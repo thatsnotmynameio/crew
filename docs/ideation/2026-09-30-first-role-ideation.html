@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: crew's first role</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --text: #1d1d1b;
+  --muted: #5d5b55;
+  --border: #e3e0d8;
+  --accent: #2f5d50;
+  --accent-soft: #e4efe9;
+  --accent-text: #22473d;
+  --warn-soft: #f7ecdc;
+  --warn-text: #6b4613;
+  --info-soft: #e6ecf6;
+  --info-text: #243f69;
+  --code-bg: #f1efe9;
+  --svg-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161715;
+    --surface: #1e201d;
+    --text: #e8e6e0;
+    --muted: #a7a49b;
+    --border: #34372f;
+    --accent: #7fbfa8;
+    --accent-soft: #23352e;
+    --accent-text: #b6e0d0;
+    --warn-soft: #3a2f1f;
+    --warn-text: #efd1a4;
+    --info-soft: #1f2a3b;
+    --info-text: #bcd0f0;
+    --code-bg: #262923;
+    --svg-bg: #1e201d;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161715; --surface: #1e201d; --text: #e8e6e0; --muted: #a7a49b; --border: #34372f;
+  --accent: #7fbfa8; --accent-soft: #23352e; --accent-text: #b6e0d0; --warn-soft: #3a2f1f;
+  --warn-text: #efd1a4; --info-soft: #1f2a3b; --info-text: #bcd0f0; --code-bg: #262923; --svg-bg: #1e201d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15.5px; line-height: 1.6;
+}
+main { max-width: 900px; margin-inline: auto; padding: 40px 16px 64px; }
+p, li, dd { max-width: 72ch; }
+h1 { font-size: 1.9rem; line-height: 1.25; margin: 0.2em 0 0.4em; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; margin: 2.4em 0 0.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.12rem; margin: 0 0 0.4em; }
+code { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+a { color: var(--accent); }
+strong { color: inherit; }
+.eyebrow { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--accent-text); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 0 1.4em; padding: 0; color: var(--muted); font-size: 0.9rem; }
+.meta div { display: flex; gap: 6px; }
+.meta dt { font-weight: 600; color: var(--text); }
+.meta dd { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 1.2em 0 0.4em; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.stat b { display: block; font-size: 1.35rem; }
+.stat span { color: var(--muted); font-size: 0.84rem; }
+.lede { font-size: 1.04rem; }
+.callout { background: var(--accent-soft); color: var(--accent-text); border-radius: 10px; padding: 14px 18px; margin: 1.2em 0; }
+.callout p { margin: 0.3em 0; }
+.callout.info { background: var(--info-soft); color: var(--info-text); }
+.jump { list-style: none; padding: 0; margin: 0 0 1.4em; display: grid; gap: 4px; }
+.jump a { text-decoration: none; }
+.jump a:hover { text-decoration: underline; }
+article.idea { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; margin: 18px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; background: var(--code-bg); color: var(--text); }
+.chip.id { background: var(--accent-soft); color: var(--accent-text); }
+.chip.axis { background: var(--info-soft); color: var(--info-text); }
+dl.fields { margin: 0; }
+dl.fields dt { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 12px; }
+dl.fields dd { margin: 3px 0 0; }
+dl.fields ul { margin: 4px 0; padding-left: 1.2em; }
+.tag { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.8em; font-weight: 500; color: var(--accent-text); background: var(--accent-soft); padding: 0 5px; border-radius: 4px; }
+figure { margin: 16px 0 4px; }
+figure svg { width: 100%; height: auto; display: block; background: var(--svg-bg); border: 1px solid var(--border); border-radius: 10px; }
+figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 6px; }
+svg text { font-family: Inter, -apple-system, "Segoe UI", sans-serif; fill: var(--text); }
+svg .muted { fill: var(--muted); }
+svg .box { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+svg .box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+svg .box-warn { fill: var(--warn-soft); stroke: var(--border); stroke-width: 1.5; }
+svg .line { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+svg .line-accent { stroke: var(--accent); stroke-width: 2; fill: none; }
+svg .arrowhead { fill: var(--muted); }
+svg .arrowhead-accent { fill: var(--accent); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-size: 0.76rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+td:first-child { white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.85em; }
+ol.axes { padding-left: 1.3em; }
+footer.composition-signal { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.84rem; }
+@media (max-width: 560px) { h1 { font-size: 1.5rem; } article.idea { padding: 16px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">Ideation · crew · Roles track</div>
+  <h1>Ideation: crew's first role</h1>
+  <dl class="meta">
+    <div><dt>Date</dt><dd><time datetime="2026-09-30">2026-09-30</time></dd></div>
+    <div><dt>Topic</dt><dd>first-role</dd></div>
+    <div><dt>Focus</dt><dd>first role, without the PM, with the least mechanism</dd></div>
+    <div><dt>Mode</dt><dd>repo-grounded</dd></div>
+  </dl>
+  <p class="lede">Which role does crew stand up first? The first round of this ideation picked the strategist / PM. The plan that came out of it needed 3 GitHub Apps, a token launcher, a ruleset and a board sync, and it was too heavy, so the boss decided not to build the PM now. This round starts from the two positions the boss proposed, the customer and whoever writes acceptance tests from the docs, and adds one test: <em>the least mechanism that delivers value now.</em></p>
+  <div class="stats">
+    <div class="stat"><b>49</b><span>raw ideas</span></div>
+    <div class="stat"><b>13 + 3</b><span>clusters + combinations</span></div>
+    <div class="stat"><b>7</b><span>survivors</span></div>
+    <div class="stat"><b>5 / 5</b><span>axes covered</span></div>
+  </div>
+  <div class="callout">
+    <p><strong>Top pick:</strong> the first role is the <strong>acceptance-test writer</strong>. It is one agent file and one Claude Code session that reads only the docs and the acceptance examples, never the code, and writes behavior tests while development happens in parallel. It posts with the boss's <code>gh</code> login, as <code>/pr-review</code> already does, and needs no GitHub App, board or launcher.</p>
+    <p>Ideas 2 to 4 shape that role. Ideas 5 and 6 are the customer, which comes second. Idea 7 is the link between the two.</p>
+  </div>
+  <div class="callout info">
+    <p><strong>What changed since the first round:</strong> the PM was dropped for weight, not for value. This round's research shows the cheapest check by someone other than the author is a test written by another session from the spec, because the implementer should not decide whether its own code is correct. No study compares tester and customer head to head; "tester first" is an argument, not a measurement.</p>
+  </div>
+</header>
+
+<nav aria-label="Sections">
+  <ul class="jump">
+    <li><a href="#grounding-context">Grounding context</a></li>
+    <li><a href="#topic-axes">Topic axes</a></li>
+    <li><a href="#ranked-ideas">Ranked ideas</a></li>
+    <li><a href="#rejection-summary">Rejection summary</a></li>
+  </ul>
+</nav>
+
+<section id="grounding-context">
+  <h2>Grounding context</h2>
+  <h3>Codebase context</h3>
+  <ul>
+    <li><code>thatsnotmynameio/crew</code> is <strong>public</strong> and nearly empty: <a href="https://github.com/thatsnotmynameio/crew/blob/main/STRATEGY.md">STRATEGY.md</a>, <a href="https://github.com/thatsnotmynameio/crew/blob/main/AGENTS.md">AGENTS.md</a>, the <code>/pr-review</code> skill and <code>review-reader</code> agent in <code>.agents/</code>, CI workflows that call <code>thatsnotmynameio/.github</code>, and docs on docs.page. There is no application code, no tests, no issues and no custom labels.</li>
+    <li>The org ruleset ("main rule") requires a PR, <strong>0 approvals</strong>, resolved threads and squash merges. The org has one human, the boss.</li>
+    <li>Installed plugins already cover strategy, ideation, brainstorming, planning, implementation and code review. None writes acceptance tests from a requirements doc as a separate role, and none acts as a customer.</li>
+    <li><code>ce-brainstorm</code> plans carry acceptance examples with IDs in Given/When/Then form; the PM plan, for example, has AE1 to AE8.</li>
+    <li>The docs home page is still the template placeholder: "Replace this page with what the project does and who it is for." (<code>docs/index.mdx</code>).</li>
+  </ul>
+  <h3>User-named references</h3>
+  <ul>
+    <li>STRATEGY.md: "no change merges without approval from a role other than its author"; "Resist a change when: it would let work reach production — or merge — without a check by someone other than its author."; the "Customer feedback loop" track names the boss's private Home Assistant repo.</li>
+    <li>The boss's direction for this round: don't build the PM now, simplify, and start from the customer or from whoever writes acceptance tests.</li>
+  </ul>
+  <h3>External context</h3>
+  <ul>
+    <li><strong>Test author separate from implementer:</strong> when one agent writes both, a misread requirement goes into the code and the test at once. AgentCoder (arXiv 2312.13010) splits programmer and test designer. Tests anchored to requirements find more defects (arXiv 2607.06636).</li>
+    <li><strong>Agents game tests:</strong> GPT-5 cheated on 76% of ImpossibleBench's impossible tasks (Oct 2025). Asking them not to barely helps. Structure works: tests outside the implementer's write access, review of every test change, hidden suites.</li>
+    <li><strong>Tests that can never fail:</strong> a solo developer had 6,104 tests at 94.6% coverage while a route guard never worked in production. It surfaced only when the guard was removed and the tests still passed. A 2026 study of 1.2M commits shows agents adding mocks in 36% of their commits.</li>
+    <li><strong>Customer agents:</strong> LinkedIn's QA Agent found 200+ valid bugs but needed a detect-then-verify stage to stay precise. Agentic exploratory QA sits on top of scripted tests, not in place of them.</li>
+  </ul>
+  <h3>Past learnings</h3>
+  <p>None: <code>docs/solutions/</code> does not exist.</p>
+</section>
+
+<section id="topic-axes">
+  <h2>Topic axes</h2>
+  <ol class="axes">
+    <li><strong>The pick:</strong> which role goes first and why now.</li>
+    <li><strong>Seams:</strong> what the role consumes and produces, and how it gives the non-author check.</li>
+    <li><strong>Lightness:</strong> the least mechanism that makes the role real.</li>
+    <li><strong>Day-one proof:</strong> what it does right away in this near-empty repo.</li>
+    <li><strong>The customer's world:</strong> who the customer is and what it reports.</li>
+  </ol>
+</section>
+
+<section id="ranked-ideas">
+  <h2>Ranked ideas</h2>
+  <ul class="jump">
+    <li><a href="#i1">1. The acceptance-test writer goes first, as one file and one session</a></li>
+    <li><a href="#i2">2. Acceptance examples are the contract</a></li>
+    <li><a href="#i3">3. First job: the promises crew already makes</a></li>
+    <li><a href="#i4">4. Tests land before code, by convention</a></li>
+    <li><a href="#i5">5. The customer reads only the published docs, in a clean environment</a></li>
+    <li><a href="#i6">6. Reports from private repos arrive de-identified</a></li>
+    <li><a href="#i7">7. Later: the customer finds, the tester ratchets</a></li>
+  </ul>
+
+  <article class="idea" id="i1">
+    <div class="chips"><span class="chip id">i1</span><span class="chip axis">The pick</span><span class="chip">Confidence 70%</span><span class="chip">Complexity Low</span></div>
+    <h3>1. The acceptance-test writer goes first, as one file and one session</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>The first role is an agent file in <code>.agents/agents/</code>, opened in its own Claude Code session. It gets only the docs and a plan's acceptance examples, never the code, and writes behavior tests while the boss implements with Claude Code in another session. It posts with the boss's <code>gh</code> login, and its PR or commit carries a line naming the role. No GitHub App, token, board or launcher.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">direct</span> STRATEGY.md: "Resist a change when: it would let work reach production — or merge — without a check by someone other than its author." <span class="tag">direct</span> <code>.agents/skills/pr-review/SKILL.md</code>: "post the review with the user's <code>gh</code>". <span class="tag">external</span> AgentCoder (arXiv 2312.13010): a test designer independent of the programmer.</dd>
+      <dt>Rationale</dt>
+      <dd>It is the cheapest form of the strategy's core rule: the implementer does not write the test that judges it. The result is a deterministic pass or fail, not another LLM's opinion. It works in any of the boss's repos that has a plan, not only in crew.</dd>
+      <dt>Downsides</dt>
+      <dd>For now the separation is a convention. With 0 approvals and one human, nothing stops the implementer from editing a test. The test runner and language are also undecided, because the repo has none yet.</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 720 290" role="img" aria-label="One plan feeds two separate sessions: the tester writes the tests and the implementer writes the code; CI runs the tests against the code">
+        <defs>
+          <marker id="arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box-accent" x="250" y="14" width="220" height="56" rx="10"/>
+        <text x="360" y="38" text-anchor="middle" font-weight="600">Plan (docs)</text>
+        <text x="360" y="58" text-anchor="middle" class="muted" font-size="13">acceptance examples</text>
+        <rect class="box" x="40" y="118" width="250" height="60" rx="10"/>
+        <text x="165" y="143" text-anchor="middle" font-weight="600">Tester (session A)</text>
+        <text x="165" y="163" text-anchor="middle" class="muted" font-size="13">reads only the docs</text>
+        <rect class="box" x="430" y="118" width="250" height="60" rx="10"/>
+        <text x="555" y="143" text-anchor="middle" font-weight="600">Implementer (session B)</text>
+        <text x="555" y="163" text-anchor="middle" class="muted" font-size="13">boss + Claude Code</text>
+        <rect class="box-warn" x="250" y="222" width="220" height="52" rx="10"/>
+        <text x="360" y="253" text-anchor="middle" font-weight="600">CI: do the tests pass?</text>
+        <path class="line" d="M300,70 L200,116" marker-end="url(#arr1)"/>
+        <path class="line" d="M420,70 L520,116" marker-end="url(#arr1)"/>
+        <path class="line" d="M190,178 L290,220" marker-end="url(#arr1)"/>
+        <path class="line" d="M530,178 L430,220" marker-end="url(#arr1)"/>
+        <text x="205" y="212" text-anchor="end" class="muted" font-size="12">tests</text>
+        <text x="515" y="212" text-anchor="start" class="muted" font-size="12">code</text>
+      </svg>
+      <figcaption>Directional sketch: both sessions start from the same doc and meet only in CI.</figcaption>
+    </figure>
+  </article>
+
+  <article class="idea" id="i2">
+    <div class="chips"><span class="chip id">i2</span><span class="chip axis">Seams</span><span class="chip">Confidence 80%</span><span class="chip">Complexity Low</span></div>
+    <h3>2. Acceptance examples are the contract</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Each acceptance example becomes one test whose name carries the example's ID (AE3 → <code>test_ae3_…</code>). A grep shows which examples have a test and which are red. When a doc sentence can't become one deterministic test, the tester asks on the doc's PR instead of guessing.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">direct</span> the shelved PM plan (since removed): "AE1. <strong>Covers R11.</strong> <strong>Given</strong> an ideation with 7 surviving ideas, <strong>when</strong> its PR merges, <strong>then</strong> …". <span class="tag">external</span> Research names requirements quality as the bottleneck for spec-driven test writers.</dd>
+      <dt>Rationale</dt>
+      <dd>No new format is needed, because <code>ce-brainstorm</code> already writes these examples. The link from requirement to example to test comes for free, and "this can't be tested" improves the doc before anyone builds it.</dd>
+      <dt>Downsides</dt>
+      <dd>Plans without acceptance examples leave the tester with no input. Vague examples produce questions that pull the boss back into the doc.</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i3">
+    <div class="chips"><span class="chip id">i3</span><span class="chip axis">Day-one proof</span><span class="chip">Confidence 65%</span><span class="chip">Complexity Low</span></div>
+    <h3>3. First job: the promises crew already makes</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>With no code in the repo, the tester starts from what the docs already promise. For example: VERSION is MAJOR.MINOR.PATCH and never below the latest release; <code>CLAUDE.md</code>, <code>.claude/skills</code> and <code>.claude/agents</code> point at their sources in <code>AGENTS.md</code> and <code>.agents/</code>. The first case it would write, "nothing merges without approval from someone other than its author", already exposes a real contradiction: the ruleset requires 0 approvals.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">direct</span> AGENTS.md: "The version must be <code>MAJOR.MINOR.PATCH</code> and not below the latest release"; "<code>AGENTS.md</code> and <code>.agents/</code> are the source; <code>CLAUDE.md</code>, <code>.claude/skills</code> and <code>.claude/agents</code> are symlinks to them." <span class="tag">direct</span> Ruleset "main rule": <code>required_approving_review_count: 0</code>.</dd>
+      <dt>Rationale</dt>
+      <dd>The role shows results today, in this repo, and settles the test convention (runner and location) before the first feature. The 0-approvals finding is something the boss had not seen.</dd>
+      <dt>Downsides</dt>
+      <dd>CI already covers much of this with the <code>version</code> check and <code>docs:check</code>, so the direct gain is small. The ruleset case works better as a finding than as a permanent test, since it would stay red until the rule changes.</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i4">
+    <div class="chips"><span class="chip id">i4</span><span class="chip axis">Lightness</span><span class="chip">Confidence 55%</span><span class="chip">Complexity Low</span></div>
+    <h3>4. Tests land before code, by convention</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Like a pre-registered clinical trial, the acceptance tests land in their own PR before the implementation, marked expected-to-fail. The implementation PR only removes the markers and never touches assertions. Anyone can see that in one diff, and <code>/pr-review</code> can treat an assertion change in an implementation PR as a serious finding. No new check, no App.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">external</span> Clinical-trial pre-registration (ClinicalTrials.gov). <span class="tag">external</span> ImpossibleBench: structural controls work, requests don't. <span class="tag">direct</span> <code>.agents/skills/pr-review/rules.md</code> holds the repo's review rules.</dd>
+      <dt>Rationale</dt>
+      <dd>History on <code>main</code> becomes the record of what was promised before the code existed. A test that passes before the feature exists shows up at once.</dd>
+      <dt>Downsides</dt>
+      <dd>It is a convention, not a block. With one human and 0 approvals, the guarantee depends on the boss and the review reading the diff.</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i5">
+    <div class="chips"><span class="chip id">i5</span><span class="chip axis">The customer's world</span><span class="chip">Confidence 70%</span><span class="chip">Complexity Low</span></div>
+    <h3>5. The customer reads only the published docs, in a clean environment</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>The customer is a session without the boss's plugins, in a temporary directory, given only the docs site and a goal ("start using crew in an empty repo"). Its main output is a list of "places I had to guess", filed as issues labeled <code>bug</code>. Its first run would already find that the home page is a placeholder.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">direct</span> <code>docs/index.mdx</code>: "Replace this page with what the project does and who it is for." <span class="tag">direct</span> STRATEGY.md: "crew stays configurable and documented enough for them to adopt." <span class="tag">external</span> LinkedIn's QA Agent: detect, then verify.</dd>
+      <dt>Rationale</dt>
+      <dd>It is the generic customer the boss asked for, and the lightest one to run: no identity, no CI. The clean environment is what makes it generic. A session with every plugin fills gaps on its own and can't see what's missing.</dd>
+      <dt>Downsides</dt>
+      <dd>Today the docs are nearly empty, so it has little to read beyond the placeholder. It pays off once a real guide exists, which is why it comes second.</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i6">
+    <div class="chips"><span class="chip id">i6</span><span class="chip axis">The customer's world</span><span class="chip">Confidence 75%</span><span class="chip">Complexity Low</span></div>
+    <h3>6. Reports from private repos arrive de-identified</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>When a customer runs in a private repo, such as the Home Assistant one, and reports to crew, the report follows an aviation near-miss format: goal, what it tried, what happened, what it expected, and whether it only worked with a workaround. Before filing, it strips entity names, hosts and paths. It is a rule of the customer role, not infrastructure.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">direct</span> STRATEGY.md: "Agents in consuming repos (e.g. my private Home Assistant repo) report back to the product team." <span class="tag">direct</span> The crew repo is public. <span class="tag">external</span> NASA's ASRS: structured, de-identified reports.</dd>
+      <dt>Rationale</dt>
+      <dd>It keeps details of the boss's home out of a public tracker, a risk nobody had raised. Near-misses show friction before it becomes a bug.</dd>
+      <dt>Downsides</dt>
+      <dd>The Home Assistant repo doesn't use crew yet, so this is a rule for when the customer exists, not a first step.</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="i7">
+    <div class="chips"><span class="chip id">i7</span><span class="chip axis">Seams</span><span class="chip">Confidence 55%</span><span class="chip">Complexity Medium</span></div>
+    <h3>7. Later: the customer finds, the tester ratchets</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Once both roles exist, they meet in one artifact. A customer report counts only when the tester can reproduce it as a failing acceptance example, and it closes when that test turns green. Anything that doesn't reproduce goes back as noise or as a doc gap.</dd>
+      <dt>Basis</dt>
+      <dd><span class="tag">external</span> LinkedIn's QA Agent detects, then verifies to stay precise. <span class="tag">reasoned</span> Turning reproduction into a test is the verify stage, and each escaped defect can only escape once.</dd>
+      <dt>Rationale</dt>
+      <dd>It joins the boss's two positions with no board, App or protocol. Escaped defects, one of the strategy's metrics, become regression tests.</dd>
+      <dt>Downsides</dt>
+      <dd>It needs both roles working before it proves anything. It is the third step, not the first.</dd>
+    </dl>
+  </article>
+</section>
+
+<section id="rejection-summary">
+  <h2>Rejection summary</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+    <tbody>
+      <tr><td>R2-1</td><td>One role, "the outsider", with two modes (tester before, customer after)</td><td>The modes share only "doesn't see the code"; merging different inputs, timing and outputs is more work than either role. Idea 7 links the roles without merging them.</td></tr>
+      <tr><td>R2-2</td><td>The customer goes first, because the docs are published</td><td>The published docs are a placeholder and one short paragraph; there is almost nothing to read. It comes second (idea 5).</td></tr>
+      <tr><td>R2-3</td><td>Isolate the tester with a docs-only sparse checkout</td><td>It isolates nothing: the agent can still run <code>git show</code>. An instruction in the agent file does about as much for less.</td></tr>
+      <tr><td>R2-4</td><td>CODEOWNERS or a path rule so only the tester writes <code>acceptance/</code></td><td>Refuted: with 0 approvals, code-owner review off and one human, nobody would enforce it.</td></tr>
+      <tr><td>R2-5</td><td>A test suite hidden from the implementer</td><td>Refuted: the repo is public, so there's nowhere to hide it without a private repo or a secret store.</td></tr>
+      <tr><td>R2-6</td><td>A CI check that rejects PRs touching both tests and code</td><td>New mechanism of the kind the boss just rejected, and there's no code to separate yet. Idea 4 keeps the useful part, by convention.</td></tr>
+      <tr><td>R2-7</td><td>The acceptance suite as a required check is the other role's approval</td><td>Under the boss's login it is a CI gate, not a non-author check, and it only matters once there's code.</td></tr>
+      <tr><td>R2-8</td><td>The backlog is the red suite, no board</td><td>A red test can't express priority, dependencies or readiness; it contradicts the strategy's backlog track.</td></tr>
+      <tr><td>R2-9</td><td>Mutation testing and calibrating the tester on the <code>.github</code> repo</td><td>Good later. Heavy for day one, and it calibrates unit tests, not acceptance tests.</td></tr>
+      <tr><td>R2-10</td><td>Turn the PM plan's AE1–AE8 into a red suite</td><td>Brings the PM back through the back door, with a large backlog for something the boss shelved.</td></tr>
+      <tr><td>R2-11</td><td>crew's first code is the tester's own red suite</td><td>A permanently red suite collides with the required checks and has no runner or language yet.</td></tr>
+      <tr><td>R2-12</td><td>Test the roles by running Claude headless against a fake <code>gh</code></td><td>Premature: nondeterministic, costly, and a fake <code>gh</code> tests scripts, not prompts.</td></tr>
+      <tr><td>R2-13</td><td>Combinations "outsider v1", full "find-then-ratchet loop", and CI "pre-registered suite"</td><td>Each stacks weak pieces. The solid parts survive as ideas 1–4 and 5–7.</td></tr>
+      <tr><td>R1-1</td><td>The first role is the strategist / PM (first round)</td><td>The boss decided not to build the PM now: its plan (3 GitHub Apps, launcher, ruleset, board sync) was too heavy for the early value.</td></tr>
+      <tr><td>R1-2</td><td>The PM's first backlog is crew itself (first round)</td><td>Depends on the PM, which is out.</td></tr>
+      <tr><td>R1-3</td><td>Assemble the PM from ce-strategy, ce-brainstorm and ce-plan; build only the board writer (first round)</td><td>Depends on the PM; the board writer is what got heavy.</td></tr>
+      <tr><td>R1-4</td><td>Stories carry acceptance criteria; the boss's approval is the non-author check (first round)</td><td>The acceptance-criteria part lives on in ideas 1 and 2; the PM part is out.</td></tr>
+      <tr><td>R1-5</td><td>The board is the PM's memory (first round)</td><td>Depends on the PM and the board.</td></tr>
+      <tr><td>R1-6</td><td>Role #2 is a pair: implementer + reviewer (first round)</td><td>Deferred. The tester gives the non-author check with less mechanism; the pair returns when there is code to review.</td></tr>
+      <tr><td>R1-7</td><td>The PM defines the statuses, so metrics start with story one (first round)</td><td>Depends on the PM and the board.</td></tr>
+      <tr><td>R1-8</td><td>First-round cuts (reviewer first, release assembler, customer first, Home Assistant first, board reconciler, dispatcher, universal checker, one session with many hats, two implementers plus a judge, role contract v1)</td><td>Kept as cut in the first round: no work on day one, against the pull model, or too much infrastructure.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Axis coverage: all 5 axes have at least one survivor; no recovery dispatch was needed.</p>
+</section>
+
+<footer class="composition-signal">Composed <time datetime="2026-09-30">2026-09-30</time> by ce-ideate from the prompt "which role should crew stand up first", grounded in <a href="https://github.com/thatsnotmynameio/crew/blob/main/STRATEGY.md">STRATEGY.md</a>, <a href="https://github.com/thatsnotmynameio/crew/blob/main/AGENTS.md">AGENTS.md</a> and <a href="https://github.com/thatsnotmynameio/crew/tree/main/.agents/skills/pr-review">.agents/skills/pr-review/</a>; second round, after the PM was set aside.</footer>
+</main>
+</body>
+</html>
