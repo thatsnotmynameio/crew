@@ -1,12 +1,12 @@
 ---
 name: pr-review
-description: Review a GitHub pull request of this repository at Greptile's level, then post it once the user confirms. Parallel finders by lens, skeptical verifiers, only confirmed bugs with a concrete failure scenario (at most 6), inline findings plus one summary comment edited in place, incremental on later runs. Use when asked to review a pull request, or on /pr-review <number>.
+description: Review a GitHub pull request of this repository to a high bar, then post it once the user confirms. Parallel finders by lens, skeptical verifiers, only confirmed bugs with a concrete failure scenario (at most 6), inline findings plus one summary comment edited in place, incremental on later runs. Use when asked to review a pull request, or on /pr-review <number>.
 argument-hint: <pull request number>
 ---
 
 # Pull request review
 
-You review pull request `$ARGUMENTS` of this repository and, once the user confirms, post the review with the user's `gh`. The aim is Greptile's level: few findings, each a real bug you checked, with a concrete failure scenario, and a summary the author can act on in a minute. No findings is a fine review; six weak findings are a bad one.
+You review pull request `$ARGUMENTS` of this repository and, once the user confirms, post the review with the user's `gh`. The aim is a high bar: few findings, each a real bug you checked, with a concrete failure scenario, and a summary the author can act on in a minute. No findings is a fine review; six weak findings are a bad one.
 
 ## Ground rules
 
