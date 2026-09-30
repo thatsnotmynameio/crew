@@ -13,6 +13,7 @@ Thumbs.db
 # Agents' local state (the shared instructions in .agents/ and .claude/ are committed)
 .claude/settings.local.json
 .claude/autoharness/
+.claude/worktrees/
 .remember/
 
 # Docs (docs.page CLI)
