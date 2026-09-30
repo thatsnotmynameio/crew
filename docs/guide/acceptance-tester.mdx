@@ -18,7 +18,7 @@ mkdir -p ~/.claude/agents
 ln -s "$(pwd)/.agents/agents/acceptance-tester.md" ~/.claude/agents/acceptance-tester.md
 ```
 
-Run it from the root of your crew checkout. Changes to the file in crew apply everywhere at once.
+Run it from the root of your crew checkout. Changes to the file in crew apply everywhere at once, and so does switching branches there: a branch without the file removes the agent from every repository. Keep that checkout on `main`.
 
 In each repository where you use it, ignore Claude Code's session worktrees by adding `.claude/worktrees/` to `.gitignore`.
 
@@ -40,7 +40,7 @@ claude --worktree my-feature-tests --name acceptance-tester --agent acceptance-t
 - **Plans without them:** it proposes examples in Given/When/Then form and writes nothing until you confirm them.
 - **Questions:** when the plan does not say how to call something, or a requirement has no observable outcome, it asks you instead of guessing.
 - **No test framework in the repository:** it proposes one and waits for you.
-- **Result:** tests in an `acceptance` folder of the test tree, with a `README.md` telling implementers not to edit them. Its commits end with `Role: acceptance-tester`.
+- **Result:** tests in an `acceptance` folder of the test tree, with a `README.md` telling implementers not to edit them. Its commits end with `Role: acceptance-tester`. Before reporting, it runs the tests once without the feature and tells you which fail as expected and which look suspect.
 
 ## When the implementer disagrees
 
