@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.page/schema.json",
+  "name": "Project",
+  "description": "One sentence: what this project does.",
+  "social": {
+    "github": "thatsnotmynameio/template"
+  },
+  "tabs": [
+    { "id": "guide", "title": "Guide", "href": "/" },
+    { "id": "develop", "title": "Develop", "href": "/develop" }
+  ],
+  "sidebar": [
+    {
+      "group": "Getting started",
+      "tab": "guide",
+      "pages": [
+        { "title": "Overview", "href": "/" }
+      ]
+    },
+    {
+      "group": "Develop",
+      "tab": "develop",
+      "pages": [
+        { "title": "Getting set up", "href": "/develop" }
+      ]
+    }
+  ]
+}

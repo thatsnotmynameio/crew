@@ -1,0 +1,32 @@
+# Every pull request: the release rule on VERSION and actionlint over the
+# workflows. Add the project's build and test jobs here, and their check names
+# to the "checks" ruleset (bootstrap.sh --checks, in thatsnotmynameio/.github).
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the release rule reads the v* tags
+          persist-credentials: false
+      - uses: thatsnotmynameio/.github/actions/release@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
+        with:
+          mode: check
+
+  actionlint:
+    uses: thatsnotmynameio/.github/.github/workflows/actionlint.yml@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0

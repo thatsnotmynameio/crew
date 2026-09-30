@@ -1,0 +1,24 @@
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Agents' local state (the shared instructions in .agents/ and .claude/ are committed)
+.claude/settings.local.json
+.claude/autoharness/
+.remember/
+
+# Docs (docs.page CLI)
+node_modules/
+
+# Coverage reports (Sonar)
+coverage.xml
+.coverage
+coverage/
