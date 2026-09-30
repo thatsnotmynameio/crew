@@ -24,7 +24,6 @@ The starting point of thatsnotmynameio's repositories: GitHub setup, releases, d
 3. Fill in:
    - `README.md`;
    - `AGENTS.md` (commands, architecture, tests);
-   - `.agents/skills/pr-review/rules.md`;
    - `docs.json` and `docs/`.
 
 4. Add the project's build and test jobs to `.github/workflows/ci.yml`, and their check names to the ruleset:
@@ -49,7 +48,7 @@ The starting point of thatsnotmynameio's repositories: GitHub setup, releases, d
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
 | `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows and the docs CLI. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
-| `.agents/skills/pr-review/` | `/pr-review <number>`: a pull request review, confirmed before it is posted. |
+| `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. See the Guide. |
 | `docs.json`, `docs/` | The docs.page site (Guide and Develop tabs). |
 | `VERSION` | The version; a pull request that bumps it is a release. Starts at `0.1.0`. |
 

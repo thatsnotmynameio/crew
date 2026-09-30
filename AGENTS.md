@@ -42,4 +42,4 @@ pnpm docs:preview     # live preview of the docs
 ## Agents
 
 - `AGENTS.md` and `.agents/` are the source; `CLAUDE.md`, `.claude/skills` and `.claude/agents` are symlinks to them. Edit the source.
-- `/pr-review <number>` reviews a pull request (`.agents/skills/pr-review/`). This repository's rules for it are in that folder's `rules.md`.
+- `acceptance-tester` (`.agents/agents/acceptance-tester.md`) writes behavior tests from a plan's acceptance examples in its own worktree, without reading the implementation. It is linked into `~/.claude/agents/` to work in any repository; see `docs/guide/acceptance-tester.mdx`.

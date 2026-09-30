@@ -14,7 +14,8 @@
       "group": "Getting started",
       "tab": "guide",
       "pages": [
-        { "title": "Overview", "href": "/" }
+        { "title": "Overview", "href": "/" },
+        { "title": "Acceptance tester", "href": "/guide/acceptance-tester" }
       ]
     },
     {
