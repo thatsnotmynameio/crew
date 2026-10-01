@@ -15,9 +15,6 @@ Thumbs.db
 .claude/autoharness/
 .claude/worktrees/
 .remember/
-.agents/skills/**/references
-.agents/skills/**/.ledger.jsonl
-.agents/skills/**/.sidecar.json
 
 # Docs (docs.page CLI)
 node_modules/
