@@ -1,10 +1,11 @@
 # crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
 # Every label crew uses starts with `crew:`. Each stage ends in `crew:waiting
 # review`, which means the issue waits for the boss, or in `crew:failed`.
-# The extra label `crew:waiting brainstorm` parks an idea no stage takes; adding
-# a stage's label later promotes it, and crew then takes the extra off. Each
-# stage and extra names its template in .github/ISSUE_TEMPLATE/, which
-# /cw-create-issue fills.
+# The extra labels park issues no stage takes: `crew:waiting brainstorm` an
+# idea, `crew:brainstorm:done` a brainstormed feature. Adding a stage's label
+# later promotes it, and crew then takes the extra off. Each stage and extra
+# names its template in .github/ISSUE_TEMPLATE/, which /cw-create-issue and
+# /cw-update-issue-plan fill.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 2
@@ -16,6 +17,9 @@ extra_labels:
   - label: "crew:waiting brainstorm"
     description: an idea to brainstorm later
     issue_template: idea.md
+  - label: "crew:brainstorm:done"
+    description: a brainstormed feature waiting for the boss to promote it
+    issue_template: feature.md
 workflow:
   - name: development
     description: a feature whose brainstorm is done

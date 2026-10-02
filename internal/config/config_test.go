@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -411,6 +412,10 @@ func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
 	for _, e := range cfg.ExtraLabels {
 		types = append(types, named{"extra label " + e.Label, e})
 	}
+	// Several types may share a template, such as a stage and an extra that
+	// both hold a brainstormed feature. Its labels name one of them.
+	var templates []string
+	labelsOf := map[string][]string{}
 	for _, typ := range types {
 		what := typ.what
 		if typ.Description == "" {
@@ -420,17 +425,23 @@ func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
 			t.Errorf("%s has no issue_template", what)
 			continue
 		}
-		path := filepath.Join(root, ".github", "ISSUE_TEMPLATE", typ.IssueTemplate)
+		if _, seen := labelsOf[typ.IssueTemplate]; !seen {
+			templates = append(templates, typ.IssueTemplate)
+		}
+		labelsOf[typ.IssueTemplate] = append(labelsOf[typ.IssueTemplate], typ.Label)
+	}
+	for _, name := range templates {
+		path := filepath.Join(root, ".github", "ISSUE_TEMPLATE", name)
 		front, err := templateFrontmatter(path)
 		if err != nil {
-			t.Errorf("%s: issue_template %s: %v", what, typ.IssueTemplate, err)
+			t.Errorf("issue_template %s: %v", name, err)
 			continue
 		}
 		if front.Name == "" || front.About == "" {
 			t.Errorf("%s: GitHub needs name and about to list it; got name %q, about %q", path, front.Name, front.About)
 		}
-		if want := []string{typ.Label}; !reflect.DeepEqual(front.Labels, want) {
-			t.Errorf("%s: labels = %q, want %q, the label of %s", path, front.Labels, want, what)
+		if len(front.Labels) != 1 || !slices.Contains(labelsOf[name], front.Labels[0]) {
+			t.Errorf("%s: labels = %q, want one of the labels of the types that name it, %q", path, front.Labels, labelsOf[name])
 		}
 	}
 }
