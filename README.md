@@ -34,7 +34,7 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
 | `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. See the Guide. |
 | `.agents/skills/cw-create-issue/` | The `/cw-create-issue` skill: creates an issue with the label and filled template of a type from `.crew/config.yaml`. See the Guide. |
-| `.agents/skills/cw-update-issue-plan/` | The `/cw-update-issue-plan` skill: writes the session's plan into the issue it is working on, and can move it to a stage or extra label. See the Guide. |
+| `.agents/skills/cw-update-issue-plan/` | The `/cw-update-issue-plan` skill: copies the session's plan file into the issue it is working on, and can move it to a stage or extra label. See the Guide. |
 | `.agents/skills/cw-brainstorm/` | The `/cw-brainstorm` skill: runs the `prompts.brainstorm` of `.crew/config.yaml` for an issue, in your own session. See the Guide. |
 | `.github/ISSUE_TEMPLATE/` | The issue templates of crew's own workflow, one per kind of work; a stage and an extra label may share one. |
 | `.compound-engineering/` | The Compound Engineering plugin's settings for this repository. |

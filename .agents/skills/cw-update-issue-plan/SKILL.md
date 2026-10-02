@@ -1,12 +1,12 @@
 ---
 name: cw-update-issue-plan
-description: Writes the plan or brainstorm of the current session into the body of the GitHub issue this session is working on, laid out by that issue type's template from `.crew/config.yaml`, and optionally moves the issue to another stage or extra label. Use when the user asks to put, write, save or update the plan or brainstorm in the issue, or answers a brainstorm's offer to write the plan by asking for it to go into the issue instead.
+description: Copies the plan file the current session's brainstorm or plan wrote (compound-engineering's `ce-brainstorm` or `ce-plan`) into the body of the GitHub issue this session is working on, laid out by that issue type's template from `.crew/config.yaml`, and optionally moves the issue to another stage or extra label. Use when the user asks to put, write, save or update the plan or brainstorm in the issue, once its plan file is written.
 argument-hint: "[label to move the issue to]"
 ---
 
 # Update an issue with the session's plan
 
-crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. The session crew runs for an issue starts from `main` and reads the issue, not the files of this checkout, so the plan has to live in the issue's body. This skill puts it there, keeps the old body in a comment, and can move the issue to a stage or extra label. It asks nothing unless it is in doubt about the issue, or a brainstorm's plan fails a check that only the user can settle.
+crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. The session crew runs for an issue starts from `main` and reads the issue, not the files of this checkout, so the plan has to live in the issue's body. This skill copies the plan file the session wrote into the issue's body, keeps the old body in a comment, and can move the issue to a stage or extra label. It does not write the plan itself: the brainstorm or plan that wrote the file already shaped and checked it. It asks nothing unless it is in doubt about the issue.
 
 Run `gh` with the repository root as the working directory. Read files with your own file tools.
 
@@ -29,34 +29,22 @@ With no argument, the issue keeps its labels.
 
 With an argument, it must be the `label` of a stage or of an extra. Otherwise say so, list the valid labels, and stop. When the issue carries a stage's `moves_to` label, crew is running a session on it: say so and stop without changing anything. The one exception is a label this session put on the issue, such as the prompt `/cw-brainstorm` ran moving it to a `moves_to` label while the user brainstorms: then this session is the one working on it, so go on.
 
-## 4. Find the plan
+## 4. Find the plan file
 
-Use, in this order:
+The plan is the file this session's brainstorm or plan wrote for this work: compound-engineering's `ce-brainstorm` writes one when the user confirms its synthesis, and `ce-plan` enriches the same file. Take the file whose path the session wrote or showed. When the session shows none, take the most recent file under `<docs>/plans/` whose frontmatter has `artifact_contract: ce-unified-plan/v1`, and name it in the report. `<docs>` is `docs_root` from `<root>/.compound-engineering/config.yaml` when that file sets it, otherwise `docs`.
 
-1. **The plan this session wrote or enriched for this work.** It is the most recent file under `<docs>/plans/` whose frontmatter has `artifact_contract: ce-unified-plan/v1`, the compound-engineering plugin's plan format. `<docs>` is `docs_root` from `<root>/.compound-engineering/config.yaml` when that file sets it, otherwise `docs`. Convert an HTML plan to Markdown.
-2. **The session's brainstorm, when no plan file was written.** This is the usual case when the user runs the skill instead of letting a brainstorm write its plan file. Take what the brainstorm settled: the confirmed synthesis, the decisions and why, the requirements, the examples, the scope and the open questions. Write only what the session settled. Leave a section out rather than fill it with guesses.
+Read the file and take its `## Goal Capsule` and `## Product Contract`, with everything under them, and any later sections such as `ce-plan`'s. Leave out the frontmatter: the issue has none. Convert an HTML plan to Markdown.
 
-When the session has neither, say so and stop.
-
-### A brainstorm from `ce-brainstorm`
-
-When the session's brainstorm ran the compound-engineering plugin's `ce-brainstorm`, compose the plan exactly as that skill would have written its plan file, so the issue gets the same plan the file would have held:
-
-1. Read `references/brainstorm-sections.md` in the `ce-brainstorm` skill's directory, the base directory the session showed when it loaded that skill. When you cannot read it, say so and stop without changing the issue.
-2. Compose the `## Goal Capsule` and `## Product Contract` under that file's section contract, prose economy, and ID rules. Leave out the frontmatter: the issue has none.
-3. Run its Ready for Planning Check on the composed plan: Complete, Consistent, Focused, and Usable by planning. Fix a failed check in place when the fix keeps what the session settled, then run the failed checks again. When a fix would choose or change product behaviour or scope, ask the user one targeted question and fix the plan after the answer.
-4. Go on to the next step only when every check passes. Never write a plan that fails one into the issue.
-
-From here on, that plan counts as a plan file.
+When there is no plan file, say so and stop without changing the issue: let the brainstorm write its plan file first, then run this skill again. Never compose the plan from the conversation.
 
 ## 5. Write the body
 
 The template is the one of the type the issue is moving to, or else of the type of the crew label it carries. When neither has a template, or its file is missing, there is none.
 
 1. Read the template and drop its YAML frontmatter and its guidance comments.
-2. Each template heading takes the plan's section of the same name, copied verbatim with its subsections. When the content comes from a brainstorm that did not run `ce-brainstorm`, write each section in the shape the template's comment asks for. Drop a template section the plan does not have.
+2. Each template heading takes the plan's section of the same name, copied verbatim with its subsections. Drop a template section the plan does not have.
 3. Plan sections the template has no heading for go after the template's sections, under their own headings.
-4. Without a template, the body is the plan's `## Goal Capsule` and `## Product Contract`.
+4. Without a template, the body is the plan's sections, in the file's order.
 
 Write the body to a temporary file outside the repository.
 
@@ -75,4 +63,4 @@ When a `gh` command fails, report its error text and stop. Do not retry.
 
 ## 8. Report
 
-Print the issue's link, where the plan came from (the plan file's path, or the session's brainstorm), what the Ready for Planning Check fixed when it ran, the link to the comment with the old body when one was posted, and the label change when there was one.
+Print the issue's link, the plan file's path, the link to the comment with the old body when one was posted, and the label change when there was one.
