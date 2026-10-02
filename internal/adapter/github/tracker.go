@@ -219,9 +219,12 @@ func missingLabel(stderr, label string) bool {
 }
 
 // ReportFailure implements port.Tracker: one Markdown comment naming each
-// failed action and its log, without its reason. Its errors are transient.
+// failed action and its log, without its reason. The issue gone (HTTP 404
+// or 410) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
+// issue, but not a rate limit) is port.ErrRefused, and any other error is
+// transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
-	if _, err := t.gh.call(ctx, "issue", "comment", report.IssueKey, "--body="+renderReport(report)); err != nil {
+	if _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
 		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
 	}
 	return nil

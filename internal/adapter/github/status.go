@@ -120,14 +120,9 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 // createStatus creates a status comment on the issue with body and caches
 // it, with its id, which gh prints.
 func (t *Tracker) createStatus(ctx context.Context, issueKey, body string) error {
-	out, err := t.gh.call(ctx, "api", "--method", "POST", "repos/{owner}/{repo}/issues/"+issueKey+"/comments",
-		"-f", "body="+body, "--jq", ".id")
+	id, err := t.postComment(ctx, issueKey, body)
 	if err != nil {
-		return fmt.Errorf("create the status comment: %w", classify(err, out, true))
-	}
-	id, err := strconv.ParseInt(strings.TrimSpace(string(out.Stdout)), 10, 64)
-	if err != nil {
-		return fmt.Errorf("create the status comment: gh printed no comment id: %w", err)
+		return fmt.Errorf("create the status comment: %w", err)
 	}
 	t.rememberStatus(issueKey, cachedStatus{id: id, body: body})
 	return nil
