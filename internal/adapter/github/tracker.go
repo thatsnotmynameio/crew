@@ -35,6 +35,7 @@ var (
 
 // issuesQuery lists the login's open issues carrying any of the labels,
 // oldest first. GitHub's labels filter matches an issue with any of them.
+// A dependency summary's blockedBy counts only the open issues blocking it.
 const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $labels: [String!]) {
   repository(owner: $owner, name: $name) {
     issues(first: 100, states: OPEN, filterBy: {createdBy: $login, labels: $labels},
@@ -45,6 +46,7 @@ const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $la
         url
         createdAt
         labels(first: 100) { nodes { name } }
+        issueDependenciesSummary { blockedBy }
       }
     }
   }
@@ -88,7 +90,8 @@ func factory(run proc.Runner) port.TrackerFactory {
 // first, at most 100. Each issue's key is its number, its reference
 // #<number>, and its states every workflow state its labels name, in the
 // workflow's spelling. Its other labels, extras included, are no states and
-// are ignored.
+// are ignored. It is blocked while an open issue blocks it, as GitHub's
+// issue dependencies record.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
@@ -114,6 +117,9 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 						Labels    struct {
 							Nodes []ghLabel `json:"nodes"`
 						} `json:"labels"`
+						Dependencies struct {
+							BlockedBy int `json:"blockedBy"`
+						} `json:"issueDependenciesSummary"`
 					} `json:"nodes"`
 				} `json:"issues"`
 			} `json:"repository"`
@@ -126,7 +132,8 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	issues := make([]crew.Issue, 0, len(nodes))
 	for _, n := range nodes {
 		key := strconv.Itoa(n.Number)
-		issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
+		issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt,
+			Blocked: n.Dependencies.BlockedBy > 0}
 		for _, l := range n.Labels.Nodes {
 			if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
 				issue.States = append(issue.States, s)

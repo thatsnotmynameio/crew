@@ -382,6 +382,24 @@ func TestAE8IssueInTwoStatesIsSkippedUntilItIsInOne(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueKey: "4", From: ready, To: inProgress})
 }
 
+func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
+	d := newDriver(t, draft(), 1)
+	blocked := issue("4", 1, ready)
+	blocked.Blocked = true
+
+	cmds, _ := d.poll(blocked, issue("5", 2, ready))
+	wantCommands(t, cmds, core.Move{IssueKey: "5", From: ready, To: inProgress})
+	wantHeld(t, d.m, "5")
+
+	d = newDriver(t, draft(), 1)
+	cmds, _ = d.poll(blocked)
+	wantCommands(t, cmds)
+	wantHeld(t, d.m)
+
+	cmds, _ = d.poll(issue("4", 1, ready))
+	wantCommands(t, cmds, core.Move{IssueKey: "4", From: ready, To: inProgress})
+}
+
 func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready), issue("2", 2, ready))

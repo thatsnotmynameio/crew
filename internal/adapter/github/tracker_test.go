@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -263,6 +264,41 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt(t *testing.T) {
+	// blockedBy counts the open issues blocking it; totalBlockedBy counts
+	// the closed ones too.
+	tr, gh := build(t, "", login, reply{
+		prefix: []string{"api", "graphql"},
+		stdout: issuesJSON(
+			blockedNode(issueNode(4, "2026-09-01T10:00:00Z", "ready"), 1, 2),
+			blockedNode(issueNode(5, "2026-09-02T10:00:00Z", "ready"), 0, 1),
+			issueNode(6, "2026-09-03T10:00:00Z", "ready"),
+		),
+	})
+	got, err := tr.List(context.Background(), []crew.State{ready})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	query := strings.Join(fieldValues(gh.callsTo("api", "graphql")[0], "query"), "")
+	if !strings.Contains(query, "issueDependenciesSummary { blockedBy }") {
+		t.Errorf("query does not ask for the open issues blocking each issue:\n%s", query)
+	}
+	blocked := map[string]bool{}
+	for _, issue := range got {
+		blocked[issue.Key] = issue.Blocked
+	}
+	if want := map[string]bool{"4": true, "5": false, "6": false}; !maps.Equal(blocked, want) {
+		t.Errorf("blocked = %v, want %v", blocked, want)
+	}
+}
+
+// blockedNode adds to an issueNode the dependency summary GitHub returns:
+// open is how many open issues block it, total how many issues do.
+func blockedNode(node string, open, total int) string {
+	return strings.TrimSuffix(node, "}") +
+		fmt.Sprintf(`,"issueDependenciesSummary":{"blockedBy":%d,"totalBlockedBy":%d}}`, open, total)
 }
 
 // Covers AE1, AE4 and AE6: the move swaps crew's labels, removes every extra
