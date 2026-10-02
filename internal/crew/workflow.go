@@ -32,6 +32,11 @@ type Action struct {
 	Name string
 	// Prompt is a text/template over the issue; see Render.
 	Prompt string
+	// Check is a shell command run in the action's workspace once its
+	// session succeeded; empty when the action has none. It is never a
+	// template: it reads the issue from environment variables, so no issue
+	// text becomes part of the command. A check that fails fails the action.
+	Check string
 }
 
 // promptIssue is the only issue data a prompt template can reach. A struct,

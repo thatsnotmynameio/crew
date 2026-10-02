@@ -348,6 +348,38 @@ func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 	}
 }
 
+func TestLoadReadsActionCheck(t *testing.T) {
+	stage := func(check string) string {
+		return `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+` + check
+	}
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "left out", body: oneStage, want: ""},
+		{name: "a command", body: stage("        check: \"test -n \\\"$CREW_BRANCH\\\"\"\n"), want: `test -n "$CREW_BRANCH"`},
+		// A check is a shell command, never a template: braces stay as written.
+		{name: "not a template", body: stage("        check: \"echo '{{.Issue.Title}}'\"\n"), want: "echo '{{.Issue.Title}}'"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, tt.body).Workflow[0].Actions[0].Check; got != tt.want {
+				t.Errorf("Check = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneStage)
 	if len(cfg.Workflow) != 1 || len(cfg.Workflow[0].Actions) != 1 {
@@ -818,6 +850,51 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
     on_failure: needs attention
 `,
 			wants: []string{"workflow[0].actions", "line 2", "at least one action"},
+		},
+		{
+			name: "empty check",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+        check: ""
+`,
+			wants: []string{"workflow[0].actions[0].check", "line 10", "must not be empty"},
+		},
+		{
+			name: "blank check",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+        check: "   "
+`,
+			wants: []string{"workflow[0].actions[0].check", "line 10", "must not be empty"},
+		},
+		{
+			name: "check of the wrong type",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+        check: [gh, pr, list]
+`,
+			wants: []string{"workflow[0].actions[0].check", "line 10"},
 		},
 		{
 			name: "action without prompt",

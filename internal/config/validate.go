@@ -32,6 +32,7 @@ type extraDoc struct {
 type actionDoc struct {
 	Name   located[string] `yaml:"name"`
 	Prompt located[string] `yaml:"prompt"`
+	Check  located[string] `yaml:"check"`
 }
 
 // parsedStage is a stage that passed its own checks, with what the
@@ -138,7 +139,12 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 			continue
 		}
 		firstPath[name] = itemPath
-		action := crew.Action{Name: name, Prompt: prompt}
+		// A check present but blank would run nothing and pass every time.
+		if doc.Check.line != 0 && strings.TrimSpace(doc.Check.value) == "" {
+			errs = append(errs, keyError(itemPath+".check", doc.Check.line, "must not be empty"))
+			continue
+		}
+		action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value}
 		if _, err := action.Render(sample); err != nil {
 			errs = append(errs, keyError(itemPath+".prompt", doc.Prompt.line, err.Error()))
 			continue
