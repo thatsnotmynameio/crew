@@ -7,6 +7,8 @@ description: A Claude Code skill that records a piece of work as a GitHub issue 
 
 `/cw-create-issue` is a Claude Code skill that records a piece of work as a GitHub issue for [crew](/guide/crew). It reads the repository's `.crew/config.yaml`, picks the type of work, fills that type's issue template, and creates the issue with the type's label. crew then takes it like an issue you labeled by hand.
 
+The skill was built for the author's own workflow, so its behavior, and the config keys it reads, may still change.
+
 The types are every stage of the workflow and every extra label in `extra_labels`. A stage's type puts its `label` on the issue, so crew starts on it at the next poll. An extra parks the issue, such as an idea to brainstorm later: no stage takes it until you add a stage's label.
 
 ## Install once
@@ -24,7 +26,7 @@ The skill needs `gh`, logged in, with permission to create the repository's issu
 
 ## Set up a repository
 
-crew ships no extra labels and no issue templates. Your repository's `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` decide the types and what each issue's body asks for. The labels and file names below are examples.
+You define the extra labels and the issue templates: your repository's `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` decide the types and what each issue's body asks for. The labels and file names below are examples.
 
 Give each stage and extra label a `description` and an `issue_template` in `.crew/config.yaml` (see [Keys](/guide/crew#keys)):
 
