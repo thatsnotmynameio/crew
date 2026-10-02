@@ -35,6 +35,8 @@ type Model struct {
 	// handled holds one entry per issue whose stage ended this run, in the
 	// order the issues were released.
 	handled []HandledView
+	// runs counts the stage runs statuses were reported for, for their ids.
+	runs int
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -63,6 +65,9 @@ type actionRun struct {
 	started   time.Time
 	said      string // what its running session last said
 	outcome   crew.Outcome
+	check     string            // its check command; empty when it has none
+	stopped   bool              // a StopCheck was sent for its check
+	cause     crew.FailureCause // what made it fail, once it ended failed
 }
 
 // call is a tracker call the core made and has not settled.
@@ -159,6 +164,9 @@ const (
 	PhaseStarting
 	// PhaseRunning: its session runs.
 	PhaseRunning
+	// PhaseChecking: its session succeeded and its check runs. The action
+	// has not ended: it is still running for the boss.
+	PhaseChecking
 	// PhaseEnded: it ended; see its Outcome.
 	PhaseEnded
 )
@@ -174,6 +182,8 @@ func (p Phase) String() string {
 		return "starting"
 	case PhaseRunning:
 		return "running"
+	case PhaseChecking:
+		return "checking"
 	case PhaseEnded:
 		return "ended"
 	}

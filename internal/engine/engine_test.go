@@ -809,11 +809,17 @@ func TestAE3AE4StopLeavesTheMoveOnTheStatusAndTheFailureReportApart(t *testing.T
 
 		want := crew.Status{
 			IssueKey: "1", IssueRef: "#1", Stage: "implement", Kind: crew.StatusEnded,
-			Actions: []crew.ActionStatus{{Name: "development", State: crew.ActionFailed}},
-			To:      needsAttention, Move: crew.MoveDone,
+			Actions: []crew.ActionStatus{{
+				Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped,
+				Log: ".crew/logs/issue-1-development.log",
+			}},
+			To: needsAttention, Move: crew.MoveDone,
 		}
 		got := lastStatus(t, tr, "1")
-		got.Updated = time.Time{}
+		if got.Run == "" {
+			t.Errorf("last status has no run: %#v", got)
+		}
+		got.Updated, got.Run = time.Time{}, ""
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("last status = %#v, want %#v", got, want)
 		}

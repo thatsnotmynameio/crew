@@ -3,8 +3,8 @@
 // case as GitHub does, and crew's labels are the workflow's states plus the
 // config's extra labels, which are never states. It lists the open issues
 // the authenticated gh user opened, moves them by swapping crew's labels,
-// reports failures as Markdown comments and keeps one status comment per
-// issue, edited in place. It works on the repository gh resolves
+// reports failures as Markdown comments and keeps a status comment on each
+// issue, with one entry per stage run. It works on the repository gh resolves
 // from crew's working directory, and runs every gh call through the shared
 // process helper.
 package github
@@ -64,7 +64,7 @@ type Tracker struct {
 	extras extras
 
 	mu       sync.Mutex
-	comments map[string]int64 // status comment ids by issue key, once found or created
+	comments map[string]cachedStatus // status comments by issue key, as last written or read
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -81,7 +81,7 @@ func factory(run proc.Runner) port.TrackerFactory {
 			return nil, err
 		}
 		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), extras: slices.Clone(extraLabels),
-			comments: map[string]int64{}}, nil
+			comments: map[string]cachedStatus{}}, nil
 	}
 }
 

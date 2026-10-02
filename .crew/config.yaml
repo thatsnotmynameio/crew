@@ -9,7 +9,8 @@
 # /cw-update-issue-plan fill. crew does not run the prompts under `prompts`:
 # /cw-brainstorm runs `brainstorm` in the boss's own session, and
 # /cw-update-issue-plan runs `update_issue_plan` there once the plan is in
-# the issue.
+# the issue. The lfg actions of development and fix have a check: they
+# succeed only when their pull request is open and closes the issue.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 2
@@ -46,6 +47,17 @@ workflow:
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
+        # The check fails the action unless an open pull request from this
+        # repository, on the worktree's branch, has the line that closes the
+        # issue. It echoes its own reason last: that line reaches the
+        # issue's status comment.
+        check: |-
+          state=$(gh pr list --head "$CREW_BRANCH" --state open --json isCrossRepository,body --jq '[.[] | select(.isCrossRepository | not)] | if length == 0 then "none" elif any(.[]; .body | gsub("\r"; "") | split("\n") | any(. == "Closes " + env.CREW_ISSUE_REF)) then "closes" else "open" end') || { echo "gh could not list the pull requests from $CREW_BRANCH"; exit 1; }
+          case $state in
+          closes) ;;
+          none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
+          *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
+          esac
   - name: fix
     description: a bug to reproduce and fix
     issue_template: bug.md
@@ -63,6 +75,17 @@ workflow:
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
+        # The check fails the action unless an open pull request from this
+        # repository, on the worktree's branch, has the line that closes the
+        # issue. It echoes its own reason last: that line reaches the
+        # issue's status comment.
+        check: |-
+          state=$(gh pr list --head "$CREW_BRANCH" --state open --json isCrossRepository,body --jq '[.[] | select(.isCrossRepository | not)] | if length == 0 then "none" elif any(.[]; .body | gsub("\r"; "") | split("\n") | any(. == "Closes " + env.CREW_ISSUE_REF)) then "closes" else "open" end') || { echo "gh could not list the pull requests from $CREW_BRANCH"; exit 1; }
+          case $state in
+          closes) ;;
+          none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
+          *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
+          esac
   - name: knowledge base
     description: a solved problem to record as a learning
     issue_template: knowledge-base.md

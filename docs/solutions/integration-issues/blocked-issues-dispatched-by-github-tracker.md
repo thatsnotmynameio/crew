@@ -39,7 +39,7 @@ The fix has three parts:
 
 - The GitHub `List` query asks for one more field per issue, `issueDependenciesSummary { blockedBy }` (`internal/adapter/github/tracker.go:49`), and sets `Blocked: n.Dependencies.BlockedBy > 0` (`internal/adapter/github/tracker.go:136`).
 - `crew.Issue` has a `Blocked` field (`internal/crew/issue.go:29`). A tracker that knows no dependencies leaves it false.
-- `core.listed` leaves blocked issues out of each stage's candidates (`internal/core/update.go:187`). A blocked issue is neither taken nor reported as queued, and a later poll takes it once nothing blocks it.
+- `core.listed` leaves blocked issues out of each stage's candidates (`internal/core/update.go:192`). A blocked issue is neither taken nor reported as queued, and a later poll takes it once nothing blocks it.
 
 The tests are `TestBlockedIssueIsNotTakenUntilNothingBlocksIt` (core) and `TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt` (github adapter).
 
@@ -50,7 +50,7 @@ The blocker count arrives with the listing crew already makes every poll. The de
 ## Prevention
 
 - When a GitHub summary field has an open-only count and a total, check which one you read against an issue whose blocker is closed. The schema text alone is ambiguous.
-- An issue that was queued at one poll and is blocked at the next keeps its "queued" status comment, because a queued status is sent only when it changes (`docs/develop/architecture.mdx:109`). The guide says so. A change that wants a "blocked" status needs a new status kind, not a tweak to `listed`.
+- An issue that was queued at one poll and is blocked at the next keeps its "queued" status comment, because a queued status is sent only when it changes (`docs/develop/architecture.mdx:127`). The guide says so. A change that wants a "blocked" status needs a new status kind, not a tweak to `listed`.
 - A blocked issue is skipped silently: no event, unlike the two-label skip (`IssueSkipped`). If the boss asks why a labeled issue sits idle, look at its relationships first.
 - `issuesQuery` now needs `Issue.issueDependenciesSummary`. On a GitHub host whose schema lacks it, such as an older GitHub Enterprise Server, every `List` fails and crew takes nothing. The failure is loud (`ListingFailed` every poll), not silent.
 - Blocked issues stay in the listing's window of the 100 oldest issues, so many old blocked issues with stage labels can hide newer unblocked ones.

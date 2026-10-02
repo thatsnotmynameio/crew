@@ -39,18 +39,18 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 		s.workspaceReady(in)
 	case WorkspaceFailed:
 		if h, a := m.action(in.IssueKey, in.Action, PhaseCreating); a != nil {
-			s.end(h, a, crew.Outcome{Reason: in.Reason})
+			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseWorkspace)
 		}
 	case SessionStarted:
 		s.sessionStarted(in)
 	case SessionFailedToStart:
 		if h, a := m.action(in.IssueKey, in.Action, PhaseStarting); a != nil {
-			s.end(h, a, crew.Outcome{Reason: in.Reason})
+			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseStart)
 		}
 	case SessionEnded:
-		if h, a := m.action(in.IssueKey, in.Action, PhaseStarting, PhaseRunning); a != nil {
-			s.end(h, a, in.Outcome)
-		}
+		s.sessionEnded(in)
+	case CheckEnded:
+		s.checkEnded(in)
 	}
 	s.windDown()
 	if m.Stopped() && !m.stopped {
@@ -106,9 +106,10 @@ func (s *step) tick(said []Said) {
 	s.retryStatuses()
 }
 
-// stop starts nothing new from now on, stops the running sessions and gives
-// each owed call not in flight its final try (R9). Issues whose actions have
-// all ended are already being judged, so their verdicts go on.
+// stop starts nothing new from now on, stops the running sessions and
+// checks, and gives each owed call not in flight its final try (R9). Issues
+// whose actions have all ended are already being judged, so their verdicts
+// go on.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {
@@ -122,8 +123,12 @@ func (s *step) stop() {
 		case ClaimRunning:
 			h.claim = ClaimStopping
 			for _, a := range h.actions {
-				if a.phase == PhaseRunning {
+				switch a.phase {
+				case PhaseRunning:
 					s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
+				case PhaseChecking:
+					a.stopped = true
+					s.command(StopCheck{IssueKey: h.issue.Key, Action: a.name})
 				}
 			}
 		case ClaimJudging, ClaimOwed:
@@ -214,7 +219,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	stage := m.stages[si]
 	h := &heldIssue{issue: issue.Clone(), stage: si, claim: ClaimTaking, taken: s.at}
 	for _, a := range stage.Actions {
-		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt})
+		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check})
 	}
 	m.issues = append(m.issues, h)
 	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Stage: stage.Name, From: stage.Label, To: stage.MovesTo})
@@ -304,7 +309,7 @@ func (s *step) taken(h *heldIssue, c *call) {
 	h.settle(c)
 	if m.stopping {
 		for _, a := range h.actions {
-			s.end(h, a, crew.Outcome{Reason: stoppedReason})
+			s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
 		}
 		return
 	}
@@ -312,7 +317,7 @@ func (s *step) taken(h *heldIssue, c *call) {
 	for _, a := range h.actions {
 		prompt, err := crew.Action{Name: a.name, Prompt: a.prompt}.Render(h.issue)
 		if err != nil {
-			s.end(h, a, crew.Outcome{Reason: err.Error()})
+			s.end(h, a, crew.Outcome{Reason: err.Error()}, crew.CausePrompt)
 			continue
 		}
 		a.prompt = prompt
@@ -333,7 +338,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	}
 	a.workspace, a.dir, a.branch = in.Workspace, in.Dir, in.Branch
 	if s.m.stopping {
-		s.end(h, a, crew.Outcome{Reason: stoppedReason})
+		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
 		return
 	}
 	a.log = in.Log
@@ -359,10 +364,54 @@ func (s *step) sessionStarted(in SessionStarted) {
 	}
 }
 
+// sessionEnded ends the action whose session ended, or, when the session
+// succeeded and the action has a check, runs the check first (R2). After a
+// stop, a check is not started and the action counts as stopped (R8).
+func (s *step) sessionEnded(in SessionEnded) {
+	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting, PhaseRunning)
+	if a == nil {
+		return
+	}
+	cause := crew.CauseSession
+	if s.m.stopping {
+		cause = crew.CauseStopped
+	}
+	switch {
+	case !in.Outcome.Succeeded || a.check == "":
+		s.end(h, a, in.Outcome, cause)
+	case s.m.stopping:
+		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
+	default:
+		a.phase = PhaseChecking
+		s.command(RunCheck{
+			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.check, Log: a.log,
+			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch,
+		})
+	}
+}
+
+// checkEnded ends the action whose check ended with the check's verdict, or
+// as stopped when a stop ended the check, whatever it returned (R8).
+func (s *step) checkEnded(in CheckEnded) {
+	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking)
+	if a == nil {
+		return
+	}
+	if a.stopped {
+		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
+		return
+	}
+	s.end(h, a, in.Outcome, crew.CauseCheck)
+}
+
 // end ends action a of h with outcome, and judges h once every action ended.
-func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome) {
+// cause says what made it fail when the outcome is a failure.
+func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.FailureCause) {
 	a.phase = PhaseEnded
 	a.outcome = outcome
+	if !outcome.Succeeded {
+		a.cause = cause
+	}
 	s.emit(ActionEnded{
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,

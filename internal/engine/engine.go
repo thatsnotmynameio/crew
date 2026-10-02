@@ -31,6 +31,9 @@ const (
 	// stopTimeout is how long a session gets to stop before its adapter
 	// kills it.
 	stopTimeout = 10 * time.Second
+	// checkTimeout bounds every action's check, as callTimeout bounds a
+	// tracker call: a check may call gh or git too. It is fixed.
+	checkTimeout = 10 * time.Minute
 	// inboxSize buffers results. Senders are bounded (running sessions plus
 	// a few commands) and the loop always drains, so blocking sends cannot
 	// deadlock; the buffer only spares them waiting on a busy step.
@@ -53,6 +56,9 @@ type Config struct {
 	Tracker   port.Tracker
 	Harness   port.Harness
 	Workspace port.Workspace
+	// Checker runs the actions' checks. Without one, an action with a
+	// check fails, saying crew has no check runner.
+	Checker port.Checker
 	// Root is the repository's absolute root: session logs go under its
 	// .crew/logs/, and it is shortened to . in every reason.
 	Root string
@@ -84,6 +90,7 @@ type Engine struct {
 	inflight int // command goroutines whose final message is still due
 	wg       sync.WaitGroup
 	sessions map[sessionKey]port.Session
+	checks   map[sessionKey]context.CancelFunc // ends each running check
 	recent   []core.Event
 	started  time.Time // when the first poll ran
 }
@@ -105,6 +112,7 @@ func New(cfg Config) *Engine {
 		model:    core.New(cfg.Workflow, cfg.MaxParallelIssues, opts...),
 		inbox:    make(chan message, inboxSize),
 		sessions: map[sessionKey]port.Session{},
+		checks:   map[sessionKey]context.CancelFunc{},
 	}
 }
 
@@ -251,6 +259,8 @@ func (e *Engine) receive(m message) {
 		e.sessions[sessionKey{in.IssueKey, in.Action}] = m.session
 	case core.SessionEnded:
 		delete(e.sessions, sessionKey{in.IssueKey, in.Action})
+	case core.CheckEnded:
+		delete(e.checks, sessionKey{in.IssueKey, in.Action})
 	}
 	e.step(m.input)
 }
