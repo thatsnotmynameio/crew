@@ -112,8 +112,21 @@ type CallDropped struct {
 	Reason string
 }
 
-// Stopped means a stop request has completed: the core holds no issue and
-// no owed call. It is emitted once.
+// StatusFailed is a status write that failed after the previous one for the
+// issue succeeded; failures in a row are reported once. Result says how it
+// failed. A queued or running status is written again at the next poll, an
+// ended one is retried until it lands, unless the tracker refused it or the
+// issue moved meanwhile (KTD5).
+type StatusFailed struct {
+	At       time.Time
+	IssueKey string
+	IssueRef string
+	Result   Result
+	Reason   string
+}
+
+// Stopped means a stop request has completed: the core holds no issue, no
+// owed call and no status write in flight or owed. It is emitted once.
 type Stopped struct {
 	At time.Time
 }
@@ -178,6 +191,9 @@ func (e CallOwed) Time() time.Time { return e.At }
 func (e CallDropped) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e StatusFailed) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e Stopped) Time() time.Time { return e.At }
 
 func (IssueTaken) event()      {}
@@ -190,4 +206,5 @@ func (PollDone) event()        {}
 func (ListingFailed) event()   {}
 func (CallOwed) event()        {}
 func (CallDropped) event()     {}
+func (StatusFailed) event()    {}
 func (Stopped) event()         {}
