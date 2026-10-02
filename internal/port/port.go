@@ -156,3 +156,37 @@ type Narrator interface {
 	// session runs and after it ended.
 	Said() string
 }
+
+// ErrCheckFailed means a check ran and exited with a non-zero status.
+var ErrCheckFailed = errors.New("the check failed")
+
+// Checker runs action checks: a command the boss wrote, run in an action's
+// workspace once its session succeeded, so crew does not judge the action
+// by what its session says alone.
+type Checker interface {
+	// Check runs check to its end, with its output going to check.Output.
+	// It returns nil when the command exited 0, and an error wrapping
+	// ErrCheckFailed when it exited otherwise. When ctx ends first, it ends
+	// the command and what the command started, and returns an error
+	// wrapping ctx.Err(). Any other error means the command could not start.
+	Check(ctx context.Context, check Check) error
+}
+
+// Check is what a Checker needs to run a check. The issue reaches the
+// command only through these fields, as environment variables, never as
+// part of the command, so no issue text can run as code.
+type Check struct {
+	// Dir is the action's workspace directory, where the command runs.
+	Dir string
+	// Command is the shell command to run.
+	Command string
+	// IssueRef, IssueKey and IssueURL identify the issue, as in crew.Issue.
+	IssueRef string
+	IssueKey string
+	IssueURL string
+	// Branch is the branch the action's work went on.
+	Branch string
+	// Output receives everything the command prints, stdout and stderr
+	// together, from one goroutine at a time; nil discards it.
+	Output io.Writer
+}
