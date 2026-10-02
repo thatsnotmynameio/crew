@@ -10,6 +10,8 @@ execution: code
 
 # Status Comment - Plan
 
+> **Superseded in part:** `docs/plans/2026-10-02-1810-feat-action-check-status-history-plan.md` (#14) replaces "one comment, edited in place" (R1 and its Key Decision): the status comment now keeps one entry per stage run and edits only the latest. A failed action's status says why in crew's words, never in the session's. The rest of this plan stands.
+
 ## Goal Capsule
 
 - **Objective:** The boss opens any issue crew handles and sees where it stands in one comment: queued and why it waits, which stage and actions are running and what each session last said, or how it ended. They do not have to open a session log or the live view on the machine running crew.

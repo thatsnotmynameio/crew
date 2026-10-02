@@ -413,8 +413,19 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 
 // crew runs on its own repository, so its .crew/config.yaml must stay valid.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
-	if _, err := config.Load(filepath.Join("..", "..")); err != nil {
+	cfg, err := config.Load(filepath.Join("..", ".."))
+	if err != nil {
 		t.Fatalf("Load(repository root) = %v", err)
+	}
+	// The stages that open a pull request check that it exists; the others
+	// have no check (R15).
+	for _, s := range cfg.Workflow {
+		for _, a := range s.Actions {
+			want := s.Name == "development" || s.Name == "fix"
+			if got := a.Check != ""; got != want {
+				t.Errorf("%s/%s has a check: %v, want %v", s.Name, a.Name, got, want)
+			}
+		}
 	}
 }
 
