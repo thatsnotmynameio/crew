@@ -234,7 +234,7 @@ func (s *step) callResult(r CallResult) {
 }
 
 // taken starts h's actions once its take move is done, or, after a stop,
-// ends them unstarted so the issue needs attention (R9).
+// ends them unstarted so the issue moves to its stage's on_failure (R9).
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
@@ -310,7 +310,7 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome) {
 }
 
 // judge moves h to its stage's on_success when every action succeeded, and
-// otherwise to needs_attention with a failure report (R7).
+// otherwise to its stage's on_failure with a failure report (R7).
 func (s *step) judge(h *heldIssue) {
 	stage := s.m.stages[h.stage]
 	h.claim = ClaimJudging
@@ -326,7 +326,7 @@ func (s *step) judge(h *heldIssue) {
 		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})
 		return
 	}
-	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: crew.NeedsAttention})
+	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnFailure})
 	s.call(h, &call{kind: CallReport, report: report})
 }
 

@@ -17,6 +17,7 @@ func draft() []crew.Stage {
 	return []crew.Stage{
 		{
 			Name: "implement", Label: crew.Ready, MovesTo: crew.InProgress, OnSuccess: crew.ReadyToReview,
+			OnFailure: crew.NeedsAttention,
 			Actions: []crew.Action{
 				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
@@ -24,7 +25,8 @@ func draft() []crew.Stage {
 		},
 		{
 			Name: "review", Label: crew.ReadyToReview, MovesTo: crew.InReview, OnSuccess: crew.ReadyToMerge,
-			Actions: []crew.Action{{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"}},
+			OnFailure: crew.NeedsAttention,
+			Actions:   []crew.Action{{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"}},
 		},
 	}
 }
@@ -324,6 +326,38 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 			wantHeld(t, d.m)
 		})
 	}
+}
+
+func TestAE1AE5FailedStageMovesToItsOwnOnFailure(t *testing.T) {
+	workflow := draft()
+	workflow[1].OnFailure = workflow[0].Label // a failed review goes back to implement
+	d := newDriver(t, workflow, 2)
+
+	// AE1: implement fails, so #1 moves to implement's on_failure.
+	d.running(issue("1", 1, crew.Ready))
+	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
+	cmds, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: failed("tests do not pass")})
+	if got := noIDs(cmds)[0]; got != (core.Move{IssueKey: "1", From: crew.InProgress, To: crew.NeedsAttention}) {
+		t.Fatalf("failed implement: got %#v, want the move to needs_attention", got)
+	}
+	d.settle(cmds)
+
+	// AE5: review fails, so #2 moves to review's on_failure, implement's label.
+	d.running(issue("2", 2, crew.ReadyToReview))
+	cmds, _ = d.send(core.SessionEnded{IssueKey: "2", Action: "custom_review", Outcome: failed("changes requested")})
+	wantCommands(t, cmds,
+		core.Move{IssueKey: "2", From: crew.InReview, To: crew.Ready},
+		core.ReportFailure{Report: crew.FailureReport{IssueKey: "2", IssueRef: "#2", Failures: []crew.ActionFailure{{
+			Action: "custom_review", Reason: "changes requested",
+			Workspace: "issue-2-custom_review", Log: ".crew/logs/issue-2-custom_review.log",
+		}}}},
+	)
+	d.settle(cmds)
+	wantHeld(t, d.m)
+
+	// On the next listing implement takes #2 again.
+	cmds, _ = d.poll(issue("2", 2, crew.Ready))
+	wantCommands(t, cmds, core.Move{IssueKey: "2", From: crew.Ready, To: crew.InProgress})
 }
 
 func TestAE8IssueInTwoStatesIsSkippedUntilItIsInOne(t *testing.T) {

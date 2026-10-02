@@ -26,6 +26,7 @@ const poll = 300 * time.Second
 // implement is the draft config's implement stage (KTD5).
 var implement = crew.Stage{
 	Name: "implement", Label: crew.Ready, MovesTo: crew.InProgress, OnSuccess: crew.ReadyToReview,
+	OnFailure: crew.NeedsAttention,
 	Actions: []crew.Action{
 		{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 		{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
@@ -35,7 +36,8 @@ var implement = crew.Stage{
 // develop is a stage with one action, for tests about one session per issue.
 var develop = crew.Stage{
 	Name: "implement", Label: crew.Ready, MovesTo: crew.InProgress, OnSuccess: crew.ReadyToReview,
-	Actions: []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
+	OnFailure: crew.NeedsAttention,
+	Actions:   []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
 }
 
 // epoch dates the issues: issue n was created n minutes after it, so #1 is
