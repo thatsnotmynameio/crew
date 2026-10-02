@@ -12,12 +12,21 @@ import (
 )
 
 type stageDoc struct {
-	Name      located[string] `yaml:"name"`
-	Label     located[string] `yaml:"label"`
-	MovesTo   located[string] `yaml:"moves_to"`
-	OnSuccess located[string] `yaml:"on_success"`
-	OnFailure located[string] `yaml:"on_failure"`
-	Actions   yaml.Node       `yaml:"actions"`
+	Name          located[string] `yaml:"name"`
+	Description   located[string] `yaml:"description"`
+	IssueTemplate located[string] `yaml:"issue_template"`
+	Label         located[string] `yaml:"label"`
+	MovesTo       located[string] `yaml:"moves_to"`
+	OnSuccess     located[string] `yaml:"on_success"`
+	OnFailure     located[string] `yaml:"on_failure"`
+	Actions       yaml.Node       `yaml:"actions"`
+}
+
+// extraDoc is one item of extra_labels: a label no stage takes.
+type extraDoc struct {
+	Label         located[string] `yaml:"label"`
+	Description   located[string] `yaml:"description"`
+	IssueTemplate located[string] `yaml:"issue_template"`
 }
 
 type actionDoc struct {
@@ -67,7 +76,7 @@ func workflow(n *yaml.Node) ([]crew.Stage, error) {
 
 func parseStage(n *yaml.Node, path string) (parsedStage, error) {
 	if n.Kind != yaml.MappingNode {
-		return parsedStage{}, keyError(path, n.Line, "must be a stage with name, label, moves_to, on_success, on_failure and actions")
+		return parsedStage{}, keyError(path, n.Line, "must be a stage with name, label, moves_to, on_success, on_failure, actions, and optionally description and issue_template")
 	}
 	var doc stageDoc
 	if err := decodeFields(entries(n, path), reflect.ValueOf(&doc).Elem()); err != nil {
@@ -83,6 +92,7 @@ func parseStage(n *yaml.Node, path string) (parsedStage, error) {
 	var err error
 	p.Name, err = required(doc.Name, path+".name", n.Line)
 	collect(err)
+	collect(described(doc.Description, doc.IssueTemplate, path))
 	p.Label, err = state(doc.Label, path+".label", n.Line)
 	collect(err)
 	p.MovesTo, err = state(doc.MovesTo, path+".moves_to", n.Line)
@@ -139,6 +149,77 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 		out = append(out, action)
 	}
 	return out, errors.Join(errs...)
+}
+
+// extraLabels decodes and validates extra_labels: labels for parked work
+// that no stage takes. Each must be none of workflow's states and no earlier
+// extra, ignoring case as GitHub does. It reports every error it finds.
+func extraLabels(n *yaml.Node, workflow []crew.Stage) ([]crew.State, error) {
+	switch {
+	case n.Kind == 0:
+		return nil, nil
+	case n.Kind != yaml.SequenceNode:
+		return nil, keyError("extra_labels", n.Line, "must be a list of labels")
+	}
+	taken := map[string]bool{}
+	for _, s := range crew.WorkflowStates(workflow) {
+		taken[strings.ToLower(string(s))] = true
+	}
+	firstPath := make(map[string]string, len(n.Content))
+	var errs []error
+	out := make([]crew.State, 0, len(n.Content))
+	for i, item := range n.Content {
+		path := fmt.Sprintf("extra_labels[%d]", i)
+		if item.Kind != yaml.MappingNode {
+			errs = append(errs, keyError(path, item.Line, "must be an extra label with label, and optionally description and issue_template"))
+			continue
+		}
+		var doc extraDoc
+		if err := decodeFields(entries(item, path), reflect.ValueOf(&doc).Elem()); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := described(doc.Description, doc.IssueTemplate, path); err != nil {
+			errs = append(errs, err)
+		}
+		label, err := state(doc.Label, path+".label", item.Line)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		key := strings.ToLower(string(label))
+		if taken[key] {
+			errs = append(errs, keyError(path+".label", doc.Label.line,
+				fmt.Sprintf("%q is a label the workflow names; an extra label must be one no stage names", label)))
+			continue
+		}
+		if first, ok := firstPath[key]; ok {
+			errs = append(errs, keyError(path+".label", doc.Label.line,
+				fmt.Sprintf("%q is already %s.label", label, first)))
+			continue
+		}
+		firstPath[key] = path
+		out = append(out, label)
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return out, nil
+}
+
+// described checks the optional description and issue_template that a stage
+// or an extra label may have. Nothing in crew reads them, the
+// /cw-create-issue skill does, so they are checked but not kept.
+func described(description, template located[string], path string) error {
+	var errs []error
+	if description.line > 0 && description.value == "" {
+		errs = append(errs, keyError(path+".description", description.line, "must not be empty"))
+	}
+	if v := template.value; template.line > 0 && (strings.ContainsAny(v, `/\`) || !strings.HasSuffix(v, ".md")) {
+		errs = append(errs, keyError(path+".issue_template", template.line,
+			fmt.Sprintf("%q must be a file name in .github/ISSUE_TEMPLATE/ ending in .md, such as bug.md", v)))
+	}
+	return errors.Join(errs...)
 }
 
 // spellOnce gives every label the spelling it first has in the workflow, in
