@@ -26,6 +26,11 @@ var (
 	_ port.Tracker        = ReportingTracker{}
 	_ port.Preparer       = ReportingTracker{}
 	_ port.StatusReporter = ReportingTracker{}
+
+	_ port.PullRequestReporter = (*PullRequestBoard)(nil)
+	_ port.Tracker             = PullRequestTracker{}
+	_ port.StatusReporter      = PullRequestTracker{}
+	_ port.PullRequestReporter = PullRequestTracker{}
 )
 
 // TrackerSettings is the fake tracker's config section. It has no key, as
@@ -364,4 +369,67 @@ type ReportingTracker struct {
 // Prepare and status writes succeed until told otherwise.
 func NewReportingTracker(issues ...crew.Issue) ReportingTracker {
 	return ReportingTracker{PreparingTracker: NewPreparingTracker(issues...), StatusBoard: &StatusBoard{}}
+}
+
+// PullRequestBoard is a scriptable port.PullRequestReporter, to embed in a
+// fake tracker. It records each pull request report, by issue key, unless a
+// failure scripted with FailPullRequests comes first. Its zero value is
+// ready to use.
+type PullRequestBoard struct {
+	mu      sync.Mutex
+	errs    map[string][]error
+	reports map[string][]crew.PullRequestReport
+}
+
+// ReportPullRequests implements port.PullRequestReporter.
+func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.PullRequestReport) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := pop(b.errs, report.IssueKey); err != nil {
+		return fmt.Errorf("report pull requests of issue %s: %w", report.IssueKey, err)
+	}
+	if b.reports == nil {
+		b.reports = map[string][]crew.PullRequestReport{}
+	}
+	b.reports[report.IssueKey] = append(b.reports[report.IssueKey], report.Clone())
+	return nil
+}
+
+// FailPullRequests makes the next len(errs) pull request reports for key
+// fail, in order, with errs. Wrap port.ErrRefused or port.ErrMovedMeanwhile
+// for those classes; any other error is transient.
+func (b *PullRequestBoard) FailPullRequests(key string, errs ...error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.errs == nil {
+		b.errs = map[string][]error{}
+	}
+	b.errs[key] = append(b.errs[key], errs...)
+}
+
+// PullRequestReports returns the pull request reports recorded for key, in
+// order. Failed reports are not among them.
+func (b *PullRequestBoard) PullRequestReports(key string) []crew.PullRequestReport {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]crew.PullRequestReport, len(b.reports[key]))
+	for i, r := range b.reports[key] {
+		out[i] = r.Clone()
+	}
+	return out
+}
+
+// PullRequestTracker is a ReportingTracker that also implements
+// port.PullRequestReporter, for the tests about pull requests. A
+// ReportingTracker does not implement it.
+type PullRequestTracker struct {
+	ReportingTracker
+	*PullRequestBoard
+}
+
+// NewPullRequestTracker returns a PullRequestTracker holding issues, whose
+// Prepare, status writes and pull request reports succeed until told
+// otherwise.
+func NewPullRequestTracker(issues ...crew.Issue) PullRequestTracker {
+	return PullRequestTracker{ReportingTracker: NewReportingTracker(issues...), PullRequestBoard: &PullRequestBoard{}}
 }
