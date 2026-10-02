@@ -212,8 +212,7 @@ func missingLabel(stderr, label string) bool {
 }
 
 // ReportFailure implements port.Tracker: one Markdown comment naming each
-// failed action, its workspace and its log, with each reason in a fenced
-// code block. Its errors are transient.
+// failed action and its log, without its reason. Its errors are transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
 	if _, err := t.gh.call(ctx, "issue", "comment", report.IssueKey, "--body="+renderReport(report)); err != nil {
 		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)

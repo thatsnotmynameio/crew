@@ -183,9 +183,8 @@ func classify(err error, out proc.Output, onIssue bool) error {
 
 // renderStatus renders a status as the status comment's Markdown: what the
 // stage does, each action with its state, the update time in UTC, then the
-// marker line. A session's last words go in a fenced code block, as a
-// failure report's reasons do, so nothing in them may render, link or
-// mention anyone.
+// marker line. A session's last words go in a fenced code block, so nothing
+// in them may render, link or mention anyone.
 func (t *Tracker) renderStatus(s crew.Status) string {
 	var b strings.Builder
 	stage := codeSpan(s.Stage)

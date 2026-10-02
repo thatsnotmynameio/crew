@@ -189,19 +189,15 @@ At the same check, crew creates the labels your workflow names and the extra lab
 6. While the actions run, crew updates the issue's status comment at every poll.
 7. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
 
-This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action, its worktree and its log, with the session's last message in a code block:
+This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action and its log, relative to the repository:
 
-````markdown
+```markdown
 crew: 1 action failed on #42.
 
-**`development`** failed in workspace `issue-42-development`. Its log is `.crew/logs/issue-42-development.log`.
-
-```text
-exit code 1 after: I could not run the tests.
+**`development`** failed. Its log is `.crew/logs/issue-42-development.log`.
 ```
-````
 
-Paths in the comment are relative to the repository. crew writes your repository's path as `.` and your home directory as `~`, so the comment does not show where your files are.
+The comment carries nothing the session said: no last message, no commands, no output. Why an action failed is in its log and in crew's output. An action whose worktree could not be created has no log, and the comment says it failed before it had a log.
 
 A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
 
@@ -231,7 +227,7 @@ Updated 2026-10-02 14:03 UTC.
 <!-- crew:status -->
 ````
 
-The session's words are cleaned like the failure report's paths and sit in a code block, so nothing in them renders or mentions anyone. Editing a comment notifies no one; the failure report is what notifies you.
+The session's words have your repository's path written as `.` and your home directory as `~`, and sit in a code block, so nothing in them renders or mentions anyone. Editing a comment notifies no one; the failure report is what notifies you.
 
 crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew queues or takes it again, and an issue whose label you remove while it is queued keeps its last status comment.
 

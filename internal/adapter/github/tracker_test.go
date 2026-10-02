@@ -453,16 +453,20 @@ func fenced(t *testing.T, markdown string) []string {
 	return blocks
 }
 
-func TestReportFailureFencesEachReason(t *testing.T) {
+func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
 	tr, gh := build(t, "", reply{prefix: []string{"issue", "comment", "12"}})
-	reason := "ask @someone why ```make``` failed"
+	reasons := []string{
+		"ran `go test ./...` and got: FAIL token=s3cret",
+		"tests did not build",
+		"workspace: fetch failed",
+	}
 	err := tr.ReportFailure(context.Background(), crew.FailureReport{
 		IssueKey: "12", IssueRef: "#12",
 		Failures: []crew.ActionFailure{
-			{Action: "development", Reason: reason, Workspace: "issue-12-development", Log: ".crew/logs/issue-12-development.log"},
-			{Action: "acceptance", Reason: "tests did not build", Workspace: "issue-12-acceptance", Log: ".crew/logs/issue-12-acceptance.log"},
-			// A reason that is a fence of its own must not close its block.
-			{Action: "lint", Reason: "````", Workspace: "issue-12-lint", Log: ".crew/logs/issue-12-lint.log"},
+			{Action: "development", Reason: reasons[0], Workspace: "issue-12-development", Log: ".crew/logs/issue-12-development.log"},
+			{Action: "acceptance", Reason: reasons[1], Workspace: "issue-12-acceptance", Log: ".crew/logs/issue-12-acceptance.log"},
+			// An action whose workspace was never created has no log.
+			{Action: "lint", Reason: reasons[2]},
 		},
 	})
 	if err != nil {
@@ -478,16 +482,16 @@ func TestReportFailureFencesEachReason(t *testing.T) {
 		t.Fatalf("comment args %q do not end with --body=", args)
 	}
 
-	if blocks := fenced(t, body); !slices.Equal(blocks, []string{reason, "tests did not build", "````"}) {
-		t.Errorf("fenced blocks = %q, want each reason in its own:\n%s", blocks, body)
+	want := "crew: 3 actions failed on #12.\n" +
+		"\n**`development`** failed. Its log is `.crew/logs/issue-12-development.log`.\n" +
+		"\n**`acceptance`** failed. Its log is `.crew/logs/issue-12-acceptance.log`.\n" +
+		"\n**`lint`** failed before it had a log. crew's output says why.\n"
+	if body != want {
+		t.Errorf("comment =\n%s\nwant\n%s", body, want)
 	}
-	if n := strings.Count(body, "@someone"); n != 1 {
-		t.Errorf("@someone appears %d times, want once, inside its fence:\n%s", n, body)
-	}
-	for _, want := range []string{"development", "issue-12-development", ".crew/logs/issue-12-development.log",
-		"acceptance", "issue-12-acceptance", ".crew/logs/issue-12-acceptance.log"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("comment does not name %q:\n%s", want, body)
+	for _, reason := range reasons {
+		if strings.Contains(body, reason) {
+			t.Errorf("comment carries the session's words %q:\n%s", reason, body)
 		}
 	}
 }
