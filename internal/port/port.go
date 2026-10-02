@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -177,6 +178,28 @@ type Narrator interface {
 	// it said nothing yet. It may be called from any goroutine while the
 	// session runs and after it ended.
 	Said() string
+}
+
+// UsageReporter is an optional interface of a harness's Session: it tells
+// what the session used, such as its cost and tokens. A session without it
+// reports nothing, and crew shows its usage as not reported.
+type UsageReporter interface {
+	// Usage returns what the session used. It is called once Wait has
+	// returned. A session that ended without a final result, such as one
+	// that was stopped, killed or crashed, reports nothing.
+	Usage() crew.Usage
+}
+
+// PullRequestFinder is an optional interface of a Tracker: it finds the
+// pull request an action opened from its branch. A tracker without it
+// leaves every action's pull request not looked up.
+type PullRequestFinder interface {
+	// FindPullRequest returns the pull request opened from branch in the
+	// tracker's repository: an open one first, otherwise the newest closed
+	// or merged one created at or after since, or none. A zero since
+	// accepts any. It returns an error when it cannot tell, and the engine
+	// then records the pull request as not looked up.
+	FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error)
 }
 
 // ErrCheckFailed means a check ran and exited with a non-zero status.
