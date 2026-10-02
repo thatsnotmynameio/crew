@@ -46,8 +46,9 @@ type Tracker interface {
 	// List returns the open issues that are in any of states. Each issue
 	// carries every crew state it is in, not only the ones asked for, so the
 	// engine can skip an issue found in two states; it carries nothing that
-	// is not a crew state, and never an extra. An error means the list could
-	// not be read; it is transient.
+	// is not a crew state, and never an extra. An issue is Blocked while an
+	// open issue blocks it, when the tracker records dependencies. An error
+	// means the list could not be read; it is transient.
 	List(ctx context.Context, states []crew.State) ([]crew.Issue, error)
 	// Move moves the issue identified by issueKey from one state to
 	// another, and leaves it in exactly one crew state, to, removing every
