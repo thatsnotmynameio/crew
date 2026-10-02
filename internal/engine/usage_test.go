@@ -206,3 +206,36 @@ func TestAE7NewLinesAreAppendedAndEarlierOnesKeptAsTheyWere(t *testing.T) {
 		}
 	})
 }
+
+func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T) {
+	pr := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.test/pull/45"}
+	used := crew.Usage{Cost: 1.5, HasCost: true}
+	for _, on := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			tr := fake.NewFindingTracker(issue(1, ready))
+			tr.ScriptLookup("crew/issue-1-development", fake.LookupScript{Found: pr})
+			cfg := config(t, tr, develop)
+			cfg.Harness = fake.NewUsageHarness()
+			cfg.UsageInStatus = on
+			r := start(t, cfg)
+
+			s := r.session()
+			s.SetUsage(used)
+			s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+			synctest.Wait()
+			r.engine.Stop()
+			if _, err := r.wait(); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			got := lastStatus(t, tr.ReportingTracker, "1").Actions[0]
+			want := crew.ActionStatus{Name: "development", State: crew.ActionSucceeded}
+			if on {
+				want.Spend, want.PullRequest = used.Spend(), pr
+			}
+			if got != want {
+				t.Errorf("usage_in_status %v: action status = %#v, want %#v", on, got, want)
+			}
+		})
+	}
+}

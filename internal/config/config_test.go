@@ -329,6 +329,25 @@ func TestLoadAcceptsPrompts(t *testing.T) {
 	}
 }
 
+func TestLoadReadsUsageInStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "left out", body: oneStage, want: false},
+		{name: "on", body: "config:\n  usage_in_status: true\n" + oneStage, want: true},
+		{name: "off", body: "config:\n  usage_in_status: false\n" + oneStage, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, tt.body).UsageInStatus; got != tt.want {
+				t.Errorf("UsageInStatus = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 	tests := []struct {
 		name string
@@ -612,6 +631,13 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
   run_time_limit_seconds: "8h"
 ` + oneStage,
 			wants: []string{"config.run_time_limit_seconds", "line 2", "8h"},
+		},
+		{
+			name: "usage in status not a boolean",
+			body: `config:
+  usage_in_status: maybe
+` + oneStage,
+			wants: []string{"config.usage_in_status", "line 2", "maybe"},
 		},
 		{
 			name: "parallel issues not positive",
