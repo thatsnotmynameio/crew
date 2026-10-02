@@ -99,11 +99,11 @@ func runningSnapshot() engine.Update {
 			}},
 		}},
 		Recent: []core.Event{
-			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement", From: crew.Ready, To: crew.InProgress},
+			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement", From: "ready", To: "in progress"},
 			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
 			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "code", Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
 			core.PollDone{At: start.Add(-10 * time.Second), Listed: 2, Taken: 1},
-			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Stage: "review", From: crew.ReadyToReview, To: crew.InReview},
+			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Stage: "review", From: "ready to review", To: "in review"},
 		},
 	}}
 }

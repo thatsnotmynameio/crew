@@ -7,20 +7,12 @@ config:
   model: claude-opus-5-5
 tracker:
   name: github
-  labels:
-    ready: ready
-    in_progress: in progress
-    ready_to_review: ready to review
-    in_review: in review
-    needs_attention: needs attention
-    paused: paused
-    ready_to_merge: ready to merge
-    done: done
 workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: in_review
+    moves_to: in progress
+    on_success: in review
+    on_failure: needs attention
     actions:
       - name: lfg
         prompt: |-

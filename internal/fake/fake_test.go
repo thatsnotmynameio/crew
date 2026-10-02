@@ -15,6 +15,14 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
+// The workflow's states in these tests, as label text.
+const (
+	ready          crew.State = "ready"
+	inProgress     crew.State = "in progress"
+	readyToReview  crew.State = "ready to review"
+	needsAttention crew.State = "needs attention"
+)
+
 func issue(key string, states ...crew.State) crew.Issue {
 	return crew.Issue{Key: key, Ref: "#" + key, Title: "Issue " + key, States: states}
 }
@@ -29,22 +37,22 @@ func keys(issues []crew.Issue) []string {
 
 func TestTrackerListsOpenIssuesInAnyGivenStateWithAllTheirStates(t *testing.T) {
 	tr := fake.NewTracker(
-		issue("1", crew.Ready),
-		issue("2", crew.ReadyToReview),
-		issue("3", crew.Done),
-		issue("4", crew.Ready, crew.NeedsAttention),
-		issue("5", crew.Ready),
+		issue("1", ready),
+		issue("2", readyToReview),
+		issue("3", "done"),
+		issue("4", ready, needsAttention),
+		issue("5", ready),
 	)
 	tr.Close("5")
 
-	got, err := tr.List(context.Background(), []crew.State{crew.Ready, crew.ReadyToReview})
+	got, err := tr.List(context.Background(), []crew.State{ready, readyToReview})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if want := []string{"1", "2", "4"}; !reflect.DeepEqual(keys(got), want) {
 		t.Fatalf("List keys = %v, want %v", keys(got), want)
 	}
-	if want := []crew.State{crew.Ready, crew.NeedsAttention}; !reflect.DeepEqual(got[2].States, want) {
+	if want := []crew.State{ready, needsAttention}; !reflect.DeepEqual(got[2].States, want) {
 		t.Errorf("issue 4 states = %v, want %v", got[2].States, want)
 	}
 	if got[0].Ref != "#1" || got[0].Title != "Issue 1" {
@@ -53,37 +61,37 @@ func TestTrackerListsOpenIssuesInAnyGivenStateWithAllTheirStates(t *testing.T) {
 }
 
 func TestTrackerMoveLeavesTheIssueInExactlyTheNewState(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.Ready))
+	tr := fake.NewTracker(issue("1", ready))
 	ctx := context.Background()
 
-	if err := tr.Move(ctx, "1", crew.Ready, crew.InProgress); err != nil {
+	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	got, ok := tr.Issue("1")
 	if !ok {
 		t.Fatal("issue 1 is gone")
 	}
-	if want := []crew.State{crew.InProgress}; !reflect.DeepEqual(got.States, want) {
+	if want := []crew.State{inProgress}; !reflect.DeepEqual(got.States, want) {
 		t.Errorf("states = %v, want %v", got.States, want)
 	}
-	if want := []fake.Move{{Key: "1", From: crew.Ready, To: crew.InProgress}}; !reflect.DeepEqual(tr.Moves(), want) {
+	if want := []fake.Move{{Key: "1", From: ready, To: inProgress}}; !reflect.DeepEqual(tr.Moves(), want) {
 		t.Errorf("Moves = %v, want %v", tr.Moves(), want)
 	}
-	listed, err := tr.List(ctx, []crew.State{crew.Ready})
+	listed, err := tr.List(ctx, []crew.State{ready})
 	if err != nil || len(listed) != 0 {
 		t.Errorf("List(ready) = %v, %v; want no issues", keys(listed), err)
 	}
 }
 
 func TestTrackerMoveFromAStateTheIssueLeftIsMovedMeanwhile(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.NeedsAttention))
+	tr := fake.NewTracker(issue("1", needsAttention))
 
-	err := tr.Move(context.Background(), "1", crew.Ready, crew.InProgress)
+	err := tr.Move(context.Background(), "1", ready, inProgress)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
 	got, _ := tr.Issue("1")
-	if want := []crew.State{crew.NeedsAttention}; !reflect.DeepEqual(got.States, want) {
+	if want := []crew.State{needsAttention}; !reflect.DeepEqual(got.States, want) {
 		t.Errorf("states = %v, want them unchanged at %v", got.States, want)
 	}
 	if len(tr.Moves()) != 0 {
@@ -94,13 +102,13 @@ func TestTrackerMoveFromAStateTheIssueLeftIsMovedMeanwhile(t *testing.T) {
 // A retry of a move that already landed finds the issue exactly in to: it is
 // done, and records no second move, as the github adapter sends no edit.
 func TestTrackerMoveOfAnIssueAlreadyInToIsDone(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.InProgress))
+	tr := fake.NewTracker(issue("1", inProgress))
 
-	if err := tr.Move(context.Background(), "1", crew.Ready, crew.InProgress); err != nil {
+	if err := tr.Move(context.Background(), "1", ready, inProgress); err != nil {
 		t.Fatalf("Move = %v, want nil", err)
 	}
 	got, _ := tr.Issue("1")
-	if want := []crew.State{crew.InProgress}; !reflect.DeepEqual(got.States, want) {
+	if want := []crew.State{inProgress}; !reflect.DeepEqual(got.States, want) {
 		t.Errorf("states = %v, want %v", got.States, want)
 	}
 	if len(tr.Moves()) != 0 {
@@ -109,57 +117,57 @@ func TestTrackerMoveOfAnIssueAlreadyInToIsDone(t *testing.T) {
 }
 
 func TestTrackerMoveOfAnIssueInToAndAnotherStateIsMovedMeanwhile(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.InProgress, crew.Paused))
+	tr := fake.NewTracker(issue("1", inProgress, "paused"))
 
-	err := tr.Move(context.Background(), "1", crew.Ready, crew.InProgress)
+	err := tr.Move(context.Background(), "1", ready, inProgress)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
 }
 
 func TestTrackerMoveOfAClosedIssueIsMovedMeanwhile(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.InProgress))
+	tr := fake.NewTracker(issue("1", inProgress))
 	tr.Close("1")
 
-	err := tr.Move(context.Background(), "1", crew.InProgress, crew.ReadyToReview)
+	err := tr.Move(context.Background(), "1", inProgress, readyToReview)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
 }
 
 func TestTrackerSetStatesChangesAnIssueFromOutside(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.InProgress))
-	tr.SetStates("1", crew.Paused)
+	tr := fake.NewTracker(issue("1", inProgress))
+	tr.SetStates("1", "paused")
 
-	err := tr.Move(context.Background(), "1", crew.InProgress, crew.ReadyToReview)
+	err := tr.Move(context.Background(), "1", inProgress, readyToReview)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
 }
 
 func TestTrackerScriptedMoveFailuresComeInOrderThenMovesSucceed(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.Ready))
+	tr := fake.NewTracker(issue("1", ready))
 	transient := errors.New("network down")
 	tr.FailMoves("1", transient, port.ErrRefused)
 	ctx := context.Background()
 
-	err := tr.Move(ctx, "1", crew.Ready, crew.InProgress)
+	err := tr.Move(ctx, "1", ready, inProgress)
 	if !errors.Is(err, transient) || errors.Is(err, port.ErrRefused) || errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Errorf("first Move = %v, want the transient error", err)
 	}
-	if err := tr.Move(ctx, "1", crew.Ready, crew.InProgress); !errors.Is(err, port.ErrRefused) {
+	if err := tr.Move(ctx, "1", ready, inProgress); !errors.Is(err, port.ErrRefused) {
 		t.Errorf("second Move = %v, want ErrRefused", err)
 	}
-	if got, _ := tr.Issue("1"); !reflect.DeepEqual(got.States, []crew.State{crew.Ready}) {
+	if got, _ := tr.Issue("1"); !reflect.DeepEqual(got.States, []crew.State{ready}) {
 		t.Errorf("states after failed moves = %v, want [ready]", got.States)
 	}
-	if err := tr.Move(ctx, "1", crew.Ready, crew.InProgress); err != nil {
+	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
 		t.Errorf("third Move = %v, want success", err)
 	}
 }
 
 func TestTrackerRecordsFailureReportsAndScriptsTheirFailures(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.NeedsAttention))
+	tr := fake.NewTracker(issue("1", needsAttention))
 	report := crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
 		{Action: "development", Reason: "tests fail", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log"},
 	}}
@@ -183,16 +191,16 @@ func TestTrackerRecordsFailureReportsAndScriptsTheirFailures(t *testing.T) {
 func TestTrackerIsSafeForConcurrentUse(t *testing.T) {
 	tr := fake.NewTracker()
 	for i := range 20 {
-		tr.Add(issue(string(rune('a'+i)), crew.Ready))
+		tr.Add(issue(string(rune('a'+i)), ready))
 	}
 	var wg sync.WaitGroup
 	for i := range 20 {
 		wg.Go(func() {
 			key := string(rune('a' + i))
-			if err := tr.Move(context.Background(), key, crew.Ready, crew.InProgress); err != nil {
+			if err := tr.Move(context.Background(), key, ready, inProgress); err != nil {
 				t.Errorf("Move %s: %v", key, err)
 			}
-			if _, err := tr.List(context.Background(), []crew.State{crew.Ready}); err != nil {
+			if _, err := tr.List(context.Background(), []crew.State{ready}); err != nil {
 				t.Errorf("List: %v", err)
 			}
 		})
@@ -211,7 +219,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	built, err := factory(func(target any) error {
 		got = target
 		return nil
-	})
+	}, []crew.State{ready})
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -223,7 +231,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	}
 
 	invalid := errors.New("tracker.lables (line 3): unknown key")
-	if _, err := factory(func(any) error { return invalid }); !errors.Is(err, invalid) {
+	if _, err := factory(func(any) error { return invalid }, nil); !errors.Is(err, invalid) {
 		t.Errorf("factory with an invalid section = %v, want the decode error", err)
 	}
 }
@@ -368,7 +376,7 @@ func TestHarnessFactoryValidatesItsSectionAndReturnsTheHarness(t *testing.T) {
 
 func TestPreparationRecordsStatesAndFailsWhenScripted(t *testing.T) {
 	tr := fake.NewPreparingTracker()
-	states := []crew.State{crew.Ready, crew.InProgress}
+	states := []crew.State{ready, inProgress}
 
 	if err := tr.Prepare(context.Background(), states); err != nil {
 		t.Fatalf("Prepare: %v", err)
@@ -443,7 +451,7 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 }
 
 func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
-	tr := fake.NewReportingTracker(issue("74", crew.Ready))
+	tr := fake.NewReportingTracker(issue("74", ready))
 	var reporter port.StatusReporter = tr
 	queued := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusQueued, Slots: 2}
 	running := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusRunning,

@@ -16,6 +16,7 @@ type stageDoc struct {
 	Label     located[string] `yaml:"label"`
 	MovesTo   located[string] `yaml:"moves_to"`
 	OnSuccess located[string] `yaml:"on_success"`
+	OnFailure located[string] `yaml:"on_failure"`
 	Actions   yaml.Node       `yaml:"actions"`
 }
 
@@ -53,6 +54,7 @@ func workflow(n *yaml.Node) ([]crew.Stage, error) {
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
+	spellOnce(parsed)
 	if err := checkGraph(parsed); err != nil {
 		return nil, err
 	}
@@ -65,7 +67,7 @@ func workflow(n *yaml.Node) ([]crew.Stage, error) {
 
 func parseStage(n *yaml.Node, path string) (parsedStage, error) {
 	if n.Kind != yaml.MappingNode {
-		return parsedStage{}, keyError(path, n.Line, "must be a stage with name, label, moves_to, on_success and actions")
+		return parsedStage{}, keyError(path, n.Line, "must be a stage with name, label, moves_to, on_success, on_failure and actions")
 	}
 	var doc stageDoc
 	if err := decodeFields(entries(n, path), reflect.ValueOf(&doc).Elem()); err != nil {
@@ -86,6 +88,8 @@ func parseStage(n *yaml.Node, path string) (parsedStage, error) {
 	p.MovesTo, err = state(doc.MovesTo, path+".moves_to", n.Line)
 	collect(err)
 	p.OnSuccess, err = state(doc.OnSuccess, path+".on_success", n.Line)
+	collect(err)
+	p.OnFailure, err = state(doc.OnFailure, path+".on_failure", n.Line)
 	collect(err)
 	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line)
 	collect(err)
@@ -137,7 +141,27 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 	return out, errors.Join(errs...)
 }
 
-// checkGraph rejects a workflow that would loop or take an issue twice.
+// spellOnce gives every label the spelling it first has in the workflow, in
+// stage order and then label, moves_to, on_success, on_failure. GitHub does
+// not tell labels apart by case, so "In Review" and "in review" are one
+// label; after this, comparing states exactly compares them as GitHub does.
+func spellOnce(stages []parsedStage) {
+	first := map[string]crew.State{}
+	for i := range stages {
+		s := &stages[i]
+		for _, state := range []*crew.State{&s.Label, &s.MovesTo, &s.OnSuccess, &s.OnFailure} {
+			key := strings.ToLower(string(*state))
+			if spelling, ok := first[key]; ok {
+				*state = spelling
+			} else {
+				first[key] = *state
+			}
+		}
+	}
+}
+
+// checkGraph rejects a workflow that would loop or take an issue twice. It
+// runs after spellOnce, so it compares labels ignoring case.
 func checkGraph(stages []parsedStage) error {
 	var errs []error
 	byLabel := make(map[crew.State]parsedStage, len(stages))
@@ -151,7 +175,7 @@ func checkGraph(stages []parsedStage) error {
 		}
 		if other, ok := byLabel[s.Label]; ok {
 			errs = append(errs, keyError(s.path+".label", s.doc.Label.line,
-				fmt.Sprintf("stage %q takes %q, as stage %q (%s) does; two stages cannot take the same state",
+				fmt.Sprintf("stage %q takes %q, as stage %q (%s) does; two stages cannot take the same label",
 					s.Name, s.Label, other.Name, other.path)))
 		} else {
 			byLabel[s.Label] = s
@@ -159,6 +183,10 @@ func checkGraph(stages []parsedStage) error {
 		if s.OnSuccess == s.Label {
 			errs = append(errs, keyError(s.path+".on_success", s.doc.OnSuccess.line,
 				fmt.Sprintf("%q is the stage's own label, so stage %q would take the issue again", s.OnSuccess, s.Name)))
+		}
+		if s.OnFailure == s.Label {
+			errs = append(errs, keyError(s.path+".on_failure", s.doc.OnFailure.line,
+				fmt.Sprintf("%q is the stage's own label, so stage %q would take the failed issue again", s.OnFailure, s.Name)))
 		}
 	}
 	for _, s := range stages {
@@ -184,19 +212,8 @@ func required(l located[string], path string, parentLine int) (string, error) {
 	return "", keyError(path, line, "required")
 }
 
-// state returns a key's value as one of the eight crew states.
+// state returns a key's value as a state: any non-empty text.
 func state(l located[string], path string, parentLine int) (crew.State, error) {
 	v, err := required(l, path, parentLine)
-	if err != nil {
-		return "", err
-	}
-	s := crew.State(v)
-	if !s.Valid() {
-		names := make([]string, 0, len(crew.States()))
-		for _, valid := range crew.States() {
-			names = append(names, string(valid))
-		}
-		return "", keyError(path, l.line, fmt.Sprintf("%q is not a crew state; use one of %s", v, strings.Join(names, ", ")))
-	}
-	return s, nil
+	return crew.State(v), err
 }

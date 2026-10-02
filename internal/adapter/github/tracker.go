@@ -1,10 +1,11 @@
 // Package github is the tracker adapter for GitHub issues, through the gh
-// CLI. It maps crew's eight states to labels (tracker.labels), lists the open
-// issues the authenticated gh user opened, moves them by swapping labels,
-// reports failures as Markdown comments and keeps one status comment per
-// issue, edited in place. It works on the repository gh
-// resolves from crew's working directory, and runs every gh call through the
-// shared process helper.
+// CLI. A workflow state is the label of the same name, compared ignoring
+// case as GitHub does, and crew's labels are the workflow's states. It lists
+// the open issues the authenticated gh user opened, moves them by swapping
+// crew's labels, reports failures as Markdown comments and keeps one status
+// comment per issue, edited in place. It works on the repository gh resolves
+// from crew's working directory, and runs every gh call through the shared
+// process helper.
 package github
 
 import (
@@ -63,28 +64,27 @@ type Tracker struct {
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
-// The factory decodes tracker.labels: each key must be a crew state, a state
-// left out maps to its key with "_" replaced by a space, and two states
-// mapping to the same name, compared case-insensitively, are an error naming
-// both. It runs no gh call; Prepare does.
+// The tracker section has no key, so the factory refuses any. The tracker
+// knows the workflow's states as its labels. It runs no gh call; Prepare
+// does.
 func Factory(group *proc.Group) port.TrackerFactory {
 	return factory(group.Run)
 }
 
 func factory(run proc.Runner) port.TrackerFactory {
-	return func(decode port.Decode) (port.Tracker, error) {
-		l, err := decodeLabels(decode)
-		if err != nil {
+	return func(decode port.Decode, states []crew.State) (port.Tracker, error) {
+		if err := decode(&settings{}); err != nil {
 			return nil, err
 		}
-		return &Tracker{gh: &gh{run: run}, labels: l, comments: map[string]int64{}}, nil
+		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), comments: map[string]int64{}}, nil
 	}
 }
 
 // List implements port.Tracker with one GraphQL query: the open issues the
 // authenticated gh user opened that carry any of the states' labels, oldest
 // first, at most 100. Each issue's key is its number, its reference
-// #<number>, and its states every crew state its labels map to.
+// #<number>, and its states every workflow state its labels name, in the
+// workflow's spelling. Its other labels are not crew's and are ignored.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
@@ -96,7 +96,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 		"-F", "owner={owner}", "-F", "name={repo}",
 		"-f", "login=" + login}
 	for _, s := range states {
-		args = append(args, "-f", "labels[]="+t.labels.name[s])
+		args = append(args, "-f", "labels[]="+string(s))
 	}
 	var reply struct {
 		Data struct {
@@ -139,8 +139,8 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 // error, so Move returns nil without an edit and a retry is safe (KTD8). Any
 // other issue without from's label moved meanwhile. Otherwise one gh issue
 // edit removes every other crew label the issue carries and adds to's,
-// leaving its other labels alone. gh saying a label does not exist is a
-// refusal: the label must be created, which retrying cannot do.
+// leaving the labels no stage names alone. gh saying a label does not exist
+// is a refusal: the label must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
 	var issue struct {
 		State  string    `json:"state"`
@@ -164,7 +164,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 			states = append(states, s)
 		}
 		if s != to {
-			args = append(args, "--remove-label="+l.Name)
+			args = append(args, "--remove-label="+labelArg(l.Name))
 		}
 	}
 	if !slices.Contains(states, from) {
@@ -173,8 +173,8 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		}
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
-	target := t.labels.name[to]
-	args = append(args, "--add-label="+target)
+	target := string(to)
+	args = append(args, "--add-label="+labelArg(target))
 	if out, err := t.gh.call(ctx, args...); err != nil {
 		if missingLabel(string(out.Stderr), target) {
 			return fmt.Errorf("%s: %w: %w", move, port.ErrRefused, err)
@@ -182,6 +182,16 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	return nil
+}
+
+// labelArg returns label as one value of gh's --add-label and --remove-label,
+// which gh reads as comma-separated values: a label holding a comma or a
+// double quote is quoted as one CSV field.
+func labelArg(label string) string {
+	if !strings.ContainsAny(label, `,"`) {
+		return label
+	}
+	return `"` + strings.ReplaceAll(label, `"`, `""`) + `"`
 }
 
 // missingLabel reports whether gh's stderr says label does not exist, in
@@ -204,7 +214,7 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 
 // Prepare implements port.Preparer. It checks that gh is installed and
 // logged in, then creates the labels of states the repository lacks,
-// comparing names case-insensitively, and only those.
+// comparing names case-insensitively, and no other label.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -221,12 +231,12 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		have[strings.ToLower(l.Name)] = true
 	}
 	for _, s := range states {
-		name := t.labels.name[s]
+		name := string(s)
 		if have[strings.ToLower(name)] {
 			continue
 		}
 		if _, err := t.gh.call(ctx, "label", "create", name); err != nil {
-			return fmt.Errorf("tracker github: create the label %q for state %s: %w", name, s, err)
+			return fmt.Errorf("tracker github: create the label %q: %w", name, err)
 		}
 		have[strings.ToLower(name)] = true
 	}

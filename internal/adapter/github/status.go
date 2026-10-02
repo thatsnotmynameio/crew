@@ -218,7 +218,7 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 		}
 	}
 	if s.Kind == crew.StatusEnded {
-		to := codeSpan(t.labels.name[s.To])
+		to := codeSpan(string(s.To))
 		switch s.Move {
 		case crew.MovePending:
 			fmt.Fprintf(&b, "\n%s is moving to %s.\n", s.IssueRef, to)

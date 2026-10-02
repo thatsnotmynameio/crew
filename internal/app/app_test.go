@@ -24,6 +24,16 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/registry"
 )
 
+// The workflow's states in these tests, as label text.
+const (
+	ready          crew.State = "ready"
+	inProgress     crew.State = "in progress"
+	readyToReview  crew.State = "ready to review"
+	inReview       crew.State = "in review"
+	needsAttention crew.State = "needs attention"
+	readyToMerge   crew.State = "ready to merge"
+)
+
 // oneAction is a config with one stage of one action, run by the fakes.
 const oneAction = `
 config:
@@ -33,8 +43,9 @@ tracker:
 workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
@@ -50,29 +61,22 @@ config:
   model: claude-opus-5-5
 tracker:
   name: fake
-  labels:
-    ready: ready
-    in_progress: in progress
-    ready_to_review: ready to review
-    in_review: in review
-    needs_attention: needs attention
-    paused: paused
-    ready_to_merge: ready to merge
-    done: done
 workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: acceptance
         prompt: "Implement test acceptance for issue {{.Issue.Ref}}"
       - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
   - name: review
-    label: ready_to_review
-    moves_to: in_review
-    on_success: ready_to_merge
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: needs attention
     actions:
       - name: custom_review
         prompt: "Review implementation for issue {{.Issue.Ref}}"
@@ -202,7 +206,7 @@ func TestWithoutATerminalOrWithPlainItPrintsTimestampedEventLines(t *testing.T) 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				tr := fake.NewTracker(issue("1", crew.Ready))
+				tr := fake.NewTracker(issue("1", ready))
 				h := fake.NewHarness()
 				r := options(t, oneAction, tr, h)
 				r.opts.Terminal, r.opts.Plain = tc.terminal, tc.plain
@@ -215,15 +219,15 @@ func TestWithoutATerminalOrWithPlainItPrintsTimestampedEventLines(t *testing.T) 
 				if code := <-r.code; code != 0 {
 					t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 				}
-				if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.ReadyToReview}) {
-					t.Errorf("#1 is in %v, want the stage's on_success, ready_to_review", got)
+				if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
+					t.Errorf("#1 is in %v, want the stage's on_success, ready to review", got)
 				}
 				out := r.stdout.String()
 				for _, want := range []string{
-					`crew: implement took #1 "Issue 1" (ready -> in_progress)`,
+					`crew: implement took #1 "Issue 1" (ready -> in progress)`,
 					`crew: #1 implement/development started on branch crew/issue-1-development, log .crew/logs/issue-1-development.log`,
 					`crew: #1 implement/development succeeded: opened a pull request`,
-					`crew: #1 moved from in_progress to ready_to_review`,
+					`crew: #1 moved from in progress to ready to review`,
 				} {
 					if !strings.Contains(out, want) {
 						t.Errorf("stdout lacks %q; it is:\n%s", want, out)
@@ -269,7 +273,7 @@ func TestARunTimeLimitWindsCrewDownAndExitsZero(t *testing.T) {
 
 // Covers AE4.
 func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t *testing.T) {
-	tr := &listCounter{Tracker: fake.NewTracker(issue("1", crew.Ready))}
+	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
 	r := options(t, strings.Replace(oneAction, "harness: fake", "harness: codex", 1), tr, fake.NewHarness())
 
 	if code := app.Run(context.Background(), r.opts); code != 2 {
@@ -289,8 +293,24 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 	}
 }
 
+// Covers AE3.
+func TestAConfigWithTrackerLabelsExitsTwoNamingTheKey(t *testing.T) {
+	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
+	r := options(t, strings.Replace(oneAction, "  name: fake\n", "  name: fake\n  labels:\n    ready: ready\n", 1), tr, fake.NewHarness())
+
+	if code := app.Run(context.Background(), r.opts); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if n := tr.listed(); n != 0 {
+		t.Errorf("the tracker listed %d times, want none", n)
+	}
+	if stderr := r.stderr.String(); !strings.Contains(stderr, "tracker.labels (line 6): unknown key") {
+		t.Errorf("stderr = %q, want it to name tracker.labels and its line", stderr)
+	}
+}
+
 func TestAFailingEnvironmentCheckExitsTwoBeforeAnyListing(t *testing.T) {
-	tr := fake.NewPreparingTracker(issue("1", crew.Ready))
+	tr := fake.NewPreparingTracker(issue("1", ready))
 	counter := &listCounter{Tracker: tr.Tracker}
 	tr.Fail(errors.New("gh is not logged in"))
 	r := options(t, oneAction, struct {
@@ -314,7 +334,7 @@ func TestAFailingEnvironmentCheckExitsTwoBeforeAnyListing(t *testing.T) {
 
 func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue("1", crew.Ready))
+		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
 		r := options(t, draft, tr, h)
 		r.start()
@@ -330,8 +350,8 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 			t.Errorf("the first tick's prompts = %v, want %v", prompts, want)
 		}
 		synctest.Wait()
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.ReadyToReview}) {
-			t.Fatalf("after implement, #1 is in %v, want ready_to_review", got)
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
+			t.Fatalf("after implement, #1 is in %v, want ready to review", got)
 		}
 
 		time.Sleep(300 * time.Second) // the second tick
@@ -347,10 +367,10 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 		}
 		wantMoves := []fake.Move{
-			{Key: "1", From: crew.Ready, To: crew.InProgress},
-			{Key: "1", From: crew.InProgress, To: crew.ReadyToReview},
-			{Key: "1", From: crew.ReadyToReview, To: crew.InReview},
-			{Key: "1", From: crew.InReview, To: crew.ReadyToMerge},
+			{Key: "1", From: ready, To: inProgress},
+			{Key: "1", From: inProgress, To: readyToReview},
+			{Key: "1", From: readyToReview, To: inReview},
+			{Key: "1", From: inReview, To: readyToMerge},
 		}
 		if got := tr.Moves(); !reflect.DeepEqual(got, wantMoves) {
 			t.Errorf("moves = %v, want %v", got, wantMoves)
@@ -360,7 +380,7 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 
 func TestASignalStopsCrewWithExitZeroAfterTheStopSequence(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue("1", crew.Ready))
+		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
 		r := options(t, oneAction, tr, h)
 		r.start()
@@ -374,8 +394,8 @@ func TestASignalStopsCrewWithExitZeroAfterTheStopSequence(t *testing.T) {
 		if !session.Stopped() {
 			t.Error("the running session was not stopped")
 		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.NeedsAttention}) {
-			t.Errorf("#1 is in %v when crew returned, want needs_attention", got)
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+			t.Errorf("#1 is in %v when crew returned, want needs attention", got)
 		}
 		if n := len(tr.Reports()); n != 1 {
 			t.Errorf("crew posted %d failure reports, want 1", n)
@@ -439,7 +459,7 @@ func (r *crewRun) release(session *fake.Session) {
 }
 
 func TestASecondSignalKillsEveryProcessAndExitsOneAtOnce(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.Ready))
+	tr := fake.NewTracker(issue("1", ready))
 	h := fake.NewHarness()
 	h.IgnoreStop(true) // the stop sequence would wait 10 seconds for it
 	r := options(t, oneAction, tr, h)
@@ -469,7 +489,7 @@ func tuiRun(t *testing.T, tr port.Tracker, h port.Harness) (*crewRun, io.WriteCl
 }
 
 func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.Ready))
+	tr := fake.NewTracker(issue("1", ready))
 	h := fake.NewHarness()
 	r, keys := tuiRun(t, tr, h)
 	r.start()
@@ -485,8 +505,8 @@ func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
 	if !session.Stopped() {
 		t.Error("the running session was not stopped")
 	}
-	if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.NeedsAttention}) {
-		t.Errorf("#1 is in %v when crew returned, want needs_attention", got)
+	if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+		t.Errorf("#1 is in %v when crew returned, want needs attention", got)
 	}
 	// What the TUI draws is its own tests' business; here the output only
 	// shows that the TUI ran instead of the line renderer.
@@ -496,7 +516,7 @@ func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
 }
 
 func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T) {
-	tr := fake.NewTracker(issue("1", crew.Ready))
+	tr := fake.NewTracker(issue("1", ready))
 	h := fake.NewHarness()
 	h.IgnoreStop(true)
 	r, keys := tuiRun(t, tr, h)
@@ -518,7 +538,7 @@ func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T
 // SIGHUP comes when the terminal crew runs in closes.
 func TestSIGHUPStopsCrewLikeSIGTERM(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue("1", crew.Ready))
+		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
 		r := options(t, oneAction, tr, h)
 		r.start()
@@ -532,8 +552,8 @@ func TestSIGHUPStopsCrewLikeSIGTERM(t *testing.T) {
 		if !session.Stopped() {
 			t.Error("the running session was not stopped")
 		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.NeedsAttention}) {
-			t.Errorf("#1 is in %v when crew returned, want needs_attention", got)
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+			t.Errorf("#1 is in %v when crew returned, want needs attention", got)
 		}
 	})
 }
@@ -567,7 +587,7 @@ func (h *hangingTracker) Prepare(ctx context.Context, _ []crew.State) error {
 }
 
 func TestASignalDuringTheEnvironmentChecksKillsEveryProcessAndExitsTwo(t *testing.T) {
-	tr := newHangingTracker(issue("1", crew.Ready))
+	tr := newHangingTracker(issue("1", ready))
 	r := options(t, oneAction, tr, fake.NewHarness())
 	sleeper := child(t, r.opts.Group) // a check's process, still running
 	r.start()
@@ -592,7 +612,7 @@ func TestASignalDuringTheEnvironmentChecksKillsEveryProcessAndExitsTwo(t *testin
 
 func TestHungEnvironmentChecksTimeOutAfterTenMinutesAndExitTwo(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := newHangingTracker(issue("1", crew.Ready))
+		tr := newHangingTracker(issue("1", ready))
 		r := options(t, oneAction, tr, fake.NewHarness())
 		start := time.Now()
 		r.start()
@@ -615,7 +635,7 @@ func TestHungEnvironmentChecksTimeOutAfterTenMinutesAndExitTwo(t *testing.T) {
 }
 
 func TestASignalAsTheEnvironmentChecksSucceedStillStopsCrew(t *testing.T) {
-	tr := newHangingTracker(issue("1", crew.Ready))
+	tr := newHangingTracker(issue("1", ready))
 	r := options(t, oneAction, tr, fake.NewHarness())
 	tr.atCheck = func() { r.signals <- syscall.SIGTERM }
 	tr.ignoreEnd = true // the checks finish as the signal arrives

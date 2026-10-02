@@ -8,7 +8,7 @@ import (
 
 // Stage is one step of the workflow. It takes an issue in its Label state,
 // moves it to MovesTo while its actions run, and moves it to OnSuccess once
-// every action has succeeded (or to NeedsAttention when any failed).
+// every action has succeeded, or to OnFailure when any failed.
 type Stage struct {
 	// Name identifies the stage in events and the TUI.
 	Name string
@@ -18,6 +18,9 @@ type Stage struct {
 	MovesTo State
 	// OnSuccess is the state the issue moves to after every action succeeded.
 	OnSuccess State
+	// OnFailure is the state the issue moves to when any action failed, with
+	// a failure report.
+	OnFailure State
 	// Actions run in parallel, each in its own workspace and session.
 	Actions []Action
 }

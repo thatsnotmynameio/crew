@@ -285,7 +285,7 @@ func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 			{Name: "development", State: crew.ActionFailed},
 			{Name: "acceptance", State: crew.ActionSucceeded},
 		},
-		To: crew.NeedsAttention, Updated: updated}
+		To: needsAttention, Updated: updated}
 	for move, want := range map[crew.MoveProgress]string{
 		crew.MovePending: "moving to `needs attention`",
 		crew.MoveDone:    "moved to `needs attention`",
@@ -297,9 +297,6 @@ func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 			if !strings.Contains(body, want) {
 				t.Errorf("move %d: body does not contain %q:\n%s", move, want, body)
 			}
-		}
-		if strings.Contains(body, "needs_attention") {
-			t.Errorf("move %d: body names the state key, not its label:\n%s", move, body)
 		}
 		if !endsWithMarker(body) {
 			t.Errorf("move %d: body does not end with the marker line:\n%s", move, body)

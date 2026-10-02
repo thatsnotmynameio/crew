@@ -65,7 +65,7 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 	issue := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	src := newSource(0,
 		engine.Update{Events: []core.Event{
-			core.IssueTaken{At: at("09:00:01"), Issue: issue, Stage: "implement", From: crew.Ready, To: crew.InProgress},
+			core.IssueTaken{At: at("09:00:01"), Issue: issue, Stage: "implement", From: "ready", To: "in progress"},
 		}},
 		engine.Update{Events: []core.Event{
 			core.ActionStarted{At: at("09:00:02"), IssueKey: "1", IssueRef: "#1", Stage: "implement", Action: "code",
@@ -74,22 +74,22 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 		engine.Update{Events: []core.Event{
 			core.ActionEnded{At: at("09:12:30"), IssueKey: "1", IssueRef: "#1", Stage: "implement", Action: "code",
 				Outcome: crew.Outcome{Succeeded: true, Reason: "Opened pull request #7"}},
-			core.IssueMoved{At: at("09:12:31"), IssueKey: "1", IssueRef: "#1", From: crew.InProgress, To: crew.ReadyToReview},
+			core.IssueMoved{At: at("09:12:31"), IssueKey: "1", IssueRef: "#1", From: "in progress", To: "ready to review"},
 		}},
 	)
 
 	got := render(t, src, at("09:13:00"))
 
 	equalLines(t, got, []string{
-		`09:00:01 crew: implement took #1 "Add login form" (ready -> in_progress)`,
+		`09:00:01 crew: implement took #1 "Add login form" (ready -> in progress)`,
 		`09:00:02 crew: #1 implement/code started on branch crew/1-code, log .crew/logs/1-code.log`,
 		`09:12:30 crew: #1 implement/code succeeded: Opened pull request #7`,
-		`09:12:31 crew: #1 moved from in_progress to ready_to_review`,
+		`09:12:31 crew: #1 moved from in progress to ready to review`,
 	})
 }
 
 func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
-	move := core.Call{Kind: core.CallMove, IssueKey: "2", IssueRef: "#2", From: crew.InReview, To: crew.NeedsAttention}
+	move := core.Call{Kind: core.CallMove, IssueKey: "2", IssueRef: "#2", From: "in review", To: "needs attention"}
 	report := core.Call{Kind: core.CallReport, IssueKey: "2", IssueRef: "#2"}
 	tests := []struct {
 		event core.Event
@@ -103,8 +103,8 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 			"#2 review/check succeeded"},
 		{core.FailureReported{At: at("10:00:00"), IssueRef: "#2"},
 			"reported the failure on #2"},
-		{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{crew.Ready, crew.InProgress}},
-			"skipped #3: it is in 2 crew states (ready, in_progress)"},
+		{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
+			"skipped #3: it carries 2 crew labels (ready, in progress)"},
 		{core.PollDone{At: at("10:00:00"), Listed: 3, Taken: 1},
 			"poll: listed 3 issues, took 1"},
 		{core.PollDone{At: at("10:00:00"), Listed: 1, Taken: 0},
@@ -112,15 +112,15 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 		{core.ListingFailed{At: at("10:00:00"), Reason: "gh: rate limited"},
 			"listing issues failed: gh: rate limited"},
 		{core.CallOwed{At: at("10:00:00"), Call: move, Reason: "timeout"},
-			"moving #2 from in_review to needs_attention failed, retrying at the next tick: timeout"},
+			"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
 		{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
 			"reporting the failure on #2 failed, retrying at the next tick: timeout"},
 		{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultMovedMeanwhile},
-			"gave up moving #2 from in_review to needs_attention: the issue moved meanwhile"},
+			"gave up moving #2 from in review to needs attention: the issue moved meanwhile"},
 		{core.CallDropped{At: at("10:00:00"), Call: report, Result: core.ResultRefused, Reason: "issue is locked"},
 			"gave up reporting the failure on #2: the tracker refused: issue is locked"},
 		{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultFailed, Reason: "timeout"},
-			"gave up moving #2 from in_review to needs_attention: it failed: timeout"},
+			"gave up moving #2 from in review to needs attention: it failed: timeout"},
 		{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultFailed, Reason: "timeout"},
 			"could not update the status comment on #2: it failed: timeout"},
 		{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultRefused, Reason: "issue is locked"},
