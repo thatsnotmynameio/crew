@@ -4,9 +4,10 @@
 // config's extra labels, which are never states. It lists the open issues
 // the authenticated gh user opened, moves them by swapping crew's labels,
 // reports failures as Markdown comments and keeps a status comment on each
-// issue, with one entry per stage run. It works on the repository gh resolves
-// from crew's working directory, and runs every gh call through the shared
-// process helper.
+// issue, with one entry per stage run, and finds the pull request an action
+// opened from its branch. It works on the repository gh resolves from crew's
+// working directory, and runs every gh call through the shared process
+// helper.
 package github
 
 import (
@@ -25,12 +26,13 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the tracker is a port.Tracker, a port.Preparer and a
-// port.StatusReporter.
+// Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
+// port.StatusReporter and a port.PullRequestFinder.
 var (
-	_ port.Tracker        = (*Tracker)(nil)
-	_ port.Preparer       = (*Tracker)(nil)
-	_ port.StatusReporter = (*Tracker)(nil)
+	_ port.Tracker           = (*Tracker)(nil)
+	_ port.Preparer          = (*Tracker)(nil)
+	_ port.StatusReporter    = (*Tracker)(nil)
+	_ port.PullRequestFinder = (*Tracker)(nil)
 )
 
 // issuesQuery lists the login's open issues carrying any of the labels,
