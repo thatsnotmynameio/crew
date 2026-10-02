@@ -26,7 +26,7 @@ func newLabels(states []crew.State) labels {
 	return l
 }
 
-// stateOf returns the workflow's state label names, if any.
+// stateOf returns the workflow state that label names, if any.
 func (l labels) stateOf(label string) (crew.State, bool) {
 	s, ok := l[strings.ToLower(label)]
 	return s, ok
