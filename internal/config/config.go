@@ -48,6 +48,10 @@ type Config struct {
 	// only in case are one label. The stages cannot loop or take an issue
 	// twice, and every prompt renders.
 	Workflow []crew.Stage
+	// Extras is extra_labels' labels in file order: labels for parked work
+	// that no stage takes. Each is written as in the file, is none of the
+	// workflow's states and is no other extra, ignoring case.
+	Extras []crew.State
 	// HarnessSection decodes the harness adapter's settings: config.model plus
 	// the keys of the optional top-level harness: section.
 	HarnessSection Decode
@@ -58,10 +62,11 @@ type Config struct {
 
 // document is the file's top level. The sections adapters own stay raw nodes.
 type document struct {
-	Config   settings  `yaml:"config"`
-	Tracker  yaml.Node `yaml:"tracker"`
-	Harness  yaml.Node `yaml:"harness"`
-	Workflow yaml.Node `yaml:"workflow"`
+	Config      settings  `yaml:"config"`
+	Tracker     yaml.Node `yaml:"tracker"`
+	Harness     yaml.Node `yaml:"harness"`
+	Workflow    yaml.Node `yaml:"workflow"`
+	ExtraLabels yaml.Node `yaml:"extra_labels"`
 }
 
 // settings is the config: section. model is the harness adapter's.
@@ -115,7 +120,7 @@ func parse(data []byte) (*Config, error) {
 	if len(root.Content) > 0 { // an empty file has no content
 		top := root.Content[0]
 		if top.Kind != yaml.MappingNode {
-			return nil, fmt.Errorf("line %d: the config must be a mapping with config, tracker, harness and workflow", top.Line)
+			return nil, fmt.Errorf("line %d: the config must be a mapping with config, tracker, harness, workflow and extra_labels", top.Line)
 		}
 		if err := decodeFields(entries(top, ""), reflect.ValueOf(&doc).Elem()); err != nil {
 			return nil, err
@@ -159,6 +164,10 @@ func parse(data []byte) (*Config, error) {
 		errs = append(errs, err)
 	}
 	if cfg.Workflow, err = workflow(&doc.Workflow); err != nil {
+		errs = append(errs, err)
+	}
+	// With an invalid workflow, the extras are checked only on their own.
+	if cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {

@@ -149,7 +149,7 @@ func build(o Options) (*engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
+	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
 	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
 	if err := errors.Join(trackerErr, harnessErr); err != nil {
 		return nil, err

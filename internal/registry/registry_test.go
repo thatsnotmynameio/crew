@@ -72,7 +72,7 @@ func TestUnregisteredTrackerNamesTheKeyAndTheRegisteredTrackersSorted(t *testing
 		"github": fake.TrackerFactory(fake.NewTracker()),
 	}, nil)
 
-	_, err := r.Tracker("linear", func(any) error { return nil }, nil)
+	_, err := r.Tracker("linear", func(any) error { return nil }, nil, nil)
 	assertErr(t, err, "tracker.name", `"linear"`, "github, jira")
 }
 
@@ -89,7 +89,7 @@ func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
     ready: todo
 `+workflow)
 
-	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
+	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
 	assertErr(t, err, "tracker.lables", "line 3", "unknown key")
 	if tr != nil {
 		t.Errorf("Tracker = %v, want none", tr)
@@ -105,25 +105,29 @@ func TestTrackerLabelsIsAnUnknownKey(t *testing.T) {
     ready: ready
 `+workflow)
 
-	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
+	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
 	assertErr(t, err, "tracker.labels", "line 3", "unknown key")
 }
 
-func TestTheTrackerFactoryGetsTheStates(t *testing.T) {
-	var got []crew.State
+func TestTheTrackerFactoryGetsTheStatesAndTheExtras(t *testing.T) {
+	var gotStates, gotExtras []crew.State
 	r := registry.New(map[string]port.TrackerFactory{
-		"fake": func(_ port.Decode, states []crew.State) (port.Tracker, error) {
-			got = states
+		"fake": func(_ port.Decode, states, extras []crew.State) (port.Tracker, error) {
+			gotStates, gotExtras = states, extras
 			return fake.NewTracker(), nil
 		},
 	}, nil)
 	states := []crew.State{"ready", "in progress"}
+	extras := []crew.State{"waiting brainstorm"}
 
-	if _, err := r.Tracker("fake", func(any) error { return nil }, states); err != nil {
+	if _, err := r.Tracker("fake", func(any) error { return nil }, states, extras); err != nil {
 		t.Fatalf("Tracker: %v", err)
 	}
-	if !slices.Equal(got, states) {
-		t.Errorf("the factory got %v, want %v", got, states)
+	if !slices.Equal(gotStates, states) {
+		t.Errorf("the factory got the states %v, want %v", gotStates, states)
+	}
+	if !slices.Equal(gotExtras, extras) {
+		t.Errorf("the factory got the extras %v, want %v", gotExtras, extras)
 	}
 }
 
@@ -140,7 +144,7 @@ tracker:
   name: fake
 `+workflow)
 
-	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
+	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
 	if err != nil {
 		t.Fatalf("Tracker: %v", err)
 	}

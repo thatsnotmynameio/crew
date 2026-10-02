@@ -1,9 +1,10 @@
 // Package github is the tracker adapter for GitHub issues, through the gh
 // CLI. A workflow state is the label of the same name, compared ignoring
-// case as GitHub does, and crew's labels are the workflow's states. It lists
-// the open issues the authenticated gh user opened, moves them by swapping
-// crew's labels, reports failures as Markdown comments and keeps one status
-// comment per issue, edited in place. It works on the repository gh resolves
+// case as GitHub does, and crew's labels are the workflow's states plus the
+// config's extra labels, which are never states. It lists the open issues
+// the authenticated gh user opened, moves them by swapping crew's labels,
+// reports failures as Markdown comments and keeps one status comment per
+// issue, edited in place. It works on the repository gh resolves
 // from crew's working directory, and runs every gh call through the shared
 // process helper.
 package github
@@ -58,6 +59,7 @@ type ghLabel struct {
 type Tracker struct {
 	gh     *gh
 	labels labels
+	extras extras
 
 	mu       sync.Mutex
 	comments map[string]int64 // status comment ids by issue key, once found or created
@@ -65,18 +67,19 @@ type Tracker struct {
 
 // Factory returns the github tracker's factory, which runs gh through group.
 // The tracker section has no key, so the factory refuses any. The tracker
-// knows the workflow's states as its labels. It runs no gh call; Prepare
-// does.
+// knows the workflow's states and the extras as its labels. It runs no gh
+// call; Prepare does.
 func Factory(group *proc.Group) port.TrackerFactory {
 	return factory(group.Run)
 }
 
 func factory(run proc.Runner) port.TrackerFactory {
-	return func(decode port.Decode, states []crew.State) (port.Tracker, error) {
+	return func(decode port.Decode, states, extraLabels []crew.State) (port.Tracker, error) {
 		if err := decode(&settings{}); err != nil {
 			return nil, err
 		}
-		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), comments: map[string]int64{}}, nil
+		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), extras: slices.Clone(extraLabels),
+			comments: map[string]int64{}}, nil
 	}
 }
 
@@ -84,7 +87,8 @@ func factory(run proc.Runner) port.TrackerFactory {
 // authenticated gh user opened that carry any of the states' labels, oldest
 // first, at most 100. Each issue's key is its number, its reference
 // #<number>, and its states every workflow state its labels name, in the
-// workflow's spelling. Its other labels are not crew's and are ignored.
+// workflow's spelling. Its other labels, extras included, are no states and
+// are ignored.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
@@ -134,13 +138,14 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 }
 
 // Move implements port.Tracker. It reads the issue's state and labels; a
-// closed issue moved meanwhile. An open issue whose only crew label is to's
-// is already moved, as when an earlier attempt landed although gh reported an
-// error, so Move returns nil without an edit and a retry is safe (KTD8). Any
-// other issue without from's label moved meanwhile. Otherwise one gh issue
-// edit removes every other crew label the issue carries and adds to's,
-// leaving the labels no stage names alone. gh saying a label does not exist
-// is a refusal: the label must be created, which retrying cannot do.
+// closed issue moved meanwhile. An open issue whose only state label is to's,
+// whatever extras it carries, is already moved, as when an earlier attempt
+// landed although gh reported an error, so Move returns nil without an edit
+// and a retry is safe (KTD8). Any other issue without from's label moved
+// meanwhile. Otherwise one gh issue edit removes every other crew label the
+// issue carries, extras included, and adds to's, leaving the labels that are
+// not crew's alone. gh saying a label does not exist is a refusal: the label
+// must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
 	var issue struct {
 		State  string    `json:"state"`
@@ -156,6 +161,10 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 	args := []string{"issue", "edit", issueKey}
 	var states []crew.State
 	for _, l := range issue.Labels {
+		if t.extras.has(l.Name) {
+			args = append(args, "--remove-label="+labelArg(l.Name))
+			continue
+		}
 		s, ok := t.labels.stateOf(l.Name)
 		if !ok {
 			continue
@@ -213,8 +222,8 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 }
 
 // Prepare implements port.Preparer. It checks that gh is installed and
-// logged in, then creates the labels of states the repository lacks,
-// comparing names case-insensitively, and no other label.
+// logged in, then creates the labels of states and the extras the repository
+// lacks, comparing names case-insensitively, and no other label.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -230,7 +239,7 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	for _, l := range present {
 		have[strings.ToLower(l.Name)] = true
 	}
-	for _, s := range states {
+	for _, s := range slices.Concat(states, []crew.State(t.extras)) {
 		name := string(s)
 		if have[strings.ToLower(name)] {
 			continue

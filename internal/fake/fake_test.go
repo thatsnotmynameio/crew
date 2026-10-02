@@ -21,6 +21,8 @@ const (
 	inProgress     crew.State = "in progress"
 	readyToReview  crew.State = "ready to review"
 	needsAttention crew.State = "needs attention"
+	// waitingBrainstorm is an extra label: parked work no stage takes.
+	waitingBrainstorm crew.State = "waiting brainstorm"
 )
 
 func issue(key string, states ...crew.State) crew.Issue {
@@ -80,6 +82,36 @@ func TestTrackerMoveLeavesTheIssueInExactlyTheNewState(t *testing.T) {
 	listed, err := tr.List(ctx, []crew.State{ready})
 	if err != nil || len(listed) != 0 {
 		t.Errorf("List(ready) = %v, %v; want no issues", keys(listed), err)
+	}
+}
+
+// An extra label is not a state: List does not report it, an issue whose
+// only crew label is an extra is not listed, and a move clears the extras.
+func TestTrackerExtrasAreNotListedAndAMoveClearsThem(t *testing.T) {
+	tr := fake.NewTracker(issue("1", ready), issue("2"))
+	tr.SetExtras("1", waitingBrainstorm)
+	tr.SetExtras("2", waitingBrainstorm)
+	ctx := context.Background()
+
+	listed, err := tr.List(ctx, []crew.State{ready, waitingBrainstorm})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if want := []string{"1"}; !reflect.DeepEqual(keys(listed), want) {
+		t.Fatalf("List keys = %v, want %v", keys(listed), want)
+	}
+	if want := []crew.State{ready}; !reflect.DeepEqual(listed[0].States, want) {
+		t.Errorf("issue 1 states = %v, want %v", listed[0].States, want)
+	}
+
+	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if got := tr.Extras("1"); len(got) != 0 {
+		t.Errorf("issue 1 extras after the move = %v, want none", got)
+	}
+	if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(tr.Extras("2"), want) {
+		t.Errorf("issue 2 extras = %v, want %v", tr.Extras("2"), want)
 	}
 }
 
@@ -219,7 +251,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	built, err := factory(func(target any) error {
 		got = target
 		return nil
-	}, []crew.State{ready})
+	}, []crew.State{ready}, []crew.State{waitingBrainstorm})
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -231,7 +263,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	}
 
 	invalid := errors.New("tracker.lables (line 3): unknown key")
-	if _, err := factory(func(any) error { return invalid }, nil); !errors.Is(err, invalid) {
+	if _, err := factory(func(any) error { return invalid }, nil, nil); !errors.Is(err, invalid) {
 		t.Errorf("factory with an invalid section = %v, want the decode error", err)
 	}
 }

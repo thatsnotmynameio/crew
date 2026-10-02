@@ -93,6 +93,12 @@ const (
 	needsAttention crew.State = "needs attention"
 )
 
+// extraLabels is the config's one extra label, waiting brainstorm: parked
+// work no stage takes.
+const extraLabels = `extra_labels:
+  - label: waiting brainstorm
+`
+
 // workflow is the draft config's workflow, so the files below load. Its
 // states are ready, in progress, ready to review, needs attention, in review
 // and ready to merge; it does not name paused.
@@ -116,15 +122,15 @@ const workflow = `workflow:
 `
 
 // section loads a .crew/config.yaml holding tracker, which is the tracker:
-// section's body, and returns the section's strict decoder and the
-// workflow's states, as the app passes them to the factory.
-func section(t *testing.T, tracker string) (port.Decode, []crew.State) {
+// section's body, and returns the section's strict decoder, the workflow's
+// states and the extra labels, as the app passes them to the factory.
+func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.State) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	body := "tracker:\n  name: github\n" + tracker + workflow
+	body := "tracker:\n  name: github\n" + tracker + extraLabels + workflow
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +138,7 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State) {
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	return cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow)
+	return cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras
 }
 
 // build builds the tracker from the tracker section's body, with gh scripted.
@@ -241,6 +247,7 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) 
 		"two crew labels":            {[]string{"ready", "Needs Attention", "bug"}, []crew.State{ready, needsAttention}},
 		"another case":               {[]string{"Ready"}, []crew.State{ready}},
 		"AE6 a label no stage names": {[]string{"paused", "ready"}, []crew.State{ready}},
+		"an extra label":             {[]string{"waiting brainstorm", "ready"}, []crew.State{ready}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, _ := build(t, "", login, reply{
@@ -258,8 +265,8 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) 
 	}
 }
 
-// Covers AE1 and AE6: the move swaps crew's labels and leaves the others,
-// bug and paused, which no stage names.
+// Covers AE1, AE4 and AE6: the move swaps crew's labels, removes every extra
+// label, and leaves the others, bug and paused, which no stage names.
 func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 	for name, tc := range map[string]struct {
 		labels string
@@ -271,6 +278,10 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 			[]string{"--remove-label=ready", "--remove-label=Needs Attention", "--add-label=in progress"}},
 		"AE6 a label no stage names": {`{"name":"paused"},{"name":"ready"}`,
 			[]string{"--remove-label=ready", "--add-label=in progress"}},
+		"AE4 an extra label": {`{"name":"waiting brainstorm"},{"name":"ready"},{"name":"bug"}`,
+			[]string{"--remove-label=waiting brainstorm", "--remove-label=ready", "--add-label=in progress"}},
+		"an extra label in another case": {`{"name":"ready"},{"name":"Waiting Brainstorm"}`,
+			[]string{"--remove-label=ready", "--remove-label=Waiting Brainstorm", "--add-label=in progress"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t, "",
@@ -311,16 +322,24 @@ func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 }
 
 // A retry of a move that landed although gh reported an error finds the issue
-// already in to: the move is done, and nothing is edited again (KTD8).
+// already in to: the move is done, and nothing is edited again (KTD8). An
+// extra label added since does not make it a move made meanwhile.
 func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
-	tr, gh := build(t, "",
-		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"In Progress"},{"name":"bug"}]}`},
-	)
-	if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
-		t.Fatalf("Move = %v, want nil", err)
-	}
-	if edits := gh.callsTo("issue", "edit"); len(edits) != 0 {
-		t.Errorf("sent edits %q, want none", edits)
+	for name, labels := range map[string]string{
+		"in to":                           `{"name":"In Progress"},{"name":"bug"}`,
+		"in to with an extra added since": `{"name":"in progress"},{"name":"waiting brainstorm"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			tr, gh := build(t, "",
+				reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[` + labels + `]}`},
+			)
+			if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
+				t.Fatalf("Move = %v, want nil", err)
+			}
+			if edits := gh.callsTo("issue", "edit"); len(edits) != 0 {
+				t.Errorf("sent edits %q, want none", edits)
+			}
+		})
 	}
 }
 
@@ -332,7 +351,7 @@ func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"blocked, \"waiting\""}]}`},
 		reply{prefix: []string{"issue", "edit", "3"}},
 	)
-	tr, err := factory(gh.run)(func(any) error { return nil }, []crew.State{ready, blocked})
+	tr, err := factory(gh.run)(func(any) error { return nil }, []crew.State{ready, blocked}, nil)
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -497,8 +516,9 @@ func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 		present string
 		want    []string
 	}{
-		"AE7 only ready": {`[{"name":"ready"}]`, []string{"in progress", "in review", "needs attention"}},
-		"another case":   {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"}]`, []string{"in review", "needs attention"}},
+		"AE7 only ready": {`[{"name":"ready"}]`, []string{"in progress", "in review", "needs attention", "waiting brainstorm"}},
+		"another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"},{"name":"Waiting Brainstorm"}]`,
+			[]string{"in review", "needs attention"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t, "",

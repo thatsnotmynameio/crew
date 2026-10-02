@@ -35,9 +35,10 @@ type TrackerSettings struct{}
 
 // TrackerFactory returns a factory that validates its section into
 // TrackerSettings and, when it is valid, returns t itself, so the test keeps
-// a handle on the tracker the engine uses. It ignores the workflow's states.
+// a handle on the tracker the engine uses. It ignores the workflow's states
+// and the extras; a test sets an issue's extras with SetExtras.
 func TrackerFactory(t port.Tracker) port.TrackerFactory {
-	return func(decode port.Decode, _ []crew.State) (port.Tracker, error) {
+	return func(decode port.Decode, _, _ []crew.State) (port.Tracker, error) {
 		var settings TrackerSettings
 		if err := decode(&settings); err != nil {
 			return nil, err
@@ -54,7 +55,9 @@ type Move struct {
 
 // Tracker is an in-memory issue tracker. It lists issues in the order they
 // were added, and a Move leaves an issue in exactly the state it moved to.
-// Its zero value is not usable; use NewTracker.
+// An issue's extra labels, set with SetExtras, are kept apart from its
+// states: List never reports them and a Move clears them. Its zero value is
+// not usable; use NewTracker.
 type Tracker struct {
 	mu         sync.Mutex
 	issues     []*trackedIssue
@@ -66,6 +69,7 @@ type Tracker struct {
 
 type trackedIssue struct {
 	issue  crew.Issue
+	extras []crew.State
 	closed bool
 }
 
@@ -78,13 +82,14 @@ func NewTracker(issues ...crew.Issue) *Tracker {
 	return t
 }
 
-// Add adds issue as an open issue, replacing any issue with the same key.
+// Add adds issue as an open issue without extras, replacing any issue with
+// the same key.
 func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	issue = issue.Clone()
 	if ti := t.find(issue.Key); ti != nil {
-		ti.issue, ti.closed = issue, false
+		ti.issue, ti.extras, ti.closed = issue, nil, false
 		return
 	}
 	t.issues = append(t.issues, &trackedIssue{issue: issue})
@@ -98,6 +103,26 @@ func (t *Tracker) SetStates(key string, states ...crew.State) {
 	if ti := t.find(key); ti != nil {
 		ti.issue.States = slices.Clone(states)
 	}
+}
+
+// SetExtras sets the extra labels of the issue with key, as a person
+// editing it would. It does nothing for an unknown key.
+func (t *Tracker) SetExtras(key string, extras ...crew.State) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if ti := t.find(key); ti != nil {
+		ti.extras = slices.Clone(extras)
+	}
+}
+
+// Extras returns the extra labels the issue with key has now.
+func (t *Tracker) Extras(key string) []crew.State {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if ti := t.find(key); ti != nil {
+		return slices.Clone(ti.extras)
+	}
+	return nil
 }
 
 // Close closes the issue with key: List no longer returns it, and moving it
@@ -177,9 +202,9 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 
 // Move implements port.Tracker. A scripted failure comes first; then an
 // unknown or closed issue is ErrMovedMeanwhile. An open issue not in from but
-// exactly in to is already moved, so Move returns nil and records no move, as
-// the github adapter does on a retry. Any other issue not in from is
-// ErrMovedMeanwhile.
+// exactly in to, whatever its extras, is already moved, so Move returns nil
+// and records no move, as the github adapter does on a retry. Any other issue
+// not in from is ErrMovedMeanwhile. A move clears the issue's extras.
 func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -196,7 +221,7 @@ func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) 
 		}
 		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, port.ErrMovedMeanwhile)
 	}
-	ti.issue.States = []crew.State{to}
+	ti.issue.States, ti.extras = []crew.State{to}, nil
 	t.moves = append(t.moves, Move{Key: issueKey, From: from, To: to})
 	return nil
 }

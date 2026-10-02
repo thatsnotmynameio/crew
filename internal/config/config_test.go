@@ -6,9 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/thatsnotmynameio/crew/internal/config"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -237,6 +240,25 @@ func TestLoadAcceptsWorkflowLabels(t *testing.T) {
 			},
 		},
 		{
+			// description and issue_template are for the skill, not the stage.
+			name: "description and issue_template leave the stage as without them",
+			body: `workflow:
+  - name: fix
+    description: Bugs to fix
+    issue_template: bug.md
+    label: ready for fix
+    moves_to: fixing
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Fix {{.Issue.Ref}}"
+`,
+			want: []crew.Stage{
+				{Name: "fix", Label: "ready for fix", MovesTo: "fixing", OnSuccess: "ready to review", OnFailure: "needs attention"},
+			},
+		},
+		{
 			// The issue stays in moves_to when the stage fails.
 			name: "on_failure equals the stage's own moves_to",
 			body: `workflow:
@@ -262,6 +284,33 @@ func TestLoadAcceptsWorkflowLabels(t *testing.T) {
 			}
 			if !reflect.DeepEqual(cfg.Workflow, tt.want) {
 				t.Errorf("Workflow = %+v\nwant %+v", cfg.Workflow, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadReadsExtraLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []crew.State
+	}{
+		{name: "left out", body: oneStage, want: nil},
+		{
+			name: "a label with a description and a template",
+			body: `extra_labels:
+  - label: "crew:waiting brainstorm"
+    description: Ideas to brainstorm later
+    issue_template: idea.md
+  - label: crew:parked
+` + oneStage,
+			want: []crew.State{"crew:waiting brainstorm", "crew:parked"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, tt.body).Extras; !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Extras = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -322,6 +371,127 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if _, err := config.Load(filepath.Join("..", "..")); err != nil {
 		t.Fatalf("Load(repository root) = %v", err)
 	}
+}
+
+// TestTheRepositorysIssueTemplatesMatchItsConfig keeps this repository's
+// .crew/config.yaml and .github/ISSUE_TEMPLATE/ in step: every stage and
+// extra label names a template that exists, and that template's frontmatter
+// gives exactly the type's label, so an issue opened on the web lands where
+// the /cw-create-issue skill would put it. Config keeps no template fields,
+// so the test decodes the file itself once Load has validated it.
+func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
+	root := filepath.Join("..", "..")
+	if _, err := config.Load(root); err != nil {
+		t.Fatalf("Load(repository root) = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".crew", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type issueType struct {
+		Name          string `yaml:"name"`
+		Label         string `yaml:"label"`
+		Description   string `yaml:"description"`
+		IssueTemplate string `yaml:"issue_template"`
+	}
+	var cfg struct {
+		Workflow    []issueType `yaml:"workflow"`
+		ExtraLabels []issueType `yaml:"extra_labels"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	type named struct {
+		what string
+		issueType
+	}
+	var types []named
+	for _, s := range cfg.Workflow {
+		types = append(types, named{"workflow stage " + s.Name, s})
+	}
+	for _, e := range cfg.ExtraLabels {
+		types = append(types, named{"extra label " + e.Label, e})
+	}
+	// Several types may share a template, such as a stage and an extra that
+	// both hold a brainstormed feature. Its labels name one of them.
+	var templates []string
+	labelsOf := map[string][]string{}
+	for _, typ := range types {
+		what := typ.what
+		if typ.Description == "" {
+			t.Errorf("%s has no description", what)
+		}
+		if typ.IssueTemplate == "" {
+			t.Errorf("%s has no issue_template", what)
+			continue
+		}
+		if _, seen := labelsOf[typ.IssueTemplate]; !seen {
+			templates = append(templates, typ.IssueTemplate)
+		}
+		labelsOf[typ.IssueTemplate] = append(labelsOf[typ.IssueTemplate], typ.Label)
+	}
+	for _, name := range templates {
+		path := filepath.Join(root, ".github", "ISSUE_TEMPLATE", name)
+		front, err := templateFrontmatter(path)
+		if err != nil {
+			t.Errorf("issue_template %s: %v", name, err)
+			continue
+		}
+		if front.Name == "" || front.About == "" {
+			t.Errorf("%s: GitHub needs name and about to list it; got name %q, about %q", path, front.Name, front.About)
+		}
+		if len(front.Labels) != 1 || !slices.Contains(labelsOf[name], front.Labels[0]) {
+			t.Errorf("%s: labels = %q, want one of the labels of the types that name it, %q", path, front.Labels, labelsOf[name])
+		}
+	}
+}
+
+// issueTemplateFront is the frontmatter of a GitHub Markdown issue template.
+type issueTemplateFront struct {
+	Name   string
+	About  string
+	Labels []string
+}
+
+// templateFrontmatter reads the frontmatter between the leading "---" lines
+// of a Markdown issue template. GitHub takes labels as a list or as one
+// comma-separated string, so both are read.
+func templateFrontmatter(path string) (issueTemplateFront, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return issueTemplateFront{}, err
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	rest, ok := strings.CutPrefix(text, "---\n")
+	if !ok {
+		return issueTemplateFront{}, errors.New(`does not start with a "---" frontmatter line`)
+	}
+	front, _, ok := strings.Cut(rest, "\n---\n")
+	if !ok {
+		return issueTemplateFront{}, errors.New(`has no closing "---" frontmatter line`)
+	}
+	var doc struct {
+		Name   string    `yaml:"name"`
+		About  string    `yaml:"about"`
+		Labels yaml.Node `yaml:"labels"`
+	}
+	if err := yaml.Unmarshal([]byte(front), &doc); err != nil {
+		return issueTemplateFront{}, err
+	}
+	out := issueTemplateFront{Name: doc.Name, About: doc.About}
+	switch doc.Labels.Kind {
+	case yaml.SequenceNode:
+		if err := doc.Labels.Decode(&out.Labels); err != nil {
+			return issueTemplateFront{}, err
+		}
+	case yaml.ScalarNode:
+		for l := range strings.SplitSeq(doc.Labels.Value, ",") {
+			if l = strings.TrimSpace(l); l != "" {
+				out.Labels = append(out.Labels, l)
+			}
+		}
+	}
+	return out, nil
 }
 
 func TestLoadRejectsInvalidConfig(t *testing.T) {
@@ -670,6 +840,122 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
         prompt: "Review {{.Issue.Ref}}"
 `,
 			wants: []string{"workflow[1].name", "line 10", "workflow[0]"},
+		},
+		{
+			// Covers AE7 of the create-issue plan.
+			name: "an extra is a stage's on_failure",
+			body: `extra_labels:
+  - label: crew:failed
+workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: crew:failed
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			wants: []string{"extra_labels[0].label", "line 2", `"crew:failed"`},
+		},
+		{
+			name: "an extra is a stage's label in another case",
+			body: `extra_labels:
+  - label: CREW:READY FOR FIX
+workflow:
+  - name: fix
+    label: crew:ready for fix
+    moves_to: crew:fixing
+    on_success: crew:ready to review
+    on_failure: crew:failed
+    actions:
+      - name: development
+        prompt: "Fix {{.Issue.Ref}}"
+`,
+			wants: []string{"extra_labels[0].label", "line 2", `"CREW:READY FOR FIX"`},
+		},
+		{
+			name: "two extras share a label in different cases",
+			body: `extra_labels:
+  - label: crew:parked
+  - label: Crew:Parked
+` + oneStage,
+			wants: []string{"extra_labels[1].label", "line 3", "extra_labels[0]"},
+		},
+		{
+			name: "an extra without a label",
+			body: `extra_labels:
+  - description: Parked work
+` + oneStage,
+			wants: []string{"extra_labels[0].label", "line 2", "required"},
+		},
+		{
+			name: "an extra with an empty label",
+			body: `extra_labels:
+  - label: ""
+` + oneStage,
+			wants: []string{"extra_labels[0].label", "line 2", "required"},
+		},
+		{
+			name: "an unknown key in an extra",
+			body: `extra_labels:
+  - label: crew:parked
+    labels: crew:waiting
+` + oneStage,
+			wants: []string{"extra_labels[0].labels", "line 3", "unknown key"},
+		},
+		{
+			name: "an issue_template in a directory",
+			body: `extra_labels:
+  - label: crew:parked
+    issue_template: templates/bug.md
+` + oneStage,
+			wants: []string{"extra_labels[0].issue_template", "line 3", ".md"},
+		},
+		{
+			name: "an issue_template outside the template directory",
+			body: `workflow:
+  - name: implement
+    issue_template: ../bug.md
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].issue_template", "line 3", ".md"},
+		},
+		{
+			name: "an issue_template that is not Markdown",
+			body: `workflow:
+  - name: implement
+    issue_template: bug.txt
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].issue_template", "line 3", ".md"},
+		},
+		{
+			name: "an empty description",
+			body: `workflow:
+  - name: implement
+    description: ""
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].description", "line 3", "empty"},
 		},
 		{
 			name: "two actions of a stage share a name",

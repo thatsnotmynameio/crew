@@ -21,7 +21,7 @@ A new tracker or coding agent is one new adapter package plus one line in the re
 | `cmd/crew` | The binary: flags, signals, the repository root, and the `git` workspace. It calls `app.Run`. |
 | `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. |
 | `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes, failure reports and statuses. |
-| `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow checks, prompt templates. |
+| `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow and extra-label checks, prompt templates. |
 | `internal/port` | The port interfaces, the optional `Preparer`, `StatusReporter` and `Narrator`, the sentinel errors and the factory types. |
 | `internal/registry` | Maps adapter names to factories. `default.go` is the production list. |
 | `internal/core` | The pure reducer: model, inputs, commands and events. |
@@ -74,7 +74,7 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 
 1. `cmd/crew` parses `--plain` and `--version`, starts catching SIGINT, SIGTERM and SIGHUP, ignores SIGPIPE so a closed output fails the renderer's write instead of killing crew, and finds the repository root with `git rev-parse --show-toplevel`.
 2. `app.Run` loads the config. The engine's keys are decoded there; each adapter's section is handed on, undecoded, as a `port.Decode`.
-3. The registry builds the tracker and the harness from their names and sections. `cmd/crew` builds the `git` workspace directly: there is only one, and no key selects it.
+3. The registry builds the tracker and the harness from their names and sections, and hands the tracker the workflow's states and the extra labels. `cmd/crew` builds the `git` workspace directly: there is only one, and no key selects it.
 4. The engine runs every adapter's `Preparer`, within 10 minutes, which a first signal cuts short. Any error so far exits with 2, before the TUI starts. A timeout or a signal there also kills every process in the group first, since a check's process may still run.
 5. `app` starts the engine and one renderer, the TUI on a terminal and the line printer otherwise, and handles the stop signals until both return. The first signal stops the engine cleanly, a signal that came as the checks succeeded included; the second kills every process in the group and exits with 1. A renderer that fails, such as on a closed output, stops the engine cleanly and exits with 1.
 
@@ -138,13 +138,13 @@ The engine never imports Bubble Tea. Only `internal/ui/tui` does, and it starts 
 
 `internal/port` holds three small interfaces, with only what every adapter must provide:
 
-- `Tracker`: `List` the open issues in some states, `Move` an issue from one state to another, `ReportFailure` from a structured report the adapter formats in its own markup. `Move` and `ReportFailure` wrap `port.ErrMovedMeanwhile` or `port.ErrRefused`; any other error is transient. A state is free text, written in the workflow as the tracker shows it: a label's name on GitHub. The tracker is built knowing the workflow's states, `crew.WorkflowStates`, which are crew's states: `List` reports only those, and `Move` touches only those.
+- `Tracker`: `List` the open issues in some states, `Move` an issue from one state to another, `ReportFailure` from a structured report the adapter formats in its own markup. `Move` and `ReportFailure` wrap `port.ErrMovedMeanwhile` or `port.ErrRefused`; any other error is transient. A state is free text, written in the workflow as the tracker shows it: a label's name on GitHub. The tracker is built knowing the workflow's states, `crew.WorkflowStates`, which are crew's states, and the config's extra labels, which are crew's labels but never states. `List` reports only the states, never an extra. `Move` touches only the states and the extras: it removes every extra the issue carries, and a retried move that finds the issue already in its target state succeeds whatever extras it carries.
 - `Harness`: `Start` a session in a directory with a prompt and an output writer. The `Session` can be waited on for a `crew.Outcome` and stopped within the caller's deadline.
 - `Workspace`: `Create` a fresh workspace for an issue and an action, and return its name, directory and branch.
 
 Anything an adapter may or may not support is a separate, optional interface. Today there are three:
 
-- `Preparer`, on any adapter: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`.
+- `Preparer`, on any adapter: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`. A tracker also creates or checks the extra labels it was built with.
 - `StatusReporter`, on a tracker: `ReportStatus` writes a structured `crew.Status` to the issue's one status comment, created once and edited in place, in the tracker's own markup. Its errors are classified as `Move`'s are. Without it, the core reports no status.
 - `Narrator`, on a harness's `Session`: `Said` returns what the session last said, on one line, and may be called while the session runs.
 
@@ -163,7 +163,7 @@ An issue's identity is an opaque `Key` plus a display `Ref`, both set by the tra
 
 `registry.Registry` is a value, not a global: no `init()` registers anything. `registry.Default` in `internal/registry/default.go` is the production list, and `cmd/crew` passes it to `app`. Tests build their own registry holding the fakes, so the fakes go through the same lookup and validation as the real adapters.
 
-A factory receives a `port.Decode` for its config section, so no adapter imports the YAML library. A tracker factory also receives the workflow's states. The decoder rejects unknown keys with the key path and line. A factory sets its defaults on the target before decoding, because a key the section leaves out keeps the target's value. A factory validates; it never runs a tool or reaches the network. That is the `Preparer`'s job.
+A factory receives a `port.Decode` for its config section, so no adapter imports the YAML library. A tracker factory also receives the workflow's states and the extra labels, as two lists. The decoder rejects unknown keys with the key path and line. A factory sets its defaults on the target before decoding, because a key the section leaves out keeps the target's value. A factory validates; it never runs a tool or reaches the network. That is the `Preparer`'s job.
 
 | Port | Selected by | Factory's section |
 | --- | --- | --- |
@@ -237,4 +237,4 @@ map[string]port.HarnessFactory{
 
 No other Go file changes: not the engine, not the core, not the config, not the renderers, not the other adapters. The boss then selects it with `config.harness: codex`. Document the new name and its keys on the Guide page in the same pull request.
 
-A tracker adapter has the same shape: a package with `Factory(group) port.TrackerFactory`, an entry in the tracker map, and its own way of finding the workflow's states, which its factory receives, among the tracker's statuses or labels.
+A tracker adapter has the same shape: a package with `Factory(group) port.TrackerFactory`, an entry in the tracker map, and its own way of finding the workflow's states and the extra labels, which its factory receives, among the tracker's statuses or labels.

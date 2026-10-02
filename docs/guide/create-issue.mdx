@@ -1,0 +1,92 @@
+---
+title: Create an issue
+description: A Claude Code skill that records a piece of work as a GitHub issue for crew, with the right label and the body its template asks for.
+---
+
+# Create an issue
+
+`/cw-create-issue` is a Claude Code skill that records a piece of work as a GitHub issue for [crew](/guide/crew). It reads the repository's `.crew/config.yaml`, picks the type of work, fills that type's issue template, and creates the issue with the type's label. crew then takes it like an issue you labeled by hand.
+
+The skill was built for the author's own workflow, so its behavior, and the config keys it reads, may still change.
+
+The types are every stage of the workflow and every extra label in `extra_labels`. A stage's type puts its `label` on the issue, so crew starts on it at the next poll. An extra parks the issue, such as an idea to brainstorm later: no stage takes it until you add a stage's label.
+
+## Install once
+
+The skill lives in the crew repository, at `.agents/skills/cw-create-issue/`. Link the directory into your user-level skills so every repository can use it:
+
+```sh
+mkdir -p ~/.claude/skills
+ln -s "$(pwd)/.agents/skills/cw-create-issue" ~/.claude/skills/cw-create-issue
+```
+
+Run it from the root of your crew checkout. Changes to the skill in crew apply everywhere at once, and so does switching branches there: a branch without the skill removes it from every repository. Keep that checkout on `main`.
+
+The skill needs `gh`, logged in, with permission to create the repository's issues and labels. It does not need the crew binary.
+
+## Set up a repository
+
+You define the extra labels and the issue templates: your repository's `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` decide the types and what each issue's body asks for. The labels and file names below are examples.
+
+Give each stage and extra label a `description` and an `issue_template` in `.crew/config.yaml` (see [Keys](/guide/crew#keys)):
+
+```yaml
+extra_labels:
+  - label: waiting brainstorm
+    description: an idea to brainstorm later
+    issue_template: idea.md
+workflow:
+  - name: fix
+    description: a bug to reproduce and fix
+    issue_template: bug.md
+    label: ready for fix
+    # moves_to, on_success, on_failure and actions as usual
+```
+
+Put the templates in `.github/ISSUE_TEMPLATE/`, where GitHub looks for them. Have each template's frontmatter `labels` name its type's label, so an issue opened from the template on the web lands in the same place.
+
+Both keys are optional. Without a description, the skill shows a stage by its name and an extra by its label. Without a template, it writes a free-form body.
+
+For a worked example, see how the crew repository sets up its own work: its `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` in the [crew repository](https://github.com/thatsnotmynameio/crew). Those choices are crew's, not defaults: the `crew:waiting brainstorm` extra, one template per stage, and a feature template laid out like a compound-engineering requirements plan. Copy only what fits your workflow.
+
+A crew binary older than these keys refuses a config that uses them, as unknown keys, and exits with 2. Rebuild crew from `main` (see [Install](/guide/crew#install)) before you pull a config that uses them.
+
+## Use it
+
+In a Claude Code session in the repository:
+
+```text
+/cw-create-issue the login form loses what you typed when the session expires
+/cw-create-issue idea for later: pause crew when Claude hits its usage limit
+/cw-create-issue
+```
+
+- **The type:** the skill infers it from what you wrote. When you did not name one and no single type clearly fits, it lists the types and asks you to pick.
+- **No arguments:** it records the session's work, such as a plan you just wrote. If the session has nothing to record, it asks what to record.
+- **A plan:** this applies only if you write plans with the [compound-engineering](https://github.com/EveryInc/compound-engineering-plugin) plugin, such as the requirements plan its `ce-brainstorm` skill writes. To record one, pass its path, or run the skill with no arguments right after writing it. The issue's body is then the plan's content: each template heading takes the plan's section of the same name, so the crew session that takes the issue needs no file outside it. A plan the issue does not record stays out of its body, even when the session wrote one. Without such a plan, the skill fills the template from what you wrote.
+
+## What it does
+
+1. It reads `.crew/config.yaml`. When the file is missing, does not parse, or names no types, it says so and creates nothing.
+2. It decides the type, asking only when it is not clear.
+3. It fills the type's template from `.github/ISSUE_TEMPLATE/` with what you wrote and what the session knows. The template's frontmatter is dropped: its `labels`, `title` and `assignees` are not used. When the template file is missing, it writes a free-form body.
+4. It creates the type's label when the repository does not have it yet.
+5. It creates the issue with a short title taken from what you wrote and exactly the type's label, no other.
+6. It prints the issue's link and label, and says when the template file was missing, which plan the body was copied from, or that the session wrote a plan the body does not use.
+
+It creates the issue at once, with no preview and no confirmation. To fix a mistake, edit the issue on GitHub. With a stage's label, crew may take the issue at its next poll, so fix a wrong label quickly.
+
+## Put a plan in an existing issue
+
+`/cw-update-issue-plan [label]` writes the session's plan into the issue the session is working on, such as an idea you parked and then brainstormed. It finds the issue from the session and asks only when it cannot tell which one. It takes the plan file the session wrote, or, when you run it instead of letting a brainstorm write its file, what the brainstorm settled. The body follows the template of the issue's type, the old body is kept in a comment, and an optional `label` moves the issue to that stage or extra label. A stage's label starts crew's work at the next poll.
+
+```text
+/cw-update-issue-plan crew:brainstorm:done
+```
+
+It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
+
+## Limits
+
+- **crew takes only issues you opened.** crew lists only the issues opened by the `gh` user it runs as. An issue someone else opens, from a template on the web or with this skill, is ignored whatever its label. The skill runs as you, so the issues you create with it are taken.
+- **Templates are not checked.** crew checks only that an `issue_template` is a file name ending in `.md`, not that the file exists. The skill tells you when it is missing.

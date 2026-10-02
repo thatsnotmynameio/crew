@@ -16,7 +16,8 @@
       "pages": [
         { "title": "Overview", "href": "/" },
         { "title": "crew", "href": "/guide/crew" },
-        { "title": "Acceptance tester", "href": "/guide/acceptance-tester" }
+        { "title": "Acceptance tester", "href": "/guide/acceptance-tester" },
+        { "title": "Create an issue", "href": "/guide/create-issue" }
       ]
     },
     {
