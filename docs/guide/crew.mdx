@@ -89,6 +89,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | `tracker.name` | `github` | Where issues live. `github` is the only one today. |
 | `harness` | none | A top-level section for harness-specific settings. `claude` takes none, and the model goes in `config.model`. |
 | `extra_labels` | none | Labels for parked work that no stage takes, such as an idea waiting for a brainstorm. See below. |
+| `prompts` | none | Named prompts that a skill runs in your own Claude Code session, such as `brainstorm` for [`/cw-brainstorm`](/guide/create-issue#brainstorm-an-issue). See [Prompts](#prompts). |
 | `workflow` | required | The stages, at least one. |
 
 Each stage has:
@@ -144,6 +145,16 @@ A prompt is a Go template over the issue:
 
 Any other field is an error when crew starts. Quote the prompt or use a block (`>-`) as in the example: in YAML, a value that starts with `{` is not a string.
 
+The top-level `prompts` maps a name to a prompt that a skill runs, not crew. Some work needs you at the keyboard, such as a brainstorm, so it cannot be an unattended action. [`/cw-brainstorm`](/guide/create-issue#brainstorm-an-issue) fills `prompts.brainstorm` with an issue and runs it in your session:
+
+```yaml
+prompts:
+  brainstorm: |-
+    /compound-engineering:ce-brainstorm {{.Issue.Ref}}
+```
+
+crew checks these prompts as it checks an action's, with the same fields, and then ignores them. `prompts` serves the author's own workflow, so it may still change.
+
 ### What "succeeded" means
 
 An action succeeded when its session ended cleanly: Claude Code's last result is not an error and `claude` exited with 0. crew does not look for a pull request or any other evidence of the work.
@@ -162,7 +173,7 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - the workflow would loop or take an issue twice (the `label`, `moves_to`, `on_success` and `on_failure` rules above);
 - an extra label is a label a stage names, or another extra's label, ignoring case;
 - a `description` is empty, or an `issue_template` is not a file name ending in `.md` (it holds a `/` or `\`, for example). crew does not check that the template file exists;
-- a prompt does not parse, or uses a field that does not exist;
+- a prompt, in an action or under `prompts`, is empty, does not parse, or uses a field that does not exist;
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
 
