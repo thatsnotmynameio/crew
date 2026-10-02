@@ -74,6 +74,9 @@ type ActionStatus struct {
 	Reason string
 	// Log is the repository-relative path of its log, once it has one.
 	Log string
+	// Workspace is the name of the workspace the action resumed in; empty
+	// when it did not resume.
+	Workspace string
 }
 
 // FailureCause is what made an action fail, for a tracker to word itself.

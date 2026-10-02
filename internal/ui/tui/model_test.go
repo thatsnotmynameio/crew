@@ -135,6 +135,41 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 	golden(t, "running", h.view())
 }
 
+// resumingSnapshot is #9 with one action reopening a failed run's
+// workspace, one resumed in its reopened workspace 3 minutes before start,
+// and one fresh, started 2 minutes before start.
+func resumingSnapshot() engine.Update {
+	issue := crew.Issue{Key: "9", Ref: "#9", Title: "Add login form"}
+	return engine.Update{Snapshot: engine.Snapshot{
+		View: core.View{Issues: []core.IssueView{
+			{Issue: issue, Stage: "development", Claim: core.ClaimRunning, Actions: []core.ActionView{
+				{Name: "docs", Phase: core.PhaseReopening, Workspace: "issue-9-docs", Branch: "crew/issue-9-docs"},
+				{Name: "lfg", Phase: core.PhaseRunning, Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
+					Started: start.Add(-3 * time.Minute), Resumed: true},
+				{Name: "tests", Phase: core.PhaseRunning, Workspace: "issue-9-tests", Branch: "crew/issue-9-tests",
+					Started: start.Add(-2 * time.Minute)},
+			}},
+		}},
+		Started: start.Add(-4 * time.Minute),
+		Recent: []core.Event{
+			core.ActionStarted{At: start.Add(-3 * time.Minute), IssueRef: "#9", Stage: "development", Action: "lfg",
+				Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
+			core.ActionStarted{At: start.Add(-2 * time.Minute), IssueRef: "#9", Stage: "development", Action: "tests",
+				Workspace: "issue-9-tests", Branch: "crew/issue-9-tests", Log: ".crew/logs/issue-9-tests.log"},
+		},
+	}}
+}
+
+// R11 and KTD10: the Actions region says when a workspace is being reopened
+// and names the workspace a running action resumed in.
+func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
+	h := newHarness(t, 120)
+
+	h.send(updateMsg(resumingSnapshot()))
+
+	golden(t, "resuming", h.view())
+}
+
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}

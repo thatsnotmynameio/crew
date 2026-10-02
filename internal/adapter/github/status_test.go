@@ -304,6 +304,77 @@ func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 	}
 }
 
+// actionLines renders s and returns the body between the stage's line and
+// the update line, which holds the actions' lines.
+func actionLines(t *testing.T, tr *Tracker, s crew.Status) string {
+	t.Helper()
+	body := tr.renderStatus(s)
+	_, rest, ok := strings.Cut(body, ".\n\n")
+	if !ok {
+		t.Fatalf("no stage line:\n%s", body)
+	}
+	actions, _, ok := strings.Cut(rest, "\nUpdated ")
+	if !ok {
+		t.Fatalf("no update line:\n%s", body)
+	}
+	return actions
+}
+
+// R11: a resumed action's line names its worktree, whatever its state, and
+// a fresh action's line stays as it was.
+func TestAResumedActionNamesItsWorktree(t *testing.T) {
+	tr, _ := build(t, "")
+	said := "U1 committed: 168 tests pass. Starting U2."
+	resumed := func(s crew.Status) crew.Status {
+		s.Actions[0].Workspace = "issue-9-lfg"
+		return s
+	}
+	ended := func(state crew.ActionState) crew.Status {
+		return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded,
+			Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, To: needsAttention, Updated: updated}
+	}
+	failed := func() crew.Status {
+		s := ended(crew.ActionFailed)
+		s.Actions[0].Cause, s.Actions[0].Log = crew.CauseSession, ".crew/logs/issue-9-lfg.log"
+		return s
+	}
+	tests := []struct {
+		name   string
+		status crew.Status
+		want   string
+	}{
+		{"resumed running with words", resumed(running74(updated.Add(-5*time.Minute), said)),
+			"**`lfg`** resumed in worktree `issue-9-lfg` and has been running for 5 minutes. It last said:\n\n```text\n" + said + "\n```\n"},
+		{"resumed running without words", resumed(running74(updated.Add(-5*time.Minute), "")),
+			"**`lfg`** resumed in worktree `issue-9-lfg` and has been running for 5 minutes.\n"},
+		{"resumed not started", resumed(running74(time.Time{}, "")),
+			"**`lfg`** resumed in worktree `issue-9-lfg` and is running.\n"},
+		{"resumed failed", resumed(failed()),
+			"**`lfg`** resumed in worktree `issue-9-lfg` and failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`.\n"},
+		{"resumed succeeded", resumed(ended(crew.ActionSucceeded)),
+			"**`lfg`** resumed in worktree `issue-9-lfg` and succeeded.\n"},
+		{"fresh running with words", running74(updated.Add(-5*time.Minute), said),
+			"**`lfg`** has been running for 5 minutes. It last said:\n\n```text\n" + said + "\n```\n"},
+		{"fresh running without words", running74(updated.Add(-5*time.Minute), ""),
+			"**`lfg`** has been running for 5 minutes.\n"},
+		{"fresh not started", running74(time.Time{}, ""),
+			"**`lfg`** is running.\n"},
+		{"fresh failed", failed(), "**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`.\n"},
+		{"fresh succeeded", ended(crew.ActionSucceeded), "**`lfg`** succeeded.\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := actionLines(t, tr, tt.status)
+			if tt.status.Kind == crew.StatusEnded {
+				got, _, _ = strings.Cut(got, "\n#74 ")
+			}
+			if got != tt.want {
+				t.Errorf("action lines = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // tail ends every status comment: a blank line and the marker line.
 const tail = "\n\n" + statusMarker + "\n"
 

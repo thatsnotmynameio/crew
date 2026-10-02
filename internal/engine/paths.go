@@ -10,25 +10,42 @@ import (
 // logDir is where session logs go, relative to the repository root (KTD12).
 const logDir = ".crew/logs"
 
-// logPath returns the repository-relative path of the log of the session
-// running in workspace. Workspace names are unique, so a log holds exactly
-// one session.
+// logPath returns the repository-relative path of the log of the sessions
+// running in workspace. A log holds every session of its workspace: a
+// resumed session's output goes after the failed run's (R10).
 func logPath(workspace string) string {
 	return logDir + "/" + workspace + ".log"
+}
+
+// logFromDir returns the path of the log at the repository-relative path
+// log, relative to dir, so a session working in dir can open it; "" when
+// there is no such path.
+func (e *Engine) logFromDir(dir, log string) string {
+	rel, err := filepath.Rel(dir, filepath.Join(e.cfg.Root, filepath.FromSlash(log)))
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // openLog opens the log at the repository-relative path rel for appending,
 // creating it and its directory as needed.
 func (e *Engine) openLog(rel string) (*os.File, error) {
-	path := filepath.Join(e.cfg.Root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("create the log directory: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	f, err := e.openAppend(rel)
 	if err != nil {
 		return nil, fmt.Errorf("open the session log: %w", err)
 	}
 	return f, nil
+}
+
+// openAppend opens the file at the repository-relative path rel for reading
+// and appending, creating it and its directory as needed.
+func (e *Engine) openAppend(rel string) (*os.File, error) {
+	path := filepath.Join(e.cfg.Root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, fmt.Errorf("create the log directory: %w", err)
+	}
+	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
 }
 
 // scrub shortens the local paths in text before it enters the core: the

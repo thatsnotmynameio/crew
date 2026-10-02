@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -44,6 +47,17 @@ func (e *Engine) launch(cmd core.Command) {
 		job = func() { e.reportStatus(c) }
 	case core.CreateWorkspace:
 		job = func() { e.createWorkspace(c) }
+	case core.ReopenWorkspace:
+		job = func() { e.reopenWorkspace(c) }
+	case core.RecordRun:
+		// Written here, in the loop, so records land in the order the core
+		// asked for them: a run's end never before its start (KTD3).
+		err := e.appendJournal(c.Record)
+		if err == nil {
+			return
+		}
+		failure := core.RecordFailed{Record: c.Record, Reason: e.scrub(err.Error())}
+		job = func() { e.post(failure) }
 	case core.StartSession:
 		job = func() { e.startSession(c) }
 	case core.StopSession:
@@ -157,16 +171,50 @@ func (e *Engine) createWorkspace(c core.CreateWorkspace) {
 		e.post(core.WorkspaceFailed{IssueKey: c.Issue.Key, Action: c.Action, Reason: e.reason(ctx, err)})
 		return
 	}
-	e.post(core.WorkspaceReady{
-		IssueKey: c.Issue.Key, Action: c.Action,
-		Workspace: space.Name, Dir: space.Dir, Branch: space.Branch, Log: logPath(space.Name),
-	})
+	e.post(e.ready(c.Issue.Key, c.Action, space, false))
 }
 
-// startSession starts the session with its output going to its log, then
-// waits for it to end in the same goroutine (R19).
+// reopenWorkspace reopens a failed run's workspace through the workspace's
+// port.Reopener, which the core asks for only when the workspace has one.
+func (e *Engine) reopenWorkspace(c core.ReopenWorkspace) {
+	r, ok := e.cfg.Workspace.(port.Reopener)
+	if !ok {
+		e.post(core.WorkspaceGone{IssueKey: c.IssueKey, Action: c.Action})
+		return
+	}
+	ctx, cancel := e.callContext()
+	defer cancel()
+	space, err := r.Reopen(ctx, port.Space{Name: c.Workspace, Branch: c.Branch})
+	switch {
+	case errors.Is(err, port.ErrWorkspaceGone):
+		e.post(core.WorkspaceGone{IssueKey: c.IssueKey, Action: c.Action})
+	case err != nil:
+		e.post(core.WorkspaceFailed{IssueKey: c.IssueKey, Action: c.Action, Reason: e.reason(ctx, err)})
+	default:
+		e.post(e.ready(c.IssueKey, c.Action, space, true))
+	}
+}
+
+// ready is the WorkspaceReady of space for action on the issue keyed key.
+func (e *Engine) ready(key, action string, space port.Space, resumed bool) core.WorkspaceReady {
+	log := logPath(space.Name)
+	return core.WorkspaceReady{
+		IssueKey: key, Action: action,
+		Workspace: space.Name, Dir: space.Dir, Branch: space.Branch, Log: log,
+		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed,
+	}
+}
+
+// startSession starts the session with its output going to its log, after
+// a marker line when the session resumes a failed run (KTD8), then waits for
+// it to end in the same goroutine (R19).
 func (e *Engine) startSession(c core.StartSession) {
 	log, err := e.openLog(c.Log)
+	if err == nil && c.Resumed {
+		if err = markResumed(log); err != nil {
+			_ = log.Close() // the write error is the one to report
+		}
+	}
 	if err != nil {
 		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
 		return
@@ -195,6 +243,28 @@ func (e *Engine) stopSession(s port.Session) {
 	// nothing the session's outcome will not say.
 	_ = s.Stop(ctx)
 	e.inbox <- message{final: true}
+}
+
+// resumeMarker is the line a resumed session's output follows in its log. It
+// is JSON, as the harness's output is, so tools reading the log as JSON
+// lines keep working.
+type resumeMarker struct {
+	Type    string    `json:"type"`
+	Subtype string    `json:"subtype"`
+	Time    time.Time `json:"time"`
+}
+
+// markResumed writes the resume marker to log, on a line of its own, so the
+// resumed session and the boss can tell where the failed run's output ends.
+func markResumed(log *os.File) error {
+	data, err := json.Marshal(resumeMarker{Type: "crew", Subtype: "resumed", Time: time.Now().UTC()})
+	if err != nil {
+		return fmt.Errorf("encode the resume marker: %w", err)
+	}
+	if err := appendLine(log, data); err != nil {
+		return fmt.Errorf("write the resume marker: %w", err)
+	}
+	return nil
 }
 
 // runCheck runs the action's check within checkTimeout, its output going to
