@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -527,5 +528,38 @@ func TestNarratingHarnessSessionsSayWhatTheTestSets(t *testing.T) {
 
 	if _, ok := start(t, fake.NewHarness(), "implement #2").(port.Narrator); ok {
 		t.Error("a plain harness's session is a port.Narrator")
+	}
+}
+
+func TestCheckerRunsEachCheckAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
+	c := fake.NewChecker()
+	c.Script("crew/fails", fake.CheckScript{Print: "no pull request\n", Exit: 1})
+	c.Script("crew/no-sh", fake.CheckScript{StartErr: errors.New("sh: not found")})
+
+	if err := c.Check(context.Background(), port.Check{Branch: "crew/passes"}); err != nil {
+		t.Errorf("unscripted check = %v, want nil", err)
+	}
+	var out strings.Builder
+	if err := c.Check(context.Background(), port.Check{Branch: "crew/fails", Output: &out}); !errors.Is(err, port.ErrCheckFailed) {
+		t.Errorf("failing check = %v, want ErrCheckFailed", err)
+	}
+	if out.String() != "no pull request\n" {
+		t.Errorf("output = %q", out.String())
+	}
+	if err := c.Check(context.Background(), port.Check{Branch: "crew/no-sh"}); err == nil || errors.Is(err, port.ErrCheckFailed) {
+		t.Errorf("check that cannot start = %v", err)
+	}
+	if got := len(c.Checks()); got != 3 {
+		t.Errorf("recorded %d checks, want 3", got)
+	}
+}
+
+func TestCheckerScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
+	c := fake.NewChecker()
+	c.Script("crew/hangs", fake.CheckScript{Block: true})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := c.Check(ctx, port.Check{Branch: "crew/hangs"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("blocking check = %v, want the context's error", err)
 	}
 }

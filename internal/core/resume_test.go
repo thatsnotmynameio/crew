@@ -398,3 +398,29 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 		t.Fatalf("actions = %#v, want the resumed acceptance naming its workspace and development none", last.Actions)
 	}
 }
+
+func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
+	wf := crewWorkflow()
+	wf[0].Actions[0].Check = "gh pr view --json url"
+	d := &driver{t: t, m: core.New(wf, 2, core.RecordingRuns(nil), core.Reopening()), now: t0}
+	d.takeIssue(issue("9", 1, readyForDev))
+	d.send(created("9", "lfg", "lfg"))
+	d.send(core.SessionStarted{IssueKey: "9", Action: "lfg"})
+	d.send(core.SessionEnded{IssueKey: "9", Action: "lfg", Outcome: succeeded})
+
+	reason := "the check failed: no pull requests found for branch \"crew/issue-9-lfg\""
+	cmds, _ := d.send(core.CheckEnded{IssueKey: "9", Action: "lfg", Outcome: failed(reason)})
+	if got := records(cmds); len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason != reason {
+		t.Fatalf("records = %#v, want one failed end with the check's reason", got)
+	}
+	d.settle(cmds)
+
+	cmds = d.takeIssue(issue("9", 2, readyForDev))
+	wantCommands(t, cmds, core.ReopenWorkspace{
+		IssueKey: "9", Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
+	})
+	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
+	if p := startOf(t, cmds).Prompt; !strings.Contains(p, `That run failed: "the check failed: no pull requests found for branch \"crew/issue-9-lfg\"".`) {
+		t.Fatalf("prompt does not quote the check's reason:\n%s", p)
+	}
+}

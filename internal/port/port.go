@@ -143,14 +143,16 @@ func Prepare(ctx context.Context, states []crew.State, adapters ...any) error {
 	return errors.Join(errs...)
 }
 
-// StatusReporter is an optional interface of a Tracker: it keeps one status
-// comment per issue, edited in place, that shows where the issue stands. A
-// tracker without it reports no status, and crew works as it does without
-// status comments.
+// StatusReporter is an optional interface of a Tracker: it keeps a status
+// comment on each issue that shows where the issue stands, with one entry
+// per stage run, oldest first. A tracker without it reports no status, and
+// crew works as it does without status comments.
 type StatusReporter interface {
 	// ReportStatus shows status on its issue, formatted in the tracker's own
-	// markup: it edits the issue's status comment, or creates it when the
-	// issue has none. The engine never has two calls for one issue in
+	// markup: it edits the latest entry of the issue's status comment when
+	// that entry is of status's run, and appends a new entry otherwise. It
+	// creates the comment when the issue has none, and continues a full
+	// comment in a new one. The engine never has two calls for one issue in
 	// flight. Its errors are classified as Tracker.Move's are.
 	ReportStatus(ctx context.Context, status crew.Status) error
 }
@@ -174,4 +176,38 @@ type Narrator interface {
 	// it said nothing yet. It may be called from any goroutine while the
 	// session runs and after it ended.
 	Said() string
+}
+
+// ErrCheckFailed means a check ran and exited with a non-zero status.
+var ErrCheckFailed = errors.New("the check failed")
+
+// Checker runs action checks: a command the boss wrote, run in an action's
+// workspace once its session succeeded, so crew does not judge the action
+// by what its session says alone.
+type Checker interface {
+	// Check runs check to its end, with its output going to check.Output.
+	// It returns nil when the command exited 0, and an error wrapping
+	// ErrCheckFailed when it exited otherwise. When ctx ends first, it ends
+	// the command and what the command started, and returns an error
+	// wrapping ctx.Err(). Any other error means the command could not start.
+	Check(ctx context.Context, check Check) error
+}
+
+// Check is what a Checker needs to run a check. The issue reaches the
+// command only through these fields, as environment variables, never as
+// part of the command, so no issue text can run as code.
+type Check struct {
+	// Dir is the action's workspace directory, where the command runs.
+	Dir string
+	// Command is the shell command to run.
+	Command string
+	// IssueRef, IssueKey and IssueURL identify the issue, as in crew.Issue.
+	IssueRef string
+	IssueKey string
+	IssueURL string
+	// Branch is the branch the action's work went on.
+	Branch string
+	// Output receives everything the command prints, stdout and stderr
+	// together, from one goroutine at a time; nil discards it.
+	Output io.Writer
 }

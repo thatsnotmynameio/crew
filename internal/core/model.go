@@ -35,9 +35,11 @@ type Model struct {
 	// handled holds one entry per issue whose stage ended this run, in the
 	// order the issues were released.
 	handled []HandledView
-	// runs holds the last run record of each issue, stage and action; nil
+	// runs counts the stage runs statuses were reported for, for their ids.
+	runs int
+	// lastRuns holds the last run record of each issue, stage and action; nil
 	// when the model records no runs (KTD1, KTD2).
-	runs map[runKey]RunRecord
+	lastRuns map[runKey]RunRecord
 	// reopening is set when the workspace can reopen a failed run's
 	// workspace (KTD4).
 	reopening bool
@@ -69,6 +71,9 @@ type actionRun struct {
 	started   time.Time
 	said      string // what its running session last said
 	outcome   crew.Outcome
+	check     string            // its check command; empty when it has none
+	stopped   bool              // a StopCheck was sent for its check
+	cause     crew.FailureCause // what made it fail, once it ended failed
 	// prev is the key's run record from before this run, set when the run
 	// reopens a workspace or records its start; nil when there was none.
 	prev *RunRecord
@@ -173,6 +178,9 @@ const (
 	PhaseStarting
 	// PhaseRunning: its session runs.
 	PhaseRunning
+	// PhaseChecking: its session succeeded and its check runs. The action
+	// has not ended: it is still running for the boss.
+	PhaseChecking
 	// PhaseEnded: it ended; see its Outcome.
 	PhaseEnded
 )
@@ -190,6 +198,8 @@ func (p Phase) String() string {
 		return "starting"
 	case PhaseRunning:
 		return "running"
+	case PhaseChecking:
+		return "checking"
 	case PhaseEnded:
 		return "ended"
 	}

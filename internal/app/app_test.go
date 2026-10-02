@@ -243,6 +243,39 @@ func TestWithoutATerminalOrWithPlainItPrintsTimestampedEventLines(t *testing.T) 
 	}
 }
 
+// Covers AE1 through the wiring: the check in the config runs through the
+// checker the options carry, and its failure fails the stage.
+func TestAnActionsCheckRunsThroughTheOptionsChecker(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue("1", ready))
+		h := fake.NewHarness()
+		checker := fake.NewChecker()
+		checker.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: 1})
+		body := strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n        check: gh pr list\n", 1)
+		r := options(t, body, tr, h)
+		r.opts.Plain = true
+		r.opts.Checker = checker
+		r.start()
+
+		next(t, h).End(success)
+		synctest.Wait()
+		r.signals <- syscall.SIGTERM
+
+		if code := <-r.code; code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+		if got := len(checker.Checks()); got != 1 {
+			t.Fatalf("checks run = %d, want 1", got)
+		}
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+			t.Errorf("#1 is in %v, want needs attention", got)
+		}
+		if out, want := r.stdout.String(), "the check failed: no open pull request"; !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q; it is:\n%s", want, out)
+		}
+	})
+}
+
 // Covers AE2 through the wiring.
 func TestARunTimeLimitWindsCrewDownAndExitsZero(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

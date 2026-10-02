@@ -228,6 +228,19 @@ func TestATickOneSecondLaterAdvancesBothElapsedTimes(t *testing.T) {
 	}
 }
 
+// Covers R9 (TUI side): an action whose check runs is still running.
+func TestAnActionRunningItsCheckShowsAsCheckingWithItsElapsedTime(t *testing.T) {
+	h := newHarness(t, 80)
+	u := runningSnapshot()
+	u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseChecking
+
+	h.send(updateMsg(u))
+
+	if view := h.view(); !strings.Contains(view, "#1 implement/code   checking 5m00s") {
+		t.Errorf("view lacks the checking action with its elapsed time:\n%s", view)
+	}
+}
+
 func TestCtrlCPostsOneStopAndKeepsRunningUntilTheEngineStops(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(runningSnapshot()))

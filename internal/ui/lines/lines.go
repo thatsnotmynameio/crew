@@ -79,9 +79,9 @@ func Text(e core.Event) string {
 	case core.RunNotRecorded:
 		return withReason(fmt.Sprintf("could not record %s %s/%s's run, so a restart may not resume it", e.IssueRef, e.Stage, e.Action), e.Reason)
 	case core.ActionEnded:
-		// The reason is shown for successes too: a clean end is the only
-		// success signal, so its last message is what tells the boss whether
-		// the work was done.
+		// The reason is shown for successes too: without a check, a clean
+		// end is the only success signal, so its last message is what tells
+		// the boss whether the work was done.
 		verdict := "failed"
 		if e.Outcome.Succeeded {
 			verdict = "succeeded"

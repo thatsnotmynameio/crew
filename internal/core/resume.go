@@ -70,7 +70,7 @@ func (r RunRecord) reason() string {
 // written (KTD1, KTD2).
 func RecordingRuns(past []RunRecord) Option {
 	return func(m *Model) {
-		m.runs = map[runKey]RunRecord{}
+		m.lastRuns = map[runKey]RunRecord{}
 		for _, r := range past {
 			m.remember(r)
 		}
@@ -89,19 +89,19 @@ func Reopening() Option {
 // gone, so that record's workspace now holds another key's work (KTD5).
 func (m *Model) remember(r RunRecord) {
 	if r.Event == RunStarted {
-		for k, other := range m.runs {
+		for k, other := range m.lastRuns {
 			if k != keyOf(r) && other.Workspace == r.Workspace {
-				delete(m.runs, k)
+				delete(m.lastRuns, k)
 			}
 		}
 	}
-	m.runs[keyOf(r)] = r
+	m.lastRuns[keyOf(r)] = r
 }
 
 // lastRun returns the last run record of a, in h's stage, on h's issue
 // (R3).
 func (m *Model) lastRun(h *heldIssue, a *actionRun) (RunRecord, bool) {
-	r, ok := m.runs[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]
+	r, ok := m.lastRuns[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]
 	return r, ok
 }
 
@@ -124,7 +124,7 @@ func (m *Model) resumable(h *heldIssue, a *actionRun) (RunRecord, bool) {
 // this run failed to start (KTD6).
 func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
 	m := s.m
-	if m.runs == nil {
+	if m.lastRuns == nil {
 		return
 	}
 	r := RunRecord{

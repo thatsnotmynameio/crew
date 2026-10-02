@@ -27,18 +27,18 @@ pnpm docs:preview     # live preview of the docs
 
 Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
-- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace and calls `app.Run`.
+- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace and the `shell` checker and calls `app.Run`.
 - `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
 - `internal/crew`: the domain (states, issues, stages, actions, outcomes, failure reports, statuses).
 - `internal/config`: `.crew/config.yaml`, strict decoding, engine defaults, workflow checks; hands each adapter its section as a `port.Decode`.
-- `internal/port`: `Tracker`, `Harness`, `Workspace`, the optional `Preparer`, `StatusReporter`, `Narrator` and `Reopener`, sentinel errors, factory types.
+- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, the optional `Preparer`, `StatusReporter`, `Narrator` and `Reopener`, sentinel errors, factory types.
 - `internal/registry`: name to factory; `default.go` is the production list.
 - `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
 - `internal/proc`: the only way to start a child process (own process group, stop with deadline, kill all).
-- `internal/adapter/{github,claude,git}`: the adapters.
+- `internal/adapter/{github,claude,git,shell}`: the adapters.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
-- `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace.
+- `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
 - **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea; only tests import `fake`.
 - **New adapter:** one package under `internal/adapter/` with a `Factory(group)`, plus one entry in `internal/registry/default.go`. Optional capabilities are separate interfaces found by type assertion: never wrap an adapter value, never add "not implemented" stubs.
 
