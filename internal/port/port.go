@@ -2,8 +2,8 @@
 // through: a Tracker for issues, a Harness for coding-agent sessions and a
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
-// separate optional interface, such as Preparer, that the engine detects by
-// type assertion. An adapter therefore never wraps another adapter value,
+// separate optional interface, such as Preparer, StatusReporter or Narrator,
+// that the engine detects by type assertion. An adapter therefore never wraps another adapter value,
 // because a wrapper hides the optional interfaces of what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
@@ -126,4 +126,25 @@ func Prepare(ctx context.Context, states []crew.State, adapters ...any) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// StatusReporter is an optional interface of a Tracker: it keeps one status
+// comment per issue, edited in place, that shows where the issue stands. A
+// tracker without it reports no status, and crew works as it does without
+// status comments.
+type StatusReporter interface {
+	// ReportStatus shows status on its issue, formatted in the tracker's own
+	// markup: it edits the issue's status comment, or creates it when the
+	// issue has none. The engine never has two calls for one issue in
+	// flight. Its errors are classified as Tracker.Move's are.
+	ReportStatus(ctx context.Context, status crew.Status) error
+}
+
+// Narrator is an optional interface of a harness's Session: it tells what
+// the session last said, for the issue's status.
+type Narrator interface {
+	// Said returns the last thing the session said, on one line, or "" when
+	// it said nothing yet. It may be called from any goroutine while the
+	// session runs and after it ended.
+	Said() string
 }
