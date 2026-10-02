@@ -156,8 +156,8 @@ func (e *Engine) SubscribeQueue(capacity int) *Queue {
 }
 
 // Prepare runs, once, the Preparer of each adapter that implements
-// port.Preparer, with the states the workflow can request, and returns their
-// errors joined, each naming its port. The preparers are environment checks
+// port.Preparer, with the workflow's states, and returns their errors
+// joined, each naming its port. The preparers are environment checks
 // (R2), so a caller can run them before starting a renderer; Run then does
 // not prepare again. Call it before Run starts, never concurrently with
 // Run; a second call returns the first one's result.
@@ -169,10 +169,10 @@ func (e *Engine) Prepare(ctx context.Context) error {
 	return e.preparation
 }
 
-// prepare runs each port's Preparer with the states the workflow can
-// request, and joins their errors, each naming its port.
+// prepare runs each port's Preparer with crew.WorkflowStates, the states
+// the workflow names, and joins their errors, each naming its port.
 func (e *Engine) prepare(ctx context.Context) error {
-	states := workflowStates(e.cfg.Workflow)
+	states := crew.WorkflowStates(e.cfg.Workflow)
 	ports := []struct {
 		name    string
 		adapter any
@@ -184,17 +184,6 @@ func (e *Engine) prepare(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// workflowStates returns the states the workflow can move issues to or take
-// them from, in canonical order: every stage's label, moves_to and
-// on_success, and needs_attention, where failed issues go (R7).
-func workflowStates(workflow []crew.Stage) []crew.State {
-	used := map[crew.State]bool{crew.NeedsAttention: true}
-	for _, s := range workflow {
-		used[s.Label], used[s.MovesTo], used[s.OnSuccess] = true, true, true
-	}
-	return slices.DeleteFunc(crew.States(), func(s crew.State) bool { return !used[s] })
 }
 
 // receive handles a message from a command goroutine.

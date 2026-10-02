@@ -51,15 +51,6 @@ config:
   model: claude-opus-5-5
 tracker:
   name: fake
-  labels:
-    ready: ready
-    in_progress: in progress
-    ready_to_review: ready to review
-    in_review: in review
-    needs_attention: needs attention
-    paused: paused
-    ready_to_merge: ready to merge
-    done: done
 workflow:
   - name: implement
     label: ready
@@ -261,6 +252,22 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 	}
 	if out := r.stdout.String(); out != "" {
 		t.Errorf("stdout = %q, want nothing", out)
+	}
+}
+
+// Covers AE3.
+func TestAConfigWithTrackerLabelsExitsTwoNamingTheKey(t *testing.T) {
+	tr := &listCounter{Tracker: fake.NewTracker(issue("1", crew.Ready))}
+	r := options(t, strings.Replace(oneAction, "  name: fake\n", "  name: fake\n  labels:\n    ready: ready\n", 1), tr, fake.NewHarness())
+
+	if code := app.Run(context.Background(), r.opts); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if n := tr.listed(); n != 0 {
+		t.Errorf("the tracker listed %d times, want none", n)
+	}
+	if stderr := r.stderr.String(); !strings.Contains(stderr, "tracker.labels (line 6): unknown key") {
+		t.Errorf("stderr = %q, want it to name tracker.labels and its line", stderr)
 	}
 }
 

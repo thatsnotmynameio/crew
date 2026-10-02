@@ -83,27 +83,47 @@ func (f *fakeGh) callsTo(prefix ...string) [][]string {
 	return out
 }
 
-// oneStage is a minimal valid workflow, so the files below load.
-const oneStage = `workflow:
+// The workflow's states, as label text.
+const (
+	ready          crew.State = "ready"
+	inProgress     crew.State = "in progress"
+	readyToReview  crew.State = "ready to review"
+	inReview       crew.State = "in review"
+	needsAttention crew.State = "needs attention"
+)
+
+// workflow is the draft config's workflow, so the files below load. Its
+// states are ready, in progress, ready to review, needs attention, in review
+// and ready to merge; it does not name paused.
+const workflow = `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
-    on_failure: needs_attention
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
+  - name: review
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: needs attention
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
 `
 
 // section loads a .crew/config.yaml holding tracker, which is the tracker:
-// section's body, and returns the section's strict decoder.
-func section(t *testing.T, tracker string) port.Decode {
+// section's body, and returns the section's strict decoder and the
+// workflow's states, as the app passes them to the factory.
+func section(t *testing.T, tracker string) (port.Decode, []crew.State) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	body := "tracker:\n  name: github\n" + tracker + oneStage
+	body := "tracker:\n  name: github\n" + tracker + workflow
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +131,7 @@ func section(t *testing.T, tracker string) port.Decode {
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	return cfg.TrackerSection
+	return cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow)
 }
 
 // build builds the tracker from the tracker section's body, with gh scripted.
@@ -160,7 +180,7 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 		),
 	})
 
-	got, err := tr.List(context.Background(), []crew.State{crew.Ready, crew.ReadyToReview})
+	got, err := tr.List(context.Background(), []crew.State{ready, readyToReview})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -185,9 +205,9 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 
 	want := []crew.Issue{
 		{Key: "12", Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
-			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{crew.Ready}},
+			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}},
 		{Key: "14", Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
-			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{crew.ReadyToReview}},
+			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{readyToReview}},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("List = %+v, want %+v", got, want)
@@ -203,7 +223,7 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 func TestListResolvesTheLoginOnce(t *testing.T) {
 	tr, gh := build(t, "", login, reply{prefix: []string{"api", "graphql"}, stdout: issuesJSON()})
 	for range 2 {
-		if _, err := tr.List(context.Background(), []crew.State{crew.Ready}); err != nil {
+		if _, err := tr.List(context.Background(), []crew.State{ready}); err != nil {
 			t.Fatalf("List: %v", err)
 		}
 	}
@@ -212,53 +232,59 @@ func TestListResolvesTheLoginOnce(t *testing.T) {
 	}
 }
 
-func TestListReturnsEveryCrewStateOfAnIssueWhateverTheCase(t *testing.T) {
-	tr, _ := build(t, "", login, reply{
-		prefix: []string{"api", "graphql"},
-		stdout: issuesJSON(issueNode(4, "2026-09-01T10:00:00Z", "ready", "Needs Attention", "bug")),
-	})
-	got, err := tr.List(context.Background(), []crew.State{crew.Ready})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 || !slices.Equal(got[0].States, []crew.State{crew.Ready, crew.NeedsAttention}) {
-		t.Errorf("List = %+v, want #4 in ready and needs_attention", got)
-	}
-}
-
-func TestListUsesTheConfiguredLabels(t *testing.T) {
-	tr, gh := build(t, "  labels:\n    ready: todo\n", login, reply{
-		prefix: []string{"api", "graphql"},
-		stdout: issuesJSON(issueNode(5, "2026-09-01T10:00:00Z", "todo")),
-	})
-	got, err := tr.List(context.Background(), []crew.State{crew.Ready, crew.InProgress})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	queries := gh.callsTo("api", "graphql")
-	if len(queries) != 1 {
-		t.Fatalf("sent %d GraphQL queries, want 1", len(queries))
-	}
-	if labels := fieldValues(queries[0], "labels[]"); !slices.Equal(labels, []string{"todo", "in progress"}) {
-		t.Errorf("labels variable = %q, want [todo, in progress]", labels)
-	}
-	if len(got) != 1 || !slices.Equal(got[0].States, []crew.State{crew.Ready}) {
-		t.Errorf("List = %+v, want #5 in ready", got)
+func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) {
+	for name, tc := range map[string]struct {
+		labels []string
+		want   []crew.State
+	}{
+		"two crew labels":            {[]string{"ready", "Needs Attention", "bug"}, []crew.State{ready, needsAttention}},
+		"another case":               {[]string{"Ready"}, []crew.State{ready}},
+		"AE6 a label no stage names": {[]string{"paused", "ready"}, []crew.State{ready}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tr, _ := build(t, "", login, reply{
+				prefix: []string{"api", "graphql"},
+				stdout: issuesJSON(issueNode(4, "2026-09-01T10:00:00Z", tc.labels...)),
+			})
+			got, err := tr.List(context.Background(), []crew.State{ready})
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(got) != 1 || !slices.Equal(got[0].States, tc.want) {
+				t.Errorf("List = %+v, want #4 in %q", got, tc.want)
+			}
+		})
 	}
 }
 
+// Covers AE1 and AE6: the move swaps crew's labels and leaves the others,
+// bug and paused, which no stage names.
 func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
-	tr, gh := build(t, "",
-		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"},{"name":"bug"},{"name":"Needs Attention"}]}`},
-		reply{prefix: []string{"issue", "edit", "3"}},
-	)
-	if err := tr.Move(context.Background(), "3", crew.Ready, crew.InProgress); err != nil {
-		t.Fatalf("Move: %v", err)
-	}
-	edits := gh.callsTo("issue", "edit")
-	want := []string{"issue", "edit", "3", "--remove-label=ready", "--remove-label=Needs Attention", "--add-label=in progress"}
-	if len(edits) != 1 || !slices.Equal(edits[0], want) {
-		t.Errorf("edits = %q, want one: %q", edits, want)
+	for name, tc := range map[string]struct {
+		labels string
+		want   []string
+	}{
+		"AE1 one crew label": {`{"name":"ready"},{"name":"bug"}`,
+			[]string{"--remove-label=ready", "--add-label=in progress"}},
+		"two crew labels": {`{"name":"ready"},{"name":"bug"},{"name":"Needs Attention"}`,
+			[]string{"--remove-label=ready", "--remove-label=Needs Attention", "--add-label=in progress"}},
+		"AE6 a label no stage names": {`{"name":"paused"},{"name":"ready"}`,
+			[]string{"--remove-label=ready", "--add-label=in progress"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tr, gh := build(t, "",
+				reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[` + tc.labels + `]}`},
+				reply{prefix: []string{"issue", "edit", "3"}},
+			)
+			if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
+				t.Fatalf("Move: %v", err)
+			}
+			edits := gh.callsTo("issue", "edit")
+			want := append([]string{"issue", "edit", "3"}, tc.want...)
+			if len(edits) != 1 || !slices.Equal(edits[0], want) {
+				t.Errorf("edits = %q, want one: %q", edits, want)
+			}
+		})
 	}
 }
 
@@ -267,12 +293,12 @@ func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 		"closed":          `{"state":"CLOSED","labels":[{"name":"ready"}]}`,
 		"no longer ready": `{"state":"OPEN","labels":[{"name":"needs attention"}]}`,
 		"in no state":     `{"state":"OPEN","labels":[{"name":"bug"}]}`,
-		"in to and other": `{"state":"OPEN","labels":[{"name":"in progress"},{"name":"paused"}]}`,
+		"in to and other": `{"state":"OPEN","labels":[{"name":"in progress"},{"name":"in review"}]}`,
 		"closed in to":    `{"state":"CLOSED","labels":[{"name":"in progress"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t, "", reply{prefix: []string{"issue", "view", "3"}, stdout: view})
-			err := tr.Move(context.Background(), "3", crew.Ready, crew.InProgress)
+			err := tr.Move(context.Background(), "3", ready, inProgress)
 			if !errors.Is(err, port.ErrMovedMeanwhile) {
 				t.Errorf("Move = %v, want ErrMovedMeanwhile", err)
 			}
@@ -289,7 +315,7 @@ func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
 	tr, gh := build(t, "",
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"In Progress"},{"name":"bug"}]}`},
 	)
-	if err := tr.Move(context.Background(), "3", crew.Ready, crew.InProgress); err != nil {
+	if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
 		t.Fatalf("Move = %v, want nil", err)
 	}
 	if edits := gh.callsTo("issue", "edit"); len(edits) != 0 {
@@ -302,7 +328,7 @@ func TestMoveToAMissingLabelIsRefused(t *testing.T) {
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
 		reply{prefix: []string{"issue", "edit", "3"}, stderr: "could not add label: 'in progress' not found\n"},
 	)
-	err := tr.Move(context.Background(), "3", crew.Ready, crew.InProgress)
+	err := tr.Move(context.Background(), "3", ready, inProgress)
 	if !errors.Is(err, port.ErrRefused) {
 		t.Errorf("Move = %v, want ErrRefused", err)
 	}
@@ -315,12 +341,12 @@ func TestAFailingGhCallIsTransientAndCarriesItsStderr(t *testing.T) {
 		reply{prefix: []string{"api", "user"}, stderr: "HTTP 502: Bad Gateway"},
 	)
 	errs := map[string]error{
-		"Move": tr.Move(context.Background(), "3", crew.Ready, crew.InProgress),
+		"Move": tr.Move(context.Background(), "3", ready, inProgress),
 		"ReportFailure": tr.ReportFailure(context.Background(), crew.FailureReport{
 			IssueKey: "3", IssueRef: "#3", Failures: []crew.ActionFailure{{Action: "development"}},
 		}),
 	}
-	_, errs["List"] = tr.List(context.Background(), []crew.State{crew.Ready})
+	_, errs["List"] = tr.List(context.Background(), []crew.State{ready})
 	for name, err := range errs {
 		if err == nil || !strings.Contains(err.Error(), "HTTP 502: Bad Gateway") {
 			t.Errorf("%s = %v, want an error carrying gh's stderr", name, err)
@@ -331,22 +357,11 @@ func TestAFailingGhCallIsTransientAndCarriesItsStderr(t *testing.T) {
 	}
 }
 
-func TestLabelsMappingTwoStatesToOneNameFailNamingBoth(t *testing.T) {
-	_, err := factory(newFakeGh(t).run)(section(t, "  labels:\n    done: Review\n    in_review: review\n"))
-	if err == nil {
-		t.Fatal("factory succeeded, want an error")
-	}
-	for _, want := range []string{"tracker.labels", "done", "in_review"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not name %q", err, want)
-		}
-	}
-}
-
 func TestUnknownTrackerKeysFailNamingThem(t *testing.T) {
 	for name, tc := range map[string]struct{ tracker, want string }{
-		"section key": {"  lables:\n    ready: todo\n", "tracker.lables"},
-		"state key":   {"  labels:\n    redy: todo\n", "tracker.labels.redy"},
+		"misspelt key": {"  lables:\n    ready: todo\n", "tracker.lables (line 3): unknown key"},
+		// Covers AE3: tracker.labels is no longer a key.
+		"labels": {"  labels:\n    ready: ready\n", "tracker.labels (line 3): unknown key"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := factory(newFakeGh(t).run)(section(t, tc.tracker))
@@ -421,7 +436,7 @@ func TestReportFailureFencesEachReason(t *testing.T) {
 
 func TestPrepareWithoutAuthTellsTheBossToLogIn(t *testing.T) {
 	tr, gh := build(t, "", reply{prefix: []string{"auth", "status"}, stderr: "You are not logged into any GitHub hosts."})
-	err := tr.Prepare(context.Background(), []crew.State{crew.Ready})
+	err := tr.Prepare(context.Background(), []crew.State{ready})
 	if err == nil || !strings.Contains(err.Error(), "gh auth login") {
 		t.Errorf("Prepare = %v, want an error telling the boss to run gh auth login", err)
 	}
@@ -432,27 +447,37 @@ func TestPrepareWithoutAuthTellsTheBossToLogIn(t *testing.T) {
 
 func TestPrepareWithoutGhSaysItIsMissing(t *testing.T) {
 	tr, _ := build(t, "", reply{prefix: []string{"auth", "status"}, err: fmt.Errorf("start gh: %w", &exec.Error{Name: "gh", Err: exec.ErrNotFound})})
-	err := tr.Prepare(context.Background(), []crew.State{crew.Ready})
+	err := tr.Prepare(context.Background(), []crew.State{ready})
 	if err == nil || !strings.Contains(err.Error(), "gh") || strings.Contains(err.Error(), "gh auth login") {
 		t.Errorf("Prepare = %v, want an error saying gh is not installed", err)
 	}
 }
 
 func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
-	tr, gh := build(t, "",
-		reply{prefix: []string{"auth", "status"}},
-		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"In Progress"},{"name":"ready to review"},{"name":"bug"}]`},
-		reply{prefix: []string{"label", "create"}},
-	)
-	states := []crew.State{crew.Ready, crew.InProgress, crew.ReadyToReview, crew.InReview, crew.NeedsAttention}
-	if err := tr.Prepare(context.Background(), states); err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-	var created []string
-	for _, c := range gh.callsTo("label", "create") {
-		created = append(created, c[2])
-	}
-	if want := []string{"in review", "needs attention"}; !slices.Equal(created, want) {
-		t.Errorf("created labels %q, want %q", created, want)
+	for name, tc := range map[string]struct {
+		present string
+		want    []string
+	}{
+		"AE7 only ready": {`[{"name":"ready"}]`, []string{"in progress", "in review", "needs attention"}},
+		"another case":   {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"}]`, []string{"in review", "needs attention"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tr, gh := build(t, "",
+				reply{prefix: []string{"auth", "status"}},
+				reply{prefix: []string{"label", "list"}, stdout: tc.present},
+				reply{prefix: []string{"label", "create"}},
+			)
+			states := []crew.State{ready, inProgress, inReview, needsAttention}
+			if err := tr.Prepare(context.Background(), states); err != nil {
+				t.Fatalf("Prepare: %v", err)
+			}
+			var created []string
+			for _, c := range gh.callsTo("label", "create") {
+				created = append(created, c[2])
+			}
+			if !slices.Equal(created, tc.want) {
+				t.Errorf("created labels %q, want %q", created, tc.want)
+			}
+		})
 	}
 }

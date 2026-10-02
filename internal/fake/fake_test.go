@@ -211,7 +211,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	built, err := factory(func(target any) error {
 		got = target
 		return nil
-	})
+	}, []crew.State{crew.Ready})
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	}
 
 	invalid := errors.New("tracker.lables (line 3): unknown key")
-	if _, err := factory(func(any) error { return invalid }); !errors.Is(err, invalid) {
+	if _, err := factory(func(any) error { return invalid }, nil); !errors.Is(err, invalid) {
 		t.Errorf("factory with an invalid section = %v, want the decode error", err)
 	}
 }

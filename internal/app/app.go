@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/config"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
@@ -148,7 +149,7 @@ func build(o Options) (*engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection)
+	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
 	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
 	if err := errors.Join(trackerErr, harnessErr); err != nil {
 		return nil, err

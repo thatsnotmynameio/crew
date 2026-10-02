@@ -363,6 +363,20 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 	})
 }
 
+func TestPrepareGetsOnlyTheStatesTheWorkflowNames(t *testing.T) {
+	blocked := develop
+	blocked.OnFailure = "blocked"
+	tr := fake.NewPreparingTracker()
+
+	if err := engine.New(config(t, tr, blocked)).Prepare(context.Background()); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	want := [][]crew.State{{crew.Ready, crew.InProgress, crew.ReadyToReview, "blocked"}}
+	if got := tr.Calls(); !reflect.DeepEqual(got, want) {
+		t.Errorf("tracker prepared for %v, want %v and no needs_attention", got, want)
+	}
+}
+
 func TestRunAfterPrepareDoesNotPrepareAgain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker()}

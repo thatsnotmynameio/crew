@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -27,34 +28,46 @@ func New(trackers map[string]port.TrackerFactory, harnesses map[string]port.Harn
 }
 
 // Tracker builds the tracker adapter registered as name, the config's
-// tracker.name, from its config section. An unregistered name is an error
-// naming tracker.name and every registered tracker; a factory's error, such
-// as an unknown key in the section, is returned with the adapter's name.
-func (r Registry) Tracker(name string, section port.Decode) (port.Tracker, error) {
-	return build(r.trackers, "tracker", "tracker.name", name, section)
+// tracker.name, from its config section and the workflow's states. An
+// unregistered name is an error naming tracker.name and every registered
+// tracker; a factory's error, such as an unknown key in the section, is
+// returned with the adapter's name.
+func (r Registry) Tracker(name string, section port.Decode, states []crew.State) (port.Tracker, error) {
+	factory, err := lookup(r.trackers, "tracker", "tracker.name", name)
+	if err != nil {
+		return nil, err
+	}
+	tracker, err := factory(section, states)
+	if err != nil {
+		return nil, fmt.Errorf("tracker %s: %w", name, err)
+	}
+	return tracker, nil
 }
 
 // Harness builds the harness adapter registered as name, the config's
 // config.harness, from its config section, as Tracker does.
 func (r Registry) Harness(name string, section port.Decode) (port.Harness, error) {
-	return build(r.harnesses, "harness", "config.harness", name, section)
+	factory, err := lookup(r.harnesses, "harness", "config.harness", name)
+	if err != nil {
+		return nil, err
+	}
+	harness, err := factory(section)
+	if err != nil {
+		return nil, fmt.Errorf("harness %s: %w", name, err)
+	}
+	return harness, nil
 }
 
-// build looks name up in factories and builds the adapter from section. kind
-// names the port and key the config key that selected name, in errors.
-func build[A any, F ~func(port.Decode) (A, error)](factories map[string]F, kind, key, name string, section port.Decode) (A, error) {
-	var none A
+// lookup returns the factory registered as name. kind names the port and key
+// the config key that selected name, in its error.
+func lookup[F any](factories map[string]F, kind, key, name string) (F, error) {
 	factory, ok := factories[name]
 	if !ok {
 		registered := "none"
 		if len(factories) > 0 {
 			registered = strings.Join(slices.Sorted(maps.Keys(factories)), ", ")
 		}
-		return none, fmt.Errorf("%s: no %s is named %q; the registered %s adapters are: %s", key, kind, name, kind, registered)
+		return factory, fmt.Errorf("%s: no %s is named %q; the registered %s adapters are: %s", key, kind, name, kind, registered)
 	}
-	adapter, err := factory(section)
-	if err != nil {
-		return none, fmt.Errorf("%s %s: %w", kind, name, err)
-	}
-	return adapter, nil
+	return factory, nil
 }

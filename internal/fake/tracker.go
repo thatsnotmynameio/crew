@@ -24,19 +24,16 @@ var (
 	_ port.Preparer = PreparingTracker{}
 )
 
-// TrackerSettings is the fake tracker's config section. It takes the labels
-// key, as the github adapter does, so a config written for github runs with
-// the fake by changing tracker.name; any other key is an error.
-type TrackerSettings struct {
-	// Labels is accepted and ignored.
-	Labels map[string]string `yaml:"labels"`
-}
+// TrackerSettings is the fake tracker's config section. It has no key, as
+// the github adapter's has none, so a config written for github runs with
+// the fake by changing tracker.name; any key is an error.
+type TrackerSettings struct{}
 
 // TrackerFactory returns a factory that validates its section into
 // TrackerSettings and, when it is valid, returns t itself, so the test keeps
-// a handle on the tracker the engine uses.
+// a handle on the tracker the engine uses. It ignores the workflow's states.
 func TrackerFactory(t port.Tracker) port.TrackerFactory {
-	return func(decode port.Decode) (port.Tracker, error) {
+	return func(decode port.Decode, _ []crew.State) (port.Tracker, error) {
 		var settings TrackerSettings
 		if err := decode(&settings); err != nil {
 			return nil, err

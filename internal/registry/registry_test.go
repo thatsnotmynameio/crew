@@ -3,10 +3,12 @@ package registry_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/config"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/registry"
@@ -32,9 +34,9 @@ func load(t *testing.T, body string) *config.Config {
 const workflow = `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
-    on_failure: needs_attention
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
@@ -70,7 +72,7 @@ func TestUnregisteredTrackerNamesTheKeyAndTheRegisteredTrackersSorted(t *testing
 		"github": fake.TrackerFactory(fake.NewTracker()),
 	}, nil)
 
-	_, err := r.Tracker("linear", func(any) error { return nil })
+	_, err := r.Tracker("linear", func(any) error { return nil }, nil)
 	assertErr(t, err, "tracker.name", `"linear"`, "github, jira")
 }
 
@@ -87,10 +89,41 @@ func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
     ready: todo
 `+workflow)
 
-	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection)
+	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
 	assertErr(t, err, "tracker.lables", "line 3", "unknown key")
 	if tr != nil {
 		t.Errorf("Tracker = %v, want none", tr)
+	}
+}
+
+// Covers AE3: tracker.labels is no longer a key, for the fake as for github.
+func TestTrackerLabelsIsAnUnknownKey(t *testing.T) {
+	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil)
+	cfg := load(t, `tracker:
+  name: fake
+  labels:
+    ready: ready
+`+workflow)
+
+	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
+	assertErr(t, err, "tracker.labels", "line 3", "unknown key")
+}
+
+func TestTheTrackerFactoryGetsTheStates(t *testing.T) {
+	var got []crew.State
+	r := registry.New(map[string]port.TrackerFactory{
+		"fake": func(_ port.Decode, states []crew.State) (port.Tracker, error) {
+			got = states
+			return fake.NewTracker(), nil
+		},
+	}, nil)
+	states := []crew.State{"ready", "in progress"}
+
+	if _, err := r.Tracker("fake", func(any) error { return nil }, states); err != nil {
+		t.Fatalf("Tracker: %v", err)
+	}
+	if !slices.Equal(got, states) {
+		t.Errorf("the factory got %v, want %v", got, states)
 	}
 }
 
@@ -105,11 +138,9 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
   model: some-model
 tracker:
   name: fake
-  labels:
-    ready: todo
 `+workflow)
 
-	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection)
+	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow))
 	if err != nil {
 		t.Fatalf("Tracker: %v", err)
 	}
