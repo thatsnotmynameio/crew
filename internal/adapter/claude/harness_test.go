@@ -171,8 +171,21 @@ func TestCommandRunsClaudeHeadlessWithTheModelInTheDirectory(t *testing.T) {
 		},
 		Dir: "/work/.crew/worktrees/issue-4-development",
 	}
-	if got.Name != want.Name || got.Dir != want.Dir || !slices.Equal(got.Args, want.Args) || got.Env != nil {
+	if got.Name != want.Name || got.Dir != want.Dir || !slices.Equal(got.Args, want.Args) {
 		t.Errorf("command = %#v, want %#v", got, want)
+	}
+}
+
+// A Bash command that outlives its timeout moves to the background, and a
+// headless session that ends its turn waiting on it ends, issue #9's early
+// success. A ten-minute default keeps a full test run in the foreground.
+func TestCommandKeepsLongBashCommandsInTheForeground(t *testing.T) {
+	env := command("Implement #4", "claude-opus-5-5", "/work").Env
+
+	for _, want := range []string{"BASH_DEFAULT_TIMEOUT_MS=600000", "BASH_MAX_TIMEOUT_MS=1800000"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env = %q, want it to hold %s", env, want)
+		}
 	}
 }
 

@@ -5,6 +5,17 @@ import "github.com/thatsnotmynameio/crew/internal/proc"
 // binary is the Claude Code CLI the adapter runs.
 const binary = "claude"
 
+// bashTimeouts raise the Bash tool's timeouts, in milliseconds, from Claude
+// Code's two-minute default and ten-minute ceiling to ten and thirty
+// minutes. A Bash command that outlives its timeout moves to the background,
+// and a headless session that ends its turn waiting on it ends there: claude
+// stops the command and exits 0, which reads as a success. Ten minutes keeps
+// a full test run in the foreground.
+var bashTimeouts = []string{
+	"BASH_DEFAULT_TIMEOUT_MS=600000",
+	"BASH_MAX_TIMEOUT_MS=1800000",
+}
+
 // command builds the headless Claude Code run of prompt with model, in dir.
 // It is pure, and kept apart from the stream parser, so that building the
 // command and judging the session change independently. The stream-json
@@ -24,5 +35,6 @@ func command(prompt, model, dir string) proc.Command {
 			"--", prompt,
 		},
 		Dir: dir,
+		Env: bashTimeouts,
 	}
 }

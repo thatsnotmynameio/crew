@@ -27,3 +27,5 @@ workflow:
           /compound-engineering:lfg {{.Issue.Ref}}
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+          This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
