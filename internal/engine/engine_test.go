@@ -361,6 +361,34 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 	})
 }
 
+func TestRunAfterPrepareDoesNotPrepareAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker()}
+		e := engine.New(config(t, tr, develop))
+
+		if err := e.Prepare(context.Background()); err != nil {
+			t.Fatalf("Prepare: %v", err)
+		}
+		if got := len(tr.Calls()); got != 1 {
+			t.Fatalf("Prepare ran the tracker's Preparer %d times, want 1", got)
+		}
+		if tr.lists != 0 {
+			t.Fatalf("Prepare listed %d times, want none", tr.lists)
+		}
+
+		e.Stop()
+		if err := e.Run(context.Background()); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if got := len(tr.Calls()); got != 1 {
+			t.Errorf("the tracker's Preparer ran %d times in all, want once", got)
+		}
+		if tr.lists != 1 {
+			t.Errorf("Run listed %d times, want the first poll's listing", tr.lists)
+		}
+	})
+}
+
 // gatedTracker holds every move to gate until release is closed, and fails
 // such a move when its context ended meanwhile.
 type gatedTracker struct {

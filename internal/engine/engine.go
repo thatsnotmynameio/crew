@@ -63,6 +63,11 @@ type Engine struct {
 	stop     chan struct{} // closed by Stop
 	stopOnce sync.Once
 
+	// prepared is set by Prepare, and preparation holds its result, so the
+	// preparers run once whether Run or its caller prepares.
+	prepared    bool
+	preparation error
+
 	// The fields below are owned by Run's loop.
 	model    *core.Model
 	inbox    chan message
@@ -85,10 +90,11 @@ func New(cfg Config) *Engine {
 	}
 }
 
-// Run prepares every adapter that implements port.Preparer, then polls at
-// once and every PollInterval until stopped (R8). A Preparer's error is
-// returned, naming the port, before any listing (R2). Preparers run on ctx,
-// so ctx ending while they run ends them, and Run returns their error.
+// Run prepares the adapters, as Prepare does, unless Prepare was already
+// called, then polls at once and every PollInterval until stopped (R8). A
+// preparation error, its own or the one Prepare returned, is returned before
+// any listing (R2). Preparers run on ctx, so ctx ending while they run ends
+// them, and Run returns their error.
 //
 // Stop, or ctx ending, requests a stop: nothing new starts, running
 // sessions get 10 seconds to stop, issues are judged as their actions end,
@@ -97,7 +103,7 @@ func New(cfg Config) *Engine {
 // when Run returns, after its last update.
 func (e *Engine) Run(ctx context.Context) error {
 	defer e.stream.close()
-	if err := e.prepare(ctx); err != nil {
+	if err := e.Prepare(ctx); err != nil {
 		return err
 	}
 	cmdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -147,6 +153,20 @@ func (e *Engine) SubscribeLatest() <-chan Update {
 // Subscribe before Run.
 func (e *Engine) SubscribeQueue(capacity int) *Queue {
 	return e.stream.subscribeQueue(capacity)
+}
+
+// Prepare runs, once, the Preparer of each adapter that implements
+// port.Preparer, with the states the workflow can request, and returns their
+// errors joined, each naming its port. The preparers are environment checks
+// (R2), so a caller can run them before starting a renderer; Run then does
+// not prepare again. Call it before Run starts, never concurrently with
+// Run; a second call returns the first one's result.
+func (e *Engine) Prepare(ctx context.Context) error {
+	if !e.prepared {
+		e.prepared = true
+		e.preparation = e.prepare(ctx)
+	}
+	return e.preparation
 }
 
 // prepare runs each port's Preparer with the states the workflow can
