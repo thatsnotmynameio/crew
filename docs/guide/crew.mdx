@@ -207,7 +207,7 @@ Press Ctrl-C (or `q` in the live view), or send SIGTERM or SIGHUP. Closing the t
 
 1. It starts nothing new.
 2. Issues whose actions have all ended are judged as usual.
-3. Running sessions get 10 seconds to stop before they are killed. Their issues move to their stage's `on_failure`, with a comment saying crew stopped them.
+3. Running sessions get 10 seconds to stop before they are killed. Their issues move to their stage's `on_failure`, with a comment saying crew stopped them. When `on_failure` is another stage's `label`, such as `ready`, that stage takes the issue again at the next poll.
 4. Moves and comments still owed get one last try.
 
 This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again, or send a second SIGTERM or SIGHUP, to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
