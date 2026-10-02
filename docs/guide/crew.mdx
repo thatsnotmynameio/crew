@@ -185,7 +185,7 @@ At the same check, crew creates the labels your workflow names and the extra lab
 
 1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels, and so are issues whose only crew label is an extra.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
-3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, gets no status comment, and a later poll takes it once every issue blocking it is closed.
+3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked; one queued before it became blocked keeps its last status comment.
 4. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
 5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone.
 6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
