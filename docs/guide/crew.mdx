@@ -83,6 +83,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
 | `tracker.name` | `github` | Where issues live. `github` is the only one today. |
 | `harness` | none | A top-level section for harness-specific settings. `claude` takes none, and the model goes in `config.model`. |
+| `extra_labels` | none | Labels for parked work that no stage takes, such as an idea waiting for a brainstorm. See below. |
 | `workflow` | required | The stages, at least one. |
 
 Each stage has:
@@ -95,12 +96,33 @@ Each stage has:
 | `on_success` | The label the issue moves to when every action succeeded. It cannot be the stage's own `label`. |
 | `on_failure` | The label the issue moves to when any action failed, with crew's comment. It cannot be the stage's own `label`, but it can be another stage's: `on_failure: ready` on the `review` stage sends a failed review back to `implement`. |
 | `actions` | At least one action, each with a `name` (unique in the stage) and a `prompt`. |
+| `description` | Optional. The work the stage takes, in a few words, such as `a bug to reproduce and fix`. crew does not use it: the [`/cw-create-issue`](/guide/create-issue) skill shows it when it lists the types of issue. |
+| `issue_template` | Optional. The file name of a Markdown issue template in `.github/ISSUE_TEMPLATE/`, such as `bug.md`. crew does not use it: `/cw-create-issue` fills it for an issue of this stage. |
 
-These four keys hold the label as it is written on GitHub, such as `in progress`. Any text works. GitHub does not tell labels apart by case, so neither does crew: `Ready` and `ready` are the same label in every rule above, and crew writes a label everywhere as you first wrote it in the file.
-
-crew's labels are the ones your stages name in these four keys, and no others. Every other label on an issue is yours: crew ignores it and never removes it.
+`label`, `moves_to`, `on_success` and `on_failure` hold the label as it is written on GitHub, such as `in progress`. Any text works. GitHub does not tell labels apart by case, so neither does crew: `Ready` and `ready` are the same label in every rule above, and crew writes a label everywhere as you first wrote it in the file.
 
 A stage whose `on_success` or `on_failure` is its own `moves_to` leaves the issue where it is when it ends. On failure crew still comments.
+
+Each item of `extra_labels` has:
+
+| Key | What it does |
+| --- | --- |
+| `label` | Required. The label, written as on GitHub. It cannot be a label any stage names in `label`, `moves_to`, `on_success` or `on_failure`, or another extra's label. |
+| `description` | Optional, as for a stage. |
+| `issue_template` | Optional, as for a stage. |
+
+```yaml
+extra_labels:
+  - label: waiting brainstorm
+    description: an idea to brainstorm later
+    issue_template: idea.md
+```
+
+crew's labels are the ones your stages name in `label`, `moves_to`, `on_success` and `on_failure`, plus the extra labels, and no others. Every other label on an issue is yours: crew ignores it and never removes it.
+
+An extra label parks an issue that no stage takes, such as an idea that waits for a brainstorm. No stage takes an issue whose only crew label is an extra. To start work on it, add a stage's `label`: that stage takes the issue at the next poll, even with the extra still on it. Every move crew makes removes the extras an issue carries, together with its other crew labels, so the issue leaves the extra behind when a stage takes it.
+
+So declare as an extra only a label you keep for crew. If you declare a label you already use, such as `bug`, crew removes it from every issue it moves.
 
 ### Prompts
 
@@ -129,18 +151,20 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - `config.harness` or `tracker.name` names an adapter that does not exist;
 - a stage lacks `label`, `moves_to`, `on_success` or `on_failure`;
 - the workflow would loop or take an issue twice (the `label`, `moves_to`, `on_success` and `on_failure` rules above);
+- an extra label is a label a stage names, or another extra's label, ignoring case;
+- a `description` is empty, or an `issue_template` is not a file name ending in `.md` (it holds a `/` or `\`, for example). crew does not check that the template file exists;
 - a prompt does not parse, or uses a field that does not exist;
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
 
-At the same check, crew creates the labels your workflow names that the repository does not have yet, each `on_failure` label included, and no other.
+At the same check, crew creates the labels your workflow names and the extra labels that the repository does not have yet, each `on_failure` label included, and no other.
 
 ## What crew does on each poll
 
-1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels.
-2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. A label no stage names does not count: an issue labeled `paused` and `ready` is taken when no stage names `paused`.
+1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels, and so are issues whose only crew label is an extra.
+2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
 3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
-4. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label and adds the new one, and leaves your other labels alone.
+4. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone.
 5. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
 6. While the actions run, crew updates the issue's status comment at every poll.
 7. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.

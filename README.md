@@ -33,6 +33,8 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | `STRATEGY.md` | What crew is for, who it serves, and its boundaries. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
 | `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. See the Guide. |
+| `.agents/skills/cw-create-issue/` | The `/cw-create-issue` skill: creates an issue with the label and filled template of a type from `.crew/config.yaml`. See the Guide. |
+| `.github/ISSUE_TEMPLATE/` | The issue templates of crew's own workflow, one per stage and extra label. |
 | `.compound-engineering/` | The Compound Engineering plugin's settings for this repository. |
 | `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`), `actionlint`, and `go` (gofmt, vet, lint, tests, govulncheck). |
 | `.github/workflows/release.yml` | Pushes to `main`: publishes `VERSION` as `vX.Y.Z` and a GitHub release when it is new. |
@@ -46,4 +48,4 @@ The workflows call [thatsnotmynameio/.github](https://github.com/thatsnotmynamei
 
 ## Symlinks on Windows
 
-`CLAUDE.md` and `.claude/agents` are symlinks. On Windows, clone with `git clone -c core.symlinks=true` (with Developer Mode on, or as an administrator), or they check out as small text files holding the path. crew itself does not run on Windows.
+`CLAUDE.md`, `.claude/agents` and `.claude/skills` are symlinks. On Windows, clone with `git clone -c core.symlinks=true` (with Developer Mode on, or as an administrator), or they check out as small text files holding the path. crew itself does not run on Windows.
