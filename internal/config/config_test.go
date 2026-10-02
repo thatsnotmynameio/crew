@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/thatsnotmynameio/crew/internal/config"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -368,6 +370,117 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if _, err := config.Load(filepath.Join("..", "..")); err != nil {
 		t.Fatalf("Load(repository root) = %v", err)
 	}
+}
+
+// TestTheRepositorysIssueTemplatesMatchItsConfig keeps this repository's
+// .crew/config.yaml and .github/ISSUE_TEMPLATE/ in step: every stage and
+// extra label names a template that exists, and that template's frontmatter
+// gives exactly the type's label, so an issue opened on the web lands where
+// the /cw-create-issue skill would put it. Config keeps no template fields,
+// so the test decodes the file itself once Load has validated it.
+func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
+	root := filepath.Join("..", "..")
+	if _, err := config.Load(root); err != nil {
+		t.Fatalf("Load(repository root) = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".crew", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type issueType struct {
+		Name          string `yaml:"name"`
+		Label         string `yaml:"label"`
+		Description   string `yaml:"description"`
+		IssueTemplate string `yaml:"issue_template"`
+	}
+	var cfg struct {
+		Workflow    []issueType `yaml:"workflow"`
+		ExtraLabels []issueType `yaml:"extra_labels"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	type named struct {
+		what string
+		issueType
+	}
+	var types []named
+	for _, s := range cfg.Workflow {
+		types = append(types, named{"workflow stage " + s.Name, s})
+	}
+	for _, e := range cfg.ExtraLabels {
+		types = append(types, named{"extra label " + e.Label, e})
+	}
+	for _, typ := range types {
+		what := typ.what
+		if typ.Description == "" {
+			t.Errorf("%s has no description", what)
+		}
+		if typ.IssueTemplate == "" {
+			t.Errorf("%s has no issue_template", what)
+			continue
+		}
+		path := filepath.Join(root, ".github", "ISSUE_TEMPLATE", typ.IssueTemplate)
+		front, err := templateFrontmatter(path)
+		if err != nil {
+			t.Errorf("%s: issue_template %s: %v", what, typ.IssueTemplate, err)
+			continue
+		}
+		if front.Name == "" || front.About == "" {
+			t.Errorf("%s: GitHub needs name and about to list it; got name %q, about %q", path, front.Name, front.About)
+		}
+		if want := []string{typ.Label}; !reflect.DeepEqual(front.Labels, want) {
+			t.Errorf("%s: labels = %q, want %q, the label of %s", path, front.Labels, want, what)
+		}
+	}
+}
+
+// issueTemplateFront is the frontmatter of a GitHub Markdown issue template.
+type issueTemplateFront struct {
+	Name   string
+	About  string
+	Labels []string
+}
+
+// templateFrontmatter reads the frontmatter between the leading "---" lines
+// of a Markdown issue template. GitHub takes labels as a list or as one
+// comma-separated string, so both are read.
+func templateFrontmatter(path string) (issueTemplateFront, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return issueTemplateFront{}, err
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	rest, ok := strings.CutPrefix(text, "---\n")
+	if !ok {
+		return issueTemplateFront{}, errors.New(`does not start with a "---" frontmatter line`)
+	}
+	front, _, ok := strings.Cut(rest, "\n---\n")
+	if !ok {
+		return issueTemplateFront{}, errors.New(`has no closing "---" frontmatter line`)
+	}
+	var doc struct {
+		Name   string    `yaml:"name"`
+		About  string    `yaml:"about"`
+		Labels yaml.Node `yaml:"labels"`
+	}
+	if err := yaml.Unmarshal([]byte(front), &doc); err != nil {
+		return issueTemplateFront{}, err
+	}
+	out := issueTemplateFront{Name: doc.Name, About: doc.About}
+	switch doc.Labels.Kind {
+	case yaml.SequenceNode:
+		if err := doc.Labels.Decode(&out.Labels); err != nil {
+			return issueTemplateFront{}, err
+		}
+	case yaml.ScalarNode:
+		for l := range strings.SplitSeq(doc.Labels.Value, ",") {
+			if l = strings.TrimSpace(l); l != "" {
+				out.Labels = append(out.Labels, l)
+			}
+		}
+	}
+	return out, nil
 }
 
 func TestLoadRejectsInvalidConfig(t *testing.T) {

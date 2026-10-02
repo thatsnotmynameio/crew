@@ -1,6 +1,10 @@
 # crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
 # Every label crew uses starts with `crew:`. Each stage ends in `crew:waiting
 # review`, which means the issue waits for the boss, or in `crew:failed`.
+# The extra label `crew:waiting brainstorm` parks an idea no stage takes; adding
+# a stage's label later promotes it, and crew then takes the extra off. Each
+# stage and extra names its template in .github/ISSUE_TEMPLATE/, which
+# /cw-create-issue fills.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 2
@@ -8,8 +12,14 @@ config:
   model: claude-opus-5-5
 tracker:
   name: github
+extra_labels:
+  - label: "crew:waiting brainstorm"
+    description: an idea to brainstorm later
+    issue_template: idea.md
 workflow:
   - name: development
+    description: a feature whose brainstorm is done
+    issue_template: feature.md
     label: "crew:ready for development"
     moves_to: "crew:in progress"
     on_success: "crew:waiting review"
@@ -21,6 +31,8 @@ workflow:
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
   - name: fix
+    description: a bug to reproduce and fix
+    issue_template: bug.md
     label: "crew:ready for fix"
     moves_to: "crew:in progress"
     on_success: "crew:waiting review"
@@ -34,6 +46,8 @@ workflow:
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
   - name: knowledge base
+    description: a solved problem to record as a learning
+    issue_template: knowledge-base.md
     label: "crew:ready for knowledge base"
     moves_to: "crew:in progress"
     on_success: "crew:waiting review"
@@ -49,6 +63,8 @@ workflow:
 
           When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
   - name: triage
+    description: a triage run over the open issues
+    issue_template: triage.md
     label: "crew:ready for triage"
     moves_to: "crew:in progress"
     on_success: "crew:waiting review"
@@ -66,6 +82,8 @@ workflow:
           6. Do not change code, push a branch or open a pull request.
           7. End with one comment on {{.Issue.Ref}}: each dependency you recorded and why, each one you suggest removing and why, likely duplicates, the issues you opened, and every command that failed or was denied, with its error.
   - name: audit ci
+    description: an audit of the GitHub Actions
+    issue_template: ci-audit.md
     label: "crew:ready for ci audit"
     moves_to: "crew:in progress"
     on_success: "crew:waiting review"
