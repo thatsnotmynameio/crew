@@ -6,9 +6,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// Input is one thing the engine tells the core: a tick, a stop request, or
-// the result of a Command. Every input carries At, the time it reached the
-// engine's inbox, so start and elapsed times stay pure in the core (KTD2).
+// Input is one thing the engine tells the core: a tick, a stop request, the
+// end of the run time, or the result of a Command. Every input carries At,
+// the time it reached the engine's inbox, so start and elapsed times stay
+// pure in the core (KTD2).
 // The set of inputs is closed: only this package's types implement Input.
 type Input interface {
 	// Stamped returns a copy of the input whose At is at. The engine stamps
@@ -39,6 +40,17 @@ type Said struct {
 // every issue as its actions end. A second request changes nothing.
 type StopRequested struct {
 	At time.Time
+}
+
+// TimeUp says the run time limit has passed since the first poll (R2). The
+// core takes no new issue from now on, lets the issues it holds run and be
+// judged as usual, and once no action is left to end gives each owed call
+// its final try and stops, as after StopRequested. It does nothing after a
+// stop request or a first TimeUp.
+type TimeUp struct {
+	At time.Time
+	// Limit is the run time limit, for the WindingDown event.
+	Limit time.Duration
 }
 
 // IssuesListed is the result of ListIssues: the open issues in any of the
@@ -173,6 +185,9 @@ func (i Tick) Stamped(at time.Time) Input { i.At = at; return i }
 func (i StopRequested) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i TimeUp) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i IssuesListed) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -201,6 +216,7 @@ func (i SessionEnded) Stamped(at time.Time) Input { i.At = at; return i }
 
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }
+func (i TimeUp) arrival() time.Time               { return i.At }
 func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
 func (i CallResult) arrival() time.Time           { return i.At }

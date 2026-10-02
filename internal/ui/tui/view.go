@@ -21,13 +21,16 @@ func (m Model) View() tea.View {
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
 
+	held := fmt.Sprintf("%d %s held (q or ctrl+c stops)", len(m.snap.Issues), lines.Plural(len(m.snap.Issues), "issue", "issues"))
 	switch {
 	case m.stopping:
 		add("crew: stopping… (q or ctrl+c again forces the exit)")
 	case m.snap.Stopping:
 		add("crew: stopping…")
+	case m.snap.TimeUp:
+		add("crew: run time is up, winding down: %s", held)
 	default:
-		add("crew: %d %s held (q or ctrl+c stops)", len(m.snap.Issues), lines.Plural(len(m.snap.Issues), "issue", "issues"))
+		add("crew: %s", held)
 	}
 
 	add("")

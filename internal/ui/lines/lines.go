@@ -100,6 +100,8 @@ func Text(e core.Event) string {
 		return withReason("gave up "+call(e.Call)+": "+result(e.Result), e.Reason)
 	case core.StatusFailed:
 		return withReason("could not update the status comment on "+e.IssueRef+": "+result(e.Result), e.Reason)
+	case core.WindingDown:
+		return fmt.Sprintf("run time of %v is up: taking no new issues, winding down", e.Limit)
 	case core.Stopped:
 		return "stopped"
 	}

@@ -125,6 +125,8 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 			"could not update the status comment on #2: it failed: timeout"},
 		{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultRefused, Reason: "issue is locked"},
 			"could not update the status comment on #2: the tracker refused: issue is locked"},
+		{core.WindingDown{At: at("10:00:00"), Limit: time.Hour},
+			"run time of 1h0m0s is up: taking no new issues, winding down"},
 		{core.Stopped{At: at("10:00:00")},
 			"stopped"},
 	}
