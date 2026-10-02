@@ -1,7 +1,8 @@
 // Package github is the tracker adapter for GitHub issues, through the gh
 // CLI. It maps crew's eight states to labels (tracker.labels), lists the open
-// issues the authenticated gh user opened, moves them by swapping labels and
-// reports failures as Markdown comments. It works on the repository gh
+// issues the authenticated gh user opened, moves them by swapping labels,
+// reports failures as Markdown comments and keeps one status comment per
+// issue, edited in place. It works on the repository gh
 // resolves from crew's working directory, and runs every gh call through the
 // shared process helper.
 package github
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -21,10 +23,12 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the tracker is a port.Tracker and a port.Preparer.
+// Compile-time guards: the tracker is a port.Tracker, a port.Preparer and a
+// port.StatusReporter.
 var (
-	_ port.Tracker  = (*Tracker)(nil)
-	_ port.Preparer = (*Tracker)(nil)
+	_ port.Tracker        = (*Tracker)(nil)
+	_ port.Preparer       = (*Tracker)(nil)
+	_ port.StatusReporter = (*Tracker)(nil)
 )
 
 // issuesQuery lists the login's open issues carrying any of the labels,
@@ -53,6 +57,9 @@ type ghLabel struct {
 type Tracker struct {
 	gh     *gh
 	labels labels
+
+	mu       sync.Mutex
+	comments map[string]int64 // status comment ids by issue key, once found or created
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -70,7 +77,7 @@ func factory(run proc.Runner) port.TrackerFactory {
 		if err != nil {
 			return nil, err
 		}
-		return &Tracker{gh: &gh{run: run}, labels: l}, nil
+		return &Tracker{gh: &gh{run: run}, labels: l, comments: map[string]int64{}}, nil
 	}
 }
 
