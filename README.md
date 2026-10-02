@@ -28,7 +28,7 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | --- | --- |
 | `cmd/crew` | The `crew` binary. |
 | `internal/` | crew's engine, its adapters (`github`, `claude`, `git`) and its TUI. See `AGENTS.md` and the Develop tab. |
-| `.crew/config.yaml` | crew's own workflow: crew runs on this repository too, with stages for features, bugs, backlog triage, CI audits and learnings, and labels that start with `crew:`. |
+| `.crew/config.yaml` | crew's own workflow: crew runs on this repository too, with stages for features, bugs, dependency triage of brainstormed features, CI audits and learnings, and labels that start with `crew:`. |
 | `docs.json`, `docs/` | The docs.page site (Guide and Develop tabs). Plans live in `docs/plans/` and are not published. |
 | `STRATEGY.md` | What crew is for, who it serves, and its boundaries. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |

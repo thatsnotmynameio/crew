@@ -1,8 +1,9 @@
 # crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
 # Every label crew uses starts with `crew:`. Each stage ends in `crew:waiting
 # review`, which means the issue waits for the boss, or in `crew:failed`.
-# The extra labels park issues no stage takes: `crew:waiting brainstorm` an
-# idea, `crew:brainstorm:done` a brainstormed feature. Adding a stage's label
+# The extra label `crew:waiting brainstorm` parks an idea no stage takes.
+# `crew:brainstorm:done` marks a brainstormed feature and starts the triage
+# stage, which finds what blocks it and what it blocks. Adding a stage's label
 # later promotes it, and crew then takes the extra off. Each stage and extra
 # names its template in .github/ISSUE_TEMPLATE/, which /cw-create-issue and
 # /cw-update-issue-plan fill.
@@ -17,9 +18,6 @@ extra_labels:
   - label: "crew:waiting brainstorm"
     description: an idea to brainstorm later
     issue_template: idea.md
-  - label: "crew:brainstorm:done"
-    description: a brainstormed feature waiting for the boss to promote it
-    issue_template: feature.md
 workflow:
   - name: development
     description: a feature whose brainstorm is done
@@ -71,24 +69,24 @@ workflow:
 
           When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
   - name: triage
-    description: a triage run over the open issues
-    issue_template: triage.md
-    label: "crew:ready for triage"
+    description: a brainstormed feature whose dependencies to find
+    issue_template: feature.md
+    label: "crew:brainstorm:done"
     moves_to: "crew:in progress"
     on_success: "crew:waiting review"
     on_failure: "crew:failed"
     actions:
       - name: triage
         prompt: |-
-          Triage this repository's open issues, other than {{.Issue.Ref}}. You run headless: nobody answers questions, so decide and report.
+          {{.Issue.Ref}} is a brainstormed feature. Find which open issues block it and which it blocks. You run headless: nobody answers questions, so decide and report.
 
-          1. Read the open issues and the dependencies GitHub already has for them (`gh api repos/{owner}/{repo}/issues/N/dependencies/blocked_by` and `.../blocking`).
-          2. When an open issue cannot be done before another one, record it as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record one only when you can say why.
-          3. Never remove a dependency. When one no longer holds, suggest removing it in your summary.
-          4. When you find work that no open issue covers, open an issue for it with the label `bug` or `enhancement`. Search the open issues first, so you do not open a duplicate.
-          5. Never add or remove a label that starts with `crew:`, on any issue.
+          1. Read {{.Issue.Ref}} (`gh issue view {{.Issue.Key}} --comments`) and the dependencies GitHub already has for it (`gh api repos/{owner}/{repo}/issues/{{.Issue.Key}}/dependencies/blocked_by` and `.../blocking`).
+          2. Read the other open issues you opened (`gh issue list --state open --author @me --limit 500 --json number,title,body,labels`). Compare {{.Issue.Ref}} with these only: leave out the issues someone else opened.
+          3. For each of them, decide whether it must be done before {{.Issue.Ref}} (it blocks {{.Issue.Ref}}) or cannot be done before {{.Issue.Ref}} ({{.Issue.Ref}} blocks it). Record each as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record only dependencies between {{.Issue.Ref}} and another issue, only when you can say why, skip one GitHub already has, and never record one that closes a cycle.
+          4. Never remove a dependency. When one of {{.Issue.Ref}}'s no longer holds, suggest removing it in your summary.
+          5. Never add or remove a label that starts with `crew:`, on any issue. Do not open, close or edit issues.
           6. Do not change code, push a branch or open a pull request.
-          7. End with one comment on {{.Issue.Ref}}: each dependency you recorded and why, each one you suggest removing and why, likely duplicates, the issues you opened, and every command that failed or was denied, with its error.
+          7. End with one comment on {{.Issue.Ref}}: what blocks it and what it blocks, marking the dependencies you recorded and why; whether no open issue blocks it, so the boss can promote it now; each dependency you suggest removing and why; the issues it likely duplicates; and every command that failed or was denied, with its error.
   - name: audit ci
     description: an audit of the GitHub Actions
     issue_template: ci-audit.md
