@@ -419,6 +419,28 @@ func TestReopenFolderGitDoesNotListNamesFolder(t *testing.T) {
 	}
 }
 
+func TestReopenAfterTheRepositoryMovedSaysToRepairTheWorktree(t *testing.T) {
+	_, root, _, space := reopenable(t)
+	if err := os.WriteFile(filepath.Join(space.Dir, "notes.txt"), []byte("half done\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	moved := root + "-moved"
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := New(&proc.Group{}, moved).Reopen(t.Context(), recorded(space))
+	if err == nil || errors.Is(err, port.ErrWorkspaceGone) {
+		t.Fatalf("err = %v, want an error that is not port.ErrWorkspaceGone", err)
+	}
+	if !strings.Contains(err.Error(), "git worktree repair") {
+		t.Errorf("err = %v, want it to offer git worktree repair, which keeps the work", err)
+	}
+	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", space.Name, "notes.txt")); err != nil {
+		t.Errorf("the worktree's uncommitted file: %v", err)
+	}
+}
+
 func TestReopenReturnsBranchCheckedOut(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -97,14 +97,16 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action string)
 }
 
 // Reopen implements port.Reopener. It finds the worktree
-// .crew/worktrees/<name> under the root, recomputed so a moved repository
-// still finds it, and reads it from `git worktree list` without changing it:
-// no fetch, merge, rebase or checkout, so the resumed session sees what the
-// failed one left (R6). A folder that is missing, or that git lists as
-// prunable, is gone. A folder git does not list is an error, not gone, so
-// work left in it is never silently abandoned for a new worktree. The branch
-// is the one checked out, or the recorded one when HEAD is detached, as in
-// the middle of a rebase. Errors carry git's stderr.
+// .crew/worktrees/<name> under the root and reads it from `git worktree
+// list` without changing it: no fetch, merge, rebase or checkout, so the
+// resumed session sees what the failed one left (R6). A folder that is
+// missing, or that git lists as prunable, is gone. A folder git does not
+// list is an error, not gone, so work left in it is never silently
+// abandoned for a new worktree: git lists a worktree under the path it was
+// created at, so after the repository moves the error offers `git worktree
+// repair`, which keeps that work. The branch is the one checked out, or the
+// recorded one when HEAD is detached, as in the middle of a rebase. Errors
+// carry git's stderr.
 func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, error) {
 	// The lock keeps a creation from adding a worktree under this name while
 	// it is being inspected.
@@ -132,7 +134,9 @@ func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, e
 		return port.Space{}, fmt.Errorf("check worktree folder %s: %w", dir, err)
 	}
 	if !listed {
-		return port.Space{}, fmt.Errorf("the folder %s is not a git worktree: remove it so crew can create a new one", dir)
+		return port.Space{}, fmt.Errorf("the folder %s is not one of this repository's git worktrees: "+
+			"if the repository moved since crew created it, run `git worktree repair %s` to keep its work; "+
+			"otherwise remove it so crew can create a new one", dir, dir)
 	}
 	branch := tree.branch
 	if branch == "" {
