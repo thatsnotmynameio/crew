@@ -19,7 +19,7 @@ import (
 )
 
 // The engine-owned defaults (R1). The model's default belongs to the harness
-// adapter, and tracker.labels' to the tracker adapter.
+// adapter.
 const (
 	defaultPollInterval      = 300 * time.Second
 	defaultMaxParallelIssues = 2
@@ -43,8 +43,10 @@ type Config struct {
 	// Tracker is tracker.name, the tracker adapter's name, "github" by
 	// default. It is not checked against the registered adapters.
 	Tracker string
-	// Workflow is the stages in file order. Every state is one of the eight,
-	// the stages cannot loop or take an issue twice, and every prompt renders.
+	// Workflow is the stages in file order. Every state is non-empty text,
+	// spelled everywhere as it is first written, since labels that differ
+	// only in case are one label. The stages cannot loop or take an issue
+	// twice, and every prompt renders.
 	Workflow []crew.Stage
 	// HarnessSection decodes the harness adapter's settings: config.model plus
 	// the keys of the optional top-level harness: section.

@@ -104,7 +104,7 @@ func (d *driver) runAll(landed []core.Command) {
 
 func TestAE1QueuedIssueGetsOneStatusWhileItWaitsForAFreeSlot(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	i1, i2, i74 := issue("1", 1, crew.Ready), issue("2", 2, crew.Ready), issue("74", 3, crew.Ready)
+	i1, i2, i74 := issue("1", 1, ready), issue("2", 2, ready), issue("74", 3, ready)
 
 	cmds, _ := d.poll(i1, i2, i74)
 	wantStatus(t, statusOf(t, cmds, "74"), crew.Status{
@@ -120,15 +120,15 @@ func TestAE1QueuedIssueGetsOneStatusWhileItWaitsForAFreeSlot(t *testing.T) {
 
 func TestQueuedIssueUnderAnotherStageGetsANewStatus(t *testing.T) {
 	d := newStatusDriver(t, draft(), 1)
-	d.running(issue("1", 1, crew.Ready))
+	d.running(issue("1", 1, ready))
 
-	cmds, _ := d.poll(issue("74", 2, crew.Ready))
+	cmds, _ := d.poll(issue("74", 2, ready))
 	if got := statusOf(t, cmds, "74"); got.Stage != "implement" {
 		t.Fatalf("queued for %q, want implement", got.Stage)
 	}
 	d.wrote("74", core.ResultDone)
 
-	cmds, _ = d.poll(issue("74", 2, crew.ReadyToReview))
+	cmds, _ = d.poll(issue("74", 2, readyToReview))
 	wantStatus(t, statusOf(t, cmds, "74"), crew.Status{
 		IssueKey: "74", IssueRef: "#74", Stage: "review", Kind: crew.StatusQueued, Slots: 1, Updated: d.now,
 	})
@@ -137,7 +137,7 @@ func TestQueuedIssueUnderAnotherStageGetsANewStatus(t *testing.T) {
 func TestTakenIssueGetsItsFirstStatusOnceItsTakeLands(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
 
-	cmds, _ := d.poll(issue("1", 1, crew.Ready))
+	cmds, _ := d.poll(issue("1", 1, ready))
 	noStatusOf(t, cmds, "1")
 
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
@@ -152,7 +152,7 @@ func TestTakenIssueGetsItsFirstStatusOnceItsTakeLands(t *testing.T) {
 
 func TestAE2RunningStatusShowsEachSessionsStartAndLastWords(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	d.runAll(d.take(issue("74", 1, crew.Ready)))
+	d.runAll(d.take(issue("74", 1, ready)))
 
 	cmds, _ := d.send(core.Tick{Said: []core.Said{
 		{IssueKey: "74", Action: "development", Text: "U1 committed: 168 tests pass. Starting U2."},
@@ -177,7 +177,7 @@ func TestAE2RunningStatusShowsEachSessionsStartAndLastWords(t *testing.T) {
 
 func TestAE3EndedStatusSaysWhereTheIssueGoesThenThatItMoved(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	d.runAll(d.take(issue("74", 1, crew.Ready)))
+	d.runAll(d.take(issue("74", 1, ready)))
 	devStarted := started(t, d.m, "74", "development")
 
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
@@ -198,7 +198,7 @@ func TestAE3EndedStatusSaysWhereTheIssueGoesThenThatItMoved(t *testing.T) {
 	}
 	wantStatus(t, statusOf(t, verdict, "74"), crew.Status{
 		IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded, Updated: d.now,
-		Actions: final, To: crew.NeedsAttention, Move: crew.MovePending,
+		Actions: final, To: needsAttention, Move: crew.MovePending,
 	})
 	reportID(t, verdict, "74") // the failure report is still its own command (R2)
 	d.wrote("74", core.ResultDone)
@@ -206,27 +206,27 @@ func TestAE3EndedStatusSaysWhereTheIssueGoesThenThatItMoved(t *testing.T) {
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	wantStatus(t, statusOf(t, cmds, "74"), crew.Status{
 		IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded, Updated: d.now,
-		Actions: final, To: crew.NeedsAttention, Move: crew.MoveDone,
+		Actions: final, To: needsAttention, Move: crew.MoveDone,
 	})
 }
 
 func TestEndedStatusSaysWhenTheMoveWasDropped(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	d.runAll(d.take(issue("74", 1, crew.Ready)))
+	d.runAll(d.take(issue("74", 1, ready)))
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 	d.wrote("74", core.ResultDone)
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultMovedMeanwhile})
 	got := statusOf(t, cmds, "74")
-	if got.Kind != crew.StatusEnded || got.To != crew.ReadyToReview || got.Move != crew.MoveDropped {
+	if got.Kind != crew.StatusEnded || got.To != readyToReview || got.Move != crew.MoveDropped {
 		t.Fatalf("status after a dropped move: %#v", got)
 	}
 }
 
 func TestAE4StopWhileASessionRunsEndsWithTheMoveOnTheComment(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	d.runAll(d.take(issue("74", 1, crew.Ready)))
+	d.runAll(d.take(issue("74", 1, ready)))
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
 
 	cmds, _ := d.send(core.StopRequested{})
@@ -236,7 +236,7 @@ func TestAE4StopWhileASessionRunsEndsWithTheMoveOnTheComment(t *testing.T) {
 	}
 
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("stopped")})
-	if got := statusOf(t, verdict, "74"); got.Move != crew.MovePending || got.To != crew.NeedsAttention {
+	if got := statusOf(t, verdict, "74"); got.Move != crew.MovePending || got.To != needsAttention {
 		t.Fatalf("status at the verdict: %#v", got)
 	}
 	reportID(t, verdict, "74")
@@ -250,7 +250,7 @@ func TestAE4StopWhileASessionRunsEndsWithTheMoveOnTheComment(t *testing.T) {
 			{Name: "acceptance", State: crew.ActionSucceeded},
 			{Name: "development", State: crew.ActionFailed},
 		},
-		To: crew.NeedsAttention, Move: crew.MoveDone,
+		To: needsAttention, Move: crew.MoveDone,
 	})
 	if d.m.Stopped() || containsStopped(events) {
 		t.Fatal("stopped with the last status write in flight")
@@ -273,7 +273,7 @@ func containsStopped(events []core.Event) bool {
 
 func TestOneStatusWriteInFlightPerIssueAndTheNewestWaits(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	cmds, _ := d.poll(issue("74", 1, crew.Ready))
+	cmds, _ := d.poll(issue("74", 1, ready))
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 	statusOf(t, landed, "74") // in flight, unanswered
 
@@ -297,7 +297,7 @@ func TestOneStatusWriteInFlightPerIssueAndTheNewestWaits(t *testing.T) {
 
 func TestFailedRunningWriteIsWrittenAgainAtTheNextTickAndReportedOnce(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	cmds, _ := d.poll(issue("74", 1, crew.Ready))
+	cmds, _ := d.poll(issue("74", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 
 	_, events := d.send(core.StatusResult{IssueKey: "74", Result: core.ResultFailed, Reason: "timeout"})
@@ -323,12 +323,12 @@ func TestFailedRunningWriteIsWrittenAgainAtTheNextTickAndReportedOnce(t *testing
 
 func TestFailedQueuedWriteIsWrittenAgainAtTheNextPoll(t *testing.T) {
 	d := newStatusDriver(t, draft(), 1)
-	d.running(issue("1", 1, crew.Ready))
-	cmds, _ := d.poll(issue("74", 2, crew.Ready))
+	d.running(issue("1", 1, ready))
+	cmds, _ := d.poll(issue("74", 2, ready))
 	statusOf(t, cmds, "74")
 	d.send(core.StatusResult{IssueKey: "74", Result: core.ResultFailed, Reason: "timeout"})
 
-	cmds, _ = d.poll(issue("74", 2, crew.Ready))
+	cmds, _ = d.poll(issue("74", 2, ready))
 	statusOf(t, cmds, "74")
 }
 
@@ -336,7 +336,7 @@ func TestFailedQueuedWriteIsWrittenAgainAtTheNextPoll(t *testing.T) {
 // the move's result, which carry the ended status.
 func ended(d *driver) []core.Command {
 	d.t.Helper()
-	d.runAll(d.take(issue("74", 1, crew.Ready)))
+	d.runAll(d.take(issue("74", 1, ready)))
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 	d.wrote("74", core.ResultDone)
@@ -381,7 +381,7 @@ func TestStopGivesAnOwedEndedStatusOneFinalTry(t *testing.T) {
 
 func TestEndedStatusFailingAfterStopGetsOneMoreTry(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	d.runAll(d.take(issue("74", 1, crew.Ready)))
+	d.runAll(d.take(issue("74", 1, ready)))
 	d.send(core.StopRequested{})
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("stopped")})
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: failed("stopped")})
@@ -414,7 +414,7 @@ func TestRefusedEndedStatusIsDroppedAndNotWaitedFor(t *testing.T) {
 
 func TestOwedOrDroppedTakeReportsNoStatus(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	take, _ := d.poll(issue("74", 1, crew.Ready))
+	take, _ := d.poll(issue("74", 1, ready))
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, take, "74"), Result: core.ResultFailed, Reason: "timeout"})
 	noStatusOf(t, cmds, "74")
 
@@ -424,7 +424,7 @@ func TestOwedOrDroppedTakeReportsNoStatus(t *testing.T) {
 	statusOf(t, cmds, "74")
 
 	d2 := newStatusDriver(t, draft(), 2)
-	take, _ = d2.poll(issue("75", 1, crew.Ready))
+	take, _ = d2.poll(issue("75", 1, ready))
 	cmds, _ = d2.send(core.CallResult{ID: moveID(t, take, "75"), Result: core.ResultRefused})
 	noStatusOf(t, cmds, "75")
 }
@@ -432,7 +432,7 @@ func TestOwedOrDroppedTakeReportsNoStatus(t *testing.T) {
 func TestAE7IssueNoStageTakesOrInTwoStatesGetsNoStatus(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
 	for range 2 {
-		cmds, _ := d.poll(issue("60", 1, crew.InReview), issue("61", 2, crew.Ready, crew.ReadyToReview))
+		cmds, _ := d.poll(issue("60", 1, inReview), issue("61", 2, ready, readyToReview))
 		if got := statuses(cmds); len(got) != 0 {
 			t.Fatalf("statuses for issues no stage takes: %#v", got)
 		}
@@ -441,7 +441,7 @@ func TestAE7IssueNoStageTakesOrInTwoStatesGetsNoStatus(t *testing.T) {
 
 func TestWithoutStatusReportingNoStatusIsReported(t *testing.T) {
 	d := newDriver(t, draft(), 1)
-	cmds, _ := d.poll(issue("1", 1, crew.Ready), issue("74", 2, crew.Ready))
+	cmds, _ := d.poll(issue("1", 1, ready), issue("74", 2, ready))
 	all := append([]core.Command{}, cmds...)
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 	all = append(all, landed...)

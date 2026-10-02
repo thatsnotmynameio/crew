@@ -89,7 +89,7 @@ func Text(e core.Event) string {
 		for i, s := range e.States {
 			states[i] = string(s)
 		}
-		return fmt.Sprintf("skipped %s: it is in %d crew states (%s)", e.IssueRef, len(e.States), strings.Join(states, ", "))
+		return fmt.Sprintf("skipped %s: it carries %d crew labels (%s)", e.IssueRef, len(e.States), strings.Join(states, ", "))
 	case core.PollDone:
 		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
 	case core.ListingFailed:
