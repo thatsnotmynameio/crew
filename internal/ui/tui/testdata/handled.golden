@@ -1,5 +1,5 @@
 crew: 2 issues held, up 12m, 48m left (q or ctrl+c stops)
-handled 0
+handled 4: 1 move given up, 1 needs attention, 1 ready to merge, 1 ready to rev…
 
 Issues
   implement
@@ -13,7 +13,13 @@ Actions
   #2 review/check     waiting
 
 Handled
-  none
+  move given up    #6  implement 5m00s   Drop the old flag
+    move to ready to review given up: issue closed
+  needs attention  #5  implement 10m00s  Parse the config once
+    tests failed: exited 1: tests fail
+    code failed: prompt did not render
+  ready to merge   #8  review 6m00s      Trim the README
+  ready to review  #7  implement 9m00s   Log the poll interval
 
 Recent events
   14:22:58 implement took #1 "Add login form" (ready -> in progress)

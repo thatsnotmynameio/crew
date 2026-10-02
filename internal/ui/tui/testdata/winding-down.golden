@@ -1,4 +1,5 @@
-crew: run time is up, winding down: 1 issue held (q or ctrl+c stops)
+crew: run time is up, winding down: 1 issue held, up 1h15m (q or ctrl+c stops)
+handled 0
 
 Issues
   implement
@@ -6,6 +7,9 @@ Issues
 
 Actions
   #42 implement/code  running 1h15m00s
+
+Handled
+  none
 
 Recent events
   14:15:00 run time of 1h0m0s is up: taking no new issues, winding down

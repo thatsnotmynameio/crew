@@ -84,7 +84,7 @@ func quits(cmd tea.Cmd) bool {
 }
 
 // runningSnapshot is #1 running two actions, started 5 and 7 minutes before
-// start, and #2 being taken by a later stage.
+// start, and #2 being taken by a later stage, 12 minutes into a one-hour run.
 func runningSnapshot() engine.Update {
 	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
@@ -98,6 +98,7 @@ func runningSnapshot() engine.Update {
 				{Name: "check", Phase: core.PhaseWaiting},
 			}},
 		}},
+		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
 			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement", From: "ready", To: "in progress"},
 			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
@@ -134,7 +135,7 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 	golden(t, "running", h.view())
 }
 
-// windingDownSnapshot is #42 still running after the run time is up.
+// windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
@@ -146,6 +147,7 @@ func windingDownSnapshot() engine.Update {
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},
+		Started: start.Add(-75 * time.Minute), RunTimeLimit: time.Hour,
 	}}
 }
 
