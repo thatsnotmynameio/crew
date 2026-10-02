@@ -16,6 +16,7 @@ tracker:
     paused: paused
     ready_to_merge: ready to merge
     done: done
+    bug: bug
 workflow:
   - name: implement
     label: ready
@@ -27,3 +28,15 @@ workflow:
           /compound-engineering:lfg {{.Issue.Ref}}
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+  - name: fix
+    label: bug
+    moves_to: in_progress
+    on_success: in_review
+    actions:
+      - name: lfg
+        prompt: |-
+          /compound-engineering:lfg {{.Issue.Ref}}
+
+          The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+          Notice if the ce-debug has already done. If yes, skip this step and start fixing it.
