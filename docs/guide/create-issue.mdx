@@ -96,7 +96,7 @@ It refuses a label that is neither a stage's nor an extra's, and leaves an issue
 
 The issue can be `#42`, `42` or its URL. Without one, the skill asks which issue. When the config has no `prompts.brainstorm`, it says so and stops.
 
-The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:waiting brainstorm`. It then moves the issue to `crew:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm ends, `/cw-update-issue-plan crew:brainstorm:done` writes the plan into the issue and parks it for you to promote. Until then, the issue stays in `crew:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
+The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:waiting brainstorm`. It then moves the issue to `crew:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm ends, `/cw-update-issue-plan crew:brainstorm:done` writes the plan into the issue and hands it to crew's triage stage, which finds what blocks it and what it blocks. Until then, the issue stays in `crew:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
 
 Install it like `/cw-create-issue`, linking `.agents/skills/cw-brainstorm` into `~/.claude/skills/`.
 
