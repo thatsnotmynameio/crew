@@ -119,6 +119,32 @@ func TestACheckThatPrintsNothingSaysSo(t *testing.T) {
 	})
 }
 
+func TestACheckReasonCarriesNoControlBytes(t *testing.T) {
+	tests := []struct {
+		name, print, want string
+	}{
+		// A NUL in the reason would make every status write fail.
+		{name: "nul", print: "a\x00b\n", want: "the check failed: ab"},
+		// A carriage return ends a line, as progress output uses it.
+		{name: "carriage return", print: "progress 10%\rno open pull request\r\n", want: "the check failed: no open pull request"},
+		{name: "escape", print: "\x1b[31mred\x1b[0m\n", want: "the check failed: [31mred[0m"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
+				checker.Script("crew/issue-1-development", fake.CheckScript{Print: tt.print, Exit: 1})
+
+				got := checkedRun(t, tr, checkedConfig(t, tr, checker))
+
+				if len(got) != 1 || got[0].Reason != tt.want {
+					t.Fatalf("failures = %+v, want reason %q", got, tt.want)
+				}
+			})
+		})
+	}
+}
+
 func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()

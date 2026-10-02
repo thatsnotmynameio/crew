@@ -84,10 +84,10 @@ func (t *Tracker) ReportStatus(ctx context.Context, status crew.Status) error {
 	return nil
 }
 
-// writeStatus writes text, status's entry, to the issue's status comment, finding
-// or creating the comment first when it is not cached. It caches the comment
-// and its body only once the write succeeded. An edit answered with HTTP 404
-// forgets the comment and returns an error wrapping errCommentGone.
+// writeStatus writes text, status's entry, to the issue's status comment,
+// finding or creating the comment first when it is not cached. It caches the
+// comment and its body only once the write succeeded. An edit answered with
+// HTTP 404 forgets the comment and returns an error wrapping errCommentGone.
 func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text string) error {
 	issueKey := status.IssueKey
 	c, ok := t.statusComment(issueKey)
@@ -239,8 +239,9 @@ func joinStatus(preamble string, texts []string) string {
 }
 
 // parseStatus splits a status comment's body into its continuation
-// preamble, if any, and its entries, oldest first. A body without an entry
-// marker where the first entry would start is one unmarked entry.
+// preamble, if any, and its entries, oldest first. Text before the first
+// entry marker, as in a comment written before entries, is one unmarked
+// entry; the marked entries crew appended after it still split off.
 func parseStatus(body string) (string, []entry) {
 	rest := strings.TrimRight(body, " \t\r\n")
 	rest = strings.TrimRight(strings.TrimSuffix(rest, statusMarker), " \t\r\n")
@@ -252,9 +253,6 @@ func parseStatus(body string) (string, []entry) {
 	}
 	if rest == "" {
 		return preamble, nil
-	}
-	if _, ok := parseMarker(rest); !ok {
-		return preamble, []entry{{text: rest}}
 	}
 	var entries []entry
 	for {

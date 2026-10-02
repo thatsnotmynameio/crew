@@ -107,8 +107,9 @@ func (s *step) tick(said []Said) {
 }
 
 // stop starts nothing new from now on, stops the running sessions and
-// checks, and gives each owed call not in flight its final try (R9). Issues whose actions have
-// all ended are already being judged, so their verdicts go on.
+// checks, and gives each owed call not in flight its final try (R9). Issues
+// whose actions have all ended are already being judged, so their verdicts
+// go on.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {

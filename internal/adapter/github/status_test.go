@@ -558,6 +558,18 @@ func TestACommentWithoutEntriesIsKeptAsTheFirstEntry(t *testing.T) {
 	if body := writes(t, gh)[0]; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
+
+	// The entry after the old text is the latest one: a status of its run
+	// replaces it rather than adding another.
+	running := queued74()
+	running.Kind = crew.StatusRunning
+	report(t, tr, running, running)
+	want = legacy + separator + tr.renderStatus(running) + tail
+	for i, body := range writes(t, gh)[1:] {
+		if body != want {
+			t.Errorf("write %d =\n%s\nwant\n%s", i+2, body, want)
+		}
+	}
 }
 
 func TestAStageNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
