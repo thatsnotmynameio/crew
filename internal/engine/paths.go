@@ -42,8 +42,10 @@ func (e *Engine) scrub(text string) string {
 
 // replaceDir replaces dir in text with with wherever it appears as a whole
 // path prefix: not preceded by a path byte, and not followed by a name
-// byte, so /home/jo leaves /home/joe and /mnt/home/jo alone. An empty dir,
-// or the filesystem root, is left as is.
+// byte, so /home/jo leaves /home/joe and /mnt/home/jo alone. Dots ending a
+// sentence do not continue the name: /repo. and /repo... are /repo, while
+// /repo.git is another path. An empty dir, or the filesystem root, is left
+// as is.
 func replaceDir(text, dir, with string) string {
 	if len(dir) < 2 {
 		return text
@@ -55,7 +57,7 @@ func replaceDir(text, dir, with string) string {
 			break
 		}
 		end := i + len(dir)
-		if (i == 0 || !pathByte(text[i-1])) && (end == len(text) || !nameByte(text[end])) {
+		if (i == 0 || !pathByte(text[i-1])) && endsName(text[end:]) {
 			b.WriteString(text[:i])
 			b.WriteString(with)
 		} else {
@@ -65,6 +67,14 @@ func replaceDir(text, dir, with string) string {
 	}
 	b.WriteString(text)
 	return b.String()
+}
+
+// endsName reports whether rest, the text right after a path, ends the
+// path's last name: past any dots, it is empty or starts with a byte that
+// cannot continue a name.
+func endsName(rest string) bool {
+	rest = strings.TrimLeft(rest, ".")
+	return rest == "" || !nameByte(rest[0])
 }
 
 // nameByte reports whether c can continue a file name. Bytes of multi-byte
