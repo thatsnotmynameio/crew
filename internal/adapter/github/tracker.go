@@ -157,7 +157,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 			states = append(states, s)
 		}
 		if s != to {
-			args = append(args, "--remove-label="+l.Name)
+			args = append(args, "--remove-label="+labelArg(l.Name))
 		}
 	}
 	if !slices.Contains(states, from) {
@@ -167,7 +167,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
 	target := string(to)
-	args = append(args, "--add-label="+target)
+	args = append(args, "--add-label="+labelArg(target))
 	if out, err := t.gh.call(ctx, args...); err != nil {
 		if missingLabel(string(out.Stderr), target) {
 			return fmt.Errorf("%s: %w: %w", move, port.ErrRefused, err)
@@ -175,6 +175,16 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	return nil
+}
+
+// labelArg returns label as one value of gh's --add-label and --remove-label,
+// which gh reads as comma-separated values: a label holding a comma or a
+// double quote is quoted as one CSV field.
+func labelArg(label string) string {
+	if !strings.ContainsAny(label, `,"`) {
+		return label
+	}
+	return `"` + strings.ReplaceAll(label, `"`, `""`) + `"`
 }
 
 // missingLabel reports whether gh's stderr says label does not exist, in

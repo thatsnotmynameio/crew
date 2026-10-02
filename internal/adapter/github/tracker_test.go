@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"os"
@@ -320,6 +321,44 @@ func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
 	}
 	if edits := gh.callsTo("issue", "edit"); len(edits) != 0 {
 		t.Errorf("sent edits %q, want none", edits)
+	}
+}
+
+// gh reads --add-label and --remove-label as comma-separated values, so a
+// label holding a comma or a double quote must reach gh as one CSV field.
+func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
+	blocked := crew.State(`blocked, "waiting"`)
+	gh := newFakeGh(t,
+		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"blocked, \"waiting\""}]}`},
+		reply{prefix: []string{"issue", "edit", "3"}},
+	)
+	tr, err := factory(gh.run)(func(any) error { return nil }, []crew.State{ready, blocked})
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	if err := tr.Move(context.Background(), "3", blocked, ready); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	edits := gh.callsTo("issue", "edit")
+	if len(edits) != 1 {
+		t.Fatalf("edits = %q, want one", edits)
+	}
+	want := map[string]string{"--remove-label=": string(blocked), "--add-label=": string(ready)}
+	for _, arg := range edits[0][3:] {
+		for flag, label := range want {
+			value, ok := strings.CutPrefix(arg, flag)
+			if !ok {
+				continue
+			}
+			got, err := csv.NewReader(strings.NewReader(value)).Read()
+			if err != nil || !slices.Equal(got, []string{label}) {
+				t.Errorf("%s%s reads as %q (%v), want the one label %q", flag, value, got, err, label)
+			}
+			delete(want, flag)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("edit %q lacks %v", edits[0], want)
 	}
 }
 
