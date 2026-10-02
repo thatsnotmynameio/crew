@@ -218,7 +218,26 @@ Run `crew` anywhere inside the repository's main checkout. In one of crew's work
 crew
 ```
 
-On a terminal, crew shows a live view: the issues it holds by stage, the running actions with their elapsed time, and the latest events. The view only displays. You act on issues through their labels on GitHub.
+On a terminal, crew shows a live view: the issues it holds by stage, the running actions with their elapsed time, the issues it handled since it started, and the latest events. The view only displays. You act on issues through their labels on GitHub.
+
+The top line says how many issues crew holds and how long it has been up, and, with `config.run_time_limit_seconds`, how much run time is left. The line under it counts the issues crew handled, by the state each went to, as your workflow names it:
+
+```text
+crew: 2 issues held, up 3h12m, 48m left (q or ctrl+c stops)
+handled 10: 2 crew:failed, 8 crew:waiting review
+```
+
+Handled lists each issue whose stage ended, on one line: the state it went to, its number, the stage and how long it took, and its title. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again. The issues that need you come first: a stage that failed, with one line per failed action and its reason, and a move crew gave up, because the issue was closed or moved meanwhile or GitHub refused it. A given-up move shows `move given up` where the state would be, and is counted on its own. The status comment on each issue keeps the detail.
+
+```text
+Handled
+  crew:failed          #28  development 41m10s  Parse the config once
+    lfg failed: exited 1: tests fail on Go 1.27
+  crew:waiting review  #36  development 8m12s   Log the poll interval
+  … and 3 more in crew:waiting review
+```
+
+The view fits the window. When rows run out, the latest events go first. Then the oldest handled issues that do not need you collapse into one line per state. The issues that need you never collapse; if even they do not fit, the view is cut at the bottom with a line saying how many lines were cut. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
 
 With `--plain`, or when the output is not a terminal, crew prints one line per event instead:
 
