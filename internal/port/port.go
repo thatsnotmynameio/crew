@@ -136,14 +136,16 @@ func Prepare(ctx context.Context, states []crew.State, adapters ...any) error {
 	return errors.Join(errs...)
 }
 
-// StatusReporter is an optional interface of a Tracker: it keeps one status
-// comment per issue, edited in place, that shows where the issue stands. A
-// tracker without it reports no status, and crew works as it does without
-// status comments.
+// StatusReporter is an optional interface of a Tracker: it keeps a status
+// comment on each issue that shows where the issue stands, with one entry
+// per stage run, oldest first. A tracker without it reports no status, and
+// crew works as it does without status comments.
 type StatusReporter interface {
 	// ReportStatus shows status on its issue, formatted in the tracker's own
-	// markup: it edits the issue's status comment, or creates it when the
-	// issue has none. The engine never has two calls for one issue in
+	// markup: it edits the latest entry of the issue's status comment when
+	// that entry is of status's run, and appends a new entry otherwise. It
+	// creates the comment when the issue has none, and continues a full
+	// comment in a new one. The engine never has two calls for one issue in
 	// flight. Its errors are classified as Tracker.Move's are.
 	ReportStatus(ctx context.Context, status crew.Status) error
 }
