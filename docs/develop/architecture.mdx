@@ -82,9 +82,9 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 
 `core.Model.Update(input)` returns the commands to run and the events to publish. It never touches a process, the network, a file or the clock: the engine stamps every input with its arrival time. Its tests are tables, with no goroutines.
 
-- **Inputs:** `Tick`, `StopRequested`, `TimeUp`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `StatusResult`, `WorkspaceReady`, `WorkspaceFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
-- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `ReportStatus`, `CreateWorkspace`, `StartSession`, `StopSession`.
-- **Events:** `IssueTaken`, `ActionStarted`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `StatusFailed`, `WindingDown`, `Stopped`.
+- **Inputs:** `Tick`, `StopRequested`, `TimeUp`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `StatusResult`, `WorkspaceReady`, `WorkspaceGone`, `WorkspaceFailed`, `RecordFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
+- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `ReportStatus`, `CreateWorkspace`, `ReopenWorkspace`, `RecordRun`, `StartSession`, `StopSession`.
+- **Events:** `IssueTaken`, `ActionStarted`, `WorkspaceMissing`, `RunNotRecorded`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `StatusFailed`, `WindingDown`, `Stopped`.
 
 Each issue the core holds has a claim, kept apart from the tracker's states:
 
@@ -110,6 +110,8 @@ With status reporting on, the core also keeps a status slot per issue key, apart
 
 When the core releases an issue whose stage ended, it keeps a handled entry for it in `View.Handled`: the stage, the state the verdict moved it to, the failed actions, whether the verdict move landed or was given up, and the time from the take to the verdict. The entry replaces the issue's earlier one, and the view leaves it out while the issue is held again. A take that is given up keeps no entry. The entries last as long as the `Model`, so one run.
 
+The core also keeps the last run record of each issue, stage and action, seeded from the run journal and updated by every `RecordRun` it issues: a start once the action's workspace is ready, and an end when the action ends, for runs that had a workspace. When a stage takes an issue, an action whose last record is a failed end, or a start with no end, gets `ReopenWorkspace` for that run's workspace instead of `CreateWorkspace`, when the workspace can reopen. `WorkspaceReady` with `Resumed` appends the resume paragraph to the action's prompt. `WorkspaceGone` emits `WorkspaceMissing` and creates a fresh workspace, unless crew is stopping. A start in a workspace retires any other key's record naming it, since names repeat once a workspace is gone. A run whose session never started keeps the reason of the last session in its workspace.
+
 `TimeUp` starts a wind-down. The core takes no new issue and stops listing, but keeps retrying owed calls and statuses at each tick and lets every held issue run and be judged. Once no held issue has an action left to end, it enters the stop sequence, so owed calls and statuses get their final try. `View.Stopping` stays false unless a stop was requested; `View.TimeUp` tells the renderers why crew is ending.
 
 ## The engine loop
@@ -121,7 +123,8 @@ When the core releases an issue whose stage ended, it keeps a handled entry for 
 - Each command runs in its own goroutine. Tracker and workspace calls get a 10-minute deadline; a timeout is a transient failure.
 - Commands run on their own context, which a stop request does not cancel. A first Ctrl-C therefore never cancels the verdict moves it waits for.
 - A stop gives each running session 10 seconds: the engine owns the deadline, and the adapter owns the signals.
-- Each session's output goes to `.crew/logs/<workspace>.log`. Before a reason reaches the core, the engine writes the repository root as `.` and the home directory as `~`.
+- Each session's output goes to `.crew/logs/<workspace>.log`, so a resumed session's goes after the failed run's, following a `{"type":"crew","subtype":"resumed"}` line. Before a reason reaches the core, the engine writes the repository root as `.` and the home directory as `~`.
+- The run journal, `.crew/logs/runs.jsonl`, is read by `Prepare`, which builds the core from it. The loop writes each `RecordRun` itself rather than in a goroutine, so a run's end never lands before its start, and each append starts on a fresh line after a write cut short by a crash.
 - At each tick, the engine asks every running session that implements `Narrator` what it last said, shortens its paths the same way, and passes the texts on the `Tick`.
 - `Run` returns once the core holds no issue, no owed call and no status write, and no command goroutine is left.
 
@@ -142,11 +145,12 @@ The engine never imports Bubble Tea. Only `internal/ui/tui` does, and it starts 
 - `Harness`: `Start` a session in a directory with a prompt and an output writer. The `Session` can be waited on for a `crew.Outcome` and stopped within the caller's deadline.
 - `Workspace`: `Create` a fresh workspace for an issue and an action, and return its name, directory and branch.
 
-Anything an adapter may or may not support is a separate, optional interface. Today there are three:
+Anything an adapter may or may not support is a separate, optional interface. Today there are four:
 
 - `Preparer`, on any adapter: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`. A tracker also creates or checks the extra labels it was built with.
 - `StatusReporter`, on a tracker: `ReportStatus` writes a structured `crew.Status` to the issue's one status comment, created once and edited in place, in the tracker's own markup. Its errors are classified as `Move`'s are. Without it, the core reports no status.
 - `Narrator`, on a harness's `Session`: `Said` returns what the session last said, on one line, and may be called while the session runs.
+- `Reopener`, on a workspace: `Reopen` returns a workspace it created before, as it is now, or an error wrapping `port.ErrWorkspaceGone` when it no longer exists. `git` reads `git worktree list` and changes nothing. Without it, a failed action starts over in a fresh workspace.
 
 The engine finds optional interfaces by type assertion, so it never wraps an adapter value, which would hide them. An adapter carries no "not implemented" stubs. Each one has compile-time guards:
 

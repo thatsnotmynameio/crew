@@ -31,7 +31,7 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 - `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
 - `internal/crew`: the domain (states, issues, stages, actions, outcomes, failure reports, statuses).
 - `internal/config`: `.crew/config.yaml`, strict decoding, engine defaults, workflow checks; hands each adapter its section as a `port.Decode`.
-- `internal/port`: `Tracker`, `Harness`, `Workspace`, the optional `Preparer`, `StatusReporter` and `Narrator`, sentinel errors, factory types.
+- `internal/port`: `Tracker`, `Harness`, `Workspace`, the optional `Preparer`, `StatusReporter`, `Narrator` and `Reopener`, sentinel errors, factory types.
 - `internal/registry`: name to factory; `default.go` is the production list.
 - `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
