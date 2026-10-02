@@ -325,3 +325,162 @@ func TestPrepareWithoutOriginNamesOrigin(t *testing.T) {
 		t.Fatalf("err = %v, want it to name origin", err)
 	}
 }
+
+// reopenable is a real repository with one worktree Create made in it.
+func reopenable(t *testing.T) (remote, string, *Workspace, port.Space) {
+	t.Helper()
+	r := newRemote(t)
+	root := r.clone(t)
+	w := New(&proc.Group{}, root)
+	space, err := w.Create(t.Context(), crew.Issue{Key: "7"}, "development")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	return r, root, w, space
+}
+
+// recorded is what crew records of a space: its name and branch, not its
+// directory.
+func recorded(space port.Space) port.Space {
+	return port.Space{Name: space.Name, Branch: space.Branch}
+}
+
+func TestReopenLeavesWorktreeAsItWasAfterOriginMovedOn(t *testing.T) {
+	r, root, w, space := reopenable(t)
+	gitIn(t, space.Dir, "commit", "--allow-empty", "-m", "work")
+	own := gitIn(t, space.Dir, "rev-parse", "HEAD")
+	notes := filepath.Join(space.Dir, "notes.txt")
+	if err := os.WriteFile(notes, []byte("half done\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fetched := gitIn(t, root, "rev-parse", "origin/trunk")
+	r.advance(t)
+
+	got, err := w.Reopen(t.Context(), recorded(space))
+	if err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	if got != space {
+		t.Errorf("space = %+v, want %+v", got, space)
+	}
+	if head := gitIn(t, space.Dir, "rev-parse", "HEAD"); head != own {
+		t.Errorf("HEAD = %s, want the worktree's own commit %s", head, own)
+	}
+	if b, err := os.ReadFile(notes); err != nil || string(b) != "half done\n" {
+		t.Errorf("uncommitted file = %q, %v; want it untouched", b, err)
+	}
+	if now := gitIn(t, root, "rev-parse", "origin/trunk"); now != fetched {
+		t.Errorf("origin/trunk moved from %s to %s: Reopen fetched", fetched, now)
+	}
+}
+
+func TestReopenGoneWorktree(t *testing.T) {
+	tests := []struct {
+		name   string
+		remove func(t *testing.T, root string, space port.Space)
+	}{
+		{name: "removed with git", remove: func(t *testing.T, root string, space port.Space) {
+			gitIn(t, root, "worktree", "remove", "--force", space.Dir)
+		}},
+		{name: "folder deleted without git", remove: func(t *testing.T, _ string, space port.Space) {
+			if err := os.RemoveAll(space.Dir); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, root, w, space := reopenable(t)
+			tt.remove(t, root, space)
+
+			_, err := w.Reopen(t.Context(), recorded(space))
+			if !errors.Is(err, port.ErrWorkspaceGone) {
+				t.Fatalf("err = %v, want it to wrap port.ErrWorkspaceGone", err)
+			}
+		})
+	}
+}
+
+func TestReopenFolderGitDoesNotListNamesFolder(t *testing.T) {
+	r := newRemote(t)
+	root := r.clone(t)
+	dir := filepath.Join(root, ".crew", "worktrees", "issue-7-development")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := New(&proc.Group{}, root).Reopen(t.Context(),
+		port.Space{Name: "issue-7-development", Branch: "crew/issue-7-development"})
+	if err == nil || errors.Is(err, port.ErrWorkspaceGone) {
+		t.Fatalf("err = %v, want an error that is not port.ErrWorkspaceGone", err)
+	}
+	if !strings.Contains(err.Error(), dir) || !strings.Contains(err.Error(), "remove") {
+		t.Errorf("err = %v, want it to name %s and say to remove it", err, dir)
+	}
+}
+
+func TestReopenAfterTheRepositoryMovedSaysToRepairTheWorktree(t *testing.T) {
+	_, root, _, space := reopenable(t)
+	if err := os.WriteFile(filepath.Join(space.Dir, "notes.txt"), []byte("half done\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	moved := root + "-moved"
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := New(&proc.Group{}, moved).Reopen(t.Context(), recorded(space))
+	if err == nil || errors.Is(err, port.ErrWorkspaceGone) {
+		t.Fatalf("err = %v, want an error that is not port.ErrWorkspaceGone", err)
+	}
+	if !strings.Contains(err.Error(), "git worktree repair") {
+		t.Errorf("err = %v, want it to offer git worktree repair, which keeps the work", err)
+	}
+	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", space.Name, "notes.txt")); err != nil {
+		t.Errorf("the worktree's uncommitted file: %v", err)
+	}
+}
+
+func TestReopenReturnsBranchCheckedOut(t *testing.T) {
+	tests := []struct {
+		name     string
+		checkout []string
+		want     string
+	}{
+		{name: "detached HEAD keeps the recorded branch", checkout: []string{"checkout", "--detach"},
+			want: "crew/issue-7-development"},
+		{name: "another branch", checkout: []string{"checkout", "-b", "crew/elsewhere"}, want: "crew/elsewhere"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, w, space := reopenable(t)
+			gitIn(t, space.Dir, tt.checkout...)
+
+			got, err := w.Reopen(t.Context(), recorded(space))
+			if err != nil {
+				t.Fatalf("Reopen: %v", err)
+			}
+			if got.Branch != tt.want || got.Dir != space.Dir || got.Name != space.Name {
+				t.Errorf("space = %+v, want %+v on branch %s", got, space, tt.want)
+			}
+		})
+	}
+}
+
+func TestReopenThroughSymlinkedRoot(t *testing.T) {
+	_, root, _, space := reopenable(t)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := New(&proc.Group{}, link).Reopen(t.Context(), recorded(space))
+	if err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	want := port.Space{Name: space.Name, Branch: space.Branch,
+		Dir: filepath.Join(link, ".crew", "worktrees", space.Name)}
+	if got != want {
+		t.Errorf("space = %+v, want %+v", got, want)
+	}
+}

@@ -622,6 +622,18 @@ func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T
 	}
 	killed(t, sleeper)
 	session.End(crew.Outcome{Reason: "released by the test"})
+	// The engine outlives the forced exit, which a real crew would not, and
+	// records the released session's end; let it land before the
+	// repository is removed.
+	journal := filepath.Join(r.opts.Root, ".crew", "logs", "runs.jsonl")
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if data, _ := os.ReadFile(journal); strings.Contains(string(data), `"event":"ended"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the released session's end never reached %s", journal)
+		}
+	}
 }
 
 // SIGHUP comes when the terminal crew runs in closes.

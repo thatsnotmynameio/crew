@@ -26,7 +26,8 @@ type IssueTaken struct {
 	To    crew.State
 }
 
-// ActionStarted is an action whose session is now running.
+// ActionStarted is an action whose session is now running. Resumed is set
+// when the session continues a failed run in that run's workspace.
 type ActionStarted struct {
 	At        time.Time
 	IssueKey  string
@@ -36,6 +37,30 @@ type ActionStarted struct {
 	Workspace string
 	Branch    string
 	Log       string
+	Resumed   bool
+}
+
+// WorkspaceMissing is a failed run's workspace that no longer exists, found
+// when its action was to resume in it. The action gets a fresh workspace,
+// unless crew is stopping.
+type WorkspaceMissing struct {
+	At        time.Time
+	IssueKey  string
+	IssueRef  string
+	Stage     string
+	Action    string
+	Workspace string
+}
+
+// RunNotRecorded is a run record the engine could not write to the run
+// journal. After a restart, crew may not know how that run ended.
+type RunNotRecorded struct {
+	At       time.Time
+	IssueKey string
+	IssueRef string
+	Stage    string
+	Action   string
+	Reason   string
 }
 
 // ActionEnded is an action that ended, successfully or not. An action that
@@ -177,6 +202,12 @@ func (e IssueTaken) Time() time.Time { return e.At }
 func (e ActionStarted) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e WorkspaceMissing) Time() time.Time { return e.At }
+
+// Time implements Event.
+func (e RunNotRecorded) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e ActionEnded) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -209,16 +240,18 @@ func (e WindingDown) Time() time.Time { return e.At }
 // Time implements Event.
 func (e Stopped) Time() time.Time { return e.At }
 
-func (IssueTaken) event()      {}
-func (ActionStarted) event()   {}
-func (ActionEnded) event()     {}
-func (IssueMoved) event()      {}
-func (FailureReported) event() {}
-func (IssueSkipped) event()    {}
-func (PollDone) event()        {}
-func (ListingFailed) event()   {}
-func (CallOwed) event()        {}
-func (CallDropped) event()     {}
-func (StatusFailed) event()    {}
-func (WindingDown) event()     {}
-func (Stopped) event()         {}
+func (IssueTaken) event()       {}
+func (ActionStarted) event()    {}
+func (ActionEnded) event()      {}
+func (WorkspaceMissing) event() {}
+func (RunNotRecorded) event()   {}
+func (IssueMoved) event()       {}
+func (FailureReported) event()  {}
+func (IssueSkipped) event()     {}
+func (PollDone) event()         {}
+func (ListingFailed) event()    {}
+func (CallOwed) event()         {}
+func (CallDropped) event()      {}
+func (StatusFailed) event()     {}
+func (WindingDown) event()      {}
+func (Stopped) event()          {}
