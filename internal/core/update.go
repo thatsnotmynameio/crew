@@ -38,9 +38,16 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 	case WorkspaceReady:
 		s.workspaceReady(in)
 	case WorkspaceFailed:
-		if h, a := m.action(in.IssueKey, in.Action, PhaseCreating); a != nil {
+		if h, a := m.action(in.IssueKey, in.Action, PhaseCreating, PhaseReopening); a != nil {
 			s.end(h, a, crew.Outcome{Reason: in.Reason})
 		}
+	case WorkspaceGone:
+		s.workspaceGone(in)
+	case RecordFailed:
+		r := in.Record
+		s.emit(RunNotRecorded{
+			At: s.at, IssueKey: r.IssueKey, IssueRef: r.IssueRef, Stage: r.Stage, Action: r.Action, Reason: in.Reason,
+		})
 	case SessionStarted:
 		s.sessionStarted(in)
 	case SessionFailedToStart:
@@ -315,6 +322,12 @@ func (s *step) taken(h *heldIssue, c *call) {
 			continue
 		}
 		a.prompt = prompt
+		if prev, ok := m.resumable(h, a); ok {
+			a.prev = &prev
+			a.phase = PhaseReopening
+			s.command(ReopenWorkspace{IssueKey: h.issue.Key, Action: a.name, Workspace: prev.Workspace, Branch: prev.Branch})
+			continue
+		}
 		a.phase = PhaseCreating
 		s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
 	}
@@ -323,21 +336,60 @@ func (s *step) taken(h *heldIssue, c *call) {
 	}
 }
 
-// workspaceReady starts the action's session, or, after a stop, fails the
-// action without starting it.
-func (s *step) workspaceReady(in WorkspaceReady) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseCreating)
+// workspaceGone creates a fresh workspace for an action whose failed run's
+// workspace no longer exists (R4), or, after a stop, fails the action
+// without one, which records nothing, so the failed run stays resumable.
+func (s *step) workspaceGone(in WorkspaceGone) {
+	h, a := s.m.action(in.IssueKey, in.Action, PhaseReopening)
 	if a == nil {
 		return
 	}
-	a.workspace, a.dir, a.branch = in.Workspace, in.Dir, in.Branch
+	s.emit(WorkspaceMissing{
+		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
+		Action: a.name, Workspace: a.prev.Workspace,
+	})
 	if s.m.stopping {
 		s.end(h, a, crew.Outcome{Reason: stoppedReason})
 		return
 	}
-	a.log = in.Log
+	a.prev = nil
+	a.phase = PhaseCreating
+	s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
+}
+
+// workspaceReady records the run's start and starts the action's session,
+// with the resume paragraph after its prompt when the workspace is a failed
+// run's (R5), or, after a stop, fails the action without starting it.
+func (s *step) workspaceReady(in WorkspaceReady) {
+	m := s.m
+	h, a := m.action(in.IssueKey, in.Action, PhaseCreating, PhaseReopening)
+	if a == nil {
+		return
+	}
+	a.workspace, a.dir, a.branch = in.Workspace, in.Dir, in.Branch
+	if !m.stopping {
+		// A session that never starts writes no log, so a stopped action
+		// names none.
+		a.log = in.Log
+	}
+	if prev, ok := m.runs[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]; ok {
+		a.prev = &prev
+	} else {
+		a.prev = nil
+	}
+	s.record(h, a, RunStarted)
+	if m.stopping {
+		s.end(h, a, crew.Outcome{Reason: stoppedReason})
+		return
+	}
+	if in.Resumed && a.prev != nil {
+		a.resumed = true
+		a.prompt += "\n\n" + resumeParagraph(*a.prev, a.branch, a.log, in.LogFromDir)
+	}
 	a.phase = PhaseStarting
-	s.command(StartSession{IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log})
+	s.command(StartSession{
+		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
+	})
 }
 
 // sessionStarted records the action's start time, and stops the session at
@@ -351,17 +403,22 @@ func (s *step) sessionStarted(in SessionStarted) {
 	a.started = s.at
 	s.emit(ActionStarted{
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
-		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log,
+		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log, Resumed: a.resumed,
 	})
 	if s.m.stopping {
 		s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
 	}
 }
 
-// end ends action a of h with outcome, and judges h once every action ended.
+// end ends action a of h with outcome, records the end of a run that had a
+// workspace, and judges h once every action ended. A run without a
+// workspace records nothing, so the key's last record stays as it was.
 func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome) {
 	a.phase = PhaseEnded
 	a.outcome = outcome
+	if a.workspace != "" {
+		s.record(h, a, RunEnded)
+	}
 	s.emit(ActionEnded{
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,

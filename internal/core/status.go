@@ -164,7 +164,8 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 	s.report(st)
 }
 
-// status returns h's status of kind, with each action's state.
+// status returns h's status of kind, with each action's state and, for an
+// action that resumed, its workspace (R11).
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
 		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
@@ -178,7 +179,11 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 				state = crew.ActionSucceeded
 			}
 		}
-		st.Actions = append(st.Actions, crew.ActionStatus{Name: a.name, State: state})
+		as := crew.ActionStatus{Name: a.name, State: state}
+		if a.resumed {
+			as.Workspace = a.workspace
+		}
+		st.Actions = append(st.Actions, as)
 	}
 	return st
 }

@@ -127,7 +127,7 @@ type StatusResult struct {
 	Reason string
 }
 
-// WorkspaceReady is a CreateWorkspace that succeeded.
+// WorkspaceReady is a CreateWorkspace or ReopenWorkspace that succeeded.
 type WorkspaceReady struct {
 	At time.Time
 	// IssueKey and Action identify the CreateWorkspace this answers.
@@ -142,6 +142,28 @@ type WorkspaceReady struct {
 	// Log is the repository-relative path of the session's log file, built
 	// by the engine from Workspace (KTD12).
 	Log string
+	// LogFromDir is the same log's path relative to Dir, so a resumed
+	// session can open it from its workspace.
+	LogFromDir string
+	// Resumed is set when this answers a ReopenWorkspace: the workspace is
+	// the failed run's, as it was left.
+	Resumed bool
+}
+
+// WorkspaceGone is a ReopenWorkspace whose workspace no longer exists. The
+// core creates a fresh one instead.
+type WorkspaceGone struct {
+	At       time.Time
+	IssueKey string
+	Action   string
+}
+
+// RecordFailed is a RecordRun the engine could not write. Record is the
+// record that was not written.
+type RecordFailed struct {
+	At     time.Time
+	Record RunRecord
+	Reason string
 }
 
 // WorkspaceFailed is a CreateWorkspace that failed. The action counts as
@@ -203,6 +225,12 @@ func (i StatusResult) Stamped(at time.Time) Input { i.At = at; return i }
 func (i WorkspaceReady) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i WorkspaceGone) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
+func (i RecordFailed) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i WorkspaceFailed) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -223,6 +251,8 @@ func (i CallResult) arrival() time.Time           { return i.At }
 func (i StatusResult) arrival() time.Time         { return i.At }
 func (i WorkspaceReady) arrival() time.Time       { return i.At }
 func (i WorkspaceFailed) arrival() time.Time      { return i.At }
+func (i WorkspaceGone) arrival() time.Time        { return i.At }
+func (i RecordFailed) arrival() time.Time         { return i.At }
 func (i SessionStarted) arrival() time.Time       { return i.At }
 func (i SessionFailedToStart) arrival() time.Time { return i.At }
 func (i SessionEnded) arrival() time.Time         { return i.At }

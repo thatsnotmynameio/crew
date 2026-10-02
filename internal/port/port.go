@@ -2,7 +2,8 @@
 // through: a Tracker for issues, a Harness for coding-agent sessions and a
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
-// separate optional interface, such as Preparer, StatusReporter or Narrator,
+// separate optional interface, such as Preparer, StatusReporter, Narrator or
+// Reopener,
 // that the engine detects by type assertion. An adapter therefore never wraps
 // another adapter value, because a wrapper hides the optional interfaces of
 // what it wraps.
@@ -30,6 +31,11 @@ var (
 	// missing permission. Retrying cannot help.
 	ErrRefused = errors.New("the tracker refused")
 )
+
+// ErrWorkspaceGone is the error class of Reopener.Reopen for a workspace
+// that no longer exists, such as a worktree the boss removed. An adapter
+// wraps it with %w and its own context.
+var ErrWorkspaceGone = errors.New("the workspace is gone")
 
 // Tracker is an issue tracker, spoken to in the workflow's states. A state
 // is text the tracker shows, such as a label's name on GitHub or a status on
@@ -102,8 +108,10 @@ type Workspace interface {
 
 // Space is a created workspace.
 type Space struct {
-	// Name is unique among the workspaces created, and safe in a file name:
-	// the session's log is named after it.
+	// Name is unique among the workspaces that exist, and safe in a file
+	// name: the session's log is named after it, so a reopened workspace
+	// keeps its log, and a name reused once its workspace is gone reuses
+	// the log too.
 	Name string
 	// Dir is the workspace's absolute directory.
 	Dir string
@@ -146,6 +154,18 @@ type StatusReporter interface {
 	// issue has none. The engine never has two calls for one issue in
 	// flight. Its errors are classified as Tracker.Move's are.
 	ReportStatus(ctx context.Context, status crew.Status) error
+}
+
+// Reopener is an optional interface of a Workspace: it reopens a workspace
+// it created before, so a failed action can resume where it stopped. A
+// workspace without it creates a fresh workspace for every action.
+type Reopener interface {
+	// Reopen returns the workspace space names, as it is now, without
+	// changing what it holds: space carries the Name and Branch crew
+	// recorded, and the returned Space the current Dir and Branch. It
+	// returns an error wrapping ErrWorkspaceGone when the workspace no
+	// longer exists, and any other error when it cannot be reopened.
+	Reopen(ctx context.Context, space Space) (Space, error)
 }
 
 // Narrator is an optional interface of a harness's Session: it tells what

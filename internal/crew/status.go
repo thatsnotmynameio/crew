@@ -58,6 +58,9 @@ type ActionStatus struct {
 	// local paths shortened; empty when it said nothing yet or its harness
 	// cannot tell.
 	Said string
+	// Workspace is the name of the workspace the action resumed in; empty
+	// when it did not resume.
+	Workspace string
 }
 
 // ActionState is how an action in a Status stands.
