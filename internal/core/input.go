@@ -19,7 +19,7 @@ type Input interface {
 }
 
 // Tick is a poll: the core lists issues, unless a listing is outstanding,
-// retries its owed calls (KTD8) and reports the status of its running
+// retries its owed calls and pull request reports (KTD8) and reports the status of its running
 // issues. Ticks after a stop request do nothing.
 type Tick struct {
 	At time.Time
@@ -67,7 +67,8 @@ type ListFailed struct {
 	Reason string
 }
 
-// Result classifies how a tracker call (a Move or a ReportFailure) ended.
+// Result classifies how a tracker call (a Move, a ReportFailure or a
+// ReportPullRequests) ended.
 // The engine maps the port's errors onto it: nil is ResultDone,
 // port.ErrMovedMeanwhile is ResultMovedMeanwhile, port.ErrRefused is
 // ResultRefused, and any other error, a timeout included, is ResultFailed.
@@ -83,9 +84,8 @@ const (
 	// ResultRefused means the tracker refused for good. The call is dropped
 	// and reported, never retried.
 	ResultRefused
-	// ResultFailed means the call failed transiently. A verdict call becomes
-	// owed and is retried; a take is abandoned and the next poll may take
-	// the issue again.
+	// ResultFailed means the call failed transiently. The call becomes owed
+	// and is retried.
 	ResultFailed
 )
 
@@ -123,6 +123,17 @@ type StatusResult struct {
 	IssueKey string
 	Result   Result
 	// Reason says why the write did not succeed, in one line. Empty on
+	// ResultDone.
+	Reason string
+}
+
+// PullRequestsResult is how a ReportPullRequests command ended, correlated
+// by its issue's key. Its Result is classified as a CallResult's is.
+type PullRequestsResult struct {
+	At       time.Time
+	IssueKey string
+	Result   Result
+	// Reason says why the report did not succeed, in one line. Empty on
 	// ResultDone.
 	Reason string
 }
@@ -231,6 +242,9 @@ func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
 func (i StatusResult) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i PullRequestsResult) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i WorkspaceReady) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -261,6 +275,7 @@ func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
 func (i CallResult) arrival() time.Time           { return i.At }
 func (i StatusResult) arrival() time.Time         { return i.At }
+func (i PullRequestsResult) arrival() time.Time   { return i.At }
 func (i WorkspaceReady) arrival() time.Time       { return i.At }
 func (i WorkspaceFailed) arrival() time.Time      { return i.At }
 func (i WorkspaceGone) arrival() time.Time        { return i.At }
