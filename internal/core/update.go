@@ -144,10 +144,8 @@ func (s *step) windDown() {
 		return
 	}
 	for _, h := range m.issues {
-		for _, a := range h.actions {
-			if a.phase != PhaseEnded {
-				return
-			}
+		if !h.ended() {
+			return
 		}
 	}
 	s.stop()
@@ -335,12 +333,9 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome) {
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
 	})
-	for _, other := range h.actions {
-		if other.phase != PhaseEnded {
-			return
-		}
+	if h.ended() {
+		s.judge(h)
 	}
-	s.judge(h)
 }
 
 // judge moves h to its stage's on_success when every action succeeded, and
@@ -404,6 +399,16 @@ func (m *Model) findCall(id CallID) (*heldIssue, *call) {
 // release forgets h.
 func (m *Model) release(h *heldIssue) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
+}
+
+// ended reports whether every action of h has ended.
+func (h *heldIssue) ended() bool {
+	for _, a := range h.actions {
+		if a.phase != PhaseEnded {
+			return false
+		}
+	}
+	return true
 }
 
 // settle forgets c, which needs no further attempt.

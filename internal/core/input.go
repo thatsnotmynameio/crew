@@ -7,8 +7,9 @@ import (
 )
 
 // Input is one thing the engine tells the core: a tick, a stop request, the
-// end of the run time, or the result of a Command. Every input carries At, the time it reached the
-// engine's inbox, so start and elapsed times stay pure in the core (KTD2).
+// end of the run time, or the result of a Command. Every input carries At,
+// the time it reached the engine's inbox, so start and elapsed times stay
+// pure in the core (KTD2).
 // The set of inputs is closed: only this package's types implement Input.
 type Input interface {
 	// Stamped returns a copy of the input whose At is at. The engine stamps
