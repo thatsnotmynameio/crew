@@ -3,6 +3,7 @@ package claude
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -388,5 +389,131 @@ func TestFactorySessionRunsClaudeThroughTheGroup(t *testing.T) {
 	}
 	if got := strings.Replace(log, stderr, "", 1); got != string(fixture(t, "success.jsonl")) {
 		t.Errorf("log without stderr = %q, want the stream as printed", got)
+	}
+}
+
+// lines returns the first n lines of the fixture name, each with its newline.
+func lines(t *testing.T, name string, n int) []byte {
+	t.Helper()
+	all := bytes.SplitAfter(fixture(t, name), []byte("\n"))
+	if n > len(all) {
+		t.Fatalf("%s has %d lines, want at least %d", name, len(all), n)
+	}
+	return bytes.Join(all[:n], nil)
+}
+
+// feed writes data to a new stream in small chunks, as claude prints it.
+func feed(data []byte) *stream {
+	s := &stream{}
+	for chunk := range slices.Chunk(data, 7) {
+		_, _ = s.Write(chunk)
+	}
+	return s
+}
+
+// assistantLine is a top-level assistant event whose one content block is a
+// text block holding text.
+func assistantLine(t *testing.T, text string) []byte {
+	t.Helper()
+	line, err := json.Marshal(map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"role":    "assistant",
+			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+		"parent_tool_use_id": nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(line, '\n')
+}
+
+func TestSaidIsEmptyBeforeAnyAssistantText(t *testing.T) {
+	if got := feed(lines(t, "success.jsonl", 1)).said(); got != "" {
+		t.Errorf("said = %q, want nothing", got)
+	}
+}
+
+func TestSaidIsTheFirstTextOnceTheSessionSaidIt(t *testing.T) {
+	got := feed(lines(t, "success.jsonl", 2)).said()
+
+	if want := "I'll start by reading the issue and the failing test."; got != want {
+		t.Errorf("said = %q, want %q", got, want)
+	}
+}
+
+func TestSaidKeepsTheTextWhenAnAssistantEventHoldsOnlyAToolUse(t *testing.T) {
+	got := feed(lines(t, "success.jsonl", 3)).said() // the third line is a Bash tool_use
+
+	if want := "I'll start by reading the issue and the failing test."; got != want {
+		t.Errorf("said = %q, want %q", got, want)
+	}
+}
+
+func TestSaidIgnoresWhatASubagentSays(t *testing.T) {
+	got := feed(fixture(t, "subagent.jsonl")).said()
+
+	if want := "I'll have a subagent find where the parser reads events."; got != want {
+		t.Errorf("said = %q, want the top-level text %q", got, want)
+	}
+}
+
+func TestSaidPutsATextOfSeveralLinesOnOneLine(t *testing.T) {
+	got := feed(assistantLine(t, "U1 committed.\n\n168 tests pass.\n  Starting U2.\n")).said()
+
+	if want := "U1 committed. 168 tests pass. Starting U2."; got != want {
+		t.Errorf("said = %q, want %q", got, want)
+	}
+}
+
+func TestSaidKeepsTheEndOfATextLongerThan200Characters(t *testing.T) {
+	text := "Começo " + strings.Repeat("é", 250) + " the end."
+
+	got := feed(assistantLine(t, text)).said()
+
+	runes := []rune(text)
+	want := "…" + string(runes[len(runes)-199:])
+	if got != want {
+		t.Errorf("said = %q, want %q", got, want)
+	}
+	if n := utf8.RuneCountInString(got); n != 200 {
+		t.Errorf("said has %d characters, want 200", n)
+	}
+	if !strings.HasSuffix(got, " the end.") {
+		t.Errorf("said = %q, want it to end as the text does", got)
+	}
+}
+
+func TestSessionSaysItsLastTopLevelTextWhileAndAfterItRuns(t *testing.T) {
+	h := build(t, noSection, &fakeSpawn{process: newProcess(fixture(t, "success.jsonl"), nil)})
+	s, err := h.Start(t.Context(), port.Run{Dir: "/work", Prompt: "Implement #4", Output: io.Discard})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	n, ok := s.(port.Narrator)
+	if !ok {
+		t.Fatalf("session %T is not a port.Narrator", s)
+	}
+
+	// Read from another goroutine while the process writes, for -race.
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = n.Said()
+			}
+		}
+	}()
+	s.Wait()
+	close(stop)
+	<-done
+
+	if got, want := n.Said(), "The tests pass. I opened the pull request."; got != want {
+		t.Errorf("Said = %q, want %q", got, want)
 	}
 }
