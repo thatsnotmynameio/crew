@@ -65,7 +65,7 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
 - **Releases:** the version is `VERSION`, starting at `0.1.0`. A pull request that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release. The version must be `MAJOR.MINOR.PATCH` and not below the latest release (CI's `version` check).
 - **Shared workflows:** CI, Docs, SonarQube, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
-- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). The `checks` ruleset requires `version`, `actionlint / actionlint` and `docs / docs.page check`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
+- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). The `checks` ruleset requires `version`, `actionlint / actionlint`, `docs / docs.page check` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
 - **Sonar:** off until the repository variable `SONAR_ENABLED` is `true`. A Sonar finding that conflicts with a required signature or convention is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.
 
 ## Agents
