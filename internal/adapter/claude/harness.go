@@ -23,11 +23,13 @@ const defaultModel = "claude-opus-5-5"
 // stoppedReason is the Outcome.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
-// Compile-time guards: the engine finds Preparer by type assertion.
+// Compile-time guards: the engine finds Preparer and Narrator by type
+// assertion.
 var (
 	_ port.Harness  = (*harness)(nil)
 	_ port.Preparer = (*harness)(nil)
 	_ port.Session  = (*session)(nil)
+	_ port.Narrator = (*session)(nil)
 )
 
 // settings is the claude adapter's config section: config.model, and no key
@@ -99,14 +101,15 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	if err != nil {
 		return nil, err
 	}
-	s := &session{process: p, done: make(chan struct{})}
-	go s.reap(events)
+	s := &session{process: p, events: events, done: make(chan struct{})}
+	go s.reap()
 	return s, nil
 }
 
 // session is a running claude process.
 type session struct {
 	process process
+	events  *stream // claude's stdout, parsed as it is printed
 	stopped atomic.Bool
 	outcome crew.Outcome  // set before done is closed
 	done    chan struct{} // closed once the process is reaped and judged
@@ -114,9 +117,9 @@ type session struct {
 
 // reap waits for the process, whose output is fully copied once Wait
 // returns, and judges it.
-func (s *session) reap(events *stream) {
+func (s *session) reap() {
 	err := s.process.Wait()
-	s.outcome = judge(events.end(), err)
+	s.outcome = judge(s.events.end(), err)
 	if s.stopped.Load() {
 		s.outcome = crew.Outcome{Reason: stoppedReason}
 	}
@@ -127,6 +130,12 @@ func (s *session) reap(events *stream) {
 func (s *session) Wait() crew.Outcome {
 	<-s.done
 	return s.outcome
+}
+
+// Said implements port.Narrator: it returns the last text block of the last
+// top-level assistant event so far, so what a subagent says never counts.
+func (s *session) Said() string {
+	return s.events.said()
 }
 
 // Stop implements port.Session. proc sends the terminate signal to the

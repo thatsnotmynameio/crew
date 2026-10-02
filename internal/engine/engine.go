@@ -10,9 +10,11 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -71,6 +73,10 @@ type Engine struct {
 	prepared    bool
 	preparation error
 
+	// reporter is the tracker's port.StatusReporter; nil when the tracker
+	// has none, and the core then reports no status (R13).
+	reporter port.StatusReporter
+
 	// The fields below are owned by Run's loop.
 	model    *core.Model
 	inbox    chan message
@@ -81,13 +87,21 @@ type Engine struct {
 	recent   []core.Event
 }
 
-// New returns an engine for cfg. It starts nothing until Run.
+// New returns an engine for cfg. It starts nothing until Run. When the
+// tracker implements port.StatusReporter, the engine reports each issue's
+// status through it (KTD1).
 func New(cfg Config) *Engine {
+	reporter, _ := cfg.Tracker.(port.StatusReporter)
+	var opts []core.Option
+	if reporter != nil {
+		opts = append(opts, core.ReportingStatus())
+	}
 	return &Engine{
 		cfg:      cfg,
 		stream:   newStream(),
 		stop:     make(chan struct{}),
-		model:    core.New(cfg.Workflow, cfg.MaxParallelIssues),
+		reporter: reporter,
+		model:    core.New(cfg.Workflow, cfg.MaxParallelIssues, opts...),
 		inbox:    make(chan message, inboxSize),
 		sessions: map[sessionKey]port.Session{},
 	}
@@ -130,7 +144,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
 		case <-ticker.C:
-			e.step(core.Tick{})
+			e.step(core.Tick{Said: e.said()})
 		case <-stop:
 			stop = nil
 			e.step(core.StopRequested{})
@@ -211,6 +225,27 @@ func workflowStates(workflow []crew.Stage) []crew.State {
 		used[s.Label], used[s.MovesTo], used[s.OnSuccess] = true, true, true
 	}
 	return slices.DeleteFunc(crew.States(), func(s crew.State) bool { return !used[s] })
+}
+
+// said returns what each running session that implements port.Narrator last
+// said, with local paths shortened (R10), then cut to its last maxSaid
+// characters, in a stable order. Cutting after shortening keeps the end of a
+// cut path from reaching the tracker. Only the loop
+// calls it, as it owns the sessions.
+func (e *Engine) said() []core.Said {
+	var out []core.Said
+	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), func(a, b sessionKey) int {
+		return cmp.Or(cmp.Compare(a.issue, b.issue), cmp.Compare(a.action, b.action))
+	}) {
+		n, ok := e.sessions[k].(port.Narrator)
+		if !ok {
+			continue
+		}
+		if text := n.Said(); text != "" {
+			out = append(out, core.Said{IssueKey: k.issue, Action: k.action, Text: lastWords(e.scrub(text))})
+		}
+	}
+	return out
 }
 
 // receive handles a message from a command goroutine.

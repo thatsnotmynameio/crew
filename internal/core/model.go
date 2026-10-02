@@ -29,6 +29,9 @@ type Model struct {
 	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
 	stopped     bool         // the Stopped event was emitted
 	lastID      CallID
+	// statuses holds each issue's status slot, by issue key; nil when
+	// status reporting is off (KTD3).
+	statuses map[string]*statusSlot
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -51,6 +54,7 @@ type actionRun struct {
 	branch    string
 	log       string // set once a session is asked to start
 	started   time.Time
+	said      string // what its running session last said
 	outcome   crew.Outcome
 }
 
@@ -68,20 +72,34 @@ type call struct {
 
 // New returns a model for workflow, whose stages are in config order and
 // already validated, taking at most maxParallelIssues issues at once (R6).
-func New(workflow []crew.Stage, maxParallelIssues int) *Model {
+func New(workflow []crew.Stage, maxParallelIssues int, opts ...Option) *Model {
 	stages := make([]crew.Stage, len(workflow))
 	for i, s := range workflow {
 		s.Actions = slices.Clone(s.Actions)
 		stages[i] = s
 	}
-	return &Model{stages: stages, maxParallel: maxParallelIssues}
+	m := &Model{stages: stages, maxParallel: maxParallelIssues}
+	for _, o := range opts {
+		o(m)
+	}
+	return m
+}
+
+// Option changes a new Model.
+type Option func(*Model)
+
+// ReportingStatus has the model report each issue's status through
+// ReportStatus commands, for a tracker that keeps status comments (KTD1).
+func ReportingStatus() Option {
+	return func(m *Model) { m.statuses = map[string]*statusSlot{} }
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has
-// completed: the core holds no issue and no owed call. The engine returns
-// once Stopped is true and none of its commands is still running.
+// completed: the core holds no issue, no owed call and no status write in
+// flight or owed. The engine returns once Stopped is true and none of its
+// commands is still running.
 func (m *Model) Stopped() bool {
-	return m.stopping && len(m.issues) == 0
+	return m.stopping && len(m.issues) == 0 && !m.statusesBusy()
 }
 
 // Claim is a held issue's state inside the core.

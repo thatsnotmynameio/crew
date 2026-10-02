@@ -142,12 +142,13 @@ At the same check, crew creates the labels your workflow uses that the repositor
 
 1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it.
-3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first.
+3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
 4. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label and adds the new one, and leaves your other labels alone.
 5. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
-6. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `needs_attention`, and crew comments on the issue.
+6. While the actions run, crew updates the issue's status comment at every poll.
+7. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `needs_attention`, and crew comments on the issue.
 
-The comment names each failed action, its worktree and its log, with the session's last message in a code block:
+This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action, its worktree and its log, with the session's last message in a code block:
 
 ````markdown
 crew: 1 action failed on #42.
@@ -161,9 +162,37 @@ exit code 1 after: I could not run the tests.
 
 Paths in the comment are relative to the repository. crew writes your repository's path as `.` and your home directory as `~`, so the comment does not show where your files are.
 
-A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported.
+A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
 
 To retry an issue in `needs attention`, swap that label for the stage's `label`, such as `ready`.
+
+### The status comment
+
+Each issue crew queues or takes gets one status comment, which crew edits in place across stages, restarts and retries. It shows where the issue stands:
+
+- **Queued:** the stage it waits for, and that it waits for a free slot (`max_parallel_issues`). crew edits it only when that changes.
+- **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the comment. crew updates it at every poll.
+- **Ended:** each action's final state, and where the issue went: the stage's `on_success`, or `needs attention`, including when you stopped crew.
+
+````markdown
+crew: `implement` is running on #42.
+
+**`acceptance`** succeeded.
+
+**`development`** has been running for 42 minutes. It last said:
+
+```text
+U1 committed: 168 tests pass. Starting U2.
+```
+
+Updated 2026-10-02 14:03 UTC.
+
+<!-- crew:status -->
+````
+
+The session's words are cleaned like the failure report's paths and sit in a code block, so nothing in them renders or mentions anyone. Editing a comment notifies no one; the failure report is what notifies you.
+
+crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew queues or takes it again, and an issue whose label you remove while it is queued keeps its last status comment.
 
 ### Where things go
 
@@ -211,7 +240,7 @@ Press Ctrl-C (or `q` in the live view), or send SIGTERM or SIGHUP. Closing the t
 
 1. It starts nothing new.
 2. Issues whose actions have all ended are judged as usual.
-3. Running sessions get 10 seconds to stop before they are killed. Their issues move to `needs attention`, with a comment saying crew stopped them.
+3. Running sessions get 10 seconds to stop before they are killed. Their issues move to `needs attention`, with a comment saying crew stopped them, and their status comments show the move.
 4. Moves and comments still owed get one last try.
 
 This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again, or send a second SIGTERM or SIGHUP, to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
@@ -248,10 +277,10 @@ A session that runs long keeps crew running past the limit, and so does a move t
 ## Limits
 
 - **One crew per repository.** Two crews in one repository take the same issues. Nothing stops you from starting a second one.
-- **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it.
+- **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it, and its status comment keeps saying its actions run.
 - **No time limit on a session.** A session runs until it ends or you stop crew. `config.run_time_limit_seconds` limits crew, not its sessions: it does not cut a running session short.
 - **No retries.** A failed action is not run again. Relabeling the issue is the retry.
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
-- **Not built yet from the old dispatcher:** pausing and resuming on usage limits (the `paused` state is reserved for it), a status comment kept up to date, skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
+- **Not built yet from the old dispatcher:** pausing and resuming on usage limits (the `paused` state is reserved for it), skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
 - **At most 100 issues per poll**, the oldest first.
 - **Sessions are headless.** They cannot ask you anything or talk to each other. The [acceptance tester](/guide/acceptance-tester) agent is interactive, so do not point an action at it.

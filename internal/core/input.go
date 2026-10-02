@@ -19,9 +19,20 @@ type Input interface {
 }
 
 // Tick is a poll: the core lists issues, unless a listing is outstanding,
-// and retries its owed calls (KTD8). Ticks after a stop request do nothing.
+// retries its owed calls (KTD8) and reports the status of its running
+// issues. Ticks after a stop request do nothing.
 type Tick struct {
 	At time.Time
+	// Said is what the running sessions last said, for their issues'
+	// statuses, with local paths already shortened.
+	Said []Said
+}
+
+// Said is what the running session of Action on an issue last said.
+type Said struct {
+	IssueKey string
+	Action   string
+	Text     string
 }
 
 // StopRequested asks the core to stop (R9). The core starts nothing new,
@@ -105,6 +116,17 @@ type CallResult struct {
 	Reason string
 }
 
+// StatusResult is how a ReportStatus command ended, correlated by its
+// issue's key. Its Result is classified as a CallResult's is.
+type StatusResult struct {
+	At       time.Time
+	IssueKey string
+	Result   Result
+	// Reason says why the write did not succeed, in one line. Empty on
+	// ResultDone.
+	Reason string
+}
+
 // WorkspaceReady is a CreateWorkspace that succeeded.
 type WorkspaceReady struct {
 	At time.Time
@@ -175,6 +197,9 @@ func (i ListFailed) Stamped(at time.Time) Input { i.At = at; return i }
 func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i StatusResult) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i WorkspaceReady) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -195,6 +220,7 @@ func (i TimeUp) arrival() time.Time               { return i.At }
 func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
 func (i CallResult) arrival() time.Time           { return i.At }
+func (i StatusResult) arrival() time.Time         { return i.At }
 func (i WorkspaceReady) arrival() time.Time       { return i.At }
 func (i WorkspaceFailed) arrival() time.Time      { return i.At }
 func (i SessionStarted) arrival() time.Time       { return i.At }

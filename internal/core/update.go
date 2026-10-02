@@ -20,7 +20,7 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 	s := &step{m: m, at: in.arrival()}
 	switch in := in.(type) {
 	case Tick:
-		s.tick()
+		s.tick(in.Said)
 	case StopRequested:
 		m.requested = true
 		s.stop()
@@ -33,6 +33,8 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
 	case CallResult:
 		s.callResult(in)
+	case StatusResult:
+		s.statusResult(in)
 	case WorkspaceReady:
 		s.workspaceReady(in)
 	case WorkspaceFailed:
@@ -70,11 +72,18 @@ func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
 // tick lists issues, unless a listing is outstanding or the run time is up,
-// and retries the owed calls that are not in flight (KTD8).
-func (s *step) tick() {
+// retries the owed calls and statuses that are not in flight (KTD8, KTD5),
+// and reports the status of each running issue with what its sessions last
+// said (R6).
+func (s *step) tick(said []Said) {
 	m := s.m
 	if m.stopping {
 		return
+	}
+	for _, x := range said {
+		if _, a := m.action(x.IssueKey, x.Action, PhaseRunning); a != nil {
+			a.said = x.Text
+		}
 	}
 	if !m.listing && !m.timeUp {
 		m.listing = true
@@ -90,7 +99,11 @@ func (s *step) tick() {
 				s.attempt(h, c)
 			}
 		}
+		if h.claim == ClaimRunning {
+			s.running(h)
+		}
 	}
+	s.retryStatuses()
 }
 
 // stop starts nothing new from now on, stops the running sessions and gives
@@ -122,6 +135,7 @@ func (s *step) stop() {
 			}
 		}
 	}
+	s.retryStatuses()
 }
 
 // timeUp ends the run time (R2): from now on nothing new is taken, while the
@@ -184,6 +198,11 @@ func (s *step) listed(issues []crew.Issue) {
 			s.take(si, issue)
 			taken++
 		}
+		for _, issue := range candidates {
+			if m.held(issue.Key) == nil {
+				s.queued(si, issue)
+			}
+		}
 	}
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
 }
@@ -240,13 +259,13 @@ func (s *step) callResult(r CallResult) {
 			s.emit(FailureReported{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref})
 		} else {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+			s.ended(h, c.to, crew.MoveDone)
 		}
 		h.settle(c)
 	case ResultFailed:
 		switch {
 		case m.stopping && c.final:
-			s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
-			h.settle(c)
+			s.dropped(h, c, r)
 		default:
 			c.owed = true
 			h.claim = ClaimOwed
@@ -257,12 +276,21 @@ func (s *step) callResult(r CallResult) {
 			}
 		}
 	default:
-		s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
-		h.settle(c)
+		s.dropped(h, c, r)
 	}
 	if len(h.calls) == 0 {
 		m.release(h)
 	}
+}
+
+// dropped gives up c, which r answered, and says so on h's status when c is
+// the verdict move.
+func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
+	s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
+	if c.kind == CallMove && !c.take {
+		s.ended(h, c.to, crew.MoveDropped)
+	}
+	h.settle(c)
 }
 
 // taken starts h's actions once its take move is done, or, after a stop,
@@ -287,6 +315,9 @@ func (s *step) taken(h *heldIssue, c *call) {
 		a.prompt = prompt
 		a.phase = PhaseCreating
 		s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
+	}
+	if h.claim == ClaimRunning {
+		s.running(h)
 	}
 }
 
@@ -353,10 +384,12 @@ func (s *step) judge(h *heldIssue) {
 	}
 	if len(report.Failures) == 0 {
 		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})
+		s.ended(h, stage.OnSuccess, crew.MovePending)
 		return
 	}
 	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: crew.NeedsAttention})
 	s.call(h, &call{kind: CallReport, report: report})
+	s.ended(h, crew.NeedsAttention, crew.MovePending)
 }
 
 // held returns the held issue keyed key, or nil.

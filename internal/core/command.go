@@ -64,9 +64,17 @@ type StopSession struct {
 	Action   string
 }
 
+// ReportStatus asks the tracker to show Status on its issue's status
+// comment (KTD3). Its result is a StatusResult carrying Status.IssueKey. The
+// core never has two status writes of one issue in flight.
+type ReportStatus struct {
+	Status crew.Status
+}
+
 func (ListIssues) command()      {}
 func (Move) command()            {}
 func (ReportFailure) command()   {}
 func (CreateWorkspace) command() {}
 func (StartSession) command()    {}
 func (StopSession) command()     {}
+func (ReportStatus) command()    {}
