@@ -1,9 +1,9 @@
 {
   "$schema": "https://docs.page/schema.json",
-  "name": "Project",
-  "description": "One sentence: what this project does.",
+  "name": "crew",
+  "description": "Moves your issues through a workflow you declare, running a coding-agent session for each action.",
   "social": {
-    "github": "thatsnotmynameio/template"
+    "github": "thatsnotmynameio/crew"
   },
   "tabs": [
     { "id": "guide", "title": "Guide", "href": "/" },
@@ -15,6 +15,7 @@
       "tab": "guide",
       "pages": [
         { "title": "Overview", "href": "/" },
+        { "title": "crew", "href": "/guide/crew" },
         { "title": "Acceptance tester", "href": "/guide/acceptance-tester" }
       ]
     },
@@ -22,7 +23,8 @@
       "group": "Develop",
       "tab": "develop",
       "pages": [
-        { "title": "Getting set up", "href": "/develop" }
+        { "title": "Getting set up", "href": "/develop" },
+        { "title": "Architecture", "href": "/develop/architecture" }
       ]
     }
   ]

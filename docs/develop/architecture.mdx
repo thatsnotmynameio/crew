@@ -1,0 +1,223 @@
+---
+title: Architecture
+description: How crew's engine is built, and how to add a tracker or harness adapter.
+---
+
+# Architecture
+
+crew is one Go module, `github.com/thatsnotmynameio/crew`. Its engine is built as ports and adapters:
+
+- a **pure core** decides everything, and performs no I/O;
+- an **engine loop** runs what the core decides through three **ports**, Tracker, Harness and Workspace, and feeds the results back;
+- **adapters** implement the ports: `github`, `claude` and `git` today;
+- **renderers**, the TUI and the line printer, only consume the updates the engine publishes.
+
+A new tracker or coding agent is one new adapter package plus one line in the registry. The engine, the renderers and the other adapters do not change.
+
+## Packages
+
+| Package | What it holds |
+| --- | --- |
+| `cmd/crew` | The binary: flags, signals, the repository root, and the `git` workspace. It calls `app.Run`. |
+| `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. |
+| `internal/crew` | The domain: the eight states, issues, stages, actions, outcomes and failure reports. |
+| `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow checks, prompt templates. |
+| `internal/port` | The port interfaces, the optional `Preparer`, the sentinel errors and the factory types. |
+| `internal/registry` | Maps adapter names to factories. `default.go` is the production list. |
+| `internal/core` | The pure reducer: model, inputs, commands and events. |
+| `internal/engine` | The loop, command execution, crew's files under `.crew/`, and the update stream. |
+| `internal/proc` | The one way to start a child process: its own process group, stop with a deadline, kill all. |
+| `internal/adapter/github` | Tracker over `gh`. |
+| `internal/adapter/claude` | Harness over `claude -p`. |
+| `internal/adapter/git` | Workspace over `git worktree`. |
+| `internal/ui/lines` | The timestamped line renderer. |
+| `internal/ui/tui` | The Bubble Tea TUI. |
+| `internal/fake` | An in-memory tracker, a scripted harness and a temp-dir workspace, for tests. |
+
+## Layering
+
+Imports point inward. Arrows mean "imports":
+
+```mermaid
+flowchart TB
+  MAIN["cmd/crew"] --> APP["internal/app"]
+  MAIN --> REG["internal/registry"]
+  MAIN --> AD
+  APP --> REG
+  APP --> CFG["internal/config"]
+  APP --> ENG["internal/engine"]
+  APP --> UI["internal/ui/lines, internal/ui/tui"]
+  REG --> AD["internal/adapter/*"]
+  AD --> PROC["internal/proc"]
+  AD --> PORT["internal/port"]
+  UI --> ENG
+  UI --> CORE["internal/core"]
+  ENG --> CORE
+  ENG --> PORT
+  CFG --> CREW["internal/crew"]
+  CORE --> CREW
+  PORT --> CREW
+```
+
+golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these rules does not hold:
+
+- `internal/crew` imports nothing of crew's.
+- `internal/port` imports none of `core`, `engine`, `config`, the adapters or the UI.
+- `internal/core` imports only `internal/crew`.
+- `internal/engine` imports no adapter and no UI package.
+- Adapters import none of `core`, `engine` or the UI.
+- Adapters never import each other, and their non-test code never imports `config`: an adapter gets its section through `port.Decode`.
+- Only tests import `internal/fake`.
+- Only `internal/ui/tui` imports Bubble Tea.
+
+## Startup
+
+1. `cmd/crew` parses `--plain` and `--version`, starts catching SIGINT and SIGTERM, and finds the repository root with `git rev-parse --show-toplevel`.
+2. `app.Run` loads the config. The engine's keys are decoded there; each adapter's section is handed on, undecoded, as a `port.Decode`.
+3. The registry builds the tracker and the harness from their names and sections. `cmd/crew` builds the `git` workspace directly: there is only one, and no key selects it.
+4. The engine runs every adapter's `Preparer`. Any error so far exits with 2, before the TUI starts.
+5. `app` starts the engine and one renderer, the TUI on a terminal and the line printer otherwise, and handles the stop signals until both return.
+
+## The core
+
+`core.Model.Update(input)` returns the commands to run and the events to publish. It never touches a process, the network, a file or the clock: the engine stamps every input with its arrival time. Its tests are tables, with no goroutines.
+
+- **Inputs:** `Tick`, `StopRequested`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `WorkspaceReady`, `WorkspaceFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
+- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `CreateWorkspace`, `StartSession`, `StopSession`.
+- **Events:** `IssueTaken`, `ActionStarted`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `Stopped`.
+
+Each issue the core holds has a claim, kept apart from the tracker's states:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Taking: picked
+  Taking --> Released: move refused or moved meanwhile
+  Taking --> Stopping: stop requested before its sessions started
+  Taking --> Running: take move done
+  Running --> Judging: every action ended
+  Running --> Stopping: stop requested
+  Stopping --> Judging: sessions ended
+  Judging --> Released: verdict move done, refused or moved meanwhile
+  Judging --> Owed: verdict move failed transiently
+  Owed --> Released: retry done, refused or moved meanwhile
+```
+
+The core picks later stages first, then the oldest issue. It never takes an issue it already holds. A call that fails transiently stays owed and is retried at every tick, and once more at stop. A refusal or a "moved meanwhile" is dropped and reported, never retried.
+
+## The engine loop
+
+`engine.Engine.Run` is the only caller of the core, on one goroutine.
+
+- Every result reaches the loop through one inbox. A ticker selected in the loop polls every `poll_interval_seconds`, so a slow step coalesces ticks instead of queueing them.
+- Each command runs in its own goroutine. Tracker and workspace calls get a 10-minute deadline; a timeout is a transient failure.
+- Commands run on their own context, which a stop request does not cancel. A first Ctrl-C therefore never cancels the verdict moves it waits for.
+- A stop gives each running session 10 seconds: the engine owns the deadline, and the adapter owns the signals.
+- Each session's output goes to `.crew/logs/<workspace>.log`. Before a reason reaches the core, the engine writes the repository root as `.` and the home directory as `~`.
+- `Run` returns once the core holds no issue and no command goroutine is left.
+
+## The update stream
+
+After every step the engine publishes an `engine.Update`: that step's events plus a `Snapshot`, a deep copy of the core's view with the last 20 events. Publishing never blocks the engine, and each subscriber decides what it can lose:
+
+- `SubscribeLatest` keeps only the newest update. The TUI uses it: every update carries the full view, so it loses nothing it renders.
+- `SubscribeQueue` keeps updates in order up to a capacity. Past it, new updates are dropped and counted, and the line renderer prints the count.
+
+The engine never imports Bubble Tea. Only `internal/ui/tui` does, and it starts with Bubble Tea's signal handler off, so crew's handler is the only one.
+
+## Ports and capabilities
+
+`internal/port` holds three small interfaces, with only what every adapter must provide:
+
+- `Tracker`: `List` the open issues in some states, `Move` an issue from one state to another, `ReportFailure` from a structured report the adapter formats in its own markup. `Move` and `ReportFailure` wrap `port.ErrMovedMeanwhile` or `port.ErrRefused`; any other error is transient.
+- `Harness`: `Start` a session in a directory with a prompt and an output writer. The `Session` can be waited on for a `crew.Outcome` and stopped within the caller's deadline.
+- `Workspace`: `Create` a fresh workspace for an issue and an action, and return its name, directory and branch.
+
+Anything an adapter may or may not support is a separate, optional interface. Today there is one, `Preparer`: it checks the adapter's tools before the first poll, and receives the states the workflow uses. The engine finds optional interfaces by type assertion, so it never wraps an adapter value, which would hide them. An adapter carries no "not implemented" stubs. Each one has compile-time guards:
+
+```go
+var (
+	_ port.Harness  = (*harness)(nil)
+	_ port.Preparer = (*harness)(nil)
+)
+```
+
+An issue's identity is an opaque `Key` plus a display `Ref`, both set by the tracker (`42` and `#42` on GitHub). Nothing outside the `github` adapter assumes an issue number.
+
+## The registry
+
+`registry.Registry` is a value, not a global: no `init()` registers anything. `registry.Default` in `internal/registry/default.go` is the production list, and `cmd/crew` passes it to `app`. Tests build their own registry holding the fakes, so the fakes go through the same lookup and validation as the real adapters.
+
+A factory receives a `port.Decode` for its config section, so no adapter imports the YAML library. The decoder rejects unknown keys with the key path and line. A factory sets its defaults on the target before decoding, because a key the section leaves out keeps the target's value. A factory validates; it never runs a tool or reaches the network. That is the `Preparer`'s job.
+
+| Port | Selected by | Factory's section |
+| --- | --- | --- |
+| Tracker | `tracker.name` | every key under `tracker:` except `name` |
+| Harness | `config.harness` | `config.model` plus the keys of the top-level `harness:` section |
+
+## Adding an adapter
+
+Take a hypothetical Codex harness. Everything it needs is one new package, `internal/adapter/codex/`, plus one entry in `internal/registry/default.go`. The `claude` adapter is the model to follow.
+
+### `internal/adapter/codex/command.go`
+
+A pure function from prompt, model and directory to a `proc.Command` that runs Codex headless. Keep it apart from the parsing, as `claude` does, so a declarative preset could replace it later.
+
+### `internal/adapter/codex/stream.go`
+
+An `io.Writer` that parses Codex's output as it is printed, plus the verdict: when the session succeeded, and its one-line reason. A session that ends cleanly succeeded; one that fails, dies or is stopped did not.
+
+### `internal/adapter/codex/harness.go`
+
+The adapter itself:
+
+```go
+package codex
+
+// Compile-time guards: the engine finds Preparer by type assertion.
+var (
+	_ port.Harness  = (*harness)(nil)
+	_ port.Preparer = (*harness)(nil)
+	_ port.Session  = (*session)(nil)
+)
+
+// settings is the adapter's section: config.model, plus any key it wants
+// under the top-level harness: section.
+type settings struct {
+	Model string `yaml:"model"`
+}
+
+// Factory returns the codex harness factory. Every session runs through
+// group, so a forced exit kills it.
+func Factory(group *proc.Group) port.HarnessFactory {
+	return func(decode port.Decode) (port.Harness, error) {
+		s := settings{Model: "..."} // the default model belongs to the adapter
+		if err := decode(&s); err != nil {
+			return nil, err
+		}
+		return &harness{group: group, model: s.Model}, nil
+	}
+}
+```
+
+- `Start` builds the command, starts it with `group.Start`, sends its output to `run.Output` and through the parser, and returns a session.
+- The session's `Wait` returns the verdict once the process has exited. Its `Stop` calls the process's `Stop(ctx)`, which sends SIGTERM to the process group, then SIGKILL when `ctx` ends.
+- `Prepare`, the optional `Preparer`, checks that `codex` is on `PATH`. Leave it out if there is nothing to check.
+
+### `internal/adapter/codex/harness_test.go` and `testdata/`
+
+Script the process behind a small interface, as `claude` does with its `spawner`, and parse recorded output from `testdata/`: a success, an error, and output with no verdict.
+
+### `internal/registry/default.go`
+
+The only existing file that changes. Add the entry to the harness map, with the import it needs:
+
+```go
+map[string]port.HarnessFactory{
+	"claude": claude.Factory(group),
+	"codex":  codex.Factory(group),
+},
+```
+
+No other Go file changes: not the engine, not the core, not the config, not the renderers, not the other adapters. The boss then selects it with `config.harness: codex`. Document the new name and its keys on the Guide page in the same pull request.
+
+A tracker adapter has the same shape: a package with `Factory(group) port.TrackerFactory`, an entry in the tracker map, and its own mapping from crew's eight states to the tracker's statuses or labels.

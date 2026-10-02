@@ -4,6 +4,8 @@ The starting point of thatsnotmynameio's repositories: GitHub setup, releases, d
 
 > Starting a repository from this template? Replace this README with the project's own.
 
+To install and run crew in your repositories, see the [Guide](https://docs.page/thatsnotmynameio/crew/guide/crew).
+
 ## Start a repository
 
 1. Create it from the template:
@@ -41,12 +43,14 @@ The starting point of thatsnotmynameio's repositories: GitHub setup, releases, d
 
 | Path | What it does |
 | --- | --- |
-| `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`) and `actionlint`. Add the project's jobs. |
+| `cmd/crew` | The `crew` binary. To install and run it, see the [Guide](https://docs.page/thatsnotmynameio/crew/guide/crew). |
+| `internal/` | crew's engine, its adapters (`github`, `claude`, `git`) and its TUI. See `AGENTS.md` and the Develop tab. |
+| `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`), `actionlint`, and `go` (gofmt, vet, lint, tests, govulncheck). |
 | `.github/workflows/release.yml` | Pushes to `main`: publishes `VERSION` as `vX.Y.Z` and a GitHub release when it is new. |
 | `.github/workflows/docs.yml` | Pull requests: docs.page's check of `docs.json` and `docs/`. |
 | `.github/workflows/sonar.yml` | SonarQube Cloud, when the variable `SONAR_ENABLED` is `true`. |
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
-| `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows and the docs CLI. |
+| `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the docs CLI and the Go modules. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
 | `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. See the Guide. |
 | `docs.json`, `docs/` | The docs.page site (Guide and Develop tabs). |
