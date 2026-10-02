@@ -202,6 +202,20 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("error %v is not fs.ErrNotExist", err)
 	}
+	if want := "docs/guide/crew.mdx"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not point to the guide (%s) for creating one", err, want)
+	}
+}
+
+// crew runs on its own repository, so its .crew/config.yaml must stay valid.
+func TestTheRepositorysOwnConfigLoads(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("Load(repository root) = %v", err)
+	}
+	if got := len(cfg.Workflow); got != 2 {
+		t.Errorf("workflow has %d stages, want 2 (implement, review)", got)
+	}
 }
 
 func TestLoadRejectsInvalidConfig(t *testing.T) {

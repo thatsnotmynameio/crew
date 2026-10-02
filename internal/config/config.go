@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -86,6 +87,9 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 func Load(root string) (*Config, error) {
 	path := filepath.Join(root, ".crew", "config.yaml")
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("read crew config: %w (create it: see docs/guide/crew.mdx in the crew repository)", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read crew config: %w", err)
 	}
