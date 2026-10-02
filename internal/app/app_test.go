@@ -378,6 +378,62 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 	})
 }
 
+// Covers AE4 and R8: an issue with an extra label and a stage's label is
+// taken by that stage and loses the extra; an issue whose only crew label is
+// an extra is never taken. The tracker is built with the config's extras.
+func TestAnExtraLabelNeverBlocksAStageAndNeverStartsOne(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const waitingBrainstorm crew.State = "waiting brainstorm"
+		tr := fake.NewTracker(issue("1", ready), issue("2"))
+		tr.SetExtras("1", waitingBrainstorm)
+		tr.SetExtras("2", waitingBrainstorm)
+		h := fake.NewHarness()
+		r := options(t, "extra_labels:\n  - label: waiting brainstorm\n"+oneAction, tr, h)
+		var extras []crew.State
+		r.opts.Registry = registry.New(
+			map[string]port.TrackerFactory{"fake": func(decode port.Decode, states, got []crew.State) (port.Tracker, error) {
+				extras = got
+				return fake.TrackerFactory(tr)(decode, states, got)
+			}},
+			map[string]port.HarnessFactory{"fake": fake.HarnessFactory(h)},
+		)
+		r.start()
+
+		s := next(t, h)
+		if got := s.Run().Prompt; got != "Implement development for issue #1" {
+			t.Errorf("the session's prompt = %q, want #1's", got)
+		}
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{inProgress}) {
+			t.Errorf("#1 is in %v, want in progress", got)
+		}
+		if got := tr.Extras("1"); len(got) != 0 {
+			t.Errorf("#1 still has the extras %v, want none", got)
+		}
+		s.End(success)
+		synctest.Wait()
+		time.Sleep(time.Hour) // later ticks
+		synctest.Wait()
+		r.signals <- syscall.SIGTERM
+
+		if code := <-r.code; code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+		if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(extras, want) {
+			t.Errorf("the tracker was built with the extras %v, want %v", extras, want)
+		}
+		wantMoves := []fake.Move{
+			{Key: "1", From: ready, To: inProgress},
+			{Key: "1", From: inProgress, To: readyToReview},
+		}
+		if got := tr.Moves(); !reflect.DeepEqual(got, wantMoves) {
+			t.Errorf("moves = %v, want %v, and none of #2", got, wantMoves)
+		}
+		if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(tr.Extras("2"), want) {
+			t.Errorf("#2 has the extras %v, want %v", tr.Extras("2"), want)
+		}
+	})
+}
+
 func TestASignalStopsCrewWithExitZeroAfterTheStopSequence(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue("1", ready))

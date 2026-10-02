@@ -1,6 +1,7 @@
 package github
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -30,4 +31,13 @@ func newLabels(states []crew.State) labels {
 func (l labels) stateOf(label string) (crew.State, bool) {
 	s, ok := l[strings.ToLower(label)]
 	return s, ok
+}
+
+// extras are the config's extra labels, in file order: crew's labels for
+// parked work, which no stage takes and which are never states.
+type extras []crew.State
+
+// has reports whether label is one of the extras, ignoring case.
+func (e extras) has(label string) bool {
+	return slices.ContainsFunc(e, func(s crew.State) bool { return strings.EqualFold(string(s), label) })
 }

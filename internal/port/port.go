@@ -34,22 +34,25 @@ var (
 // Tracker is an issue tracker, spoken to in the workflow's states. A state
 // is text the tracker shows, such as a label's name on GitHub or a status on
 // another tracker; the adapter knows how its tracker shows it, and is built
-// knowing the workflow's states (TrackerFactory). Those are crew's states.
+// knowing the workflow's states and the config's extra labels
+// (TrackerFactory). Those states are crew's states. The extras are crew's
+// too, for parked work no stage takes, but they are never states.
 type Tracker interface {
 	// List returns the open issues that are in any of states. Each issue
 	// carries every crew state it is in, not only the ones asked for, so the
 	// engine can skip an issue found in two states; it carries nothing that
-	// is not a crew state. An error means the list could not be read; it is
-	// transient.
+	// is not a crew state, and never an extra. An error means the list could
+	// not be read; it is transient.
 	List(ctx context.Context, states []crew.State) ([]crew.Issue, error)
 	// Move moves the issue identified by issueKey from one state to
-	// another, and leaves it in exactly one crew state, to, without touching
-	// what is not a crew state. It returns an error wrapping
-	// ErrMovedMeanwhile when the issue is closed or not in from, one
-	// wrapping ErrRefused when the tracker refuses for good, and any other
-	// error when the move failed transiently. It returns nil, changing
-	// nothing, when the issue is already exactly in to and not in from, so
-	// retrying a move that landed is safe.
+	// another, and leaves it in exactly one crew state, to, removing every
+	// extra it carries, without touching what is not crew's. It returns an
+	// error wrapping ErrMovedMeanwhile when the issue is closed or not in
+	// from, one wrapping ErrRefused when the tracker refuses for good, and
+	// any other error when the move failed transiently. It returns nil,
+	// changing nothing, when the issue is already exactly in to and not in
+	// from, whatever extras it carries, so retrying a move that landed is
+	// safe.
 	Move(ctx context.Context, issueKey string, from, to crew.State) error
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
@@ -113,8 +116,9 @@ type Space struct {
 type Preparer interface {
 	// Prepare checks and prepares the adapter for a workflow that can
 	// request states, so an adapter creates or checks only what the workflow
-	// uses. An error names the tool or setting at fault, and crew stops
-	// before polling.
+	// uses; a Tracker also creates or checks the extras it was built with.
+	// An error names the tool or setting at fault, and crew stops before
+	// polling.
 	Prepare(ctx context.Context, states []crew.State) error
 }
 

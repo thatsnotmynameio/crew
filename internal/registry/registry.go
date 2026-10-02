@@ -28,16 +28,16 @@ func New(trackers map[string]port.TrackerFactory, harnesses map[string]port.Harn
 }
 
 // Tracker builds the tracker adapter registered as name, the config's
-// tracker.name, from its config section and the workflow's states. An
-// unregistered name is an error naming tracker.name and every registered
-// tracker; a factory's error, such as an unknown key in the section, is
-// returned with the adapter's name.
-func (r Registry) Tracker(name string, section port.Decode, states []crew.State) (port.Tracker, error) {
+// tracker.name, from its config section, the workflow's states and the
+// config's extra labels. An unregistered name is an error naming
+// tracker.name and every registered tracker; a factory's error, such as an
+// unknown key in the section, is returned with the adapter's name.
+func (r Registry) Tracker(name string, section port.Decode, states, extras []crew.State) (port.Tracker, error) {
 	factory, err := lookup(r.trackers, "tracker", "tracker.name", name)
 	if err != nil {
 		return nil, err
 	}
-	tracker, err := factory(section, states)
+	tracker, err := factory(section, states, extras)
 	if err != nil {
 		return nil, fmt.Errorf("tracker %s: %w", name, err)
 	}
