@@ -46,12 +46,11 @@ type Model struct {
 // subscription (Engine.SubscribeLatest), measuring elapsed times with now
 // and showing event times in loc.
 //
-// The first Ctrl-C or q calls stop (U10 passes Engine.Stop) and shows
-// "stopping…"; the model keeps running until updates is closed, then quits.
-// A second Ctrl-C or q calls force and quits at once (KTD7). force is
-// called from Update, while the terminal is still in raw mode, so it should
-// kill what must die and return, leaving the exit to the caller after
-// Program.Run returns. Bubble Tea's own signal handler should be disabled
+// The first Ctrl-C or q calls stop and shows "stopping…"; the model keeps
+// running until updates is closed, then quits. A second Ctrl-C or q calls
+// force and quits at once (KTD7). force is called from Update, while the
+// terminal is still in raw mode, so it should kill what must die and return,
+// leaving the exit to the caller after Program.Run returns. Bubble Tea's own signal handler should be disabled
 // (tea.WithoutSignalHandler), so crew's handler is the only one.
 func New(updates <-chan engine.Update, stop, force func(), now func() time.Time, loc *time.Location) Model {
 	return Model{updates: updates, stop: stop, force: force, now: now, loc: loc, at: now(), width: 80}

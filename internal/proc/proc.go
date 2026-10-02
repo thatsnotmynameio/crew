@@ -214,6 +214,10 @@ func (g *Group) KillAll() {
 	}
 }
 
+// Runner is the shape of Group.Run, so a caller can take a Group's Run and
+// tests can inject a scripted one.
+type Runner func(ctx context.Context, c Command) (Output, error)
+
 // Run runs c to completion and returns what it printed. A non-zero exit is
 // an error wrapping *exec.ExitError, with the command's stderr in its
 // message. When ctx is done first, Run kills the command's process group and

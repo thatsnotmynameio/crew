@@ -27,7 +27,7 @@ const (
 	// transient failure, so a hung gh or git cannot stall polling or stop.
 	callTimeout = 10 * time.Minute
 	// stopTimeout is how long a session gets to stop before its adapter
-	// kills it, as the old dispatcher's GRACE.
+	// kills it.
 	stopTimeout = 10 * time.Second
 	// inboxSize buffers results. Senders are bounded (running sessions plus
 	// a few commands) and the loop always drains, so blocking sends cannot
@@ -97,7 +97,7 @@ func New(cfg Config) *Engine {
 // them, and Run returns their error.
 //
 // Stop, or ctx ending, requests a stop: nothing new starts, running
-// sessions get 10 seconds to stop, issues are judged as their actions end,
+// sessions get stopTimeout to stop, issues are judged as their actions end,
 // and owed calls get one final try (R9). Run returns nil once the core holds
 // no issue and no command goroutine is left. Every subscription is closed
 // when Run returns, after its last update.

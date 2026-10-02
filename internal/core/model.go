@@ -85,7 +85,7 @@ func (m *Model) Stopped() bool {
 // Claim is a held issue's state inside the core.
 type Claim int
 
-// The claim states, as the plan's claim-state diagram names them.
+// The claim states.
 const (
 	// ClaimTaking: the take move is in flight.
 	ClaimTaking Claim = iota
@@ -187,7 +187,7 @@ type ActionView struct {
 func (m *Model) View() View {
 	v := View{Stopping: m.stopping}
 	for _, h := range m.issues {
-		iv := IssueView{Issue: cloneIssue(h.issue), Stage: m.stages[h.stage].Name, Claim: h.claim}
+		iv := IssueView{Issue: h.issue.Clone(), Stage: m.stages[h.stage].Name, Claim: h.claim}
 		for _, a := range h.actions {
 			iv.Actions = append(iv.Actions, ActionView{
 				Name: a.name, Phase: a.phase, Workspace: a.workspace, Branch: a.branch,
@@ -207,10 +207,4 @@ func (m *Model) View() View {
 // describe returns c as a Call of h.
 func (h *heldIssue) describe(c *call) Call {
 	return Call{Kind: c.kind, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to}
-}
-
-// cloneIssue copies issue, so the copy shares no slice with it.
-func cloneIssue(issue crew.Issue) crew.Issue {
-	issue.States = slices.Clone(issue.States)
-	return issue
 }

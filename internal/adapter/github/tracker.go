@@ -44,6 +44,11 @@ const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $la
   }
 }`
 
+// ghLabel is a label as gh prints it in JSON.
+type ghLabel struct {
+	Name string `json:"name"`
+}
+
 // Tracker is the GitHub tracker. It is safe for concurrent use.
 type Tracker struct {
 	gh     *gh
@@ -59,7 +64,7 @@ func Factory(group *proc.Group) port.TrackerFactory {
 	return factory(group.Run)
 }
 
-func factory(run runner) port.TrackerFactory {
+func factory(run proc.Runner) port.TrackerFactory {
 	return func(decode port.Decode) (port.Tracker, error) {
 		l, err := decodeLabels(decode)
 		if err != nil {
@@ -96,9 +101,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 						URL       string    `json:"url"`
 						CreatedAt time.Time `json:"createdAt"`
 						Labels    struct {
-							Nodes []struct {
-								Name string `json:"name"`
-							} `json:"nodes"`
+							Nodes []ghLabel `json:"nodes"`
 						} `json:"labels"`
 					} `json:"nodes"`
 				} `json:"issues"`
@@ -130,16 +133,15 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 // refusal: the label must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
 	var issue struct {
-		State  string `json:"state"`
-		Labels []struct {
-			Name string `json:"name"`
-		} `json:"labels"`
+		State  string    `json:"state"`
+		Labels []ghLabel `json:"labels"`
 	}
+	move := fmt.Sprintf("move issue #%s from %s to %s", issueKey, from, to)
 	if err := t.gh.decode(ctx, &issue, "issue", "view", issueKey, "--json", "state,labels"); err != nil {
-		return fmt.Errorf("move issue #%s from %s to %s: %w", issueKey, from, to, err)
+		return fmt.Errorf("%s: %w", move, err)
 	}
 	if issue.State != "OPEN" {
-		return fmt.Errorf("move issue #%s from %s to %s: it is %s: %w", issueKey, from, to, strings.ToLower(issue.State), port.ErrMovedMeanwhile)
+		return fmt.Errorf("%s: it is %s: %w", move, strings.ToLower(issue.State), port.ErrMovedMeanwhile)
 	}
 	args := []string{"issue", "edit", issueKey}
 	inFrom := false
@@ -151,15 +153,15 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		}
 	}
 	if !inFrom {
-		return fmt.Errorf("move issue #%s from %s to %s: it is no longer %s: %w", issueKey, from, to, from, port.ErrMovedMeanwhile)
+		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
 	target := t.labels.name[to]
 	args = append(args, "--add-label="+target)
 	if out, err := t.gh.call(ctx, args...); err != nil {
 		if missingLabel(string(out.Stderr), target) {
-			return fmt.Errorf("move issue #%s from %s to %s: %w: %w", issueKey, from, to, port.ErrRefused, err)
+			return fmt.Errorf("%s: %w: %w", move, port.ErrRefused, err)
 		}
-		return fmt.Errorf("move issue #%s from %s to %s: %w", issueKey, from, to, err)
+		return fmt.Errorf("%s: %w", move, err)
 	}
 	return nil
 }
@@ -192,9 +194,7 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		}
 		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
 	}
-	var present []struct {
-		Name string `json:"name"`
-	}
+	var present []ghLabel
 	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
 		return fmt.Errorf("tracker github: read the repository's labels: %w", err)
 	}

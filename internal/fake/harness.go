@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -79,7 +80,7 @@ func (h *Harness) ignoresStop() bool {
 func (h *Harness) Sessions() []*Session {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append([]*Session(nil), h.sessions...)
+	return slices.Clone(h.sessions)
 }
 
 // Next returns the first session that Next has not returned yet, in start

@@ -1,6 +1,9 @@
 package crew
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // Issue is an issue as a tracker reports it. Its identity is the opaque Key
 // plus the display Ref, both set by the tracker adapter: Key "42" and Ref "#42"
@@ -20,4 +23,11 @@ type Issue struct {
 	// States are the crew states the issue is in. A healthy issue is in
 	// exactly one; an issue in two or more is skipped and reported.
 	States []State
+}
+
+// Clone returns a copy of i with its own States, so the copy shares no slice
+// with i.
+func (i Issue) Clone() Issue {
+	i.States = slices.Clone(i.States)
+	return i
 }

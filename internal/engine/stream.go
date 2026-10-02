@@ -25,7 +25,7 @@ type Update struct {
 // latest events. Its View shares no memory with the core.
 type Snapshot struct {
 	core.View
-	// Recent are the last 20 events, oldest first.
+	// Recent are the last recentEvents events, oldest first.
 	Recent []core.Event
 }
 

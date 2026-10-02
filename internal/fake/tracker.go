@@ -81,7 +81,7 @@ func NewTracker(issues ...crew.Issue) *Tracker {
 func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	issue.States = slices.Clone(issue.States)
+	issue = issue.Clone()
 	if ti := t.find(issue.Key); ti != nil {
 		ti.issue, ti.closed = issue, false
 		return
@@ -117,7 +117,7 @@ func (t *Tracker) Issue(key string) (crew.Issue, bool) {
 	if ti == nil {
 		return crew.Issue{}, false
 	}
-	return clone(ti.issue), true
+	return ti.issue.Clone(), true
 }
 
 // FailMoves makes the next moves of the issue with key fail, one error per
@@ -168,7 +168,7 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 			continue
 		}
 		if slices.ContainsFunc(ti.issue.States, func(s crew.State) bool { return slices.Contains(states, s) }) {
-			out = append(out, clone(ti.issue))
+			out = append(out, ti.issue.Clone())
 		}
 	}
 	return out, nil
@@ -221,11 +221,6 @@ func pop(scripted map[string][]error, key string) error {
 	}
 	scripted[key] = errs[1:]
 	return errs[0]
-}
-
-func clone(i crew.Issue) crew.Issue {
-	i.States = slices.Clone(i.States)
-	return i
 }
 
 // Preparation is a scriptable port.Preparer, to embed in a fake. It records

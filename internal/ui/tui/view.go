@@ -27,7 +27,7 @@ func (m Model) View() tea.View {
 	case m.snap.Stopping:
 		add("crew: stopping…")
 	default:
-		add("crew: %d %s held (q or ctrl+c stops)", len(m.snap.Issues), plural(len(m.snap.Issues), "issue", "issues"))
+		add("crew: %d %s held (q or ctrl+c stops)", len(m.snap.Issues), lines.Plural(len(m.snap.Issues), "issue", "issues"))
 	}
 
 	add("")
@@ -124,11 +124,4 @@ func fit(s string, width int) string {
 	}
 	r := []rune(s)
 	return string(r[:width-1]) + "…"
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }

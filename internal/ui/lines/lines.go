@@ -1,7 +1,7 @@
 // Package lines is crew's headless renderer (R18): it prints each domain
 // event of the engine's ordered subscription as one timestamped line,
-// "HH:MM:SS crew: <text>", as the old dispatcher's stamp did. It never
-// imports bubbletea, so the headless mode stays free of the TUI.
+// "HH:MM:SS crew: <text>". It never imports bubbletea, so the headless mode
+// stays free of the TUI.
 package lines
 
 import (
@@ -39,7 +39,7 @@ func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time) erro
 		}
 		n := dropped - reported
 		reported = dropped
-		return line(w, now().In(loc), fmt.Sprintf("%d %s dropped because this output fell behind", n, plural(n, "event was", "events were")))
+		return line(w, now().In(loc), fmt.Sprintf("%d %s dropped because this output fell behind", n, Plural(n, "event was", "events were")))
 	}
 	for u := range ch {
 		for _, e := range u.Events {
@@ -91,7 +91,7 @@ func Text(e core.Event) string {
 		}
 		return fmt.Sprintf("skipped %s: it is in %d crew states (%s)", e.IssueRef, len(e.States), strings.Join(states, ", "))
 	case core.PollDone:
-		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, plural(e.Listed, "issue", "issues"), e.Taken)
+		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
 	case core.ListingFailed:
 		return withReason("listing issues failed", e.Reason)
 	case core.CallOwed:
@@ -130,7 +130,8 @@ func withReason(text, reason string) string {
 	return text + ": " + reason
 }
 
-func plural(n int, one, many string) string {
+// Plural returns one when n is 1 and many otherwise.
+func Plural(n int, one, many string) string {
 	if n == 1 {
 		return one
 	}

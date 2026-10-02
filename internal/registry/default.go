@@ -9,7 +9,7 @@ import (
 
 // Default returns the production registry: every adapter compiled into
 // crew, each starting its processes through group, so a forced exit can kill
-// them all. A new adapter is one more line here (R13).
+// them all. A new adapter is one more line here.
 func Default(group *proc.Group) Registry {
 	return New(
 		map[string]port.TrackerFactory{

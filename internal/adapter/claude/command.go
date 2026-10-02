@@ -6,10 +6,10 @@ import "github.com/thatsnotmynameio/crew/internal/proc"
 const binary = "claude"
 
 // command builds the headless Claude Code run of prompt with model, in dir.
-// It is pure, and kept apart from the stream parser, so that a declarative
-// preset can replace it without touching how a session is judged. The
-// stream-json output, which needs --verbose with -p, is what the parser
-// judges the session by; proc closes stdin.
+// It is pure, and kept apart from the stream parser, so that building the
+// command and judging the session change independently. The stream-json
+// output, which needs --verbose with -p, is what the parser judges the
+// session by; proc closes stdin.
 func command(prompt, model, dir string) proc.Command {
 	return proc.Command{
 		Name: binary,

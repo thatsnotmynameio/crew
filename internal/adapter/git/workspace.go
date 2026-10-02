@@ -25,16 +25,12 @@ var (
 // worktrees is where the worktrees go, relative to the repository root.
 const worktrees = ".crew/worktrees"
 
-// runner runs a command to completion, as proc.Group.Run does; tests script
-// it.
-type runner func(ctx context.Context, c proc.Command) (proc.Output, error)
-
 // Workspace creates each action's worktree under <root>/.crew/worktrees/,
 // on a new branch from origin's latest default branch. It is safe for
 // concurrent use, and creates one worktree at a time.
 type Workspace struct {
 	root string
-	run  runner
+	run  proc.Runner
 	// lock serializes creations: concurrent fetches race on the default
 	// branch's ref lock. It is a channel so a waiter can give up on ctx.
 	lock chan struct{}

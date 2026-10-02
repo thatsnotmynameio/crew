@@ -10,8 +10,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// maxReason is how many characters of a reason an outcome keeps, as the old
-// dispatcher's LATEST did.
+// maxReason is how many characters of a reason an outcome keeps.
 const maxReason = 200
 
 // stream reads claude's stream-json output as it is written: one JSON event

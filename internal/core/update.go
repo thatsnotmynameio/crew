@@ -160,12 +160,12 @@ func (s *step) listed(issues []crew.Issue) {
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	stage := m.stages[si]
-	h := &heldIssue{issue: cloneIssue(issue), stage: si, claim: ClaimTaking}
+	h := &heldIssue{issue: issue.Clone(), stage: si, claim: ClaimTaking}
 	for _, a := range stage.Actions {
 		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt})
 	}
 	m.issues = append(m.issues, h)
-	s.emit(IssueTaken{At: s.at, Issue: cloneIssue(issue), Stage: stage.Name, From: stage.Label, To: stage.MovesTo})
+	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Stage: stage.Name, From: stage.Label, To: stage.MovesTo})
 	s.call(h, &call{kind: CallMove, take: true, from: stage.Label, to: stage.MovesTo})
 }
 
@@ -209,19 +209,17 @@ func (s *step) callResult(r CallResult) {
 		h.settle(c)
 	case ResultFailed:
 		switch {
-		case !m.stopping:
-			c.owed = true
-			h.claim = ClaimOwed
-			s.emit(CallOwed{At: s.at, Call: h.describe(c), Reason: r.Reason})
-		case !c.final:
-			c.owed = true
-			c.final = true
-			h.claim = ClaimOwed
-			s.emit(CallOwed{At: s.at, Call: h.describe(c), Reason: r.Reason})
-			s.attempt(h, c)
-		default:
+		case m.stopping && c.final:
 			s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
 			h.settle(c)
+		default:
+			c.owed = true
+			h.claim = ClaimOwed
+			s.emit(CallOwed{At: s.at, Call: h.describe(c), Reason: r.Reason})
+			if m.stopping {
+				c.final = true
+				s.attempt(h, c)
+			}
 		}
 	default:
 		s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
@@ -258,7 +256,7 @@ func (s *step) taken(h *heldIssue, c *call, r CallResult) {
 		}
 		a.prompt = prompt
 		a.phase = PhaseCreating
-		s.command(CreateWorkspace{Issue: cloneIssue(h.issue), Action: a.name})
+		s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
 	}
 }
 

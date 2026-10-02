@@ -11,15 +11,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// runner runs a command to completion, as proc.Group.Run does: a non-zero
-// exit is an error carrying the command's stderr, and Output holds what it
-// printed either way. Tests inject a scripted one.
-type runner func(ctx context.Context, c proc.Command) (proc.Output, error)
-
-// gh calls the gh CLI through a runner. It works on the repository gh
+// gh calls the gh CLI through a proc.Runner. It works on the repository gh
 // resolves from crew's working directory, the repository's root.
 type gh struct {
-	run runner
+	run proc.Runner
 
 	mu    sync.Mutex
 	login string // the authenticated user, once resolved
