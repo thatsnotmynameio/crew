@@ -50,7 +50,7 @@ func build[A any, F ~func(port.Decode) (A, error)](factories map[string]F, kind,
 		if len(factories) > 0 {
 			registered = strings.Join(slices.Sorted(maps.Keys(factories)), ", ")
 		}
-		return none, fmt.Errorf("%s: no %s is named %q; the registered %ss are: %s", key, kind, name, kind, registered)
+		return none, fmt.Errorf("%s: no %s is named %q; the registered %s adapters are: %s", key, kind, name, kind, registered)
 	}
 	adapter, err := factory(section)
 	if err != nil {

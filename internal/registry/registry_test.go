@@ -57,7 +57,7 @@ func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
 	cfg := load(t, "config:\n  harness: codex\n"+workflow)
 
 	h, err := r.Harness(cfg.Harness, cfg.HarnessSection)
-	assertErr(t, err, "harness", `"codex"`, "claude")
+	assertErr(t, err, "harness", `"codex"`, "the registered harness adapters are: claude")
 	if h != nil {
 		t.Errorf("Harness = %v, want none", h)
 	}
