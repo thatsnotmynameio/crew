@@ -1,0 +1,65 @@
+// Package shell is the check adapter: it runs each action's check with sh,
+// in the action's workspace, as a child process of crew.
+package shell
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/thatsnotmynameio/crew/internal/port"
+	"github.com/thatsnotmynameio/crew/internal/proc"
+)
+
+// Compile-time guard.
+var _ port.Checker = (*Checker)(nil)
+
+// stopTimeout is how long a check ended by its context gets to stop before
+// it is killed.
+const stopTimeout = 10 * time.Second
+
+// Checker runs checks with sh -c. It is safe for concurrent use.
+type Checker struct {
+	group *proc.Group
+}
+
+// New returns a checker that starts its checks in group, so a forced exit
+// kills them with crew's other children.
+func New(group *proc.Group) *Checker {
+	return &Checker{group: group}
+}
+
+// Check implements port.Checker. The command runs as sh's -c argument, with
+// CREW_ISSUE_REF, CREW_ISSUE_KEY, CREW_ISSUE_URL and CREW_BRANCH set, and
+// stdout and stderr on one pipe, so its output keeps the order it was
+// printed in.
+func (c *Checker) Check(ctx context.Context, check port.Check) error {
+	p, err := c.group.Start(proc.Command{
+		Name: "sh", Args: []string{"-c", check.Command}, Dir: check.Dir,
+		Env: []string{
+			"CREW_ISSUE_REF=" + check.IssueRef,
+			"CREW_ISSUE_KEY=" + check.IssueKey,
+			"CREW_ISSUE_URL=" + check.IssueURL,
+			"CREW_BRANCH=" + check.Branch,
+		},
+	}, check.Output, check.Output)
+	if err != nil {
+		return err
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- p.Wait() }()
+	select {
+	case err := <-exited:
+		if err != nil {
+			return fmt.Errorf("%w: %w", port.ErrCheckFailed, err)
+		}
+		return nil
+	case <-ctx.Done():
+		stop, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopTimeout)
+		defer cancel()
+		// Stop kills the group at its deadline, so its error adds nothing.
+		_ = p.Stop(stop)
+		<-exited
+		return fmt.Errorf("the check was ended: %w", ctx.Err())
+	}
+}

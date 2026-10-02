@@ -180,7 +180,8 @@ func (m Model) issues() []string {
 }
 
 // actions is the Actions region: the actions not yet ended, with the
-// elapsed time of the running ones.
+// elapsed time of the running ones, a running check included: its action
+// still runs, from its session's start.
 func (m Model) actions() []string {
 	out := []string{"", "Actions"}
 	var names, states []string
@@ -191,8 +192,8 @@ func (m Model) actions() []string {
 			}
 			names = append(names, fmt.Sprintf("%s %s/%s", iv.Issue.Ref, iv.Stage, a.Name))
 			state := a.Phase.String()
-			if a.Phase == core.PhaseRunning {
-				state = "running " + elapsed(m.at.Sub(a.Started))
+			if a.Phase == core.PhaseRunning || a.Phase == core.PhaseChecking {
+				state += " " + elapsed(m.at.Sub(a.Started))
 			}
 			states = append(states, state)
 		}

@@ -178,6 +178,15 @@ type SessionEnded struct {
 	Outcome  crew.Outcome
 }
 
+// CheckEnded is a RunCheck that ended, with the check's verdict: it passed,
+// or it failed, ran out of time or could not start, as its Reason says.
+type CheckEnded struct {
+	At       time.Time
+	IssueKey string
+	Action   string
+	Outcome  crew.Outcome
+}
+
 // Stamped implements Input.
 func (i Tick) Stamped(at time.Time) Input { i.At = at; return i }
 
@@ -214,6 +223,9 @@ func (i SessionFailedToStart) Stamped(at time.Time) Input { i.At = at; return i 
 // Stamped implements Input.
 func (i SessionEnded) Stamped(at time.Time) Input { i.At = at; return i }
 
+// Stamped implements Input.
+func (i CheckEnded) Stamped(at time.Time) Input { i.At = at; return i }
+
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }
 func (i TimeUp) arrival() time.Time               { return i.At }
@@ -226,3 +238,4 @@ func (i WorkspaceFailed) arrival() time.Time      { return i.At }
 func (i SessionStarted) arrival() time.Time       { return i.At }
 func (i SessionFailedToStart) arrival() time.Time { return i.At }
 func (i SessionEnded) arrival() time.Time         { return i.At }
+func (i CheckEnded) arrival() time.Time           { return i.At }

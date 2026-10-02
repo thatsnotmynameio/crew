@@ -26,6 +26,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/thatsnotmynameio/crew/internal/adapter/git"
+	"github.com/thatsnotmynameio/crew/internal/adapter/shell"
 	"github.com/thatsnotmynameio/crew/internal/app"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
@@ -85,6 +86,7 @@ func run(args []string) int {
 	return app.Run(ctx, app.Options{
 		Registry:  registry.Default(&group),
 		Workspace: func(root string) port.Workspace { return git.New(&group, root) },
+		Checker:   shell.New(&group),
 		Root:      root,
 		Home:      home,
 		Stdout:    stdout,

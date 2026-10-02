@@ -64,6 +64,29 @@ type StopSession struct {
 	Action   string
 }
 
+// RunCheck asks the engine to run Command, the action's check, in Dir once
+// its session succeeded, its output going to the log at Log after the
+// session's. The issue's ref, key and URL and the action's Branch reach the
+// command as environment variables, never as part of it. Its result is
+// CheckEnded.
+type RunCheck struct {
+	IssueKey string
+	Action   string
+	Dir      string
+	Command  string
+	Log      string
+	IssueRef string
+	IssueURL string
+	Branch   string
+}
+
+// StopCheck asks the engine to stop the running check of Action on the
+// issue. The check's end still arrives as CheckEnded.
+type StopCheck struct {
+	IssueKey string
+	Action   string
+}
+
 // ReportStatus asks the tracker to show Status on its issue's status
 // comment (KTD3). Its result is a StatusResult carrying Status.IssueKey. The
 // core never has two status writes of one issue in flight.
@@ -77,4 +100,6 @@ func (ReportFailure) command()   {}
 func (CreateWorkspace) command() {}
 func (StartSession) command()    {}
 func (StopSession) command()     {}
+func (RunCheck) command()        {}
+func (StopCheck) command()       {}
 func (ReportStatus) command()    {}

@@ -53,6 +53,9 @@ type Options struct {
 	Registry registry.Registry
 	// Workspace returns the workspace adapter for the repository at root.
 	Workspace func(root string) port.Workspace
+	// Checker runs the actions' checks; nil fails every action that has a
+	// check.
+	Checker port.Checker
 	// Root is the repository's absolute root, where .crew/ lives.
 	Root string
 	// Home is the user's home directory, shortened to ~ in failure reports;
@@ -162,6 +165,7 @@ func build(o Options) (*engine.Engine, error) {
 		Tracker:           tracker,
 		Harness:           harness,
 		Workspace:         o.Workspace(o.Root),
+		Checker:           o.Checker,
 		Root:              o.Root,
 		Home:              o.Home,
 	}), nil
