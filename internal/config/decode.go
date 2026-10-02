@@ -17,7 +17,7 @@ import (
 // lowercased field name, as the YAML library does), recursing into nested
 // structs, pointers to structs and slices of structs. A key no field takes, a
 // key given twice, or a value of the wrong type is an error naming the key
-// path, such as tracker.labels.ready, and its line. Keys inside a map field are
+// path, such as harness.model, and its line. Keys inside a map field are
 // not checked, and `,inline` fields are not supported. A key left out of the
 // section leaves its field as the target had it, which is how a factory keeps
 // its own defaults. A section absent from the file decodes nothing.

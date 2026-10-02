@@ -35,6 +35,7 @@ workflow:
     label: ready
     moves_to: in_progress
     on_success: ready_to_review
+    on_failure: needs_attention
     actions:
       - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
@@ -64,6 +65,7 @@ workflow:
     label: ready
     moves_to: in_progress
     on_success: ready_to_review
+    on_failure: needs_attention
     actions:
       - name: acceptance
         prompt: "Implement test acceptance for issue {{.Issue.Ref}}"
@@ -73,6 +75,7 @@ workflow:
     label: ready_to_review
     moves_to: in_review
     on_success: ready_to_merge
+    on_failure: needs_attention
     actions:
       - name: custom_review
         prompt: "Review implementation for issue {{.Issue.Ref}}"

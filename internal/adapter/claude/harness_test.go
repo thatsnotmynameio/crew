@@ -150,6 +150,7 @@ const workflow = `workflow:
     label: ready
     moves_to: in_progress
     on_success: ready_to_review
+    on_failure: needs_attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"

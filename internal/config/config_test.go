@@ -56,8 +56,9 @@ func loadErr(t *testing.T, body string, wants ...string) {
 const oneStage = `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
@@ -82,14 +83,14 @@ func TestLoadDraftConfig(t *testing.T) {
 	}
 	wantWorkflow := []crew.Stage{
 		{
-			Name: "implement", Label: "ready", MovesTo: "in_progress", OnSuccess: "ready_to_review",
+			Name: "implement", Label: "ready", MovesTo: "in progress", OnSuccess: "ready to review", OnFailure: "needs attention",
 			Actions: []crew.Action{
 				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
 			},
 		},
 		{
-			Name: "review", Label: "ready_to_review", MovesTo: "in_review", OnSuccess: "ready_to_merge",
+			Name: "review", Label: "ready to review", MovesTo: "in review", OnSuccess: "ready to merge", OnFailure: "needs attention",
 			Actions: []crew.Action{
 				{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"},
 			},
@@ -107,21 +108,6 @@ func TestLoadDraftConfig(t *testing.T) {
 	}
 	if harness.Model != "claude-opus-5-5" {
 		t.Errorf("harness model = %q, want claude-opus-5-5", harness.Model)
-	}
-
-	var tracker struct {
-		Labels map[string]string `yaml:"labels"`
-	}
-	if err := cfg.TrackerSection(&tracker); err != nil {
-		t.Fatalf("TrackerSection: %v", err)
-	}
-	wantLabels := map[string]string{
-		"ready": "ready", "in_progress": "in progress", "ready_to_review": "ready to review",
-		"in_review": "in review", "needs_attention": "needs attention", "paused": "paused",
-		"ready_to_merge": "ready to merge", "done": "done",
-	}
-	if !reflect.DeepEqual(tracker.Labels, wantLabels) {
-		t.Errorf("tracker labels = %v, want %v", tracker.Labels, wantLabels)
 	}
 }
 
@@ -166,13 +152,118 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 		t.Errorf("harness model = %q, want the target's own default", harness.Model)
 	}
 	tracker := struct {
-		Labels map[string]string `yaml:"labels"`
-	}{Labels: map[string]string{"ready": "todo"}}
+		Host string `yaml:"host"`
+	}{Host: "github.com"}
 	if err := cfg.TrackerSection(&tracker); err != nil {
 		t.Fatalf("TrackerSection: %v", err)
 	}
-	if !reflect.DeepEqual(tracker.Labels, map[string]string{"ready": "todo"}) {
-		t.Errorf("tracker labels = %v, want the target's own default", tracker.Labels)
+	if tracker.Host != "github.com" {
+		t.Errorf("tracker host = %q, want the target's own default", tracker.Host)
+	}
+}
+
+func TestLoadAcceptsWorkflowLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []crew.Stage
+	}{
+		{
+			name: "any label text, kept as written",
+			body: `workflow:
+  - name: implement
+    label: Ready For Work
+    moves_to: crew is on it
+    on_success: In Review
+    on_failure: Needs Attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			want: []crew.Stage{
+				{Name: "implement", Label: "Ready For Work", MovesTo: "crew is on it", OnSuccess: "In Review", OnFailure: "Needs Attention"},
+			},
+		},
+		{
+			// Covers AE5: a failed review goes back to implement.
+			name: "on_failure is another stage's label",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+  - name: review
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: ready
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
+`,
+			want: []crew.Stage{
+				{Name: "implement", Label: "ready", MovesTo: "in progress", OnSuccess: "ready to review", OnFailure: "needs attention"},
+				{Name: "review", Label: "ready to review", MovesTo: "in review", OnSuccess: "ready to merge", OnFailure: "ready"},
+			},
+		},
+		{
+			// A label is spelled everywhere as it is first written.
+			name: "a label written in two cases takes its first spelling",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: In Progress
+    on_success: ready to review
+    on_failure: Needs Attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+  - name: review
+    label: Ready To Review
+    moves_to: in review
+    on_success: in progress
+    on_failure: needs attention
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
+`,
+			want: []crew.Stage{
+				{Name: "implement", Label: "ready", MovesTo: "In Progress", OnSuccess: "ready to review", OnFailure: "Needs Attention"},
+				{Name: "review", Label: "ready to review", MovesTo: "in review", OnSuccess: "In Progress", OnFailure: "Needs Attention"},
+			},
+		},
+		{
+			// The issue stays in moves_to when the stage fails.
+			name: "on_failure equals the stage's own moves_to",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: in review
+    on_failure: in progress
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			want: []crew.Stage{
+				{Name: "implement", Label: "ready", MovesTo: "in progress", OnSuccess: "in review", OnFailure: "in progress"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := load(t, tt.body)
+			for i := range cfg.Workflow {
+				cfg.Workflow[i].Actions = nil
+			}
+			if !reflect.DeepEqual(cfg.Workflow, tt.want) {
+				t.Errorf("Workflow = %+v\nwant %+v", cfg.Workflow, tt.want)
+			}
+		})
 	}
 }
 
@@ -280,34 +371,107 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			wants: []string{"workflow", "at least one stage"},
 		},
 		{
-			name: "label outside the eight states",
-			body: `workflow:
-  - name: implement
-    label: redy
-    moves_to: in_progress
-    on_success: ready_to_review
-    actions:
-      - name: development
-        prompt: "Implement {{.Issue.Ref}}"
-`,
-			wants: []string{
-				"workflow[0].label", "line 3", `"redy"`,
-				"ready", "in_progress", "ready_to_review", "in_review",
-				"needs_attention", "paused", "ready_to_merge", "done",
-			},
-		},
-		{
-			name: "moves_to outside the eight states",
+			// Covers AE2.
+			name: "stage without on_failure",
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: doing
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: in review
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
 `,
-			wants: []string{"workflow[0].moves_to", "line 4", `"doing"`},
+			wants: []string{"workflow[0].on_failure", "line 2", "required"},
+		},
+		{
+			name: "empty on_failure",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: in review
+    on_failure: ""
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].on_failure", "required"},
+		},
+		{
+			// Covers AE5.
+			name: "on_failure equals the stage's own label",
+			body: `workflow:
+  - name: review
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: ready to review
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].on_failure", "line 6", `"review"`, "label"},
+		},
+		{
+			// Labels are compared ignoring case, as GitHub does.
+			name: "on_failure is the stage's own label in another case",
+			body: `workflow:
+  - name: review
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: Ready to Review
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].on_failure", "line 6", `"review"`, "label"},
+		},
+		{
+			// Covers AE4.
+			name: "two stages take the same label in different cases",
+			body: `workflow:
+  - name: implement
+    label: Ready
+    moves_to: in progress
+    on_success: in review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+  - name: triage
+    label: ready
+    moves_to: sorting
+    on_success: sorted
+    on_failure: needs attention
+    actions:
+      - name: sort
+        prompt: "Triage {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[1].label", "line 11", `"implement"`, `"triage"`, "same label"},
+		},
+		{
+			name: "moves_to is another stage's label in another case",
+			body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: In Review
+    on_success: done
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+  - name: review
+    label: in review
+    moves_to: reviewing
+    on_success: ready to merge
+    on_failure: needs attention
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
+`,
+			wants: []string{"workflow[0].moves_to", "line 4", `"review"`},
 		},
 		{
 			// Covers AE7.
@@ -315,8 +479,9 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
+    moves_to: in progress
     on_success: ready
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
@@ -328,35 +493,39 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
   - name: triage
     label: ready
-    moves_to: in_review
+    moves_to: in review
     on_success: paused
+    on_failure: needs attention
     actions:
       - name: sort
         prompt: "Triage {{.Issue.Ref}}"
 `,
-			wants: []string{"workflow[1].label", "line 10", `"implement"`, `"triage"`},
+			wants: []string{"workflow[1].label", "line 11", `"implement"`, `"triage"`},
 		},
 		{
 			name: "moves_to is another stage's label",
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: ready_to_review
+    moves_to: ready to review
     on_success: done
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
   - name: review
-    label: ready_to_review
-    moves_to: in_review
-    on_success: ready_to_merge
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: needs attention
     actions:
       - name: custom_review
         prompt: "Review {{.Issue.Ref}}"
@@ -370,6 +539,7 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
     label: ready
     moves_to: ready
     on_success: done
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
@@ -381,35 +551,38 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: acceptance
         prompt: "Implement {{.Issue.Ref}}"
       - name: development
         prompt: "Implement {{.Issue.Numbr}}"
 `,
-			wants: []string{"workflow[0].actions[1].prompt", "line 10", `"development"`, "Numbr"},
+			wants: []string{"workflow[0].actions[1].prompt", "line 11", `"development"`, "Numbr"},
 		},
 		{
 			name: "prompt does not parse",
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref"
 `,
-			wants: []string{"workflow[0].actions[0].prompt", "line 8", `"development"`},
+			wants: []string{"workflow[0].actions[0].prompt", "line 9", `"development"`},
 		},
 		{
 			name: "stage without on_success",
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
+    moves_to: in progress
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
@@ -421,8 +594,9 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
 `,
 			wants: []string{"workflow[0].actions", "line 2", "at least one action"},
 		},
@@ -431,47 +605,51 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
 `,
-			wants: []string{"workflow[0].actions[0].prompt", "line 7", "required"},
+			wants: []string{"workflow[0].actions[0].prompt", "line 8", "required"},
 		},
 		{
 			name: "two stages share a name",
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
   - name: implement
-    label: ready_to_review
-    moves_to: in_review
-    on_success: ready_to_merge
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Review {{.Issue.Ref}}"
 `,
-			wants: []string{"workflow[1].name", "line 9", "workflow[0]"},
+			wants: []string{"workflow[1].name", "line 10", "workflow[0]"},
 		},
 		{
 			name: "two actions of a stage share a name",
 			body: `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
       - name: development
         prompt: "Implement again {{.Issue.Ref}}"
 `,
-			wants: []string{"workflow[0].actions[1].name", "line 9", "actions[0]"},
+			wants: []string{"workflow[0].actions[1].name", "line 10", "actions[0]"},
 		},
 	}
 	for _, tt := range tests {
@@ -496,7 +674,7 @@ tracker:
     - name: Todo
       state: ready
     - name: Doing
-      stat: in_progress
+      stat: in progress
 `+oneStage)
 
 	var harness struct {
