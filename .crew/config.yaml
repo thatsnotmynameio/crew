@@ -20,6 +20,8 @@ workflow:
           /compound-engineering:lfg {{.Issue.Ref}}
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+          This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
   - name: fix
     label: "crew:ready for fix"
     moves_to: "crew:in progress"
@@ -33,6 +35,8 @@ workflow:
           {{.Issue.Ref}} reports a bug: take the defect route. Reproduce it with a failing test first, then fix it.
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+          This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
   - name: knowledge base
     label: "crew:ready for knowledge base"
     moves_to: "crew:in progress"
