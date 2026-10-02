@@ -43,12 +43,13 @@ func (m Model) fitted() []string {
 	fixed = append(fixed, "", "Handled")
 	entries := byAttention(m.snap.Handled)
 	cols := columnsOf(entries)
-	var rest []core.HandledView
-	for _, e := range entries {
-		if !e.NeedsAttention() {
-			rest = append(rest, e)
-			continue
-		}
+	// byAttention puts the entries that need attention first.
+	split := slices.IndexFunc(entries, func(e core.HandledView) bool { return !e.NeedsAttention() })
+	if split < 0 {
+		split = len(entries)
+	}
+	attention, rest := entries[:split], entries[split:]
+	for _, e := range attention {
 		fixed = append(fixed, cols.line(e))
 		fixed = append(fixed, reasons(e)...)
 	}
@@ -60,33 +61,32 @@ func (m Model) fitted() []string {
 
 	// Everything fits, or there is no height to fit.
 	if h <= 0 || len(fixed)+len(rest)+2+len(recent) <= h {
-		return withRest(fixed, rest, cols, 0, recentRegion(recent))
+		return append(withRest(fixed, rest, cols, 0), recentRegion(recent)...)
 	}
 	// Recent events keeps its newest rows that fit, with its header.
 	if left := h - len(fixed) - len(rest) - 2; left > 0 {
-		return withRest(fixed, rest, cols, 0, recentRegion(recent[len(recent)-left:]))
+		return append(withRest(fixed, rest, cols, 0), recentRegion(recent[len(recent)-left:])...)
 	}
 	// The oldest entries that need no attention collapse, as few as fit.
 	for k := 0; k <= len(rest); k++ {
 		if len(fixed)+len(rest)-k+len(collapsed(rest[len(rest)-k:])) <= h {
-			return withRest(fixed, rest, cols, k, nil)
+			return withRest(fixed, rest, cols, k)
 		}
 	}
 	// Even the entries that need attention do not fit: cut at the bottom.
-	all := withRest(fixed, rest, cols, len(rest), nil)
+	all := withRest(fixed, rest, cols, len(rest))
 	keep := h - 1
 	return append(all[:keep:keep], fmt.Sprintf("… %d lines cut", len(all)-keep))
 }
 
 // withRest returns fixed, then the entries of rest but its last k, then one
-// line per state of those k, then tail.
-func withRest(fixed []string, rest []core.HandledView, cols columns, k int, tail []string) []string {
+// line per state of those k.
+func withRest(fixed []string, rest []core.HandledView, cols columns, k int) []string {
 	out := slices.Clone(fixed)
 	for _, e := range rest[:len(rest)-k] {
 		out = append(out, cols.line(e))
 	}
-	out = append(out, collapsed(rest[len(rest)-k:])...)
-	return append(out, tail...)
+	return append(out, collapsed(rest[len(rest)-k:])...)
 }
 
 // collapsed sums up entries in one line per state, in the order of each
@@ -156,13 +156,7 @@ func (m Model) counts() string {
 	}
 	states := slices.Collect(maps.Keys(n))
 	slices.SortFunc(states, func(a, b crew.State) int {
-		if failing[a] != failing[b] {
-			if failing[a] {
-				return -1
-			}
-			return 1
-		}
-		return cmp.Or(cmp.Compare(n[b], n[a]), cmp.Compare(a, b))
+		return cmp.Or(trueFirst(failing[a], failing[b]), cmp.Compare(n[b], n[a]), cmp.Compare(a, b))
 	})
 	for _, s := range states {
 		parts = append(parts, fmt.Sprintf("%d %s", n[s], s))
@@ -213,14 +207,16 @@ func (m Model) actions() []string {
 	return out
 }
 
-// recent returns one line per recent event, oldest first, or none.
+// recent returns one line per recent event, oldest first, or none. Each
+// event takes one row, as the fitting counts, even when its reason spans
+// several lines, such as git's stderr.
 func (m Model) recent() []string {
 	if len(m.snap.Recent) == 0 {
 		return []string{"  none"}
 	}
 	var out []string
 	for _, e := range m.snap.Recent {
-		out = append(out, fmt.Sprintf("  %s %s", e.Time().In(m.loc).Format(time.TimeOnly), lines.Text(e)))
+		out = append(out, fmt.Sprintf("  %s %s", e.Time().In(m.loc).Format(time.TimeOnly), oneLine(lines.Text(e))))
 	}
 	return out
 }
@@ -237,15 +233,20 @@ func byAttention(handled []core.HandledView) []core.HandledView {
 	out := slices.Clone(handled)
 	slices.Reverse(out)
 	slices.SortStableFunc(out, func(a, b core.HandledView) int {
-		if a.NeedsAttention() != b.NeedsAttention() {
-			if a.NeedsAttention() {
-				return -1
-			}
-			return 1
-		}
-		return b.Ended.Compare(a.Ended)
+		return cmp.Or(trueFirst(a.NeedsAttention(), b.NeedsAttention()), b.Ended.Compare(a.Ended))
 	})
 	return out
+}
+
+// trueFirst orders true before false.
+func trueFirst(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return -1
+	}
+	return 1
 }
 
 // columns are the widths of a Handled line's padded columns.

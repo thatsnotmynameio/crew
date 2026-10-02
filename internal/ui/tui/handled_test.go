@@ -173,6 +173,27 @@ func TestAReasonWithNewlinesTakesOneLine(t *testing.T) {
 	}
 }
 
+func TestARecentEventWithAMultiLineReasonTakesOneRow(t *testing.T) {
+	u := runningSnapshot()
+	u.Snapshot.Recent = append(u.Snapshot.Recent, core.ActionEnded{
+		At: start, IssueRef: "#1", Stage: "implement", Action: "code",
+		Outcome: crew.Outcome{Reason: "git fetch: exit status 128: ssh: Could not resolve hostname\nfatal: Could not read from remote repository."},
+	})
+	full := fitted(t, 200, 0, u)
+	rows := strings.Count(full, "\n") + 1
+
+	// A window two rows short of everything leaves Recent events four of its
+	// six rows; a reason that broke onto two rows would push the top line off.
+	view := fitted(t, 200, rows-2, u)
+
+	if got := line(t, view, 0); !strings.HasPrefix(got, "crew: 2 issues held") {
+		t.Errorf("first line = %q, want the top line", got)
+	}
+	if !strings.Contains(view, "ssh: Could not resolve hostname fatal: Could not read") {
+		t.Errorf("view lacks the reason on one row:\n%s", view)
+	}
+}
+
 // manySnapshot is runningSnapshot with ten issues handled: #11 and #12
 // failed, and the successes #13 to #20 in crew:waiting review, the higher
 // the number the more recent.
