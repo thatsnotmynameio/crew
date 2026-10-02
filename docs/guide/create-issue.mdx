@@ -57,7 +57,7 @@ In a Claude Code session in the repository:
 
 - **The type:** the skill infers it from what you wrote. When you did not name one and no single type clearly fits, it lists the types and asks you to pick.
 - **No arguments:** it records the session's work, such as a plan you just wrote. If the session has nothing to record, it asks what to record.
-- **A plan:** when the session wrote a requirements plan, such as one from `ce-brainstorm`, the skill appends the plan's `## Product Contract` section to the body, so the crew session that takes the issue needs no file outside it. To pick the plan yourself, pass its path.
+- **A plan:** to record a requirements plan, such as the one `ce-brainstorm` writes, pass its path, or run the skill with no arguments right after writing it. The issue's body is then the plan's content: each template heading takes the plan's section of the same name, so the crew session that takes the issue needs no file outside it. A plan the issue does not record stays out of its body, even when the session wrote one.
 
 ## What it does
 
@@ -66,7 +66,7 @@ In a Claude Code session in the repository:
 3. It fills the type's template from `.github/ISSUE_TEMPLATE/` with what you wrote and what the session knows. The template's frontmatter is dropped: its `labels`, `title` and `assignees` are not used. When the template file is missing, it writes a free-form body.
 4. It creates the type's label when the repository does not have it yet.
 5. It creates the issue with a short title taken from what you wrote and exactly the type's label, no other.
-6. It prints the issue's link and label, and says when the template file was missing or a plan was appended.
+6. It prints the issue's link and label, and says when the template file was missing, which plan the body was copied from, or that the session wrote a plan the body does not use.
 
 It creates the issue at once, with no preview and no confirmation. To fix a mistake, edit the issue on GitHub. With a stage's label, crew may take the issue at its next poll, so fix a wrong label quickly.
 

@@ -36,14 +36,22 @@ In any other case, including when two types fit, list the types (each with its d
 ## 4. Write the body
 
 1. When the type has an `issue_template`, read `<root>/.github/ISSUE_TEMPLATE/<issue_template>`.
-2. **Template found:** drop its YAML frontmatter; its `labels`, `title` and `assignees` are not used. Fill each section from what the user wrote and from the session's context, keeping the template's headings. Replace the template's guidance comments with the content they ask for. Do not invent facts: leave a section short when there is little to say.
+2. **Template found:** drop its YAML frontmatter; its `labels`, `title` and `assignees` are not used. When the issue records a plan, step 5 fills the sections. Otherwise fill each section from what the user wrote and from the session's context, keeping the template's headings. Replace the template's guidance comments with the content they ask for. Do not invent facts: leave a section short when there is little to say.
 3. **No template,** because the type declares none or its file is missing: write a free-form body from the same sources. Remember a missing file for the report.
 
-## 5. Append the session's plan
+## 5. Copy the plan the issue records
 
-The session's plan is the plan path the user passed, or else the most recent plan this session wrote or enriched under `<docs>/plans/`. `<docs>` is `docs_root` from `<root>/.compound-engineering/config.yaml` when that file sets it, otherwise `docs`. A plan is a file whose frontmatter has `artifact_contract: ce-unified-plan/v1`.
+An issue records a plan when the user passed the plan's path, ran the skill with no arguments to record the session's plan, or asked in other words to record it. The session's plan is the most recent plan this session wrote or enriched under `<docs>/plans/`. `<docs>` is `docs_root` from `<root>/.compound-engineering/config.yaml` when that file sets it, otherwise `docs`. A plan is a file whose frontmatter has `artifact_contract: ce-unified-plan/v1`, such as the requirements plan `ce-brainstorm` writes.
 
-When there is a plan with a `## Product Contract` section, append that whole section after the body, under its own `## Product Contract` heading, so the crew session that takes the issue needs no file outside it. Convert an HTML plan's section to Markdown. A plan without that section counts as no plan.
+When the issue records a plan, its body is the plan's content, so the crew session that takes the issue needs no file outside it:
+
+1. Each template heading takes the plan's section of the same name, copied verbatim, with its subsections. Drop the template's guidance comments, and drop a template section the plan does not have.
+2. Plan sections the template has no heading for go after the template's sections, under their own headings.
+3. Without a template, the body is the plan's `## Goal Capsule` and `## Product Contract`.
+
+Convert an HTML plan to Markdown. A plan without a `## Product Contract` section counts as no plan.
+
+When the issue does not record a plan, use none, even if the session wrote one: a plan on an unrelated issue would reach an unattended crew run as its scope.
 
 ## 6. Ensure the label exists
 
@@ -63,4 +71,5 @@ When a `gh` command fails, report its error text and stop. Do not retry.
 Print the issue's link and its label. Also say:
 
 - that the template file was missing, naming the path, when it was,
-- that the plan's Product Contract was appended, naming the plan, when it was.
+- which plan the body was copied from, when it was,
+- that the session wrote a plan the body does not use, naming it, when that happened.
