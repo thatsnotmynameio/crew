@@ -74,6 +74,8 @@ func (e *Engine) launch(cmd core.Command) {
 		ctx, cancel := context.WithTimeout(e.cmdCtx, checkTimeout)
 		e.checks[sessionKey{c.IssueKey, c.Action}] = cancel
 		job = func() { e.runCheck(ctx, cancel, c) }
+	case core.FindPullRequest:
+		job = func() { e.findPullRequest(c) }
 	case core.StopCheck:
 		// The core asks to stop only checks it started; the check's end
 		// still arrives through its own goroutine, in runCheck.
@@ -231,7 +233,24 @@ func (e *Engine) startSession(c core.StartSession) {
 	// change the session's verdict, which is what the core needs.
 	_ = log.Close()
 	outcome.Reason = e.scrub(outcome.Reason)
-	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome})
+	var usage crew.Usage
+	if r, ok := s.(port.UsageReporter); ok {
+		usage = r.Usage()
+	}
+	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome, Usage: usage})
+}
+
+// findPullRequest looks up the pull request c's action opened, within
+// lookupTimeout. A lookup that fails or times out leaves it not looked up,
+// which changes nothing else (R7).
+func (e *Engine) findPullRequest(c core.FindPullRequest) {
+	ctx, cancel := context.WithTimeout(e.cmdCtx, lookupTimeout)
+	defer cancel()
+	pr, err := e.finder.FindPullRequest(ctx, c.Branch, c.Since)
+	if err != nil {
+		pr = crew.PullRequest{}
+	}
+	e.post(core.PullRequestFound{IssueKey: c.IssueKey, Action: c.Action, PullRequest: pr})
 }
 
 // stopSession stops s within the stop deadline (KTD7). Its end reaches the

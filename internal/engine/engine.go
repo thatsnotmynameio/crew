@@ -34,6 +34,10 @@ const (
 	// checkTimeout bounds every action's check, as callTimeout bounds a
 	// tracker call: a check may call gh or git too. It is fixed.
 	checkTimeout = 10 * time.Minute
+	// lookupTimeout bounds the lookup of an action's pull request, which
+	// runs even while crew stops, so a hung gh delays a stop by no more
+	// (KTD3).
+	lookupTimeout = 15 * time.Second
 	// inboxSize buffers results. Senders are bounded (running sessions plus
 	// a few commands) and the loop always drains, so blocking sends cannot
 	// deadlock; the buffer only spares them waiting on a busy step.
@@ -59,6 +63,10 @@ type Config struct {
 	// Checker runs the actions' checks. Without one, an action with a
 	// check fails, saying crew has no check runner.
 	Checker port.Checker
+	// UsageInStatus has each issue's status show what its ended actions
+	// spent and the pull requests they opened, when the tracker reports
+	// statuses (KTD11).
+	UsageInStatus bool
 	// Root is the repository's absolute root: session logs go under its
 	// .crew/logs/, and it is shortened to . in every reason.
 	Root string
@@ -82,6 +90,9 @@ type Engine struct {
 	// reporter is the tracker's port.StatusReporter; nil when the tracker
 	// has none, and the core then reports no status (R13).
 	reporter port.StatusReporter
+	// finder is the tracker's port.PullRequestFinder; nil when the tracker
+	// has none, and the core then looks up no pull request (R6).
+	finder port.PullRequestFinder
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
@@ -96,26 +107,37 @@ type Engine struct {
 	checks   map[sessionKey]context.CancelFunc // ends each running check
 	recent   []core.Event
 	started  time.Time // when the first poll ran
+	run      string    // this crew run's id in the run journal: started, in RFC 3339
 }
 
 // New returns an engine for cfg. It starts nothing until Run. When the
 // tracker implements port.StatusReporter, the engine reports each issue's
 // status through it (KTD1). When the workspace implements port.Reopener, a
-// failed run's action resumes in that run's workspace (KTD4).
+// failed run's action resumes in that run's workspace (KTD4). When the
+// tracker implements port.PullRequestFinder, the engine looks up the pull
+// request each action opened.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
+	finder, _ := cfg.Tracker.(port.PullRequestFinder)
 	var opts []core.Option
 	if reporter != nil {
 		opts = append(opts, core.ReportingStatus())
+		if cfg.UsageInStatus {
+			opts = append(opts, core.ReportingUsage())
+		}
 	}
 	if _, ok := cfg.Workspace.(port.Reopener); ok {
 		opts = append(opts, core.Reopening())
+	}
+	if finder != nil {
+		opts = append(opts, core.FindingPullRequests())
 	}
 	return &Engine{
 		cfg:      cfg,
 		stream:   newStream(),
 		stop:     make(chan struct{}),
 		reporter: reporter,
+		finder:   finder,
 		opts:     opts,
 		inbox:    make(chan message, inboxSize),
 		sessions: map[sessionKey]port.Session{},
@@ -157,6 +179,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		timeUp = timer.C
 	}
 	e.started = time.Now()
+	e.run = e.started.UTC().Format(time.RFC3339Nano)
 	e.step(core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
