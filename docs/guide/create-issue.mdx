@@ -76,6 +76,16 @@ In a Claude Code session in the repository:
 
 It creates the issue at once, with no preview and no confirmation. To fix a mistake, edit the issue on GitHub. With a stage's label, crew may take the issue at its next poll, so fix a wrong label quickly.
 
+## Put a plan in an existing issue
+
+`/cw-update-issue-plan [label]` writes the session's plan into the issue the session is working on, such as an idea you parked and then brainstormed. It finds the issue from the session and asks only when it cannot tell which one. It takes the plan file the session wrote, or, when you run it instead of letting a brainstorm write its file, what the brainstorm settled. The body follows the template of the issue's type, the old body is kept in a comment, and an optional `label` moves the issue to that stage or extra label. A stage's label starts crew's work at the next poll.
+
+```text
+/cw-update-issue-plan crew:brainstorm:done
+```
+
+It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
+
 ## Limits
 
 - **crew takes only issues you opened.** crew lists only the issues opened by the `gh` user it runs as. An issue someone else opens, from a template on the web or with this skill, is ignored whatever its label. The skill runs as you, so the issues you create with it are taken.
