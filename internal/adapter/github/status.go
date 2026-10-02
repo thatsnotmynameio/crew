@@ -367,7 +367,8 @@ func classify(err error, out proc.Output, onIssue bool) error {
 // UTC. A session's last words go in a fenced code block, so nothing in them
 // may render, link or mention anyone. A failed action says why in crew's
 // words, from its cause; only a failed check's reason shows, in a code
-// span, as no session's or tool's own words may.
+// span, as no session's or tool's own words may. An ended action whose
+// status holds what it spent says so, with its pull request.
 func (t *Tracker) renderStatus(s crew.Status) string {
 	var b strings.Builder
 	b.WriteString(markerLine(s) + "\n")
@@ -392,14 +393,14 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 		}
 		switch {
 		case a.State == crew.ActionSucceeded:
-			fmt.Fprintf(&b, "\n%s%s succeeded.\n", name, and)
+			fmt.Fprintf(&b, "\n%s%s succeeded.%s\n", name, and, usage(a))
 		case a.State == crew.ActionFailed:
 			fmt.Fprintf(&b, "\n%s%s failed%s.", name, and, failureCause(a))
 			if a.Log == "" {
-				b.WriteString(" It failed before it had a log.\n")
+				fmt.Fprintf(&b, " It failed before it had a log.%s\n", usage(a))
 				break
 			}
-			fmt.Fprintf(&b, " Its log is %s.\n", codeSpan(a.Log))
+			fmt.Fprintf(&b, " Its log is %s.%s\n", codeSpan(a.Log), usage(a))
 		case a.Started.IsZero():
 			fmt.Fprintf(&b, "\n%s%s is running.\n", name, and)
 		default:
@@ -425,6 +426,25 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 	}
 	fmt.Fprintf(&b, "\nUpdated %s UTC.", s.Updated.UTC().Format("2006-01-02 15:04"))
 	return b.String()
+}
+
+// usage words what an ended action's session spent and the pull request it
+// opened, after a space, as in " Usage: $12.40, 17.2M tokens. Pull request:
+// [#45](url).", or returns "" when its status holds no session's spend.
+// These are crew's own figures and the tracker's link, never the session's
+// words.
+func usage(a crew.ActionStatus) string {
+	if a.Spend.Sessions == 0 {
+		return ""
+	}
+	pr := "not looked up"
+	switch a.PullRequest.Lookup {
+	case crew.PullRequestFound:
+		pr = "[" + a.PullRequest.Ref + "](" + a.PullRequest.URL + ")"
+	case crew.PullRequestNone:
+		pr = "none"
+	}
+	return " Usage: " + a.Spend.String() + ". Pull request: " + pr + "."
 }
 
 // failureCause words what made a failed action fail, after a colon, or

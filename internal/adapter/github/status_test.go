@@ -304,6 +304,47 @@ func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 	}
 }
 
+// AE8: an ended action whose status holds what its session spent says so,
+// with its pull request; one without stays as it was.
+func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
+	tr, _ := build(t, "")
+	pr45 := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://github.com/o/r/pull/45"}
+	spent := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{CacheRead: 17_200_000}, HasTokens: true}.Spend()
+	ended := func(a crew.ActionStatus) crew.Status {
+		a.Name = "lfg"
+		return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded,
+			Actions: []crew.ActionStatus{a}, To: needsAttention, Updated: updated}
+	}
+	tests := []struct {
+		name   string
+		action crew.ActionStatus
+		want   string
+	}{
+		{"succeeded with a pull request",
+			crew.ActionStatus{State: crew.ActionSucceeded, Spend: spent, PullRequest: pr45},
+			"**`lfg`** succeeded. Usage: $12.40, 17.2M tokens. Pull request: [#45](https://github.com/o/r/pull/45).\n"},
+		{"failed without a pull request",
+			crew.ActionStatus{
+				State: crew.ActionFailed, Cause: crew.CauseSession, Log: ".crew/logs/issue-9-lfg.log",
+				Spend: spent, PullRequest: crew.PullRequest{Lookup: crew.PullRequestNone},
+			},
+			"**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`. " +
+				"Usage: $12.40, 17.2M tokens. Pull request: none.\n"},
+		{"nothing reported, not looked up",
+			crew.ActionStatus{State: crew.ActionSucceeded, Spend: crew.Usage{}.Spend()},
+			"**`lfg`** succeeded. Usage: cost and tokens not reported. Pull request: not looked up.\n"},
+		{"no session", crew.ActionStatus{State: crew.ActionSucceeded}, "**`lfg`** succeeded.\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, _ := strings.Cut(actionLines(t, tr, ended(tt.action)), "\n#74 ")
+			if got != tt.want {
+				t.Errorf("action lines:\n got %q\nwant %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // actionLines renders s and returns the body between the stage's line and
 // the update line, which holds the actions' lines.
 func actionLines(t *testing.T, tr *Tracker, s crew.Status) string {
