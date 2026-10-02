@@ -441,3 +441,51 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 		t.Errorf("Spaces = %d, want 10", got)
 	}
 }
+
+func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
+	tr := fake.NewReportingTracker(issue("74", crew.Ready))
+	var reporter port.StatusReporter = tr
+	queued := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusQueued, Slots: 2}
+	running := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusRunning,
+		Actions: []crew.ActionStatus{{Name: "development", State: crew.ActionRunning}}}
+	tr.FailStatuses("74", port.ErrRefused)
+	ctx := context.Background()
+
+	if err := reporter.ReportStatus(ctx, queued); !errors.Is(err, port.ErrRefused) {
+		t.Fatalf("first ReportStatus = %v, want ErrRefused", err)
+	}
+	for _, s := range []crew.Status{queued, running} {
+		if err := reporter.ReportStatus(ctx, s); err != nil {
+			t.Fatalf("ReportStatus: %v", err)
+		}
+	}
+	running.Actions[0].Said = "changed after the write"
+
+	got := tr.Statuses("74")
+	if len(got) != 2 || got[0].Kind != crew.StatusQueued || got[1].Actions[0].Said != "" {
+		t.Errorf("Statuses = %+v, want the queued then the running status, as written", got)
+	}
+	if _, ok := any(fake.NewPreparingTracker()).(port.StatusReporter); ok {
+		t.Error("a PreparingTracker reports statuses; only a ReportingTracker should")
+	}
+}
+
+func TestNarratingHarnessSessionsSayWhatTheTestSets(t *testing.T) {
+	h := fake.NewNarratingHarness()
+	s := start(t, h, "implement #1")
+	n, ok := s.(port.Narrator)
+	if !ok {
+		t.Fatal("a narrating harness's session is not a port.Narrator")
+	}
+	if got := n.Said(); got != "" {
+		t.Errorf("Said before Say = %q, want empty", got)
+	}
+	h.Sessions()[0].Say("Starting U2.")
+	if got := n.Said(); got != "Starting U2." {
+		t.Errorf("Said = %q, want the text Say set", got)
+	}
+
+	if _, ok := start(t, fake.NewHarness(), "implement #2").(port.Narrator); ok {
+		t.Error("a plain harness's session is a port.Narrator")
+	}
+}
