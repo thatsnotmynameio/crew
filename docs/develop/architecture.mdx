@@ -20,9 +20,9 @@ A new tracker or coding agent is one new adapter package plus one line in the re
 | --- | --- |
 | `cmd/crew` | The binary: flags, signals, the repository root, and the `git` workspace. It calls `app.Run`. |
 | `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. |
-| `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes and failure reports. |
+| `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes, failure reports and statuses. |
 | `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow checks, prompt templates. |
-| `internal/port` | The port interfaces, the optional `Preparer`, the sentinel errors and the factory types. |
+| `internal/port` | The port interfaces, the optional `Preparer`, `StatusReporter` and `Narrator`, the sentinel errors and the factory types. |
 | `internal/registry` | Maps adapter names to factories. `default.go` is the production list. |
 | `internal/core` | The pure reducer: model, inputs, commands and events. |
 | `internal/engine` | The loop, command execution, crew's files under `.crew/`, and the update stream. |
@@ -82,9 +82,9 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 
 `core.Model.Update(input)` returns the commands to run and the events to publish. It never touches a process, the network, a file or the clock: the engine stamps every input with its arrival time. Its tests are tables, with no goroutines.
 
-- **Inputs:** `Tick`, `StopRequested`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `WorkspaceReady`, `WorkspaceFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
-- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `CreateWorkspace`, `StartSession`, `StopSession`.
-- **Events:** `IssueTaken`, `ActionStarted`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `Stopped`.
+- **Inputs:** `Tick`, `StopRequested`, `TimeUp`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `StatusResult`, `WorkspaceReady`, `WorkspaceFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
+- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `ReportStatus`, `CreateWorkspace`, `StartSession`, `StopSession`.
+- **Events:** `IssueTaken`, `ActionStarted`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `StatusFailed`, `WindingDown`, `Stopped`.
 
 Each issue the core holds has a claim, kept apart from the tracker's states:
 
@@ -106,16 +106,22 @@ stateDiagram-v2
 
 The core picks later stages first, then the oldest issue. It never takes an issue it already holds. A call that fails transiently stays owed and is retried at every tick, and once more at stop. A refusal or a "moved meanwhile" is dropped and reported, never retried.
 
+With status reporting on, the core also keeps a status slot per issue key, apart from the issues it holds, so a queued issue has one and a status write never holds a slot of `max_parallel_issues`. It reports an issue as queued when a listing leaves it waiting, as running once its take lands and at every tick, and as ended when it is judged and again once the verdict move settles. Each slot has at most one `ReportStatus` in flight, and the newest status waits for it. A queued or ended status is sent only when it differs from the last one, ignoring its time. A failed queued or running status is written again at the next poll. A failed ended status is retried at every tick, and once more at stop. Successful writes emit no event; the first failure after a success emits `StatusFailed`.
+
+`TimeUp` starts a wind-down. The core takes no new issue and stops listing, but keeps retrying owed calls and statuses at each tick and lets every held issue run and be judged. Once no held issue has an action left to end, it enters the stop sequence, so owed calls and statuses get their final try. `View.Stopping` stays false unless a stop was requested; `View.TimeUp` tells the renderers why crew is ending.
+
 ## The engine loop
 
 `engine.Engine.Run` is the only caller of the core, on one goroutine.
 
 - Every result reaches the loop through one inbox. A ticker selected in the loop polls every `poll_interval_seconds`, so a slow step coalesces ticks instead of queueing them.
+- With `run_time_limit_seconds`, a timer started just before the first poll sends the core `TimeUp`, so the environment checks do not count.
 - Each command runs in its own goroutine. Tracker and workspace calls get a 10-minute deadline; a timeout is a transient failure.
 - Commands run on their own context, which a stop request does not cancel. A first Ctrl-C therefore never cancels the verdict moves it waits for.
 - A stop gives each running session 10 seconds: the engine owns the deadline, and the adapter owns the signals.
 - Each session's output goes to `.crew/logs/<workspace>.log`. Before a reason reaches the core, the engine writes the repository root as `.` and the home directory as `~`.
-- `Run` returns once the core holds no issue and no command goroutine is left.
+- At each tick, the engine asks every running session that implements `Narrator` what it last said, shortens its paths the same way, and passes the texts on the `Tick`.
+- `Run` returns once the core holds no issue, no owed call and no status write, and no command goroutine is left.
 
 ## The update stream
 
@@ -134,7 +140,13 @@ The engine never imports Bubble Tea. Only `internal/ui/tui` does, and it starts 
 - `Harness`: `Start` a session in a directory with a prompt and an output writer. The `Session` can be waited on for a `crew.Outcome` and stopped within the caller's deadline.
 - `Workspace`: `Create` a fresh workspace for an issue and an action, and return its name, directory and branch.
 
-Anything an adapter may or may not support is a separate, optional interface. Today there is one, `Preparer`: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`. The engine finds optional interfaces by type assertion, so it never wraps an adapter value, which would hide them. An adapter carries no "not implemented" stubs. Each one has compile-time guards:
+Anything an adapter may or may not support is a separate, optional interface. Today there are three:
+
+- `Preparer`, on any adapter: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`.
+- `StatusReporter`, on a tracker: `ReportStatus` writes a structured `crew.Status` to the issue's one status comment, created once and edited in place, in the tracker's own markup. Its errors are classified as `Move`'s are. Without it, the core reports no status.
+- `Narrator`, on a harness's `Session`: `Said` returns what the session last said, on one line, and may be called while the session runs.
+
+The engine finds optional interfaces by type assertion, so it never wraps an adapter value, which would hide them. An adapter carries no "not implemented" stubs. Each one has compile-time guards:
 
 ```go
 var (
@@ -204,6 +216,7 @@ func Factory(group *proc.Group) port.HarnessFactory {
 - `Start` builds the command, starts it with `group.Start`, sends its output to `run.Output` and through the parser, and returns a session.
 - The session's `Wait` returns the verdict once the process has exited. Its `Stop` calls the process's `Stop(ctx)`, which sends SIGTERM to the process group, then SIGKILL when `ctx` ends.
 - `Prepare`, the optional `Preparer`, checks that `codex` is on `PATH`. Leave it out if there is nothing to check.
+- `Said`, the optional `Narrator` on the session, returns the last thing the session said, for the issue's status comment. Leave it out if the output does not tell.
 
 ### `internal/adapter/codex/harness_test.go` and `testdata/`
 

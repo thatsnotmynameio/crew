@@ -77,6 +77,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `config.poll_interval_seconds` | `300` | Seconds between polls. Must be positive. |
+| `config.run_time_limit_seconds` | none | How long crew runs, counted from its first poll, before it winds down (see [Run it for a set time](#run-it-for-a-set-time)). Must be positive: `28800` is 8 hours. Without it, crew runs until you stop it. |
 | `config.max_parallel_issues` | `2` | How many issues crew works on at once. It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
 | `config.harness` | `claude` | The coding agent that runs sessions. `claude` is the only one today. |
 | `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
@@ -138,12 +139,13 @@ At the same check, crew creates the labels your workflow names that the reposito
 
 1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. A label no stage names does not count: an issue labeled `paused` and `ready` is taken when no stage names `paused`.
-3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first.
+3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
 4. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label and adds the new one, and leaves your other labels alone.
 5. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
-6. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
+6. While the actions run, crew updates the issue's status comment at every poll.
+7. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
 
-The comment names each failed action, its worktree and its log, with the session's last message in a code block:
+This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action, its worktree and its log, with the session's last message in a code block:
 
 ````markdown
 crew: 1 action failed on #42.
@@ -157,9 +159,37 @@ exit code 1 after: I could not run the tests.
 
 Paths in the comment are relative to the repository. crew writes your repository's path as `.` and your home directory as `~`, so the comment does not show where your files are.
 
-A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported.
+A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
 
 To retry a failed issue, swap its `on_failure` label, such as `needs attention`, for the stage's `label`, such as `ready`.
+
+### The status comment
+
+Each issue crew queues or takes gets one status comment, which crew edits in place across stages, restarts and retries. It shows where the issue stands:
+
+- **Queued:** the stage it waits for, and that it waits for a free slot (`max_parallel_issues`). crew edits it only when that changes.
+- **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the comment. crew updates it at every poll.
+- **Ended:** each action's final state, and where the issue went: the stage's `on_success` or its `on_failure`, including when you stopped crew.
+
+````markdown
+crew: `implement` is running on #42.
+
+**`acceptance`** succeeded.
+
+**`development`** has been running for 42 minutes. It last said:
+
+```text
+U1 committed: 168 tests pass. Starting U2.
+```
+
+Updated 2026-10-02 14:03 UTC.
+
+<!-- crew:status -->
+````
+
+The session's words are cleaned like the failure report's paths and sit in a code block, so nothing in them renders or mentions anyone. Editing a comment notifies no one; the failure report is what notifies you.
+
+crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew queues or takes it again, and an issue whose label you remove while it is queued keeps its last status comment.
 
 ### Where things go
 
@@ -207,7 +237,7 @@ Press Ctrl-C (or `q` in the live view), or send SIGTERM or SIGHUP. Closing the t
 
 1. It starts nothing new.
 2. Issues whose actions have all ended are judged as usual.
-3. Running sessions get 10 seconds to stop before they are killed. Their issues move to their stage's `on_failure`, with a comment saying crew stopped them. When `on_failure` is another stage's `label`, such as `ready`, that stage takes the issue again at the next poll.
+3. Running sessions get 10 seconds to stop before they are killed. Their issues move to their stage's `on_failure`, with a comment saying crew stopped them, and their status comments show the move. When `on_failure` is another stage's `label`, such as `ready`, that stage takes the issue again at the next poll.
 4. Moves and comments still owed get one last try.
 
 This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again, or send a second SIGTERM or SIGHUP, to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
@@ -216,21 +246,38 @@ If crew's output goes to a pipe that closes, for example `crew | head`, crew sto
 
 The checks crew runs when it starts have the same 10 minutes. Past them, or on Ctrl-C, SIGTERM or SIGHUP meanwhile, crew kills every process it started and exits with 2, before its first poll.
 
+### Run it for a set time
+
+Set `config.run_time_limit_seconds` to start crew for a set time, such as overnight. The time counts from the first poll, so the checks crew runs when it starts do not use it up. When the time is up, crew winds down:
+
+1. It takes no new issue, even one that is `ready`.
+2. Sessions already running go on until they end, and their issues are judged as usual. No issue goes to its stage's `on_failure` because of the limit.
+3. Moves and comments still owed get their last try, as when you stop crew.
+4. crew exits with 0.
+
+crew says it is winding down, in the live view and with `--plain`:
+
+```text
+06:22:58 crew: run time of 8h0m0s is up: taking no new issues, winding down
+```
+
+A session that runs long keeps crew running past the limit, and so does a move that keeps failing while crew takes an issue, until GitHub answers. Press Ctrl-C (or `q`), or send SIGTERM or SIGHUP, to stop it the usual way: running sessions get 10 seconds to stop, and their issues move to their stage's `on_failure`. A second one forces the exit.
+
 ### Exit codes
 
 | Code | When |
 | --- | --- |
-| `0` | crew stopped cleanly. |
+| `0` | crew stopped cleanly, or wound down after its run time. |
 | `1` | crew failed while running, or you forced the exit. |
 | `2` | The config, a flag or the environment is wrong; nothing was polled. |
 
 ## Limits
 
 - **One crew per repository.** Two crews in one repository take the same issues. Nothing stops you from starting a second one.
-- **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it.
-- **No time limit on a session.** A session runs until it ends or you stop crew.
+- **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it, and its status comment keeps saying its actions run.
+- **No time limit on a session.** A session runs until it ends or you stop crew. `config.run_time_limit_seconds` limits crew, not its sessions: it does not cut a running session short.
 - **No retries.** A failed action is not run again. Relabeling the issue is the retry.
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
-- **Not built yet from the old dispatcher:** pausing and resuming on usage limits, a status comment kept up to date, skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
+- **Not built yet from the old dispatcher:** pausing and resuming on usage limits, skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
 - **At most 100 issues per poll**, the oldest first.
 - **Sessions are headless.** They cannot ask you anything or talk to each other. The [acceptance tester](/guide/acceptance-tester) agent is interactive, so do not point an action at it.

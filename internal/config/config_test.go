@@ -267,6 +267,25 @@ func TestLoadAcceptsWorkflowLabels(t *testing.T) {
 	}
 }
 
+func TestLoadReadsTheRunTimeLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want time.Duration
+	}{
+		{name: "left out", body: oneStage, want: 0},
+		{name: "eight hours", body: "config:\n  run_time_limit_seconds: 28800\n" + oneStage, want: 8 * time.Hour},
+		{name: "empty", body: "config:\n  run_time_limit_seconds:\n" + oneStage, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, tt.body).RunTimeLimit; got != tt.want {
+				t.Errorf("RunTimeLimit = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneStage)
 	if len(cfg.Workflow) != 1 || len(cfg.Workflow[0].Actions) != 1 {
@@ -350,6 +369,27 @@ func TestLoadRejectsInvalidConfig(t *testing.T) {
   poll_interval_seconds: 0
 ` + oneStage,
 			wants: []string{"config.poll_interval_seconds", "line 2", "positive"},
+		},
+		{
+			name: "run time limit zero",
+			body: `config:
+  run_time_limit_seconds: 0
+` + oneStage,
+			wants: []string{"config.run_time_limit_seconds", "line 2", "positive"},
+		},
+		{
+			name: "run time limit negative",
+			body: `config:
+  run_time_limit_seconds: -5
+` + oneStage,
+			wants: []string{"config.run_time_limit_seconds", "line 2", "positive"},
+		},
+		{
+			name: "run time limit as a duration",
+			body: `config:
+  run_time_limit_seconds: "8h"
+` + oneStage,
+			wants: []string{"config.run_time_limit_seconds", "line 2", "8h"},
 		},
 		{
 			name: "parallel issues not positive",

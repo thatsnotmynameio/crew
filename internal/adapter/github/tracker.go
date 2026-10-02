@@ -2,9 +2,10 @@
 // CLI. A workflow state is the label of the same name, compared ignoring
 // case as GitHub does, and crew's labels are the workflow's states. It lists
 // the open issues the authenticated gh user opened, moves them by swapping
-// crew's labels and reports failures as Markdown comments. It works on the
-// repository gh resolves from crew's working directory, and runs every gh
-// call through the shared process helper.
+// crew's labels, reports failures as Markdown comments and keeps one status
+// comment per issue, edited in place. It works on the repository gh resolves
+// from crew's working directory, and runs every gh call through the shared
+// process helper.
 package github
 
 import (
@@ -15,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -22,10 +24,12 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the tracker is a port.Tracker and a port.Preparer.
+// Compile-time guards: the tracker is a port.Tracker, a port.Preparer and a
+// port.StatusReporter.
 var (
-	_ port.Tracker  = (*Tracker)(nil)
-	_ port.Preparer = (*Tracker)(nil)
+	_ port.Tracker        = (*Tracker)(nil)
+	_ port.Preparer       = (*Tracker)(nil)
+	_ port.StatusReporter = (*Tracker)(nil)
 )
 
 // issuesQuery lists the login's open issues carrying any of the labels,
@@ -54,6 +58,9 @@ type ghLabel struct {
 type Tracker struct {
 	gh     *gh
 	labels labels
+
+	mu       sync.Mutex
+	comments map[string]int64 // status comment ids by issue key, once found or created
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -69,7 +76,7 @@ func factory(run proc.Runner) port.TrackerFactory {
 		if err := decode(&settings{}); err != nil {
 			return nil, err
 		}
-		return &Tracker{gh: &gh{run: run}, labels: newLabels(states)}, nil
+		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), comments: map[string]int64{}}, nil
 	}
 }
 

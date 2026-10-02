@@ -243,6 +243,34 @@ func TestWithoutATerminalOrWithPlainItPrintsTimestampedEventLines(t *testing.T) 
 	}
 }
 
+// Covers AE2 through the wiring.
+func TestARunTimeLimitWindsCrewDownAndExitsZero(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker()
+		h := fake.NewHarness()
+		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  run_time_limit_seconds: 3600\n", 1), tr, h)
+		r.opts.Plain = true
+		t0 := time.Now()
+		r.start()
+
+		if code := <-r.code; code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+		if got := time.Since(t0); got != time.Hour {
+			t.Errorf("crew exited after %v, want 1h0m0s", got)
+		}
+		out := r.stdout.String()
+		for _, want := range []string{
+			"crew: run time of 1h0m0s is up: taking no new issues, winding down",
+			"crew: stopped",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("stdout lacks %q; it is:\n%s", want, out)
+			}
+		}
+	})
+}
+
 // Covers AE4.
 func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}

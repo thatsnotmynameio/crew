@@ -158,6 +158,7 @@ func build(o Options) (*engine.Engine, error) {
 		Workflow:          cfg.Workflow,
 		MaxParallelIssues: cfg.MaxParallelIssues,
 		PollInterval:      cfg.PollInterval,
+		RunTimeLimit:      cfg.RunTimeLimit,
 		Tracker:           tracker,
 		Harness:           harness,
 		Workspace:         o.Workspace(o.Root),

@@ -20,9 +20,12 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 	s := &step{m: m, at: in.arrival()}
 	switch in := in.(type) {
 	case Tick:
-		s.tick()
+		s.tick(in.Said)
 	case StopRequested:
+		m.requested = true
 		s.stop()
+	case TimeUp:
+		s.timeUp(in.Limit)
 	case IssuesListed:
 		s.listed(in.Issues)
 	case ListFailed:
@@ -30,6 +33,8 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
 	case CallResult:
 		s.callResult(in)
+	case StatusResult:
+		s.statusResult(in)
 	case WorkspaceReady:
 		s.workspaceReady(in)
 	case WorkspaceFailed:
@@ -47,6 +52,7 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 			s.end(h, a, in.Outcome)
 		}
 	}
+	s.windDown()
 	if m.Stopped() && !m.stopped {
 		m.stopped = true
 		s.emit(Stopped{At: s.at})
@@ -65,14 +71,21 @@ type step struct {
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
-// tick lists issues, unless a listing is outstanding, and retries the owed
-// calls that are not in flight (KTD8).
-func (s *step) tick() {
+// tick lists issues, unless a listing is outstanding or the run time is up,
+// retries the owed calls and statuses that are not in flight (KTD8, KTD5),
+// and reports the status of each running issue with what its sessions last
+// said (R6).
+func (s *step) tick(said []Said) {
 	m := s.m
 	if m.stopping {
 		return
 	}
-	if !m.listing {
+	for _, x := range said {
+		if _, a := m.action(x.IssueKey, x.Action, PhaseRunning); a != nil {
+			a.said = x.Text
+		}
+	}
+	if !m.listing && !m.timeUp {
 		m.listing = true
 		states := make([]crew.State, len(m.stages))
 		for i, st := range m.stages {
@@ -86,7 +99,11 @@ func (s *step) tick() {
 				s.attempt(h, c)
 			}
 		}
+		if h.claim == ClaimRunning {
+			s.running(h)
+		}
 	}
+	s.retryStatuses()
 }
 
 // stop starts nothing new from now on, stops the running sessions and gives
@@ -118,14 +135,43 @@ func (s *step) stop() {
 			}
 		}
 	}
+	s.retryStatuses()
+}
+
+// timeUp ends the run time (R2): from now on nothing new is taken, while the
+// held issues, a take in flight or owed included, run and are judged as
+// usual (R4). windDown stops once they have all ended.
+func (s *step) timeUp(limit time.Duration) {
+	m := s.m
+	if m.stopping || m.timeUp {
+		return
+	}
+	m.timeUp = true
+	s.emit(WindingDown{At: s.at, Limit: limit})
+}
+
+// windDown starts the stop sequence once the run time is up and no held
+// issue has an action left to end, so owed calls get their final try (R5).
+func (s *step) windDown() {
+	m := s.m
+	if !m.timeUp || m.stopping {
+		return
+	}
+	for _, h := range m.issues {
+		if !h.ended() {
+			return
+		}
+	}
+	s.stop()
 }
 
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: later stages first, then the oldest issue first (KTD8).
+// issues: later stages first, then the oldest issue first (KTD8). It takes
+// nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
-	if m.stopping {
+	if m.stopping || m.timeUp {
 		return
 	}
 	for _, issue := range issues {
@@ -151,6 +197,11 @@ func (s *step) listed(issues []crew.Issue) {
 			}
 			s.take(si, issue)
 			taken++
+		}
+		for _, issue := range candidates {
+			if m.held(issue.Key) == nil {
+				s.queued(si, issue)
+			}
 		}
 	}
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
@@ -208,13 +259,13 @@ func (s *step) callResult(r CallResult) {
 			s.emit(FailureReported{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref})
 		} else {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+			s.ended(h, c.to, crew.MoveDone)
 		}
 		h.settle(c)
 	case ResultFailed:
 		switch {
 		case m.stopping && c.final:
-			s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
-			h.settle(c)
+			s.dropped(h, c, r)
 		default:
 			c.owed = true
 			h.claim = ClaimOwed
@@ -225,12 +276,21 @@ func (s *step) callResult(r CallResult) {
 			}
 		}
 	default:
-		s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
-		h.settle(c)
+		s.dropped(h, c, r)
 	}
 	if len(h.calls) == 0 {
 		m.release(h)
 	}
+}
+
+// dropped gives up c, which r answered, and says so on h's status when c is
+// the verdict move.
+func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
+	s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
+	if c.kind == CallMove && !c.take {
+		s.ended(h, c.to, crew.MoveDropped)
+	}
+	h.settle(c)
 }
 
 // taken starts h's actions once its take move is done, or, after a stop,
@@ -255,6 +315,9 @@ func (s *step) taken(h *heldIssue, c *call) {
 		a.prompt = prompt
 		a.phase = PhaseCreating
 		s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
+	}
+	if h.claim == ClaimRunning {
+		s.running(h)
 	}
 }
 
@@ -301,12 +364,9 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome) {
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
 	})
-	for _, other := range h.actions {
-		if other.phase != PhaseEnded {
-			return
-		}
+	if h.ended() {
+		s.judge(h)
 	}
-	s.judge(h)
 }
 
 // judge moves h to its stage's on_success when every action succeeded, and
@@ -324,10 +384,12 @@ func (s *step) judge(h *heldIssue) {
 	}
 	if len(report.Failures) == 0 {
 		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})
+		s.ended(h, stage.OnSuccess, crew.MovePending)
 		return
 	}
 	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnFailure})
 	s.call(h, &call{kind: CallReport, report: report})
+	s.ended(h, stage.OnFailure, crew.MovePending)
 }
 
 // held returns the held issue keyed key, or nil.
@@ -370,6 +432,16 @@ func (m *Model) findCall(id CallID) (*heldIssue, *call) {
 // release forgets h.
 func (m *Model) release(h *heldIssue) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
+}
+
+// ended reports whether every action of h has ended.
+func (h *heldIssue) ended() bool {
+	for _, a := range h.actions {
+		if a.phase != PhaseEnded {
+			return false
+		}
+	}
+	return true
 }
 
 // settle forgets c, which needs no further attempt.

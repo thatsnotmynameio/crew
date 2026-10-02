@@ -37,6 +37,8 @@ func (e *Engine) launch(cmd core.Command) {
 		job = func() { e.move(c) }
 	case core.ReportFailure:
 		job = func() { e.report(c) }
+	case core.ReportStatus:
+		job = func() { e.reportStatus(c) }
 	case core.CreateWorkspace:
 		job = func() { e.createWorkspace(c) }
 	case core.StartSession:
@@ -91,22 +93,34 @@ func (e *Engine) report(c core.ReportFailure) {
 	e.post(e.callResult(ctx, c.ID, err))
 }
 
+// reportStatus writes a status through the tracker's StatusReporter, which
+// the core asks for only when the tracker has one.
+func (e *Engine) reportStatus(c core.ReportStatus) {
+	ctx, cancel := e.callContext()
+	defer cancel()
+	err := e.reporter.ReportStatus(ctx, c.Status)
+	result, reason := e.classify(ctx, err)
+	e.post(core.StatusResult{IssueKey: c.Status.IssueKey, Result: result, Reason: reason})
+}
+
 // callResult maps a tracker call's error onto the core's result classes.
 func (e *Engine) callResult(ctx context.Context, id core.CallID, err error) core.CallResult {
-	r := core.CallResult{ID: id, Result: core.ResultDone}
-	if err == nil {
-		return r
-	}
+	result, reason := e.classify(ctx, err)
+	return core.CallResult{ID: id, Result: result, Reason: reason}
+}
+
+// classify maps a tracker call's error onto the core's result classes, with
+// its reason; nil is ResultDone, with no reason.
+func (e *Engine) classify(ctx context.Context, err error) (core.Result, string) {
 	switch {
+	case err == nil:
+		return core.ResultDone, ""
 	case errors.Is(err, port.ErrMovedMeanwhile):
-		r.Result = core.ResultMovedMeanwhile
+		return core.ResultMovedMeanwhile, e.reason(ctx, err)
 	case errors.Is(err, port.ErrRefused):
-		r.Result = core.ResultRefused
-	default:
-		r.Result = core.ResultFailed
+		return core.ResultRefused, e.reason(ctx, err)
 	}
-	r.Reason = e.reason(ctx, err)
-	return r
+	return core.ResultFailed, e.reason(ctx, err)
 }
 
 // reason is err as a reason for the core: local paths shortened, and a

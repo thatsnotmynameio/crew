@@ -18,10 +18,14 @@ import (
 
 // Compile-time guards: the fakes implement exactly the interfaces they claim.
 var (
-	_ port.Tracker  = (*Tracker)(nil)
-	_ port.Preparer = (*Preparation)(nil)
-	_ port.Tracker  = PreparingTracker{}
-	_ port.Preparer = PreparingTracker{}
+	_ port.Tracker        = (*Tracker)(nil)
+	_ port.Preparer       = (*Preparation)(nil)
+	_ port.Tracker        = PreparingTracker{}
+	_ port.Preparer       = PreparingTracker{}
+	_ port.StatusReporter = (*StatusBoard)(nil)
+	_ port.Tracker        = ReportingTracker{}
+	_ port.Preparer       = ReportingTracker{}
+	_ port.StatusReporter = ReportingTracker{}
 )
 
 // TrackerSettings is the fake tracker's config section. It has no key, as
@@ -276,4 +280,63 @@ type PreparingTracker struct {
 // Prepare succeeds until told to Fail.
 func NewPreparingTracker(issues ...crew.Issue) PreparingTracker {
 	return PreparingTracker{Tracker: NewTracker(issues...), Preparation: &Preparation{}}
+}
+
+// StatusBoard is a scriptable port.StatusReporter, to embed in a fake
+// tracker. It records each status written, by issue key, unless a failure
+// scripted with FailStatuses comes first. Its zero value is ready to use.
+type StatusBoard struct {
+	mu       sync.Mutex
+	errs     map[string][]error
+	statuses map[string][]crew.Status
+}
+
+// ReportStatus implements port.StatusReporter.
+func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := pop(b.errs, status.IssueKey); err != nil {
+		return fmt.Errorf("report status on issue %s: %w", status.IssueKey, err)
+	}
+	if b.statuses == nil {
+		b.statuses = map[string][]crew.Status{}
+	}
+	b.statuses[status.IssueKey] = append(b.statuses[status.IssueKey], status.Clone())
+	return nil
+}
+
+// FailStatuses makes the next len(errs) status writes for key fail, in
+// order, with errs.
+func (b *StatusBoard) FailStatuses(key string, errs ...error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.errs == nil {
+		b.errs = map[string][]error{}
+	}
+	b.errs[key] = append(b.errs[key], errs...)
+}
+
+// Statuses returns the statuses written for key, in order.
+func (b *StatusBoard) Statuses(key string) []crew.Status {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]crew.Status, len(b.statuses[key]))
+	for i, s := range b.statuses[key] {
+		out[i] = s.Clone()
+	}
+	return out
+}
+
+// ReportingTracker is a PreparingTracker that also implements
+// port.StatusReporter, for the tests about status comments. A plain
+// *Tracker or PreparingTracker does not implement it.
+type ReportingTracker struct {
+	PreparingTracker
+	*StatusBoard
+}
+
+// NewReportingTracker returns a ReportingTracker holding issues, whose
+// Prepare and status writes succeed until told otherwise.
+func NewReportingTracker(issues ...crew.Issue) ReportingTracker {
+	return ReportingTracker{PreparingTracker: NewPreparingTracker(issues...), StatusBoard: &StatusBoard{}}
 }

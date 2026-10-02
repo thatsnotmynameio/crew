@@ -10,9 +10,11 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -43,6 +45,9 @@ type Config struct {
 	MaxParallelIssues int
 	// PollInterval is the time between listings; it must be positive.
 	PollInterval time.Duration
+	// RunTimeLimit is how long the engine runs from its first poll before
+	// it winds down. Zero runs until stopped.
+	RunTimeLimit time.Duration
 	// Tracker, Harness and Workspace are the adapters. The engine detects
 	// their optional interfaces, such as port.Preparer, on these values.
 	Tracker   port.Tracker
@@ -68,6 +73,10 @@ type Engine struct {
 	prepared    bool
 	preparation error
 
+	// reporter is the tracker's port.StatusReporter; nil when the tracker
+	// has none, and the core then reports no status (R13).
+	reporter port.StatusReporter
+
 	// The fields below are owned by Run's loop.
 	model    *core.Model
 	inbox    chan message
@@ -78,13 +87,21 @@ type Engine struct {
 	recent   []core.Event
 }
 
-// New returns an engine for cfg. It starts nothing until Run.
+// New returns an engine for cfg. It starts nothing until Run. When the
+// tracker implements port.StatusReporter, the engine reports each issue's
+// status through it (KTD1).
 func New(cfg Config) *Engine {
+	reporter, _ := cfg.Tracker.(port.StatusReporter)
+	var opts []core.Option
+	if reporter != nil {
+		opts = append(opts, core.ReportingStatus())
+	}
 	return &Engine{
 		cfg:      cfg,
 		stream:   newStream(),
 		stop:     make(chan struct{}),
-		model:    core.New(cfg.Workflow, cfg.MaxParallelIssues),
+		reporter: reporter,
+		model:    core.New(cfg.Workflow, cfg.MaxParallelIssues, opts...),
 		inbox:    make(chan message, inboxSize),
 		sessions: map[sessionKey]port.Session{},
 	}
@@ -98,9 +115,11 @@ func New(cfg Config) *Engine {
 //
 // Stop, or ctx ending, requests a stop: nothing new starts, running
 // sessions get stopTimeout to stop, issues are judged as their actions end,
-// and owed calls get one final try (R9). Run returns nil once the core holds
-// no issue and no command goroutine is left. Every subscription is closed
-// when Run returns, after its last update.
+// and owed calls get one final try (R9). RunTimeLimit after the first poll,
+// the core winds down instead: nothing new is taken, and running sessions
+// end on their own. Run returns nil once the core holds no issue and no
+// command goroutine is left. Every subscription is closed when Run returns,
+// after its last update.
 func (e *Engine) Run(ctx context.Context) error {
 	defer e.stream.close()
 	if err := e.Prepare(ctx); err != nil {
@@ -113,17 +132,28 @@ func (e *Engine) Run(ctx context.Context) error {
 	ticker := time.NewTicker(e.cfg.PollInterval)
 	defer ticker.Stop()
 	stop, done := e.stop, ctx.Done()
+	// The run time counts from the first poll, so the preparers do not use
+	// it up. A nil channel never fires: without a limit, nothing winds down.
+	var timeUp <-chan time.Time
+	if e.cfg.RunTimeLimit > 0 {
+		timer := time.NewTimer(e.cfg.RunTimeLimit)
+		defer timer.Stop()
+		timeUp = timer.C
+	}
 	e.step(core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
 		case <-ticker.C:
-			e.step(core.Tick{})
+			e.step(core.Tick{Said: e.said()})
 		case <-stop:
 			stop = nil
 			e.step(core.StopRequested{})
 		case <-done:
 			done = nil
 			e.step(core.StopRequested{})
+		case <-timeUp:
+			timeUp = nil
+			e.step(core.TimeUp{Limit: e.cfg.RunTimeLimit})
 		case m := <-e.inbox:
 			e.receive(m)
 		}
@@ -184,6 +214,27 @@ func (e *Engine) prepare(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// said returns what each running session that implements port.Narrator last
+// said, with local paths shortened (R10), then cut to its last maxSaid
+// characters, in a stable order. Cutting after shortening keeps the end of a
+// cut path from reaching the tracker. Only the loop
+// calls it, as it owns the sessions.
+func (e *Engine) said() []core.Said {
+	var out []core.Said
+	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), func(a, b sessionKey) int {
+		return cmp.Or(cmp.Compare(a.issue, b.issue), cmp.Compare(a.action, b.action))
+	}) {
+		n, ok := e.sessions[k].(port.Narrator)
+		if !ok {
+			continue
+		}
+		if text := n.Said(); text != "" {
+			out = append(out, core.Said{IssueKey: k.issue, Action: k.action, Text: lastWords(e.scrub(text))})
+		}
+	}
+	return out
 }
 
 // receive handles a message from a command goroutine.

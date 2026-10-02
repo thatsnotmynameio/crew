@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -14,14 +16,19 @@ import (
 const maxReason = 200
 
 // stream reads claude's stream-json output as it is written: one JSON event
-// per line. It keeps only the last top-level result event, which is what the
-// session is judged by. A line that is not a JSON object is skipped.
+// per line. It keeps the last top-level result event, which is what the
+// session is judged by, and the last text the session said. A line that is
+// not a JSON object is skipped.
 //
-// It is written from one goroutine, and read with end once the writes are
-// over.
+// It is written from one goroutine. The result is read with end once the
+// writes are over; what the session said is read with said from any
+// goroutine, while the writes go on.
 type stream struct {
 	partial []byte  // the start of a line whose newline has not come yet
 	last    *result // the last top-level result event so far
+
+	mu   sync.Mutex
+	text string // the last top-level text so far, on one line
 }
 
 // result is a top-level result event. Decoding a line into it reads only
@@ -32,6 +39,19 @@ type result struct {
 	Subtype string `json:"subtype"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
+}
+
+// assistant is an assistant event: a message from the session, or from a
+// subagent when ParentToolUseID is set. Decoding it also reads only the
+// event's own keys and its message's content blocks.
+type assistant struct {
+	ParentToolUseID *string `json:"parent_tool_use_id"`
+	Message         struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"message"`
 }
 
 // Write implements io.Writer. It never fails, so the stream never stops the
@@ -61,10 +81,41 @@ func (s *stream) line(line []byte) {
 		return
 	}
 	var ev result
-	if err := json.Unmarshal(line, &ev); err != nil || ev.Type != "result" {
+	if err := json.Unmarshal(line, &ev); err != nil {
 		return
 	}
-	s.last = &ev
+	switch ev.Type {
+	case "result":
+		s.last = &ev
+	case "assistant":
+		s.assistant(line)
+	}
+}
+
+// assistant reads a top-level assistant event and keeps its last text
+// block. An event from a subagent, or one holding no text, such as a lone
+// tool_use, changes nothing.
+func (s *stream) assistant(line []byte) {
+	var ev assistant
+	if err := json.Unmarshal(line, &ev); err != nil || ev.ParentToolUseID != nil {
+		return
+	}
+	for _, block := range slices.Backward(ev.Message.Content) {
+		if block.Type == "text" {
+			s.mu.Lock()
+			s.text = strings.Join(strings.Fields(block.Text), " ")
+			s.mu.Unlock()
+			return
+		}
+	}
+}
+
+// said returns the last text the session said, on one line, or "" when it
+// said nothing yet.
+func (s *stream) said() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.text
 }
 
 // end reads the last line, when the stream did not end with a newline, and

@@ -15,6 +15,8 @@ var (
 	_ port.Session  = (*Session)(nil)
 	_ port.Harness  = PreparingHarness{}
 	_ port.Preparer = PreparingHarness{}
+	_ port.Session  = NarratingSession{}
+	_ port.Narrator = NarratingSession{}
 )
 
 // The reasons of sessions the fake harness ends itself.
@@ -54,11 +56,21 @@ type Harness struct {
 	next       int           // the index of the session Next returns next
 	started    chan struct{} // closed and replaced whenever a session starts
 	ignoreStop bool
+	narrating  bool // its sessions implement port.Narrator
 }
 
 // NewHarness returns a harness with no sessions, whose sessions obey Stop.
+// Its sessions do not implement port.Narrator.
 func NewHarness() *Harness {
 	return &Harness{started: make(chan struct{})}
+}
+
+// NewNarratingHarness returns a harness like NewHarness's, whose sessions
+// implement port.Narrator: each says what Session.Say last set.
+func NewNarratingHarness() *Harness {
+	h := NewHarness()
+	h.narrating = true
+	return h
 }
 
 // IgnoreStop makes Stop, on any session and from now on, wait for the stop
@@ -113,6 +125,9 @@ func (h *Harness) Start(_ context.Context, run port.Run) (port.Session, error) {
 	h.sessions = append(h.sessions, s)
 	close(h.started)
 	h.started = make(chan struct{})
+	if h.narrating {
+		return NarratingSession{s}, nil
+	}
 	return s, nil
 }
 
@@ -125,6 +140,7 @@ type Session struct {
 	outcome crew.Outcome
 	ended   bool
 	stopped bool
+	said    string
 	done    chan struct{} // closed when the session ends
 }
 
@@ -172,6 +188,13 @@ func (s *Session) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Say sets what the session last said, for a narrating harness's session.
+func (s *Session) Say(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.said = text
+}
+
 // Stopped reports whether Stop was called on the session.
 func (s *Session) Stopped() bool {
 	s.mu.Lock()
@@ -190,4 +213,17 @@ type PreparingHarness struct {
 // told to Fail.
 func NewPreparingHarness() PreparingHarness {
 	return PreparingHarness{Harness: NewHarness(), Preparation: &Preparation{}}
+}
+
+// NarratingSession is the session a narrating harness starts: a Session that
+// also implements port.Narrator.
+type NarratingSession struct {
+	*Session
+}
+
+// Said implements port.Narrator: it returns what Say last set.
+func (n NarratingSession) Said() string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.said
 }

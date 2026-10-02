@@ -34,6 +34,9 @@ type Config struct {
 	// MaxParallelIssues is config.max_parallel_issues, 2 by default. It counts
 	// issues, not sessions.
 	MaxParallelIssues int
+	// RunTimeLimit is config.run_time_limit_seconds: how long crew runs from
+	// its first poll before it winds down. Zero, the default, is no limit.
+	RunTimeLimit time.Duration
 	// Harness is config.harness, the harness adapter's name, "claude" by
 	// default. It is not checked against the registered adapters.
 	Harness string
@@ -65,6 +68,7 @@ type document struct {
 type settings struct {
 	PollIntervalSeconds located[int]    `yaml:"poll_interval_seconds"`
 	MaxParallelIssues   located[int]    `yaml:"max_parallel_issues"`
+	RunTimeLimitSeconds located[int]    `yaml:"run_time_limit_seconds"`
 	Harness             located[string] `yaml:"harness"`
 	Model               yaml.Node       `yaml:"model"`
 }
@@ -136,6 +140,12 @@ func parse(data []byte) (*Config, error) {
 			errs = append(errs, keyError("config.max_parallel_issues", s.line, "must be a positive number of issues"))
 		}
 		cfg.MaxParallelIssues = s.value
+	}
+	if s := doc.Config.RunTimeLimitSeconds; s.line > 0 {
+		if s.value <= 0 {
+			errs = append(errs, keyError("config.run_time_limit_seconds", s.line, "must be a positive number of seconds"))
+		}
+		cfg.RunTimeLimit = time.Duration(s.value) * time.Second
 	}
 	if s := doc.Config.Harness; s.line > 0 {
 		cfg.Harness = s.value
