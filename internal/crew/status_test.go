@@ -1,22 +1,18 @@
-package crew_test
+package crew
 
-import (
-	"testing"
-
-	"github.com/thatsnotmynameio/crew/internal/crew"
-)
+import "testing"
 
 func TestStatusCloneSharesNoActions(t *testing.T) {
-	s := crew.Status{IssueKey: "74", Kind: crew.StatusRunning, Actions: []crew.ActionStatus{
-		{Name: "development", State: crew.ActionRunning, Said: "Starting U2."},
-		{Name: "acceptance", State: crew.ActionSucceeded},
+	s := Status{IssueKey: "74", Kind: StatusRunning, Actions: []ActionStatus{
+		{Name: "development", State: ActionRunning, Said: "Starting U2."},
+		{Name: "acceptance", State: ActionSucceeded},
 	}}
 
 	c := s.Clone()
 	c.Actions[0].Said = "changed"
-	c.Actions[1].State = crew.ActionFailed
+	c.Actions[1].State = ActionFailed
 
-	if s.Actions[0].Said != "Starting U2." || s.Actions[1].State != crew.ActionSucceeded {
+	if s.Actions[0].Said != "Starting U2." || s.Actions[1].State != ActionSucceeded {
 		t.Errorf("changing the clone changed the original: %+v", s.Actions)
 	}
 }

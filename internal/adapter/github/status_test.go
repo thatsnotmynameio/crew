@@ -171,7 +171,7 @@ func TestStatusErrorsAreClassifiedFromTheHTTPStatus(t *testing.T) {
 				t.Fatalf("ReportStatus = %v, want an error naming issue #74", err)
 			}
 			for _, sentinel := range []error{port.ErrMovedMeanwhile, port.ErrRefused} {
-				if got, want := errors.Is(err, sentinel), sentinel == tc.want; got != want {
+				if got, want := errors.Is(err, sentinel), errors.Is(tc.want, sentinel); got != want {
 					t.Errorf("errors.Is(%v, %v) = %t, want %t", err, sentinel, got, want)
 				}
 			}
