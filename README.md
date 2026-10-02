@@ -1,6 +1,6 @@
 # crew
 
-crew moves your GitHub issues through a workflow you declare in the repository. It polls for the issues you labeled and runs each stage's actions in parallel, each one a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue on, or to `needs attention` with a comment saying what failed.
+crew moves your GitHub issues through a workflow you declare in the repository. It polls for the issues you labeled and runs each stage's actions in parallel, each one a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue to the stage's success label, or to its failure label with a comment saying what failed. You name every label in the workflow: crew has no fixed ones.
 
 crew only runs sessions and moves labels. Opening pull requests, reviewing and merging are your prompts' job and yours.
 
@@ -28,7 +28,7 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | --- | --- |
 | `cmd/crew` | The `crew` binary. |
 | `internal/` | crew's engine, its adapters (`github`, `claude`, `git`) and its TUI. See `AGENTS.md` and the Develop tab. |
-| `.crew/config.yaml` | crew's own workflow: crew runs on this repository too. |
+| `.crew/config.yaml` | crew's own workflow: crew runs on this repository too, with stages for features, bugs, backlog triage, CI audits and learnings, and labels that start with `crew:`. |
 | `docs.json`, `docs/` | The docs.page site (Guide and Develop tabs). Plans live in `docs/plans/` and are not published. |
 | `STRATEGY.md` | What crew is for, who it serves, and its boundaries. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
