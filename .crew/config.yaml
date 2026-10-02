@@ -7,7 +7,9 @@
 # later promotes it, and crew then takes the extra off. Each stage and extra
 # names its template in .github/ISSUE_TEMPLATE/, which /cw-create-issue and
 # /cw-update-issue-plan fill. crew does not run the prompts under `prompts`:
-# /cw-brainstorm runs `brainstorm` in the boss's own session.
+# /cw-brainstorm runs `brainstorm` in the boss's own session, and
+# /cw-update-issue-plan runs `update_issue_plan` there once the plan is in
+# the issue.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 2
@@ -26,6 +28,8 @@ prompts:
     Otherwise move it to `crew:in progress`: `gh issue edit {{.Issue.Key}} --remove-label "crew:waiting brainstorm" --add-label "crew:in progress"`. When that fails, report the error and stop.
 
     Then run /compound-engineering:ce-brainstorm {{.Issue.Ref}} ({{.Issue.URL}}). The issue's title and body are the idea to brainstorm.
+  update_issue_plan: |-
+    Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's triage stage takes it at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
 workflow:
   - name: development
     description: a feature whose brainstorm is done

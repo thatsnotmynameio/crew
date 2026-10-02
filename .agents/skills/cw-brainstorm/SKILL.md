@@ -49,4 +49,4 @@ Do not add checks, label changes or questions the prompt does not ask for. When 
 
 ## 5. After the brainstorm
 
-When the prompt's work ends, say which issue it was for. When the brainstorm settled a plan, mention `/cw-update-issue-plan <label>`, which writes the plan into the issue and can move it to the next stage or extra label.
+When the prompt's work ends, say which issue it was for. When the brainstorm wrote its plan file, mention `/cw-update-issue-plan`, which copies that file into the issue and then runs the repository's `prompts.update_issue_plan`, or moves the issue to a label given as its argument.

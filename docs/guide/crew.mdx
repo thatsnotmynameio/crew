@@ -153,6 +153,8 @@ prompts:
     /compound-engineering:ce-brainstorm {{.Issue.Ref}}
 ```
 
+[`/cw-update-issue-plan`](/guide/create-issue#put-a-plan-in-an-existing-issue), run without a label, runs `prompts.update_issue_plan` the same way once it has put the plan in the issue, for example to move the issue to the label that always comes next.
+
 crew checks these prompts as it checks an action's, with the same fields, and then ignores them. `prompts` serves the author's own workflow, so it may still change.
 
 ### What "succeeded" means

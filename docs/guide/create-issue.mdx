@@ -78,10 +78,11 @@ It creates the issue at once, with no preview and no confirmation. To fix a mist
 
 ## Put a plan in an existing issue
 
-`/cw-update-issue-plan [label]` writes the session's plan into the issue the session is working on, such as an idea you parked and then brainstormed. It finds the issue from the session and asks only when it cannot tell which one. It takes the plan file the session wrote, or, when you run it instead of letting a brainstorm write its file, what the brainstorm settled. When that brainstorm ran compound-engineering's `ce-brainstorm`, the skill composes the plan by that skill's section rules and runs its Ready for Planning Check before writing anything, so the issue gets the plan the file would have held. It fixes what the check finds and asks you only when a fix would change behaviour or scope. The body follows the template of the issue's type, the old body is kept in a comment, and an optional `label` moves the issue to that stage or extra label. A stage's label starts crew's work at the next poll.
+`/cw-update-issue-plan [label]` copies the session's plan file into the issue the session is working on, such as an idea you parked and then brainstormed. It finds the issue from the session and asks only when it cannot tell which one. The plan file is the one compound-engineering's `ce-brainstorm` writes when you confirm its synthesis, or the same file after `ce-plan` enriched it. The skill does not write the plan itself: without a plan file it stops and changes nothing, so let the brainstorm write its file first. The body follows the template of the issue's type, and the old body is kept in a comment. An optional `label` then moves the issue to that stage or extra label. Without one, the skill runs `prompts.update_issue_plan` from `.crew/config.yaml` (see [Prompts](/guide/crew#prompts)) when the config has it, filled with the issue as `/cw-brainstorm` fills its prompt, so the label that always comes next needs no typing. Without either, the issue keeps its labels. A stage's label starts crew's work at the next poll.
 
 ```text
-/cw-update-issue-plan crew:brainstorm:done
+/cw-update-issue-plan
+/cw-update-issue-plan crew:ready for development
 ```
 
 It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. A `moves_to` label that your own session put on the issue, such as one `/cw-brainstorm` set, does not stop it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
@@ -96,7 +97,7 @@ It refuses a label that is neither a stage's nor an extra's, and leaves an issue
 
 The issue can be `#42`, `42` or its URL. Without one, the skill asks which issue. When the config has no `prompts.brainstorm`, it says so and stops.
 
-The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:waiting brainstorm`. It then moves the issue to `crew:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm ends, `/cw-update-issue-plan crew:brainstorm:done` writes the plan into the issue and hands it to crew's triage stage, which finds what blocks it and what it blocks. Until then, the issue stays in `crew:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
+The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:waiting brainstorm`. It then moves the issue to `crew:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm has written its plan file, `/cw-update-issue-plan` copies it into the issue, and the repository's `prompts.update_issue_plan` moves the issue to `crew:brainstorm:done`. That hands it to crew's triage stage, which finds what blocks it and what it blocks. Until then, the issue stays in `crew:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
 
 Install it like `/cw-create-issue`, linking `.agents/skills/cw-brainstorm` into `~/.claude/skills/`.
 
