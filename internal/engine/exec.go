@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -51,6 +53,19 @@ func (e *Engine) launch(cmd core.Command) {
 			return
 		}
 		job = func() { e.stopSession(s) }
+	case core.RunCheck:
+		// The check's context is made here, in the loop, so a StopCheck
+		// that follows always finds it.
+		ctx, cancel := context.WithTimeout(e.cmdCtx, checkTimeout)
+		e.checks[sessionKey{c.IssueKey, c.Action}] = cancel
+		job = func() { e.runCheck(ctx, cancel, c) }
+	case core.StopCheck:
+		// The core asks to stop only checks it started; the check's end
+		// still arrives through its own goroutine, in runCheck.
+		if cancel, ok := e.checks[sessionKey{c.IssueKey, c.Action}]; ok {
+			cancel()
+		}
+		return
 	default:
 		panic(fmt.Sprintf("engine: unknown core command %T", cmd))
 	}
@@ -179,4 +194,47 @@ func (e *Engine) stopSession(s port.Session) {
 	// nothing the session's outcome will not say.
 	_ = s.Stop(ctx)
 	e.inbox <- message{final: true}
+}
+
+// runCheck runs the action's check within checkTimeout, its output going to
+// the action's log after the session's, and posts its verdict. Its reason
+// says how the check ended in crew's words, followed, for a check that
+// failed, by the last line it printed (R5).
+func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
+	defer cancel()
+	e.post(core.CheckEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: e.check(ctx, c)})
+}
+
+// check runs c and returns its verdict.
+func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
+	if e.cfg.Checker == nil {
+		return crew.Outcome{Reason: "the check could not start: crew has no check runner"}
+	}
+	log, err := e.openLog(c.Log)
+	if err != nil {
+		return crew.Outcome{Reason: "the check could not start: " + e.scrub(err.Error())}
+	}
+	// A failed write or close cannot change the check's verdict.
+	defer func() { _ = log.Close() }()
+	_, _ = fmt.Fprintf(log, "\ncrew: running the check: %s\n", c.Command)
+	var last lastLine
+	err = e.cfg.Checker.Check(ctx, port.Check{
+		Dir: c.Dir, Command: c.Command, IssueRef: c.IssueRef, IssueKey: c.IssueKey, IssueURL: c.IssueURL,
+		Branch: c.Branch, Output: io.MultiWriter(log, &last),
+	})
+	switch {
+	case err == nil:
+		return crew.Outcome{Succeeded: true, Reason: "the check passed"}
+	case errors.Is(err, port.ErrCheckFailed):
+		line := last.String()
+		if line == "" {
+			return crew.Outcome{Reason: "the check failed and printed nothing"}
+		}
+		return crew.Outcome{Reason: "the check failed: " + lastWords(e.scrub(line))}
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return crew.Outcome{Reason: fmt.Sprintf("the check ran out of time after %s", checkTimeout)}
+	case ctx.Err() != nil:
+		return crew.Outcome{Reason: "the check was stopped"}
+	}
+	return crew.Outcome{Reason: "the check could not start: " + e.scrub(err.Error())}
 }

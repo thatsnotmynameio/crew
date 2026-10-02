@@ -451,7 +451,6 @@ func TestANewStageRunIsAppendedAfterTheEndedOne(t *testing.T) {
 // shows, in a code span.
 func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	tr, _ := build(t, "")
-	const log = ".crew/logs/issue-74-lfg.log"
 	for cause, want := range map[crew.FailureCause]string{
 		crew.CauseSession:   "**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-74-lfg.log`.",
 		crew.CauseCheck:     "**`lfg`** failed: `` `gh` found no @someone **pull request** ``. Its log is `.crew/logs/issue-74-lfg.log`.",

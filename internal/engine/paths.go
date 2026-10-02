@@ -101,3 +101,42 @@ func nameByte(c byte) bool {
 func pathByte(c byte) bool {
 	return c == '/' || nameByte(c)
 }
+
+// maxLine bounds how much of a check's current line lastLine keeps: the end
+// of a line is what a check says last.
+const maxLine = 4096
+
+// lastLine is a writer that keeps the last non-empty line written to it,
+// trimmed, in bounded memory. One goroutine writes to it at a time.
+type lastLine struct {
+	cur  []byte // the line being written, cut to its last maxLine bytes
+	last string // the last complete non-empty line
+}
+
+func (l *lastLine) Write(p []byte) (int, error) {
+	for _, b := range p {
+		if b == '\n' {
+			l.end()
+			continue
+		}
+		l.cur = append(l.cur, b)
+		if len(l.cur) > 2*maxLine {
+			l.cur = append(l.cur[:0], l.cur[len(l.cur)-maxLine:]...)
+		}
+	}
+	return len(p), nil
+}
+
+// end ends the line being written, keeping it when it is not blank.
+func (l *lastLine) end() {
+	if line := strings.TrimSpace(strings.ToValidUTF8(string(l.cur), "")); line != "" {
+		l.last = line
+	}
+	l.cur = l.cur[:0]
+}
+
+// String returns the last non-empty line, counting an unended last line.
+func (l *lastLine) String() string {
+	l.end()
+	return l.last
+}

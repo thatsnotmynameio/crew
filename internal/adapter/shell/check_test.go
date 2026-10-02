@@ -124,8 +124,14 @@ func TestCheckEndedByItsContextIsKilledWithWhatItStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := syscall.Kill(n, 0); err == nil {
-		t.Errorf("the check's child %d still runs", n)
+	// A killed child stays a zombie until init reaps it, so give that a
+	// moment.
+	deadline := time.Now().Add(5 * time.Second)
+	for syscall.Kill(n, 0) == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("the check's child %d still runs", n)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
