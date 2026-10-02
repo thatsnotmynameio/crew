@@ -113,9 +113,6 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 	case n.Kind != yaml.SequenceNode || len(n.Content) == 0:
 		return nil, keyError(path, n.Line, "list at least one action")
 	}
-	// Prompts are rendered for this issue at load, so a bad template stops
-	// crew before polling rather than when an issue is taken.
-	sample := crew.Issue{Key: "42", Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
 	var errs []error
 	out := make([]crew.Action, 0, len(n.Content))
 	firstPath := make(map[string]string, len(n.Content))
@@ -149,6 +146,45 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 		out = append(out, action)
 	}
 	return out, errors.Join(errs...)
+}
+
+// sample is the issue every prompt is rendered for at load, so a bad
+// template stops crew before polling rather than when an issue is taken.
+var sample = crew.Issue{Key: "42", Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
+
+// prompts checks the top-level prompts: a mapping from a name to a prompt
+// that a skill, such as /cw-brainstorm, runs in the user's own session. crew
+// does not run them, so they are checked but not kept: each must be
+// non-empty text that renders as an action's prompt does.
+func prompts(n *yaml.Node) error {
+	section, err := mapping(n, "prompts")
+	if err != nil {
+		return err
+	}
+	var errs []error
+	seen := make(map[string]int, len(section))
+	for _, e := range section {
+		name := e.key.Value
+		if first, ok := seen[name]; ok {
+			errs = append(errs, keyError(e.path, e.key.Line, fmt.Sprintf("duplicate key, first set on line %d", first)))
+			continue
+		}
+		seen[name] = e.key.Line
+		var prompt located[string]
+		if err := decodeValue(e.value, e.path, reflect.ValueOf(&prompt).Elem()); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if prompt.value == "" {
+			errs = append(errs, keyError(e.path, e.key.Line, "must not be empty"))
+			continue
+		}
+		action := crew.Action{Name: name, Prompt: prompt.value}
+		if _, err := action.Render(sample); err != nil {
+			errs = append(errs, keyError(e.path, e.key.Line, err.Error()))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // extraLabels decodes and validates extra_labels: labels for parked work
