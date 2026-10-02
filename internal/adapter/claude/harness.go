@@ -1,0 +1,169 @@
+// Package claude is the harness adapter for Claude Code. It runs `claude -p`
+// headless in an action's workspace and judges the session by the
+// stream-json events it prints: the session succeeded when its last result
+// event is not an error and the process exited 0.
+package claude
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os/exec"
+	"sync"
+	"sync/atomic"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/port"
+	"github.com/thatsnotmynameio/crew/internal/proc"
+)
+
+// defaultModel is the model a session runs when config.model is not set.
+const defaultModel = "claude-opus-5-5"
+
+// stoppedReason is the Outcome.Reason of a session ended by Stop.
+const stoppedReason = "stopped by crew before the session ended"
+
+// Compile-time guards: the engine finds Preparer by type assertion.
+var (
+	_ port.Harness  = (*harness)(nil)
+	_ port.Preparer = (*harness)(nil)
+	_ port.Session  = (*session)(nil)
+)
+
+// settings is the claude adapter's config section: config.model, and no key
+// under harness: yet.
+type settings struct {
+	Model string `yaml:"model"`
+}
+
+// process is what a session needs of a started child; *proc.Process is one.
+type process interface {
+	Wait() error
+	Stop(ctx context.Context) error
+}
+
+// spawner starts c with its stdout and stderr copied to the given writers,
+// as (*proc.Group).Start does. Tests replace it to script claude.
+type spawner func(c proc.Command, stdout, stderr io.Writer) (process, error)
+
+// Factory returns the claude harness factory. Its section is config.model,
+// which defaults to claude-opus-5-5, and harness:, which takes no key yet.
+// The harness it builds is a port.Preparer that checks claude is on PATH.
+// Every session runs through group, in its own process group, so a forced
+// exit kills it.
+func Factory(group *proc.Group) port.HarnessFactory {
+	spawn := func(c proc.Command, stdout, stderr io.Writer) (process, error) {
+		p, err := group.Start(c, stdout, stderr)
+		if err != nil {
+			return nil, err // never a nil *proc.Process inside a non-nil interface
+		}
+		return p, nil
+	}
+	return func(decode port.Decode) (port.Harness, error) {
+		s := settings{Model: defaultModel}
+		if err := decode(&s); err != nil {
+			return nil, err
+		}
+		if s.Model == "" {
+			s.Model = defaultModel
+		}
+		return &harness{model: s.Model, spawn: spawn}, nil
+	}
+}
+
+// harness starts claude sessions with one model.
+type harness struct {
+	model string
+	spawn spawner
+}
+
+// Prepare implements port.Preparer: it checks that claude is on PATH.
+func (h *harness) Prepare(context.Context, []crew.State) error {
+	if _, err := exec.LookPath(binary); err != nil {
+		return fmt.Errorf("the claude harness runs the %s CLI, which is not on PATH: %w", binary, err)
+	}
+	return nil
+}
+
+// Start implements port.Harness. It runs claude in run.Dir with the
+// harness's model. Everything claude prints, stdout and stderr, goes to
+// run.Output, and stdout also goes through the stream parser as it is
+// printed, so the verdict never re-reads the log.
+func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("start %s: %w", binary, err)
+	}
+	out := &serialWriter{w: run.Output}
+	events := &stream{}
+	p, err := h.spawn(command(run.Prompt, h.model, run.Dir), io.MultiWriter(out, events), out)
+	if err != nil {
+		return nil, err
+	}
+	s := &session{process: p, done: make(chan struct{})}
+	go s.reap(events)
+	return s, nil
+}
+
+// session is a running claude process.
+type session struct {
+	process process
+	stopped atomic.Bool
+	outcome crew.Outcome  // set before done is closed
+	done    chan struct{} // closed once the process is reaped and judged
+}
+
+// reap waits for the process, whose output is fully copied once Wait
+// returns, and judges it.
+func (s *session) reap(events *stream) {
+	err := s.process.Wait()
+	s.outcome = judge(events.end(), err)
+	if s.stopped.Load() {
+		s.outcome = crew.Outcome{Reason: stoppedReason}
+	}
+	close(s.done)
+}
+
+// Wait implements port.Session.
+func (s *session) Wait() crew.Outcome {
+	<-s.done
+	return s.outcome
+}
+
+// Stop implements port.Session. proc sends the terminate signal to the
+// session's process group, and the kill signal once ctx is done. The
+// session's outcome is then a failure saying it was stopped.
+func (s *session) Stop(ctx context.Context) error {
+	select {
+	case <-s.done:
+		return nil
+	default:
+	}
+	s.stopped.Store(true)
+	if err := s.process.Stop(ctx); err != nil {
+		return fmt.Errorf("stop %s: %w", binary, err)
+	}
+	<-s.done
+	return nil
+}
+
+// serialWriter passes writes to w one at a time, because stdout and stderr
+// are copied from two goroutines and port.Run.Output takes one at a time.
+//
+// It never fails: once w fails, such as on a full disk, it drops the rest.
+// A failed write would end proc's copy of that pipe, and claude, blocked
+// writing to a pipe nobody reads, would hang until stopped.
+type serialWriter struct {
+	mu  sync.Mutex
+	w   io.Writer
+	err error // w's first error; nothing is written after it
+}
+
+// Write implements io.Writer.
+func (s *serialWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err == nil {
+		_, s.err = s.w.Write(p)
+	}
+	return len(p), nil
+}
