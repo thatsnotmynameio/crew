@@ -166,8 +166,9 @@ func (s *step) windDown() {
 }
 
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: later stages first, then the oldest issue first (KTD8). It takes
-// nothing once the run time is up.
+// issues: later stages first, then the oldest issue first (KTD8). A blocked
+// issue is neither taken nor queued, and is taken at a later poll once
+// nothing blocks it. It takes nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -183,7 +184,7 @@ func (s *step) listed(issues []crew.Issue) {
 	for si := len(m.stages) - 1; si >= 0; si-- {
 		var candidates []crew.Issue
 		for _, issue := range issues {
-			if len(issue.States) == 1 && issue.States[0] == m.stages[si].Label {
+			if len(issue.States) == 1 && issue.States[0] == m.stages[si].Label && !issue.Blocked {
 				candidates = append(candidates, issue)
 			}
 		}

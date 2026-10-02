@@ -23,6 +23,10 @@ type Issue struct {
 	// States are the crew states the issue is in. A healthy issue is in
 	// exactly one; an issue in two or more is skipped and reported.
 	States []State
+	// Blocked is set when an open issue blocks this one. A blocked issue is
+	// not taken until every issue blocking it is closed. A tracker that
+	// knows no dependencies leaves it false.
+	Blocked bool
 }
 
 // Clone returns a copy of i with its own States, so the copy shares no slice

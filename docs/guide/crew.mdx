@@ -185,11 +185,12 @@ At the same check, crew creates the labels your workflow names and the extra lab
 
 1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels, and so are issues whose only crew label is an extra.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
-3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
-4. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone.
-5. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
-6. While the actions run, crew updates the issue's status comment at every poll.
-7. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
+3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, gets no status comment, and a later poll takes it once every issue blocking it is closed.
+4. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
+5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone.
+6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
+7. While the actions run, crew updates the issue's status comment at every poll.
+8. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
 
 This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action and its log, relative to the repository:
 
@@ -339,6 +340,6 @@ A session that runs long keeps crew running past the limit, and so does a move t
 - **No time limit on a session.** A session runs until it ends or you stop crew. `config.run_time_limit_seconds` limits crew, not its sessions: it does not cut a running session short.
 - **No retries.** A failed action is not run again. Relabeling the issue is the retry.
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
-- **Not built yet from the old dispatcher:** pausing and resuming on usage limits, skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
+- **Not built yet from the old dispatcher:** pausing and resuming on usage limits, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
 - **At most 100 issues per poll**, the oldest first.
 - **Sessions are headless.** They cannot ask you anything or talk to each other. The [acceptance tester](/guide/acceptance-tester) agent is interactive, so do not point an action at it.
