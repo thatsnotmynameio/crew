@@ -148,9 +148,9 @@ func load(t *testing.T, body string) (*config.Config, error) {
 const workflow = `workflow:
   - name: implement
     label: ready
-    moves_to: in_progress
-    on_success: ready_to_review
-    on_failure: needs_attention
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
@@ -341,7 +341,7 @@ func TestPreparerFailsNamingClaudeWhenItIsNotOnPath(t *testing.T) {
 		t.Fatalf("factory: %v", err)
 	}
 
-	err = port.Prepare(t.Context(), []crew.State{crew.Ready}, h)
+	err = port.Prepare(t.Context(), []crew.State{"ready"}, h)
 	if err == nil || !strings.Contains(err.Error(), "claude") {
 		t.Errorf("Prepare = %v, want an error naming claude", err)
 	}
@@ -366,7 +366,7 @@ func TestFactorySessionRunsClaudeThroughTheGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
-	if err := port.Prepare(t.Context(), []crew.State{crew.Ready}, h); err != nil {
+	if err := port.Prepare(t.Context(), []crew.State{"ready"}, h); err != nil {
 		t.Fatalf("Prepare with claude on PATH: %v", err)
 	}
 	dir, err := filepath.EvalSymlinks(t.TempDir())

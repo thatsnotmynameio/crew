@@ -21,12 +21,20 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
+// The workflow's states in these tests, as label text.
+const (
+	ready          crew.State = "ready"
+	inProgress     crew.State = "in progress"
+	readyToReview  crew.State = "ready to review"
+	needsAttention crew.State = "needs attention"
+)
+
 const poll = 300 * time.Second
 
 // implement is the draft config's implement stage (KTD5).
 var implement = crew.Stage{
-	Name: "implement", Label: crew.Ready, MovesTo: crew.InProgress, OnSuccess: crew.ReadyToReview,
-	OnFailure: crew.NeedsAttention,
+	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
+	OnFailure: needsAttention,
 	Actions: []crew.Action{
 		{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 		{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
@@ -35,8 +43,8 @@ var implement = crew.Stage{
 
 // develop is a stage with one action, for tests about one session per issue.
 var develop = crew.Stage{
-	Name: "implement", Label: crew.Ready, MovesTo: crew.InProgress, OnSuccess: crew.ReadyToReview,
-	OnFailure: crew.NeedsAttention,
+	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
+	OnFailure: needsAttention,
 	Actions:   []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
 }
 
@@ -247,7 +255,7 @@ func TestASlowListingCoalescesTheMissedTick(t *testing.T) {
 // Covers AE1.
 func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, crew.Ready), issue(2, crew.Ready), issue(3, crew.Ready))
+		tr := fake.NewTracker(issue(1, ready), issue(2, ready), issue(3, ready))
 		r := start(t, config(t, tr, implement))
 
 		sessions := r.sessions(4)
@@ -270,11 +278,11 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 			t.Errorf("issue-2-development prompt = %q", got)
 		}
 		for _, key := range []string{"1", "2"} {
-			if got := states(t, tr, key); !reflect.DeepEqual(got, []crew.State{crew.InProgress}) {
-				t.Errorf("issue %s is in %v, want in_progress", key, got)
+			if got := states(t, tr, key); !reflect.DeepEqual(got, []crew.State{inProgress}) {
+				t.Errorf("issue %s is in %v, want in progress", key, got)
 			}
 		}
-		if got := states(t, tr, "3"); !reflect.DeepEqual(got, []crew.State{crew.Ready}) {
+		if got := states(t, tr, "3"); !reflect.DeepEqual(got, []crew.State{ready}) {
 			t.Errorf("issue 3 is in %v, want it to wait in ready", got)
 		}
 		for name, s := range sessions {
@@ -335,7 +343,7 @@ func (l *listCounter) List(ctx context.Context, states []crew.State) ([]crew.Iss
 
 func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker(issue(1, crew.Ready))}
+		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker(issue(1, ready))}
 		notLoggedIn := errors.New("gh is not logged in")
 		tr.Fail(notLoggedIn)
 		harness := fake.NewPreparingHarness()
@@ -353,7 +361,7 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 		if tr.lists != 0 {
 			t.Errorf("tracker listed %d times, want none", tr.lists)
 		}
-		want := [][]crew.State{{crew.Ready, crew.InProgress, crew.ReadyToReview, crew.NeedsAttention}}
+		want := [][]crew.State{{ready, inProgress, readyToReview, needsAttention}}
 		if got := tr.Calls(); !reflect.DeepEqual(got, want) {
 			t.Errorf("tracker prepared for %v, want the workflow's states %v", got, want)
 		}
@@ -371,9 +379,9 @@ func TestPrepareGetsOnlyTheStatesTheWorkflowNames(t *testing.T) {
 	if err := engine.New(config(t, tr, blocked)).Prepare(context.Background()); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	want := [][]crew.State{{crew.Ready, crew.InProgress, crew.ReadyToReview, "blocked"}}
+	want := [][]crew.State{{ready, inProgress, readyToReview, "blocked"}}
 	if got := tr.Calls(); !reflect.DeepEqual(got, want) {
-		t.Errorf("tracker prepared for %v, want %v and no needs_attention", got, want)
+		t.Errorf("tracker prepared for %v, want %v and no needs attention", got, want)
 	}
 }
 
@@ -429,8 +437,8 @@ func (g *gatedTracker) Move(ctx context.Context, key string, from, to crew.State
 func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := &gatedTracker{
-			Tracker: fake.NewTracker(issue(1, crew.Ready), issue(2, crew.Ready)),
-			gate:    crew.ReadyToReview, entered: make(chan struct{}, 1), release: make(chan struct{}),
+			Tracker: fake.NewTracker(issue(1, ready), issue(2, ready)),
+			gate:    readyToReview, entered: make(chan struct{}, 1), release: make(chan struct{}),
 		}
 		r := start(t, config(t, tr, develop))
 		sessions := r.sessions(2)
@@ -453,18 +461,18 @@ func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.ReadyToReview}) {
-			t.Errorf("issue 1 is in %v, want ready_to_review", got)
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
+			t.Errorf("issue 1 is in %v, want ready to review", got)
 		}
-		if got := states(t, tr, "2"); !reflect.DeepEqual(got, []crew.State{crew.NeedsAttention}) {
-			t.Errorf("issue 2 is in %v, want needs_attention", got)
+		if got := states(t, tr, "2"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+			t.Errorf("issue 2 is in %v, want needs attention", got)
 		}
 	})
 }
 
 func TestStopKillsASessionIgnoringItAtTheTenSecondDeadline(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, crew.Ready))
+		tr := fake.NewTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
 		r.harness.IgnoreStop(true)
 		s := r.sessions(1)["issue-1-development"]
@@ -481,8 +489,8 @@ func TestStopKillsASessionIgnoringItAtTheTenSecondDeadline(t *testing.T) {
 		if !s.Stopped() {
 			t.Error("the session was not stopped")
 		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.NeedsAttention}) {
-			t.Errorf("issue 1 is in %v, want needs_attention", got)
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+			t.Errorf("issue 1 is in %v, want needs attention", got)
 		}
 		reports := tr.Reports()
 		if len(reports) != 1 || len(reports[0].Failures) != 1 || reports[0].Failures[0].Reason != fake.KilledReason {
@@ -512,7 +520,7 @@ func (m *moveCounter) Move(ctx context.Context, key string, from, to crew.State)
 
 func TestStopGivesAFailingVerdictMoveOneFinalTryAndReturns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := &moveCounter{Tracker: fake.NewTracker(issue(1, crew.Ready)), to: crew.NeedsAttention}
+		tr := &moveCounter{Tracker: fake.NewTracker(issue(1, ready)), to: needsAttention}
 		r := start(t, config(t, tr, develop))
 		r.sessions(1)
 		down := errors.New("tracker is down")
@@ -525,18 +533,18 @@ func TestStopGivesAFailingVerdictMoveOneFinalTryAndReturns(t *testing.T) {
 		}
 
 		if tr.moves != 2 {
-			t.Errorf("tried the needs_attention move %d times, want 2: the first and one final try", tr.moves)
+			t.Errorf("tried the needs attention move %d times, want 2: the first and one final try", tr.moves)
 		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.InProgress}) {
-			t.Errorf("issue 1 is in %v, want it left in in_progress", got)
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{inProgress}) {
+			t.Errorf("issue 1 is in %v, want it left in in progress", got)
 		}
 		dropped := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
 			d, ok := e.(core.CallDropped)
-			return ok && d.Call.Kind == core.CallMove && d.Call.To == crew.NeedsAttention &&
+			return ok && d.Call.Kind == core.CallMove && d.Call.To == needsAttention &&
 				d.Result == core.ResultFailed && strings.Contains(d.Reason, "tracker is down")
 		})
 		if !dropped {
-			t.Errorf("last update's recent events = %#v, want the dropped needs_attention move", final.Snapshot.Recent)
+			t.Errorf("last update's recent events = %#v, want the dropped needs attention move", final.Snapshot.Recent)
 		}
 	})
 }
@@ -589,7 +597,7 @@ func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action str
 
 func TestAWorkspaceFailureReachesTheReportWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, crew.Ready))
+		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
 		cfg.Workspace = failingWorkspace{root: cfg.Root, home: cfg.Home}
 		r := start(t, cfg)
@@ -634,7 +642,7 @@ func reportedReason(t *testing.T, tr *fake.Tracker, cfg engine.Config, during fu
 
 func TestASessionsReasonReachesTheReportWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, crew.Ready))
+		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
 
 		got := reportedReason(t, tr, cfg, func(r *rig) {
@@ -661,7 +669,7 @@ func (h failingHarness) Start(_ context.Context, run port.Run) (port.Session, er
 
 func TestAHarnessStartFailureReachesTheReportWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, crew.Ready))
+		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
 		cfg.Harness = failingHarness{home: cfg.Home}
 
@@ -675,7 +683,7 @@ func TestAHarnessStartFailureReachesTheReportWithLocalPathsShortened(t *testing.
 
 func TestALogThatCannotOpenReachesTheReportWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, crew.Ready))
+		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
 		// A file where the log directory goes makes creating it fail.
 		if err := os.WriteFile(filepath.Join(cfg.Root, ".crew", "logs"), nil, 0o600); err != nil {

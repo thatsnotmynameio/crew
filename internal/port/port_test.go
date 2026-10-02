@@ -14,7 +14,7 @@ import (
 func TestPrepareRunsPreparersAndSkipsTheOthers(t *testing.T) {
 	tracker := fake.NewPreparingTracker()
 	harness := fake.NewHarness() // not a Preparer
-	states := []crew.State{crew.Ready, crew.InProgress, crew.ReadyToReview}
+	states := []crew.State{"ready", "in progress", "ready to review"}
 
 	if err := port.Prepare(context.Background(), states, tracker, harness, fake.NewWorkspace(t.TempDir())); err != nil {
 		t.Fatalf("Prepare: %v", err)
@@ -30,7 +30,7 @@ func TestPrepareReturnsEveryFailure(t *testing.T) {
 	tracker.Fail(noGh)
 	harness.Fail(noClaude)
 
-	err := port.Prepare(context.Background(), []crew.State{crew.Ready}, tracker, harness)
+	err := port.Prepare(context.Background(), []crew.State{"ready"}, tracker, harness)
 	if !errors.Is(err, noGh) || !errors.Is(err, noClaude) {
 		t.Errorf("Prepare = %v, want both failures", err)
 	}
