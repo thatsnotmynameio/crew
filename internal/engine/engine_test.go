@@ -708,3 +708,94 @@ func TestATrackerCallsReasonHasLocalPathsShortened(t *testing.T) {
 		}
 	})
 }
+
+// slowPreparer is a tracker whose environment check takes delay.
+type slowPreparer struct {
+	*slowTracker
+	delay time.Duration
+}
+
+func (s *slowPreparer) Prepare(context.Context, []crew.State) error {
+	time.Sleep(s.delay)
+	return nil
+}
+
+// Covers AE1.
+func TestWithoutARunTimeLimitTheEngineKeepsPollingUntilStopped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := &slowTracker{Tracker: fake.NewTracker()}
+		t0 := time.Now()
+		r := start(t, config(t, tr, develop))
+
+		time.Sleep(72 * time.Hour)
+		synctest.Wait()
+		select {
+		case err := <-r.done:
+			t.Fatalf("Run returned %v without a stop", err)
+		default:
+		}
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		spans := tr.spans()
+		if got, want := spans[len(spans)-1].start.Sub(t0), 72*time.Hour; got != want {
+			t.Errorf("last listing started at %v, want %v", got, want)
+		}
+	})
+}
+
+// Covers AE2.
+func TestTheRunTimeLimitCountsFromTheFirstPollAndStopsAnIdleEngine(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := &slowPreparer{slowTracker: &slowTracker{Tracker: fake.NewTracker()}, delay: 10 * time.Minute}
+		cfg := config(t, tr, develop)
+		cfg.RunTimeLimit = time.Hour
+		t0 := time.Now()
+		r := start(t, cfg)
+
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if got, want := time.Since(t0), 70*time.Minute; got != want {
+			t.Errorf("Run returned after %v, want %v: the checks' 10 minutes plus the hour", got, want)
+		}
+		if got := tr.spans()[0].start.Sub(t0); got != 10*time.Minute {
+			t.Errorf("first listing started at %v, want 10m0s", got)
+		}
+	})
+}
+
+// Covers AE3.
+func TestWhenTheRunTimeIsUpARunningSessionFinishesAndNothingNewIsTaken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(42, crew.Ready))
+		cfg := config(t, tr, develop)
+		cfg.RunTimeLimit = time.Hour
+		t0 := time.Now()
+		r := start(t, cfg)
+		session := r.sessions(1)["issue-42-development"]
+
+		time.Sleep(time.Hour + time.Second)
+		tr.Add(issue(43, crew.Ready))
+		time.Sleep(90*time.Minute - time.Since(t0))
+		session.End(crew.Outcome{Succeeded: true, Reason: "done"})
+
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if got, want := time.Since(t0), 90*time.Minute; got != want {
+			t.Errorf("Run returned after %v, want %v, once #42 was judged", got, want)
+		}
+		if session.Stopped() {
+			t.Error("#42's session was stopped; it should have run to its end")
+		}
+		if got := states(t, tr, "42"); !reflect.DeepEqual(got, []crew.State{crew.ReadyToReview}) {
+			t.Errorf("#42 is in %v, want ready_to_review", got)
+		}
+		if got := states(t, tr, "43"); !reflect.DeepEqual(got, []crew.State{crew.Ready}) {
+			t.Errorf("#43 is in %v, want it still ready, never taken", got)
+		}
+	})
+}

@@ -43,6 +43,9 @@ type Config struct {
 	MaxParallelIssues int
 	// PollInterval is the time between listings; it must be positive.
 	PollInterval time.Duration
+	// RunTimeLimit is how long the engine runs from its first poll before
+	// it winds down. Zero runs until stopped.
+	RunTimeLimit time.Duration
 	// Tracker, Harness and Workspace are the adapters. The engine detects
 	// their optional interfaces, such as port.Preparer, on these values.
 	Tracker   port.Tracker
@@ -98,9 +101,11 @@ func New(cfg Config) *Engine {
 //
 // Stop, or ctx ending, requests a stop: nothing new starts, running
 // sessions get stopTimeout to stop, issues are judged as their actions end,
-// and owed calls get one final try (R9). Run returns nil once the core holds
-// no issue and no command goroutine is left. Every subscription is closed
-// when Run returns, after its last update.
+// and owed calls get one final try (R9). RunTimeLimit after the first poll,
+// the core winds down instead: nothing new is taken, and running sessions
+// end on their own. Run returns nil once the core holds no issue and no
+// command goroutine is left. Every subscription is closed when Run returns,
+// after its last update.
 func (e *Engine) Run(ctx context.Context) error {
 	defer e.stream.close()
 	if err := e.Prepare(ctx); err != nil {
@@ -113,6 +118,14 @@ func (e *Engine) Run(ctx context.Context) error {
 	ticker := time.NewTicker(e.cfg.PollInterval)
 	defer ticker.Stop()
 	stop, done := e.stop, ctx.Done()
+	// The run time counts from the first poll, so the preparers do not use
+	// it up. A nil channel never fires: without a limit, nothing winds down.
+	var timeUp <-chan time.Time
+	if e.cfg.RunTimeLimit > 0 {
+		timer := time.NewTimer(e.cfg.RunTimeLimit)
+		defer timer.Stop()
+		timeUp = timer.C
+	}
 	e.step(core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
@@ -124,6 +137,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		case <-done:
 			done = nil
 			e.step(core.StopRequested{})
+		case <-timeUp:
+			timeUp = nil
+			e.step(core.TimeUp{Limit: e.cfg.RunTimeLimit})
 		case m := <-e.inbox:
 			e.receive(m)
 		}
