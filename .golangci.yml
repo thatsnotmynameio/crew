@@ -48,6 +48,12 @@ linters:
               desc: the core imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/proc
               desc: the core imports only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: the core imports only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/registry
+              desc: the core imports only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/app
+              desc: the core imports only the domain
         engine:
           files:
             - "**/internal/engine/**"
