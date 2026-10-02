@@ -17,15 +17,17 @@ const maxReason = 200
 
 // stream reads claude's stream-json output as it is written: one JSON event
 // per line. It keeps the last top-level result event, which is what the
-// session is judged by, and the last text the session said. A line that is
-// not a JSON object is skipped.
+// session is judged by, the turns of every result event, and the last text
+// the session said. A line that is not a JSON object is skipped.
 //
-// It is written from one goroutine. The result is read with end once the
-// writes are over; what the session said is read with said from any
-// goroutine, while the writes go on.
+// It is written from one goroutine. The result is read with end, and the
+// usage with usage, once the writes are over; what the session said is read
+// with said from any goroutine, while the writes go on.
 type stream struct {
 	partial []byte  // the start of a line whose newline has not come yet
 	last    *result // the last top-level result event so far
+	turns   int     // num_turns added up over every result event so far
+	turned  bool    // some result event had num_turns
 
 	mu   sync.Mutex
 	text string // the last top-level text so far, on one line
@@ -39,6 +41,21 @@ type result struct {
 	Subtype string `json:"subtype"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
+	// Cost is total_cost_usd, the session's cost so far in US dollars, or
+	// nil when the event has none.
+	Cost *float64 `json:"total_cost_usd"`
+	// Turns is num_turns, the turns of this event's query only, or nil.
+	Turns *int `json:"num_turns"`
+	// Models is modelUsage: the session's tokens so far, by model.
+	Models map[string]modelUsage `json:"modelUsage"`
+}
+
+// modelUsage is one model's tokens in a result event's modelUsage.
+type modelUsage struct {
+	Input      int64 `json:"inputTokens"`
+	Output     int64 `json:"outputTokens"`
+	CacheRead  int64 `json:"cacheReadInputTokens"`
+	CacheWrite int64 `json:"cacheCreationInputTokens"`
 }
 
 // assistant is an assistant event: a message from the session, or from a
@@ -87,6 +104,10 @@ func (s *stream) line(line []byte) {
 	switch ev.Type {
 	case "result":
 		s.last = &ev
+		if ev.Turns != nil {
+			s.turns += *ev.Turns
+			s.turned = true
+		}
 	case "assistant":
 		s.assistant(line)
 	}
@@ -128,6 +149,34 @@ func (s *stream) end() *result {
 	return s.last
 }
 
+// usage returns what the session used, read once end has returned. The
+// last result's cost and modelUsage cover the whole session, subagents and
+// earlier queries included, so they are the cost and the tokens, summed
+// over models; an empty modelUsage reports no tokens. Each result's
+// num_turns counts only its own query, so the turns are added up. It is
+// nothing when there was no result.
+func (s *stream) usage() crew.Usage {
+	if s.last == nil {
+		return crew.Usage{}
+	}
+	u := crew.Usage{Turns: s.turns, HasTurns: s.turned}
+	if s.last.Cost != nil {
+		u.Cost, u.HasCost = *s.last.Cost, true
+	}
+	for model, m := range s.last.Models {
+		u.Tokens.Input += m.Input
+		u.Tokens.Output += m.Output
+		u.Tokens.CacheRead += m.CacheRead
+		u.Tokens.CacheWrite += m.CacheWrite
+		u.Models = append(u.Models, model)
+	}
+	if len(u.Models) > 0 {
+		u.HasTokens = true
+		slices.Sort(u.Models)
+	}
+	return u
+}
+
 // judge is the verdict on a session whose last top-level result event is
 // last, or nil, and whose process exited with exit (nil for status 0). It
 // succeeded only when last exists, is not an error, and the process exited
@@ -159,6 +208,13 @@ func exited(err error) string {
 		return fmt.Sprintf("exit code %d", coded.ExitCode())
 	}
 	return err.Error()
+}
+
+// signaled reports whether a process that exited with err was ended by a
+// signal, for which *exec.ExitError's code is -1.
+func signaled(err error) bool {
+	var coded interface{ ExitCode() int }
+	return errors.As(err, &coded) && coded.ExitCode() < 0
 }
 
 // oneLine joins s's words with single spaces and cuts it to maxReason
