@@ -136,7 +136,7 @@ func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, e
 	if !listed {
 		return port.Space{}, fmt.Errorf("the folder %s is not one of this repository's git worktrees: "+
 			"if the repository moved since crew created it, run `git worktree repair %s` to keep its work; "+
-			"otherwise remove it so crew can create a new one", dir, dir)
+			"otherwise save any work in it, then remove it so crew can create a new one", dir, dir)
 	}
 	branch := tree.branch
 	if branch == "" {
