@@ -161,16 +161,27 @@ func TestCommandRunsClaudeHeadlessWithTheModelInTheDirectory(t *testing.T) {
 	want := proc.Command{
 		Name: "claude",
 		Args: []string{
-			"-p", "Implement #4",
+			"-p",
 			"--model", "claude-opus-5-5",
 			"--permission-mode", "auto",
 			"--output-format", "stream-json",
 			"--verbose",
+			"--", "Implement #4",
 		},
 		Dir: "/work/.crew/worktrees/issue-4-development",
 	}
 	if got.Name != want.Name || got.Dir != want.Dir || !slices.Equal(got.Args, want.Args) || got.Env != nil {
 		t.Errorf("command = %#v, want %#v", got, want)
+	}
+}
+
+func TestCommandPassesAPromptStartingWithADashAsThePrompt(t *testing.T) {
+	prompt := "- Read the issue\n--dry-run does nothing"
+
+	args := command(prompt, "claude-opus-5-5", "/work").Args
+
+	if n := len(args); n < 2 || args[n-2] != "--" || args[n-1] != prompt {
+		t.Errorf("args = %q, want the prompt last, right after --", args)
 	}
 }
 
