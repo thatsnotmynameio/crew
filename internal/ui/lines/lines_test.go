@@ -91,6 +91,7 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 	move := core.Call{Kind: core.CallMove, IssueKey: "2", IssueRef: "#2", From: "in review", To: "needs attention"}
 	report := core.Call{Kind: core.CallReport, IssueKey: "2", IssueRef: "#2"}
+	prs := core.Call{Kind: core.CallPullRequests, IssueKey: "2", IssueRef: "#2", To: "needs attention"}
 	tests := []struct {
 		event core.Event
 		want  string
@@ -130,6 +131,10 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 			"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
 		{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
 			"reporting the failure on #2 failed, retrying at the next tick: timeout"},
+		{core.CallOwed{At: at("10:00:00"), Call: prs, Reason: "gh: HTTP 502"},
+			"updating the pull requests of #2 to needs attention failed, retrying at the next tick: gh: HTTP 502"},
+		{core.CallDropped{At: at("10:00:00"), Call: prs, Result: core.ResultRefused, Reason: "pull request is locked"},
+			"gave up updating the pull requests of #2 to needs attention: the tracker refused: pull request is locked"},
 		{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultMovedMeanwhile},
 			"gave up moving #2 from in review to needs attention: the issue moved meanwhile"},
 		{core.CallDropped{At: at("10:00:00"), Call: report, Result: core.ResultRefused, Reason: "issue is locked"},

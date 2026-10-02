@@ -82,6 +82,9 @@ type Engine struct {
 	// reporter is the tracker's port.StatusReporter; nil when the tracker
 	// has none, and the core then reports no status (R13).
 	reporter port.StatusReporter
+	// pullRequests is the tracker's port.PullRequestReporter; nil when the
+	// tracker has none, and the core then makes no pull request report.
+	pullRequests port.PullRequestReporter
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
@@ -100,7 +103,9 @@ type Engine struct {
 
 // New returns an engine for cfg. It starts nothing until Run. When the
 // tracker implements port.StatusReporter, the engine reports each issue's
-// status through it (KTD1). When the workspace implements port.Reopener, a
+// status through it (KTD1). When it implements port.PullRequestReporter, the
+// engine follows each move that landed with a report on the issue's pull
+// requests through it. When the workspace implements port.Reopener, a
 // failed run's action resumes in that run's workspace (KTD4).
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
@@ -108,18 +113,23 @@ func New(cfg Config) *Engine {
 	if reporter != nil {
 		opts = append(opts, core.ReportingStatus())
 	}
+	pullRequests, _ := cfg.Tracker.(port.PullRequestReporter)
+	if pullRequests != nil {
+		opts = append(opts, core.ReportingPullRequests())
+	}
 	if _, ok := cfg.Workspace.(port.Reopener); ok {
 		opts = append(opts, core.Reopening())
 	}
 	return &Engine{
-		cfg:      cfg,
-		stream:   newStream(),
-		stop:     make(chan struct{}),
-		reporter: reporter,
-		opts:     opts,
-		inbox:    make(chan message, inboxSize),
-		sessions: map[sessionKey]port.Session{},
-		checks:   map[sessionKey]context.CancelFunc{},
+		cfg:          cfg,
+		stream:       newStream(),
+		stop:         make(chan struct{}),
+		reporter:     reporter,
+		pullRequests: pullRequests,
+		opts:         opts,
+		inbox:        make(chan message, inboxSize),
+		sessions:     map[sessionKey]port.Session{},
+		checks:       map[sessionKey]context.CancelFunc{},
 	}
 }
 
