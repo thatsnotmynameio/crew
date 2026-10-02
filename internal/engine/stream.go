@@ -3,6 +3,7 @@ package engine
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 )
@@ -21,12 +22,18 @@ type Update struct {
 }
 
 // Snapshot is the engine's view after a step: the issues the core holds, by
-// stage and claim, their actions with start times, the owed calls, and the
-// latest events. Its View shares no memory with the core.
+// stage and claim, their actions with start times, the owed calls, the issues
+// handled this run, the latest events, and when the run started. Its View
+// shares no memory with the core.
 type Snapshot struct {
 	core.View
 	// Recent are the last recentEvents events, oldest first.
 	Recent []core.Event
+	// Started is when the first poll ran, where the run time limit counts
+	// from; zero before it.
+	Started time.Time
+	// RunTimeLimit is the run time limit; zero when there is none.
+	RunTimeLimit time.Duration
 }
 
 // Queue is an ordered subscription for renderers that print every event,

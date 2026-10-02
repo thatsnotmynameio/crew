@@ -85,6 +85,7 @@ type Engine struct {
 	wg       sync.WaitGroup
 	sessions map[sessionKey]port.Session
 	recent   []core.Event
+	started  time.Time // when the first poll ran
 }
 
 // New returns an engine for cfg. It starts nothing until Run. When the
@@ -140,6 +141,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		defer timer.Stop()
 		timeUp = timer.C
 	}
+	e.started = time.Now()
 	e.step(core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
@@ -265,7 +267,10 @@ func (e *Engine) step(in core.Input) {
 		e.recent = e.recent[n:]
 	}
 	e.stream.publish(Update{
-		Events:   events,
-		Snapshot: Snapshot{View: e.model.View(), Recent: slices.Clone(e.recent)},
+		Events: events,
+		Snapshot: Snapshot{
+			View: e.model.View(), Recent: slices.Clone(e.recent),
+			Started: e.started, RunTimeLimit: e.cfg.RunTimeLimit,
+		},
 	})
 }

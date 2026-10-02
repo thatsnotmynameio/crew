@@ -36,8 +36,9 @@ type Model struct {
 	// at is the clock's time at the last update or tick; elapsed times are
 	// measured to it, so View stays a function of the model.
 	at time.Time
-	// width is the window's width in columns.
-	width int
+	// width and height are the window's size in columns and rows; a zero
+	// height, before the first size, fits nothing to it.
+	width, height int
 	// stopping is true once the boss asked to stop.
 	stopping bool
 }
@@ -74,7 +75,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.at = m.now()
 		return m, tick()
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":

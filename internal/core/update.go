@@ -211,7 +211,7 @@ func (s *step) listed(issues []crew.Issue) {
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	stage := m.stages[si]
-	h := &heldIssue{issue: issue.Clone(), stage: si, claim: ClaimTaking}
+	h := &heldIssue{issue: issue.Clone(), stage: si, claim: ClaimTaking, taken: s.at}
 	for _, a := range stage.Actions {
 		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt})
 	}
@@ -260,6 +260,7 @@ func (s *step) callResult(r CallResult) {
 		} else {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 			s.ended(h, c.to, crew.MoveDone)
+			h.verdict.Move = crew.MoveDone
 		}
 		h.settle(c)
 	case ResultFailed:
@@ -289,6 +290,7 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 	s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
 	if c.kind == CallMove && !c.take {
 		s.ended(h, c.to, crew.MoveDropped)
+		h.verdict.Move, h.verdict.DropReason = crew.MoveDropped, r.Reason
 	}
 	h.settle(c)
 }
@@ -382,11 +384,15 @@ func (s *step) judge(h *heldIssue) {
 			})
 		}
 	}
+	h.verdict = &HandledView{
+		Issue: h.issue.Clone(), Stage: stage.Name, To: stage.OnSuccess, Taken: h.taken, Ended: s.at,
+	}
 	if len(report.Failures) == 0 {
 		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})
 		s.ended(h, stage.OnSuccess, crew.MovePending)
 		return
 	}
+	h.verdict.To, h.verdict.Failures = stage.OnFailure, slices.Clone(report.Failures)
 	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnFailure})
 	s.call(h, &call{kind: CallReport, report: report})
 	s.ended(h, stage.OnFailure, crew.MovePending)
@@ -429,9 +435,15 @@ func (m *Model) findCall(id CallID) (*heldIssue, *call) {
 	return nil, nil
 }
 
-// release forgets h.
+// release forgets h, keeping its handled entry, which replaces the issue's
+// earlier one, when its stage ended.
 func (m *Model) release(h *heldIssue) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
+	if h.verdict == nil {
+		return
+	}
+	m.handled = slices.DeleteFunc(m.handled, func(e HandledView) bool { return e.Issue.Key == h.issue.Key })
+	m.handled = append(m.handled, *h.verdict)
 }
 
 // ended reports whether every action of h has ended.
