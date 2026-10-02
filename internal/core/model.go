@@ -24,8 +24,10 @@ type Model struct {
 	maxParallel int
 	issues      []*heldIssue // in the order they were taken
 	listing     bool         // a ListIssues is outstanding
-	stopping    bool
-	stopped     bool // the Stopped event was emitted
+	timeUp      bool         // the run time is up: take nothing new
+	requested   bool         // a stop was requested
+	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
+	stopped     bool         // the Stopped event was emitted
 	lastID      CallID
 }
 
@@ -75,9 +77,9 @@ func New(workflow []crew.Stage, maxParallelIssues int) *Model {
 	return &Model{stages: stages, maxParallel: maxParallelIssues}
 }
 
-// Stopped reports whether a stop was requested and has completed: the core
-// holds no issue and no owed call. The engine returns once Stopped is true
-// and none of its commands is still running.
+// Stopped reports whether a stop, requested or ending a wind-down, has
+// completed: the core holds no issue and no owed call. The engine returns
+// once Stopped is true and none of its commands is still running.
 func (m *Model) Stopped() bool {
 	return m.stopping && len(m.issues) == 0
 }
@@ -156,8 +158,11 @@ func (p Phase) String() string {
 // View is a snapshot of what the core holds, for subscribers (KTD6). It
 // shares no memory with the Model, so it may be kept and changed freely.
 type View struct {
-	// Stopping is true once a stop was requested.
+	// Stopping is true once a stop was requested. A wind-down ending in the
+	// stop sequence by itself does not set it.
 	Stopping bool
+	// TimeUp is true once the run time is up and crew winds down.
+	TimeUp bool
 	// Issues are the held issues, in the order they were taken.
 	Issues []IssueView
 	// Owed are the tracker calls waiting for a retry.
@@ -187,7 +192,7 @@ type ActionView struct {
 
 // View returns a snapshot of what the core holds.
 func (m *Model) View() View {
-	v := View{Stopping: m.stopping}
+	v := View{Stopping: m.requested, TimeUp: m.timeUp}
 	for _, h := range m.issues {
 		iv := IssueView{Issue: h.issue.Clone(), Stage: m.stages[h.stage].Name, Claim: h.claim}
 		for _, a := range h.actions {

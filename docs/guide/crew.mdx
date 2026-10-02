@@ -84,6 +84,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `config.poll_interval_seconds` | `300` | Seconds between polls. Must be positive. |
+| `config.run_time_limit_seconds` | none | How long crew runs, counted from its first poll, before it winds down (see [Run it for a set time](#run-it-for-a-set-time)). Must be positive: `28800` is 8 hours. Without it, crew runs until you stop it. |
 | `config.max_parallel_issues` | `2` | How many issues crew works on at once. It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
 | `config.harness` | `claude` | The coding agent that runs sessions. `claude` is the only one today. |
 | `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
@@ -219,11 +220,28 @@ If crew's output goes to a pipe that closes, for example `crew | head`, crew sto
 
 The checks crew runs when it starts have the same 10 minutes. Past them, or on Ctrl-C, SIGTERM or SIGHUP meanwhile, crew kills every process it started and exits with 2, before its first poll.
 
+### Run it for a set time
+
+Set `config.run_time_limit_seconds` to start crew for a set time, such as overnight. The time counts from the first poll, so the checks crew runs when it starts do not use it up. When the time is up, crew winds down:
+
+1. It takes no new issue, even one that is `ready`.
+2. Sessions already running go on until they end, and their issues are judged as usual. No issue goes to `needs attention` because of the limit.
+3. Moves and comments still owed get their last try, as when you stop crew.
+4. crew exits with 0.
+
+crew says it is winding down, in the live view and with `--plain`:
+
+```text
+06:22:58 crew: run time of 8h0m0s is up: taking no new issues, winding down
+```
+
+A session that runs long keeps crew running past the limit, and so does a move that keeps failing while crew takes an issue, until GitHub answers. Press Ctrl-C (or `q`), or send SIGTERM or SIGHUP, to stop it the usual way: running sessions get 10 seconds to stop, and their issues move to `needs attention`. A second one forces the exit.
+
 ### Exit codes
 
 | Code | When |
 | --- | --- |
-| `0` | crew stopped cleanly. |
+| `0` | crew stopped cleanly, or wound down after its run time. |
 | `1` | crew failed while running, or you forced the exit. |
 | `2` | The config, a flag or the environment is wrong; nothing was polled. |
 
@@ -231,7 +249,7 @@ The checks crew runs when it starts have the same 10 minutes. Past them, or on C
 
 - **One crew per repository.** Two crews in one repository take the same issues. Nothing stops you from starting a second one.
 - **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it.
-- **No time limit on a session.** A session runs until it ends or you stop crew.
+- **No time limit on a session.** A session runs until it ends or you stop crew. `config.run_time_limit_seconds` limits crew, not its sessions: it does not cut a running session short.
 - **No retries.** A failed action is not run again. Relabeling the issue is the retry.
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
 - **Not built yet from the old dispatcher:** pausing and resuming on usage limits (the `paused` state is reserved for it), a status comment kept up to date, skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.

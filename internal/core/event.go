@@ -112,8 +112,17 @@ type CallDropped struct {
 	Reason string
 }
 
-// Stopped means a stop request has completed: the core holds no issue and
-// no owed call. It is emitted once.
+// WindingDown means the run time limit has passed (R6): the core takes no
+// new issue and stops once the issues it holds are judged. It is emitted
+// once, unless a stop was requested first.
+type WindingDown struct {
+	At time.Time
+	// Limit is the run time limit.
+	Limit time.Duration
+}
+
+// Stopped means a stop, requested or ending a wind-down, has completed: the
+// core holds no issue and no owed call. It is emitted once.
 type Stopped struct {
 	At time.Time
 }
@@ -178,6 +187,9 @@ func (e CallOwed) Time() time.Time { return e.At }
 func (e CallDropped) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e WindingDown) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e Stopped) Time() time.Time { return e.At }
 
 func (IssueTaken) event()      {}
@@ -190,4 +202,5 @@ func (PollDone) event()        {}
 func (ListingFailed) event()   {}
 func (CallOwed) event()        {}
 func (CallDropped) event()     {}
+func (WindingDown) event()     {}
 func (Stopped) event()         {}

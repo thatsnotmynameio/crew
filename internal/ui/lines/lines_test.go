@@ -121,6 +121,8 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 			"gave up reporting the failure on #2: the tracker refused: issue is locked"},
 		{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultFailed, Reason: "timeout"},
 			"gave up moving #2 from in_review to needs_attention: it failed: timeout"},
+		{core.WindingDown{At: at("10:00:00"), Limit: time.Hour},
+			"run time of 1h0m0s is up: taking no new issues, winding down"},
 		{core.Stopped{At: at("10:00:00")},
 			"stopped"},
 	}
