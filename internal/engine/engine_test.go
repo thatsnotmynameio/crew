@@ -69,6 +69,8 @@ type rig struct {
 	cancel  context.CancelFunc
 	done    chan error
 	final   chan engine.Update
+	// queue holds every update, for tests that read all the events.
+	queue *engine.Queue
 }
 
 // config returns a config over tracker for workflow, with a fake harness and
@@ -97,8 +99,12 @@ func start(t *testing.T, cfg engine.Config) *rig {
 	t.Helper()
 	e := engine.New(cfg)
 	latest := e.SubscribeLatest()
+	queue := e.SubscribeQueue(1024)
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &rig{t: t, root: cfg.Root, engine: e, cancel: cancel, done: make(chan error, 1), final: make(chan engine.Update, 1)}
+	r := &rig{
+		t: t, root: cfg.Root, engine: e, cancel: cancel, done: make(chan error, 1), final: make(chan engine.Update, 1),
+		queue: queue,
+	}
 	if h, ok := cfg.Harness.(*fake.Harness); ok {
 		r.harness = h
 	}

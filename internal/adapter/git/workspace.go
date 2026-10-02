@@ -20,6 +20,7 @@ import (
 var (
 	_ port.Workspace = (*Workspace)(nil)
 	_ port.Preparer  = (*Workspace)(nil)
+	_ port.Reopener  = (*Workspace)(nil)
 )
 
 // worktrees is where the worktrees go, relative to the repository root.
@@ -93,6 +94,103 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action string)
 		return port.Space{}, fmt.Errorf("create worktree %s: %w", space.Name, err)
 	}
 	return space, nil
+}
+
+// Reopen implements port.Reopener. It finds the worktree
+// .crew/worktrees/<name> under the root and reads it from `git worktree
+// list` without changing it: no fetch, merge, rebase or checkout, so the
+// resumed session sees what the failed one left (R6). A folder that is
+// missing, or that git lists as prunable, is gone. A folder git does not
+// list is an error, not gone, so work left in it is never silently
+// abandoned for a new worktree: git lists a worktree under the path it was
+// created at, so after the repository moves the error offers `git worktree
+// repair`, which keeps that work. The branch is the one checked out, or the
+// recorded one when HEAD is detached, as in the middle of a rebase. Errors
+// carry git's stderr.
+func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, error) {
+	// The lock keeps a creation from adding a worktree under this name while
+	// it is being inspected.
+	if err := w.acquire(ctx); err != nil {
+		return port.Space{}, err
+	}
+	defer w.release()
+
+	root, err := filepath.Abs(w.root)
+	if err != nil {
+		return port.Space{}, fmt.Errorf("workspace root: %w", err)
+	}
+	dir := filepath.Join(root, worktrees, space.Name)
+	out, err := w.git(ctx, "worktree", "list", "--porcelain")
+	if err != nil {
+		return port.Space{}, fmt.Errorf("list worktrees: %w", err)
+	}
+	tree, listed := findWorktree(string(out.Stdout), canonical(dir))
+	if listed && tree.prunable {
+		return port.Space{}, fmt.Errorf("worktree %s: git lists it as prunable: %w", dir, port.ErrWorkspaceGone)
+	}
+	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+		return port.Space{}, fmt.Errorf("worktree %s: %w", dir, port.ErrWorkspaceGone)
+	} else if err != nil {
+		return port.Space{}, fmt.Errorf("check worktree folder %s: %w", dir, err)
+	}
+	if !listed {
+		return port.Space{}, fmt.Errorf("the folder %s is not one of this repository's git worktrees: "+
+			"if the repository moved since crew created it, run `git worktree repair %s` to keep its work; "+
+			"otherwise save any work in it, then remove it so crew can create a new one", dir, dir)
+	}
+	branch := tree.branch
+	if branch == "" {
+		branch = space.Branch
+	}
+	return port.Space{Name: space.Name, Dir: dir, Branch: branch}, nil
+}
+
+// worktree is one entry of `git worktree list --porcelain`.
+type worktree struct {
+	// branch is the branch checked out, or "" when HEAD is detached.
+	branch   string
+	prunable bool
+}
+
+// findWorktree returns the entry of the porcelain listing out whose path is
+// dir, which is canonical. The listing is records of "key value" lines
+// separated by blank lines, each starting with "worktree <path>".
+func findWorktree(out, dir string) (worktree, bool) {
+	var tree worktree
+	found := false
+	for line := range strings.Lines(out) {
+		line = strings.TrimRight(line, "\n")
+		key, value, _ := strings.Cut(line, " ")
+		switch {
+		case key == "worktree":
+			if found {
+				return tree, true
+			}
+			found = canonical(value) == dir
+			tree = worktree{}
+		case !found:
+		case key == "branch":
+			tree.branch = strings.TrimPrefix(value, "refs/heads/")
+		case key == "prunable":
+			tree.prunable = true
+		}
+	}
+	return tree, found
+}
+
+// canonical resolves the symlinks in p's longest existing ancestor, so two
+// spellings of one path compare equal even when its last folders are gone:
+// git may record a worktree through a symlink the root does not use, as
+// macOS's /var does for /private/var.
+func canonical(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	parent := filepath.Dir(p)
+	if parent == p {
+		return p
+	}
+	return filepath.Join(canonical(parent), filepath.Base(p))
 }
 
 // free returns the first of base, base-2, base-3… whose folder and branch do

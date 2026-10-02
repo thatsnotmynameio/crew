@@ -212,7 +212,7 @@ At the same check, crew creates the labels your workflow names and the extra lab
 3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked; one queued before it became blocked keeps its last status comment.
 4. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
 5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone.
-6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
+6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt. When the last run of that action, in that stage, on that issue failed, crew [resumes it](#resume-a-failed-action) in that run's worktree instead.
 7. While the actions run, crew updates the issue's status comment at every poll.
 8. When every action of the issue has ended, its check included, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
 
@@ -228,14 +228,38 @@ The comment carries nothing the session said: no last message, no commands, no o
 
 A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
 
-To retry a failed issue, swap its `on_failure` label, such as `needs attention`, for the stage's `label`, such as `ready`.
+To retry a failed issue, swap its `on_failure` label, such as `needs attention`, for the stage's `label`, such as `ready`. Each failed action then resumes where it stopped, and each action that succeeded starts over.
+
+### Resume a failed action
+
+When a stage takes an issue, crew looks at the last run of each of its actions on that issue. When that run failed, the action resumes: crew runs a new session in the failed run's worktree, on its branch, with the commits and uncommitted files it left. crew does not fetch, merge or rebase the default branch into it. A run counts as failed when its action failed for any reason: the session failed, its check failed, crew stopped it, it failed to start, or crew crashed or was killed while it ran. A run that succeeded is never resumed, and an action of another stage never resumes it, even when the two actions share a name.
+
+The new session gets the action's usual prompt followed by a paragraph from crew. It says that the session continues an earlier session's work in this worktree, on its branch, quotes why that run failed, gives the run's log (`.crew/logs/issue-42-development.log` in the main checkout, `../../logs/issue-42-development.log` from the worktree), and tells the session to check the worktree's state with `git` before going on. The new session's output goes into the same log, after this line:
+
+```json
+{"type":"crew","subtype":"resumed","time":"2026-10-02T21:05:00Z"}
+```
+
+The event lines, the live view and the status comment say that the action resumed and name its worktree. A resumed run is judged like any other. When it fails, the next relabel resumes it again; there is no limit.
+
+To start over instead, remove the worktree before you relabel the issue:
+
+```sh
+git worktree remove --force .crew/worktrees/issue-42-development
+```
+
+crew then creates a new worktree, `issue-42-development-2` while the old branch exists, and says so in its output. The old branch, and any pull request from it, are yours to clean up.
+
+crew knows how runs ended from its run journal, `.crew/logs/runs.jsonl`, so a resume works after a restart. Runs that ended before your crew version had the journal are not in it, so their actions start over. Renaming a stage or an action in the config starts its actions over too.
+
+If crew was killed, for example with SIGKILL, its sessions can outlive it. Make sure none still runs in the worktree before you relabel the issue, or two sessions will work in it.
 
 ### The status comment
 
 Each issue crew queues or takes gets one status comment. It keeps one entry per stage run, oldest first: a stage run starts when crew queues the issue for a stage or takes it, and ends when the next one starts. crew edits only the latest entry, and earlier entries keep the text they had when their stage ended, across restarts. An entry shows where the issue stands:
 
 - **Queued:** the stage it waits for, and that it waits for a free slot (`max_parallel_issues`). crew edits it only when that changes.
-- **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the entry. crew updates it at every poll. An action whose check runs is still running.
+- **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the entry. An action that [resumed](#resume-a-failed-action) names its worktree, as in "**`development`** resumed in worktree `issue-42-development` and has been running for 5 minutes." crew updates it at every poll. An action whose check runs is still running.
 - **Ended:** each action's final state, and where the issue went: the stage's `on_success` or its `on_failure`, including when you stopped crew. Each failed action says why in crew's words, with its log: its session failed, crew stopped it, its workspace could not be created, its session could not start, or its prompt did not render. A failed check shows its reason, as in the example below.
 
 ````markdown
@@ -283,8 +307,18 @@ For action `development` on issue #42:
 | Worktree | `.crew/worktrees/issue-42-development` |
 | Branch | `crew/issue-42-development`, not pushed by crew |
 | Session log | `.crew/logs/issue-42-development.log` |
+| Run journal | `.crew/logs/runs.jsonl`, for every run |
 
-The name is the issue's key and the action's name, lowercased, with anything outside `a-z`, `0-9` and `-` turned into `-`. When a name is taken, crew adds `-2`, `-3` and so on. crew never removes worktrees: they are your evidence when an issue needs attention. Remove them with `git worktree remove` when you are done.
+The name is the issue's key and the action's name, lowercased, with anything outside `a-z`, `0-9` and `-` turned into `-`. When a name is taken, crew adds `-2`, `-3` and so on. A resumed action keeps its worktree, branch and log. crew never removes worktrees: they are your evidence when an issue needs attention, and a failed action resumes in its own. Remove them with `git worktree remove` when you are done.
+
+The run journal has one JSON line when a run's worktree is ready and one when its action ends. crew only appends to it. For example:
+
+```json
+{"v":1,"event":"started","time":"2026-10-02T20:08:28Z","issue":"42","ref":"#42","stage":"implement","action":"development","workspace":"issue-42-development","branch":"crew/issue-42-development","log":".crew/logs/issue-42-development.log"}
+{"v":1,"event":"ended","time":"2026-10-02T21:05:00Z","issue":"42","ref":"#42","stage":"implement","action":"development","workspace":"issue-42-development","branch":"crew/issue-42-development","log":".crew/logs/issue-42-development.log","succeeded":false,"reason":"tests fail"}
+```
+
+`reason` is the action's one-line reason, with your repository's path written as `.` and your home directory as `~`. A run with a `started` line and no `ended` line was cut short by a crash or a kill. crew stops before polling when it cannot read the journal, and says in its output when it cannot write to it.
 
 Add crew's local files to `.gitignore`, and keep `.crew/config.yaml` committed:
 
@@ -376,9 +410,9 @@ A session that runs long keeps crew running past the limit, and so does a move t
 ## Limits
 
 - **One crew per repository.** Two crews in one repository take the same issues. Nothing stops you from starting a second one.
-- **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it, and its status comment keeps saying its actions run until its next stage run starts.
+- **No recovery after a crash on its own.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it, and its status comment keeps saying its actions run until its next stage run starts. Relabeling it with its stage's `label` resumes its actions in their worktrees.
 - **No time limit on a session.** A session runs until it ends or you stop crew. `config.run_time_limit_seconds` limits crew, not its sessions: it does not cut a running session short.
-- **No retries.** A failed action, or one whose check failed, is not run again. Relabeling the issue is the retry.
+- **No retries on its own.** crew never runs a failed action, or one whose check failed, again by itself. Relabeling the issue is the retry, and it resumes the failed action. Two stages whose `on_failure` is each other's `label` would hand an issue back and forth with no one relabeling it, resuming each time.
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
 - **Not built yet from the old dispatcher:** pausing and resuming on usage limits, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
 - **At most 100 issues per poll**, the oldest first.

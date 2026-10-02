@@ -45,16 +45,39 @@ type CreateWorkspace struct {
 	Action string
 }
 
+// ReopenWorkspace asks to reopen the workspace a failed run of Action on
+// the issue left, named Workspace, on Branch, as recorded. Its result is
+// WorkspaceReady with Resumed set, WorkspaceGone when the workspace no
+// longer exists, or WorkspaceFailed. The core asks only when the workspace
+// can reopen (Reopening).
+type ReopenWorkspace struct {
+	IssueKey  string
+	Action    string
+	Workspace string
+	Branch    string
+}
+
+// RecordRun asks the engine to append Record to the run journal (KTD1). The
+// engine writes records in the order the core asks for them; a write that
+// fails comes back as RecordFailed. The core asks only when it records runs
+// (RecordingRuns).
+type RecordRun struct {
+	Record RunRecord
+}
+
 // StartSession asks the harness to start a session in Dir with Prompt, its
 // output going to the log file at Log (repository-relative, as received in
 // WorkspaceReady). Its result is SessionStarted or SessionFailedToStart,
-// then SessionEnded once a started session ends.
+// then SessionEnded once a started session ends. Resumed is set when the
+// session continues a failed run in its reopened workspace, so the engine
+// marks in the log where the new session starts.
 type StartSession struct {
 	IssueKey string
 	Action   string
 	Dir      string
 	Prompt   string
 	Log      string
+	Resumed  bool
 }
 
 // StopSession asks the engine to stop the running session of Action on the
@@ -98,6 +121,8 @@ func (ListIssues) command()      {}
 func (Move) command()            {}
 func (ReportFailure) command()   {}
 func (CreateWorkspace) command() {}
+func (ReopenWorkspace) command() {}
+func (RecordRun) command()       {}
 func (StartSession) command()    {}
 func (StopSession) command()     {}
 func (RunCheck) command()        {}

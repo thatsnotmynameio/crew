@@ -14,8 +14,11 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// Compile-time guard.
-var _ port.Workspace = (*Workspace)(nil)
+// Compile-time guards.
+var (
+	_ port.Workspace = (*Workspace)(nil)
+	_ port.Reopener  = (*Workspace)(nil)
+)
 
 // Workspace creates plain directories under a root, such as t.TempDir(). It
 // is not in the registry, as no config key selects a workspace; tests build
@@ -60,6 +63,23 @@ func (w *Workspace) Create(_ context.Context, issue crew.Issue, action string) (
 		w.mu.Unlock()
 		return space, nil
 	}
+}
+
+// Reopen implements port.Reopener. It returns the workspace named
+// space.Name as it is, keeping the recorded branch, or an error wrapping
+// port.ErrWorkspaceGone when its directory no longer exists.
+func (w *Workspace) Reopen(_ context.Context, space port.Space) (port.Space, error) {
+	root, err := filepath.Abs(w.root)
+	if err != nil {
+		return port.Space{}, fmt.Errorf("workspace root: %w", err)
+	}
+	dir := filepath.Join(root, space.Name)
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", space.Name, port.ErrWorkspaceGone)
+	} else if err != nil {
+		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", space.Name, err)
+	}
+	return port.Space{Name: space.Name, Dir: dir, Branch: space.Branch}, nil
 }
 
 // Spaces returns the workspaces created so far, in creation order.

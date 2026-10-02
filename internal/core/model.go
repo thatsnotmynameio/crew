@@ -37,6 +37,12 @@ type Model struct {
 	handled []HandledView
 	// runs counts the stage runs statuses were reported for, for their ids.
 	runs int
+	// lastRuns holds the last run record of each issue, stage and action; nil
+	// when the model records no runs (KTD1, KTD2).
+	lastRuns map[runKey]RunRecord
+	// reopening is set when the workspace can reopen a failed run's
+	// workspace (KTD4).
+	reopening bool
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -68,6 +74,12 @@ type actionRun struct {
 	check     string            // its check command; empty when it has none
 	stopped   bool              // a StopCheck was sent for its check
 	cause     crew.FailureCause // what made it fail, once it ended failed
+	// prev is the key's run record from before this run, set when the run
+	// reopens a workspace or records its start; nil when there was none.
+	prev *RunRecord
+	// resumed is set once the action runs in a failed run's reopened
+	// workspace.
+	resumed bool
 }
 
 // call is a tracker call the core made and has not settled.
@@ -160,6 +172,8 @@ const (
 	PhaseWaiting Phase = iota
 	// PhaseCreating: its workspace is being created.
 	PhaseCreating
+	// PhaseReopening: a failed run's workspace is being reopened.
+	PhaseReopening
 	// PhaseStarting: its session is being started.
 	PhaseStarting
 	// PhaseRunning: its session runs.
@@ -178,6 +192,8 @@ func (p Phase) String() string {
 		return "waiting"
 	case PhaseCreating:
 		return "creating workspace"
+	case PhaseReopening:
+		return "reopening workspace"
 	case PhaseStarting:
 		return "starting"
 	case PhaseRunning:
@@ -263,6 +279,9 @@ type ActionView struct {
 	Started time.Time
 	// Outcome is set once Phase is PhaseEnded.
 	Outcome crew.Outcome
+	// Resumed is set once the action runs in a failed run's reopened
+	// workspace.
+	Resumed bool
 }
 
 // View returns a snapshot of what the core holds.
@@ -273,7 +292,7 @@ func (m *Model) View() View {
 		for _, a := range h.actions {
 			iv.Actions = append(iv.Actions, ActionView{
 				Name: a.name, Phase: a.phase, Workspace: a.workspace, Branch: a.branch,
-				Log: a.log, Started: a.started, Outcome: a.outcome,
+				Log: a.log, Started: a.started, Outcome: a.outcome, Resumed: a.resumed,
 			})
 		}
 		v.Issues = append(v.Issues, iv)
