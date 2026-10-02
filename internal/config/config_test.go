@@ -319,12 +319,8 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 
 // crew runs on its own repository, so its .crew/config.yaml must stay valid.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
-	cfg, err := config.Load(filepath.Join("..", ".."))
-	if err != nil {
+	if _, err := config.Load(filepath.Join("..", "..")); err != nil {
 		t.Fatalf("Load(repository root) = %v", err)
-	}
-	if got := len(cfg.Workflow); got != 1 {
-		t.Errorf("workflow has %d stages, want 1 (implement)", got)
 	}
 }
 

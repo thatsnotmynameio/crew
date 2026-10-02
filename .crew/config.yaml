@@ -1,5 +1,6 @@
 # crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
-# The same workflow as pururu-ha's, with one lfg session per issue.
+# Every label crew uses starts with `crew:`. Each stage ends in `crew:waiting
+# review`, which means the issue waits for the boss, or in `crew:failed`.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 2
@@ -8,11 +9,11 @@ config:
 tracker:
   name: github
 workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: in review
-    on_failure: needs attention
+  - name: development
+    label: "crew:ready for development"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
     actions:
       - name: lfg
         prompt: |-
@@ -21,3 +22,66 @@ workflow:
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
+  - name: fix
+    label: "crew:ready for fix"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
+    actions:
+      - name: lfg
+        prompt: |-
+          /compound-engineering:lfg {{.Issue.Ref}}
+
+          {{.Issue.Ref}} reports a bug: take the defect route. Reproduce it with a failing test first, then fix it.
+
+          The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+          This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
+  - name: knowledge base
+    label: "crew:ready for knowledge base"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
+    actions:
+      - name: compound
+        prompt: |-
+          /compound-engineering:ce-compound mode:non-interactive {{.Issue.Ref}} ({{.Issue.URL}})
+
+          {{.Issue.Ref}} names a solved problem and the issues and pull requests where it was solved. Read them for the context this session does not have.
+
+          When you write or update a learning, open a pull request with it through /compound-engineering:ce-commit-push-pr mode:pipeline, which asks nothing and does not stay to watch the pull request. The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+          When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
+  - name: triage
+    label: "crew:ready for triage"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
+    actions:
+      - name: triage
+        prompt: |-
+          Triage this repository's open issues, other than {{.Issue.Ref}}. You run headless: nobody answers questions, so decide and report.
+
+          1. Read the open issues and the dependencies GitHub already has for them (`gh api repos/{owner}/{repo}/issues/N/dependencies/blocked_by` and `.../blocking`).
+          2. When an open issue cannot be done before another one, record it as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record one only when you can say why.
+          3. Never remove a dependency. When one no longer holds, suggest removing it in your summary.
+          4. When you find work that no open issue covers, open an issue for it with the label `bug` or `enhancement`. Search the open issues first, so you do not open a duplicate.
+          5. Never add or remove a label that starts with `crew:`, on any issue.
+          6. Do not change code, push a branch or open a pull request.
+          7. End with one comment on {{.Issue.Ref}}: each dependency you recorded and why, each one you suggest removing and why, likely duplicates, the issues you opened, and every command that failed or was denied, with its error.
+  - name: audit ci
+    label: "crew:ready for ci audit"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
+    actions:
+      - name: audit
+        prompt: |-
+          Review this repository's GitHub Actions and find what to improve. You run headless: nobody answers questions, so decide and report.
+
+          1. Read `.github/workflows/` and its recent runs (`gh run list`, `gh run view`). Look for failing or flaky jobs, slow jobs, steps repeated across jobs, missing caches, permissions wider than needed and actions not pinned by SHA.
+          2. Most jobs call the shared workflows of thatsnotmynameio/.github. When a change belongs there, say so in its issue.
+          3. For each improvement worth doing, open an issue with the label `enhancement`, or `bug` when something is broken: what to change, why, and the evidence, with links to the runs. Search the open issues first, so you do not open a duplicate.
+          4. Never add or remove a label that starts with `crew:`, on any issue.
+          5. Do not change code, push a branch or open a pull request.
+          6. End with one comment on {{.Issue.Ref}}: the issues you opened, what you checked and found fine, and anything you could not check, with the error.
