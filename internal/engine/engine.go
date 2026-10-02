@@ -82,6 +82,9 @@ type Engine struct {
 	// reporter is the tracker's port.StatusReporter; nil when the tracker
 	// has none, and the core then reports no status (R13).
 	reporter port.StatusReporter
+	// opts are the core's options; Prepare builds the core with them once it
+	// has read the run journal (KTD2).
+	opts []core.Option
 
 	// The fields below are owned by Run's loop.
 	model    *core.Model
@@ -97,19 +100,23 @@ type Engine struct {
 
 // New returns an engine for cfg. It starts nothing until Run. When the
 // tracker implements port.StatusReporter, the engine reports each issue's
-// status through it (KTD1).
+// status through it (KTD1). When the workspace implements port.Reopener, a
+// failed run's action resumes in that run's workspace (KTD4).
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	var opts []core.Option
 	if reporter != nil {
 		opts = append(opts, core.ReportingStatus())
 	}
+	if _, ok := cfg.Workspace.(port.Reopener); ok {
+		opts = append(opts, core.Reopening())
+	}
 	return &Engine{
 		cfg:      cfg,
 		stream:   newStream(),
 		stop:     make(chan struct{}),
 		reporter: reporter,
-		model:    core.New(cfg.Workflow, cfg.MaxParallelIssues, opts...),
+		opts:     opts,
 		inbox:    make(chan message, inboxSize),
 		sessions: map[sessionKey]port.Session{},
 		checks:   map[sessionKey]context.CancelFunc{},
@@ -196,11 +203,11 @@ func (e *Engine) SubscribeQueue(capacity int) *Queue {
 }
 
 // Prepare runs, once, the Preparer of each adapter that implements
-// port.Preparer, with the workflow's states, and returns their errors
-// joined, each naming its port. The preparers are environment checks
-// (R2), so a caller can run them before starting a renderer; Run then does
-// not prepare again. Call it before Run starts, never concurrently with
-// Run; a second call returns the first one's result.
+// port.Preparer, with the workflow's states, then reads the run journal, and
+// returns their errors joined, each naming its port or the journal. These
+// are environment checks (R2), so a caller can run them before starting a
+// renderer; Run then does not prepare again. Call it before Run starts,
+// never concurrently with Run; a second call returns the first one's result.
 func (e *Engine) Prepare(ctx context.Context) error {
 	if !e.prepared {
 		e.prepared = true
@@ -210,7 +217,8 @@ func (e *Engine) Prepare(ctx context.Context) error {
 }
 
 // prepare runs each port's Preparer with crew.WorkflowStates, the states
-// the workflow names, and joins their errors, each naming its port.
+// the workflow names, then reads the run journal and builds the core from
+// it. It joins their errors, each naming its port or the journal.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.WorkflowStates(e.cfg.Workflow)
 	ports := []struct {
@@ -223,6 +231,11 @@ func (e *Engine) prepare(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("prepare the %s: %w", p.name, err))
 		}
 	}
+	past, err := e.readJournal()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	e.model = core.New(e.cfg.Workflow, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past))...)
 	return errors.Join(errs...)
 }
 

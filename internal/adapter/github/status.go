@@ -363,11 +363,11 @@ func classify(err error, out proc.Output, onIssue bool) error {
 
 // renderStatus renders a status as its entry in the status comment, in
 // Markdown: the entry's marker line, what the stage does, each action with
-// its state, then the update time in UTC. A session's last words go in a
-// fenced code block, so nothing in them may render, link or mention anyone.
-// A failed action says why in crew's words, from its cause; only a failed
-// check's reason shows, in a code span, as no session's or tool's own words
-// may.
+// its state and, when it resumed, its worktree, then the update time in
+// UTC. A session's last words go in a fenced code block, so nothing in them
+// may render, link or mention anyone. A failed action says why in crew's
+// words, from its cause; only a failed check's reason shows, in a code
+// span, as no session's or tool's own words may.
 func (t *Tracker) renderStatus(s crew.Status) string {
 	var b strings.Builder
 	b.WriteString(markerLine(s) + "\n")
@@ -382,21 +382,28 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 		fmt.Fprintf(&b, "crew: %s ended on %s.\n", stage, s.IssueRef)
 	}
 	for _, a := range s.Actions {
-		name := "**" + codeSpan(a.Name) + "**"
+		// A resumed action's line names its worktree: "**`lfg`** resumed in
+		// worktree `issue-9-lfg` and failed." A fresh one reads "**`lfg`**
+		// failed."
+		name, and := "**"+codeSpan(a.Name)+"**", ""
+		if a.Workspace != "" {
+			name += " resumed in worktree " + codeSpan(a.Workspace)
+			and = " and"
+		}
 		switch {
 		case a.State == crew.ActionSucceeded:
-			fmt.Fprintf(&b, "\n%s succeeded.\n", name)
+			fmt.Fprintf(&b, "\n%s%s succeeded.\n", name, and)
 		case a.State == crew.ActionFailed:
-			fmt.Fprintf(&b, "\n%s failed%s.", name, failureCause(a))
+			fmt.Fprintf(&b, "\n%s%s failed%s.", name, and, failureCause(a))
 			if a.Log == "" {
 				b.WriteString(" It failed before it had a log.\n")
 				break
 			}
 			fmt.Fprintf(&b, " Its log is %s.\n", codeSpan(a.Log))
 		case a.Started.IsZero():
-			fmt.Fprintf(&b, "\n%s is running.\n", name)
+			fmt.Fprintf(&b, "\n%s%s is running.\n", name, and)
 		default:
-			fmt.Fprintf(&b, "\n%s has been running for %s.", name, elapsed(s.Updated.Sub(a.Started)))
+			fmt.Fprintf(&b, "\n%s%s has been running for %s.", name, and, elapsed(s.Updated.Sub(a.Started)))
 			if a.Said == "" {
 				b.WriteString("\n")
 				break
