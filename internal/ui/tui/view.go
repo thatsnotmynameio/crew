@@ -26,6 +26,8 @@ func (m Model) View() tea.View {
 		add("crew: stopping… (q or ctrl+c again forces the exit)")
 	case m.snap.Stopping:
 		add("crew: stopping…")
+	case m.snap.TimeUp:
+		add("crew: run time is up, winding down: %d %s held (q or ctrl+c stops)", len(m.snap.Issues), lines.Plural(len(m.snap.Issues), "issue", "issues"))
 	default:
 		add("crew: %d %s held (q or ctrl+c stops)", len(m.snap.Issues), lines.Plural(len(m.snap.Issues), "issue", "issues"))
 	}

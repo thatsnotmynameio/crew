@@ -134,6 +134,42 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 	golden(t, "running", h.view())
 }
 
+// windingDownSnapshot is #42 still running after the run time is up.
+func windingDownSnapshot() engine.Update {
+	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
+	return engine.Update{Snapshot: engine.Snapshot{
+		View: core.View{TimeUp: true, Issues: []core.IssueView{
+			{Issue: issue, Stage: "implement", Claim: core.ClaimRunning, Actions: []core.ActionView{
+				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/42-code", Started: start.Add(-75 * time.Minute)},
+			}},
+		}},
+		Recent: []core.Event{
+			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
+		},
+	}}
+}
+
+// Covers AE3 (TUI side).
+func TestAfterTheRunTimeIsUpTheHeaderSaysCrewIsWindingDown(t *testing.T) {
+	h := newHarness(t, 80)
+
+	h.send(updateMsg(windingDownSnapshot()))
+
+	golden(t, "winding-down", h.view())
+}
+
+func TestARequestedStopWhileWindingDownShowsTheStoppingHeader(t *testing.T) {
+	h := newHarness(t, 80)
+	u := windingDownSnapshot()
+	u.Snapshot.View.Stopping = true
+
+	h.send(updateMsg(u))
+
+	if got, want := strings.SplitN(h.view(), "\n", 2)[0], "crew: stopping…"; got != want {
+		t.Errorf("header = %q, want %q", got, want)
+	}
+}
+
 func TestATickOneSecondLaterAdvancesBothElapsedTimes(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(runningSnapshot()))
