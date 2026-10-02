@@ -16,6 +16,13 @@ Thumbs.db
 .claude/worktrees/
 .remember/
 
+# The crew binary built at the root (go build ./cmd/crew)
+/crew
+
+# crew's local files when it runs on this repository (.crew/config.yaml stays committed)
+.crew/logs/
+.crew/worktrees/
+
 # Docs (docs.page CLI)
 node_modules/
 

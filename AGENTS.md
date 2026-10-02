@@ -2,31 +2,58 @@
 
 Guidance for coding agents working in this repository. Claude Code reads it as `CLAUDE.md`, a symlink to this file.
 
-<!-- One paragraph: what this project is and who uses it. The docs site is the user-facing reference; the README is a short entry point that links to it. -->
+crew is a Go program that polls a tracker (GitHub) and moves each issue through the workflow a repository declares in `.crew/config.yaml`, running one coding-agent session (Claude Code) per action in its own git worktree. Its user is the boss, running it in their own repositories. The docs site is the reference: `docs/guide/crew.mdx` for users, `docs/develop/` for contributors.
 
 ## Commands
 
-Run every command from the repository root.
-
-<!-- Add the project's commands: install, test (all, one file, one test), lint, format, type check. -->
+Run every command from the repository root. Go 1.27 (`go.mod`).
 
 ```sh
+go build ./cmd/crew   # the binary, at the root (ignored by git)
+go test -race ./...   # every test; one package: go test -race ./internal/core; one test: add -run TestName
+gofmt -l cmd internal # prints the unformatted files; must print nothing
+go vet ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run   # lint + layering (depguard)
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 pnpm install          # once: the docs.page CLI
 pnpm docs:check       # the docs site's links and MDX
 pnpm docs:preview     # live preview of the docs
 ```
 
+- **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
+- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` and govulncheck.
+
 ## Architecture
 
-<!-- Where the code lives (one line per folder or module), what each part may import, the order things start in and what each step may assume. -->
+Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
+
+- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace and calls `app.Run`.
+- `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
+- `internal/crew`: the domain (states, issues, stages, actions, outcomes, failure reports).
+- `internal/config`: `.crew/config.yaml`, strict decoding, engine defaults, workflow checks; hands each adapter its section as a `port.Decode`.
+- `internal/port`: `Tracker`, `Harness`, `Workspace`, the optional `Preparer`, sentinel errors, factory types.
+- `internal/registry`: name to factory; `default.go` is the production list.
+- `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.
+- `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
+- `internal/proc`: the only way to start a child process (own process group, stop with deadline, kill all).
+- `internal/adapter/{github,claude,git}`: the adapters.
+- `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
+- `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace.
+- **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea; only tests import `fake`.
+- **New adapter:** one package under `internal/adapter/` with a `Factory(group)`, plus one entry in `internal/registry/default.go`. Optional capabilities are separate interfaces found by type assertion: never wrap an adapter value, never add "not implemented" stubs.
 
 ## Tests
 
-<!-- The fixtures and helpers every test uses, and how to run one test in isolation. -->
+- **Fakes:** `internal/fake`: `NewTracker`, the scripted `NewHarness`, `NewWorkspace(t.TempDir())`, and `TrackerFactory`/`HarnessFactory` to register them. Tests build their own `registry.New` with the fakes, so they go through the same lookup and validation as real adapters.
+- **Core:** table tests, no goroutines, no process, network or filesystem.
+- **Time:** the engine loop, and `app` where timing matters, run under `testing/synctest` (fake clock, so `time.Sleep` there costs nothing; leaked goroutines fail).
+- **Adapters:** scripted `gh` and `git` runners, and recorded `stream-json` fixtures in `internal/adapter/claude/testdata/`.
+- **Real git:** only in temporary repositories (`t.TempDir()`, a local bare `origin`), with `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM` set so the user's config cannot leak in.
+- **Golden files:** the TUI's views in `internal/ui/tui/testdata/`; rewrite with `go test ./internal/ui/tui -update` and review the diff.
 
 ## Docs
 
-- **Where:** [docs.page](https://docs.page) serves `docs.json` (tabs and sidebar) and `docs/**/*.mdx` from `main`. Only `.mdx` is published, so `docs/superpowers/` (specs and plans) is not.
+- **Where:** [docs.page](https://docs.page) serves `docs.json` (tabs and sidebar) and `docs/**/*.mdx` from `main`. Only `.mdx` is published, so `docs/plans/` and `docs/ideation/` are not.
 - **Two tabs:** `Guide` (`/`) for users and `Develop` (`/develop`) for contributors.
 - **Keep it true:** a change in behaviour, configuration or messages updates the matching pages in the same pull request.
 - **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.

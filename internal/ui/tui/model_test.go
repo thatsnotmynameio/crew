@@ -1,0 +1,247 @@
+package tui
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf8"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
+)
+
+var update = flag.Bool("update", false, "rewrite the golden files in testdata")
+
+// zone is a fixed location three hours west of UTC, so the golden file does
+// not depend on the machine's zone.
+var zone = time.FixedZone("test", -3*60*60)
+
+// start is the clock's time when a test begins.
+var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
+
+// harness drives a Model directly through Update and View, with a clock the
+// test moves and counters for the stop and force callbacks.
+type harness struct {
+	t       *testing.T
+	model   tea.Model
+	updates chan engine.Update
+	clock   time.Time
+	stops   int
+	forces  int
+}
+
+func newHarness(t *testing.T, width int) *harness {
+	t.Helper()
+	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
+	h.model = New(h.updates, func() { h.stops++ }, func() { h.forces++ }, func() time.Time { return h.clock }, zone)
+	h.send(tea.WindowSizeMsg{Width: width, Height: 40})
+	return h
+}
+
+func (h *harness) send(msg tea.Msg) tea.Cmd {
+	h.t.Helper()
+	m, cmd := h.model.Update(msg)
+	h.model = m
+	return cmd
+}
+
+func (h *harness) view() string { return h.model.View().Content }
+
+var ctrlC = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+
+// quits reports whether running cmd, and the commands it batches, asks the
+// program to quit. A command that blocks, such as waiting for the next
+// update, is not a quit.
+func quits(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	got := make(chan tea.Msg, 1)
+	go func() { got <- cmd() }()
+	select {
+	case msg := <-got:
+		switch msg := msg.(type) {
+		case tea.QuitMsg:
+			return true
+		case tea.BatchMsg:
+			for _, c := range msg {
+				if quits(c) {
+					return true
+				}
+			}
+		}
+		return false
+	case <-time.After(100 * time.Millisecond):
+		return false
+	}
+}
+
+// runningSnapshot is #1 running two actions, started 5 and 7 minutes before
+// start, and #2 being taken by a later stage.
+func runningSnapshot() engine.Update {
+	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
+	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
+	return engine.Update{Snapshot: engine.Snapshot{
+		View: core.View{Issues: []core.IssueView{
+			{Issue: one, Stage: "implement", Claim: core.ClaimRunning, Actions: []core.ActionView{
+				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5 * time.Minute)},
+				{Name: "tests", Phase: core.PhaseRunning, Branch: "crew/1-tests", Started: start.Add(-7 * time.Minute)},
+			}},
+			{Issue: two, Stage: "review", Claim: core.ClaimTaking, Actions: []core.ActionView{
+				{Name: "check", Phase: core.PhaseWaiting},
+			}},
+		}},
+		Recent: []core.Event{
+			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement", From: crew.Ready, To: crew.InProgress},
+			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
+			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "code", Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
+			core.PollDone{At: start.Add(-10 * time.Second), Listed: 2, Taken: 1},
+			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Stage: "review", From: crew.ReadyToReview, To: crew.InReview},
+		},
+	}}
+}
+
+func golden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", name+".golden")
+	if *update {
+		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden file (run with -update to create it): %v", err)
+	}
+	if got != string(want) {
+		t.Errorf("view does not match %s:\n%s\nwant:\n%s", path, got, want)
+	}
+}
+
+// Covers AE6 (TUI side).
+func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
+	h := newHarness(t, 80)
+
+	h.send(updateMsg(runningSnapshot()))
+
+	golden(t, "running", h.view())
+}
+
+func TestATickOneSecondLaterAdvancesBothElapsedTimes(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(updateMsg(runningSnapshot()))
+
+	h.clock = h.clock.Add(time.Second)
+	cmd := h.send(tickMsg{})
+
+	view := h.view()
+	for _, want := range []string{"5m01s", "7m01s"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view lacks elapsed %s:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "5m00s") || strings.Contains(view, "7m00s") {
+		t.Errorf("view still shows the old elapsed times:\n%s", view)
+	}
+	if cmd == nil {
+		t.Error("tick scheduled no next tick")
+	}
+}
+
+func TestCtrlCPostsOneStopAndKeepsRunningUntilTheEngineStops(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(updateMsg(runningSnapshot()))
+
+	if quits(h.send(ctrlC)) {
+		t.Fatal("Ctrl-C quit the program before the engine stopped")
+	}
+	if h.stops != 1 {
+		t.Fatalf("stop called %d times, want 1", h.stops)
+	}
+	if !strings.Contains(h.view(), "stopping…") {
+		t.Errorf("view does not say stopping…:\n%s", h.view())
+	}
+
+	// The engine keeps publishing while it stops; the TUI keeps rendering.
+	stopping := runningSnapshot()
+	stopping.Snapshot.Stopping = true
+	if quits(h.send(updateMsg(stopping))) {
+		t.Fatal("an update while stopping quit the program")
+	}
+	if h.stops != 1 || h.forces != 0 {
+		t.Fatalf("after one Ctrl-C: stop called %d times, force %d; want 1 and 0", h.stops, h.forces)
+	}
+
+	close(h.updates)
+	if !quits(h.send(engineStoppedMsg{})) {
+		t.Error("the engine-stopped message did not quit the program")
+	}
+}
+
+func TestTheClosedUpdateChannelBecomesTheEngineStoppedMessage(t *testing.T) {
+	h := newHarness(t, 80)
+	cmd := h.send(updateMsg(runningSnapshot()))
+
+	close(h.updates)
+
+	if msg := cmd(); msg != (engineStoppedMsg{}) {
+		t.Errorf("waiting on a closed channel returned %#v, want engineStoppedMsg", msg)
+	}
+}
+
+func TestASecondCtrlCOrQWhileStoppingForcesTheExit(t *testing.T) {
+	for _, keys := range [][2]tea.KeyPressMsg{
+		{ctrlC, ctrlC},
+		{{Code: 'q', Text: "q"}, {Code: 'q', Text: "q"}},
+		{{Code: 'q', Text: "q"}, ctrlC},
+	} {
+		t.Run(keys[0].String()+" then "+keys[1].String(), func(t *testing.T) {
+			h := newHarness(t, 80)
+			h.send(keys[0])
+			if h.stops != 1 || h.forces != 0 {
+				t.Fatalf("after the first key: stop %d, force %d; want 1 and 0", h.stops, h.forces)
+			}
+
+			cmd := h.send(keys[1])
+
+			if h.stops != 1 || h.forces != 1 {
+				t.Errorf("after the second key: stop %d, force %d; want 1 and 1", h.stops, h.forces)
+			}
+			if !quits(cmd) {
+				t.Error("the forced exit did not quit the program")
+			}
+		})
+	}
+}
+
+func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
+	for _, width := range []int{59, 40, 12, 1} {
+		t.Run(fmt.Sprintf("width %d", width), func(t *testing.T) {
+			h := newHarness(t, width)
+			snap := runningSnapshot()
+			snap.Snapshot.Issues[0].Issue.Title = strings.Repeat("A very long issue title ", 8)
+
+			h.send(updateMsg(snap))
+			view := h.view()
+
+			for _, l := range strings.Split(view, "\n") {
+				if n := utf8.RuneCountInString(l); n > width {
+					t.Errorf("line is %d columns wide, over %d: %q", n, width, l)
+				}
+			}
+			if width >= 40 && !strings.Contains(view, "#1 A very long issue") {
+				t.Errorf("view at width %d lacks the start of #1's title:\n%s", width, view)
+			}
+			if strings.Contains(view, snap.Snapshot.Issues[0].Issue.Title) {
+				t.Errorf("view at width %d shows the whole long title:\n%s", width, view)
+			}
+		})
+	}
+}

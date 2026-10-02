@@ -1,0 +1,239 @@
+---
+title: crew
+description: Run crew in a repository to move its issues through your workflow, one coding-agent session per action.
+---
+
+# crew
+
+crew moves your issues through a workflow you declare in the repository. It polls GitHub for the issues you labeled, and for each one it runs the stage's actions in parallel. Each action is a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue on, or to `needs attention` with a comment saying what failed.
+
+crew only runs sessions and moves labels. Opening a pull request, reviewing and merging are your prompts' job and yours.
+
+## Install
+
+You need Go 1.27 or later:
+
+```sh
+go install github.com/thatsnotmynameio/crew/cmd/crew@main
+```
+
+This puts `crew` in `$(go env GOPATH)/bin`. Install from `@main` for now: the only release, `v0.1.0`, predates crew's Go code. From the next release on, `@vX.Y.Z` works too.
+
+## Before you run it
+
+- **macOS or Linux.** crew starts every tool in its own process group, which Windows does not have.
+- **A git repository with an `origin` remote on GitHub.** crew branches each action from origin's latest default branch.
+- **`gh`, logged in** (`gh auth login`), with permission to edit the repository's issues and labels.
+- **`claude` on your `PATH`**, logged in.
+
+crew checks all of this when it starts and stops with a message if something is missing.
+
+## Configure it
+
+crew reads `.crew/config.yaml` at the root of the repository. Commit it. Here is a complete example:
+
+```yaml
+config:
+  poll_interval_seconds: 300
+  max_parallel_issues: 2
+  harness: claude
+  model: claude-opus-5-5
+tracker:
+  name: github
+  labels:
+    ready: ready
+    in_progress: in progress
+    ready_to_review: ready to review
+    in_review: in review
+    needs_attention: needs attention
+    paused: paused
+    ready_to_merge: ready to merge
+    done: done
+workflow:
+  - name: implement
+    label: ready
+    moves_to: in_progress
+    on_success: ready_to_review
+    actions:
+      - name: acceptance
+        prompt: >-
+          Write the acceptance tests for issue {{.Issue.Ref}} ({{.Issue.URL}}).
+          Take the acceptance examples from the issue and ask nothing: nobody
+          answers questions in this session. Open a pull request with the tests.
+      - name: development
+        prompt: >-
+          Implement issue {{.Issue.Ref}}, "{{.Issue.Title}}" ({{.Issue.URL}}).
+          Open a pull request with the change.
+  - name: review
+    label: ready_to_review
+    moves_to: in_review
+    on_success: ready_to_merge
+    actions:
+      - name: custom_review
+        prompt: "Review the pull requests for issue {{.Issue.Ref}} and leave your review on them."
+```
+
+With it, an issue labeled `ready` gets two sessions at once, `acceptance` and `development`, and moves to `in progress`. When both succeed, it moves to `ready to review`, where the `review` stage takes it. Here `on_success: ready_to_merge` only means "reviewed": crew does not check pull requests or merge anything.
+
+Sessions run with no one to answer them, so tell the agent not to ask. A session that asks a question and stops counts as a success. That is why the `acceptance` prompt tells it to take the examples from the issue.
+
+### Keys
+
+Everything but `workflow` is optional. A minimal file is a `workflow` alone.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `config.poll_interval_seconds` | `300` | Seconds between polls. Must be positive. |
+| `config.max_parallel_issues` | `2` | How many issues crew works on at once. It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
+| `config.harness` | `claude` | The coding agent that runs sessions. `claude` is the only one today. |
+| `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
+| `tracker.name` | `github` | Where issues live. `github` is the only one today. |
+| `tracker.labels.STATE` | the state's name with `_` as a space | The GitHub label for each of crew's eight states, such as `in_progress: in progress`. Two states cannot share a label, ignoring case. |
+| `harness` | none | A top-level section for harness-specific settings. `claude` takes none, and the model goes in `config.model`. |
+| `workflow` | required | The stages, at least one. |
+
+Each stage has:
+
+| Key | What it does |
+| --- | --- |
+| `name` | The stage's name, unique in the workflow. |
+| `label` | The state the stage takes issues from. No two stages take the same state. |
+| `moves_to` | The state the issue is in while the actions run. It cannot be any stage's `label`, or that stage would take the issue too. |
+| `on_success` | The state the issue moves to when every action succeeded. It cannot be the stage's own `label`. |
+| `actions` | At least one action, each with a `name` (unique in the stage) and a `prompt`. |
+
+Every state is one of the eight keys under `tracker.labels`: `ready`, `in_progress`, `ready_to_review`, `in_review`, `needs_attention`, `paused`, `ready_to_merge` and `done`. In the workflow you write the key (`in_progress`), and on GitHub the issue carries its label (`in progress`).
+
+### Prompts
+
+A prompt is a Go template over the issue:
+
+| Field | On GitHub |
+| --- | --- |
+| `{{.Issue.Ref}}` | `#42` |
+| `{{.Issue.Key}}` | `42` |
+| `{{.Issue.Title}}` | the issue's title |
+| `{{.Issue.URL}}` | the issue's web address |
+
+Any other field is an error when crew starts. Quote the prompt or use a block (`>-`) as in the example: in YAML, a value that starts with `{` is not a string.
+
+### What "succeeded" means
+
+An action succeeded when its session ended cleanly: Claude Code's last result is not an error and `claude` exited with 0. crew does not look for a pull request or any other evidence of the work.
+
+So a session can succeed without doing its work. For example, `--permission-mode auto` denies a tool, and the agent gives up politely. Write prompts that say what done looks like, and read the last message crew prints for every action that ends, successes included.
+
+### When crew refuses to start
+
+Before its first poll, crew checks the whole file and its tools. It stops, exiting with 2, when:
+
+- a key is unknown, or a value has the wrong type (the message names the key and its line);
+- `config.harness` or `tracker.name` names an adapter that does not exist;
+- a state is not one of the eight;
+- the workflow would loop or take an issue twice (the `label`, `moves_to` and `on_success` rules above);
+- a prompt does not parse, or uses a field that does not exist;
+- `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
+- the checks take more than 10 minutes, or you stop crew during them.
+
+At the same check, crew creates the labels your workflow uses that the repository does not have yet, plus `needs attention`.
+
+## What crew does on each poll
+
+1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels.
+2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it.
+3. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first.
+4. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label and adds the new one, and leaves your other labels alone.
+5. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt.
+6. When every action of the issue has ended, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `needs_attention`, and crew comments on the issue.
+
+The comment names each failed action, its worktree and its log, with the session's last message in a code block:
+
+````markdown
+crew: 1 action failed on #42.
+
+**`development`** failed in workspace `issue-42-development`. Its log is `.crew/logs/issue-42-development.log`.
+
+```text
+exit code 1 after: I could not run the tests.
+```
+````
+
+Paths in the comment are relative to the repository. crew writes your repository's path as `.` and your home directory as `~`, so the comment does not show where your files are.
+
+A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported.
+
+To retry an issue in `needs attention`, swap that label for the stage's `label`, such as `ready`.
+
+### Where things go
+
+For action `development` on issue #42:
+
+| What | Where |
+| --- | --- |
+| Worktree | `.crew/worktrees/issue-42-development` |
+| Branch | `crew/issue-42-development`, not pushed by crew |
+| Session log | `.crew/logs/issue-42-development.log` |
+
+The name is the issue's key and the action's name, lowercased, with anything outside `a-z`, `0-9` and `-` turned into `-`. When a name is taken, crew adds `-2`, `-3` and so on. crew never removes worktrees: they are your evidence when an issue needs attention. Remove them with `git worktree remove` when you are done.
+
+Add crew's local files to `.gitignore`, and keep `.crew/config.yaml` committed:
+
+```text
+.crew/logs/
+.crew/worktrees/
+```
+
+## Run it
+
+Run `crew` anywhere inside the repository's main checkout. In one of crew's worktrees, it would take that worktree for the repository.
+
+```sh
+crew
+```
+
+On a terminal, crew shows a live view: the issues it holds by stage, the running actions with their elapsed time, and the latest events. The view only displays. You act on issues through their labels on GitHub.
+
+With `--plain`, or when the output is not a terminal, crew prints one line per event instead:
+
+```text
+14:22:58 crew: implement took #42 "Add login form" (ready -> in_progress)
+14:22:58 crew: poll: listed 1 issue, took 1
+14:22:59 crew: #42 moved from ready to in_progress
+14:23:04 crew: #42 implement/acceptance started on branch crew/issue-42-acceptance, log .crew/logs/issue-42-acceptance.log
+```
+
+`crew --version` prints the version, which is `dev` for a `go install` build.
+
+### Stop it
+
+Press Ctrl-C (or `q` in the live view), or send SIGTERM or SIGHUP. Closing the terminal crew runs in sends SIGHUP. crew stops cleanly:
+
+1. It starts nothing new.
+2. Issues whose actions have all ended are judged as usual.
+3. Running sessions get 10 seconds to stop before they are killed. Their issues move to `needs attention`, with a comment saying crew stopped them.
+4. Moves and comments still owed get one last try.
+
+This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again, or send a second SIGTERM or SIGHUP, to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
+
+If crew's output goes to a pipe that closes, for example `crew | head`, crew stops cleanly the same way and exits with 1.
+
+The checks crew runs when it starts have the same 10 minutes. Past them, or on Ctrl-C, SIGTERM or SIGHUP meanwhile, crew kills every process it started and exits with 2, before its first poll.
+
+### Exit codes
+
+| Code | When |
+| --- | --- |
+| `0` | crew stopped cleanly. |
+| `1` | crew failed while running, or you forced the exit. |
+| `2` | The config, a flag or the environment is wrong; nothing was polled. |
+
+## Limits
+
+- **One crew per repository.** Two crews in one repository take the same issues. Nothing stops you from starting a second one.
+- **No recovery after a crash.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it.
+- **No time limit on a session.** A session runs until it ends or you stop crew.
+- **No retries.** A failed action is not run again. Relabeling the issue is the retry.
+- **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
+- **Not built yet from the old dispatcher:** pausing and resuming on usage limits (the `paused` state is reserved for it), a status comment kept up to date, skipping issues blocked by others, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
+- **At most 100 issues per poll**, the oldest first.
+- **Sessions are headless.** They cannot ask you anything or talk to each other. The [acceptance tester](/guide/acceptance-tester) agent is interactive, so do not point an action at it.

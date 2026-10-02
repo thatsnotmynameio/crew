@@ -1,15 +1,53 @@
 ---
 title: Getting set up
-description: How to work on this project.
+description: How to build, test and lint crew, and how releases and the docs work.
 ---
 
 # Getting set up
 
-Replace this page with how to set up, test and release the project.
+crew is a Go module, `github.com/thatsnotmynameio/crew`. Its binary is `cmd/crew`, and everything else is under `internal/`. [Architecture](/develop/architecture) explains how the packages fit together and how to add an adapter.
+
+You need:
+
+- Go 1.27 or later, as `go.mod` says;
+- macOS or Linux, since crew starts its tools in process groups;
+- pnpm, for the docs only.
+
+## Commands
+
+Run every command from the repository root.
+
+```sh
+go build ./cmd/crew                 # the crew binary, at the root (ignored by git)
+go test -race ./...                 # every test
+gofmt -l cmd internal               # files gofmt would change; prints nothing when clean
+go vet ./...
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+```
+
+Run golangci-lint through `go run` as above, at the version CI uses. A golangci-lint older than v2.13.0 cannot lint a `go 1.27` module, so an older one installed on your machine fails. Its config, `.golangci.yml`, also enforces the package layering through `depguard`.
+
+To run one package's tests, or one test:
+
+```sh
+go test -race ./internal/core
+go test -race ./internal/core -run TestName
+```
+
+The TUI's views are golden files under `internal/ui/tui/testdata/`. After a deliberate change to the view, rewrite them and review the diff:
+
+```sh
+go test ./internal/ui/tui -update
+```
+
+CI's `go` job (`.github/workflows/ci.yml`) runs gofmt, `go vet`, golangci-lint, the tests with the race detector, and govulncheck on every pull request.
 
 ## Releases
 
 The version is `VERSION`. A pull request that bumps it is a release: once it merges to `main`, the Release workflow publishes the tag `vX.Y.Z` and a GitHub release. The version must be `MAJOR.MINOR.PATCH` and not below the latest release.
+
+Users install a release with `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z`. The first tag, `v0.1.0`, predates the Go module, so until the next release they install from `@main`.
 
 ## Docs
 
