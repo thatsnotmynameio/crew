@@ -8,9 +8,10 @@ import (
 )
 
 // renderReport renders a failure report as one Markdown comment. Each failed
-// action gets its name, workspace and log, then its reason in a fenced code
-// block: a reason is a session's or a tool's last words, so nothing in it may
-// render, link or mention anyone.
+// action gets its name and its log's repository-relative path, or a line
+// saying it failed before it had a log. A reason is a session's or a tool's
+// last words, which can hold commands and their output, so the comment never
+// carries it: the boss reads it in the log or in crew's output.
 func renderReport(r crew.FailureReport) string {
 	var b strings.Builder
 	noun := "action"
@@ -19,10 +20,11 @@ func renderReport(r crew.FailureReport) string {
 	}
 	fmt.Fprintf(&b, "crew: %d %s failed on %s.\n", len(r.Failures), noun, r.IssueRef)
 	for _, f := range r.Failures {
-		fmt.Fprintf(&b, "\n**%s** failed in workspace %s. Its log is %s.\n\n",
-			codeSpan(f.Action), codeSpan(f.Workspace), codeSpan(f.Log))
-		fence := strings.Repeat("`", max(3, longestBacktickRun(f.Reason)+1))
-		fmt.Fprintf(&b, "%stext\n%s\n%s\n", fence, f.Reason, fence)
+		if f.Log == "" {
+			fmt.Fprintf(&b, "\n**%s** failed before it had a log. crew's output says why.\n", codeSpan(f.Action))
+			continue
+		}
+		fmt.Fprintf(&b, "\n**%s** failed. Its log is %s.\n", codeSpan(f.Action), codeSpan(f.Log))
 	}
 	return b.String()
 }
