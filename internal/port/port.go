@@ -3,8 +3,9 @@
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter or Narrator,
-// that the engine detects by type assertion. An adapter therefore never wraps another adapter value,
-// because a wrapper hides the optional interfaces of what it wraps.
+// that the engine detects by type assertion. An adapter therefore never wraps
+// another adapter value, because a wrapper hides the optional interfaces of
+// what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.

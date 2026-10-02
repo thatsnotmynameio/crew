@@ -166,10 +166,10 @@ func httpStatus(stderr string) int {
 	return code
 }
 
-// classify wraps err, from a gh api call on the issue, with the port error
-// its HTTP status means: 404 or 410 when onIssue says the URL is the issue's
-// is the issue gone, and 403 is a refusal unless GitHub is rate limiting,
-// which passes. Any other error is returned as is, transient.
+// classify wraps err, from a gh api call, with the port error its HTTP
+// status means: 404 or 410, when onIssue says the call was on the issue
+// itself, mean the issue is gone, and 403 is a refusal unless GitHub is rate
+// limiting, which passes. Any other error is returned as is, transient.
 func classify(err error, out proc.Output, onIssue bool) error {
 	stderr := string(out.Stderr)
 	switch code := httpStatus(stderr); {
@@ -191,12 +191,8 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 	stage := codeSpan(s.Stage)
 	switch s.Kind {
 	case crew.StatusQueued:
-		noun := "issues"
-		if s.Slots == 1 {
-			noun = "issue"
-		}
-		fmt.Fprintf(&b, "crew: %s is queued for %s, waiting for a free slot: crew runs at most %d %s at once.\n",
-			s.IssueRef, stage, s.Slots, noun)
+		fmt.Fprintf(&b, "crew: %s is queued for %s, waiting for a free slot: crew runs at most %s at once.\n",
+			s.IssueRef, stage, plural(s.Slots, "issue"))
 	case crew.StatusRunning:
 		fmt.Fprintf(&b, "crew: %s is running on %s.\n", stage, s.IssueRef)
 	case crew.StatusEnded:
