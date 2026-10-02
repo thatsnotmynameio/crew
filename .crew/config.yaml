@@ -45,7 +45,7 @@ workflow:
 
           {{.Issue.Ref}} names a solved problem and the issues and pull requests where it was solved. Read them for the context this session does not have.
 
-          When you write or update a learning, open a pull request with it through /compound-engineering:ce-commit-push-pr. The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+          When you write or update a learning, open a pull request with it through /compound-engineering:ce-commit-push-pr mode:pipeline, which asks nothing and does not stay to watch the pull request. The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
   - name: triage
