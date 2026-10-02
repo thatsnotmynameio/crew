@@ -41,7 +41,7 @@ In any other case, including when two types fit, list the types (each with its d
 
 ## 5. Copy the plan the issue records
 
-An issue records a plan when the user passed the plan's path, ran the skill with no arguments to record the session's plan, or asked in other words to record it. The session's plan is the most recent plan this session wrote or enriched under `<docs>/plans/`. `<docs>` is `docs_root` from `<root>/.compound-engineering/config.yaml` when that file sets it, otherwise `docs`. A plan is a file whose frontmatter has `artifact_contract: ce-unified-plan/v1`, such as the requirements plan `ce-brainstorm` writes.
+An issue records a plan when the user passed the plan's path, ran the skill with no arguments to record the session's plan, or asked in other words to record it. The session's plan is the most recent plan this session wrote or enriched under `<docs>/plans/`. `<docs>` is `docs_root` from `<root>/.compound-engineering/config.yaml` when that file sets it, otherwise `docs`. A plan is a file whose frontmatter has `artifact_contract: ce-unified-plan/v1`: the compound-engineering plugin's plan format, such as the requirements plan its `ce-brainstorm` writes. A repository that does not use that plugin has no plans, and this step does nothing.
 
 When the issue records a plan, its body is the plan's content, so the crew session that takes the issue needs no file outside it:
 

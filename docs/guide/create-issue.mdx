@@ -11,7 +11,7 @@ The types are every stage of the workflow and every extra label in `extra_labels
 
 ## Install once
 
-The skill lives in this repository at `.agents/skills/cw-create-issue/`. Link the directory into your user-level skills so every repository can use it:
+The skill lives in the crew repository, at `.agents/skills/cw-create-issue/`. Link the directory into your user-level skills so every repository can use it:
 
 ```sh
 mkdir -p ~/.claude/skills
@@ -23,6 +23,8 @@ Run it from the root of your crew checkout. Changes to the skill in crew apply e
 The skill needs `gh`, logged in, with permission to create the repository's issues and labels. It does not need the crew binary.
 
 ## Set up a repository
+
+crew ships no extra labels and no issue templates. Your repository's `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` decide the types and what each issue's body asks for. The labels and file names below are examples.
 
 Give each stage and extra label a `description` and an `issue_template` in `.crew/config.yaml` (see [Keys](/guide/crew#keys)):
 
@@ -43,6 +45,8 @@ Put the templates in `.github/ISSUE_TEMPLATE/`, where GitHub looks for them. Hav
 
 Both keys are optional. Without a description, the skill shows a stage by its name and an extra by its label. Without a template, it writes a free-form body.
 
+For a worked example, see how the crew repository sets up its own work: its `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` in the [crew repository](https://github.com/thatsnotmynameio/crew). Those choices are crew's, not defaults: the `crew:waiting brainstorm` extra, one template per stage, and a feature template laid out like a compound-engineering requirements plan. Copy only what fits your workflow.
+
 A crew binary older than these keys refuses a config that uses them, as unknown keys, and exits with 2. Rebuild crew from `main` (see [Install](/guide/crew#install)) before you pull a config that uses them.
 
 ## Use it
@@ -57,7 +61,7 @@ In a Claude Code session in the repository:
 
 - **The type:** the skill infers it from what you wrote. When you did not name one and no single type clearly fits, it lists the types and asks you to pick.
 - **No arguments:** it records the session's work, such as a plan you just wrote. If the session has nothing to record, it asks what to record.
-- **A plan:** to record a requirements plan, such as the one `ce-brainstorm` writes, pass its path, or run the skill with no arguments right after writing it. The issue's body is then the plan's content: each template heading takes the plan's section of the same name, so the crew session that takes the issue needs no file outside it. A plan the issue does not record stays out of its body, even when the session wrote one.
+- **A plan:** this applies only if you write plans with the [compound-engineering](https://github.com/EveryInc/compound-engineering-plugin) plugin, such as the requirements plan its `ce-brainstorm` skill writes. To record one, pass its path, or run the skill with no arguments right after writing it. The issue's body is then the plan's content: each template heading takes the plan's section of the same name, so the crew session that takes the issue needs no file outside it. A plan the issue does not record stays out of its body, even when the session wrote one. Without such a plan, the skill fills the template from what you wrote.
 
 ## What it does
 

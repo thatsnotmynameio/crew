@@ -118,6 +118,8 @@ extra_labels:
     issue_template: idea.md
 ```
 
+crew has no extra labels of its own: without `extra_labels` there are none, and the label above is only an example.
+
 crew's labels are the ones your stages name in `label`, `moves_to`, `on_success` and `on_failure`, plus the extra labels, and no others. Every other label on an issue is yours: crew ignores it and never removes it.
 
 An extra label parks an issue that no stage takes, such as an idea that waits for a brainstorm. No stage takes an issue whose only crew label is an extra. To start work on it, add a stage's `label`: that stage takes the issue at the next poll, even with the extra still on it. Every move crew makes removes the extras an issue carries, together with its other crew labels, so the issue leaves the extra behind when a stage takes it.
