@@ -6,7 +6,7 @@ argument-hint: "[label to move the issue to]"
 
 # Update an issue with the session's plan
 
-crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. The session crew runs for an issue starts from `main` and reads the issue, not the files of this checkout, so the plan has to live in the issue's body. This skill puts it there, keeps the old body in a comment, and can move the issue to a stage or extra label. It asks nothing unless it is in doubt about the issue.
+crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. The session crew runs for an issue starts from `main` and reads the issue, not the files of this checkout, so the plan has to live in the issue's body. This skill puts it there, keeps the old body in a comment, and can move the issue to a stage or extra label. It asks nothing unless it is in doubt about the issue, or a brainstorm's plan fails a check that only the user can settle.
 
 Run `gh` with the repository root as the working directory. Read files with your own file tools.
 
@@ -38,12 +38,23 @@ Use, in this order:
 
 When the session has neither, say so and stop.
 
+### A brainstorm from `ce-brainstorm`
+
+When the session's brainstorm ran the compound-engineering plugin's `ce-brainstorm`, compose the plan exactly as that skill would have written its plan file, so the issue gets the same plan the file would have held:
+
+1. Read `references/brainstorm-sections.md` in the `ce-brainstorm` skill's directory, the base directory the session showed when it loaded that skill. When you cannot read it, say so and stop without changing the issue.
+2. Compose the `## Goal Capsule` and `## Product Contract` under that file's section contract, prose economy, and ID rules. Leave out the frontmatter: the issue has none.
+3. Run its Ready for Planning Check on the composed plan: Complete, Consistent, Focused, and Usable by planning. Fix a failed check in place when the fix keeps what the session settled, then run the failed checks again. When a fix would choose or change product behaviour or scope, ask the user one targeted question and fix the plan after the answer.
+4. Go on to the next step only when every check passes. Never write a plan that fails one into the issue.
+
+From here on, that plan counts as a plan file.
+
 ## 5. Write the body
 
 The template is the one of the type the issue is moving to, or else of the type of the crew label it carries. When neither has a template, or its file is missing, there is none.
 
 1. Read the template and drop its YAML frontmatter and its guidance comments.
-2. Each template heading takes the plan's section of the same name, copied verbatim with its subsections. When the content comes from the brainstorm instead of a plan file, write each section in the shape the template's comment asks for. Drop a template section the plan does not have.
+2. Each template heading takes the plan's section of the same name, copied verbatim with its subsections. When the content comes from a brainstorm that did not run `ce-brainstorm`, write each section in the shape the template's comment asks for. Drop a template section the plan does not have.
 3. Plan sections the template has no heading for go after the template's sections, under their own headings.
 4. Without a template, the body is the plan's `## Goal Capsule` and `## Product Contract`.
 
@@ -64,4 +75,4 @@ When a `gh` command fails, report its error text and stop. Do not retry.
 
 ## 8. Report
 
-Print the issue's link, where the plan came from (the plan file's path, or the session's brainstorm), the link to the comment with the old body when one was posted, and the label change when there was one.
+Print the issue's link, where the plan came from (the plan file's path, or the session's brainstorm), what the Ready for Planning Check fixed when it ran, the link to the comment with the old body when one was posted, and the label change when there was one.
