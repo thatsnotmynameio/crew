@@ -32,6 +32,9 @@ type Model struct {
 	// statuses holds each issue's status slot, by issue key; nil when
 	// status reporting is off (KTD3).
 	statuses map[string]*statusSlot
+	// handled holds one entry per issue whose stage ended this run, in the
+	// order the issues were released.
+	handled []HandledView
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -42,6 +45,10 @@ type heldIssue struct {
 	claim   Claim
 	actions []*actionRun // in the stage's action order
 	calls   []*call      // the take move, then the verdict calls
+	taken   time.Time    // when the stage took the issue
+	// verdict is the issue's handled entry, set once every action ended and
+	// completed by its verdict move's result; nil before.
+	verdict *HandledView
 }
 
 // actionRun is one action of a held issue.
@@ -185,6 +192,46 @@ type View struct {
 	Issues []IssueView
 	// Owed are the tracker calls waiting for a retry.
 	Owed []Call
+	// Handled are the issues whose stage ended this run, one entry per
+	// issue holding its latest stage, in the order they were released. An
+	// issue held again is left out until its new stage ends.
+	Handled []HandledView
+}
+
+// HandledView is an issue whose stage ended this run, as that stage left it.
+type HandledView struct {
+	Issue crew.Issue
+	Stage string
+	// To is the state the stage's verdict moved the issue to, or meant to
+	// when Move is MoveDropped.
+	To crew.State
+	// Failures are the stage's failed actions, in its action order; nil
+	// when every action succeeded.
+	Failures []crew.ActionFailure
+	// Move is MoveDone, or MoveDropped when crew gave the verdict move up.
+	Move crew.MoveProgress
+	// DropReason says why the verdict move was given up.
+	DropReason string
+	// Taken is when the stage took the issue; Ended is when its last action
+	// ended.
+	Taken time.Time
+	Ended time.Time
+}
+
+// NeedsAttention reports whether the boss should look at the issue: an
+// action failed, or crew gave the verdict move up.
+func (h HandledView) NeedsAttention() bool {
+	return len(h.Failures) > 0 || h.Move == crew.MoveDropped
+}
+
+// Duration is the stage's time, from the take to the verdict.
+func (h HandledView) Duration() time.Duration { return h.Ended.Sub(h.Taken) }
+
+// clone returns a copy of h that shares no memory with it.
+func (h HandledView) clone() HandledView {
+	h.Issue = h.Issue.Clone()
+	h.Failures = slices.Clone(h.Failures)
+	return h
 }
 
 // IssueView is one held issue.
@@ -224,6 +271,11 @@ func (m *Model) View() View {
 			if c.owed {
 				v.Owed = append(v.Owed, h.describe(c))
 			}
+		}
+	}
+	for _, e := range m.handled {
+		if m.held(e.Issue.Key) == nil {
+			v.Handled = append(v.Handled, e.clone())
 		}
 	}
 	return v
