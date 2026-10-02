@@ -213,8 +213,8 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(repository root) = %v", err)
 	}
-	if got := len(cfg.Workflow); got != 2 {
-		t.Errorf("workflow has %d stages, want 2 (implement, review)", got)
+	if got := len(cfg.Workflow); got != 1 {
+		t.Errorf("workflow has %d stages, want 1 (implement)", got)
 	}
 }
 
