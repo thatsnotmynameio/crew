@@ -72,11 +72,11 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 
 ## Startup
 
-1. `cmd/crew` parses `--plain` and `--version`, starts catching SIGINT and SIGTERM, and finds the repository root with `git rev-parse --show-toplevel`.
+1. `cmd/crew` parses `--plain` and `--version`, starts catching SIGINT, SIGTERM and SIGHUP, ignores SIGPIPE so a closed output fails the renderer's write instead of killing crew, and finds the repository root with `git rev-parse --show-toplevel`.
 2. `app.Run` loads the config. The engine's keys are decoded there; each adapter's section is handed on, undecoded, as a `port.Decode`.
 3. The registry builds the tracker and the harness from their names and sections. `cmd/crew` builds the `git` workspace directly: there is only one, and no key selects it.
-4. The engine runs every adapter's `Preparer`. Any error so far exits with 2, before the TUI starts.
-5. `app` starts the engine and one renderer, the TUI on a terminal and the line printer otherwise, and handles the stop signals until both return.
+4. The engine runs every adapter's `Preparer`, within 10 minutes, which a first signal cuts short. Any error so far exits with 2, before the TUI starts. A timeout or a signal there also kills every process in the group first, since a check's process may still run.
+5. `app` starts the engine and one renderer, the TUI on a terminal and the line printer otherwise, and handles the stop signals until both return. The first signal stops the engine cleanly, a signal that came as the checks succeeded included; the second kills every process in the group and exits with 1. A renderer that fails, such as on a closed output, stops the engine cleanly and exits with 1.
 
 ## The core
 

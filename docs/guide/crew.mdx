@@ -132,7 +132,8 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - a state is not one of the eight;
 - the workflow would loop or take an issue twice (the `label`, `moves_to` and `on_success` rules above);
 - a prompt does not parse, or uses a field that does not exist;
-- `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`.
+- `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
+- the checks take more than 10 minutes, or you stop crew during them.
 
 At the same check, crew creates the labels your workflow uses that the repository does not have yet, plus `needs attention`.
 
@@ -205,14 +206,18 @@ With `--plain`, or when the output is not a terminal, crew prints one line per e
 
 ### Stop it
 
-Press Ctrl-C (or `q` in the live view), or send SIGTERM. crew stops cleanly:
+Press Ctrl-C (or `q` in the live view), or send SIGTERM or SIGHUP. Closing the terminal crew runs in sends SIGHUP. crew stops cleanly:
 
 1. It starts nothing new.
 2. Issues whose actions have all ended are judged as usual.
 3. Running sessions get 10 seconds to stop before they are killed. Their issues move to `needs attention`, with a comment saying crew stopped them.
 4. Moves and comments still owed get one last try.
 
-This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
+This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again, or send a second SIGTERM or SIGHUP, to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
+
+If crew's output goes to a pipe that closes, for example `crew | head`, crew stops cleanly the same way and exits with 1.
+
+The checks crew runs when it starts have the same 10 minutes. Past them, or on Ctrl-C, SIGTERM or SIGHUP meanwhile, crew kills every process it started and exits with 2, before its first poll.
 
 ### Exit codes
 

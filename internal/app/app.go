@@ -36,9 +36,15 @@ const (
 	ExitConfig = 2
 )
 
-// lineQueue is the line renderer's queue capacity, far above the few events
-// crew publishes per poll (KTD6).
-const lineQueue = 1024
+const (
+	// lineQueue is the line renderer's queue capacity, far above the few
+	// events crew publishes per poll (KTD6).
+	lineQueue = 1024
+	// prepareTimeout bounds the environment checks, as the engine bounds
+	// every tracker and workspace call, so a hung gh or git cannot hold crew
+	// before its first poll.
+	prepareTimeout = 10 * time.Minute
+)
 
 // Options are what Run needs from the process it runs in.
 type Options struct {
@@ -64,14 +70,17 @@ type Options struct {
 	// Group is the process group every adapter starts its processes in, so
 	// a forced exit can kill them all (KTD16).
 	Group *proc.Group
-	// Signals delivers the stop signals, SIGINT and SIGTERM. The first asks
-	// the engine to stop; the second forces the exit.
+	// Signals delivers the stop signals, SIGINT, SIGTERM and SIGHUP. The
+	// first ends the environment checks, or asks the engine to stop; the
+	// second forces the exit.
 	Signals <-chan os.Signal
 }
 
 // Run runs crew until it stops and returns its exit code. A config or
 // environment error is printed to Stderr, and Run returns ExitConfig before
-// anything polls or renders. Otherwise Run returns once the engine has
+// anything polls or renders. So does a signal during the environment checks,
+// or the checks taking over prepareTimeout; as a check's process may still
+// run then, Run kills every process in Group first. Otherwise Run returns once the engine has
 // stopped, with ExitClean, or ExitFailure when something failed meanwhile.
 // A second stop request (a second signal, or a second Ctrl-C or q in the TUI)
 // kills every process in Group and returns ExitFailure at once. Any other
@@ -86,14 +95,51 @@ func Run(ctx context.Context, o Options) (code int) {
 		}
 	}()
 	eng, err := build(o)
-	if err == nil {
-		err = eng.Prepare(ctx)
-	}
 	if err != nil {
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	return run(ctx, eng, o)
+	signalled, err := prepare(ctx, eng, o)
+	if err != nil {
+		o.errorf("%v", err)
+		return ExitConfig
+	}
+	return run(ctx, eng, o, signalled)
+}
+
+// prepare runs the environment checks within prepareTimeout, and a first
+// signal meanwhile ends them. It reports whether a signal came, so one that
+// came just as the checks succeeded still stops the run. When the checks
+// end early, it kills every process in Group, since a check's process may
+// outlive its context.
+func prepare(ctx context.Context, eng *engine.Engine, o Options) (signalled bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, prepareTimeout)
+	defer cancel()
+	got := make(chan bool, 1)
+	checked := make(chan struct{})
+	go func() {
+		select {
+		case <-o.Signals:
+			cancel()
+			got <- true
+		case <-checked:
+			got <- false
+		}
+	}()
+	err = eng.Prepare(ctx)
+	close(checked)
+	signalled = <-got
+	if err == nil || ctx.Err() == nil {
+		return signalled, err
+	}
+	o.Group.KillAll()
+	switch {
+	case signalled:
+		return true, errors.New("stopped during the environment checks")
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return false, fmt.Errorf("the environment checks timed out after %v: %w", prepareTimeout, err)
+	}
+	return false, err
 }
 
 // build loads the config and builds the engine and its adapters.
@@ -120,8 +166,9 @@ func build(o Options) (*engine.Engine, error) {
 }
 
 // run runs the engine and the renderer until both have returned, and handles
-// the stop signals meanwhile.
-func run(ctx context.Context, eng *engine.Engine, o Options) int {
+// the stop signals meanwhile. stopping tells that a first signal came
+// already, so the engine stops at once and the next signal forces the exit.
+func run(ctx context.Context, eng *engine.Engine, o Options, stopping bool) int {
 	var forced atomic.Bool
 	force := func() {
 		forced.Store(true)
@@ -139,10 +186,13 @@ func run(ctx context.Context, eng *engine.Engine, o Options) int {
 		queue := eng.SubscribeQueue(lineQueue)
 		render = func() error { return lines.Run(queue, o.Stdout, time.Local, time.Now) }
 	}
+	if stopping {
+		eng.Stop()
+	}
 	engineDone := goSafely(func() error { return eng.Run(ctx) })
 	rendered := goSafely(render)
 
-	code, stopping := ExitClean, false
+	code := ExitClean
 	for engineDone != nil || rendered != nil {
 		select {
 		case <-o.Signals:

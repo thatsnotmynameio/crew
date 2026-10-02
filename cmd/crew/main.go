@@ -7,7 +7,8 @@
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a TUI;
 // otherwise, or with --plain, it prints timestamped event lines. The first
-// Ctrl-C or SIGTERM stops it cleanly, and a second one forces the exit. It
+// Ctrl-C, SIGTERM or SIGHUP stops it cleanly, and a second one forces the
+// exit. A closed output stops it cleanly as well. It
 // exits 0 on a clean stop, 1 on a runtime failure or a forced exit, and 2 on
 // a config or environment error.
 package main
@@ -64,8 +65,12 @@ func run(args []string) int {
 
 	// Signals are caught from here on: none may kill crew before the
 	// engine's stop sequence, or a forced exit, has ended its children.
+	// SIGHUP, from a closing terminal, stops crew as SIGINT and SIGTERM do.
+	// SIGPIPE is ignored, so a closed stdout fails the renderer's write,
+	// which stops crew cleanly too.
 	signals := make(chan os.Signal, 2)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Ignore(syscall.SIGPIPE)
 
 	ctx := context.Background()
 	var group proc.Group

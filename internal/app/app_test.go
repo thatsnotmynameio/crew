@@ -486,3 +486,117 @@ func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T
 	killed(t, sleeper)
 	session.End(crew.Outcome{Reason: "released by the test"})
 }
+
+// SIGHUP comes when the terminal crew runs in closes.
+func TestSIGHUPStopsCrewLikeSIGTERM(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue("1", crew.Ready))
+		h := fake.NewHarness()
+		r := options(t, oneAction, tr, h)
+		r.start()
+		session := next(t, h)
+
+		r.signals <- syscall.SIGHUP
+
+		if code := <-r.code; code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+		if !session.Stopped() {
+			t.Error("the running session was not stopped")
+		}
+		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{crew.NeedsAttention}) {
+			t.Errorf("#1 is in %v when crew returned, want needs_attention", got)
+		}
+	})
+}
+
+// hangingTracker is a fake tracker whose environment check runs until its
+// context ends, as a hung gh would. atCheck, when set, is the first thing
+// the check calls; ignoreEnd makes the check succeed all the same.
+type hangingTracker struct {
+	*listCounter
+
+	checking  chan struct{}
+	atCheck   func()
+	ignoreEnd bool
+}
+
+func newHangingTracker(issues ...crew.Issue) *hangingTracker {
+	return &hangingTracker{listCounter: &listCounter{Tracker: fake.NewTracker(issues...)}, checking: make(chan struct{})}
+}
+
+// Prepare implements port.Preparer.
+func (h *hangingTracker) Prepare(ctx context.Context, _ []crew.State) error {
+	close(h.checking)
+	if h.atCheck != nil {
+		h.atCheck()
+	}
+	<-ctx.Done()
+	if h.ignoreEnd {
+		return nil
+	}
+	return ctx.Err()
+}
+
+func TestASignalDuringTheEnvironmentChecksKillsEveryProcessAndExitsTwo(t *testing.T) {
+	tr := newHangingTracker(issue("1", crew.Ready))
+	r := options(t, oneAction, tr, fake.NewHarness())
+	sleeper := child(t, r.opts.Group) // a check's process, still running
+	r.start()
+	<-tr.checking
+
+	r.signals <- syscall.SIGINT
+
+	if code := r.exitCode(t); code != 2 {
+		t.Fatalf("exit code = %d, want 2; stderr:\n%s", code, r.stderr)
+	}
+	killed(t, sleeper)
+	if stderr := r.stderr.String(); !strings.Contains(stderr, "stopped during the environment checks") {
+		t.Errorf("stderr = %q, want it to say crew stopped during the environment checks", stderr)
+	}
+	if n := tr.listed(); n != 0 {
+		t.Errorf("the tracker listed %d times, want none", n)
+	}
+	if out := r.stdout.String(); out != "" {
+		t.Errorf("stdout = %q, want nothing", out)
+	}
+}
+
+func TestHungEnvironmentChecksTimeOutAfterTenMinutesAndExitTwo(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := newHangingTracker(issue("1", crew.Ready))
+		r := options(t, oneAction, tr, fake.NewHarness())
+		start := time.Now()
+		r.start()
+
+		code := <-r.code
+
+		if code != 2 {
+			t.Fatalf("exit code = %d, want 2; stderr:\n%s", code, r.stderr)
+		}
+		if took := time.Since(start); took != 10*time.Minute {
+			t.Errorf("the checks ended after %v, want 10m0s", took)
+		}
+		if stderr := r.stderr.String(); !strings.Contains(stderr, "timed out") {
+			t.Errorf("stderr = %q, want it to say the environment checks timed out", stderr)
+		}
+		if n := tr.listed(); n != 0 {
+			t.Errorf("the tracker listed %d times, want none", n)
+		}
+	})
+}
+
+func TestASignalAsTheEnvironmentChecksSucceedStillStopsCrew(t *testing.T) {
+	tr := newHangingTracker(issue("1", crew.Ready))
+	r := options(t, oneAction, tr, fake.NewHarness())
+	tr.atCheck = func() { r.signals <- syscall.SIGTERM }
+	tr.ignoreEnd = true // the checks finish as the signal arrives
+	r.start()
+
+	if code := r.exitCode(t); code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+	}
+	if !strings.Contains(r.stdout.String(), "crew: stopped") {
+		t.Errorf("stdout lacks the stop; it is:\n%s", r.stdout)
+	}
+}
