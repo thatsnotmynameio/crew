@@ -43,6 +43,14 @@ type Model struct {
 	// reopening is set when the workspace can reopen a failed run's
 	// workspace (KTD4).
 	reopening bool
+	// finding is set when the tracker can find the pull request an action
+	// opened (KTD3).
+	finding bool
+	// statusUsage is set when statuses show each ended action's spend and
+	// pull request (KTD11).
+	statusUsage bool
+	// spent sums what every session that ended this run used (R14).
+	spent crew.Spend
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -80,6 +88,17 @@ type actionRun struct {
 	// resumed is set once the action runs in a failed run's reopened
 	// workspace.
 	resumed bool
+	// since is when the action's new workspace was made; zero for a
+	// reopened one (KTD6).
+	since time.Time
+	// usage is what its session reported it used, once the session ended.
+	usage crew.Usage
+	// finding is set while its pull request is being looked up; pr holds
+	// what the lookup found once it is done. An action whose outcome is
+	// known before the lookup is done waits in PhaseFinishing, holding its
+	// outcome and cause.
+	finding bool
+	pr      crew.PullRequest
 }
 
 // call is a tracker call the core made and has not settled.
@@ -111,6 +130,19 @@ func New(workflow []crew.Stage, maxParallelIssues int, opts ...Option) *Model {
 
 // Option changes a new Model.
 type Option func(*Model)
+
+// FindingPullRequests has the model look up the pull request each action
+// opened, through FindPullRequest commands, once its session ended (KTD3).
+func FindingPullRequests() Option {
+	return func(m *Model) { m.finding = true }
+}
+
+// ReportingUsage has the statuses the model reports show each ended
+// action's spend and pull request (KTD11). It takes effect only with
+// ReportingStatus.
+func ReportingUsage() Option {
+	return func(m *Model) { m.statusUsage = true }
+}
 
 // ReportingStatus has the model report each issue's status through
 // ReportStatus commands, for a tracker that keeps status comments (KTD1).
@@ -181,6 +213,9 @@ const (
 	// PhaseChecking: its session succeeded and its check runs. The action
 	// has not ended: it is still running for the boss.
 	PhaseChecking
+	// PhaseFinishing: its outcome is known and it waits for the lookup of
+	// its pull request. It is still running for the boss.
+	PhaseFinishing
 	// PhaseEnded: it ended; see its Outcome.
 	PhaseEnded
 )
@@ -200,6 +235,8 @@ func (p Phase) String() string {
 		return "running"
 	case PhaseChecking:
 		return "checking"
+	case PhaseFinishing:
+		return "finishing"
 	case PhaseEnded:
 		return "ended"
 	}
@@ -222,6 +259,9 @@ type View struct {
 	// issue holding its latest stage, in the order they were released. An
 	// issue held again is left out until its new stage ends.
 	Handled []HandledView
+	// Spent sums what every session that ended this run used, including
+	// those of entries Handled no longer shows (R14).
+	Spent crew.Spend
 }
 
 // HandledView is an issue whose stage ended this run, as that stage left it.
@@ -234,6 +274,9 @@ type HandledView struct {
 	// Failures are the stage's failed actions, in its action order; nil
 	// when every action succeeded.
 	Failures []crew.ActionFailure
+	// Actions are the stage's actions, in its action order, with what each
+	// spent and the pull request it opened (R12).
+	Actions []HandledAction
 	// Move is MoveDone, or MoveDropped when crew gave the verdict move up.
 	Move crew.MoveProgress
 	// DropReason says why the verdict move was given up.
@@ -242,6 +285,25 @@ type HandledView struct {
 	// ended.
 	Taken time.Time
 	Ended time.Time
+}
+
+// HandledAction is one action of a HandledView.
+type HandledAction struct {
+	Name string
+	// Spend is what its session used; it sums no session when the action
+	// never had one.
+	Spend crew.Spend
+	// PullRequest is the pull request its lookup found.
+	PullRequest crew.PullRequest
+}
+
+// Spend sums what the stage's sessions used.
+func (h HandledView) Spend() crew.Spend {
+	var sum crew.Spend
+	for _, a := range h.Actions {
+		sum = sum.Add(a.Spend)
+	}
+	return sum
 }
 
 // NeedsAttention reports whether the boss should look at the issue: an
@@ -257,6 +319,7 @@ func (h HandledView) Duration() time.Duration { return h.Ended.Sub(h.Taken) }
 func (h HandledView) clone() HandledView {
 	h.Issue = h.Issue.Clone()
 	h.Failures = slices.Clone(h.Failures)
+	h.Actions = slices.Clone(h.Actions)
 	return h
 }
 
@@ -286,7 +349,7 @@ type ActionView struct {
 
 // View returns a snapshot of what the core holds.
 func (m *Model) View() View {
-	v := View{Stopping: m.requested, TimeUp: m.timeUp}
+	v := View{Stopping: m.requested, TimeUp: m.timeUp, Spent: m.spent}
 	for _, h := range m.issues {
 		iv := IssueView{Issue: h.issue.Clone(), Stage: m.stages[h.stage].Name, Claim: h.claim}
 		for _, a := range h.actions {

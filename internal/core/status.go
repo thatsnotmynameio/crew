@@ -210,7 +210,8 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 // status returns h's status of kind, with each action's state, and for a
 // failed action its cause and log. Only a check's reason goes with it: a
 // session's or a tool's own words never do (R12). An action that resumed
-// also names its workspace.
+// also names its workspace. With ReportingUsage, an ended action whose
+// session started also carries what it spent and its pull request.
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
 		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
@@ -230,6 +231,9 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 		}
 		if a.resumed {
 			as.Workspace = a.workspace
+		}
+		if s.m.statusUsage && a.phase == PhaseEnded && !a.started.IsZero() {
+			as.Spend, as.PullRequest = a.usage.Spend(), a.pr
 		}
 		st.Actions = append(st.Actions, as)
 	}

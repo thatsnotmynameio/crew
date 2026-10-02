@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -305,14 +306,15 @@ func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 	})
 }
 
-func TestAFailureWithoutAWorkspaceRecordsNothingAndKeepsTheFailedRun(t *testing.T) {
+func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T) {
 	past := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke"))
 	d := resumeDriver(t, past)
 	d.takeIssue(issue("9", 1, readyForDev))
 
 	cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "9", Action: "lfg", Reason: "git worktree list failed"})
-	if got := records(cmds); len(got) != 0 {
-		t.Fatalf("records = %#v, want none", got)
+	if got := records(cmds); len(got) != 1 || got[0].Event != core.RunEnded || got[0].Workspace != "" ||
+		got[0].Reason != "git worktree list failed" {
+		t.Fatalf("records = %#v, want one end without a workspace", got)
 	}
 	d.settle(cmds)
 
@@ -330,10 +332,12 @@ func TestAStopThenAGoneWorkspaceCreatesNothing(t *testing.T) {
 
 	cmds, _ := d.send(core.WorkspaceGone{IssueKey: "9", Action: "lfg"})
 	for _, c := range cmds {
-		switch c.(type) {
-		case core.CreateWorkspace, core.RecordRun:
-			t.Fatalf("got %#v after a stop, want no workspace and no record", c)
+		if _, ok := c.(core.CreateWorkspace); ok {
+			t.Fatalf("got %#v after a stop, want no workspace", c)
 		}
+	}
+	if got := records(cmds); len(got) != 1 || got[0].Workspace != "" || got[0].Reason != "crew stopped" {
+		t.Fatalf("records = %#v, want one stopped end without a workspace", got)
 	}
 	if a := d.m.View().Issues[0].Actions[0]; a.Phase != core.PhaseEnded || a.Outcome.Reason != "crew stopped" {
 		t.Fatalf("action = %#v, want ended with crew stopped", a)
@@ -354,7 +358,8 @@ func TestAFreshRunIsRecordedFromItsWorkspaceToItsEnd(t *testing.T) {
 	wantStart.At = t0.Add(4 * time.Second)
 	wantEnd := endedRun(wantStart, succeeded)
 	wantEnd.At = t0.Add(6 * time.Second)
-	if len(start) != 1 || start[0] != wantStart || len(end) != 1 || end[0] != wantEnd {
+	wantEnd.SessionStarted = t0.Add(5 * time.Second)
+	if len(start) != 1 || !reflect.DeepEqual(start[0], wantStart) || len(end) != 1 || !reflect.DeepEqual(end[0], wantEnd) {
 		t.Fatalf("records = %#v then %#v, want %#v then %#v", start, end, wantStart, wantEnd)
 	}
 }

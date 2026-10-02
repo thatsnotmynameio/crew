@@ -1,6 +1,10 @@
 package core
 
-import "github.com/thatsnotmynameio/crew/internal/crew"
+import (
+	"time"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
+)
 
 // Command is a side effect the core asks the engine to run through a port.
 // The engine runs each command and feeds its result back as an Input. The
@@ -103,6 +107,18 @@ type RunCheck struct {
 	Branch   string
 }
 
+// FindPullRequest asks the tracker for the pull request opened from Branch
+// once Action's session on the issue ended: an open one, or a closed or
+// merged one created at or after Since, which is zero for a resumed
+// workspace (KTD6). Its result is PullRequestFound. The core asks only when
+// the tracker can find pull requests (FindingPullRequests).
+type FindPullRequest struct {
+	IssueKey string
+	Action   string
+	Branch   string
+	Since    time.Time
+}
+
 // StopCheck asks the engine to stop the running check of Action on the
 // issue. The check's end still arrives as CheckEnded.
 type StopCheck struct {
@@ -126,5 +142,6 @@ func (RecordRun) command()       {}
 func (StartSession) command()    {}
 func (StopSession) command()     {}
 func (RunCheck) command()        {}
+func (FindPullRequest) command() {}
 func (StopCheck) command()       {}
 func (ReportStatus) command()    {}
