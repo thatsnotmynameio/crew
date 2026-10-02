@@ -161,7 +161,7 @@ func TestAfterTheRunTimeIsUpTheHeaderSaysCrewIsWindingDown(t *testing.T) {
 func TestARequestedStopWhileWindingDownShowsTheStoppingHeader(t *testing.T) {
 	h := newHarness(t, 80)
 	u := windingDownSnapshot()
-	u.Snapshot.View.Stopping = true
+	u.Snapshot.Stopping = true
 
 	h.send(updateMsg(u))
 
