@@ -1,0 +1,85 @@
+# golangci-lint v2 (v2.14.0 in CI; locally: go run
+# github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run).
+# depguard enforces the package layering of the engine plan (KTD17): imports
+# point inward, and only the TUI imports bubbletea.
+version: "2"
+
+linters:
+  enable:
+    - depguard
+    - errorlint
+    - gocritic
+    - misspell
+    - revive
+  settings:
+    depguard:
+      rules:
+        domain:
+          files:
+            - "**/internal/crew/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal
+              desc: the domain imports nothing of crew's
+        port:
+          files:
+            - "**/internal/port/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: ports import only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: ports import only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: ports import only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: ports import only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: ports import only the domain
+        core:
+          files:
+            - "**/internal/core/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/port
+              desc: the core imports only the domain; the engine translates port results
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: the core imports only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: the core imports only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: the core imports only the domain
+            - pkg: github.com/thatsnotmynameio/crew/internal/proc
+              desc: the core imports only the domain
+        engine:
+          files:
+            - "**/internal/engine/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: the engine never imports an adapter
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: the engine never imports a UI package
+        adapters:
+          files:
+            - "**/internal/adapter/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: adapters import the domain, the ports and proc only
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: adapters import the domain, the ports and proc only
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: adapters import the domain, the ports and proc only
+        fakes:
+          files:
+            - "!$test"
+            - "!**/internal/fake/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/fake
+              desc: the fakes are for tests only
+        bubbletea:
+          files:
+            - "!**/internal/ui/tui/**"
+          deny:
+            - pkg: charm.land/bubbletea
+              desc: only the TUI imports bubbletea
+
+formatters:
+  enable:
+    - gofmt

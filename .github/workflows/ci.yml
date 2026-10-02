@@ -30,3 +30,34 @@ jobs:
 
   actionlint:
     uses: thatsnotmynameio/.github/.github/workflows/actionlint.yml@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
+
+  # The Go module: formatting, vet, lint (including the layering rules in
+  # .golangci.yml), tests with the race detector, and known vulnerabilities.
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l cmd internal)"
+          if [ -n "$unformatted" ]; then
+            echo "Not gofmt-formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+      - name: go test
+        run: go test -race ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
