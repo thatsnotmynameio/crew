@@ -82,9 +82,9 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 
 `core.Model.Update(input)` returns the commands to run and the events to publish. It never touches a process, the network, a file or the clock: the engine stamps every input with its arrival time. Its tests are tables, with no goroutines.
 
-- **Inputs:** `Tick`, `StopRequested`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `WorkspaceReady`, `WorkspaceFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
+- **Inputs:** `Tick`, `StopRequested`, `TimeUp`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `WorkspaceReady`, `WorkspaceFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`.
 - **Commands:** `ListIssues`, `Move`, `ReportFailure`, `CreateWorkspace`, `StartSession`, `StopSession`.
-- **Events:** `IssueTaken`, `ActionStarted`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `Stopped`.
+- **Events:** `IssueTaken`, `ActionStarted`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `WindingDown`, `Stopped`.
 
 Each issue the core holds has a claim, kept apart from the tracker's states:
 
@@ -106,11 +106,14 @@ stateDiagram-v2
 
 The core picks later stages first, then the oldest issue. It never takes an issue it already holds. A call that fails transiently stays owed and is retried at every tick, and once more at stop. A refusal or a "moved meanwhile" is dropped and reported, never retried.
 
+`TimeUp` starts a wind-down. The core takes no new issue and stops listing, but keeps retrying owed calls at each tick and lets every held issue run and be judged. Once no held issue has an action left to end, it enters the stop sequence, so owed calls get their final try. `View.Stopping` stays false unless a stop was requested; `View.TimeUp` tells the renderers why crew is ending.
+
 ## The engine loop
 
 `engine.Engine.Run` is the only caller of the core, on one goroutine.
 
 - Every result reaches the loop through one inbox. A ticker selected in the loop polls every `poll_interval_seconds`, so a slow step coalesces ticks instead of queueing them.
+- With `run_time_limit_seconds`, a timer started just before the first poll sends the core `TimeUp`, so the environment checks do not count.
 - Each command runs in its own goroutine. Tracker and workspace calls get a 10-minute deadline; a timeout is a transient failure.
 - Commands run on their own context, which a stop request does not cancel. A first Ctrl-C therefore never cancels the verdict moves it waits for.
 - A stop gives each running session 10 seconds: the engine owns the deadline, and the adapter owns the signals.
