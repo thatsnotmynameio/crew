@@ -47,7 +47,7 @@ Put the templates in `.github/ISSUE_TEMPLATE/`, where GitHub looks for them. Hav
 
 Both keys are optional. Without a description, the skill shows a stage by its name and an extra by its label. Without a template, it writes a free-form body.
 
-For a worked example, see how the crew repository sets up its own work: its `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` in the [crew repository](https://github.com/thatsnotmynameio/crew). Those choices are crew's, not defaults: the `crew:waiting brainstorm` extra, one template per stage, and a feature template laid out like a compound-engineering requirements plan. Copy only what fits your workflow.
+For a worked example, see how the crew repository sets up its own work: the `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` at its root. Those choices are crew's, not defaults: the `crew:waiting brainstorm` extra, one template per stage, and a feature template laid out like a compound-engineering requirements plan. Copy only what fits your workflow.
 
 A crew binary older than these keys refuses a config that uses them, as unknown keys, and exits with 2. Rebuild crew from `main` (see [Install](/guide/crew#install)) before you pull a config that uses them.
 
