@@ -853,3 +853,33 @@ func TestARefusedEndedStatusIsNotRetriedAndStopDoesNotWaitForIt(t *testing.T) {
 		}
 	})
 }
+
+func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewReportingTracker(issue(1, crew.Ready))
+		cfg := config(t, tr, develop)
+		cfg.Harness = fake.NewNarratingHarness()
+		r := start(t, cfg)
+		s := r.sessions(1)["issue-1-development"]
+
+		// The repository's path starts before the last 200 characters, so a
+		// cut before shortening would leave the end of it in the text.
+		tail := "/internal/core/update.go " + strings.Repeat("x", 190)
+		s.Say("Edited " + cfg.Root + tail)
+		time.Sleep(poll)
+		synctest.Wait()
+
+		got := lastStatus(t, tr, "1").Actions[0].Said
+		if want := "…" + string([]rune("." + tail)[len([]rune("."+tail))-199:]); got != want {
+			t.Errorf("Said = %q, want %q", got, want)
+		}
+		if strings.Contains(got, filepath.Base(cfg.Root)) || strings.Contains(got, "home") {
+			t.Errorf("Said = %q names part of a local path", got)
+		}
+
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}

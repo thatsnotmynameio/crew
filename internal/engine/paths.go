@@ -40,6 +40,19 @@ func (e *Engine) scrub(text string) string {
 	return replaceDir(replaceDir(text, e.cfg.Root, "."), e.cfg.Home, "~")
 }
 
+// maxSaid is how many characters of what a session last said reach the core.
+const maxSaid = 200
+
+// lastWords keeps the last maxSaid characters of text, starting a cut text
+// with an ellipsis: the end of what a session says is the newest.
+func lastWords(text string) string {
+	runes := []rune(text)
+	if len(runes) <= maxSaid {
+		return text
+	}
+	return "…" + string(runes[len(runes)-maxSaid+1:])
+}
+
 // replaceDir replaces dir in text with with wherever it appears as a whole
 // path prefix: not preceded by a path byte, and not followed by a name
 // byte, so /home/jo leaves /home/joe and /mnt/home/jo alone. Dots ending a

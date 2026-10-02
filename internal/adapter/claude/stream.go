@@ -28,7 +28,7 @@ type stream struct {
 	last    *result // the last top-level result event so far
 
 	mu   sync.Mutex
-	text string // the last top-level text so far, from lastWords
+	text string // the last top-level text so far, on one line
 }
 
 // result is a top-level result event. Decoding a line into it reads only
@@ -103,7 +103,7 @@ func (s *stream) assistant(line []byte) {
 	for _, block := range slices.Backward(ev.Message.Content) {
 		if block.Type == "text" {
 			s.mu.Lock()
-			s.text = lastWords(block.Text)
+			s.text = strings.Join(strings.Fields(block.Text), " ")
 			s.mu.Unlock()
 			return
 		}
@@ -170,16 +170,4 @@ func oneLine(s string) string {
 		return s
 	}
 	return string(runes[:maxReason-1]) + "…"
-}
-
-// lastWords joins s's words with single spaces and keeps its last maxReason
-// characters, starting a cut text with an ellipsis: the end of what a session
-// says is the newest.
-func lastWords(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	runes := []rune(s)
-	if len(runes) <= maxReason {
-		return s
-	}
-	return "…" + string(runes[len(runes)-maxReason+1:])
 }

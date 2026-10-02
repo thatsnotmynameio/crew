@@ -212,7 +212,9 @@ func workflowStates(workflow []crew.Stage) []crew.State {
 }
 
 // said returns what each running session that implements port.Narrator last
-// said, with local paths shortened (R10), in a stable order. Only the loop
+// said, with local paths shortened (R10), then cut to its last maxSaid
+// characters, in a stable order. Cutting after shortening keeps the end of a
+// cut path from reaching the tracker. Only the loop
 // calls it, as it owns the sessions.
 func (e *Engine) said() []core.Said {
 	var out []core.Said
@@ -224,7 +226,7 @@ func (e *Engine) said() []core.Said {
 			continue
 		}
 		if text := n.Said(); text != "" {
-			out = append(out, core.Said{IssueKey: k.issue, Action: k.action, Text: e.scrub(text)})
+			out = append(out, core.Said{IssueKey: k.issue, Action: k.action, Text: lastWords(e.scrub(text))})
 		}
 	}
 	return out

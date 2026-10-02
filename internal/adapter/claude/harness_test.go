@@ -467,21 +467,12 @@ func TestSaidPutsATextOfSeveralLinesOnOneLine(t *testing.T) {
 	}
 }
 
-func TestSaidKeepsTheEndOfATextLongerThan200Characters(t *testing.T) {
+func TestSaidKeepsALongTextWhole(t *testing.T) {
+	// The engine cuts what a session said, once it shortened its paths.
 	text := "Começo " + strings.Repeat("é", 250) + " the end."
 
-	got := feed(assistantLine(t, text)).said()
-
-	runes := []rune(text)
-	want := "…" + string(runes[len(runes)-199:])
-	if got != want {
-		t.Errorf("said = %q, want %q", got, want)
-	}
-	if n := utf8.RuneCountInString(got); n != 200 {
-		t.Errorf("said has %d characters, want 200", n)
-	}
-	if !strings.HasSuffix(got, " the end.") {
-		t.Errorf("said = %q, want it to end as the text does", got)
+	if got := feed(assistantLine(t, text)).said(); got != text {
+		t.Errorf("said = %q, want the whole text %q", got, text)
 	}
 }
 
