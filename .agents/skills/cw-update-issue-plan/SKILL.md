@@ -27,7 +27,7 @@ Read it with `gh issue view <number> --json number,title,state,body,labels,url`.
 
 With no argument, the issue keeps its labels.
 
-With an argument, it must be the `label` of a stage or of an extra. Otherwise say so, list the valid labels, and stop. When the issue carries a stage's `moves_to` label, crew is running a session on it: say so and stop without changing anything.
+With an argument, it must be the `label` of a stage or of an extra. Otherwise say so, list the valid labels, and stop. When the issue carries a stage's `moves_to` label, crew is running a session on it: say so and stop without changing anything. The one exception is a label this session put on the issue, such as the prompt `/cw-brainstorm` ran moving it to a `moves_to` label while the user brainstorms: then this session is the one working on it, so go on.
 
 ## 4. Find the plan
 

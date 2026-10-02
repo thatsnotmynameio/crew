@@ -6,7 +6,8 @@
 # stage, which finds what blocks it and what it blocks. Adding a stage's label
 # later promotes it, and crew then takes the extra off. Each stage and extra
 # names its template in .github/ISSUE_TEMPLATE/, which /cw-create-issue and
-# /cw-update-issue-plan fill.
+# /cw-update-issue-plan fill. crew does not run the prompts under `prompts`:
+# /cw-brainstorm runs `brainstorm` in the boss's own session.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 2
@@ -18,6 +19,13 @@ extra_labels:
   - label: "crew:waiting brainstorm"
     description: an idea to brainstorm later
     issue_template: idea.md
+prompts:
+  brainstorm: |-
+    Read {{.Issue.Ref}} with `gh issue view {{.Issue.Key}} --json state,labels`. When it is closed, or does not carry the label `crew:waiting brainstorm`, say so, name the crew labels it carries, and stop without changing anything.
+
+    Otherwise move it to `crew:in progress`: `gh issue edit {{.Issue.Key}} --remove-label "crew:waiting brainstorm" --add-label "crew:in progress"`. When that fails, report the error and stop.
+
+    Then run /compound-engineering:ce-brainstorm {{.Issue.Ref}} ({{.Issue.URL}}). The issue's title and body are the idea to brainstorm.
 workflow:
   - name: development
     description: a feature whose brainstorm is done
