@@ -98,13 +98,20 @@ func (m *Model) remember(r RunRecord) {
 	m.runs[keyOf(r)] = r
 }
 
-// resumable returns the failed last run of a, in h's stage, on h's issue,
-// when the model can reopen its workspace (R1, R2, R3).
+// lastRun returns the last run record of a, in h's stage, on h's issue
+// (R3).
+func (m *Model) lastRun(h *heldIssue, a *actionRun) (RunRecord, bool) {
+	r, ok := m.runs[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]
+	return r, ok
+}
+
+// resumable returns the failed last run of a when the model can reopen its
+// workspace (R1, R2).
 func (m *Model) resumable(h *heldIssue, a *actionRun) (RunRecord, bool) {
 	if !m.reopening {
 		return RunRecord{}, false
 	}
-	r, ok := m.runs[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]
+	r, ok := m.lastRun(h, a)
 	if !ok || !r.failed() {
 		return RunRecord{}, false
 	}

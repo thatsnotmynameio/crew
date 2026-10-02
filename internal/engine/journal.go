@@ -124,18 +124,24 @@ func (e *Engine) appendJournal(r core.RunRecord) error {
 	if err != nil {
 		return fmt.Errorf("open the run journal: %w", err)
 	}
-	if err := startLine(f); err != nil {
-		_ = f.Close() // the write error is the one to report
-		return fmt.Errorf("write the run journal: %w", err)
+	err = appendLine(f, data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
 	}
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		_ = f.Close() // the write error is the one to report
-		return fmt.Errorf("write the run journal: %w", err)
-	}
-	if err := f.Close(); err != nil {
+	if err != nil {
 		return fmt.Errorf("write the run journal: %w", err)
 	}
 	return nil
+}
+
+// appendLine appends data to f, a file opened for reading and appending, as
+// a line of its own.
+func appendLine(f *os.File, data []byte) error {
+	if err := startLine(f); err != nil {
+		return err
+	}
+	_, err := f.Write(append(data, '\n'))
+	return err
 }
 
 // startLine makes the next write to f, a file opened for reading and

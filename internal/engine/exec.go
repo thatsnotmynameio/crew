@@ -245,10 +245,7 @@ func markResumed(log *os.File) error {
 	if err != nil {
 		return fmt.Errorf("encode the resume marker: %w", err)
 	}
-	if err := startLine(log); err != nil {
-		return fmt.Errorf("write the resume marker: %w", err)
-	}
-	if _, err := log.Write(append(data, '\n')); err != nil {
+	if err := appendLine(log, data); err != nil {
 		return fmt.Errorf("write the resume marker: %w", err)
 	}
 	return nil

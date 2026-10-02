@@ -198,8 +198,8 @@ func (e *Engine) SubscribeQueue(capacity int) *Queue {
 // port.Preparer, with the workflow's states, then reads the run journal, and
 // returns their errors joined, each naming its port or the journal. These
 // are environment checks (R2), so a caller can run them before starting a
-// renderer; Run then does not prepare again. Call it before Run starts, never concurrently with
-// Run; a second call returns the first one's result.
+// renderer; Run then does not prepare again. Call it before Run starts,
+// never concurrently with Run; a second call returns the first one's result.
 func (e *Engine) Prepare(ctx context.Context) error {
 	if !e.prepared {
 		e.prepared = true

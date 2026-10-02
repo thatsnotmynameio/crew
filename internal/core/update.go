@@ -372,10 +372,9 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 		// names none.
 		a.log = in.Log
 	}
-	if prev, ok := m.runs[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]; ok {
+	a.prev = nil
+	if prev, ok := m.lastRun(h, a); ok {
 		a.prev = &prev
-	} else {
-		a.prev = nil
 	}
 	s.record(h, a, RunStarted)
 	if m.stopping {
