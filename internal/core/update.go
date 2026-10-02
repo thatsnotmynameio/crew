@@ -22,7 +22,10 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 	case Tick:
 		s.tick()
 	case StopRequested:
+		m.requested = true
 		s.stop()
+	case TimeUp:
+		s.timeUp(in.Limit)
 	case IssuesListed:
 		s.listed(in.Issues)
 	case ListFailed:
@@ -47,6 +50,7 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 			s.end(h, a, in.Outcome)
 		}
 	}
+	s.windDown()
 	if m.Stopped() && !m.stopped {
 		m.stopped = true
 		s.emit(Stopped{At: s.at})
@@ -65,14 +69,14 @@ type step struct {
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
-// tick lists issues, unless a listing is outstanding, and retries the owed
-// calls that are not in flight (KTD8).
+// tick lists issues, unless a listing is outstanding or the run time is up,
+// and retries the owed calls that are not in flight (KTD8).
 func (s *step) tick() {
 	m := s.m
 	if m.stopping {
 		return
 	}
-	if !m.listing {
+	if !m.listing && !m.timeUp {
 		m.listing = true
 		states := make([]crew.State, len(m.stages))
 		for i, st := range m.stages {
@@ -120,12 +124,42 @@ func (s *step) stop() {
 	}
 }
 
+// timeUp ends the run time (R2): from now on nothing new is taken, while the
+// held issues, a take in flight or owed included, run and are judged as
+// usual (R4). windDown stops once they have all ended.
+func (s *step) timeUp(limit time.Duration) {
+	m := s.m
+	if m.stopping || m.timeUp {
+		return
+	}
+	m.timeUp = true
+	s.emit(WindingDown{At: s.at, Limit: limit})
+}
+
+// windDown starts the stop sequence once the run time is up and no held
+// issue has an action left to end, so owed calls get their final try (R5).
+func (s *step) windDown() {
+	m := s.m
+	if !m.timeUp || m.stopping {
+		return
+	}
+	for _, h := range m.issues {
+		for _, a := range h.actions {
+			if a.phase != PhaseEnded {
+				return
+			}
+		}
+	}
+	s.stop()
+}
+
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: later stages first, then the oldest issue first (KTD8).
+// issues: later stages first, then the oldest issue first (KTD8). It takes
+// nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
-	if m.stopping {
+	if m.stopping || m.timeUp {
 		return
 	}
 	for _, issue := range issues {
