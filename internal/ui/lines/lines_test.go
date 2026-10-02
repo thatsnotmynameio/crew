@@ -95,6 +95,18 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 		event core.Event
 		want  string
 	}{
+		{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+			Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log"},
+			"#9 development/lfg started on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
+		{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+			Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
+			"#9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
+		{core.WorkspaceMissing{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+			Workspace: "issue-9-lfg"},
+			"#9 development/lfg: worktree issue-9-lfg is gone, creating a new one"},
+		{core.RunNotRecorded{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+			Reason: "disk full"},
+			"could not record #9 development/lfg's run, so a restart may not resume it: disk full"},
 		{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
 			Outcome: crew.Outcome{Reason: "session exited with status 1"}},
 			"#2 review/check failed: session exited with status 1"},

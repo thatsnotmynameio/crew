@@ -182,9 +182,10 @@ func classify(err error, out proc.Output, onIssue bool) error {
 }
 
 // renderStatus renders a status as the status comment's Markdown: what the
-// stage does, each action with its state, the update time in UTC, then the
-// marker line. A session's last words go in a fenced code block, so nothing
-// in them may render, link or mention anyone.
+// stage does, each action with its state and, when it resumed, its
+// worktree, the update time in UTC, then the marker line. A session's last
+// words go in a fenced code block, so nothing in them may render, link or
+// mention anyone.
 func (t *Tracker) renderStatus(s crew.Status) string {
 	var b strings.Builder
 	stage := codeSpan(s.Stage)
@@ -198,16 +199,23 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 		fmt.Fprintf(&b, "crew: %s ended on %s.\n", stage, s.IssueRef)
 	}
 	for _, a := range s.Actions {
-		name := "**" + codeSpan(a.Name) + "**"
+		// A resumed action's line names its worktree: "**`lfg`** resumed in
+		// worktree `issue-9-lfg` and failed." A fresh one reads "**`lfg`**
+		// failed."
+		name, and := "**"+codeSpan(a.Name)+"**", ""
+		if a.Workspace != "" {
+			name += " resumed in worktree " + codeSpan(a.Workspace)
+			and = " and"
+		}
 		switch {
 		case a.State == crew.ActionSucceeded:
-			fmt.Fprintf(&b, "\n%s succeeded.\n", name)
+			fmt.Fprintf(&b, "\n%s%s succeeded.\n", name, and)
 		case a.State == crew.ActionFailed:
-			fmt.Fprintf(&b, "\n%s failed.\n", name)
+			fmt.Fprintf(&b, "\n%s%s failed.\n", name, and)
 		case a.Started.IsZero():
-			fmt.Fprintf(&b, "\n%s is running.\n", name)
+			fmt.Fprintf(&b, "\n%s%s is running.\n", name, and)
 		default:
-			fmt.Fprintf(&b, "\n%s has been running for %s.", name, elapsed(s.Updated.Sub(a.Started)))
+			fmt.Fprintf(&b, "\n%s%s has been running for %s.", name, and, elapsed(s.Updated.Sub(a.Started)))
 			if a.Said == "" {
 				b.WriteString("\n")
 				break

@@ -180,7 +180,7 @@ func (m Model) issues() []string {
 }
 
 // actions is the Actions region: the actions not yet ended, with the
-// elapsed time of the running ones.
+// elapsed time of the running ones and the workspace a resumed one runs in.
 func (m Model) actions() []string {
 	out := []string{"", "Actions"}
 	var names, states []string
@@ -193,6 +193,9 @@ func (m Model) actions() []string {
 			state := a.Phase.String()
 			if a.Phase == core.PhaseRunning {
 				state = "running " + elapsed(m.at.Sub(a.Started))
+				if a.Resumed {
+					state = "resumed in " + a.Workspace + ", " + state
+				}
 			}
 			states = append(states, state)
 		}
