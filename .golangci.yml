@@ -72,6 +72,15 @@ linters:
               desc: adapters import the domain, the ports and proc only
             - pkg: github.com/thatsnotmynameio/crew/internal/ui
               desc: adapters import the domain, the ports and proc only
+        adapter-code:
+          files:
+            - "**/internal/adapter/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: adapters never import each other
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: adapters get their section through port.Decode, not config
         fakes:
           files:
             - "!$test"
