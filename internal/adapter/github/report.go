@@ -53,3 +53,26 @@ func longestBacktickRun(s string) int {
 	}
 	return longest
 }
+
+// renderStop renders a pull request report's stop comment, for a report
+// with an end, in Markdown: how the stage ended on the issue and the label
+// the issue and the pull request moved to, each failed action as the status
+// comment words it, that nobody watches the pull request any more, then
+// link. Like the status comment, it carries no session's words.
+func renderStop(r crew.PullRequestReport, link string) string {
+	var b strings.Builder
+	outcome := "succeeded"
+	if r.End.Failed() {
+		outcome = "failed"
+	}
+	fmt.Fprintf(&b, "crew: %s %s on %s, which moved to %s, as did this pull request.\n",
+		codeSpan(r.End.Stage), outcome, r.IssueRef, codeSpan(string(r.State)))
+	for _, a := range r.End.Actions {
+		if a.State == crew.ActionFailed {
+			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(a.Name)+"**", a))
+		}
+	}
+	b.WriteString("\nNobody watches this pull request any more: new review comments and CI failures need a person.\n")
+	fmt.Fprintf(&b, "\n%s\n", link)
+	return b.String()
+}
