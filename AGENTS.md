@@ -57,6 +57,8 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 - **Two tabs:** `Guide` (`/`) for users and `Develop` (`/develop`) for contributors.
 - **Keep it true:** a change in behaviour, configuration or messages updates the matching pages in the same pull request.
 - **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
+- **Learnings:** `docs/solutions/` holds documented solutions to past problems (bugs, best practices, workflow patterns), by category, with YAML frontmatter (`module`, `tags`, `problem_type`). It is Markdown, so it is not published.
+- **Capture:** After a solved, verified problem, automatically invoke the `ce-compound` skill with `mode:non-interactive` at the completion checkpoint only when the work produced durable project reasoning that is not readily recoverable from the final code, tests, types, comments, or existing documentation, and losing it would plausibly cause recurrence, material risk, or substantial rediscovery. Apply this counterfactual: if the learning document disappeared, would a future engineer reading the final implementation still be likely to repeat the mistake or redo substantial investigation? If not, do not invoke it. Completion, effort, and diff size alone are not enough. Capture at the checkpoint so a qualifying learning can ship in the PR that produced it, and only where the repository treats captured learnings as tracked, committed knowledge.
 - **Check:** `pnpm install` once, then `pnpm docs:check` (the Docs workflow runs it on every pull request) and `pnpm docs:preview`. Use pnpm, never npm: `package.json` pins the docs.page CLI and pnpm itself (`packageManager`), and `pnpm-lock.yaml` pins them by hash.
 
 ## Releases and CI
@@ -70,3 +72,4 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
 - `AGENTS.md` and `.agents/` are the source; `CLAUDE.md` and `.claude/agents` are symlinks to them. Edit the source.
 - `acceptance-tester` (`.agents/agents/acceptance-tester.md`) writes behavior tests from a plan's acceptance examples in its own worktree, without reading the implementation. It is linked into `~/.claude/agents/` to work in any repository; see `docs/guide/acceptance-tester.mdx`.
+- **Reports:** Write every report, summary, or handoff to the user through the `ce-noslop` skill. This applies when you are the top-level agent writing to the user, not when you are a subagent reporting to its caller. Do not apply it to code, config, verbatim quotes, or text the user asked to post as written.

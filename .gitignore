@@ -30,3 +30,4 @@ node_modules/
 coverage.xml
 .coverage
 coverage/
+.context/compound-engineering/
