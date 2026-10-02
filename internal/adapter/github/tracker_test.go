@@ -264,7 +264,10 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 	for name, view := range map[string]string{
 		"closed":          `{"state":"CLOSED","labels":[{"name":"ready"}]}`,
-		"no longer ready": `{"state":"OPEN","labels":[{"name":"in progress"}]}`,
+		"no longer ready": `{"state":"OPEN","labels":[{"name":"needs attention"}]}`,
+		"in no state":     `{"state":"OPEN","labels":[{"name":"bug"}]}`,
+		"in to and other": `{"state":"OPEN","labels":[{"name":"in progress"},{"name":"paused"}]}`,
+		"closed in to":    `{"state":"CLOSED","labels":[{"name":"in progress"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t, "", reply{prefix: []string{"issue", "view", "3"}, stdout: view})
@@ -276,6 +279,20 @@ func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 				t.Errorf("sent edits %q, want none", edits)
 			}
 		})
+	}
+}
+
+// A retry of a move that landed although gh reported an error finds the issue
+// already in to: the move is done, and nothing is edited again (KTD8).
+func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
+	tr, gh := build(t, "",
+		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"In Progress"},{"name":"bug"}]}`},
+	)
+	if err := tr.Move(context.Background(), "3", crew.Ready, crew.InProgress); err != nil {
+		t.Fatalf("Move = %v, want nil", err)
+	}
+	if edits := gh.callsTo("issue", "edit"); len(edits) != 0 {
+		t.Errorf("sent edits %q, want none", edits)
 	}
 }
 

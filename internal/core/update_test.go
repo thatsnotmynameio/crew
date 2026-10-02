@@ -514,8 +514,8 @@ func TestVerdictCallMovedMeanwhileOrRefusedIsDroppedAndReported(t *testing.T) {
 	}
 }
 
-func TestTakeThatDoesNotSucceedReleasesTheIssue(t *testing.T) {
-	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused, core.ResultFailed} {
+func TestTakeMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
+	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
 		t.Run(result.String(), func(t *testing.T) {
 			d := newDriver(t, draft(), 1)
 			take, _ := d.poll(issue("1", 1, crew.Ready))
@@ -529,6 +529,139 @@ func TestTakeThatDoesNotSucceedReleasesTheIssue(t *testing.T) {
 
 			cmds, _ = d.poll(issue("2", 2, crew.Ready))
 			wantCommands(t, cmds, core.Move{IssueKey: "2", From: crew.Ready, To: crew.InProgress})
+		})
+	}
+}
+
+// A take that failed transiently may have landed, so the issue stays held
+// and the take is owed: the retry, which the tracker makes idempotent, either
+// moves it or finds it already moved, and the stage proceeds (KTD8).
+func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
+	d := newDriver(t, draft(), 1)
+	i1 := issue("1", 1, crew.Ready)
+	take, _ := d.poll(i1)
+
+	cmds, events := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	wantCommands(t, cmds)
+	owed := core.Call{Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: crew.Ready, To: crew.InProgress}
+	hasEvent(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
+	want := core.View{
+		Issues: []core.IssueView{{
+			Issue: i1, Stage: "implement", Claim: core.ClaimOwed,
+			Actions: []core.ActionView{
+				{Name: "acceptance", Phase: core.PhaseWaiting},
+				{Name: "development", Phase: core.PhaseWaiting},
+			},
+		}},
+		Owed: []core.Call{owed},
+	}
+	if v := d.m.View(); !reflect.DeepEqual(v, want) {
+		t.Fatalf("view:\n got %#v\nwant %#v", v, want)
+	}
+
+	// The next tick retries the take; its listing, still showing #1 in
+	// ready, neither takes #1 again nor takes #2 into the slot #1 holds.
+	retry, _ := d.send(core.Tick{})
+	wantCommands(t, retry,
+		core.ListIssues{States: []crew.State{crew.Ready, crew.ReadyToReview}},
+		core.Move{IssueKey: "1", From: crew.Ready, To: crew.InProgress},
+	)
+	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{i1, issue("2", 2, crew.Ready)}})
+	wantCommands(t, cmds)
+
+	cmds, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
+	wantCommands(t, cmds,
+		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
+		core.CreateWorkspace{Issue: i1, Action: "development"},
+	)
+	hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: crew.Ready, To: crew.InProgress})
+	if c := claimOf(t, d.m, "1"); c != core.ClaimRunning {
+		t.Fatalf("claim of #1: got %v, want running", c)
+	}
+	if got := d.m.View().Owed; got != nil {
+		t.Fatalf("owed after the retry succeeded: %#v", got)
+	}
+}
+
+func TestOwedTakeRetryMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
+	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
+		t.Run(result.String(), func(t *testing.T) {
+			d := newDriver(t, draft(), 1)
+			take, _ := d.poll(issue("1", 1, crew.Ready))
+			d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
+			retry, _ := d.send(core.Tick{})
+
+			cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: result, Reason: "nope"})
+			wantCommands(t, cmds)
+			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
+				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: crew.Ready, To: crew.InProgress,
+			}})
+			wantHeld(t, d.m)
+		})
+	}
+}
+
+// At stop, an owed take gets its one final try. If it lands, the issue is
+// in moves_to with nothing started, so it needs attention like an issue
+// whose take landed after the stop; if it fails, the core gives it up.
+func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
+	stoppedReport := core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
+		{Action: "acceptance", Reason: "crew stopped"},
+		{Action: "development", Reason: "crew stopped"},
+	}}}
+	tests := []struct {
+		name string
+		// final returns the final try's command, from a take that is owed or
+		// in flight at stop.
+		final func(d *driver, take []core.Command) []core.Command
+	}{
+		{
+			name: "owed at stop",
+			final: func(d *driver, take []core.Command) []core.Command {
+				d.send(core.CallResult{ID: moveID(d.t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
+				cmds, _ := d.send(core.StopRequested{})
+				return cmds
+			},
+		},
+		{
+			name: "in flight at stop",
+			final: func(d *driver, take []core.Command) []core.Command {
+				if cmds, _ := d.send(core.StopRequested{}); len(cmds) != 0 {
+					d.t.Fatalf("stop issued %#v while the take is in flight", cmds)
+				}
+				cmds, _ := d.send(core.CallResult{ID: moveID(d.t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
+				return cmds
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+", final try done", func(t *testing.T) {
+			d := newDriver(t, draft(), 1)
+			take, _ := d.poll(issue("1", 1, crew.Ready))
+			final := tt.final(d, take)
+			wantCommands(t, final, core.Move{IssueKey: "1", From: crew.Ready, To: crew.InProgress})
+
+			cmds, _ := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultDone})
+			wantCommands(t, cmds, core.Move{IssueKey: "1", From: crew.InProgress, To: crew.NeedsAttention}, stoppedReport)
+			d.settle(cmds)
+			if !d.m.Stopped() {
+				t.Fatal("not stopped once the verdict calls settled")
+			}
+		})
+		t.Run(tt.name+", final try failed", func(t *testing.T) {
+			d := newDriver(t, draft(), 1)
+			take, _ := d.poll(issue("1", 1, crew.Ready))
+			final := tt.final(d, take)
+
+			cmds, events := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultFailed, Reason: "still down"})
+			wantCommands(t, cmds)
+			hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
+				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: crew.Ready, To: crew.InProgress,
+			}})
+			if !d.m.Stopped() {
+				t.Fatal("not stopped once the owed take had its final try")
+			}
+			hasEvent(t, events, core.Stopped{At: d.now})
 		})
 	}
 }

@@ -187,7 +187,10 @@ func (s *step) attempt(h *heldIssue, c *call) {
 	s.command(Move{ID: c.id, IssueKey: h.issue.Key, From: c.from, To: c.to})
 }
 
-// callResult settles, owes or retries the call r answers.
+// callResult settles, owes or retries the call r answers. A take and a
+// verdict call are owed alike when they fail transiently: a take may have
+// landed although it failed, so releasing its issue could strand it in
+// moves_to with no session, and the tracker makes the retry idempotent.
 func (s *step) callResult(r CallResult) {
 	m := s.m
 	h, c := m.findCall(r.ID)
@@ -195,12 +198,12 @@ func (s *step) callResult(r CallResult) {
 		return
 	}
 	c.inFlight = false
-	if c.take {
-		s.taken(h, c, r)
-		return
-	}
 	switch r.Result {
 	case ResultDone:
+		if c.take {
+			s.taken(h, c)
+			return
+		}
 		if c.kind == CallReport {
 			s.emit(FailureReported{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref})
 		} else {
@@ -230,15 +233,10 @@ func (s *step) callResult(r CallResult) {
 	}
 }
 
-// taken handles the result of h's take move. A take that did not succeed
-// releases the issue: nothing moved it, so a later poll may take it again.
-func (s *step) taken(h *heldIssue, c *call, r CallResult) {
+// taken starts h's actions once its take move is done, or, after a stop,
+// ends them unstarted so the issue needs attention (R9).
+func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
-	if r.Result != ResultDone {
-		s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
-		m.release(h)
-		return
-	}
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 	h.settle(c)
 	if m.stopping {

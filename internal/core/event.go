@@ -93,7 +93,8 @@ type ListingFailed struct {
 	Reason string
 }
 
-// CallOwed is a verdict move or failure report that failed transiently. The
+// CallOwed is a take move, verdict move or failure report that failed
+// transiently. The
 // core owes it and retries it at the next tick (KTD8), or once at stop.
 type CallOwed struct {
 	At     time.Time
@@ -102,8 +103,7 @@ type CallOwed struct {
 }
 
 // CallDropped is a tracker call the core gave up: the issue moved meanwhile,
-// the tracker refused, a take failed transiently (the next poll may take the
-// issue again), or an owed call failed its final try at stop. Result says
+// the tracker refused, or an owed call failed its final try at stop. Result says
 // which; the call is never retried.
 type CallDropped struct {
 	At     time.Time

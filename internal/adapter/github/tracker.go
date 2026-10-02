@@ -127,9 +127,12 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 }
 
 // Move implements port.Tracker. It reads the issue's state and labels; a
-// closed issue, or one without from's label, moved meanwhile. Otherwise one
-// gh issue edit removes every other crew label the issue carries and adds
-// to's, leaving its other labels alone. gh saying a label does not exist is a
+// closed issue moved meanwhile. An open issue whose only crew label is to's
+// is already moved, as when an earlier attempt landed although gh reported an
+// error, so Move returns nil without an edit and a retry is safe (KTD8). Any
+// other issue without from's label moved meanwhile. Otherwise one gh issue
+// edit removes every other crew label the issue carries and adds to's,
+// leaving its other labels alone. gh saying a label does not exist is a
 // refusal: the label must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
 	var issue struct {
@@ -144,15 +147,23 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		return fmt.Errorf("%s: it is %s: %w", move, strings.ToLower(issue.State), port.ErrMovedMeanwhile)
 	}
 	args := []string{"issue", "edit", issueKey}
-	inFrom := false
+	var states []crew.State
 	for _, l := range issue.Labels {
 		s, ok := t.labels.stateOf(l.Name)
-		inFrom = inFrom || (ok && s == from)
-		if ok && s != to {
+		if !ok {
+			continue
+		}
+		if !slices.Contains(states, s) {
+			states = append(states, s)
+		}
+		if s != to {
 			args = append(args, "--remove-label="+l.Name)
 		}
 	}
-	if !inFrom {
+	if !slices.Contains(states, from) {
+		if slices.Equal(states, []crew.State{to}) {
+			return nil
+		}
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
 	target := t.labels.name[to]

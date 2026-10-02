@@ -175,7 +175,10 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 }
 
 // Move implements port.Tracker. A scripted failure comes first; then an
-// unknown or closed issue, or one not in from, is ErrMovedMeanwhile.
+// unknown or closed issue is ErrMovedMeanwhile. An open issue not in from but
+// exactly in to is already moved, so Move returns nil and records no move, as
+// the github adapter does on a retry. Any other issue not in from is
+// ErrMovedMeanwhile.
 func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -183,7 +186,13 @@ func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) 
 		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, err)
 	}
 	ti := t.find(issueKey)
-	if ti == nil || ti.closed || !slices.Contains(ti.issue.States, from) {
+	if ti == nil || ti.closed {
+		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, port.ErrMovedMeanwhile)
+	}
+	if !slices.Contains(ti.issue.States, from) {
+		if slices.Equal(ti.issue.States, []crew.State{to}) {
+			return nil
+		}
 		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, port.ErrMovedMeanwhile)
 	}
 	ti.issue.States = []crew.State{to}

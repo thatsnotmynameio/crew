@@ -3,6 +3,8 @@
 // produces. It imports nothing of crew's, so every other package can share it.
 package crew
 
+import "slices"
+
 // State is one of crew's eight issue states. It is the engine's vocabulary:
 // each tracker adapter maps a State to its own representation (a label, a
 // status, a column), and nothing outside an adapter knows that mapping.
@@ -28,9 +30,5 @@ func States() []State {
 
 // Valid reports whether s is one of the eight crew states.
 func (s State) Valid() bool {
-	switch s {
-	case Ready, InProgress, ReadyToReview, InReview, NeedsAttention, Paused, ReadyToMerge, Done:
-		return true
-	}
-	return false
+	return slices.Contains(States(), s)
 }

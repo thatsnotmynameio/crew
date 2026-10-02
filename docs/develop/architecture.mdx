@@ -94,6 +94,8 @@ stateDiagram-v2
   Taking --> Released: move refused or moved meanwhile
   Taking --> Stopping: stop requested before its sessions started
   Taking --> Running: take move done
+  Taking --> Owed: take move failed transiently
+  Owed --> Running: retried take done
   Running --> Judging: every action ended
   Running --> Stopping: stop requested
   Stopping --> Judging: sessions ended

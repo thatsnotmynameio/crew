@@ -6,8 +6,8 @@
 //
 // Each issue the core holds moves through claim states kept apart from the
 // tracker's states: Taking, then Running (or Stopping), then Judging, and
-// Owed while a verdict call waits for a retry. An issue is released when its
-// verdict calls are settled.
+// Owed while its take or a verdict call waits for a retry. An issue is
+// released when its verdict calls are settled, or when its take is given up.
 package core
 
 import (
@@ -96,7 +96,9 @@ const (
 	ClaimStopping
 	// ClaimJudging: every action ended and the verdict calls are in flight.
 	ClaimJudging
-	// ClaimOwed: a verdict call failed transiently and waits for a retry.
+	// ClaimOwed: the take move or a verdict call failed transiently and
+	// waits for a retry. With an owed take, no action has started yet: they
+	// stay PhaseWaiting until the retried take is done.
 	ClaimOwed
 )
 
@@ -122,7 +124,7 @@ type Phase int
 
 // The phases of an action.
 const (
-	// PhaseWaiting: the issue's take move is in flight.
+	// PhaseWaiting: the issue's take move is in flight or owed.
 	PhaseWaiting Phase = iota
 	// PhaseCreating: its workspace is being created.
 	PhaseCreating

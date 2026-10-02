@@ -91,6 +91,32 @@ func TestTrackerMoveFromAStateTheIssueLeftIsMovedMeanwhile(t *testing.T) {
 	}
 }
 
+// A retry of a move that already landed finds the issue exactly in to: it is
+// done, and records no second move, as the github adapter sends no edit.
+func TestTrackerMoveOfAnIssueAlreadyInToIsDone(t *testing.T) {
+	tr := fake.NewTracker(issue("1", crew.InProgress))
+
+	if err := tr.Move(context.Background(), "1", crew.Ready, crew.InProgress); err != nil {
+		t.Fatalf("Move = %v, want nil", err)
+	}
+	got, _ := tr.Issue("1")
+	if want := []crew.State{crew.InProgress}; !reflect.DeepEqual(got.States, want) {
+		t.Errorf("states = %v, want %v", got.States, want)
+	}
+	if len(tr.Moves()) != 0 {
+		t.Errorf("Moves = %v, want none", tr.Moves())
+	}
+}
+
+func TestTrackerMoveOfAnIssueInToAndAnotherStateIsMovedMeanwhile(t *testing.T) {
+	tr := fake.NewTracker(issue("1", crew.InProgress, crew.Paused))
+
+	err := tr.Move(context.Background(), "1", crew.Ready, crew.InProgress)
+	if !errors.Is(err, port.ErrMovedMeanwhile) {
+		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
+	}
+}
+
 func TestTrackerMoveOfAClosedIssueIsMovedMeanwhile(t *testing.T) {
 	tr := fake.NewTracker(issue("1", crew.InProgress))
 	tr.Close("1")

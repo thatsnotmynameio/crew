@@ -43,7 +43,9 @@ type Tracker interface {
 	// another, and leaves it in exactly one crew state, to. It returns an
 	// error wrapping ErrMovedMeanwhile when the issue is closed or not in
 	// from, one wrapping ErrRefused when the tracker refuses for good, and
-	// any other error when the move failed transiently.
+	// any other error when the move failed transiently. It returns nil,
+	// changing nothing, when the issue is already exactly in to and not in
+	// from, so retrying a move that landed is safe.
 	Move(ctx context.Context, issueKey string, from, to crew.State) error
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
