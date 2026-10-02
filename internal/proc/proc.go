@@ -1,0 +1,280 @@
+// Package proc is the one way crew starts a child process, such as claude,
+// gh or git. Each child runs in its own process group, so a terminal's Ctrl-C
+// reaches crew alone and crew decides when its children stop; and every
+// signal goes to the child's whole group, so the tools and servers a child
+// spawned stop with it. A Group records the children it started, so a forced
+// exit can kill every one of them.
+//
+// It works on Unix systems (darwin and linux), where process groups exist.
+package proc
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"reflect"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+// drainTimeout bounds how long a process waits, once its group has ended,
+// for its output pipes to close. Only a descendant that left the group, such
+// as a daemon calling setsid, can hold them open past that.
+const drainTimeout = 2 * time.Second
+
+// Command is a child process to run.
+type Command struct {
+	// Name is the program, looked up in PATH when it holds no slash.
+	Name string
+	// Args are the arguments after the program name.
+	Args []string
+	// Dir is the working directory; empty means crew's.
+	Dir string
+	// Env holds KEY=value entries added to crew's environment, winning over
+	// crew's own. GIT_TERMINAL_PROMPT=0 and GH_PROMPT_DISABLED=1 are always
+	// set and win over Env: a child in a background process group that read
+	// the terminal would stop forever.
+	Env []string
+}
+
+// Output is what a command run to completion printed.
+type Output struct {
+	Stdout, Stderr []byte
+}
+
+// Group starts child processes and records the live ones. Its zero value is
+// ready to use, and it is safe for concurrent use; it must not be copied
+// after first use. Every child gets its own process group.
+type Group struct {
+	mu   sync.Mutex
+	live map[*Process]struct{}
+}
+
+// Process is a started child and its process group.
+type Process struct {
+	pgid   int
+	err    error         // set before exited is closed
+	exited chan struct{} // closed once the child itself has exited
+	done   chan struct{} // closed once its group is gone and its output copied
+}
+
+// Start starts c in a new process group, with stdin reading nothing and its
+// stdout and stderr copied to the given writers; a nil writer discards. When
+// stdout and stderr are the same writer, the child gets one pipe for both, so
+// the writer is never written from two goroutines.
+//
+// When the child exits, whatever it left running in its group is killed: a
+// command's helpers end with it.
+func (g *Group) Start(c Command, stdout, stderr io.Writer) (*Process, error) {
+	cmd := exec.Command(c.Name, c.Args...)
+	cmd.Dir = c.Dir
+	cmd.Env = append(append(os.Environ(), c.Env...), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	var pipes []*pipe
+	closeAll := func() {
+		for _, p := range pipes {
+			_ = p.r.Close()
+			_ = p.w.Close()
+		}
+	}
+	if stdout != nil {
+		p, err := newPipe(stdout)
+		if err != nil {
+			return nil, fmt.Errorf("start %s: %w", c.Name, err)
+		}
+		pipes = append(pipes, p)
+		cmd.Stdout = p.w
+	}
+	if stderr != nil {
+		if sameWriter(stdout, stderr) {
+			cmd.Stderr = cmd.Stdout
+		} else {
+			p, err := newPipe(stderr)
+			if err != nil {
+				closeAll()
+				return nil, fmt.Errorf("start %s: %w", c.Name, err)
+			}
+			pipes = append(pipes, p)
+			cmd.Stderr = p.w
+		}
+	}
+
+	proc := &Process{exited: make(chan struct{}), done: make(chan struct{})}
+	// Holding the lock across the start means KillAll never misses a child
+	// that started before it.
+	g.mu.Lock()
+	if err := cmd.Start(); err != nil {
+		g.mu.Unlock()
+		closeAll()
+		return nil, fmt.Errorf("start %s: %w", c.Name, err)
+	}
+	proc.pgid = cmd.Process.Pid
+	if g.live == nil {
+		g.live = make(map[*Process]struct{})
+	}
+	g.live[proc] = struct{}{}
+	g.mu.Unlock()
+
+	var copies sync.WaitGroup
+	for _, p := range pipes {
+		_ = p.w.Close() // the child holds its own copy
+		copies.Go(func() { _, _ = io.Copy(p.dst, p.r) })
+	}
+	go g.reap(proc, cmd, pipes, &copies)
+	return proc, nil
+}
+
+// reap waits for the child, kills what it left in its group, lets the output
+// drain, and then marks the process done.
+func (g *Group) reap(p *Process, cmd *exec.Cmd, pipes []*pipe, copies *sync.WaitGroup) {
+	p.err = cmd.Wait()
+	close(p.exited)
+	// The child is reaped, so the group outlives it only through its
+	// descendants; until they are gone, its id cannot be reused.
+	_ = signal(p.pgid, syscall.SIGKILL)
+
+	copied := make(chan struct{})
+	go func() {
+		copies.Wait()
+		close(copied)
+	}()
+	select {
+	case <-copied:
+	case <-time.After(drainTimeout):
+		for _, pp := range pipes {
+			_ = pp.r.Close() // unblocks the copy
+		}
+		<-copied
+	}
+	for _, pp := range pipes {
+		_ = pp.r.Close()
+	}
+
+	g.mu.Lock()
+	delete(g.live, p)
+	g.mu.Unlock()
+	close(p.done)
+}
+
+// Wait waits for the process to end and returns how the child exited: nil
+// for status 0, or an error wrapping *exec.ExitError. It may be called more
+// than once, and from any goroutine.
+func (p *Process) Wait() error {
+	<-p.done
+	return p.err
+}
+
+// Stop sends SIGTERM to the child's process group and, if the child has not
+// exited when ctx is done, SIGKILL. It returns once the child has exited and
+// its group has been killed; an error means the group could not be
+// signalled. Stopping a process that already ended does nothing.
+func (p *Process) Stop(ctx context.Context) error {
+	select {
+	case <-p.exited:
+		<-p.done
+		return nil
+	default:
+	}
+	if err := signal(p.pgid, syscall.SIGTERM); err != nil {
+		return err
+	}
+	select {
+	case <-p.exited:
+	case <-ctx.Done():
+		if err := signal(p.pgid, syscall.SIGKILL); err != nil {
+			return err
+		}
+	}
+	<-p.done
+	return nil
+}
+
+// KillAll sends SIGKILL to the process group of every live child and returns
+// once they have all ended. It is for crew's forced exit, and for any exit
+// that skips the engine's stop sequence.
+func (g *Group) KillAll() {
+	g.mu.Lock()
+	live := make([]*Process, 0, len(g.live))
+	for p := range g.live {
+		live = append(live, p)
+	}
+	g.mu.Unlock()
+	for _, p := range live {
+		_ = signal(p.pgid, syscall.SIGKILL)
+	}
+	for _, p := range live {
+		<-p.done
+	}
+}
+
+// Run runs c to completion and returns what it printed. A non-zero exit is
+// an error wrapping *exec.ExitError, with the command's stderr in its
+// message. When ctx is done first, Run kills the command's process group and
+// returns an error wrapping ctx.Err(), so a timeout reads as
+// context.DeadlineExceeded.
+func (g *Group) Run(ctx context.Context, c Command) (Output, error) {
+	if err := ctx.Err(); err != nil {
+		return Output{}, fmt.Errorf("%s: %w", c.Name, err)
+	}
+	var stdout, stderr bytes.Buffer
+	p, err := g.Start(c, &stdout, &stderr)
+	if err != nil {
+		return Output{}, err
+	}
+	var cancelled error
+	select {
+	case <-p.done:
+	case <-ctx.Done():
+		cancelled = ctx.Err()
+		_ = signal(p.pgid, syscall.SIGKILL)
+		<-p.done
+	}
+	out := Output{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
+	switch {
+	case cancelled != nil:
+		return out, fmt.Errorf("%s: %w", c.Name, cancelled)
+	case p.err != nil:
+		if msg := strings.TrimSpace(string(out.Stderr)); msg != "" {
+			return out, fmt.Errorf("%s: %w: %s", c.Name, p.err, msg)
+		}
+		return out, fmt.Errorf("%s: %w", c.Name, p.err)
+	}
+	return out, nil
+}
+
+// signal sends sig to process group pgid. A group that is already gone is
+// not an error.
+func signal(pgid int, sig syscall.Signal) error {
+	err := syscall.Kill(-pgid, sig)
+	if err == nil || errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return fmt.Errorf("signal process group %d: %w", pgid, err)
+}
+
+// pipe carries one output stream of a child to its writer.
+type pipe struct {
+	r, w *os.File
+	dst  io.Writer
+}
+
+func newPipe(dst io.Writer) (*pipe, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	return &pipe{r: r, w: w, dst: dst}, nil
+}
+
+// sameWriter reports whether a and b are the same writer, without panicking
+// on writers whose dynamic type cannot be compared.
+func sameWriter(a, b io.Writer) bool {
+	return a != nil && reflect.TypeOf(a) == reflect.TypeOf(b) && reflect.TypeOf(a).Comparable() && a == b
+}
