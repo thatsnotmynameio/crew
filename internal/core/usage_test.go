@@ -174,7 +174,7 @@ func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testi
 	t.Run("fresh", func(t *testing.T) {
 		d := usageDriver(t, draft())
 		cmds, _ := d.poll(issue("9", 1, ready))
-		cmds, _ = d.send(core.CallResult{ID: moveID(t, cmds, "9"), Result: core.ResultDone})
+		d.send(core.CallResult{ID: moveID(t, cmds, "9"), Result: core.ResultDone})
 		d.send(space("9", "acceptance"))
 		made := d.now
 		d.send(core.SessionStarted{IssueKey: "9", Action: "acceptance"})
@@ -214,7 +214,7 @@ func TestAE4AStageMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
 func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) {
 	d := usageDriver(t, draft())
 	cmds, _ := d.poll(issue("5", 1, ready))
-	cmds, _ = d.send(core.CallResult{ID: moveID(t, cmds, "5"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, cmds, "5"), Result: core.ResultDone})
 	d.send(core.WorkspaceFailed{IssueKey: "5", Action: "acceptance", Reason: "no space left"})
 	d.send(space("5", "development"))
 	d.send(core.SessionStarted{IssueKey: "5", Action: "development"})
