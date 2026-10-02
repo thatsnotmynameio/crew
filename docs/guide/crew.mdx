@@ -55,7 +55,10 @@ workflow:
       - name: development
         prompt: >-
           Implement issue {{.Issue.Ref}}, "{{.Issue.Title}}" ({{.Issue.URL}}).
-          Open a pull request with the change.
+          Open a pull request with the change. This session is headless:
+          ending your turn ends the session. Never end a turn waiting on a
+          background command; run it in the foreground, or wait for it with
+          Monitor.
   - name: review
     label: ready to review
     moves_to: in review
@@ -69,6 +72,8 @@ workflow:
 With it, an issue labeled `ready` gets two sessions at once, `acceptance` and `development`, and moves to `in progress`. When both succeed, it moves to `ready to review`, where the `review` stage takes it. When either fails, it moves to `needs attention`. Here `on_success: ready to merge` only means "reviewed": crew does not check pull requests or merge anything.
 
 Sessions run with no one to answer them, so tell the agent not to ask. A session that asks a question and stops counts as a success. That is why the `acceptance` prompt tells it to take the examples from the issue.
+
+Ending a turn also ends the session, and nothing resumes it. A session that ends its turn to wait for a background command, such as a test run, is stopped there and counts as a success. That is why the `development` prompt tells it to run commands in the foreground or wait for them with Monitor.
 
 ### Keys
 
@@ -120,6 +125,8 @@ Any other field is an error when crew starts. Quote the prompt or use a block (`
 An action succeeded when its session ended cleanly: Claude Code's last result is not an error and `claude` exited with 0. crew does not look for a pull request or any other evidence of the work.
 
 So a session can succeed without doing its work. For example, `--permission-mode auto` denies a tool, and the agent gives up politely. Write prompts that say what done looks like, and read the last message crew prints for every action that ends, successes included.
+
+To make an early end less likely, crew starts `claude` with a Bash timeout of 10 minutes by default and 30 at most (`BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS`), instead of Claude Code's 2 and 10. A Bash command that outlives its timeout moves to the background, so a full test run now stays in the foreground. They win over the same variables in the environment you start crew in.
 
 ### When crew refuses to start
 
