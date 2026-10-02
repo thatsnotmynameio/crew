@@ -316,6 +316,19 @@ func TestLoadReadsExtraLabels(t *testing.T) {
 	}
 }
 
+// crew runs none of the prompts under prompts:, skills do, so a config with
+// them loads like one without.
+func TestLoadAcceptsPrompts(t *testing.T) {
+	body := `prompts:
+  brainstorm: |-
+    Brainstorm {{.Issue.Ref}} ({{.Issue.URL}}): {{.Issue.Title}}, issue {{.Issue.Key}}.
+  triage: "Look at {{.Issue.Ref}}"
+` + oneStage
+	if got, want := load(t, body), load(t, oneStage); !reflect.DeepEqual(got.Workflow, want.Workflow) || !reflect.DeepEqual(got.Extras, want.Extras) {
+		t.Errorf("Load = %+v, want %+v", got, want)
+	}
+}
+
 func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 	tests := []struct {
 		name string
@@ -911,6 +924,50 @@ workflow:
     issue_template: templates/bug.md
 ` + oneStage,
 			wants: []string{"extra_labels[0].issue_template", "line 3", ".md"},
+		},
+		{
+			name: "prompts is a list",
+			body: `prompts:
+  - brainstorm
+` + oneStage,
+			wants: []string{"prompts", "line 2", "must be a mapping"},
+		},
+		{
+			name: "a prompt is a mapping",
+			body: `prompts:
+  brainstorm:
+    prompt: "Brainstorm {{.Issue.Ref}}"
+` + oneStage,
+			wants: []string{"prompts.brainstorm", "line 3"},
+		},
+		{
+			name: "an empty prompt",
+			body: `prompts:
+  brainstorm:
+` + oneStage,
+			wants: []string{"prompts.brainstorm", "line 2", "empty"},
+		},
+		{
+			name: "a prompt with an unknown field",
+			body: `prompts:
+  brainstorm: "Brainstorm {{.Issue.Number}}"
+` + oneStage,
+			wants: []string{"prompts.brainstorm", "line 2", "Number"},
+		},
+		{
+			name: "a prompt that does not parse",
+			body: `prompts:
+  brainstorm: "Brainstorm {{.Issue.Ref"
+` + oneStage,
+			wants: []string{"prompts.brainstorm", "line 2"},
+		},
+		{
+			name: "two prompts share a name",
+			body: `prompts:
+  brainstorm: "Brainstorm {{.Issue.Ref}}"
+  brainstorm: "Again {{.Issue.Ref}}"
+` + oneStage,
+			wants: []string{"prompts.brainstorm", "line 3", "duplicate key"},
 		},
 		{
 			name: "an issue_template outside the template directory",

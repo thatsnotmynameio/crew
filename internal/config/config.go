@@ -67,6 +67,7 @@ type document struct {
 	Harness     yaml.Node `yaml:"harness"`
 	Workflow    yaml.Node `yaml:"workflow"`
 	ExtraLabels yaml.Node `yaml:"extra_labels"`
+	Prompts     yaml.Node `yaml:"prompts"`
 }
 
 // settings is the config: section. model is the harness adapter's.
@@ -120,7 +121,7 @@ func parse(data []byte) (*Config, error) {
 	if len(root.Content) > 0 { // an empty file has no content
 		top := root.Content[0]
 		if top.Kind != yaml.MappingNode {
-			return nil, fmt.Errorf("line %d: the config must be a mapping with config, tracker, harness, workflow and extra_labels", top.Line)
+			return nil, fmt.Errorf("line %d: the config must be a mapping with config, tracker, harness, workflow, extra_labels and prompts", top.Line)
 		}
 		if err := decodeFields(entries(top, ""), reflect.ValueOf(&doc).Elem()); err != nil {
 			return nil, err
@@ -168,6 +169,9 @@ func parse(data []byte) (*Config, error) {
 	}
 	// With an invalid workflow, the extras are checked only on their own.
 	if cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow); err != nil {
+		errs = append(errs, err)
+	}
+	if err := prompts(&doc.Prompts); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {

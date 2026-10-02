@@ -84,7 +84,21 @@ It creates the issue at once, with no preview and no confirmation. To fix a mist
 /cw-update-issue-plan crew:brainstorm:done
 ```
 
-It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
+It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. A `moves_to` label that your own session put on the issue, such as one `/cw-brainstorm` set, does not stop it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
+
+## Brainstorm an issue
+
+`/cw-brainstorm <issue>` runs your repository's brainstorm prompt for an issue, in your session. A brainstorm asks you questions, so crew cannot run it unattended. The skill reads `prompts.brainstorm` from `.crew/config.yaml` (see [Prompts](/guide/crew#prompts)), fills it with the issue as crew fills an action's prompt, and follows it as if you had typed it. The skill adds nothing of its own: what to check, which labels to change and which skill to run are all in the prompt.
+
+```text
+/cw-brainstorm #42
+```
+
+The issue can be `#42`, `42` or its URL. Without one, the skill asks which issue. When the config has no `prompts.brainstorm`, it says so and stops.
+
+The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:waiting brainstorm`. It then moves the issue to `crew:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm ends, `/cw-update-issue-plan crew:brainstorm:done` writes the plan into the issue and hands it to crew's triage stage, which finds what blocks it and what it blocks. Until then, the issue stays in `crew:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
+
+Install it like `/cw-create-issue`, linking `.agents/skills/cw-brainstorm` into `~/.claude/skills/`.
 
 ## Limits
 
