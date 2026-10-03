@@ -105,6 +105,8 @@ func loopText(e core.Event) string {
 	switch e := e.(type) {
 	case core.PollDone:
 		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
+	case core.PollSkipped:
+		return fmt.Sprintf("poll: skipped, %d of %d %s busy", e.Busy, e.Slots, Plural(e.Slots, "slot", "slots"))
 	case core.ListingFailed:
 		return withReason("listing issues failed", e.Reason)
 	case core.CallOwed:

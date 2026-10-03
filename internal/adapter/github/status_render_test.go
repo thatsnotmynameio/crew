@@ -87,27 +87,6 @@ func TestElapsedTimeIsInWholeMinutes(t *testing.T) {
 	}
 }
 
-// Covers AE1.
-func TestAQueuedStatusNamesTheStageAndTheLimit(t *testing.T) {
-	tr, _ := build(t)
-	body := tr.renderStatus(queued74())
-	wants := []string{"`implement`", "free slot", "at most 2 issues at once", "Updated 2026-10-02 14:03 UTC."}
-	for _, want := range wants {
-		if !strings.Contains(body, want) {
-			t.Errorf("body does not contain %q:\n%s", want, body)
-		}
-	}
-	if !strings.HasPrefix(body, "<!-- crew:entry run= kind=queued stage=implement -->\n") {
-		t.Errorf("body does not start with its entry marker:\n%s", body)
-	}
-
-	one := queued74()
-	one.Slots = 1
-	if body := tr.renderStatus(one); !strings.Contains(body, "at most 1 issue at once") {
-		t.Errorf("body does not say at most 1 issue at once:\n%s", body)
-	}
-}
-
 // Covers AE3 and AE4.
 func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 	tr, _ := build(t)

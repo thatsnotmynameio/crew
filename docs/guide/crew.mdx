@@ -132,7 +132,7 @@ The label above is an example. Extra labels, `description` and `issue_template` 
 
 crew's labels are the ones your stages name in `label`, `moves_to`, `on_success` and `on_failure`, plus the extra labels, and no others. Every other label on an issue is yours: crew ignores it and never removes it.
 
-An extra label parks an issue that no stage takes, such as an idea that waits for a brainstorm. No stage takes an issue whose only crew label is an extra. To start work on it, add a stage's `label`: that stage takes the issue at the next poll, even with the extra still on it. Every move crew makes removes the extras an issue carries, together with its other crew labels, so the issue leaves the extra behind when a stage takes it.
+An extra label parks an issue that no stage takes, such as an idea that waits for a brainstorm. No stage takes an issue whose only crew label is an extra. To start work on it, add a stage's `label`: that stage takes the issue at the next poll with a free slot, even with the extra still on it. Every move crew makes removes the extras an issue carries, together with its other crew labels, so the issue leaves the extra behind when a stage takes it.
 
 So declare as an extra only a label you keep for crew. If you declare a label you already use, such as `bug`, crew removes it from every issue it moves.
 
@@ -208,10 +208,12 @@ At the same check, crew creates the labels your workflow names and the extra lab
 
 ## What crew does on each poll
 
+While crew holds as many issues as `max_parallel_issues`, a poll lists no issues, since it could take none. It still updates the running issues' status comments and retries what is owed, and says so in a line such as `poll: skipped, 2 of 2 slots busy`. When crew lets go of an issue after such a poll, it lists at once instead of waiting for the next poll. Otherwise, a poll goes like this:
+
 1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels, and so are issues whose only crew label is an extra.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
-3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked; one queued before it became blocked keeps its last status comment.
-4. It takes issues while slots are free: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
+3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked.
+4. It takes issues while slots are free: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. crew writes nothing on the issues left waiting: they keep their label, and a later poll with a free slot takes them.
 5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone. Every move crew makes is then mirrored on the issue's open [pull requests](#the-pull-requests).
 6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt. When the last run of that action, in that stage, on that issue failed, crew [resumes it](#resume-a-failed-action) in that run's worktree instead.
 7. While the actions run, crew updates the issue's status comment at every poll.
@@ -227,7 +229,7 @@ crew: 1 action failed on #42.
 
 The comment carries nothing the session said: no last message, no commands, no output. Why an action failed is in its log, in crew's output and, in crew's own words, in the status comment. An action whose worktree could not be created has no log, and the comment says it failed before it had a log.
 
-A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. So is a label or comment on a pull request, which never holds back or undoes the issue's move. One that cannot work, because the issue was closed or relabeled meanwhile or GitHub refused it, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
+A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. So is a label or comment on a pull request, which never holds back or undoes the issue's move. One that cannot work, because the issue was closed or relabeled meanwhile or GitHub refused it, is dropped and reported. A status comment that says an issue is running is not retried: the next poll writes it again.
 
 To retry a failed issue, swap its `on_failure` label, such as `needs attention`, for the stage's `label`, such as `ready`. Each failed action then resumes where it stopped, and each action that succeeded starts over.
 
@@ -257,9 +259,8 @@ If crew was killed, for example with SIGKILL, its sessions can outlive it. Make 
 
 ### The status comment
 
-Each issue crew queues or takes gets one status comment. It keeps one entry per stage run, oldest first: a stage run starts when crew queues the issue for a stage or takes it, and ends when the next one starts. crew edits only the latest entry, and earlier entries keep the text they had when their stage ended, across restarts. An entry shows where the issue stands:
+Each issue crew takes gets one status comment, created when crew takes it. It keeps one entry per stage run, oldest first: a stage run starts when a stage takes the issue, and ends when the next one starts. crew edits only the latest entry, and earlier entries keep the text they had when their stage ended, across restarts. An entry shows where the issue stands:
 
-- **Queued:** the stage it waits for, and that it waits for a free slot (`max_parallel_issues`). crew edits it only when that changes.
 - **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the entry. An action that [resumed](#resume-a-failed-action) names its worktree, as in "**`development`** resumed in worktree `issue-42-development` and has been running for 5 minutes." crew updates it at every poll. An action whose check runs, or whose pull request crew is looking up, is still running.
 - **Ended:** each action's final state, and where the issue went: the stage's `on_success` or its `on_failure`, including when you stopped crew. Each failed action says why in crew's words, with its log: its session failed, crew stopped it, its workspace could not be created, its session could not start, or its prompt did not render. A failed check shows its reason, as in the example below.
 - **With `config.usage_in_status: true`:** each ended action whose session started also shows its cost and tokens, as the [run journal](#where-things-go) records them, and its pull request, linked, as in "**`development`** succeeded. Usage: $12.40, 48.4M tokens. Pull request: #45." A value the harness did not report says so, and a sum that misses one is marked partial. Without the setting, the comment shows none of this.
@@ -296,9 +297,9 @@ Updated 2026-10-02 14:43 UTC.
 
 The hidden lines mark the entries and the comment. The session's words have your repository's path written as `.` and your home directory as `~`, and sit in a code block, so nothing in them renders or mentions anyone. Editing a comment notifies no one; the failure report is what notifies you.
 
-crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as, and keeps what it holds. An entry left running by a crew that crashed or was killed says that crew stopped following that stage once the next stage run starts. A comment written before crew kept entries becomes the first entry. Edits you make by hand inside the comment are not kept.
+crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as, and keeps what it holds. An entry left running by a crew that crashed or was killed says that crew stopped following that stage once the next stage run starts. A comment written before crew kept entries becomes the first entry. A queued entry that an earlier crew version wrote, while the issue waited for a free slot, becomes the running entry when crew takes the issue for that stage. Edits you make by hand inside the comment are not kept.
 
-A comment that would grow past GitHub's limit of 65,536 characters is left as it is, and crew continues in a new status comment that says so. From then on, crew writes only to the new one. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew queues or takes it again, and an issue whose label you remove while it is queued keeps its last status comment.
+A comment that would grow past GitHub's limit of 65,536 characters is left as it is, and crew continues in a new status comment that says so. From then on, crew writes only to the new one. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew takes it again. crew does not touch the comment of an issue it does not take, so a queued entry an earlier version left there stays as it is.
 
 ### The pull requests
 

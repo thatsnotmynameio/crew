@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -43,11 +42,6 @@ func endsWithMarker(body string) bool {
 	return strings.HasSuffix(strings.TrimRight(body, " \t\r\n"), "\n"+statusMarker)
 }
 
-func queued74() crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusQueued, Slots: 2,
-		Updated: updated}
-}
-
 func TestFirstStatusCreatesTheCommentAndTheNextEditsIt(t *testing.T) {
 	tr, gh := build(t, login,
 		reply{prefix: listComments, stdout: "[" + commentJSON(5, "me", "Thanks!") + "]"},
@@ -55,7 +49,7 @@ func TestFirstStatusCreatesTheCommentAndTheNextEditsIt(t *testing.T) {
 		reply{prefix: editComment},
 	)
 	for range 2 {
-		if err := tr.ReportStatus(context.Background(), queued74()); err != nil {
+		if err := tr.ReportStatus(context.Background(), running74(time.Time{}, "")); err != nil {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
@@ -96,7 +90,7 @@ func TestARestartedTrackerEditsTheViewersNewestStatusComment(t *testing.T) {
 		reply{prefix: listComments, stdout: page1 + "\n" + page2 + "\n"},
 		reply{prefix: editComment},
 	)
-	if err := tr.ReportStatus(context.Background(), queued74()); err != nil {
+	if err := tr.ReportStatus(context.Background(), running74(time.Time{}, "")); err != nil {
 		t.Fatalf("ReportStatus: %v", err)
 	}
 	edits := gh.callsTo(editComment...)
@@ -115,7 +109,7 @@ func TestAnEditOfADeletedCommentCreatesItAgain(t *testing.T) {
 		reply{prefix: editComment, stderr: "gh: Not Found (HTTP 404)\n"},
 	)
 	for range 2 {
-		if err := tr.ReportStatus(context.Background(), queued74()); err != nil {
+		if err := tr.ReportStatus(context.Background(), running74(time.Time{}, "")); err != nil {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
@@ -162,7 +156,7 @@ func TestStatusErrorsAreClassifiedFromTheHTTPStatus(t *testing.T) {
 			list := orReply(tc.list, reply{prefix: listComments, stdout: "[]"})
 			create := orReply(tc.create, reply{prefix: createComment, stdout: "101\n"})
 			tr, _ := build(t, login, list, create)
-			err := tr.ReportStatus(context.Background(), queued74())
+			err := tr.ReportStatus(context.Background(), running74(time.Time{}, ""))
 			if err == nil || !strings.Contains(err.Error(), "issue #74") {
 				t.Fatalf("ReportStatus = %v, want an error naming issue #74", err)
 			}

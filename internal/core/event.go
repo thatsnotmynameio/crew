@@ -112,6 +112,17 @@ type PollDone struct {
 	Taken int
 }
 
+// PollSkipped is a tick that did not list because every slot is busy: the
+// issues the core holds reach max_parallel_issues, so a listing could take
+// nothing. The rest of the tick ran as usual.
+type PollSkipped struct {
+	At time.Time
+	// Busy is how many issues the core holds.
+	Busy int
+	// Slots is max_parallel_issues.
+	Slots int
+}
+
 // ListingFailed is a listing that failed. The next tick lists again.
 type ListingFailed struct {
 	At     time.Time
@@ -139,8 +150,8 @@ type CallDropped struct {
 
 // StatusFailed is a status write that failed after the previous one for the
 // issue succeeded; failures in a row are reported once. Result says how it
-// failed. A queued or running status is written again at the next poll, an
-// ended one is retried until it lands, unless the tracker refused it or the
+// failed. A running status is written again at the next tick, an ended one
+// is retried until it lands, unless the tracker refused it or the
 // issue moved meanwhile (KTD5).
 type StatusFailed struct {
 	At       time.Time
@@ -232,6 +243,9 @@ func (e IssueSkipped) Time() time.Time { return e.At }
 func (e PollDone) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e PollSkipped) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e ListingFailed) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -258,6 +272,7 @@ func (IssueMoved) event()       {}
 func (FailureReported) event()  {}
 func (IssueSkipped) event()     {}
 func (PollDone) event()         {}
+func (PollSkipped) event()      {}
 func (ListingFailed) event()    {}
 func (CallOwed) event()         {}
 func (CallDropped) event()      {}

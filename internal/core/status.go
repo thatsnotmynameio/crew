@@ -9,8 +9,9 @@ import (
 )
 
 // statusSlot is what the core knows of one issue's status comment (KTD3). It
-// is kept apart from the held issues, so a queued issue has one too and a
-// status write never holds a free slot. At most one write is in flight.
+// is kept apart from the held issues, so a released issue's last statuses
+// still land and a status write never holds a slot. At most one write is in
+// flight.
 type statusSlot struct {
 	ref string
 	// shown is what the comment shows, as far as the core knows; nil when
@@ -175,14 +176,6 @@ func (m *Model) statusesBusy() bool {
 	return false
 }
 
-// queued reports issue as queued for stage si, waiting for a free slot (R4).
-func (s *step) queued(si int, issue crew.Issue) {
-	s.report(crew.Status{
-		IssueKey: issue.Key, IssueRef: issue.Ref, Stage: s.m.stages[si].Name,
-		Kind: crew.StatusQueued, Slots: s.m.maxParallel, Updated: s.at,
-	})
-}
-
 // running reports h's stage and its actions as they stand (R6, R7, R8). An
 // action whose check runs is still running, since its session started; its
 // session's last words are no longer current.
@@ -245,6 +238,6 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 // sameStatus reports whether a and b show the same, whenever computed (R5).
 func sameStatus(a, b crew.Status) bool {
 	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Stage == b.Stage &&
-		a.Kind == b.Kind && a.Slots == b.Slots && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
+		a.Kind == b.Kind && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
 		slices.Equal(a.Actions, b.Actions)
 }
