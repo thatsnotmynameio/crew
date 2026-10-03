@@ -1,7 +1,7 @@
 ---
 name: Feature
 about: A feature whose brainstorm is done. crew builds it and opens a pull request.
-labels: ["crew:ready for development"]
+labels: ["crew:development:ready"]
 ---
 
 <!-- This body is the requirements plan that ce-brainstorm writes: its Goal Capsule and Product Contract. /cw-create-issue copies them here from the plan. Writing by hand, keep the headings and leave out the sections that do not apply. -->
