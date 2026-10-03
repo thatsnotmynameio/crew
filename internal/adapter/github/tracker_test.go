@@ -335,6 +335,8 @@ func valuesNode(node string, values ...string) string {
 
 func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
 	urgent, medium, low := priorityOptions[0], priorityOptions[2], priorityOptions[3]
+	unknown := selectValue("Priority", "IFSSO_unknown", priorityOptions...)
+	effort := selectValue("Effort", "IFSSO_high", "IFSSO_high", "IFSSO_low")
 	tr, gh := build(t, login, reply{
 		prefix: []string{"api", "graphql"},
 		stdout: issuesJSON(
@@ -343,8 +345,8 @@ func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
 			// A date value decodes as an empty object next to Priority.
 			valuesNode(issueNode(3, "2026-09-03T10:00:00Z", "ready"), `{}`, selectValue("Priority", medium, priorityOptions...)),
 			valuesNode(issueNode(4, "2026-09-04T10:00:00Z", "ready"), selectValue("priority", urgent, priorityOptions...)),
-			valuesNode(issueNode(5, "2026-09-05T10:00:00Z", "ready"), selectValue("Priority", "IFSSO_unknown", priorityOptions...)),
-			valuesNode(issueNode(6, "2026-09-06T10:00:00Z", "ready"), selectValue("Effort", "IFSSO_high", "IFSSO_high", "IFSSO_low")),
+			valuesNode(issueNode(5, "2026-09-05T10:00:00Z", "ready"), unknown),
+			valuesNode(issueNode(6, "2026-09-06T10:00:00Z", "ready"), effort),
 			// AE5: a repository a user owns has no issue fields.
 			valuesNode(issueNode(7, "2026-09-07T10:00:00Z", "ready")),
 			issueNode(8, "2026-09-08T10:00:00Z", "ready"),
