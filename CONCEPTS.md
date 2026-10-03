@@ -86,6 +86,14 @@ The comment crew posts on each of an issue's open pull requests when a stage run
 
 It is a new comment at every stage end, so the boss is notified and a rerun leaves a trail. Like the failure report, it never quotes what a session or a tool said.
 
+## Identity
+
+### Mate
+
+A GitHub identity of crew's own: a private GitHub App the boss creates with `crew mates create`, owned by the account that owns the repository, whose private key stays on the boss's machine. It acts on GitHub as its bot, such as `crew-tester[bot]`.
+
+A boss can have many mates, and a mate is only an identity: it carries no model, prompt or settings. crew does not act as its mates yet; until it does, crew and its sessions act as the boss's `gh` login.
+
 ## Flagged ambiguities
 
 - "Run" alone is ambiguous: a *stage run* is one pass through a stage, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
