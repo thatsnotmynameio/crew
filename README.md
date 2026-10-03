@@ -38,10 +38,10 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | `.agents/skills/cw-brainstorm/` | The `/cw-brainstorm` skill: runs the `prompts.brainstorm` of `.crew/config.yaml` for an issue, in your own session. See the Guide. |
 | `.github/ISSUE_TEMPLATE/` | The issue templates of crew's own workflow, one per kind of work; a stage and an extra label may share one. |
 | `.compound-engineering/` | The Compound Engineering plugin's settings for this repository. |
-| `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`), `actionlint`, and `go` (gofmt, vet, lint, tests, govulncheck). |
+| `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`) and `actionlint`. Pull requests and pushes to `main`: `go` (gofmt, vet, lint, tests, coverage floors, govulncheck) `codacy` (uploads the coverage to Codacy) and `codacy gate` (repeats Codacy's verdict on a pull request), both when the variable `CODACY_ENABLED` is `true` and skipped for Dependabot. |
+| `.github/workflows/codacy-import.yml` | Pushes to `main` that change `.codacy/codacy.config.json`: applies it to Codacy. |
 | `.github/workflows/release.yml` | Pushes to `main`: publishes `VERSION` as `vX.Y.Z` and a GitHub release when it is new. |
 | `.github/workflows/docs.yml` | Pull requests: docs.page's check of `docs.json` and `docs/`. |
-| `.github/workflows/sonar.yml` | SonarQube Cloud, when the variable `SONAR_ENABLED` is `true`. |
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
 | `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the docs CLI and the Go modules. |
 | `VERSION` | The version; a pull request that bumps it is a release. |

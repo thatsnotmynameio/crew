@@ -20,6 +20,10 @@ var (
 	_ port.Reopener  = (*Workspace)(nil)
 )
 
+// dirMode is the permission of a workspace's directory: the owner's, and
+// read-only for the group.
+const dirMode = 0o700
+
 // Workspace creates plain directories under a root, such as t.TempDir(). It
 // is not in the registry, as no config key selects a workspace; tests build
 // it directly.
@@ -50,7 +54,7 @@ func (w *Workspace) Create(_ context.Context, issue crew.Issue, action string) (
 			name = fmt.Sprintf("%s-%d", base, n)
 		}
 		dir := filepath.Join(root, name)
-		err := os.Mkdir(dir, 0o750)
+		err := os.Mkdir(dir, dirMode)
 		if errors.Is(err, fs.ErrExist) {
 			continue
 		}

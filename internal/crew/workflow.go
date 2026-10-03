@@ -35,7 +35,7 @@ type Action struct {
 	// Check is a shell command run in the action's workspace once its
 	// session succeeded; empty when the action has none. It is never a
 	// template: it reads the issue from environment variables, so no issue
-	// text becomes part of the command. A check that fails fails the action.
+	// text becomes part of the command. A failing check fails the action.
 	Check string
 }
 

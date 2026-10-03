@@ -27,7 +27,8 @@ type output struct {
 func (o *output) Write(p []byte) (int, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.buf.Write(p)
+	n, _ := o.buf.Write(p) // a bytes.Buffer's Write never returns an error
+	return n, nil
 }
 
 func (o *output) String() string {
@@ -66,7 +67,9 @@ func TestCheckThatExitsNonZeroFailsWithItsOutputInOrder(t *testing.T) {
 
 func TestCheckReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 	var out output
-	c := check(t, `printf '%s|%s|%s|%s|%s\n' "$CREW_ISSUE_REF" "$CREW_ISSUE_KEY" "$CREW_ISSUE_URL" "$CREW_BRANCH" "$(pwd -P)"`, &out)
+	command := `printf '%s|%s|%s|%s|%s\n' ` +
+		`"$CREW_ISSUE_REF" "$CREW_ISSUE_KEY" "$CREW_ISSUE_URL" "$CREW_BRANCH" "$(pwd -P)"`
+	c := check(t, command, &out)
 	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
 		t.Fatalf("Check: %v", err)
 	}
@@ -89,7 +92,7 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
 		case "CREW_BRANCH", "CREW_ISSUE_KEY", "CREW_ISSUE_REF", "CREW_ISSUE_URL":

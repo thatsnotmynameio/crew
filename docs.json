@@ -25,7 +25,8 @@
       "tab": "develop",
       "pages": [
         { "title": "Getting set up", "href": "/develop" },
-        { "title": "Architecture", "href": "/develop/architecture" }
+        { "title": "Architecture", "href": "/develop/architecture" },
+        { "title": "Code quality", "href": "/develop/quality" }
       ]
     }
   ]

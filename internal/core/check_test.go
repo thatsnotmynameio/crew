@@ -75,7 +75,9 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 		t.Fatalf("claim while the check runs = %v, want running", got)
 	}
 
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: "the check passed"}})
+	cmds, _ := d.send(core.CheckEnded{
+		IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: "the check passed"},
+	})
 	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
 }
 
@@ -150,7 +152,7 @@ func TestTimeUpLetsARunningCheckFinishBeforeStopping(t *testing.T) {
 func TestCheckingActionIsRunningInItsStatus(t *testing.T) {
 	d := newStatusDriver(t, checked(), 2)
 	d.runAll(d.take(issue("74", 1, ready)))
-	devStarted := started(t, d.m, "74", "development")
+	devStarted := started(t, d.m, "development")
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
 	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 
@@ -165,78 +167,87 @@ func TestCheckingActionIsRunningInItsStatus(t *testing.T) {
 	}
 }
 
+// devSpace is the workspace of issue 74's development.
+var devSpace = space("74", "development")
+
+// draftWith is the draft workflow with actions as its first stage's.
+func draftWith(actions ...crew.Action) []crew.Stage {
+	w := draft()
+	w[0].Actions = actions
+	return w
+}
+
+// failedCauseCases are the ways development fails, each with the status it
+// ends with.
+var failedCauseCases = []struct {
+	name   string
+	action crew.Action
+	// end ends development once its issue was taken.
+	end  func(d *driver, landed []core.Command) []core.Command
+	want crew.ActionStatus
+}{
+	{
+		name:   "session",
+		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		end: func(d *driver, landed []core.Command) []core.Command {
+			d.runAll(landed)
+			cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("token=secret")})
+			return cmds
+		},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseSession, Log: devSpace.Log},
+	},
+	{
+		name:   "check",
+		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}", Check: "false"},
+		end: func(d *driver, landed []core.Command) []core.Command {
+			d.runAll(landed)
+			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			cmds, _ := d.send(core.CheckEnded{
+				IssueKey: "74", Action: "development", Outcome: failed("the check failed: no pull request"),
+			})
+			return cmds
+		},
+		want: crew.ActionStatus{
+			Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck,
+			Reason: "the check failed: no pull request", Log: devSpace.Log,
+		},
+	},
+	{
+		name:   "stopped",
+		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		end: func(d *driver, landed []core.Command) []core.Command {
+			d.runAll(landed)
+			d.send(core.StopRequested{})
+			cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("stopped by crew")})
+			return cmds
+		},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: devSpace.Log},
+	},
+	{
+		name:   "workspace",
+		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		end: func(d *driver, _ []core.Command) []core.Command {
+			cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "74", Action: "development", Reason: "git: no origin"})
+			return cmds
+		},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseWorkspace},
+	},
+	{
+		name:   "start",
+		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		end: func(d *driver, _ []core.Command) []core.Command {
+			d.send(devSpace)
+			cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "74", Action: "development", Reason: "claude: not found"})
+			return cmds
+		},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStart, Log: devSpace.Log},
+	},
+}
+
 func TestEndedStatusGivesEachFailedActionsCauseNotItsWords(t *testing.T) {
-	stage := func(actions ...crew.Action) []crew.Stage {
-		w := draft()
-		w[0].Actions = actions
-		return w
-	}
-	ws := space("74", "development")
-	tests := []struct {
-		name   string
-		action crew.Action
-		// end ends development once its issue was taken.
-		end  func(d *driver, landed []core.Command) []core.Command
-		want crew.ActionStatus
-	}{
-		{
-			name:   "session",
-			action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
-			end: func(d *driver, landed []core.Command) []core.Command {
-				d.runAll(landed)
-				cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("token=secret")})
-				return cmds
-			},
-			want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseSession, Log: ws.Log},
-		},
-		{
-			name:   "check",
-			action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}", Check: "false"},
-			end: func(d *driver, landed []core.Command) []core.Command {
-				d.runAll(landed)
-				d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-				cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed("the check failed: no pull request")})
-				return cmds
-			},
-			want: crew.ActionStatus{
-				Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck,
-				Reason: "the check failed: no pull request", Log: ws.Log,
-			},
-		},
-		{
-			name:   "stopped",
-			action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
-			end: func(d *driver, landed []core.Command) []core.Command {
-				d.runAll(landed)
-				d.send(core.StopRequested{})
-				cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("stopped by crew")})
-				return cmds
-			},
-			want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: ws.Log},
-		},
-		{
-			name:   "workspace",
-			action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
-			end: func(d *driver, _ []core.Command) []core.Command {
-				cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "74", Action: "development", Reason: "git: no origin"})
-				return cmds
-			},
-			want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseWorkspace},
-		},
-		{
-			name:   "start",
-			action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
-			end: func(d *driver, _ []core.Command) []core.Command {
-				d.send(ws)
-				cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "74", Action: "development", Reason: "claude: not found"})
-				return cmds
-			},
-			want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStart, Log: ws.Log},
-		},
-	}
-	for _, tt := range tests {
+	for _, tt := range failedCauseCases {
 		t.Run(tt.name, func(t *testing.T) {
-			d := newStatusDriver(t, stage(tt.action), 2)
+			d := newStatusDriver(t, draftWith(tt.action), 2)
 			got := statusOf(t, tt.end(d, d.take(issue("74", 1, ready))), "74")
 			if got.Kind != crew.StatusEnded || !reflect.DeepEqual(got.Actions, []crew.ActionStatus{tt.want}) {
 				t.Fatalf("ended status: %#v\nwant actions %#v", got, []crew.ActionStatus{tt.want})

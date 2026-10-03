@@ -187,13 +187,15 @@ func (s *step) running(h *heldIssue) {
 			st.Actions[i].Started, st.Actions[i].Said = a.started, a.said
 		case PhaseChecking:
 			st.Actions[i].Started = a.started
+		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseEnded:
+			// No session runs: the action has no start time to report.
 		}
 	}
 	s.report(st)
 }
 
-// ended reports h's stage as ended, with each action's final state and the
-// move to to (R11).
+// ended reports h's stage as ended, with each action's final state and its
+// move to the state to (R11).
 func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 	st := s.status(h, crew.StatusEnded)
 	st.To, st.Move = to, move

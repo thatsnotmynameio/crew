@@ -11,7 +11,7 @@ You need:
 
 - Go 1.27 or later, as `go.mod` says;
 - macOS or Linux, since crew starts its tools in process groups;
-- pnpm, for the docs only.
+- pnpm, for the docs and the Codacy CLIs.
 
 ## Commands
 
@@ -20,13 +20,15 @@ Run every command from the repository root.
 ```sh
 go build ./cmd/crew                 # the crew binary, at the root (ignored by git)
 go test -race ./...                 # every test
-gofmt -l cmd internal               # files gofmt would change; prints nothing when clean
+gofmt -l cmd internal tools         # files gofmt would change; prints nothing when clean
 go vet ./...
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 ```
 
-Run golangci-lint through `go run` as above, at the version CI uses. A golangci-lint older than v2.13.0 cannot lint a `go 1.27` module, so an older one installed on your machine fails. Its config, `.golangci.yml`, also enforces the package layering through `depguard`.
+[Code quality](/develop/quality) lists the coverage checks and Codacy's tools, which also run locally.
+
+Run golangci-lint through `go run` as above, at the version CI uses. A golangci-lint older than v2.13.0 cannot lint a `go 1.27` module, so an older one installed on your machine fails. Its config, `.golangci.yml`, turns on every linter except the ones it lists with a reason, and also enforces the package layering through `depguard`.
 
 To run one package's tests, or one test:
 
@@ -41,7 +43,7 @@ The TUI's views are golden files under `internal/ui/tui/testdata/`. After a deli
 go test ./internal/ui/tui -update
 ```
 
-CI's `go` job (`.github/workflows/ci.yml`) runs gofmt, `go vet`, golangci-lint, the tests with the race detector, and govulncheck on every pull request.
+CI's `go` job (`.github/workflows/ci.yml`) runs gofmt, `go vet`, golangci-lint, the tests with the race detector and coverage, the two coverage floors, and govulncheck on every pull request and every push to `main`. Its `codacy` job sends the results to Codacy; see [Code quality](/develop/quality).
 
 ## Releases
 

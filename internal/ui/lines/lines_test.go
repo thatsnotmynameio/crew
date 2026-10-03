@@ -88,73 +88,79 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 	})
 }
 
+// The tracker calls the sentences below describe.
+var (
+	move   = core.Call{Kind: core.CallMove, IssueKey: "2", IssueRef: "#2", From: "in review", To: "needs attention"}
+	report = core.Call{Kind: core.CallReport, IssueKey: "2", IssueRef: "#2"}
+	prs    = core.Call{Kind: core.CallPullRequests, IssueKey: "2", IssueRef: "#2", To: "needs attention"}
+)
+
+// sentences pairs each kind of event with the sentence Text gives it.
+var sentences = []struct {
+	event core.Event
+	want  string
+}{
+	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log"},
+		"#9 development/lfg started on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
+	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
+		"#9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
+	{core.WorkspaceMissing{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+		Workspace: "issue-9-lfg"},
+		"#9 development/lfg: worktree issue-9-lfg is gone, creating a new one"},
+	{core.RunNotRecorded{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+		Reason: "disk full"},
+		"could not record #9 development/lfg's run, so a restart may not resume it: disk full"},
+	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
+		Outcome: crew.Outcome{Reason: "session exited with status 1"}},
+		"#2 review/check failed: session exited with status 1"},
+	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
+		Outcome: crew.Outcome{Succeeded: true}},
+		"#2 review/check succeeded"},
+	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "implement", Action: "lfg",
+		Outcome: crew.Outcome{Reason: "the check failed: no open pull request from crew/issue-2-lfg"}},
+		"#2 implement/lfg failed: the check failed: no open pull request from crew/issue-2-lfg"},
+	{core.FailureReported{At: at("10:00:00"), IssueRef: "#2"},
+		"reported the failure on #2"},
+	{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
+		"skipped #3: it carries 2 crew labels (ready, in progress)"},
+	{core.PollDone{At: at("10:00:00"), Listed: 3, Taken: 1},
+		"poll: listed 3 issues, took 1"},
+	{core.PollDone{At: at("10:00:00"), Listed: 1, Taken: 0},
+		"poll: listed 1 issue, took 0"},
+	{core.PollSkipped{At: at("10:00:00"), Busy: 2, Slots: 2},
+		"poll: skipped, 2 of 2 slots busy"},
+	{core.PollSkipped{At: at("10:00:00"), Busy: 1, Slots: 1},
+		"poll: skipped, 1 of 1 slot busy"},
+	{core.ListingFailed{At: at("10:00:00"), Reason: "gh: rate limited"},
+		"listing issues failed: gh: rate limited"},
+	{core.CallOwed{At: at("10:00:00"), Call: move, Reason: "timeout"},
+		"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
+	{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
+		"reporting the failure on #2 failed, retrying at the next tick: timeout"},
+	{core.CallOwed{At: at("10:00:00"), Call: prs, Reason: "gh: HTTP 502"},
+		"updating the pull requests of #2 to needs attention failed, retrying at the next tick: gh: HTTP 502"},
+	{core.CallDropped{At: at("10:00:00"), Call: prs, Result: core.ResultRefused, Reason: "pull request is locked"},
+		"gave up updating the pull requests of #2 to needs attention: the tracker refused: pull request is locked"},
+	{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultMovedMeanwhile},
+		"gave up moving #2 from in review to needs attention: the issue moved meanwhile"},
+	{core.CallDropped{At: at("10:00:00"), Call: report, Result: core.ResultRefused, Reason: "issue is locked"},
+		"gave up reporting the failure on #2: the tracker refused: issue is locked"},
+	{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultFailed, Reason: "timeout"},
+		"gave up moving #2 from in review to needs attention: it failed: timeout"},
+	{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultFailed, Reason: "timeout"},
+		"could not update the status comment on #2: it failed: timeout"},
+	{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultRefused, Reason: "issue is locked"},
+		"could not update the status comment on #2: the tracker refused: issue is locked"},
+	{core.WindingDown{At: at("10:00:00"), Limit: time.Hour},
+		"run time of 1h0m0s is up: taking no new issues, winding down"},
+	{core.Stopped{At: at("10:00:00")},
+		"stopped"},
+}
+
 func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
-	move := core.Call{Kind: core.CallMove, IssueKey: "2", IssueRef: "#2", From: "in review", To: "needs attention"}
-	report := core.Call{Kind: core.CallReport, IssueKey: "2", IssueRef: "#2"}
-	prs := core.Call{Kind: core.CallPullRequests, IssueKey: "2", IssueRef: "#2", To: "needs attention"}
-	tests := []struct {
-		event core.Event
-		want  string
-	}{
-		{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
-			Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log"},
-			"#9 development/lfg started on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-		{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
-			Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
-			"#9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-		{core.WorkspaceMissing{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
-			Workspace: "issue-9-lfg"},
-			"#9 development/lfg: worktree issue-9-lfg is gone, creating a new one"},
-		{core.RunNotRecorded{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
-			Reason: "disk full"},
-			"could not record #9 development/lfg's run, so a restart may not resume it: disk full"},
-		{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
-			Outcome: crew.Outcome{Reason: "session exited with status 1"}},
-			"#2 review/check failed: session exited with status 1"},
-		{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
-			Outcome: crew.Outcome{Succeeded: true}},
-			"#2 review/check succeeded"},
-		{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "implement", Action: "lfg",
-			Outcome: crew.Outcome{Reason: "the check failed: no open pull request from crew/issue-2-lfg"}},
-			"#2 implement/lfg failed: the check failed: no open pull request from crew/issue-2-lfg"},
-		{core.FailureReported{At: at("10:00:00"), IssueRef: "#2"},
-			"reported the failure on #2"},
-		{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
-			"skipped #3: it carries 2 crew labels (ready, in progress)"},
-		{core.PollDone{At: at("10:00:00"), Listed: 3, Taken: 1},
-			"poll: listed 3 issues, took 1"},
-		{core.PollDone{At: at("10:00:00"), Listed: 1, Taken: 0},
-			"poll: listed 1 issue, took 0"},
-		{core.PollSkipped{At: at("10:00:00"), Busy: 2, Slots: 2},
-			"poll: skipped, 2 of 2 slots busy"},
-		{core.PollSkipped{At: at("10:00:00"), Busy: 1, Slots: 1},
-			"poll: skipped, 1 of 1 slot busy"},
-		{core.ListingFailed{At: at("10:00:00"), Reason: "gh: rate limited"},
-			"listing issues failed: gh: rate limited"},
-		{core.CallOwed{At: at("10:00:00"), Call: move, Reason: "timeout"},
-			"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
-		{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
-			"reporting the failure on #2 failed, retrying at the next tick: timeout"},
-		{core.CallOwed{At: at("10:00:00"), Call: prs, Reason: "gh: HTTP 502"},
-			"updating the pull requests of #2 to needs attention failed, retrying at the next tick: gh: HTTP 502"},
-		{core.CallDropped{At: at("10:00:00"), Call: prs, Result: core.ResultRefused, Reason: "pull request is locked"},
-			"gave up updating the pull requests of #2 to needs attention: the tracker refused: pull request is locked"},
-		{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultMovedMeanwhile},
-			"gave up moving #2 from in review to needs attention: the issue moved meanwhile"},
-		{core.CallDropped{At: at("10:00:00"), Call: report, Result: core.ResultRefused, Reason: "issue is locked"},
-			"gave up reporting the failure on #2: the tracker refused: issue is locked"},
-		{core.CallDropped{At: at("10:00:00"), Call: move, Result: core.ResultFailed, Reason: "timeout"},
-			"gave up moving #2 from in review to needs attention: it failed: timeout"},
-		{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultFailed, Reason: "timeout"},
-			"could not update the status comment on #2: it failed: timeout"},
-		{core.StatusFailed{At: at("10:00:00"), IssueRef: "#2", Result: core.ResultRefused, Reason: "issue is locked"},
-			"could not update the status comment on #2: the tracker refused: issue is locked"},
-		{core.WindingDown{At: at("10:00:00"), Limit: time.Hour},
-			"run time of 1h0m0s is up: taking no new issues, winding down"},
-		{core.Stopped{At: at("10:00:00")},
-			"stopped"},
-	}
-	for _, tt := range tests {
+	for _, tt := range sentences {
 		t.Run(tt.want, func(t *testing.T) {
 			if got := lines.Text(tt.event); got != tt.want {
 				t.Errorf("Text = %q, want %q", got, tt.want)

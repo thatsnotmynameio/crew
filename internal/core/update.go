@@ -18,48 +18,8 @@ const stoppedReason = "crew stopped"
 // nothing.
 func (m *Model) Update(in Input) ([]Command, []Event) {
 	s := &step{m: m, at: in.arrival()}
-	switch in := in.(type) {
-	case Tick:
-		s.tick(in.Said)
-	case StopRequested:
-		m.requested = true
-		s.stop()
-	case TimeUp:
-		s.timeUp(in.Limit)
-	case IssuesListed:
-		s.listed(in.Issues)
-	case ListFailed:
-		m.listing = false
-		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
-	case CallResult:
-		s.callResult(in)
-	case StatusResult:
-		s.statusResult(in)
-	case PullRequestsResult:
-		s.pullRequestsResult(in)
-	case WorkspaceReady:
-		s.workspaceReady(in)
-	case WorkspaceFailed:
-		if h, a := m.action(in.IssueKey, in.Action, PhaseCreating, PhaseReopening); a != nil {
-			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseWorkspace)
-		}
-	case WorkspaceGone:
-		s.workspaceGone(in)
-	case RecordFailed:
-		r := in.Record
-		s.emit(RunNotRecorded{
-			At: s.at, IssueKey: r.IssueKey, IssueRef: r.IssueRef, Stage: r.Stage, Action: r.Action, Reason: in.Reason,
-		})
-	case SessionStarted:
-		s.sessionStarted(in)
-	case SessionFailedToStart:
-		if h, a := m.action(in.IssueKey, in.Action, PhaseStarting); a != nil {
-			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseStart)
-		}
-	case SessionEnded:
-		s.sessionEnded(in)
-	case CheckEnded:
-		s.checkEnded(in)
+	if !s.runInput(in) {
+		s.actionInput(in)
 	}
 	s.windDown()
 	if m.Stopped() && !m.stopped {
@@ -67,6 +27,39 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 		s.emit(Stopped{At: s.at})
 	}
 	return s.cmds, s.events
+}
+
+// runInput applies an input about the run as a whole or its tracker calls,
+// and reports whether in was one.
+func (s *step) runInput(in Input) bool {
+	switch in := in.(type) {
+	case Tick:
+		s.tick(in.Said)
+	case StopRequested:
+		s.m.requested = true
+		s.stop()
+	case TimeUp:
+		s.timeUp(in.Limit)
+	case IssuesListed:
+		s.listed(in.Issues)
+	case ListFailed:
+		s.m.listing = false
+		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
+	case CallResult:
+		s.callResult(in)
+	case StatusResult:
+		s.statusResult(in)
+	case PullRequestsResult:
+		s.pullRequestsResult(in)
+	case RecordFailed:
+		r := in.Record
+		s.emit(RunNotRecorded{
+			At: s.at, IssueKey: r.IssueKey, IssueRef: r.IssueRef, Stage: r.Stage, Action: r.Action, Reason: in.Reason,
+		})
+	default:
+		return false
+	}
+	return true
 }
 
 // step is one Update in progress: the input's time and what it produced.
@@ -100,15 +93,11 @@ func (s *step) tick(said []Said) {
 			m.skipped++
 			s.emit(PollSkipped{At: s.at, Busy: len(m.issues), Slots: m.maxParallel})
 		} else {
-			s.list()
+			s.listIssues()
 		}
 	}
 	for _, h := range m.issues {
-		for _, c := range h.calls {
-			if c.owed && !c.inFlight {
-				s.attempt(h, c)
-			}
-		}
+		s.retryOwed(h, false)
 		if h.claim == ClaimRunning {
 			s.running(h)
 		}
@@ -117,9 +106,9 @@ func (s *step) tick(said []Said) {
 	s.retryPullRequests()
 }
 
-// list asks for the issues in the stages' labels, and starts the count of
-// skipped listings again (R6).
-func (s *step) list() {
+// listIssues asks for the issues in every stage's state, and starts the count
+// of skipped listings again (R6).
+func (s *step) listIssues() {
 	m := s.m
 	m.listing = true
 	m.skipped = 0
@@ -135,7 +124,20 @@ func (s *step) list() {
 func (s *step) freed() {
 	m := s.m
 	if m.skipped > 0 && !m.listing && !m.timeUp && !m.stopping {
-		s.list()
+		s.listIssues()
+	}
+}
+
+// retryOwed attempts h's owed calls that are not in flight, each as its final
+// try when final is set.
+func (s *step) retryOwed(h *heldIssue, final bool) {
+	for _, c := range h.calls {
+		if c.owed && !c.inFlight {
+			if final {
+				c.final = true
+			}
+			s.attempt(h, c)
+		}
 	}
 }
 
@@ -155,26 +157,30 @@ func (s *step) stop() {
 			h.claim = ClaimStopping
 		case ClaimRunning:
 			h.claim = ClaimStopping
-			for _, a := range h.actions {
-				switch a.phase {
-				case PhaseRunning:
-					s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
-				case PhaseChecking:
-					a.stopped = true
-					s.command(StopCheck{IssueKey: h.issue.Key, Action: a.name})
-				}
-			}
+			s.stopActions(h)
 		case ClaimJudging, ClaimOwed:
-			for _, c := range h.calls {
-				if c.owed && !c.inFlight {
-					c.final = true
-					s.attempt(h, c)
-				}
-			}
+			s.retryOwed(h, true)
+		case ClaimStopping:
+			// Only stop sets this claim, and stop runs once.
 		}
 	}
 	s.retryStatuses()
 	s.retryPullRequests()
+}
+
+// stopActions stops h's running sessions and checks.
+func (s *step) stopActions(h *heldIssue) {
+	for _, a := range h.actions {
+		switch a.phase {
+		case PhaseRunning:
+			s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
+		case PhaseChecking:
+			a.stopped = true
+			s.command(StopCheck{IssueKey: h.issue.Key, Action: a.name})
+		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseEnded:
+			// No session or check runs: its next input sees the stop.
+		}
+	}
 }
 
 // timeUp ends the run time (R2): from now on nothing new is taken, while the
@@ -214,32 +220,47 @@ func (s *step) listed(issues []crew.Issue) {
 	if m.stopping || m.timeUp {
 		return
 	}
+	s.skipped(issues)
+	taken := 0
+	for si := range slices.Backward(m.stages) {
+		taken += s.takeStage(si, issues)
+	}
+	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
+}
+
+// skipped reports each issue in more than one state that crew does not hold
+// (R15).
+func (s *step) skipped(issues []crew.Issue) {
 	for _, issue := range issues {
-		if len(issue.States) > 1 && m.held(issue.Key) == nil {
+		if len(issue.States) > 1 && s.m.held(issue.Key) == nil {
 			s.emit(IssueSkipped{At: s.at, IssueKey: issue.Key, IssueRef: issue.Ref, States: slices.Clone(issue.States)})
 		}
 	}
-	taken := 0
-	for si := len(m.stages) - 1; si >= 0; si-- {
-		var candidates []crew.Issue
-		for _, issue := range issues {
-			if len(issue.States) == 1 && issue.States[0] == m.stages[si].Label && !issue.Blocked {
-				candidates = append(candidates, issue)
-			}
-		}
-		slices.SortStableFunc(candidates, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
-		for _, issue := range candidates {
-			if m.full() {
-				break
-			}
-			if m.held(issue.Key) != nil {
-				continue
-			}
-			s.take(si, issue)
-			taken++
+}
+
+// takeStage takes stage si's unblocked issues, the oldest first, while slots
+// are free, and returns how many it took. It reports nothing for the rest.
+func (s *step) takeStage(si int, issues []crew.Issue) int {
+	m := s.m
+	var candidates []crew.Issue
+	for _, issue := range issues {
+		if len(issue.States) == 1 && issue.States[0] == m.stages[si].Label && !issue.Blocked {
+			candidates = append(candidates, issue)
 		}
 	}
-	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
+	slices.SortStableFunc(candidates, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
+	taken := 0
+	for _, issue := range candidates {
+		if m.full() {
+			break
+		}
+		if m.held(issue.Key) != nil {
+			continue
+		}
+		s.take(si, issue)
+		taken++
+	}
+	return taken
 }
 
 // take holds issue for stage si and moves it to the stage's moves_to.
@@ -365,141 +386,6 @@ func (s *step) taken(h *heldIssue, c *call) {
 	}
 	if h.claim == ClaimRunning {
 		s.running(h)
-	}
-}
-
-// workspaceGone creates a fresh workspace for an action whose failed run's
-// workspace no longer exists (R4), or, after a stop, fails the action
-// without one, which records nothing, so the failed run stays resumable.
-func (s *step) workspaceGone(in WorkspaceGone) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseReopening)
-	if a == nil {
-		return
-	}
-	s.emit(WorkspaceMissing{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
-		Action: a.name, Workspace: a.prev.Workspace,
-	})
-	if s.m.stopping {
-		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
-		return
-	}
-	a.prev = nil
-	a.phase = PhaseCreating
-	s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
-}
-
-// workspaceReady records the run's start and starts the action's session,
-// with the resume paragraph after its prompt when the workspace is a failed
-// run's (R5), or, after a stop, fails the action without starting it.
-func (s *step) workspaceReady(in WorkspaceReady) {
-	m := s.m
-	h, a := m.action(in.IssueKey, in.Action, PhaseCreating, PhaseReopening)
-	if a == nil {
-		return
-	}
-	a.workspace, a.dir, a.branch = in.Workspace, in.Dir, in.Branch
-	if !m.stopping {
-		// A session that never starts writes no log, so a stopped action
-		// names none.
-		a.log = in.Log
-	}
-	a.prev = nil
-	if prev, ok := m.lastRun(h, a); ok {
-		a.prev = &prev
-	}
-	s.record(h, a, RunStarted)
-	if m.stopping {
-		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
-		return
-	}
-	if in.Resumed && a.prev != nil {
-		a.resumed = true
-		a.prompt += "\n\n" + resumeParagraph(*a.prev, a.branch, a.log, in.LogFromDir)
-	}
-	a.phase = PhaseStarting
-	s.command(StartSession{
-		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
-	})
-}
-
-// sessionStarted records the action's start time, and stops the session at
-// once when a stop arrived while it was starting.
-func (s *step) sessionStarted(in SessionStarted) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting)
-	if a == nil {
-		return
-	}
-	a.phase = PhaseRunning
-	a.started = s.at
-	s.emit(ActionStarted{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
-		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log, Resumed: a.resumed,
-	})
-	if s.m.stopping {
-		s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
-	}
-}
-
-// sessionEnded ends the action whose session ended, or, when the session
-// succeeded and the action has a check, runs the check first (R2). After a
-// stop, a check is not started and the action counts as stopped (R8).
-func (s *step) sessionEnded(in SessionEnded) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting, PhaseRunning)
-	if a == nil {
-		return
-	}
-	cause := crew.CauseSession
-	if s.m.stopping {
-		cause = crew.CauseStopped
-	}
-	switch {
-	case !in.Outcome.Succeeded || a.check == "":
-		s.end(h, a, in.Outcome, cause)
-	case s.m.stopping:
-		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
-	default:
-		a.phase = PhaseChecking
-		s.command(RunCheck{
-			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.check, Log: a.log,
-			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch,
-		})
-	}
-}
-
-// checkEnded ends the action whose check ended with the check's verdict, or
-// as stopped when a stop ended the check, whatever it returned (R8).
-func (s *step) checkEnded(in CheckEnded) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking)
-	if a == nil {
-		return
-	}
-	if a.stopped {
-		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
-		return
-	}
-	s.end(h, a, in.Outcome, crew.CauseCheck)
-}
-
-// end ends action a of h with outcome, records the end of a run that had a
-// workspace, and judges h once every action ended. cause says what made it
-// fail when the outcome is a failure. A run without a workspace records
-// nothing, so the key's last record stays as it was.
-func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.FailureCause) {
-	a.phase = PhaseEnded
-	a.outcome = outcome
-	if !outcome.Succeeded {
-		a.cause = cause
-	}
-	if a.workspace != "" {
-		s.record(h, a, RunEnded)
-	}
-	s.emit(ActionEnded{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
-		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
-	})
-	if h.ended() {
-		s.judge(h)
 	}
 }
 

@@ -15,6 +15,9 @@ import (
 // only a few times per poll (KTD7).
 const tickInterval = time.Second
 
+// defaultWidth is the window's width in columns before its first size.
+const defaultWidth = 80
+
 // updateMsg is an update the engine published.
 type updateMsg engine.Update
 
@@ -54,7 +57,7 @@ type Model struct {
 // leaving the exit to the caller after Program.Run returns. Bubble Tea's own signal handler should be disabled
 // (tea.WithoutSignalHandler), so crew's handler is the only one.
 func New(updates <-chan engine.Update, stop, force func(), now func() time.Time, loc *time.Location) Model {
-	return Model{updates: updates, stop: stop, force: force, now: now, loc: loc, at: now(), width: 80}
+	return Model{updates: updates, stop: stop, force: force, now: now, loc: loc, at: now(), width: defaultWidth}
 }
 
 // Init starts waiting for updates and ticking.

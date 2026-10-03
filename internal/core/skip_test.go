@@ -67,8 +67,8 @@ func TestAE1ABusyTickDoesNotListAndSaysSo(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
 	d.runAll(d.take(issue("1", 1, ready)))
 	d.runAll(d.take(issue("2", 2, ready)))
-	d.wrote("1", core.ResultDone)
-	d.wrote("2", core.ResultDone)
+	d.wrote("1")
+	d.wrote("2")
 
 	cmds, events := d.send(core.Tick{})
 	wantListings(t, cmds, 0)

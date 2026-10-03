@@ -198,8 +198,9 @@ func (k CallKind) String() string {
 		return "report"
 	case CallPullRequests:
 		return "pull requests"
+	default:
+		return "move"
 	}
-	return "move"
 }
 
 // Call describes a tracker call in events and in the View.

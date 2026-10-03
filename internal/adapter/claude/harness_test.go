@@ -37,15 +37,31 @@ type fakeProcess struct {
 	exit           error
 	hang           bool
 
-	stopOnce sync.Once
-	stop     chan struct{}
-	stopCtx  context.Context // the ctx Stop got; read after Stop returns
-	err      error           // set before done is closed
-	done     chan struct{}
+	stopOnce     sync.Once
+	stop         chan struct{}
+	stopped      bool      // Stop was called; read after Stop returns
+	stopDeadline time.Time // the deadline of the ctx Stop got, zero without one
+	err          error     // set before done is closed
+	done         chan struct{}
 }
 
 func newProcess(stdout []byte, exit error) *fakeProcess {
 	return &fakeProcess{stdout: stdout, exit: exit, stop: make(chan struct{}), done: make(chan struct{})}
+}
+
+func (p *fakeProcess) Wait() error {
+	<-p.done
+	return p.err
+}
+
+func (p *fakeProcess) Stop(ctx context.Context) error {
+	p.stopOnce.Do(func() {
+		p.stopped = true
+		p.stopDeadline, _ = ctx.Deadline()
+		close(p.stop)
+	})
+	<-p.done
+	return nil
 }
 
 func (p *fakeProcess) run(stdout, stderr io.Writer) {
@@ -62,20 +78,6 @@ func (p *fakeProcess) run(stdout, stderr io.Writer) {
 		p.err = exitError{code: -1, msg: "signal: terminated"}
 	}
 	close(p.done)
-}
-
-func (p *fakeProcess) Wait() error {
-	<-p.done
-	return p.err
-}
-
-func (p *fakeProcess) Stop(ctx context.Context) error {
-	p.stopOnce.Do(func() {
-		p.stopCtx = ctx
-		close(p.stop)
-	})
-	<-p.done
-	return nil
 }
 
 // fakeSpawn is the old dispatcher's FakeSpawn: it records each command and
@@ -260,7 +262,8 @@ func TestCleanResultSucceedsWithItsText(t *testing.T) {
 func TestErrorResultFailsWithItsTextOnOneLineCutTo200Characters(t *testing.T) {
 	got, _ := runSession(t, newProcess(fixture(t, "error.jsonl"), exitError{code: 1, msg: "exit status 1"}))
 
-	want := crew.Outcome{Reason: `API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}} ` +
+	want := crew.Outcome{Reason: `API Error: 529 ` +
+		`{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}} ` +
 		`The request could not be completed because the service is temporarily overloaded. The session stopped before…`}
 	if got != want {
 		t.Errorf("outcome = %+v, want %+v", got, want)
@@ -337,11 +340,11 @@ func TestStopEndsTheSessionWithinTheCallersDeadlineAsAFailure(t *testing.T) {
 		t.Fatalf("Stop: %v", err)
 	}
 
-	if p.stopCtx == nil {
+	if !p.stopped {
 		t.Fatal("the process was never stopped")
 	}
-	if got, ok := p.stopCtx.Deadline(); !ok || !got.Equal(deadline) {
-		t.Errorf("process stopped with deadline %v, want the caller's %v", got, deadline)
+	if !p.stopDeadline.Equal(deadline) {
+		t.Errorf("process stopped with deadline %v, want the caller's %v", p.stopDeadline, deadline)
 	}
 	if got := s.Wait(); got.Succeeded || !strings.Contains(got.Reason, "stopped") {
 		t.Errorf("outcome = %+v, want a failure saying it was stopped", got)

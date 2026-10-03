@@ -4,205 +4,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
-
-// The workflow's states in these tests, as label text.
-const (
-	ready          crew.State = "ready"
-	inProgress     crew.State = "in progress"
-	readyToReview  crew.State = "ready to review"
-	inReview       crew.State = "in review"
-	needsAttention crew.State = "needs attention"
-	readyToMerge   crew.State = "ready to merge"
-)
-
-var t0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-
-// draft is the workflow of the boss's draft config (KTD5).
-func draft() []crew.Stage {
-	return []crew.Stage{
-		{
-			Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
-			OnFailure: needsAttention,
-			Actions: []crew.Action{
-				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
-				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
-			},
-		},
-		{
-			Name: "review", Label: readyToReview, MovesTo: inReview, OnSuccess: readyToMerge,
-			OnFailure: needsAttention,
-			Actions:   []crew.Action{{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"}},
-		},
-	}
-}
-
-// issue returns an issue keyed key, opened minute minutes after t0.
-func issue(key string, minute int, states ...crew.State) crew.Issue {
-	return crew.Issue{
-		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
-		Created: t0.Add(time.Duration(minute) * time.Minute), States: states,
-	}
-}
-
-// space is the workspace an engine would create for key and action.
-func space(key, action string) core.WorkspaceReady {
-	name := "issue-" + key + "-" + action
-	return core.WorkspaceReady{
-		IssueKey: key, Action: action, Workspace: name, Dir: "/repo/.crew/worktrees/" + name,
-		Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
-	}
-}
-
-// driver feeds a model inputs one second apart, as the engine would stamp them.
-type driver struct {
-	t   *testing.T
-	m   *core.Model
-	now time.Time
-}
-
-func newDriver(t *testing.T, workflow []crew.Stage, maxParallel int) *driver {
-	t.Helper()
-	return &driver{t: t, m: core.New(workflow, maxParallel), now: t0}
-}
-
-func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
-	d.now = d.now.Add(time.Second)
-	return d.m.Update(in.Stamped(d.now))
-}
-
-// settle answers cmds as a healthy engine would: moves succeed, workspaces
-// are created and sessions start. Listings and stops are left unanswered.
-func (d *driver) settle(cmds []core.Command) {
-	d.t.Helper()
-	for len(cmds) > 0 {
-		var next []core.Command
-		for _, c := range cmds {
-			var out []core.Command
-			switch c := c.(type) {
-			case core.Move:
-				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
-			case core.ReportFailure:
-				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
-			case core.CreateWorkspace:
-				out, _ = d.send(space(c.Issue.Key, c.Action))
-			case core.StartSession:
-				out, _ = d.send(core.SessionStarted{IssueKey: c.IssueKey, Action: c.Action})
-			}
-			next = append(next, out...)
-		}
-		cmds = next
-	}
-}
-
-// poll ticks and answers the listing with issues.
-func (d *driver) poll(issues ...crew.Issue) ([]core.Command, []core.Event) {
-	d.t.Helper()
-	cmds, _ := d.send(core.Tick{})
-	if len(cmds) == 0 {
-		d.t.Fatalf("tick issued no listing")
-	}
-	return d.send(core.IssuesListed{Issues: issues})
-}
-
-// running takes issues in ready and starts all their sessions.
-func (d *driver) running(issues ...crew.Issue) {
-	d.t.Helper()
-	cmds, _ := d.poll(issues...)
-	d.settle(cmds)
-}
-
-// noIDs returns cmds with the call IDs zeroed, so they compare by content.
-func noIDs(cmds []core.Command) []core.Command {
-	out := make([]core.Command, 0, len(cmds))
-	for _, c := range cmds {
-		switch c := c.(type) {
-		case core.Move:
-			c.ID = 0
-			out = append(out, c)
-		case core.ReportFailure:
-			c.ID = 0
-			out = append(out, c)
-		default:
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// moveID returns the ID of the move of issue key in cmds.
-func moveID(t *testing.T, cmds []core.Command, key string) core.CallID {
-	t.Helper()
-	for _, c := range cmds {
-		if m, ok := c.(core.Move); ok && m.IssueKey == key {
-			return m.ID
-		}
-	}
-	t.Fatalf("no move of %s in %#v", key, cmds)
-	return 0
-}
-
-// reportID returns the ID of the failure report of issue key in cmds.
-func reportID(t *testing.T, cmds []core.Command, key string) core.CallID {
-	t.Helper()
-	for _, c := range cmds {
-		if r, ok := c.(core.ReportFailure); ok && r.Report.IssueKey == key {
-			return r.ID
-		}
-	}
-	t.Fatalf("no failure report of %s in %#v", key, cmds)
-	return 0
-}
-
-func wantCommands(t *testing.T, got []core.Command, want ...core.Command) {
-	t.Helper()
-	if want == nil {
-		want = []core.Command{}
-	}
-	if g := noIDs(got); !reflect.DeepEqual(g, want) {
-		t.Fatalf("commands:\n got %#v\nwant %#v", g, want)
-	}
-}
-
-func hasEvent(t *testing.T, events []core.Event, want core.Event) {
-	t.Helper()
-	for _, e := range events {
-		if reflect.DeepEqual(e, want) {
-			return
-		}
-	}
-	t.Fatalf("no event %#v in %#v", want, events)
-}
-
-func claimOf(t *testing.T, m *core.Model, key string) core.Claim {
-	t.Helper()
-	for _, iv := range m.View().Issues {
-		if iv.Issue.Key == key {
-			return iv.Claim
-		}
-	}
-	t.Fatalf("issue %s is not held", key)
-	return 0
-}
-
-func wantHeld(t *testing.T, m *core.Model, keys ...string) {
-	t.Helper()
-	var got []string
-	for _, iv := range m.View().Issues {
-		got = append(got, iv.Issue.Key)
-	}
-	if !reflect.DeepEqual(got, keys) {
-		t.Fatalf("held issues: got %v, want %v", got, keys)
-	}
-}
-
-func failed(reason string) crew.Outcome { return crew.Outcome{Succeeded: false, Reason: reason} }
-
-var succeeded = crew.Outcome{Succeeded: true, Reason: "done"}
 
 func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	d := newDriver(t, draft(), 2)
@@ -217,14 +22,11 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 		core.Move{IssueKey: "2", From: ready, To: inProgress},
 	)
 	at := d.now
-	wantEvents := []core.Event{
+	wantEvents(t, events,
 		core.IssueTaken{At: at, Issue: i1, Stage: "implement", From: ready, To: inProgress},
 		core.IssueTaken{At: at, Issue: i2, Stage: "implement", From: ready, To: inProgress},
 		core.PollDone{At: at, Listed: 3, Taken: 2},
-	}
-	if !reflect.DeepEqual(events, wantEvents) {
-		t.Fatalf("events:\n got %#v\nwant %#v", events, wantEvents)
-	}
+	)
 
 	var all []core.Command
 	for _, it := range []crew.Issue{i1, i2} {
@@ -237,18 +39,12 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 		all = append(all, created...)
 	}
 
-	var sessions []core.Command
-	for _, key := range []string{"1", "2"} {
-		for _, action := range []string{"acceptance", "development"} {
-			started, _ := d.send(space(key, action))
-			sessions = append(sessions, started...)
-		}
-	}
+	sessions := d.workspacesReady("1", "2")
 	wantCommands(t, sessions,
-		core.StartSession{IssueKey: "1", Action: "acceptance", Dir: "/repo/.crew/worktrees/issue-1-acceptance", Prompt: "Implement test acceptance for issue #1", Log: ".crew/logs/issue-1-acceptance.log"},
-		core.StartSession{IssueKey: "1", Action: "development", Dir: "/repo/.crew/worktrees/issue-1-development", Prompt: "Implement development for issue #1", Log: ".crew/logs/issue-1-development.log"},
-		core.StartSession{IssueKey: "2", Action: "acceptance", Dir: "/repo/.crew/worktrees/issue-2-acceptance", Prompt: "Implement test acceptance for issue #2", Log: ".crew/logs/issue-2-acceptance.log"},
-		core.StartSession{IssueKey: "2", Action: "development", Dir: "/repo/.crew/worktrees/issue-2-development", Prompt: "Implement development for issue #2", Log: ".crew/logs/issue-2-development.log"},
+		session("1", "acceptance", "Implement test acceptance for issue #1"),
+		session("1", "development", "Implement development for issue #1"),
+		session("2", "acceptance", "Implement test acceptance for issue #2"),
+		session("2", "development", "Implement development for issue #2"),
 	)
 
 	// #3 waits: no command concerns it and the core does not hold it.
@@ -260,21 +56,27 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	wantHeld(t, d.m, "1", "2")
 }
 
-// issueKey returns the key of the issue c concerns.
-func issueKey(c core.Command) string {
-	switch c := c.(type) {
-	case core.Move:
-		return c.IssueKey
-	case core.ReportFailure:
-		return c.Report.IssueKey
-	case core.CreateWorkspace:
-		return c.Issue.Key
-	case core.StartSession:
-		return c.IssueKey
-	case core.StopSession:
-		return c.IssueKey
+// workspacesReady answers the workspace of each draft action of keys as
+// ready, and returns the commands that start their sessions.
+func (d *driver) workspacesReady(keys ...string) []core.Command {
+	d.t.Helper()
+	var sessions []core.Command
+	for _, key := range keys {
+		for _, action := range []string{"acceptance", "development"} {
+			started, _ := d.send(space(key, action))
+			sessions = append(sessions, started...)
+		}
 	}
-	return ""
+	return sessions
+}
+
+// session is the StartSession for prompt in the workspace space gives key
+// and action.
+func session(key, action, prompt string) core.StartSession {
+	return core.StartSession{
+		IssueKey: key, Action: action, Dir: "/repo/.crew/worktrees/issue-" + key + "-" + action,
+		Prompt: prompt, Log: ".crew/logs/issue-" + key + "-" + action + ".log",
+	}
 }
 
 func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
@@ -375,7 +177,9 @@ func TestAE8IssueInTwoStatesIsSkippedUntilItIsInOne(t *testing.T) {
 
 	cmds, events := d.poll(issue("4", 1, ready, needsAttention))
 	wantCommands(t, cmds)
-	hasEvent(t, events, core.IssueSkipped{At: d.now, IssueKey: "4", IssueRef: "#4", States: []crew.State{ready, needsAttention}})
+	hasEvent(t, events, core.IssueSkipped{
+		At: d.now, IssueKey: "4", IssueRef: "#4", States: []crew.State{ready, needsAttention},
+	})
 	wantHeld(t, d.m)
 
 	cmds, _ = d.poll(issue("4", 1, ready))
@@ -398,46 +202,6 @@ func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
 
 	cmds, _ = d.poll(issue("4", 1, ready))
 	wantCommands(t, cmds, core.Move{IssueKey: "4", From: ready, To: inProgress})
-}
-
-func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("1", 1, ready), issue("2", 2, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
-	wantCommands(t, verdict, core.Move{IssueKey: "1", From: inProgress, To: readyToReview})
-
-	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds,
-		core.StopSession{IssueKey: "2", Action: "acceptance"},
-		core.StopSession{IssueKey: "2", Action: "development"},
-	)
-	if d.m.Stopped() {
-		t.Fatal("stopped while issues are held")
-	}
-
-	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview})
-
-	d.send(core.SessionEnded{IssueKey: "2", Action: "acceptance", Outcome: failed("stopped")})
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "2", Action: "development", Outcome: failed("stopped")})
-	wantCommands(t, cmds,
-		core.Move{IssueKey: "2", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "2", IssueRef: "#2", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "stopped", Workspace: "issue-2-acceptance", Log: ".crew/logs/issue-2-acceptance.log"},
-			{Action: "development", Reason: "stopped", Workspace: "issue-2-development", Log: ".crew/logs/issue-2-development.log"},
-		}}},
-	)
-
-	d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
-	if d.m.Stopped() {
-		t.Fatal("stopped while #2's report is in flight")
-	}
-	_, events = d.send(core.CallResult{ID: reportID(t, cmds, "2"), Result: core.ResultDone})
-	if !d.m.Stopped() {
-		t.Fatal("not stopped once every verdict call settled")
-	}
-	hasEvent(t, events, core.Stopped{At: d.now})
 }
 
 func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
@@ -509,222 +273,6 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	t.Fatalf("no ActionEnded for acceptance in %#v", events)
 }
 
-// judgedNeedingAttention runs #1 to a failed verdict and returns the verdict
-// commands, both in flight.
-func judgedNeedingAttention(d *driver) []core.Command {
-	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
-	return cmds
-}
-
-func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
-
-	cmds, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	wantCommands(t, cmds)
-	owed := core.Call{Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview}
-	hasEvent(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
-	if got := d.m.View().Owed; !reflect.DeepEqual(got, []core.Call{owed}) {
-		t.Fatalf("owed: got %#v, want %#v", got, []core.Call{owed})
-	}
-	if c := claimOf(t, d.m, "1"); c != core.ClaimOwed {
-		t.Fatalf("claim of #1: got %v, want owed", c)
-	}
-
-	retry, _ := d.send(core.Tick{})
-	wantCommands(t, retry,
-		core.ListIssues{States: []crew.State{ready, readyToReview}},
-		core.Move{IssueKey: "1", From: inProgress, To: readyToReview},
-	)
-
-	// The retry is in flight: the next tick does not issue it again.
-	d.send(core.IssuesListed{})
-	cmds, _ = d.send(core.Tick{})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
-
-	_, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview})
-	wantHeld(t, d.m)
-	if got := d.m.View().Owed; got != nil {
-		t.Fatalf("owed after the retry succeeded: %#v", got)
-	}
-}
-
-func TestVerdictCallMovedMeanwhileOrRefusedIsDroppedAndReported(t *testing.T) {
-	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
-		t.Run(result.String(), func(t *testing.T) {
-			d := newDriver(t, draft(), 2)
-			verdict := judgedNeedingAttention(d)
-
-			_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: result, Reason: "nope"})
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
-				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: inProgress, To: needsAttention,
-			}})
-			_, events = d.send(core.CallResult{ID: reportID(t, verdict, "1"), Result: result, Reason: "nope"})
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
-				Kind: core.CallReport, IssueKey: "1", IssueRef: "#1",
-			}})
-			wantHeld(t, d.m)
-
-			cmds, _ := d.send(core.Tick{})
-			wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
-		})
-	}
-}
-
-func TestTakeMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
-	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
-		t.Run(result.String(), func(t *testing.T) {
-			d := newDriver(t, draft(), 1)
-			take, _ := d.poll(issue("1", 1, ready))
-
-			cmds, events := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: result, Reason: "nope"})
-			wantCommands(t, cmds)
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
-				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress,
-			}})
-			wantHeld(t, d.m)
-
-			cmds, _ = d.poll(issue("2", 2, ready))
-			wantCommands(t, cmds, core.Move{IssueKey: "2", From: ready, To: inProgress})
-		})
-	}
-}
-
-// A take that failed transiently may have landed, so the issue stays held
-// and the take is owed: the retry, which the tracker makes idempotent, either
-// moves it or finds it already moved, and the stage proceeds (KTD8).
-func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
-	d := newDriver(t, draft(), 1)
-	i1 := issue("1", 1, ready)
-	take, _ := d.poll(i1)
-
-	cmds, events := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	wantCommands(t, cmds)
-	owed := core.Call{Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress}
-	hasEvent(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
-	want := core.View{
-		Issues: []core.IssueView{{
-			Issue: i1, Stage: "implement", Claim: core.ClaimOwed,
-			Actions: []core.ActionView{
-				{Name: "acceptance", Phase: core.PhaseWaiting},
-				{Name: "development", Phase: core.PhaseWaiting},
-			},
-		}},
-		Owed: []core.Call{owed},
-	}
-	if v := d.m.View(); !reflect.DeepEqual(v, want) {
-		t.Fatalf("view:\n got %#v\nwant %#v", v, want)
-	}
-
-	// The next tick retries the take. #1 holds the only slot, so the tick
-	// does not list (R7).
-	retry, events := d.send(core.Tick{})
-	wantCommands(t, retry, core.Move{IssueKey: "1", From: ready, To: inProgress})
-	hasEvent(t, events, core.PollSkipped{At: d.now, Busy: 1, Slots: 1})
-
-	cmds, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i1, Action: "development"},
-	)
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress})
-	if c := claimOf(t, d.m, "1"); c != core.ClaimRunning {
-		t.Fatalf("claim of #1: got %v, want running", c)
-	}
-	if got := d.m.View().Owed; got != nil {
-		t.Fatalf("owed after the retry succeeded: %#v", got)
-	}
-}
-
-func TestOwedTakeRetryMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
-	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
-		t.Run(result.String(), func(t *testing.T) {
-			d := newDriver(t, draft(), 1)
-			take, _ := d.poll(issue("1", 1, ready))
-			d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
-			retry, _ := d.send(core.Tick{})
-
-			// The tick skipped its listing, so the freed slot lists at once (R4).
-			cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: result, Reason: "nope"})
-			wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
-				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress,
-			}})
-			wantHeld(t, d.m)
-		})
-	}
-}
-
-// At stop, an owed take gets its one final try. If it lands, the issue is
-// in moves_to with nothing started, so it needs attention like an issue
-// whose take landed after the stop; if it fails, the core gives it up.
-func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
-	stoppedReport := core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-		{Action: "acceptance", Reason: "crew stopped"},
-		{Action: "development", Reason: "crew stopped"},
-	}}}
-	tests := []struct {
-		name string
-		// final returns the final try's command, from a take that is owed or
-		// in flight at stop.
-		final func(d *driver, take []core.Command) []core.Command
-	}{
-		{
-			name: "owed at stop",
-			final: func(d *driver, take []core.Command) []core.Command {
-				d.send(core.CallResult{ID: moveID(d.t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
-				cmds, _ := d.send(core.StopRequested{})
-				return cmds
-			},
-		},
-		{
-			name: "in flight at stop",
-			final: func(d *driver, take []core.Command) []core.Command {
-				if cmds, _ := d.send(core.StopRequested{}); len(cmds) != 0 {
-					d.t.Fatalf("stop issued %#v while the take is in flight", cmds)
-				}
-				cmds, _ := d.send(core.CallResult{ID: moveID(d.t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
-				return cmds
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name+", final try done", func(t *testing.T) {
-			d := newDriver(t, draft(), 1)
-			take, _ := d.poll(issue("1", 1, ready))
-			final := tt.final(d, take)
-			wantCommands(t, final, core.Move{IssueKey: "1", From: ready, To: inProgress})
-
-			cmds, _ := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultDone})
-			wantCommands(t, cmds, core.Move{IssueKey: "1", From: inProgress, To: needsAttention}, stoppedReport)
-			d.settle(cmds)
-			if !d.m.Stopped() {
-				t.Fatal("not stopped once the verdict calls settled")
-			}
-		})
-		t.Run(tt.name+", final try failed", func(t *testing.T) {
-			d := newDriver(t, draft(), 1)
-			take, _ := d.poll(issue("1", 1, ready))
-			final := tt.final(d, take)
-
-			cmds, events := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultFailed, Reason: "still down"})
-			wantCommands(t, cmds)
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress,
-			}})
-			if !d.m.Stopped() {
-				t.Fatal("not stopped once the owed take had its final try")
-			}
-			hasEvent(t, events, core.Stopped{At: d.now})
-		})
-	}
-}
-
 func TestPicksLaterStagesFirstThenTheOldestIssue(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -775,101 +323,6 @@ func TestAtMostOneListingIsOutstanding(t *testing.T) {
 	wantCommands(t, cmds, list)
 }
 
-func TestStopDuringTakeStartsNothingAndNeedsAttention(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	take, _ := d.poll(issue("1", 1, ready))
-
-	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds)
-	if c := claimOf(t, d.m, "1"); c != core.ClaimStopping {
-		t.Fatalf("claim of #1: got %v, want stopping", c)
-	}
-
-	cmds, _ = d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "crew stopped"},
-			{Action: "development", Reason: "crew stopped"},
-		}}},
-	)
-}
-
-func TestStopDuringSetupStartsNothingMoreAndStopsWhatStarted(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	take, _ := d.poll(issue("1", 1, ready))
-	d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	d.send(space("1", "development")) // its StartSession is in flight
-
-	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds)
-
-	cmds, _ = d.send(space("1", "acceptance"))
-	wantCommands(t, cmds)
-	cmds, _ = d.send(core.SessionStarted{IssueKey: "1", Action: "development"})
-	wantCommands(t, cmds, core.StopSession{IssueKey: "1", Action: "development"})
-
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: failed("stopped")})
-	wantCommands(t, cmds,
-		core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "crew stopped", Workspace: "issue-1-acceptance"},
-			{Action: "development", Reason: "stopped", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log"},
-		}}},
-	)
-}
-
-func TestStopGivesEachOwedCallOneFinalTry(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	verdict := judgedNeedingAttention(d)
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
-
-	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.Move{IssueKey: "1", From: inProgress, To: needsAttention})
-
-	// The report, in flight at stop, fails transiently: it gets its final try.
-	retry, _ := d.send(core.CallResult{ID: reportID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	if len(retry) != 1 {
-		t.Fatalf("report retry: got %#v, want one ReportFailure", retry)
-	}
-	reportRetry := reportID(t, retry, "1")
-
-	_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultFailed, Reason: "still down"})
-	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-		Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: inProgress, To: needsAttention,
-	}})
-	cmds, events = d.send(core.CallResult{ID: reportRetry, Result: core.ResultFailed, Reason: "still down"})
-	wantCommands(t, cmds)
-	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-		Kind: core.CallReport, IssueKey: "1", IssueRef: "#1",
-	}})
-	if !d.m.Stopped() {
-		t.Fatal("not stopped once every owed call had its final try")
-	}
-	hasEvent(t, events, core.Stopped{At: d.now})
-}
-
-func TestStopWithNothingHeldStopsAtOnceAndPollsNoMore(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	cmds, _ := d.send(core.Tick{}) // a listing is outstanding at stop
-
-	_, events := d.send(core.StopRequested{})
-	if !d.m.Stopped() {
-		t.Fatal("not stopped with nothing held")
-	}
-	hasEvent(t, events, core.Stopped{At: d.now})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
-
-	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
-	wantCommands(t, cmds)
-	cmds, events = d.send(core.Tick{})
-	wantCommands(t, cmds)
-	_, events2 := d.send(core.StopRequested{})
-	if len(events)+len(events2) != 0 {
-		t.Fatalf("events after stop: %#v %#v", events, events2)
-	}
-}
-
 func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	cmds, _ := d.poll(issue("1", 1, ready))
@@ -897,192 +350,5 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 	v.Issues[0].Actions[0].Name = "changed"
 	if again := d.m.View(); !reflect.DeepEqual(again, want) {
 		t.Fatalf("changing a view changed the model:\n got %#v\nwant %#v", again, want)
-	}
-}
-
-// limit is the run time limit of the wind-down tests.
-const limit = time.Hour
-
-func wantEvents(t *testing.T, got []core.Event, want ...core.Event) {
-	t.Helper()
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("events:\n got %#v\nwant %#v", got, want)
-	}
-}
-
-func TestAE2TimeUpWithNothingHeldWindsDownAndStopsAtOnce(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.send(core.Tick{}) // a listing is outstanding when time is up
-
-	cmds, events := d.send(core.TimeUp{Limit: limit})
-	wantCommands(t, cmds)
-	wantEvents(t, events, core.WindingDown{At: d.now, Limit: limit}, core.Stopped{At: d.now})
-	if !d.m.Stopped() {
-		t.Fatal("not stopped with nothing held")
-	}
-
-	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
-	wantCommands(t, cmds)
-}
-
-func TestAE3TimeUpLetsARunningIssueFinishAndTakesNothingNew(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("42", 1, ready))
-
-	cmds, events := d.send(core.TimeUp{Limit: limit})
-	wantCommands(t, cmds)
-	wantEvents(t, events, core.WindingDown{At: d.now, Limit: limit})
-	if v := d.m.View(); !v.TimeUp || v.Stopping {
-		t.Fatalf("view: TimeUp %v, Stopping %v; want true, false", v.TimeUp, v.Stopping)
-	}
-
-	cmds, _ = d.send(core.Tick{})
-	wantCommands(t, cmds)
-	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{issue("43", 2, ready)}})
-	wantCommands(t, cmds)
-
-	d.send(core.SessionEnded{IssueKey: "42", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "42", Action: "development", Outcome: succeeded})
-	wantCommands(t, verdict, core.Move{IssueKey: "42", From: inProgress, To: readyToReview})
-	if d.m.Stopped() {
-		t.Fatal("stopped while #42's verdict move is in flight")
-	}
-
-	_, events = d.send(core.CallResult{ID: moveID(t, verdict, "42"), Result: core.ResultDone})
-	wantEvents(t, events,
-		core.IssueMoved{At: d.now, IssueKey: "42", IssueRef: "#42", From: inProgress, To: readyToReview},
-		core.Stopped{At: d.now},
-	)
-	if !d.m.Stopped() {
-		t.Fatal("not stopped once #42 was judged")
-	}
-	if d.m.View().Stopping {
-		t.Fatal("the view says a stop was requested; none was")
-	}
-}
-
-func TestAE3AnIssueThatFailsWhileWindingDownNeedsAttentionAsUsual(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("42", 1, ready))
-	d.send(core.TimeUp{Limit: limit})
-
-	d.send(core.SessionEnded{IssueKey: "42", Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "42", Action: "development", Outcome: succeeded})
-	wantCommands(t, cmds,
-		core.Move{IssueKey: "42", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "broke", Workspace: "issue-42-acceptance", Log: ".crew/logs/issue-42-acceptance.log"},
-		}}},
-	)
-
-	d.send(core.CallResult{ID: moveID(t, cmds, "42"), Result: core.ResultDone})
-	_, events := d.send(core.CallResult{ID: reportID(t, cmds, "42"), Result: core.ResultDone})
-	hasEvent(t, events, core.Stopped{At: d.now})
-}
-
-func TestATakeInFlightWhenTimeIsUpStartsItsActions(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	i42 := issue("42", 1, ready)
-	take, _ := d.poll(i42)
-	d.send(core.TimeUp{Limit: limit})
-
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, take, "42"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i42, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i42, Action: "development"},
-	)
-}
-
-func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenRuns(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	i42 := issue("42", 1, ready)
-	take, _ := d.poll(i42)
-	d.send(core.CallResult{ID: moveID(t, take, "42"), Result: core.ResultFailed, Reason: "timeout"})
-
-	_, events := d.send(core.TimeUp{Limit: limit})
-	wantEvents(t, events, core.WindingDown{At: d.now, Limit: limit})
-
-	retry, events := d.send(core.Tick{})
-	wantCommands(t, retry, core.Move{IssueKey: "42", From: ready, To: inProgress})
-	if len(events) != 0 || d.m.Stopped() {
-		t.Fatalf("a tick with an owed take: events %#v, stopped %v", events, d.m.Stopped())
-	}
-
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, retry, "42"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i42, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i42, Action: "development"},
-	)
-}
-
-func TestWhileWindingDownOwedCallsAreRetriedAtTicksThenGetAFinalTry(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("1", 1, ready), issue("2", 2, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	d.send(core.TimeUp{Limit: limit})
-
-	retry, _ := d.send(core.Tick{})
-	wantCommands(t, retry, core.Move{IssueKey: "1", From: inProgress, To: readyToReview})
-	owed := core.Call{Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview}
-	_, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	wantEvents(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
-
-	// #2's last action ends: nothing is left to end, so the owed move gets
-	// its final try.
-	d.send(core.SessionEnded{IssueKey: "2", Action: "acceptance", Outcome: succeeded})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "2", Action: "development", Outcome: succeeded})
-	wantCommands(t, cmds,
-		core.Move{IssueKey: "2", From: inProgress, To: readyToReview},
-		core.Move{IssueKey: "1", From: inProgress, To: readyToReview},
-	)
-
-	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	wantEvents(t, events, core.CallDropped{At: d.now, Call: owed, Result: core.ResultFailed, Reason: "timeout"})
-	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
-	hasEvent(t, events, core.Stopped{At: d.now})
-}
-
-func TestAE4AStopWhileWindingDownStopsRunningSessionsAsUsual(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("42", 1, ready))
-	d.send(core.TimeUp{Limit: limit})
-
-	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds,
-		core.StopSession{IssueKey: "42", Action: "acceptance"},
-		core.StopSession{IssueKey: "42", Action: "development"},
-	)
-	if !d.m.View().Stopping {
-		t.Fatal("the view does not say a stop was requested")
-	}
-
-	d.send(core.SessionEnded{IssueKey: "42", Action: "acceptance", Outcome: failed("stopped")})
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "42", Action: "development", Outcome: failed("stopped")})
-	wantCommands(t, cmds,
-		core.Move{IssueKey: "42", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "stopped", Workspace: "issue-42-acceptance", Log: ".crew/logs/issue-42-acceptance.log"},
-			{Action: "development", Reason: "stopped", Workspace: "issue-42-development", Log: ".crew/logs/issue-42-development.log"},
-		}}},
-	)
-}
-
-func TestTimeUpAfterAStopOrASecondTimeChangesNothing(t *testing.T) {
-	d := newDriver(t, draft(), 2)
-	d.running(issue("42", 1, ready))
-	d.send(core.StopRequested{})
-	cmds, events := d.send(core.TimeUp{Limit: limit})
-	if len(cmds)+len(events) != 0 || d.m.View().TimeUp {
-		t.Fatalf("time up after a stop: commands %#v, events %#v, TimeUp %v", cmds, events, d.m.View().TimeUp)
-	}
-
-	d = newDriver(t, draft(), 2)
-	d.running(issue("42", 1, ready))
-	d.send(core.TimeUp{Limit: limit})
-	cmds, events = d.send(core.TimeUp{Limit: limit})
-	if len(cmds)+len(events) != 0 {
-		t.Fatalf("a second time up: commands %#v, events %#v", cmds, events)
 	}
 }
