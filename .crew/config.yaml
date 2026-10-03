@@ -32,6 +32,25 @@ prompts:
   update_issue_plan: |-
     Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's triage stage takes it at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
 workflow:
+  - name: triage
+    description: a brainstormed feature whose dependencies to find
+    issue_template: feature.md
+    label: "crew:brainstorm:done"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
+    actions:
+      - name: triage
+        prompt: |-
+          {{.Issue.Ref}} is a brainstormed feature. Find which open issues block it and which it blocks. You run headless: nobody answers questions, so decide and report.
+
+          1. Read {{.Issue.Ref}} (`gh issue view {{.Issue.Key}} --comments`) and the dependencies GitHub already has for it (`gh api repos/{owner}/{repo}/issues/{{.Issue.Key}}/dependencies/blocked_by` and `.../blocking`).
+          2. Read the other open issues you opened (`gh issue list --state open --author @me --limit 500 --json number,title,body,labels`). Compare {{.Issue.Ref}} with these only: leave out the issues someone else opened.
+          3. For each of them, decide whether it must be done before {{.Issue.Ref}} (it blocks {{.Issue.Ref}}) or cannot be done before {{.Issue.Ref}} ({{.Issue.Ref}} blocks it). Record each as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record only dependencies between {{.Issue.Ref}} and another issue, only when you can say why, skip one GitHub already has, and never record one that closes a cycle.
+          4. Never remove a dependency. When one of {{.Issue.Ref}}'s no longer holds, suggest removing it in your summary.
+          5. Never add or remove a label that starts with `crew:`, on any issue. Do not open, close or edit issues.
+          6. Do not change code, push a branch or open a pull request.
+          7. End with one comment on {{.Issue.Ref}}: what blocks it and what it blocks, marking the dependencies you recorded and why; whether no open issue blocks it, so the boss can promote it now; each dependency you suggest removing and why; the issues it likely duplicates; and every command that failed or was denied, with its error.
   - name: development
     description: a feature whose brainstorm is done
     issue_template: feature.md
@@ -86,42 +105,6 @@ workflow:
           none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
           *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
           esac
-  - name: knowledge base
-    description: a solved problem to record as a learning
-    issue_template: knowledge-base.md
-    label: "crew:ready for knowledge base"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
-    actions:
-      - name: compound
-        prompt: |-
-          /compound-engineering:ce-compound mode:non-interactive {{.Issue.Ref}} ({{.Issue.URL}})
-
-          {{.Issue.Ref}} names a solved problem and the issues and pull requests where it was solved. Read them for the context this session does not have.
-
-          When you write or update a learning, open a pull request with it through /compound-engineering:ce-commit-push-pr mode:pipeline, which asks nothing and does not stay to watch the pull request. The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
-
-          When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
-  - name: triage
-    description: a brainstormed feature whose dependencies to find
-    issue_template: feature.md
-    label: "crew:brainstorm:done"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
-    actions:
-      - name: triage
-        prompt: |-
-          {{.Issue.Ref}} is a brainstormed feature. Find which open issues block it and which it blocks. You run headless: nobody answers questions, so decide and report.
-
-          1. Read {{.Issue.Ref}} (`gh issue view {{.Issue.Key}} --comments`) and the dependencies GitHub already has for it (`gh api repos/{owner}/{repo}/issues/{{.Issue.Key}}/dependencies/blocked_by` and `.../blocking`).
-          2. Read the other open issues you opened (`gh issue list --state open --author @me --limit 500 --json number,title,body,labels`). Compare {{.Issue.Ref}} with these only: leave out the issues someone else opened.
-          3. For each of them, decide whether it must be done before {{.Issue.Ref}} (it blocks {{.Issue.Ref}}) or cannot be done before {{.Issue.Ref}} ({{.Issue.Ref}} blocks it). Record each as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record only dependencies between {{.Issue.Ref}} and another issue, only when you can say why, skip one GitHub already has, and never record one that closes a cycle.
-          4. Never remove a dependency. When one of {{.Issue.Ref}}'s no longer holds, suggest removing it in your summary.
-          5. Never add or remove a label that starts with `crew:`, on any issue. Do not open, close or edit issues.
-          6. Do not change code, push a branch or open a pull request.
-          7. End with one comment on {{.Issue.Ref}}: what blocks it and what it blocks, marking the dependencies you recorded and why; whether no open issue blocks it, so the boss can promote it now; each dependency you suggest removing and why; the issues it likely duplicates; and every command that failed or was denied, with its error.
   - name: audit ci
     description: an audit of the GitHub Actions
     issue_template: ci-audit.md
@@ -140,3 +123,20 @@ workflow:
           4. Never add or remove a label that starts with `crew:`, on any issue.
           5. Do not change code, push a branch or open a pull request.
           6. End with one comment on {{.Issue.Ref}}: the issues you opened, what you checked and found fine, and anything you could not check, with the error.
+  - name: knowledge base
+    description: a solved problem to record as a learning
+    issue_template: knowledge-base.md
+    label: "crew:ready for knowledge base"
+    moves_to: "crew:in progress"
+    on_success: "crew:waiting review"
+    on_failure: "crew:failed"
+    actions:
+      - name: compound
+        prompt: |-
+          /compound-engineering:ce-compound mode:non-interactive {{.Issue.Ref}} ({{.Issue.URL}})
+
+          {{.Issue.Ref}} names a solved problem and the issues and pull requests where it was solved. Read them for the context this session does not have.
+
+          When you write or update a learning, open a pull request with it through /compound-engineering:ce-commit-push-pr mode:pipeline, which asks nothing and does not stay to watch the pull request. The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+
+          When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
