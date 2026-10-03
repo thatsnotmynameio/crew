@@ -31,11 +31,11 @@ type Model struct {
 	stopped     bool         // the Stopped event was emitted
 	lastID      CallID
 	// queueOf holds the queue each stage runs in, by stage index, as an
-	// index into queueSlots (KTD2). maxParallel caps every queue together.
+	// index into queues (KTD2). maxParallel caps every queue together.
 	queueOf []int
-	// queueSlots holds the slots of each queue some stage runs in.
-	queueSlots []int
-	// slots is what the stages can use: queueSlots summed, at most
+	// queues holds each queue some stage runs in, with the slots it has.
+	queues []crew.Queue
+	// slots is what the stages can use: the queues' slots summed, at most
 	// maxParallel (KTD4).
 	slots int
 	// statuses holds each issue's status slot, by issue key; nil when
@@ -144,38 +144,39 @@ func New(workflow []crew.Stage, maxParallelIssues int, opts ...Option) *Model {
 		stages[i] = s
 	}
 	m := &Model{stages: stages, maxParallel: maxParallelIssues}
-	m.queueOf, m.queueSlots, m.slots = queues(stages, maxParallelIssues)
+	m.queueOf, m.queues, m.slots = queues(stages, maxParallelIssues)
 	for _, o := range opts {
 		o(m)
 	}
 	return m
 }
 
-// queues returns the queue each of stages runs in, as an index into slots;
-// the slots of each queue some stage runs in, told apart by name; and what
-// the stages can use, the sum of those slots at most maxParallelIssues
-// (KTD2, KTD4). The stages with the zero Queue share one queue of
-// maxParallelIssues slots, so the global cap alone limits them.
-func queues(stages []crew.Stage, maxParallelIssues int) ([]int, []int, int) {
+// queues returns the queue each of stages runs in, as an index into the
+// second result; each queue some stage runs in, told apart by name, with its
+// slots; and what the stages can use, the sum of those slots at most
+// maxParallelIssues (KTD2, KTD4). The stages with the zero Queue share one
+// unnamed queue of maxParallelIssues slots, so the global cap alone limits
+// them.
+func queues(stages []crew.Stage, maxParallelIssues int) ([]int, []crew.Queue, int) {
 	queueOf := make([]int, len(stages))
-	var slots []int
+	var out []crew.Queue
 	usable := 0
 	index := map[string]int{}
 	for i, s := range stages {
-		n := s.Queue.Slots
-		if s.Queue == (crew.Queue{}) {
-			n = maxParallelIssues
+		queue := s.Queue
+		if queue == (crew.Queue{}) {
+			queue.Slots = maxParallelIssues
 		}
-		q, ok := index[s.Queue.Name]
+		q, ok := index[queue.Name]
 		if !ok {
-			q = len(slots)
-			index[s.Queue.Name] = q
-			slots = append(slots, n)
-			usable += n
+			q = len(out)
+			index[queue.Name] = q
+			out = append(out, queue)
+			usable += queue.Slots
 		}
 		queueOf[i] = q
 	}
-	return queueOf, slots, min(usable, maxParallelIssues)
+	return queueOf, out, min(usable, maxParallelIssues)
 }
 
 // Option changes a new Model.
@@ -313,6 +314,9 @@ type View struct {
 	TimeUp bool
 	// Issues are the held issues, in the order they were taken.
 	Issues []IssueView
+	// Queues are the queues some stage runs in, in the order of the first
+	// stage that runs in each.
+	Queues []QueueView
 	// Owed are the tracker calls waiting for a retry: the held issues'
 	// moves and failure reports, then the pull request reports.
 	Owed []Call
@@ -384,10 +388,27 @@ func (h HandledView) clone() HandledView {
 	return h
 }
 
+// QueueView is one queue some stage runs in.
+type QueueView struct {
+	// Name is the queue's name; empty for the queue the stages with the
+	// zero crew.Queue share.
+	Name string
+	// Slots is how many issues the queue may hold at once.
+	Slots int
+	// Busy is how many held issues, in any claim, run in the queue: the
+	// count the core takes by (KTD3).
+	Busy int
+}
+
+// Free is how many of the queue's slots are not busy.
+func (q QueueView) Free() int { return max(q.Slots-q.Busy, 0) }
+
 // IssueView is one held issue.
 type IssueView struct {
-	Issue   crew.Issue
-	Stage   string
+	Issue crew.Issue
+	Stage string
+	// Queue is the name of the queue the issue's stage runs in.
+	Queue   string
 	Claim   Claim
 	Actions []ActionView
 }
@@ -411,8 +432,14 @@ type ActionView struct {
 // View returns a snapshot of what the core holds.
 func (m *Model) View() View {
 	v := View{Stopping: m.requested, TimeUp: m.timeUp, Spent: m.spent}
+	for q, queue := range m.queues {
+		v.Queues = append(v.Queues, QueueView{Name: queue.Name, Slots: queue.Slots, Busy: m.busy(q)})
+	}
 	for _, h := range m.issues {
-		iv := IssueView{Issue: h.issue.Clone(), Stage: m.stages[h.stage].Name, Claim: h.claim}
+		iv := IssueView{
+			Issue: h.issue.Clone(), Stage: m.stages[h.stage].Name,
+			Queue: m.queues[m.queueOf[h.stage]].Name, Claim: h.claim,
+		}
 		for _, a := range h.actions {
 			iv.Actions = append(iv.Actions, ActionView{
 				Name: a.name, Phase: a.phase, Workspace: a.workspace, Branch: a.branch,
