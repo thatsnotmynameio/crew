@@ -9,9 +9,9 @@ import (
 )
 
 // newPullRequestDriver is newDriver with pull request reports on.
-func newPullRequestDriver(t *testing.T, workflow []crew.Stage, maxParallel int) *driver {
+func newPullRequestDriver(t *testing.T, workflow []crew.Stage) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(workflow, maxParallel, core.ReportingPullRequests()), now: t0}
+	return &driver{t: t, m: core.New(workflow, 2, core.ReportingPullRequests()), now: t0}
 }
 
 // pullRequestReports returns the reports cmds ask to make, in order.
@@ -117,7 +117,7 @@ func TestWithoutPullRequestReportsAStageReportsNone(t *testing.T) {
 }
 
 func TestALandedTakeReportsItsMovesToWithNoEnd(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	wantReport(t, pullRequestReportOf(t, d.takeLanded()), crew.PullRequestReport{
 		IssueKey: "74", IssueRef: "#74", State: inProgress,
 	})
@@ -126,7 +126,7 @@ func TestALandedTakeReportsItsMovesToWithNoEnd(t *testing.T) {
 func TestATakeThatFailsReportsNothing(t *testing.T) {
 	for _, result := range []core.Result{core.ResultFailed, core.ResultMovedMeanwhile, core.ResultRefused} {
 		t.Run(result.String(), func(t *testing.T) {
-			d := newPullRequestDriver(t, draft(), 2)
+			d := newPullRequestDriver(t, draft())
 			cmds, _ := d.poll(issue("74", 1, ready))
 			cmds, _ = d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: result})
 			noPullRequestReport(t, cmds)
@@ -135,14 +135,14 @@ func TestATakeThatFailsReportsNothing(t *testing.T) {
 }
 
 func TestAE1ASucceededStageReportsOnSuccessAndItsEndOnceItsMoveLands(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	wantReport(t, pullRequestReportOf(t, d.succeededStage()), crew.PullRequestReport{
 		IssueKey: "74", IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
 }
 
 func TestAFailedStageReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
-	d := newPullRequestDriver(t, checked(), 2)
+	d := newPullRequestDriver(t, checked())
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
 	d.runAll(landed)
@@ -163,7 +163,7 @@ func TestAFailedStageReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 }
 
 func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
 	d.runAll(landed)
@@ -185,7 +185,7 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 func TestADroppedVerdictMoveReportsNothing(t *testing.T) {
 	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
 		t.Run(result.String(), func(t *testing.T) {
-			d := newPullRequestDriver(t, draft(), 2)
+			d := newPullRequestDriver(t, draft())
 			landed := d.takeLanded()
 			d.answerPullRequests("74", core.ResultDone)
 			d.runAll(landed)
@@ -200,7 +200,7 @@ func TestADroppedVerdictMoveReportsNothing(t *testing.T) {
 }
 
 func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	take := pullRequestReportOf(t, landed)
 
@@ -217,7 +217,7 @@ func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
 }
 
 func TestAE5AReportThatFailsTransientlyIsOwedAndResentAtTheNextTick(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	want := pullRequestReportOf(t, d.succeededStage())
 
 	cmds, events := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "timeout"})
@@ -236,7 +236,7 @@ func TestAE5AReportThatFailsTransientlyIsOwedAndResentAtTheNextTick(t *testing.T
 }
 
 func TestAnOwedReportIsInTheViewAndHoldsBackTheIssuesLaterReports(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultFailed)
 	owed := core.Call{Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: inProgress}
@@ -264,7 +264,7 @@ func TestAnOwedReportIsInTheViewAndHoldsBackTheIssuesLaterReports(t *testing.T) 
 func TestARefusedOrMovedMeanwhileReportIsDroppedAndTheNextOneSent(t *testing.T) {
 	for _, result := range []core.Result{core.ResultRefused, core.ResultMovedMeanwhile} {
 		t.Run(result.String(), func(t *testing.T) {
-			d := newPullRequestDriver(t, draft(), 2)
+			d := newPullRequestDriver(t, draft())
 			landed := d.takeLanded()
 			d.verdictLanded(landed, succeeded, succeeded)
 
@@ -280,7 +280,7 @@ func TestARefusedOrMovedMeanwhileReportIsDroppedAndTheNextOneSent(t *testing.T) 
 }
 
 func TestStopGivesAnOwedReportOneFinalTryThenDropsIt(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	want := pullRequestReportOf(t, d.succeededStage())
 	d.answerPullRequests("74", core.ResultFailed)
 
@@ -303,7 +303,7 @@ func TestStopGivesAnOwedReportOneFinalTryThenDropsIt(t *testing.T) {
 }
 
 func TestStopWaitsForAReportInFlightWithNoIssueHeld(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	pullRequestReportOf(t, d.succeededStage())
 	wantHeld(t, d.m)
 
@@ -319,7 +319,7 @@ func TestStopWaitsForAReportInFlightWithNoIssueHeld(t *testing.T) {
 }
 
 func TestAReportThatFailsInFlightAfterAStopGetsOneFinalTry(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	want := pullRequestReportOf(t, d.succeededStage())
 	d.send(core.StopRequested{})
 
@@ -342,7 +342,7 @@ func TestAReportThatFailsInFlightAfterAStopGetsOneFinalTry(t *testing.T) {
 }
 
 func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	take := pullRequestReportOf(t, landed)
 	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
@@ -369,7 +369,7 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 }
 
 func TestAnOwedTakeReportLeavesTheIssueRunning(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	var created []string
 	for _, c := range landed {
@@ -394,7 +394,7 @@ func TestAnOwedTakeReportLeavesTheIssueRunning(t *testing.T) {
 }
 
 func TestEachReportHasItsOwnIDAndARetryKeepsIt(t *testing.T) {
-	d := newPullRequestDriver(t, draft(), 2)
+	d := newPullRequestDriver(t, draft())
 	cmds, _ := d.poll(issue("1", 1, ready), issue("2", 2, ready))
 	landed1, _ := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 	landed2, _ := d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})

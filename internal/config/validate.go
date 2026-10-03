@@ -35,10 +35,19 @@ type actionDoc struct {
 	Check  located[string] `yaml:"check"`
 }
 
+// What each kind of list item must be, said when an item is not a mapping.
+const (
+	stageShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
+		"and optionally description and issue_template"
+	actionShape = "must be an action with name and prompt"
+	extraShape  = "must be an extra label with label, and optionally description and issue_template"
+)
+
 // parsedStage is a stage that passed its own checks, with what the
 // workflow-graph checks need to name its keys.
 type parsedStage struct {
 	crew.Stage
+
 	path string
 	doc  stageDoc
 }
@@ -76,11 +85,8 @@ func workflow(n *yaml.Node) ([]crew.Stage, error) {
 }
 
 func parseStage(n *yaml.Node, path string) (parsedStage, error) {
-	if n.Kind != yaml.MappingNode {
-		return parsedStage{}, keyError(path, n.Line, "must be a stage with name, label, moves_to, on_success, on_failure, actions, and optionally description and issue_template")
-	}
 	var doc stageDoc
-	if err := decodeFields(entries(n, path), reflect.ValueOf(&doc).Elem()); err != nil {
+	if err := decodeItem(n, path, stageShape, &doc); err != nil {
 		return parsedStage{}, err
 	}
 	p := parsedStage{path: path, doc: doc}
@@ -118,35 +124,9 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 	out := make([]crew.Action, 0, len(n.Content))
 	firstPath := make(map[string]string, len(n.Content))
 	for i, item := range n.Content {
-		itemPath := fmt.Sprintf("%s[%d]", path, i)
-		if item.Kind != yaml.MappingNode {
-			errs = append(errs, keyError(itemPath, item.Line, "must be an action with name and prompt"))
-			continue
-		}
-		var doc actionDoc
-		if err := decodeFields(entries(item, itemPath), reflect.ValueOf(&doc).Elem()); err != nil {
+		action, err := parseAction(item, fmt.Sprintf("%s[%d]", path, i), firstPath)
+		if err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		name, nameErr := required(doc.Name, itemPath+".name", item.Line)
-		prompt, promptErr := required(doc.Prompt, itemPath+".prompt", item.Line)
-		if nameErr != nil || promptErr != nil {
-			errs = append(errs, nameErr, promptErr)
-			continue
-		}
-		if first, ok := firstPath[name]; ok {
-			errs = append(errs, keyError(itemPath+".name", doc.Name.line, fmt.Sprintf("action %q is already %s", name, first)))
-			continue
-		}
-		firstPath[name] = itemPath
-		// A check present but blank would run nothing and pass every time.
-		if doc.Check.line != 0 && strings.TrimSpace(doc.Check.value) == "" {
-			errs = append(errs, keyError(itemPath+".check", doc.Check.line, "must not be empty"))
-			continue
-		}
-		action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value}
-		if _, err := action.Render(sample); err != nil {
-			errs = append(errs, keyError(itemPath+".prompt", doc.Prompt.line, err.Error()))
 			continue
 		}
 		out = append(out, action)
@@ -154,9 +134,48 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 	return out, errors.Join(errs...)
 }
 
-// sample is the issue every prompt is rendered for at load, so a bad
+// parseAction decodes and checks the action n at path. firstPath holds the
+// path of each action name the stage already has; a valid name is added to
+// it.
+func parseAction(n *yaml.Node, path string, firstPath map[string]string) (crew.Action, error) {
+	var doc actionDoc
+	if err := decodeItem(n, path, actionShape, &doc); err != nil {
+		return crew.Action{}, err
+	}
+	name, nameErr := required(doc.Name, path+".name", n.Line)
+	prompt, promptErr := required(doc.Prompt, path+".prompt", n.Line)
+	if nameErr != nil || promptErr != nil {
+		return crew.Action{}, errors.Join(nameErr, promptErr)
+	}
+	if first, ok := firstPath[name]; ok {
+		return crew.Action{}, keyError(path+".name", doc.Name.line, fmt.Sprintf("action %q is already %s", name, first))
+	}
+	firstPath[name] = path
+	// A check present but blank would run nothing and pass every time.
+	if doc.Check.line != 0 && strings.TrimSpace(doc.Check.value) == "" {
+		return crew.Action{}, keyError(path+".check", doc.Check.line, "must not be empty")
+	}
+	action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value}
+	if _, err := action.Render(sampleIssue()); err != nil {
+		return crew.Action{}, keyError(path+".prompt", doc.Prompt.line, err.Error())
+	}
+	return action, nil
+}
+
+// decodeItem decodes the list item n at path into the struct target points
+// to. An item that is not a mapping is reported with shape, what it must be.
+func decodeItem(n *yaml.Node, path, shape string, target any) error {
+	if n.Kind != yaml.MappingNode {
+		return keyError(path, n.Line, shape)
+	}
+	return decodeFields(entries(n, path), reflect.ValueOf(target).Elem())
+}
+
+// sampleIssue is the issue every prompt is rendered for at load, so a bad
 // template stops crew before polling rather than when an issue is taken.
-var sample = crew.Issue{Key: "42", Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
+func sampleIssue() crew.Issue {
+	return crew.Issue{Key: "42", Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
+}
 
 // prompts checks the top-level prompts: a mapping from a name to a prompt
 // that a skill, such as /cw-brainstorm, runs in the user's own session. crew
@@ -186,7 +205,7 @@ func prompts(n *yaml.Node) error {
 			continue
 		}
 		action := crew.Action{Name: name, Prompt: prompt.value}
-		if _, err := action.Render(sample); err != nil {
+		if _, err := action.Render(sampleIssue()); err != nil {
 			errs = append(errs, keyError(e.path, e.key.Line, err.Error()))
 		}
 	}
@@ -203,50 +222,63 @@ func extraLabels(n *yaml.Node, workflow []crew.Stage) ([]crew.State, error) {
 	case n.Kind != yaml.SequenceNode:
 		return nil, keyError("extra_labels", n.Line, "must be a list of labels")
 	}
-	taken := map[string]bool{}
-	for _, s := range crew.WorkflowStates(workflow) {
-		taken[strings.ToLower(string(s))] = true
-	}
+	taken := lowerStates(workflow)
 	firstPath := make(map[string]string, len(n.Content))
 	var errs []error
 	out := make([]crew.State, 0, len(n.Content))
 	for i, item := range n.Content {
 		path := fmt.Sprintf("extra_labels[%d]", i)
-		if item.Kind != yaml.MappingNode {
-			errs = append(errs, keyError(path, item.Line, "must be an extra label with label, and optionally description and issue_template"))
-			continue
-		}
 		var doc extraDoc
-		if err := decodeFields(entries(item, path), reflect.ValueOf(&doc).Elem()); err != nil {
+		if err := decodeItem(item, path, extraShape, &doc); err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		if err := described(doc.Description, doc.IssueTemplate, path); err != nil {
 			errs = append(errs, err)
 		}
-		label, err := state(doc.Label, path+".label", item.Line)
+		label, err := extraLabel(doc.Label, path, item.Line, taken, firstPath)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		key := strings.ToLower(string(label))
-		if taken[key] {
-			errs = append(errs, keyError(path+".label", doc.Label.line,
-				fmt.Sprintf("%q is a label the workflow names; an extra label must be one no stage names", label)))
-			continue
-		}
-		if first, ok := firstPath[key]; ok {
-			errs = append(errs, keyError(path+".label", doc.Label.line,
-				fmt.Sprintf("%q is already %s.label", label, first)))
-			continue
-		}
-		firstPath[key] = path
 		out = append(out, label)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return out, nil
+}
+
+// lowerStates returns the workflow's states, lowercased.
+func lowerStates(workflow []crew.Stage) map[string]bool {
+	states := map[string]bool{}
+	for _, s := range crew.WorkflowStates(workflow) {
+		states[strings.ToLower(string(s))] = true
+	}
+	return states
+}
+
+// extraLabel checks the label of the extra at path, whose mapping is on
+// itemLine. taken holds the workflow's states and firstPath the path of
+// each earlier extra, both by lowercased label; a valid label is added to
+// firstPath.
+func extraLabel(l located[string], path string, itemLine int, taken map[string]bool,
+	firstPath map[string]string,
+) (crew.State, error) {
+	label, err := state(l, path+".label", itemLine)
+	if err != nil {
+		return "", err
+	}
+	key := strings.ToLower(string(label))
+	if taken[key] {
+		return "", keyError(path+".label", l.line,
+			fmt.Sprintf("%q is a label the workflow names; an extra label must be one no stage names", label))
+	}
+	if first, ok := firstPath[key]; ok {
+		return "", keyError(path+".label", l.line, fmt.Sprintf("%q is already %s.label", label, first))
+	}
+	firstPath[key] = path
+	return label, nil
 }
 
 // described checks the optional description and issue_template that a stage

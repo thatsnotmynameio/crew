@@ -5,13 +5,87 @@
 version: "2"
 
 linters:
-  enable:
-    - depguard
-    - errorlint
-    - gocritic
-    - misspell
-    - revive
+  # Every linter is on unless it is listed under disable with the reason it
+  # is off: a rule earns its place by finding things we would fix. The version
+  # is pinned (v2.14.0), so a release cannot switch new linters on unseen.
+  default: all
+  disable:
+    # Codacy's duplication engine owns duplication (one owner per metric).
+    - dupl
+    # cyclop measures the same cyclomatic complexity, matched to Lizard's CCN.
+    - gocyclo
+    # Whitespace style (blank lines around blocks and before returns). gofmt
+    # already owns layout; these findings never made the code clearer.
+    - wsl
+    - wsl_v5
+    - nlreturn
+    # Go's zero values are deliberate: requiring every struct field to be set
+    # would undo them and add noise to every literal.
+    - exhaustruct
+    - exhaustruct_v5
+    # Short names in short scopes are idiomatic Go (i, err, ok, tc).
+    - varnamelen
+    # `if err := f(); err != nil` scopes err to its check, the idiomatic form.
+    - noinlineerr
+    # Tests isolate git with t.Setenv (GIT_CONFIG_GLOBAL), which t.Parallel
+    # forbids, and the whole suite runs in seconds.
+    - paralleltest
+    # Ports and adapters: factories and adapters return port interfaces
+    # (port.Tracker, port.Session, core.Input) by design.
+    - ireturn
+    # Struct tags mirror formats crew does not own: Claude's stream-json, gh's
+    # JSON and the snake_case keys of .crew/config.yaml.
+    - tagliatelle
+    # Tests are white-box on purpose: the core's reducer and the adapters'
+    # scripted runners are tested from inside their packages.
+    - testpackage
+    # Errors carry their context where they are made; sentinels exist only
+    # where a caller branches on them (internal/port). Wrapping every message
+    # in a static error adds a type nobody checks.
+    - err113
+    # crew is English-only and shows the boss times in their local zone on
+    # purpose; this linter is for internationalised code.
+    - gosmopolitan
+    # Deprecated in favour of gomodguard_v2, which default: all already runs.
+    - gomodguard
   settings:
+    revive:
+      enable-default-rules: true
+      rules:
+        # Matched to Codacy's Lizard parameter-count pattern.
+        - name: argument-limit
+          arguments: [8]
+        # Matched to Codacy's Lizard file-length pattern (non-comment lines).
+        - name: file-length-limit
+          arguments:
+            - max: 500
+              skipComments: true
+              skipBlankLines: true
+    exhaustive:
+      # A switch with a default branch already handles every other value.
+      default-signifies-exhaustive: true
+    wrapcheck:
+      # crew's own packages already wrap with context where the error is made;
+      # only errors from third-party packages need context added here.
+      ignore-package-globs:
+        - github.com/thatsnotmynameio/crew/*
+    cyclop:
+      max-complexity: 15
+    gocognit:
+      min-complexity: 15
+    funlen:
+      # Lines, not statements: Codacy's Lizard counts non-comment lines, and
+      # both must agree on what is too long.
+      lines: 50
+      statements: -1
+      ignore-comments: true
+    nestif:
+      min-complexity: 4
+    lll:
+      line-length: 120
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     depguard:
       rules:
         domain:
@@ -94,6 +168,26 @@ linters:
           deny:
             - pkg: charm.land/bubbletea
               desc: only the TUI imports bubbletea
+
+  exclusions:
+    presets:
+      # Only known false positives: unchecked Close/Print-style errors in the
+      # standard library. (common-false-positives is left out: it turns gosec's
+      # subprocess and file-path rules off everywhere, not only where a
+      # finding is justified.)
+      - std-error-handling
+    rules:
+      # Tests repeat literal inputs and expectations so each case reads alone.
+      - path: _test\.go
+        linters: [goconst]
+      # Test fixtures are package-level values shared by the cases of a file.
+      - path: _test\.go
+        linters: [gochecknoglobals]
+      # Tests read fixtures from testdata, run git in temporary repositories
+      # and write files in t.TempDir(): paths and commands come from the test.
+      - path: _test\.go
+        linters: [gosec]
+        text: "G(204|304|306)"
 
 formatters:
   enable:

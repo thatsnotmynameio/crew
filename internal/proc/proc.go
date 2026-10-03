@@ -72,55 +72,23 @@ type Process struct {
 // When the child exits, whatever it left running in its group is killed: a
 // command's helpers end with it.
 func (g *Group) Start(c Command, stdout, stderr io.Writer) (*Process, error) {
-	cmd := exec.Command(c.Name, c.Args...)
+	// proc is the one way crew starts a child: the program and its arguments
+	// come from crew's adapters, never from a shell.
+	//nolint:noctx // Stop and KillAll end the child's whole group; a context would kill its pid alone
+	cmd := exec.Command(c.Name, c.Args...) //nolint:gosec // running the program its callers name is proc's job
 	cmd.Dir = c.Dir
 	cmd.Env = append(append(os.Environ(), c.Env...), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var pipes []*pipe
-	closeAll := func() {
-		for _, p := range pipes {
-			_ = p.r.Close()
-			_ = p.w.Close()
-		}
-	}
-	if stdout != nil {
-		p, err := newPipe(stdout)
-		if err != nil {
-			return nil, fmt.Errorf("start %s: %w", c.Name, err)
-		}
-		pipes = append(pipes, p)
-		cmd.Stdout = p.w
-	}
-	if stderr != nil {
-		if sameWriter(stdout, stderr) {
-			cmd.Stderr = cmd.Stdout
-		} else {
-			p, err := newPipe(stderr)
-			if err != nil {
-				closeAll()
-				return nil, fmt.Errorf("start %s: %w", c.Name, err)
-			}
-			pipes = append(pipes, p)
-			cmd.Stderr = p.w
-		}
-	}
-
-	proc := &Process{exited: make(chan struct{}), done: make(chan struct{})}
-	// Holding the lock across the start means KillAll never misses a child
-	// that started before it.
-	g.mu.Lock()
-	if err := cmd.Start(); err != nil {
-		g.mu.Unlock()
-		closeAll()
+	pipes, err := attachPipes(cmd, stdout, stderr)
+	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", c.Name, err)
 	}
-	proc.pgid = cmd.Process.Pid
-	if g.live == nil {
-		g.live = make(map[*Process]struct{})
+	proc, err := g.launch(cmd, c.Name)
+	if err != nil {
+		closePipes(pipes)
+		return nil, err
 	}
-	g.live[proc] = struct{}{}
-	g.mu.Unlock()
 
 	var copies sync.WaitGroup
 	for _, p := range pipes {
@@ -129,38 +97,6 @@ func (g *Group) Start(c Command, stdout, stderr io.Writer) (*Process, error) {
 	}
 	go g.reap(proc, cmd, pipes, &copies)
 	return proc, nil
-}
-
-// reap waits for the child, kills what it left in its group, lets the output
-// drain, and then marks the process done.
-func (g *Group) reap(p *Process, cmd *exec.Cmd, pipes []*pipe, copies *sync.WaitGroup) {
-	p.err = cmd.Wait()
-	close(p.exited)
-	// The child is reaped, so the group outlives it only through its
-	// descendants; until they are gone, its id cannot be reused.
-	_ = signal(p.pgid, syscall.SIGKILL)
-
-	copied := make(chan struct{})
-	go func() {
-		copies.Wait()
-		close(copied)
-	}()
-	select {
-	case <-copied:
-	case <-time.After(drainTimeout):
-		for _, pp := range pipes {
-			_ = pp.r.Close() // unblocks the copy
-		}
-		<-copied
-	}
-	for _, pp := range pipes {
-		_ = pp.r.Close()
-	}
-
-	g.mu.Lock()
-	delete(g.live, p)
-	g.mu.Unlock()
-	close(p.done)
 }
 
 // Wait waits for the process to end and returns how the child exited: nil
@@ -253,6 +189,56 @@ func (g *Group) Run(ctx context.Context, c Command) (Output, error) {
 	return out, nil
 }
 
+// launch starts cmd, the command named name, and records it as a live child.
+func (g *Group) launch(cmd *exec.Cmd, name string) (*Process, error) {
+	proc := &Process{exited: make(chan struct{}), done: make(chan struct{})}
+	// Holding the lock across the start means KillAll never misses a child
+	// that started before it.
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start %s: %w", name, err)
+	}
+	proc.pgid = cmd.Process.Pid
+	if g.live == nil {
+		g.live = make(map[*Process]struct{})
+	}
+	g.live[proc] = struct{}{}
+	return proc, nil
+}
+
+// reap waits for the child, kills what it left in its group, lets the output
+// drain, and then marks the process done.
+func (g *Group) reap(p *Process, cmd *exec.Cmd, pipes []*pipe, copies *sync.WaitGroup) {
+	p.err = cmd.Wait()
+	close(p.exited)
+	// The child is reaped, so the group outlives it only through its
+	// descendants; until they are gone, its id cannot be reused.
+	_ = signal(p.pgid, syscall.SIGKILL)
+
+	copied := make(chan struct{})
+	go func() {
+		copies.Wait()
+		close(copied)
+	}()
+	select {
+	case <-copied:
+	case <-time.After(drainTimeout):
+		for _, pp := range pipes {
+			_ = pp.r.Close() // unblocks the copy
+		}
+		<-copied
+	}
+	for _, pp := range pipes {
+		_ = pp.r.Close()
+	}
+
+	g.mu.Lock()
+	delete(g.live, p)
+	g.mu.Unlock()
+	close(p.done)
+}
+
 // signal sends sig to process group pgid. A group that is already gone is
 // not an error.
 func signal(pgid int, sig syscall.Signal) error {
@@ -272,9 +258,45 @@ type pipe struct {
 func newPipe(dst io.Writer) (*pipe, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("output pipe: %w", err)
 	}
 	return &pipe{r: r, w: w, dst: dst}, nil
+}
+
+// attachPipes gives cmd a pipe to each writer that is not nil, one pipe for
+// both when stdout and stderr are the same writer, and returns the pipes.
+func attachPipes(cmd *exec.Cmd, stdout, stderr io.Writer) ([]*pipe, error) {
+	var pipes []*pipe
+	if stdout != nil {
+		p, err := newPipe(stdout)
+		if err != nil {
+			return nil, err
+		}
+		pipes = append(pipes, p)
+		cmd.Stdout = p.w
+	}
+	switch {
+	case stderr == nil:
+	case sameWriter(stdout, stderr):
+		cmd.Stderr = cmd.Stdout
+	default:
+		p, err := newPipe(stderr)
+		if err != nil {
+			closePipes(pipes)
+			return nil, err
+		}
+		pipes = append(pipes, p)
+		cmd.Stderr = p.w
+	}
+	return pipes, nil
+}
+
+// closePipes closes both ends of every pipe.
+func closePipes(pipes []*pipe) {
+	for _, p := range pipes {
+		_ = p.r.Close()
+		_ = p.w.Close()
+	}
 }
 
 // sameWriter reports whether a and b are the same writer, without panicking

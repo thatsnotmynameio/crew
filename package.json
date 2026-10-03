@@ -8,6 +8,8 @@
     "docs:preview": "docs.page preview"
   },
   "devDependencies": {
+    "@codacy/analysis-cli": "0.24.0",
+    "@codacy/codacy-cloud-cli": "1.14.0",
     "@docs.page/cli": "2.1.0"
   }
 }

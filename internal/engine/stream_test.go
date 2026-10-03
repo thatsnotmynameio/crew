@@ -16,7 +16,11 @@ func listed(t *testing.T, u Update) int {
 	if len(u.Events) != 1 {
 		t.Fatalf("update has %d events, want 1", len(u.Events))
 	}
-	return u.Events[0].(core.PollDone).Listed
+	done, ok := u.Events[0].(core.PollDone)
+	if !ok {
+		t.Fatalf("update's event is %T, want core.PollDone", u.Events[0])
+	}
+	return done.Listed
 }
 
 // Under synctest, a publish that blocked would deadlock the bubble and fail

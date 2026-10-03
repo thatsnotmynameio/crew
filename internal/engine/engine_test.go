@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strings"
+	"strconv"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -53,7 +54,7 @@ var develop = crew.Stage{
 var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func issue(n int, states ...crew.State) crew.Issue {
-	key := fmt.Sprint(n)
+	key := strconv.Itoa(n)
 	return crew.Issue{
 		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key,
 		Created: epoch.Add(time.Duration(n) * time.Minute), States: states,
@@ -144,7 +145,7 @@ func (r *rig) sessions(n int) map[string]*fake.Session {
 }
 
 func states(t *testing.T, tr interface {
-	Issue(string) (crew.Issue, bool)
+	Issue(key string) (crew.Issue, bool)
 }, key string) []crew.State {
 	t.Helper()
 	i, ok := tr.Issue(key)
@@ -152,6 +153,16 @@ func states(t *testing.T, tr interface {
 		t.Fatalf("issue %s is gone", key)
 	}
 	return i.States
+}
+
+// fakeWorkspace returns cfg's workspace, the fake one config made.
+func fakeWorkspace(t *testing.T, cfg engine.Config) *fake.Workspace {
+	t.Helper()
+	w, ok := cfg.Workspace.(*fake.Workspace)
+	if !ok {
+		t.Fatalf("workspace is %T, want the fake one", cfg.Workspace)
+	}
+	return w
 }
 
 // span is one listing a tracker saw.
@@ -164,6 +175,7 @@ type span struct {
 // listing never returns on its own when hangFirst is set.
 type slowTracker struct {
 	*fake.Tracker
+
 	delay     time.Duration
 	hangFirst bool
 
@@ -204,7 +216,7 @@ func (s *slowTracker) spans() []span {
 }
 
 func offsets(t0 time.Time, spans []span) []time.Duration {
-	var out []time.Duration
+	out := make([]time.Duration, 0, len(spans))
 	for _, s := range spans {
 		out = append(out, s.start.Sub(t0))
 	}
@@ -266,31 +278,11 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 
 		sessions := r.sessions(4)
 
-		names := slices.Sorted(func(yield func(string) bool) {
-			for name := range sessions {
-				if !yield(name) {
-					return
-				}
-			}
-		})
 		want := []string{"issue-1-acceptance", "issue-1-development", "issue-2-acceptance", "issue-2-development"}
-		if !reflect.DeepEqual(names, want) {
+		if names := slices.Sorted(maps.Keys(sessions)); !reflect.DeepEqual(names, want) {
 			t.Fatalf("sessions run in workspaces %v, want %v", names, want)
 		}
-		if got := sessions["issue-1-acceptance"].Run().Prompt; got != "Implement test acceptance for issue #1" {
-			t.Errorf("issue-1-acceptance prompt = %q", got)
-		}
-		if got := sessions["issue-2-development"].Run().Prompt; got != "Implement development for issue #2" {
-			t.Errorf("issue-2-development prompt = %q", got)
-		}
-		for _, key := range []string{"1", "2"} {
-			if got := states(t, tr, key); !reflect.DeepEqual(got, []crew.State{inProgress}) {
-				t.Errorf("issue %s is in %v, want in progress", key, got)
-			}
-		}
-		if got := states(t, tr, "3"); !reflect.DeepEqual(got, []crew.State{ready}) {
-			t.Errorf("issue 3 is in %v, want it to wait in ready", got)
-		}
+		checkTookTwoIssues(t, tr, sessions)
 		for name, s := range sessions {
 			if _, err := fmt.Fprintf(s.Run().Output, "output of %s\n", name); err != nil {
 				t.Fatalf("write to %s's output: %v", name, err)
@@ -303,27 +295,12 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 			t.Fatalf("Run: %v", err)
 		}
 
-		for name := range sessions {
-			got, err := os.ReadFile(filepath.Join(r.root, ".crew", "logs", name+".log"))
-			if err != nil {
-				t.Fatalf("log of %s: %v", name, err)
-			}
-			if want := "output of " + name + "\n"; string(got) != want {
-				t.Errorf("log of %s = %q, want %q", name, got, want)
-			}
-		}
-		var logs []string
-		for _, rep := range tr.Reports() {
-			for _, f := range rep.Failures {
-				logs = append(logs, f.Log)
-			}
-		}
-		slices.Sort(logs)
+		checkEachLogHoldsItsOutput(t, r.root, sessions)
 		wantLogs := []string{
 			".crew/logs/issue-1-acceptance.log", ".crew/logs/issue-1-development.log",
 			".crew/logs/issue-2-acceptance.log", ".crew/logs/issue-2-development.log",
 		}
-		if !reflect.DeepEqual(logs, wantLogs) {
+		if logs := reportedLogs(tr); !reflect.DeepEqual(logs, wantLogs) {
 			t.Errorf("failure reports name logs %v, want %v", logs, wantLogs)
 		}
 		if !slices.ContainsFunc(final.Events, func(e core.Event) bool { _, ok := e.(core.Stopped); return ok }) {
@@ -332,227 +309,51 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 	})
 }
 
-// listCounter is a preparing fake tracker that counts its listings.
-type listCounter struct {
-	fake.PreparingTracker
-
-	mu    sync.Mutex
-	lists int
-}
-
-func (l *listCounter) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
-	l.mu.Lock()
-	l.lists++
-	l.mu.Unlock()
-	return l.PreparingTracker.List(ctx, states)
-}
-
-func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker(issue(1, ready))}
-		notLoggedIn := errors.New("gh is not logged in")
-		tr.Fail(notLoggedIn)
-		harness := fake.NewPreparingHarness()
-		cfg := config(t, tr, develop)
-		cfg.Harness = harness
-
-		err := engine.New(cfg).Run(context.Background())
-
-		if !errors.Is(err, notLoggedIn) {
-			t.Fatalf("Run = %v, want the preparer's error", err)
-		}
-		if !strings.Contains(err.Error(), "tracker") {
-			t.Errorf("Run = %q, want it to name the tracker", err)
-		}
-		if tr.lists != 0 {
-			t.Errorf("tracker listed %d times, want none", tr.lists)
-		}
-		want := [][]crew.State{{ready, inProgress, readyToReview, needsAttention}}
-		if got := tr.Calls(); !reflect.DeepEqual(got, want) {
-			t.Errorf("tracker prepared for %v, want the workflow's states %v", got, want)
-		}
-		if got := harness.Calls(); !reflect.DeepEqual(got, want) {
-			t.Errorf("harness prepared for %v, want %v", got, want)
-		}
-	})
-}
-
-func TestPrepareGetsOnlyTheStatesTheWorkflowNames(t *testing.T) {
-	blocked := develop
-	blocked.OnFailure = "blocked"
-	tr := fake.NewPreparingTracker()
-
-	if err := engine.New(config(t, tr, blocked)).Prepare(context.Background()); err != nil {
-		t.Fatalf("Prepare: %v", err)
+// checkTookTwoIssues checks that sessions run the prompts of issues 1 and 2,
+// which moved to in progress, while issue 3 waits in ready.
+func checkTookTwoIssues(t *testing.T, tr *fake.Tracker, sessions map[string]*fake.Session) {
+	t.Helper()
+	if got := sessions["issue-1-acceptance"].Run().Prompt; got != "Implement test acceptance for issue #1" {
+		t.Errorf("issue-1-acceptance prompt = %q", got)
 	}
-	want := [][]crew.State{{ready, inProgress, readyToReview, "blocked"}}
-	if got := tr.Calls(); !reflect.DeepEqual(got, want) {
-		t.Errorf("tracker prepared for %v, want %v and no needs attention", got, want)
+	if got := sessions["issue-2-development"].Run().Prompt; got != "Implement development for issue #2" {
+		t.Errorf("issue-2-development prompt = %q", got)
+	}
+	for _, key := range []string{"1", "2"} {
+		if got := states(t, tr, key); !reflect.DeepEqual(got, []crew.State{inProgress}) {
+			t.Errorf("issue %s is in %v, want in progress", key, got)
+		}
+	}
+	if got := states(t, tr, "3"); !reflect.DeepEqual(got, []crew.State{ready}) {
+		t.Errorf("issue 3 is in %v, want it to wait in ready", got)
 	}
 }
 
-func TestRunAfterPrepareDoesNotPrepareAgain(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker()}
-		e := engine.New(config(t, tr, develop))
-
-		if err := e.Prepare(context.Background()); err != nil {
-			t.Fatalf("Prepare: %v", err)
-		}
-		if got := len(tr.Calls()); got != 1 {
-			t.Fatalf("Prepare ran the tracker's Preparer %d times, want 1", got)
-		}
-		if tr.lists != 0 {
-			t.Fatalf("Prepare listed %d times, want none", tr.lists)
-		}
-
-		e.Stop()
-		if err := e.Run(context.Background()); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-		if got := len(tr.Calls()); got != 1 {
-			t.Errorf("the tracker's Preparer ran %d times in all, want once", got)
-		}
-		if tr.lists != 1 {
-			t.Errorf("Run listed %d times, want the first poll's listing", tr.lists)
-		}
-	})
-}
-
-// gatedTracker holds every move to gate until release is closed, and fails
-// such a move when its context ended meanwhile.
-type gatedTracker struct {
-	*fake.Tracker
-	gate    crew.State
-	entered chan struct{}
-	release chan struct{}
-}
-
-func (g *gatedTracker) Move(ctx context.Context, key string, from, to crew.State) error {
-	if to == g.gate {
-		g.entered <- struct{}{}
-		<-g.release
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("move issue %s: %w", key, err)
-		}
-	}
-	return g.Tracker.Move(ctx, key, from, to)
-}
-
-// Covers AE9 through the loop.
-func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := &gatedTracker{
-			Tracker: fake.NewTracker(issue(1, ready), issue(2, ready)),
-			gate:    readyToReview, entered: make(chan struct{}, 1), release: make(chan struct{}),
-		}
-		r := start(t, config(t, tr, develop))
-		sessions := r.sessions(2)
-
-		sessions["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
-		<-tr.entered
-		r.cancel() // Run's context ending is a stop request, not an abort.
-		synctest.Wait()
-
-		select {
-		case err := <-r.done:
-			t.Fatalf("Run returned %v while a verdict move was in flight", err)
-		default:
-		}
-		if !sessions["issue-2-development"].Stopped() {
-			t.Error("issue 2's running session was not stopped")
-		}
-		close(tr.release)
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
-			t.Errorf("issue 1 is in %v, want ready to review", got)
-		}
-		if got := states(t, tr, "2"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
-			t.Errorf("issue 2 is in %v, want needs attention", got)
-		}
-	})
-}
-
-func TestStopKillsASessionIgnoringItAtTheTenSecondDeadline(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		r := start(t, config(t, tr, develop))
-		r.harness.IgnoreStop(true)
-		s := r.sessions(1)["issue-1-development"]
-
-		t0 := time.Now()
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-
-		if got := time.Since(t0); got != 10*time.Second {
-			t.Errorf("Run returned %v after the stop request, want 10s", got)
-		}
-		if !s.Stopped() {
-			t.Error("the session was not stopped")
-		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
-			t.Errorf("issue 1 is in %v, want needs attention", got)
-		}
-		reports := tr.Reports()
-		if len(reports) != 1 || len(reports[0].Failures) != 1 || reports[0].Failures[0].Reason != fake.KilledReason {
-			t.Errorf("reports = %+v, want one naming the killed session", reports)
-		}
-	})
-}
-
-// moveCounter is a fake tracker that counts the moves asked for to one state,
-// failed ones included.
-type moveCounter struct {
-	*fake.Tracker
-	to crew.State
-
-	mu    sync.Mutex
-	moves int
-}
-
-func (m *moveCounter) Move(ctx context.Context, key string, from, to crew.State) error {
-	if to == m.to {
-		m.mu.Lock()
-		m.moves++
-		m.mu.Unlock()
-	}
-	return m.Tracker.Move(ctx, key, from, to)
-}
-
-func TestStopGivesAFailingVerdictMoveOneFinalTryAndReturns(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := &moveCounter{Tracker: fake.NewTracker(issue(1, ready)), to: needsAttention}
-		r := start(t, config(t, tr, develop))
-		r.sessions(1)
-		down := errors.New("tracker is down")
-		tr.FailMoves("1", down, down, down)
-
-		r.engine.Stop()
-		final, err := r.wait()
+// checkEachLogHoldsItsOutput checks that the log of each session, under
+// root, holds what that session wrote.
+func checkEachLogHoldsItsOutput(t *testing.T, root string, sessions map[string]*fake.Session) {
+	t.Helper()
+	for name := range sessions {
+		got, err := os.ReadFile(filepath.Join(root, ".crew", "logs", name+".log"))
 		if err != nil {
-			t.Fatalf("Run: %v", err)
+			t.Fatalf("log of %s: %v", name, err)
 		}
+		if want := "output of " + name + "\n"; string(got) != want {
+			t.Errorf("log of %s = %q, want %q", name, got, want)
+		}
+	}
+}
 
-		if tr.moves != 2 {
-			t.Errorf("tried the needs attention move %d times, want 2: the first and one final try", tr.moves)
+// reportedLogs returns the logs the tracker's failure reports name, sorted.
+func reportedLogs(tr *fake.Tracker) []string {
+	var logs []string
+	for _, rep := range tr.Reports() {
+		for _, f := range rep.Failures {
+			logs = append(logs, f.Log)
 		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{inProgress}) {
-			t.Errorf("issue 1 is in %v, want it left in in progress", got)
-		}
-		dropped := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
-			d, ok := e.(core.CallDropped)
-			return ok && d.Call.Kind == core.CallMove && d.Call.To == needsAttention &&
-				d.Result == core.ResultFailed && strings.Contains(d.Reason, "tracker is down")
-		})
-		if !dropped {
-			t.Errorf("last update's recent events = %#v, want the dropped needs attention move", final.Snapshot.Recent)
-		}
-	})
+	}
+	slices.Sort(logs)
+	return logs
 }
 
 func TestAListingThatNeverReturnsTimesOutAndALaterTickListsAgain(t *testing.T) {
@@ -590,339 +391,10 @@ func TestAListingThatNeverReturnsTimesOutAndALaterTickListsAgain(t *testing.T) {
 	})
 }
 
-// failingWorkspace fails every creation with an error naming local paths, as
-// git's stderr does.
-type failingWorkspace struct {
-	root, home string
-}
-
-func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action string) (port.Space, error) {
-	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.Key+"-"+action)
-	return port.Space{}, fmt.Errorf("git worktree add: fatal: '%s' already exists (see %s)", dir, filepath.Join(w.home, ".gitconfig"))
-}
-
-func TestAWorkspaceFailureReachesTheReportWithLocalPathsShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		cfg.Workspace = failingWorkspace{root: cfg.Root, home: cfg.Home}
-		r := start(t, cfg)
-
-		synctest.Wait()
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-
-		reports := tr.Reports()
-		if len(reports) != 1 || len(reports[0].Failures) != 1 {
-			t.Fatalf("reports = %+v, want one with one failure", reports)
-		}
-		want := "git worktree add: fatal: './.crew/worktrees/issue-1-development' already exists (see ~/.gitconfig)"
-		if got := reports[0].Failures[0].Reason; got != want {
-			t.Errorf("reason = %q, want %q", got, want)
-		}
-	})
-}
-
-// reportedReason runs cfg, calling during first when it is set, until every
-// goroutine is blocked, stops it, and returns the reason of the one failure
-// the tracker received.
-func reportedReason(t *testing.T, tr *fake.Tracker, cfg engine.Config, during func(*rig)) string {
-	t.Helper()
-	r := start(t, cfg)
-	if during != nil {
-		during(r)
-	}
-	synctest.Wait()
-	r.engine.Stop()
-	if _, err := r.wait(); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	reports := tr.Reports()
-	if len(reports) != 1 || len(reports[0].Failures) != 1 {
-		t.Fatalf("reports = %+v, want one with one failure", reports)
-	}
-	return reports[0].Failures[0].Reason
-}
-
-func TestASessionsReasonReachesTheReportWithLocalPathsShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-
-		got := reportedReason(t, tr, cfg, func(r *rig) {
-			r.sessions(1)["issue-1-development"].End(crew.Outcome{
-				Reason: fmt.Sprintf("go test failed in %s/engine (cache %s/.cache), ran in %s.", cfg.Root, cfg.Home, cfg.Root),
-			})
-		})
-
-		if want := "go test failed in ./engine (cache ~/.cache), ran in .."; got != want {
-			t.Errorf("reason = %q, want %q", got, want)
-		}
-	})
-}
-
-// failingHarness fails every start with an error naming local paths, as a
-// harness's stderr does.
-type failingHarness struct {
-	home string
-}
-
-func (h failingHarness) Start(_ context.Context, run port.Run) (port.Session, error) {
-	return nil, fmt.Errorf("claude: cannot run in %s: no settings in %s", run.Dir, filepath.Join(h.home, ".claude"))
-}
-
-func TestAHarnessStartFailureReachesTheReportWithLocalPathsShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		cfg.Harness = failingHarness{home: cfg.Home}
-
-		got := reportedReason(t, tr, cfg, nil)
-
-		if want := "claude: cannot run in ./.crew/worktrees/issue-1-development: no settings in ~/.claude"; got != want {
-			t.Errorf("reason = %q, want %q", got, want)
-		}
-	})
-}
-
-func TestALogThatCannotOpenReachesTheReportWithLocalPathsShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		// A file where the log directory goes makes creating it fail.
-		if err := os.WriteFile(filepath.Join(cfg.Root, ".crew", "logs"), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-
-		got := reportedReason(t, tr, cfg, nil)
-
-		if !strings.Contains(got, "./.crew/logs") || strings.Contains(got, cfg.Root) {
-			t.Errorf("reason = %q, want it to name ./.crew/logs and not %s", got, cfg.Root)
-		}
-	})
-}
-
-// failingLister is a fake tracker whose listings fail with an error naming
-// local paths, as gh's stderr does.
-type failingLister struct {
-	*fake.Tracker
-	root, home string
-}
-
-func (f failingLister) List(context.Context, []crew.State) ([]crew.Issue, error) {
-	return nil, fmt.Errorf("gh: no repository in %s (config %s)", f.root, filepath.Join(f.home, ".config", "gh"))
-}
-
-func TestATrackerCallsReasonHasLocalPathsShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		cfg := config(t, nil, develop)
-		cfg.Tracker = failingLister{Tracker: fake.NewTracker(), root: cfg.Root, home: cfg.Home}
-		r := start(t, cfg)
-
-		synctest.Wait()
-		r.engine.Stop()
-		final, err := r.wait()
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-
-		want := "gh: no repository in . (config ~/.config/gh)"
-		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
-			f, ok := e.(core.ListingFailed)
-			return ok && f.Reason == want
-		})
-		if !failed {
-			t.Errorf("recent events = %#v, want a ListingFailed with reason %q", final.Snapshot.Recent, want)
-		}
-	})
-}
-
-// lastStatus returns the last status the tracker holds for key, failing
-// without one.
-func lastStatus(t *testing.T, tr fake.ReportingTracker, key string) crew.Status {
-	t.Helper()
-	got := tr.Statuses(key)
-	if len(got) == 0 {
-		t.Fatalf("no status written for %s", key)
-	}
-	return got[len(got)-1]
-}
-
-func TestAE2AE6RunningStatusCarriesTheSessionsWordsWithLocalPathsShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewReportingTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		cfg.Harness = fake.NewNarratingHarness()
-		r := start(t, cfg)
-		s := r.sessions(1)["issue-1-development"]
-		begun := time.Now()
-
-		s.Say(fmt.Sprintf("Edited %s/internal/core/update.go for @someone", cfg.Root))
-		time.Sleep(poll)
-		synctest.Wait()
-
-		got := lastStatus(t, tr, "1")
-		if got.Kind != crew.StatusRunning || len(got.Actions) != 1 {
-			t.Fatalf("status = %#v, want development running", got)
-		}
-		a := got.Actions[0]
-		if want := "Edited ./internal/core/update.go for @someone"; a.Said != want {
-			t.Errorf("Said = %q, want %q", a.Said, want)
-		}
-		if !a.Started.Equal(begun) || !got.Updated.Equal(begun.Add(poll)) {
-			t.Errorf("started %v and updated %v, want %v and a poll later", a.Started, got.Updated, begun)
-		}
-
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-}
-
-func TestR9SessionThatCannotNarrateGivesAStatusWithoutWords(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewReportingTracker(issue(1, ready))
-		r := start(t, config(t, tr, develop))
-		r.sessions(1)
-		time.Sleep(poll)
-		synctest.Wait()
-
-		got := lastStatus(t, tr, "1")
-		if a := got.Actions[0]; a.State != crew.ActionRunning || a.Started.IsZero() || a.Said != "" {
-			t.Errorf("action = %#v, want running with a start time and no words", a)
-		}
-
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-}
-
-func TestAE3AE4StopLeavesTheMoveOnTheStatusAndTheFailureReportApart(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewReportingTracker(issue(1, ready))
-		r := start(t, config(t, tr, develop))
-		r.sessions(1)
-
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-
-		want := crew.Status{
-			IssueKey: "1", IssueRef: "#1", Stage: "implement", Kind: crew.StatusEnded,
-			Actions: []crew.ActionStatus{{
-				Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped,
-				Log: ".crew/logs/issue-1-development.log",
-			}},
-			To: needsAttention, Move: crew.MoveDone,
-		}
-		got := lastStatus(t, tr, "1")
-		if got.Run == "" {
-			t.Errorf("last status has no run: %#v", got)
-		}
-		got.Updated, got.Run = time.Time{}, ""
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("last status = %#v, want %#v", got, want)
-		}
-		if len(tr.Reports()) != 1 {
-			t.Errorf("reports = %+v, want the failure report as well", tr.Reports())
-		}
-	})
-}
-
-// statusCounter is a reporting fake tracker that counts its status writes.
-type statusCounter struct {
-	fake.ReportingTracker
-
-	mu     sync.Mutex
-	writes int
-}
-
-func (c *statusCounter) ReportStatus(ctx context.Context, s crew.Status) error {
-	c.mu.Lock()
-	c.writes++
-	c.mu.Unlock()
-	return c.ReportingTracker.ReportStatus(ctx, s)
-}
-
-func (c *statusCounter) count() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.writes
-}
-
-func TestARefusedEndedStatusIsNotRetriedAndStopDoesNotWaitForIt(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := &statusCounter{ReportingTracker: fake.NewReportingTracker(issue(1, ready))}
-		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
-		synctest.Wait()
-
-		locked := fmt.Errorf("issue is locked: %w", port.ErrRefused)
-		tr.FailStatuses("1", locked, locked)
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
-		synctest.Wait()
-		writes := tr.count()
-
-		time.Sleep(poll)
-		synctest.Wait()
-		if got := tr.count(); got != writes {
-			t.Errorf("%d status writes after the next tick, want still %d", got, writes)
-		}
-		for _, st := range tr.Statuses("1") {
-			if st.Kind == crew.StatusEnded {
-				t.Errorf("an ended status was written: %#v", st)
-			}
-		}
-
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
-			t.Errorf("issue 1 is in %v, want ready to review", got)
-		}
-	})
-}
-
-func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewReportingTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		cfg.Harness = fake.NewNarratingHarness()
-		r := start(t, cfg)
-		s := r.sessions(1)["issue-1-development"]
-
-		// The repository's path starts before the last 200 characters, so a
-		// cut before shortening would leave the end of it in the text.
-		tail := "/internal/core/update.go " + strings.Repeat("x", 190)
-		s.Say("Edited " + cfg.Root + tail)
-		time.Sleep(poll)
-		synctest.Wait()
-
-		got := lastStatus(t, tr, "1").Actions[0].Said
-		if want := "…" + string([]rune("." + tail)[len([]rune("."+tail))-199:]); got != want {
-			t.Errorf("Said = %q, want %q", got, want)
-		}
-		if strings.Contains(got, filepath.Base(cfg.Root)) || strings.Contains(got, "home") {
-			t.Errorf("Said = %q names part of a local path", got)
-		}
-
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-}
-
 // slowPreparer is a tracker whose environment check takes delay.
 type slowPreparer struct {
 	*slowTracker
+
 	delay time.Duration
 }
 

@@ -20,6 +20,10 @@ import (
 // move up, so the issue is not in that state.
 const givenUp = "move given up"
 
+// recentHeader is the rows of the Recent events region's header: a blank
+// line and its title.
+const recentHeader = 2
+
 // View renders the latest snapshot: a summary of the run and of the issues
 // handled so far, then four regions: the held issues by stage and claim, the
 // actions not yet ended with their elapsed time, the issues handled this run,
@@ -60,11 +64,11 @@ func (m Model) fitted() []string {
 	h := m.height
 
 	// Everything fits, or there is no height to fit.
-	if h <= 0 || len(fixed)+len(rest)+2+len(recent) <= h {
+	if h <= 0 || len(fixed)+len(rest)+recentHeader+len(recent) <= h {
 		return append(withRest(fixed, rest, cols, 0), recentRegion(recent)...)
 	}
 	// Recent events keeps its newest rows that fit, with its header.
-	if left := h - len(fixed) - len(rest) - 2; left > 0 {
+	if left := h - len(fixed) - len(rest) - recentHeader; left > 0 {
 		return append(withRest(fixed, rest, cols, 0), recentRegion(recent[len(recent)-left:])...)
 	}
 	// The oldest entries that need no attention collapse, as few as fit.
@@ -100,7 +104,7 @@ func collapsed(entries []core.HandledView) []string {
 		}
 		n[e.To]++
 	}
-	var out []string
+	out := make([]string, 0, len(order))
 	for _, s := range order {
 		out = append(out, fmt.Sprintf("  … and %d more in %s", n[s], s))
 	}
@@ -191,14 +195,7 @@ func (m Model) actions() []string {
 				continue
 			}
 			names = append(names, fmt.Sprintf("%s %s/%s", iv.Issue.Ref, iv.Stage, a.Name))
-			state := a.Phase.String()
-			if a.Phase == core.PhaseRunning || a.Phase == core.PhaseChecking {
-				state += " " + elapsed(m.at.Sub(a.Started))
-				if a.Resumed {
-					state = "resumed in " + a.Workspace + ", " + state
-				}
-			}
-			states = append(states, state)
+			states = append(states, m.actionState(a))
 		}
 	}
 	if len(names) == 0 {
@@ -209,6 +206,20 @@ func (m Model) actions() []string {
 		out = append(out, fmt.Sprintf("  %-*s  %s", pad, n, states[i]))
 	}
 	return out
+}
+
+// actionState is a's phase, with its elapsed time while it runs or is
+// checked, and its workspace when it resumed.
+func (m Model) actionState(a core.ActionView) string {
+	state := a.Phase.String()
+	if a.Phase != core.PhaseRunning && a.Phase != core.PhaseChecking {
+		return state
+	}
+	state += " " + elapsed(m.at.Sub(a.Started))
+	if a.Resumed {
+		state = "resumed in " + a.Workspace + ", " + state
+	}
+	return state
 }
 
 // recent returns one line per recent event, oldest first, or none. Each
@@ -269,7 +280,8 @@ func columnsOf(entries []core.HandledView) columns {
 // line is e's Handled line: its state, ref, stage and duration, then title,
 // which sits last so a narrow window cuts it first.
 func (c columns) line(e core.HandledView) string {
-	return fmt.Sprintf("  %-*s  %-*s  %-*s  %s", c.state, stateOf(e), c.ref, e.Issue.Ref, c.stage, stageOf(e), e.Issue.Title)
+	return fmt.Sprintf("  %-*s  %-*s  %-*s  %s",
+		c.state, stateOf(e), c.ref, e.Issue.Ref, c.stage, stageOf(e), e.Issue.Title)
 }
 
 func stateOf(e core.HandledView) string {
@@ -328,23 +340,24 @@ func width(names []string) int {
 
 // elapsed formats d as 5m03s, or 1h05m03s past an hour.
 func elapsed(d time.Duration) string {
-	s := int(max(d, 0) / time.Second)
-	if s >= 3600 {
-		return fmt.Sprintf("%dh%02dm%02ds", s/3600, s/60%60, s%60)
+	d = max(d, 0)
+	minutes, seconds := int(d%time.Hour/time.Minute), int(d%time.Minute/time.Second)
+	if d >= time.Hour {
+		return fmt.Sprintf("%dh%02dm%02ds", int(d/time.Hour), minutes, seconds)
 	}
-	return fmt.Sprintf("%dm%02ds", s/60, s%60)
+	return fmt.Sprintf("%dm%02ds", minutes, seconds)
 }
 
 // short formats d as 3h12m, 48m, or 30s under a minute.
 func short(d time.Duration) string {
-	s := int(max(d, 0) / time.Second)
+	d = max(d, 0)
 	switch {
-	case s >= 3600:
-		return fmt.Sprintf("%dh%02dm", s/3600, s/60%60)
-	case s >= 60:
-		return fmt.Sprintf("%dm", s/60)
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
+	case d >= time.Minute:
+		return fmt.Sprintf("%dm", int(d/time.Minute))
 	}
-	return fmt.Sprintf("%ds", s)
+	return fmt.Sprintf("%ds", int(d/time.Second))
 }
 
 // fit cuts s to width runes, ending a cut line with an ellipsis. Titles sit

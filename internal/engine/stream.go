@@ -27,6 +27,7 @@ type Update struct {
 // shares no memory with the core.
 type Snapshot struct {
 	core.View
+
 	// Recent are the last recentEvents events, oldest first.
 	Recent []core.Event
 	// Started is when the first poll ran, where the run time limit counts
