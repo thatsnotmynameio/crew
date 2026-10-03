@@ -71,7 +71,7 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsReason(t *testing.T) {
 		if e.Issue.Ref != "#1" || e.Stage != "implement" || e.To != needsAttention || !e.NeedsAttention() {
 			t.Errorf("entry = %#v, want #1 in needs attention, needing attention", e)
 		}
-		var reasons []string
+		reasons := make([]string, 0, len(e.Failures))
 		for _, f := range e.Failures {
 			reasons = append(reasons, f.Action+": "+f.Reason)
 		}

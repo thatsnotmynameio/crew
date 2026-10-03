@@ -89,7 +89,9 @@ type located[T any] struct {
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 	l.line = n.Line
-	return n.Decode(&l.value)
+	// Wrapped, a *yaml.TypeError would end the whole decode instead of
+	// joining the library's other type errors.
+	return n.Decode(&l.value) //nolint:wrapcheck // yaml merges a *yaml.TypeError only when returned as is
 }
 
 // Load reads root/.crew/config.yaml, where root is the repository's root,
@@ -98,86 +100,98 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 // all the workflow's errors are reported together.
 func Load(root string) (*Config, error) {
 	path := filepath.Join(root, ".crew", "config.yaml")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // the path is the repository's own .crew/config.yaml
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read crew config: %w (create it: see docs/guide/crew.mdx in the crew repository)", err)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read crew config: %w", err)
 	}
-	cfg, err := parse(data)
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	cfg, err := parse(&node)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
 }
 
-func parse(data []byte) (*Config, error) {
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
+// parse turns the file's YAML document into a Config, reporting every error
+// it finds after the top level decodes.
+func parse(root *yaml.Node) (*Config, error) {
+	var doc document
+	if err := decodeDocument(root, &doc); err != nil {
 		return nil, err
 	}
-	var doc document
-	if len(root.Content) > 0 { // an empty file has no content
-		top := root.Content[0]
-		if top.Kind != yaml.MappingNode {
-			return nil, fmt.Errorf("line %d: the config must be a mapping with config, tracker, harness, workflow, extra_labels and prompts", top.Line)
-		}
-		if err := decodeFields(entries(top, ""), reflect.ValueOf(&doc).Elem()); err != nil {
-			return nil, err
-		}
-	}
-
 	cfg := &Config{
 		PollInterval:      defaultPollInterval,
 		MaxParallelIssues: defaultMaxParallelIssues,
 		Harness:           defaultHarness,
 		Tracker:           defaultTracker,
 	}
-	var errs []error
-	if s := doc.Config.PollIntervalSeconds; s.line > 0 {
-		if s.value <= 0 {
-			errs = append(errs, keyError("config.poll_interval_seconds", s.line, "must be a positive number of seconds"))
-		}
-		cfg.PollInterval = time.Duration(s.value) * time.Second
-	}
-	if s := doc.Config.MaxParallelIssues; s.line > 0 {
-		if s.value <= 0 {
-			errs = append(errs, keyError("config.max_parallel_issues", s.line, "must be a positive number of issues"))
-		}
-		cfg.MaxParallelIssues = s.value
-	}
-	if s := doc.Config.RunTimeLimitSeconds; s.line > 0 {
-		if s.value <= 0 {
-			errs = append(errs, keyError("config.run_time_limit_seconds", s.line, "must be a positive number of seconds"))
-		}
-		cfg.RunTimeLimit = time.Duration(s.value) * time.Second
-	}
-	if s := doc.Config.Harness; s.line > 0 {
-		cfg.Harness = s.value
-	}
-
+	errs := engineSettings(&doc.Config, cfg)
 	var err error
-	if cfg.HarnessSection, err = harnessSection(&doc); err != nil {
-		errs = append(errs, err)
-	}
-	if cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg); err != nil {
-		errs = append(errs, err)
-	}
-	if cfg.Workflow, err = workflow(&doc.Workflow); err != nil {
-		errs = append(errs, err)
-	}
+	cfg.HarnessSection, err = harnessSection(&doc)
+	errs = append(errs, err)
+	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
+	errs = append(errs, err)
+	cfg.Workflow, err = workflow(&doc.Workflow)
+	errs = append(errs, err)
 	// With an invalid workflow, the extras are checked only on their own.
-	if cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow); err != nil {
-		errs = append(errs, err)
-	}
-	if err := prompts(&doc.Prompts); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+	cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow)
+	errs = append(errs, err)
+	errs = append(errs, prompts(&doc.Prompts))
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return cfg, nil
+}
+
+// decodeDocument decodes the file's top level into doc. An empty file has no
+// content and leaves doc empty.
+func decodeDocument(root *yaml.Node, doc *document) error {
+	if len(root.Content) == 0 {
+		return nil
+	}
+	top := root.Content[0]
+	if top.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: the config must be a mapping with "+
+			"config, tracker, harness, workflow, extra_labels and prompts", top.Line)
+	}
+	return decodeFields(entries(top, ""), reflect.ValueOf(doc).Elem())
+}
+
+// engineSettings reads the engine's keys of config: into cfg, which holds
+// their defaults, and returns what is wrong with them; the nil errors stand
+// for the keys that are fine.
+func engineSettings(s *settings, cfg *Config) []error {
+	if s.PollIntervalSeconds.line > 0 {
+		cfg.PollInterval = time.Duration(s.PollIntervalSeconds.value) * time.Second
+	}
+	if s.MaxParallelIssues.line > 0 {
+		cfg.MaxParallelIssues = s.MaxParallelIssues.value
+	}
+	if s.RunTimeLimitSeconds.line > 0 {
+		cfg.RunTimeLimit = time.Duration(s.RunTimeLimitSeconds.value) * time.Second
+	}
+	if s.Harness.line > 0 {
+		cfg.Harness = s.Harness.value
+	}
+	return []error{
+		positive(s.PollIntervalSeconds, "config.poll_interval_seconds", "must be a positive number of seconds"),
+		positive(s.MaxParallelIssues, "config.max_parallel_issues", "must be a positive number of issues"),
+		positive(s.RunTimeLimitSeconds, "config.run_time_limit_seconds", "must be a positive number of seconds"),
+	}
+}
+
+// positive reports msg for the key at path when it is set and not above zero.
+func positive(l located[int], path, msg string) error {
+	if l.line > 0 && l.value <= 0 {
+		return keyError(path, l.line, msg)
+	}
+	return nil
 }
 
 // harnessSection joins config.model with the keys of harness:, which is
@@ -233,6 +247,7 @@ func mapping(n *yaml.Node, path string) ([]entry, error) {
 		return nil, nil
 	case yaml.MappingNode:
 		return entries(n, path), nil
+	default:
+		return nil, keyError(path, n.Line, "must be a mapping")
 	}
-	return nil, keyError(path, n.Line, "must be a mapping")
 }

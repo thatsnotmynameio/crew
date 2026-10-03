@@ -36,6 +36,10 @@ import (
 // version is set at build time with -ldflags "-X main.version=vX.Y.Z".
 var version = "dev"
 
+// signalBuffer holds the two signals crew acts on, the one that stops it and
+// the one that forces the exit, so neither is lost while crew is busy.
+const signalBuffer = 2
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -63,13 +67,18 @@ func run(args []string) int {
 		_, _ = fmt.Fprintln(stdout, "crew", version)
 		return app.ExitClean
 	}
+	return start(*plain, stdout, stderr)
+}
 
+// start catches the stop signals, finds the repository's root and runs crew
+// there, returning its exit code. plain is the --plain flag.
+func start(plain bool, stdout, stderr *os.File) int {
 	// Signals are caught from here on: none may kill crew before the
 	// engine's stop sequence, or a forced exit, has ended its children.
 	// SIGHUP, from a closing terminal, stops crew as SIGINT and SIGTERM do.
 	// SIGPIPE is ignored, so a closed stdout fails the renderer's write,
 	// which stops crew cleanly too.
-	signals := make(chan os.Signal, 2)
+	signals := make(chan os.Signal, signalBuffer)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	signal.Ignore(syscall.SIGPIPE)
 
@@ -92,7 +101,7 @@ func run(args []string) int {
 		Stdout:    stdout,
 		Stderr:    stderr,
 		Terminal:  term.IsTerminal(int(stdout.Fd())),
-		Plain:     *plain,
+		Plain:     plain,
 		Group:     &group,
 		Signals:   signals,
 	})

@@ -158,7 +158,8 @@ func TestAnIssueTakenAgainLeavesHandledUntilItsNewStageEnds(t *testing.T) {
 	if got.Stage != "review" || got.To != needsAttention || got.Taken != taken || got.Ended != ended {
 		t.Fatalf("entry after review: got %#v, want review, needs attention, taken %v, ended %v", got, taken, ended)
 	}
-	if want := []crew.ActionFailure{failure("1", "custom_review", "changes requested")}; !reflect.DeepEqual(got.Failures, want) {
+	want := []crew.ActionFailure{failure("1", "custom_review", "changes requested")}
+	if !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
 }
@@ -230,8 +231,9 @@ func TestEntriesAreInTheOrderTheirIssuesWereReleased(t *testing.T) {
 		verdict, _ := d.send(core.SessionEnded{IssueKey: key, Action: "development", Outcome: succeeded})
 		d.settle(verdict)
 	}
-	var got []string
-	for _, e := range handled(d) {
+	entries := handled(d)
+	got := make([]string, 0, len(entries))
+	for _, e := range entries {
 		got = append(got, e.Issue.Key)
 	}
 	if !reflect.DeepEqual(got, []string{"2", "1"}) {
