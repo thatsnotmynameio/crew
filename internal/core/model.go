@@ -24,6 +24,7 @@ type Model struct {
 	maxParallel int
 	issues      []*heldIssue // in the order they were taken
 	listing     bool         // a ListIssues is outstanding
+	skipped     int          // ticks that skipped their listing since the last one
 	timeUp      bool         // the run time is up: take nothing new
 	requested   bool         // a stop was requested
 	stopping    bool         // the stop sequence runs: requested, or ending a wind-down

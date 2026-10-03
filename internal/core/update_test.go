@@ -621,15 +621,11 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 		t.Fatalf("view:\n got %#v\nwant %#v", v, want)
 	}
 
-	// The next tick retries the take; its listing, still showing #1 in
-	// ready, neither takes #1 again nor takes #2 into the slot #1 holds.
-	retry, _ := d.send(core.Tick{})
-	wantCommands(t, retry,
-		core.ListIssues{States: []crew.State{ready, readyToReview}},
-		core.Move{IssueKey: "1", From: ready, To: inProgress},
-	)
-	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{i1, issue("2", 2, ready)}})
-	wantCommands(t, cmds)
+	// The next tick retries the take. #1 holds the only slot, so the tick
+	// does not list (R7).
+	retry, events := d.send(core.Tick{})
+	wantCommands(t, retry, core.Move{IssueKey: "1", From: ready, To: inProgress})
+	hasEvent(t, events, core.PollSkipped{At: d.now, Busy: 1, Slots: 1})
 
 	cmds, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	wantCommands(t, cmds,
@@ -653,8 +649,9 @@ func TestOwedTakeRetryMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
 			d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
 			retry, _ := d.send(core.Tick{})
 
+			// The tick skipped its listing, so the freed slot lists at once (R4).
 			cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: result, Reason: "nope"})
-			wantCommands(t, cmds)
+			wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
 				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress,
 			}})

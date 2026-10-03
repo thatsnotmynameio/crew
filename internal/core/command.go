@@ -16,7 +16,8 @@ type CallID uint64
 
 // ListIssues asks the tracker for the open issues in any of States. Its
 // result is IssuesListed or ListFailed. The core keeps at most one listing
-// outstanding.
+// outstanding. It asks at a tick with a free slot, and at once when an issue
+// it releases frees a slot after a tick skipped its listing.
 type ListIssues struct {
 	// States are the stages' trigger states, in config order.
 	States []crew.State

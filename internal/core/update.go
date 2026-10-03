@@ -81,6 +81,7 @@ func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
 // tick lists issues, unless a listing is outstanding or the run time is up,
+// or says it skipped the listing while every slot is busy (R1, R3). It then
 // retries the owed calls, statuses and pull request reports that are not in
 // flight (KTD8, KTD5), and reports the status of each running issue with what
 // its sessions last said (R6).
@@ -95,12 +96,12 @@ func (s *step) tick(said []Said) {
 		}
 	}
 	if !m.listing && !m.timeUp {
-		m.listing = true
-		states := make([]crew.State, len(m.stages))
-		for i, st := range m.stages {
-			states[i] = st.Label
+		if m.full() {
+			m.skipped++
+			s.emit(PollSkipped{At: s.at, Busy: len(m.issues), Slots: m.maxParallel})
+		} else {
+			s.list()
 		}
-		s.command(ListIssues{States: states})
 	}
 	for _, h := range m.issues {
 		for _, c := range h.calls {
@@ -114,6 +115,28 @@ func (s *step) tick(said []Said) {
 	}
 	s.retryStatuses()
 	s.retryPullRequests()
+}
+
+// list asks for the issues in the stages' labels, and starts the count of
+// skipped listings again (R6).
+func (s *step) list() {
+	m := s.m
+	m.listing = true
+	m.skipped = 0
+	states := make([]crew.State, len(m.stages))
+	for i, st := range m.stages {
+		states[i] = st.Label
+	}
+	s.command(ListIssues{States: states})
+}
+
+// freed lists at once when a released issue freed a slot after a tick
+// skipped its listing (R4); otherwise the next tick lists (R5).
+func (s *step) freed() {
+	m := s.m
+	if m.skipped > 0 && !m.listing && !m.timeUp && !m.stopping {
+		s.list()
+	}
 }
 
 // stop starts nothing new from now on, stops the running sessions and
@@ -182,9 +205,9 @@ func (s *step) windDown() {
 }
 
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: later stages first, then the oldest issue first (KTD8). A blocked
-// issue is neither taken nor queued, and is taken at a later poll once
-// nothing blocks it. It takes nothing once the run time is up.
+// issues: later stages first, then the oldest issue first (KTD8). It reports
+// nothing for the issues it leaves, a blocked one included: a later listing
+// with a free slot takes them. It takes nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -206,7 +229,7 @@ func (s *step) listed(issues []crew.Issue) {
 		}
 		slices.SortStableFunc(candidates, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
 		for _, issue := range candidates {
-			if len(m.issues) >= m.maxParallel {
+			if m.full() {
 				break
 			}
 			if m.held(issue.Key) != nil {
@@ -214,11 +237,6 @@ func (s *step) listed(issues []crew.Issue) {
 			}
 			s.take(si, issue)
 			taken++
-		}
-		for _, issue := range candidates {
-			if m.held(issue.Key) == nil {
-				s.queued(si, issue)
-			}
 		}
 	}
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
@@ -299,6 +317,7 @@ func (s *step) callResult(r CallResult) {
 	}
 	if len(h.calls) == 0 {
 		m.release(h)
+		s.freed()
 	}
 }
 
@@ -509,6 +528,12 @@ func (s *step) judge(h *heldIssue) {
 	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnFailure})
 	s.call(h, &call{kind: CallReport, report: report})
 	s.ended(h, stage.OnFailure, crew.MovePending)
+}
+
+// full reports whether every slot is busy: the issues held, in any claim,
+// reach max_parallel_issues, so a listing could take nothing (R1, R7).
+func (m *Model) full() bool {
+	return len(m.issues) >= m.maxParallel
 }
 
 // held returns the held issue keyed key, or nil.
