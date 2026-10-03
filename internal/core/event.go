@@ -118,9 +118,9 @@ type ListingFailed struct {
 	Reason string
 }
 
-// CallOwed is a take move, verdict move or failure report that failed
-// transiently. The
-// core owes it and retries it at the next tick (KTD8), or once at stop.
+// CallOwed is a take move, verdict move, failure report or pull request
+// report that failed transiently. The core owes it and retries it at the
+// next tick (KTD8), or once at stop.
 type CallOwed struct {
 	At     time.Time
 	Call   Call
@@ -160,13 +160,14 @@ type WindingDown struct {
 }
 
 // Stopped means a stop, requested or ending a wind-down, has completed: the
-// core holds no issue, no owed call and no status write in flight or owed. It
-// is emitted once.
+// core holds no issue, no owed call, no status write in flight or owed and no
+// pull request report not settled. It is emitted once.
 type Stopped struct {
 	At time.Time
 }
 
-// CallKind tells a Move from a ReportFailure in a Call.
+// CallKind tells a Move, a ReportFailure and a ReportPullRequests apart in a
+// Call.
 type CallKind int
 
 // The kinds of tracker call.
@@ -175,12 +176,17 @@ const (
 	CallMove CallKind = iota
 	// CallReport is a ReportFailure.
 	CallReport
+	// CallPullRequests is a ReportPullRequests.
+	CallPullRequests
 )
 
 // String names the kind for renderers.
 func (k CallKind) String() string {
-	if k == CallReport {
+	switch k {
+	case CallReport:
 		return "report"
+	case CallPullRequests:
+		return "pull requests"
 	}
 	return "move"
 }
@@ -190,7 +196,9 @@ type Call struct {
 	Kind     CallKind
 	IssueKey string
 	IssueRef string
-	// From and To are the move's states; both are empty for a report.
+	// From and To are the move's states; both are empty for a failure
+	// report. For a pull request report, To is the state the pull requests
+	// are put in and From is empty.
 	From crew.State
 	To   crew.State
 }

@@ -4,9 +4,11 @@
 // config's extra labels, which are never states. It lists the open issues
 // the authenticated gh user opened, moves them by swapping crew's labels,
 // reports failures as Markdown comments and keeps a status comment on each
-// issue, with one entry per stage run. It works on the repository gh resolves
-// from crew's working directory, and runs every gh call through the shared
-// process helper.
+// issue, with one entry per stage run. It puts the open pull requests that
+// close an issue in the issue's crew label, and comments on them when a stage
+// ends that nobody watches them any more. It works on the repository gh
+// resolves from crew's working directory, and runs every gh call through the
+// shared process helper.
 package github
 
 import (
@@ -25,12 +27,13 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the tracker is a port.Tracker, a port.Preparer and a
-// port.StatusReporter.
+// Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
+// port.StatusReporter and a port.PullRequestReporter.
 var (
-	_ port.Tracker        = (*Tracker)(nil)
-	_ port.Preparer       = (*Tracker)(nil)
-	_ port.StatusReporter = (*Tracker)(nil)
+	_ port.Tracker             = (*Tracker)(nil)
+	_ port.Preparer            = (*Tracker)(nil)
+	_ port.StatusReporter      = (*Tracker)(nil)
+	_ port.PullRequestReporter = (*Tracker)(nil)
 )
 
 // issuesQuery lists the login's open issues carrying any of the labels,
@@ -65,6 +68,7 @@ type Tracker struct {
 
 	mu       sync.Mutex
 	comments map[string]cachedStatus // status comments by issue key, as last written or read
+	stopped  map[string][]int        // pull requests given a report's stop comment, by report ID
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -81,7 +85,7 @@ func factory(run proc.Runner) port.TrackerFactory {
 			return nil, err
 		}
 		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), extras: slices.Clone(extraLabels),
-			comments: map[string]cachedStatus{}}, nil
+			comments: map[string]cachedStatus{}, stopped: map[string][]int{}}, nil
 	}
 }
 
@@ -165,11 +169,45 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 	if issue.State != "OPEN" {
 		return fmt.Errorf("%s: it is %s: %w", move, strings.ToLower(issue.State), port.ErrMovedMeanwhile)
 	}
-	args := []string{"issue", "edit", issueKey}
+	remove, states := t.swap(issue.Labels, to)
+	if !slices.Contains(states, from) {
+		if slices.Equal(states, []crew.State{to}) {
+			return nil
+		}
+		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
+	}
+	if err := t.editLabels(ctx, "issue", issueKey, remove, to); err != nil {
+		return fmt.Errorf("%s: %w", move, err)
+	}
+	return nil
+}
+
+// editLabels runs one gh <kind> edit of number, an issue's or a pull
+// request's, that removes the labels remove names, as swap returns them, and
+// adds to's. gh saying to's label does not exist is a refusal: the label must
+// be created, which retrying cannot do.
+func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []string, to crew.State) error {
+	target := string(to)
+	args := slices.Concat([]string{kind, "edit", number}, remove, []string{"--add-label=" + labelArg(target)})
+	if out, err := t.gh.call(ctx, args...); err != nil {
+		if missingLabel(string(out.Stderr), target) {
+			return fmt.Errorf("%w: %w", port.ErrRefused, err)
+		}
+		return err
+	}
+	return nil
+}
+
+// swap returns the --remove-label arguments that take every crew label but
+// to's off a labelable carrying labels, extras included, leaving the labels
+// that are not crew's, and the states labels name, each once, in label order.
+// Move and the pull request mirror both swap labels through it.
+func (t *Tracker) swap(labels []ghLabel, to crew.State) ([]string, []crew.State) {
+	var remove []string
 	var states []crew.State
-	for _, l := range issue.Labels {
+	for _, l := range labels {
 		if t.extras.has(l.Name) {
-			args = append(args, "--remove-label="+labelArg(l.Name))
+			remove = append(remove, "--remove-label="+labelArg(l.Name))
 			continue
 		}
 		s, ok := t.labels.stateOf(l.Name)
@@ -180,24 +218,10 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 			states = append(states, s)
 		}
 		if s != to {
-			args = append(args, "--remove-label="+labelArg(l.Name))
+			remove = append(remove, "--remove-label="+labelArg(l.Name))
 		}
 	}
-	if !slices.Contains(states, from) {
-		if slices.Equal(states, []crew.State{to}) {
-			return nil
-		}
-		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
-	}
-	target := string(to)
-	args = append(args, "--add-label="+labelArg(target))
-	if out, err := t.gh.call(ctx, args...); err != nil {
-		if missingLabel(string(out.Stderr), target) {
-			return fmt.Errorf("%s: %w: %w", move, port.ErrRefused, err)
-		}
-		return fmt.Errorf("%s: %w", move, err)
-	}
-	return nil
+	return remove, states
 }
 
 // labelArg returns label as one value of gh's --add-label and --remove-label,
@@ -219,9 +243,12 @@ func missingLabel(stderr, label string) bool {
 }
 
 // ReportFailure implements port.Tracker: one Markdown comment naming each
-// failed action and its log, without its reason. Its errors are transient.
+// failed action and its log, without its reason. The issue gone (HTTP 404
+// or 410) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
+// issue, but not a rate limit) is port.ErrRefused, and any other error is
+// transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
-	if _, err := t.gh.call(ctx, "issue", "comment", report.IssueKey, "--body="+renderReport(report)); err != nil {
+	if _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
 		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
 	}
 	return nil

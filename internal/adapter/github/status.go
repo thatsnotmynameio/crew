@@ -120,14 +120,9 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 // createStatus creates a status comment on the issue with body and caches
 // it, with its id, which gh prints.
 func (t *Tracker) createStatus(ctx context.Context, issueKey, body string) error {
-	out, err := t.gh.call(ctx, "api", "--method", "POST", "repos/{owner}/{repo}/issues/"+issueKey+"/comments",
-		"-f", "body="+body, "--jq", ".id")
+	id, err := t.postComment(ctx, issueKey, body)
 	if err != nil {
-		return fmt.Errorf("create the status comment: %w", classify(err, out, true))
-	}
-	id, err := strconv.ParseInt(strings.TrimSpace(string(out.Stdout)), 10, 64)
-	if err != nil {
-		return fmt.Errorf("create the status comment: gh printed no comment id: %w", err)
+		return fmt.Errorf("create the status comment: %w", err)
 	}
 	t.rememberStatus(issueKey, cachedStatus{id: id, body: body})
 	return nil
@@ -394,12 +389,7 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 		case a.State == crew.ActionSucceeded:
 			fmt.Fprintf(&b, "\n%s%s succeeded.\n", name, and)
 		case a.State == crew.ActionFailed:
-			fmt.Fprintf(&b, "\n%s%s failed%s.", name, and, failureCause(a))
-			if a.Log == "" {
-				b.WriteString(" It failed before it had a log.\n")
-				break
-			}
-			fmt.Fprintf(&b, " Its log is %s.\n", codeSpan(a.Log))
+			fmt.Fprintf(&b, "\n%s\n", failedAction(name+and, a))
 		case a.Started.IsZero():
 			fmt.Fprintf(&b, "\n%s%s is running.\n", name, and)
 		default:
@@ -425,6 +415,18 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 	}
 	fmt.Fprintf(&b, "\nUpdated %s UTC.", s.Updated.UTC().Format("2006-01-02 15:04"))
 	return b.String()
+}
+
+// failedAction words the failed action a, named by subject, as the status
+// comment and the stop comment both give it: why it failed, in crew's words,
+// then its log, as in "**`lfg`** failed: crew stopped it. Its log is
+// `.crew/logs/issue-42-lfg.log`."
+func failedAction(subject string, a crew.ActionStatus) string {
+	line := fmt.Sprintf("%s failed%s.", subject, failureCause(a))
+	if a.Log == "" {
+		return line + " It failed before it had a log."
+	}
+	return line + " Its log is " + codeSpan(a.Log) + "."
 }
 
 // failureCause words what made a failed action fail, after a colon, or

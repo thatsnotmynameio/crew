@@ -117,14 +117,23 @@ type ReportStatus struct {
 	Status crew.Status
 }
 
-func (ListIssues) command()      {}
-func (Move) command()            {}
-func (ReportFailure) command()   {}
-func (CreateWorkspace) command() {}
-func (ReopenWorkspace) command() {}
-func (RecordRun) command()       {}
-func (StartSession) command()    {}
-func (StopSession) command()     {}
-func (RunCheck) command()        {}
-func (StopCheck) command()       {}
-func (ReportStatus) command()    {}
+// ReportPullRequests asks the tracker to show Report on the open pull
+// requests that close its issue (KTD1). Its result is a PullRequestsResult
+// carrying Report.IssueKey. The core never has two reports of one issue in
+// flight, and a retried report keeps its ID.
+type ReportPullRequests struct {
+	Report crew.PullRequestReport
+}
+
+func (ListIssues) command()         {}
+func (Move) command()               {}
+func (ReportFailure) command()      {}
+func (CreateWorkspace) command()    {}
+func (ReopenWorkspace) command()    {}
+func (RecordRun) command()          {}
+func (StartSession) command()       {}
+func (StopSession) command()        {}
+func (RunCheck) command()           {}
+func (StopCheck) command()          {}
+func (ReportStatus) command()       {}
+func (ReportPullRequests) command() {}
