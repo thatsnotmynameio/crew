@@ -62,13 +62,13 @@ The brainstorm checked that crew can later use such an identity inside a session
 
 - R6. Once the app exists, crew opens the page to install it, and the boss installs it on the current repository. crew prints that URL too.
 - R7. crew reports success only once the mate's saved key has minted an installation token for the current repository. Its last message names the mate and its bot login, such as `crew-tester[bot]`.
-- R8. When the app was created but the installation did not cover the repository, crew keeps the mate, exits with a failure, and prints the URL to install it.
+- R8. When the app was created but the installation did not cover the repository, crew keeps the mate, exits with a failure, and prints the URL to install it. Running the command again finishes the installation (R11).
 
 **Keeping mates**
 
 - R9. crew saves each mate's identity and private key on the boss's machine, outside any repository, readable only by the boss's own OS user, keyed by owner account and mate name.
 - R10. crew never prints, logs or writes into a repository a mate's private key.
-- R11. `crew mates create` refuses a name the same owner already has a mate for on this machine, before opening the browser, and changes nothing.
+- R11. When the owner already has a mate of that name on this machine, `crew mates create` creates no new app and goes straight to installing that mate on the current repository (R6–R8).
 - R12. When the boss cancels on GitHub's page, or the creation does not finish, crew saves nothing and exits with a failure.
 
 **Today's behaviour**
@@ -99,14 +99,14 @@ The brainstorm checked that crew can later use such an identity inside a session
 - AE1. **Covers R1.** Given a repository owned by the organization `thatsnotmynameio`, when the boss creates a mate, the app belongs to `thatsnotmynameio`. Given a repository on the boss's personal account, the app belongs to that account.
 - AE2. **Covers R4.** Given GitHub already has an account named `crew-dev`, when the boss runs `crew mates create dev` and renames the app to `thatsnotmyname-crew-dev` on GitHub's page, crew records the mate `dev` with the bot login `thatsnotmyname-crew-dev[bot]`.
 - AE3. **Covers R8.** Given the boss created the app but closed the install page, crew exits with a failure, keeps the mate, and prints the install URL.
-- AE4. **Covers R11.** Given the boss already has a mate `tester` for `thatsnotmynameio` on this machine, `crew mates create tester` in a `thatsnotmynameio` repository exits with a failure before opening the browser. In a repository of the boss's personal account, it proceeds.
+- AE4. **Covers R11.** Given the boss already has a mate `tester` for `thatsnotmynameio` on this machine, `crew mates create tester` in another `thatsnotmynameio` repository creates no app: it opens the install page for that repository and confirms as in R7. In a repository of the boss's personal account, it creates a new app for that account.
 - AE5. **Covers R12.** Given the boss closes GitHub's create-app page without creating the app, crew saves nothing and exits with a failure.
 - AE6. **Covers R13.** Given the boss has a mate installed on the repository, running `crew` labels, comments and starts sessions as the boss's `gh` login, as before.
 
 ### Scope Boundaries
 
 - **Acting as mates is #80.** That covers sessions, checks and crew's own GitHub writes acting as a mate; declaring in `.crew/config.yaml` which mate acts where; refreshing tokens during a session; and adding the mate as co-author of commits.
-- **No other mate commands.** Listing, removing or renaming mates, installing an existing mate on another repository, and copying a mate to another machine.
+- **No other mate commands.** Listing, removing or renaming mates, and copying a mate to another machine.
 - **No permissions per mate.**
 - **No official public crew app,** no server holding a key, and no hosted crew.
 
@@ -135,6 +135,7 @@ This plan covers creating mates. The breakdown below is the current understandin
 - Where and in what form crew keeps a mate on disk (R9).
 - Whether `crew mates create` needs `.crew/config.yaml`, or only a git repository with a GitHub remote.
 - crew's exit code for each failure, within the existing 0, 1 and 2.
+- Whether the boss can paste the URL GitHub redirected to, when the browser cannot reach crew, such as with crew on a remote machine over SSH (R3).
 
 ### Sources / Research
 
