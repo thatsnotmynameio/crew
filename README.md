@@ -1,6 +1,6 @@
 # crew
 
-crew moves your GitHub issues through a workflow you declare in the repository. It polls for the issues you labeled and runs each stage's actions in parallel, each one a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue to the stage's success label, or to its failure label with a comment saying what failed. You name every label in the workflow: crew has no fixed ones.
+crew moves your GitHub issues through a workflow you declare in the repository. It polls for the issues and pull requests you labeled and runs each stage's actions in parallel, each one a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue to the stage's success label, or to its failure label with a comment saying what failed. You name every label in the workflow: crew has no fixed ones.
 
 crew only runs sessions and moves labels. Opening pull requests, reviewing and merging are your prompts' job and yours.
 
