@@ -23,13 +23,14 @@ const defaultModel = "claude-opus-5-5"
 // stoppedReason is the Outcome.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
-// Compile-time guards: the engine finds Preparer and Narrator by type
-// assertion.
+// Compile-time guards: the engine finds Preparer, Narrator and
+// UsageReporter by type assertion.
 var (
-	_ port.Harness  = (*harness)(nil)
-	_ port.Preparer = (*harness)(nil)
-	_ port.Session  = (*session)(nil)
-	_ port.Narrator = (*session)(nil)
+	_ port.Harness       = (*harness)(nil)
+	_ port.Preparer      = (*harness)(nil)
+	_ port.Session       = (*session)(nil)
+	_ port.Narrator      = (*session)(nil)
+	_ port.UsageReporter = (*session)(nil)
 )
 
 // settings is the claude adapter's config section: config.model, and no key
@@ -112,6 +113,7 @@ type session struct {
 	events  *stream // claude's stdout, parsed as it is printed
 	stopped atomic.Bool
 	outcome crew.Outcome  // set before done is closed
+	usage   crew.Usage    // set before done is closed
 	done    chan struct{} // closed once the process is reaped and judged
 }
 
@@ -125,6 +127,14 @@ func (s *session) Wait() crew.Outcome {
 // top-level assistant event so far, so what a subagent says never counts.
 func (s *session) Said() string {
 	return s.events.said()
+}
+
+// Usage implements port.UsageReporter: the cost, tokens, turns and models
+// the session's result events report, or nothing when crew stopped it, a
+// signal ended it, or it printed no result.
+func (s *session) Usage() crew.Usage {
+	<-s.done
+	return s.usage
 }
 
 // Stop implements port.Session. proc sends the terminate signal to the
@@ -145,12 +155,16 @@ func (s *session) Stop(ctx context.Context) error {
 }
 
 // reap waits for the process, whose output is fully copied once Wait
-// returns, and judges it.
+// returns, judges it and reads its usage. A session crew stopped, or one a
+// signal ended, reports no usage.
 func (s *session) reap() {
 	err := s.process.Wait()
 	s.outcome = judge(s.events.end(), err)
-	if s.stopped.Load() {
+	switch {
+	case s.stopped.Load():
 		s.outcome = crew.Outcome{Reason: stoppedReason}
+	case !signaled(err):
+		s.usage = s.events.usage()
 	}
 	close(s.done)
 }

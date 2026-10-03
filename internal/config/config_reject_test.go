@@ -94,6 +94,13 @@ var invalidSettings = []rejectCase{
 		wants: []string{"config.run_time_limit_seconds", "line 2", "8h"},
 	},
 	{
+		name: "usage in status not a boolean",
+		body: `config:
+  usage_in_status: maybe
+` + oneStage,
+		wants: []string{"config.usage_in_status", "line 2", "maybe"},
+	},
+	{
 		name: "parallel issues not positive",
 		body: `config:
   max_parallel_issues: -1

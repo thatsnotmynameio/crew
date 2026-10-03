@@ -18,6 +18,9 @@ var (
 	_ port.Preparer = PreparingHarness{}
 	_ port.Session  = NarratingSession{}
 	_ port.Narrator = NarratingSession{}
+
+	_ port.Session       = UsageSession{}
+	_ port.UsageReporter = UsageSession{}
 )
 
 // The reasons of sessions the fake harness ends itself.
@@ -58,10 +61,11 @@ type Harness struct {
 	started    chan struct{} // closed and replaced whenever a session starts
 	ignoreStop bool
 	narrating  bool // its sessions implement port.Narrator
+	reporting  bool // its sessions implement port.UsageReporter
 }
 
 // NewHarness returns a harness with no sessions, whose sessions obey Stop.
-// Its sessions do not implement port.Narrator.
+// Its sessions implement neither port.Narrator nor port.UsageReporter.
 func NewHarness() *Harness {
 	return &Harness{started: make(chan struct{})}
 }
@@ -71,6 +75,14 @@ func NewHarness() *Harness {
 func NewNarratingHarness() *Harness {
 	h := NewHarness()
 	h.narrating = true
+	return h
+}
+
+// NewUsageHarness returns a harness like NewHarness's, whose sessions
+// implement port.UsageReporter: each reports what Session.SetUsage last set.
+func NewUsageHarness() *Harness {
+	h := NewHarness()
+	h.reporting = true
 	return h
 }
 
@@ -120,8 +132,11 @@ func (h *Harness) Start(_ context.Context, run port.Run) (port.Session, error) {
 	h.sessions = append(h.sessions, s)
 	close(h.started)
 	h.started = make(chan struct{})
-	if h.narrating {
+	switch {
+	case h.narrating:
 		return NarratingSession{s}, nil
+	case h.reporting:
+		return UsageSession{s}, nil
 	}
 	return s, nil
 }
@@ -142,6 +157,7 @@ type Session struct {
 	ended   bool
 	stopped bool
 	said    string
+	usage   crew.Usage
 	done    chan struct{} // closed when the session ends
 }
 
@@ -196,6 +212,14 @@ func (s *Session) Say(text string) {
 	s.said = text
 }
 
+// SetUsage sets what the session used, for a usage harness's session.
+func (s *Session) SetUsage(u crew.Usage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u.Models = slices.Clone(u.Models)
+	s.usage = u
+}
+
 // Stopped reports whether Stop was called on the session.
 func (s *Session) Stopped() bool {
 	s.mu.Lock()
@@ -227,4 +251,19 @@ func (n NarratingSession) Said() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.said
+}
+
+// UsageSession is the session a usage harness starts: a Session that also
+// implements port.UsageReporter.
+type UsageSession struct {
+	*Session
+}
+
+// Usage implements port.UsageReporter: it returns what SetUsage last set.
+func (u UsageSession) Usage() crew.Usage {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	usage := u.usage
+	usage.Models = slices.Clone(usage.Models)
+	return usage
 }

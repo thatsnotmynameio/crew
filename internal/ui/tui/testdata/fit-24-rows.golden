@@ -1,5 +1,5 @@
 crew: 2 issues held, up 12m, 48m left (q or ctrl+c stops)
-handled 10: 2 needs attention, 8 crew:waiting review
+handled 10 ($70.05, 138.1M tokens): 2 needs attention, 8 crew:waiting review
 
 Issues
   implement
@@ -13,12 +13,12 @@ Actions
   #2 review/check     waiting
 
 Handled
-  needs attention      #11  implement 40m00s    Parse the config once
+  needs attention      #11  implement 40m00s    $4.05, 6.1M tokens  no pull req…
     lfg failed: exited 1: "tests fail on Go 1.27"
-  needs attention      #12  implement 1m00s     Drop the old --dry flag
+  needs attention      #12  implement 1m00s                                    …
     lfg failed: prompt did not render: no field "Body"
-  crew:waiting review  #20  development 40m00s  Success number 20
-  crew:waiting review  #19  development 39m00s  Success number 19
-  crew:waiting review  #18  development 38m00s  Success number 18
-  crew:waiting review  #17  development 37m00s  Success number 17
+  crew:waiting review  #20  development 40m00s  $10.00, 20M tokens  #50        …
+  crew:waiting review  #19  development 39m00s  $9.50, 19M tokens   #49        …
+  crew:waiting review  #18  development 38m00s  $9.00, 18M tokens   #48        …
+  crew:waiting review  #17  development 37m00s  $8.50, 17M tokens   #47        …
   … and 4 more in crew:waiting review

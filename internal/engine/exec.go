@@ -63,6 +63,8 @@ func (e *Engine) job(ctx context.Context, cmd core.Command) func() {
 		return func() { e.reopenWorkspace(ctx, c) }
 	case core.StartSession:
 		return func() { e.startSession(ctx, c) }
+	case core.FindPullRequest:
+		return func() { e.findPullRequest(ctx, c) }
 	}
 	return e.loopJob(ctx, cmd)
 }
@@ -261,7 +263,24 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	// change the session's verdict, which is what the core needs.
 	_ = log.Close()
 	outcome.Reason = e.scrub(outcome.Reason)
-	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome})
+	var usage crew.Usage
+	if r, ok := s.(port.UsageReporter); ok {
+		usage = r.Usage()
+	}
+	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome, Usage: usage})
+}
+
+// findPullRequest looks up the pull request c's action opened, within
+// lookupTimeout. A lookup that fails or times out leaves it not looked up,
+// which changes nothing else (R7).
+func (e *Engine) findPullRequest(ctx context.Context, c core.FindPullRequest) {
+	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+	pr, err := e.finder.FindPullRequest(ctx, c.Branch, c.Since)
+	if err != nil {
+		pr = crew.PullRequest{}
+	}
+	e.post(core.PullRequestFound{IssueKey: c.IssueKey, Action: c.Action, PullRequest: pr})
 }
 
 // stopSession stops s within the stop deadline (KTD7). Its end reaches the

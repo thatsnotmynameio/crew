@@ -87,6 +87,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | `config.poll_interval_seconds` | `300` | Seconds between polls. Must be positive. |
 | `config.run_time_limit_seconds` | none | How long crew runs, counted from its first poll, before it winds down (see [Run it for a set time](#run-it-for-a-set-time)). Must be positive: `28800` is 8 hours. Without it, crew runs until you stop it. |
 | `config.max_parallel_issues` | `2` | How many issues crew works on at once. It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
+| `config.usage_in_status` | `false` | Adds each ended action's cost, tokens and pull request to the [status comment](#the-status-comment). |
 | `config.harness` | `claude` | The coding agent that runs sessions. `claude` is the only one today. |
 | `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
 | `tracker.name` | `github` | Where issues live. `github` is the only one today. |
@@ -260,8 +261,9 @@ If crew was killed, for example with SIGKILL, its sessions can outlive it. Make 
 
 Each issue crew takes gets one status comment, created when crew takes it. It keeps one entry per stage run, oldest first: a stage run starts when a stage takes the issue, and ends when the next one starts. crew edits only the latest entry, and earlier entries keep the text they had when their stage ended, across restarts. An entry shows where the issue stands:
 
-- **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the entry. An action that [resumed](#resume-a-failed-action) names its worktree, as in "**`development`** resumed in worktree `issue-42-development` and has been running for 5 minutes." crew updates it at every poll. An action whose check runs is still running.
+- **Running:** the stage, each action as running, succeeded or failed, how long each running action has run, the last thing its session said, and when crew updated the entry. An action that [resumed](#resume-a-failed-action) names its worktree, as in "**`development`** resumed in worktree `issue-42-development` and has been running for 5 minutes." crew updates it at every poll. An action whose check runs, or whose pull request crew is looking up, is still running.
 - **Ended:** each action's final state, and where the issue went: the stage's `on_success` or its `on_failure`, including when you stopped crew. Each failed action says why in crew's words, with its log: its session failed, crew stopped it, its workspace could not be created, its session could not start, or its prompt did not render. A failed check shows its reason, as in the example below.
+- **With `config.usage_in_status: true`:** each ended action whose session started also shows its cost and tokens, as the [run journal](#where-things-go) records them, and its pull request, linked, as in "**`development`** succeeded. Usage: $12.40, 48.4M tokens. Pull request: #45." A value the harness did not report says so, and a sum that misses one is marked partial. Without the setting, the comment shows none of this.
 
 ````markdown
 <!-- crew:entry run=20261002T130112.000000000Z.1 kind=ended stage=implement -->
@@ -334,14 +336,36 @@ For action `development` on issue #42:
 
 The name is the issue's key and the action's name, lowercased, with anything outside `a-z`, `0-9` and `-` turned into `-`. When a name is taken, crew adds `-2`, `-3` and so on. A resumed action keeps its worktree, branch and log. crew never removes worktrees: they are your evidence when an issue needs attention, and a failed action resumes in its own. Remove them with `git worktree remove` when you are done.
 
-The run journal has one JSON line when a run's worktree is ready and one when its action ends. crew only appends to it. For example:
+The run journal has one JSON line when a run's worktree is ready and one when its action ends, whatever its outcome. crew only appends to it, and never rewrites or trims it, so it holds every run of every crew process in this repository. For example:
 
 ```json
-{"v":1,"event":"started","time":"2026-10-02T20:08:28Z","issue":"42","ref":"#42","stage":"implement","action":"development","workspace":"issue-42-development","branch":"crew/issue-42-development","log":".crew/logs/issue-42-development.log"}
-{"v":1,"event":"ended","time":"2026-10-02T21:05:00Z","issue":"42","ref":"#42","stage":"implement","action":"development","workspace":"issue-42-development","branch":"crew/issue-42-development","log":".crew/logs/issue-42-development.log","succeeded":false,"reason":"tests fail"}
+{"v":1,"event":"started","time":"2026-10-02T20:08:28Z","run":"2026-10-02T20:08:20.344209367Z","issue":"42","ref":"#42","stage":"implement","action":"development","workspace":"issue-42-development","branch":"crew/issue-42-development","log":".crew/logs/issue-42-development.log"}
+{"v":1,"event":"ended","time":"2026-10-02T21:05:00Z","run":"2026-10-02T20:08:20.344209367Z","issue":"42","ref":"#42","stage":"implement","action":"development","workspace":"issue-42-development","branch":"crew/issue-42-development","log":".crew/logs/issue-42-development.log","succeeded":true,"reason":"done","duration_ms":3390000,"cost_usd":12.4,"input_tokens":450,"output_tokens":184862,"cache_read_tokens":46816709,"cache_write_tokens":1364924,"turns":64,"models":["claude-opus-5-5","claude-sonnet-5-5"],"pull_request":"#45","pull_request_url":"https://github.com/you/repo/pull/45","pull_request_lookup":"found"}
 ```
 
-`reason` is the action's one-line reason, with your repository's path written as `.` and your home directory as `~`. A run with a `started` line and no `ended` line was cut short by a crash or a kill. crew stops before polling when it cannot read the journal, and says in its output when it cannot write to it.
+| Key | What it holds |
+| --- | --- |
+| `run` | The crew process the line belongs to: when it started, in UTC. Every line of one run of `crew` has the same value. |
+| `succeeded`, `reason` | The action's outcome and its one-line reason, with your repository's path written as `.` and your home directory as `~`. |
+| `duration_ms` | Milliseconds from the session's start to the action's end, its check included. Left out when no session started, as when its worktree could not be created. |
+| `cost_usd` | The session's cost in US dollars, exactly as the harness reports it. With `claude` it is Claude Code's `total_cost_usd` at API prices, an estimate on a subscription. |
+| `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | The session's tokens by kind, its subagents included. |
+| `turns` | The session's turns. With `claude`, the main session's turns, not its subagents'. |
+| `models` | The models the session used. |
+| `pull_request`, `pull_request_url` | The pull request crew found from the action's branch. |
+| `pull_request_lookup` | `found`, `none` when the branch has no pull request, or `not looked up` when the tracker cannot look or the lookup failed. |
+
+A key the harness did not report is left out of the line, never written as zero. A session crew stopped, or one that was killed or crashed before its final result, reports none of them. An action that never got a worktree has an `ended` line with no `workspace`.
+
+crew finds the pull request with `gh pr list --head <branch>`, once the action's session ends, for up to 15 seconds: an open one from your repository first, otherwise the newest closed or merged one created since the worktree was made. A pull request opened from another branch than the action's is not found. A missing pull request changes nothing about the action's outcome; a [check](#checks) is how you fail it.
+
+crew computes no totals across runs. Read the journal with your own tools, for example the cost of each ended action as CSV:
+
+```sh
+jq -r 'select(.event == "ended") | [.time, .run, .ref, .stage, .action, .succeeded, .cost_usd, .output_tokens, .pull_request] | @csv' .crew/logs/runs.jsonl
+```
+
+A run with a `started` line and no `ended` line was cut short by a crash or a kill, including a second ctrl+c. crew stops before polling when it cannot read the journal, and says in its output when it cannot write to it.
 
 Add crew's local files to `.gitignore`, and keep `.crew/config.yaml` committed:
 
@@ -360,22 +384,24 @@ crew
 
 On a terminal, crew shows a live view: the issues it holds by stage, the running actions with their elapsed time, the issues it handled since it started, and the latest events. The view only displays. You act on issues through their labels on GitHub.
 
-The top line says how many issues crew holds and how long it has been up, and, with `config.run_time_limit_seconds`, how much run time is left. The line under it counts the issues crew handled, by the state each went to, as your workflow names it:
+The top line says how many issues crew holds and how long it has been up, and, with `config.run_time_limit_seconds`, how much run time is left. The line under it counts the issues crew handled, with the cost and tokens of every session that ended since crew started, then the issues by the state each went to, as your workflow names it:
 
 ```text
 crew: 2 issues held, up 3h12m, 48m left (q or ctrl+c stops)
-handled 10: 2 crew:failed, 8 crew:waiting review
+handled 10 ($70.05, 138.1M tokens): 2 crew:failed, 8 crew:waiting review
 ```
 
-Handled lists each issue whose stage ended, on one line: the state it went to, its number, the stage and how long it took, and its title. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again. The issues that need you come first: a stage that failed, with one line per failed action and its reason, and a move crew gave up, because the issue was closed or moved meanwhile or GitHub refused it. A given-up move shows `move given up` where the state would be, and is counted on its own. The status comment on each issue keeps the detail.
+Handled lists each issue whose stage ended, on one line: the state it went to, its number, the stage and how long it took, the cost and tokens of the stage's sessions, the pull request of a stage with one action, and its title. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again; the line above still counts what its earlier stages cost. The issues that need you come first: a stage that failed, with one line per failed action and its reason, and a move crew gave up, because the issue was closed or moved meanwhile or GitHub refused it. A given-up move shows `move given up` where the state would be, and is counted on its own. A stage with several actions shows each action's pull request on a line of its own. The status comment on each issue keeps the detail.
 
 ```text
 Handled
-  crew:failed          #28  development 41m10s  Parse the config once
+  crew:failed          #28  development 41m10s  $6.89, 12.7M tokens  no pull request  Parse the config once
     lfg failed: exited 1: tests fail on Go 1.27
-  crew:waiting review  #36  development 8m12s   Log the poll interval
+  crew:waiting review  #36  development 8m12s   $8.21, 18.4M tokens  #45              Log the poll interval
   … and 3 more in crew:waiting review
 ```
+
+The cost is the harness's figure, shown as it reports it and always next to the tokens, which add up all four kinds the [run journal](#where-things-go) keeps apart. A stage where some session reported no cost shows the known cost marked `(partial)`, and one where none did says `cost not reported`. A running action shows no cost: its numbers appear once it ends. An action that never had a session adds nothing and shows no pull request.
 
 The view fits the window. When rows run out, the latest events go first. Then the oldest handled issues that do not need you collapse into one line per state. The issues that need you never collapse; if even they do not fit, the view is cut at the bottom with a line saying how many lines were cut. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
 
