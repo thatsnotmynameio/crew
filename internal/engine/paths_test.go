@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestScrubShortensRootAndHomeOnlyAtWholePathBoundaries(t *testing.T) {
 	const root, home = "/home/jo/repo", "/home/jo"
@@ -40,5 +43,41 @@ func TestReplaceDirLeavesAnEmptyDirOrTheFilesystemRootAlone(t *testing.T) {
 		if got := replaceDir("see /home/jo", dir, "~"); got != "see /home/jo" {
 			t.Errorf("replaceDir with dir %q = %q, want the text unchanged", dir, got)
 		}
+	}
+}
+
+func TestScrubRedactsTokensBeforeTheCut(t *testing.T) {
+	e := &Engine{cfg: Config{Root: "/home/jo/repo", Home: "/home/jo"}}
+	// In a 260-character text, the token starts at 59, so the cut keeping
+	// the last 199 after its ellipsis, from 61, would split its prefix.
+	token := "ghs_" + strings.Repeat("A", 36)
+	text := strings.Repeat("x", 57) + "t=" + token + strings.Repeat("y", 161)
+	if cut := lastWords(text); !strings.HasPrefix(cut, "…s_AAAA") {
+		t.Fatalf("lastWords = %q, want the cut inside the token's prefix", cut)
+	}
+	got := lastWords(e.scrub(text))
+	if strings.Contains(got, "AAAA") || !strings.Contains(got, "[redacted token]") {
+		t.Errorf("lastWords(scrub) = %q, want the redaction and no part of the token", got)
+	}
+	for _, tok := range []string{"ghp_abc123", "gho_abc", "ghu_abc", "ghr_abc", "github_pat_11AB_cd"} {
+		if got := e.scrub("token " + tok + " leaked"); got != "token [redacted token] leaked" {
+			t.Errorf("scrub(%q) = %q, want it redacted", tok, got)
+		}
+	}
+	if got := e.scrub("a ghost_town and highs_"); got != "a ghost_town and highs_" {
+		t.Errorf("scrub = %q, want words that are no tokens left alone", got)
+	}
+}
+
+func TestScrubRedactsPrivateKeys(t *testing.T) {
+	e := &Engine{}
+	//nolint:gosec // G101: a fake key, which scrub must redact
+	key := "-----BEGIN RSA PRIVATE KEY-----\nMIIEow\nIBAAK\n-----END RSA PRIVATE KEY-----" // gitleaks:allow
+	if got := e.scrub("cat key.pem:\n" + key + "\ndone"); got != "cat key.pem:\n[redacted private key]\ndone" {
+		t.Errorf("scrub = %q, want the block redacted", got)
+	}
+	cut := "head: -----BEGIN PRIVATE KEY-----\nMIIEow" // gitleaks:allow
+	if got := e.scrub(cut); got != "head: [redacted private key]" {
+		t.Errorf("scrub = %q, want a cut block redacted to the end", got)
 	}
 }

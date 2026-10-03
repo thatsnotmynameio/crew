@@ -62,6 +62,10 @@ type Action struct {
 	// template: it reads the issue from environment variables, so no issue
 	// text becomes part of the command. A failing check fails the action.
 	Check string
+	// Mate is the name of the mate that acts for the action's session and
+	// check on the tracker: the action's own or the config's default. Empty
+	// means the boss.
+	Mate string
 }
 
 // promptIssue is the only issue data a prompt template can reach. A struct,

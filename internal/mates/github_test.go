@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -188,18 +190,57 @@ func TestRequestsWithAnUnusableKeyAreNotSent(t *testing.T) {
 	}
 }
 
-func TestAccessTokenIsLimitedToTheRepository(t *testing.T) {
+// testGrant is the reply of a token call granting what crew asks for.
+const testGrant = `{"token":"ghs_secret","expires_at":"2026-10-03T13:00:00Z","permissions":{"issues":"write",` +
+	`"pull_requests":"write","contents":"read","checks":"read","statuses":"read","actions":"read","metadata":"read"}}`
+
+func TestAccessTokenIsLimitedToTheRepositoryAndCrewsPermissions(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		checkRequest(t, r, http.MethodPost, "/app/installations/99/access_tokens")
 		bearerClaims(t, r)
-		body, _ := io.ReadAll(r.Body)
-		if string(body) != `{"repositories":["crew"]}` {
-			t.Errorf("body = %s, want the repository by name", body)
+		var body struct {
+			Repositories []string          `json:"repositories"`
+			Permissions  map[string]string `json:"permissions"`
 		}
-		reply(w, http.StatusCreated, `{"token":"ghs_secret","expires_at":"2026-10-03T13:00:00Z"}`)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("body: %v", err)
+		}
+		if !slices.Equal(body.Repositories, []string{"crew"}) || !maps.Equal(body.Permissions, permissions()) {
+			t.Errorf("body = %+v, want the repository by name and the manifest's permissions", body)
+		}
+		reply(w, http.StatusCreated, testGrant)
 	})
-	if err := c.AccessToken(context.Background(), testMate("thatsnotmynameio"), 99, "crew"); err != nil {
-		t.Errorf("AccessToken: %v", err)
+	got, err := c.AccessToken(context.Background(), testMate("thatsnotmynameio"), 99, "crew")
+	if err != nil {
+		t.Fatalf("AccessToken: %v", err)
+	}
+	if got.Token != "ghs_secret" || !got.ExpiresAt.Equal(testNow.Add(time.Hour)) ||
+		!maps.Equal(got.Permissions, permissions()) {
+		t.Errorf("AccessToken = %+v, want the token, its expiry and its permissions", got)
+	}
+}
+
+func TestPermissionsAreTheManifests(t *testing.T) {
+	if got := NewManifest("tester", "o", "http://x").Permissions; !maps.Equal(got, permissions()) {
+		t.Errorf("manifest permissions = %v, want %v", got, permissions())
+	}
+	p := permissions()
+	p["contents"] = permWrite
+	if permissions()["contents"] != permRead {
+		t.Error("changing Permissions' map changed the next one")
+	}
+}
+
+func TestTokenNeverPrints(t *testing.T) {
+	tok := Token("ghs_secret")
+	g := Grant{Token: tok}
+	for _, s := range []string{
+		fmt.Sprint(tok), fmt.Sprintf("%s %v %q %d %x %#v", tok, tok, tok, tok, tok, tok), tok.String(),
+		fmt.Sprintf("%+v %#v", g, g),
+	} {
+		if strings.Contains(s, "ghs_secret") {
+			t.Errorf("%q prints the token", s)
+		}
 	}
 }
 
@@ -207,12 +248,67 @@ func TestAccessTokenFailureCarriesNoRequest(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusUnprocessableEntity, `{"message":"There is at least one repository that does not exist"}`)
 	})
-	err := c.AccessToken(context.Background(), testMate("thatsnotmynameio"), 99, "crew")
+	_, err := c.AccessToken(context.Background(), testMate("thatsnotmynameio"), 99, "crew")
 	if err == nil || !strings.Contains(err.Error(), "does not exist") || !strings.Contains(err.Error(), "422") {
 		t.Fatalf("AccessToken on 422 = %v, want the status and GitHub's message", err)
 	}
 	if strings.Contains(err.Error(), "Bearer") || strings.Contains(err.Error(), "repositories") {
 		t.Errorf("AccessToken = %v, carries the request", err)
+	}
+}
+
+func TestBotUserIDAsksWithTheInstallationToken(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		checkRequest(t, r, http.MethodGet, "/users/crew-ops[bot]")
+		if r.RequestURI != "/users/crew-ops%5Bbot%5D" {
+			t.Errorf("request URI = %q, want the brackets escaped", r.RequestURI)
+		}
+		if got := r.Header.Get("Authorization"); got != "token ghs_secret" {
+			t.Errorf("Authorization = %q, want the installation token", got)
+		}
+		reply(w, http.StatusOK, `{"login":"crew-ops[bot]","id":123,"type":"Bot"}`)
+	})
+	id, err := c.BotUserID(context.Background(), "ghs_secret", "crew-ops")
+	if err != nil || id != 123 {
+		t.Errorf("BotUserID = %d, %v; want 123", id, err)
+	}
+}
+
+func TestBotUserIDRefusesWhatCannotBeTrusted(t *testing.T) {
+	for name, tc := range map[string]struct {
+		slug, body string
+		status     int
+	}{
+		"slug with a quote": {slug: "crew-'ops", body: `{"id":123}`, status: http.StatusOK},
+		"slug in capitals":  {slug: "Crew-ops", body: `{"id":123}`, status: http.StatusOK},
+		"empty slug":        {slug: "", body: `{"id":123}`, status: http.StatusOK},
+		"non-numeric id":    {slug: "crew-ops", body: `{"id":"123; rm -rf /"}`, status: http.StatusOK},
+		"zero id":           {slug: "crew-ops", body: `{"id":0}`, status: http.StatusOK},
+		"negative id":       {slug: "crew-ops", body: `{"id":-4}`, status: http.StatusOK},
+		"not found":         {slug: "crew-ops", body: `{"message":"Not Found"}`, status: http.StatusNotFound},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				reply(w, tc.status, tc.body)
+			})
+			id, err := c.BotUserID(context.Background(), "ghs_secret", tc.slug)
+			if err == nil {
+				t.Errorf("BotUserID = %d, nil error; want an error", id)
+			}
+			if err != nil && strings.Contains(err.Error(), "ghs_secret") {
+				t.Errorf("BotUserID = %v, quotes the token", err)
+			}
+		})
+	}
+}
+
+func TestATokenRequestIsNotAKeyRejection(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		reply(w, http.StatusUnauthorized, `{"message":"Bad credentials"}`)
+	})
+	_, err := c.BotUserID(context.Background(), "ghs_secret", "crew-ops")
+	if err == nil || errors.Is(err, ErrKeyRejected) {
+		t.Errorf("BotUserID on 401 = %v, want an error that is not ErrKeyRejected", err)
 	}
 }
 

@@ -281,6 +281,94 @@ func TestLoadReadsActionCheck(t *testing.T) {
 	}
 }
 
+// matedStages is a workflow of two stages, implement with the actions
+// development and review, and fix with the action fix, each naming the mate
+// in mates, in that order; "" names none.
+func matedStages(mates ...string) string {
+	mate := func(i int) string {
+		if mates[i] == "" {
+			return ""
+		}
+		return "        mate: " + mates[i] + "\n"
+	}
+	return `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to fix
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+` + mate(0) + `      - name: review
+        prompt: "Review {{.Issue.Ref}}"
+` + mate(1) + `  - name: fix
+    label: ready to fix
+    moves_to: fixing
+    on_success: done
+    on_failure: needs attention
+    actions:
+      - name: fix
+        prompt: "Fix {{.Issue.Ref}}"
+` + mate(2)
+}
+
+func TestLoadGivesEveryActionItsMate(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantMate  string
+		wantMates []string
+		// want is each action's mate, in workflow order.
+		want []string
+	}{
+		{
+			// Covers R5.
+			name: "no mate anywhere", body: matedStages("", "", ""),
+			wantMate: "", wantMates: nil, want: []string{"", "", ""},
+		},
+		{
+			name: "an action's own mate, or the default", body: "config:\n  mate: ops\n" + matedStages("developer", "", ""),
+			wantMate: "ops", wantMates: []string{"ops", "developer"}, want: []string{"developer", "ops", "ops"},
+		},
+		{
+			name:     "each mate listed once, the default first",
+			body:     "config:\n  mate: ops\n" + matedStages("developer", "ops", "developer"),
+			wantMate: "ops", wantMates: []string{"ops", "developer"}, want: []string{"developer", "ops", "developer"},
+		},
+		{
+			name: "only the default", body: "config:\n  mate: ops\n" + matedStages("", "", ""),
+			wantMate: "ops", wantMates: []string{"ops"}, want: []string{"ops", "ops", "ops"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := load(t, tt.body)
+			if got := actionMates(cfg.Workflow); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("action mates = %q, want %q", got, tt.want)
+			}
+			if cfg.Mate != tt.wantMate {
+				t.Errorf("Mate = %q, want %q", cfg.Mate, tt.wantMate)
+			}
+			if !reflect.DeepEqual(cfg.Mates, tt.wantMates) {
+				t.Errorf("Mates = %q, want %q", cfg.Mates, tt.wantMates)
+			}
+		})
+	}
+}
+
+// actionMates returns the mate of each of workflow's actions, in workflow
+// order.
+func actionMates(workflow []crew.Stage) []string {
+	var out []string
+	for _, s := range workflow {
+		for _, a := range s.Actions {
+			out = append(out, a.Mate)
+		}
+	}
+	return out
+}
+
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneStage)
 	if len(cfg.Workflow) != 1 || len(cfg.Workflow[0].Actions) != 1 {

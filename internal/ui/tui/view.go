@@ -43,7 +43,12 @@ func (m Model) View() tea.View {
 // fitted returns the view's lines, at most the window's height of them when
 // the height is known.
 func (m Model) fitted() []string {
-	fixed := append([]string{m.top(), m.counts()}, m.queues()...)
+	fixed := []string{m.top()}
+	for _, w := range m.warnings {
+		fixed = append(fixed, "warning: "+w)
+	}
+	fixed = append(fixed, m.counts())
+	fixed = append(fixed, m.queues()...)
 	fixed = append(fixed, m.issues()...)
 	fixed = append(fixed, m.actions()...)
 	fixed = append(fixed, "", "Handled")

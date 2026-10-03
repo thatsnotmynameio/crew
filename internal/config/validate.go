@@ -34,13 +34,14 @@ type actionDoc struct {
 	Name   located[string] `yaml:"name"`
 	Prompt located[string] `yaml:"prompt"`
 	Check  located[string] `yaml:"check"`
+	Mate   located[string] `yaml:"mate"`
 }
 
 // What each kind of list item must be, said when an item is not a mapping.
 const (
 	stageShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
 		"and optionally description, issue_template and queue"
-	actionShape = "must be an action with name and prompt"
+	actionShape = "must be an action with name and prompt, and optionally check and mate"
 	extraShape  = "must be an extra label with label, and optionally description and issue_template"
 )
 
@@ -54,8 +55,9 @@ type parsedStage struct {
 }
 
 // workflow decodes and validates workflow:, giving each stage its queue from
-// table, and reports every error it finds.
-func workflow(n *yaml.Node, table queueTable) ([]crew.Stage, error) {
+// table and each action that names no mate of its own mate, the default. It
+// reports every error it finds.
+func workflow(n *yaml.Node, table queueTable, mate string) ([]crew.Stage, error) {
 	if n.Kind == 0 {
 		return nil, errors.New("workflow: missing; list at least one stage")
 	}
@@ -65,7 +67,7 @@ func workflow(n *yaml.Node, table queueTable) ([]crew.Stage, error) {
 	var errs []error
 	parsed := make([]parsedStage, 0, len(n.Content))
 	for i, item := range n.Content {
-		stage, err := parseStage(item, fmt.Sprintf("workflow[%d]", i), table)
+		stage, err := parseStage(item, fmt.Sprintf("workflow[%d]", i), table, mate)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -86,7 +88,7 @@ func workflow(n *yaml.Node, table queueTable) ([]crew.Stage, error) {
 	return stages, nil
 }
 
-func parseStage(n *yaml.Node, path string, table queueTable) (parsedStage, error) {
+func parseStage(n *yaml.Node, path string, table queueTable, mate string) (parsedStage, error) {
 	var doc stageDoc
 	if err := decodeItem(n, path, stageShape, &doc); err != nil {
 		return parsedStage{}, err
@@ -112,12 +114,12 @@ func parseStage(n *yaml.Node, path string, table queueTable) (parsedStage, error
 	collect(err)
 	p.Queue, err = stageQueue(doc.Queue, path, table)
 	collect(err)
-	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line)
+	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line, mate)
 	collect(err)
 	return p, errors.Join(errs...)
 }
 
-func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
+func actions(n *yaml.Node, path string, stageLine int, mate string) ([]crew.Action, error) {
 	switch {
 	case n.Kind == 0:
 		return nil, keyError(path, stageLine, "list at least one action")
@@ -128,7 +130,7 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 	out := make([]crew.Action, 0, len(n.Content))
 	firstPath := make(map[string]string, len(n.Content))
 	for i, item := range n.Content {
-		action, err := parseAction(item, fmt.Sprintf("%s[%d]", path, i), firstPath)
+		action, err := parseAction(item, fmt.Sprintf("%s[%d]", path, i), mate, firstPath)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -138,10 +140,11 @@ func actions(n *yaml.Node, path string, stageLine int) ([]crew.Action, error) {
 	return out, errors.Join(errs...)
 }
 
-// parseAction decodes and checks the action n at path. firstPath holds the
-// path of each action name the stage already has; a valid name is added to
-// it.
-func parseAction(n *yaml.Node, path string, firstPath map[string]string) (crew.Action, error) {
+// parseAction decodes and checks the action n at path, whose mate is its own
+// or mate, the default. An action can name its own mate only when there is a
+// default. firstPath holds the path of each action name the stage already
+// has; a valid name is added to it.
+func parseAction(n *yaml.Node, path, mate string, firstPath map[string]string) (crew.Action, error) {
 	var doc actionDoc
 	if err := decodeItem(n, path, actionShape, &doc); err != nil {
 		return crew.Action{}, err
@@ -159,7 +162,14 @@ func parseAction(n *yaml.Node, path string, firstPath map[string]string) (crew.A
 	if doc.Check.line != 0 && strings.TrimSpace(doc.Check.value) == "" {
 		return crew.Action{}, keyError(path+".check", doc.Check.line, "must not be empty")
 	}
-	action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value}
+	if own := doc.Mate.value; own != "" {
+		if mate == "" {
+			return crew.Action{}, keyError(path+".mate", doc.Mate.line,
+				fmt.Sprintf("names mate %q, but config.mate names no default mate; set config.mate too", own))
+		}
+		mate = own
+	}
+	action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value, Mate: mate}
 	if _, err := action.Render(sampleIssue()); err != nil {
 		return crew.Action{}, keyError(path+".prompt", doc.Prompt.line, err.Error())
 	}

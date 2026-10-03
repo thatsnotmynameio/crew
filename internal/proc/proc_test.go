@@ -121,6 +121,39 @@ func TestStartRunsTheChildInDirWithItsEnvAndWriters(t *testing.T) {
 	}
 }
 
+// run runs c to its end and returns its stdout.
+func run(t *testing.T, c proc.Command) string {
+	t.Helper()
+	var g proc.Group
+	out, err := g.Run(context.Background(), c)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return string(out.Stdout)
+}
+
+func TestStartRemovesTheInheritedVariablesInUnsetAndAddsEnv(t *testing.T) {
+	t.Setenv("GH_TOKEN", "boss-token")
+	t.Setenv("GITHUB_TOKEN", "boss-token")
+	t.Setenv("CREW_KEPT", "kept")
+	c := sh(`echo "${GH_TOKEN-unset}|${GITHUB_TOKEN-unset}|$GH_CONFIG_DIR|$CREW_KEPT"`)
+	c.Env = []string{"GH_CONFIG_DIR=/run/crew/developer"}
+	c.Unset = []string{"GH_TOKEN", "GITHUB_TOKEN"}
+
+	if got, want := run(t, c), "unset|unset|/run/crew/developer|kept\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestUnsetCannotRemoveThePromptSettings(t *testing.T) {
+	c := sh(`echo "$GIT_TERMINAL_PROMPT $GH_PROMPT_DISABLED"`)
+	c.Unset = []string{"GIT_TERMINAL_PROMPT", "GH_PROMPT_DISABLED"}
+
+	if got, want := run(t, c), "0 1\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
 func TestWaitReportsTheExitStatus(t *testing.T) {
 	var g proc.Group
 	p, err := g.Start(sh("exit 3"), nil, nil)

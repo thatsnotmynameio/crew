@@ -24,6 +24,11 @@ import (
 // prefix, as the old dispatcher's FakeGh scripted them.
 type reply struct {
 	prefix []string
+	// as, when set, matches only calls as the boss (asBoss) or as a mate
+	// (asMate).
+	as string
+	// once makes the reply answer one call only.
+	once   bool
 	stdout string
 	// stderr, when set, makes the call exit non-zero with it.
 	stderr string
@@ -39,6 +44,8 @@ type fakeGh struct {
 
 	mu    sync.Mutex
 	calls [][]string
+	cmds  []proc.Command
+	used  map[int]bool // the once replies that answered
 }
 
 func newFakeGh(t *testing.T, script ...reply) *fakeGh {
@@ -48,15 +55,23 @@ func newFakeGh(t *testing.T, script ...reply) *fakeGh {
 
 func (f *fakeGh) run(_ context.Context, c proc.Command) (proc.Output, error) {
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls = append(f.calls, slices.Clone(c.Args))
-	f.mu.Unlock()
+	f.cmds = append(f.cmds, c)
 	if c.Name != "gh" {
 		f.t.Errorf("ran %q, want only gh", c.Name)
 		return proc.Output{}, errors.New("not gh")
 	}
-	for _, r := range f.script {
-		if len(c.Args) < len(r.prefix) || !slices.Equal(c.Args[:len(r.prefix)], r.prefix) {
+	for i, r := range f.script {
+		if len(c.Args) < len(r.prefix) || !slices.Equal(c.Args[:len(r.prefix)], r.prefix) ||
+			r.as != "" && r.as != runsAs(c) || f.used[i] {
 			continue
+		}
+		if r.once {
+			if f.used == nil {
+				f.used = map[int]bool{}
+			}
+			f.used[i] = true
 		}
 		switch {
 		case r.err != nil:
@@ -172,8 +187,12 @@ func wantClassified(t *testing.T, err, want error) {
 
 var login = reply{prefix: []string{"api", "user"}, stdout: "me\n"}
 
+// noCodeowners answers every CODEOWNERS lookup with 404: the repository has
+// none.
+var noCodeowners = reply{prefix: []string{"api", "-H", rawAccept}, stderr: "gh: Not Found (HTTP 404)"}
+
 func issuesJSON(nodes ...string) string {
-	return `{"data":{"repository":{"issues":{"nodes":[` + strings.Join(nodes, ",") + `]}}}}`
+	return `{"data":{"repository":{"issues0":{"nodes":[` + strings.Join(nodes, ",") + `]}}}}`
 }
 
 func issueNode(number int, created string, labels ...string) string {
@@ -221,14 +240,19 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 		t.Fatalf("sent %d GraphQL queries, want 1", len(queries))
 	}
 	q := queries[0]
-	if logins := fieldValues(q, "login"); !slices.Equal(logins, []string{"me"}) {
-		t.Errorf("login variable = %q, want [me]", logins)
+	if logins := fieldValues(q, "author0"); !slices.Equal(logins, []string{"me"}) {
+		t.Errorf("author0 variable = %q, want [me]", logins)
+	}
+	if logins := fieldValues(q, "author1"); logins != nil {
+		t.Errorf("author1 variable = %q, want none", logins)
 	}
 	if labels := fieldValues(q, "labels[]"); !slices.Equal(labels, []string{"ready", "ready to review"}) {
 		t.Errorf("labels variable = %q, want [ready, ready to review]", labels)
 	}
 	query := strings.Join(fieldValues(q, "query"), "")
-	for _, want := range []string{"createdBy: $login", "labels: $labels", "states: OPEN", "CREATED_AT", "ASC"} {
+	for _, want := range []string{
+		"issues0: issues(", "createdBy: $author0", "labels: $labels", "states: OPEN", "CREATED_AT", "ASC",
+	} {
 		if !strings.Contains(query, want) {
 			t.Errorf("query does not contain %q:\n%s", want, query)
 		}

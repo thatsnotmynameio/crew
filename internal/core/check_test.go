@@ -81,6 +81,31 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
 }
 
+// Each action's session and check act as the action's own mate (KTD9).
+func TestSessionAndCheckCarryTheActionsMate(t *testing.T) {
+	w := checked()
+	w[0].Actions[0].Mate = "ops"
+	w[0].Actions[1].Mate = "developer"
+	d := newDriver(t, w, 2)
+	cmds, _ := d.poll(issue("74", 1, ready))
+	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
+
+	acceptance := session("74", "acceptance", "Implement test acceptance for issue #74")
+	acceptance.Mate = "ops"
+	cmds, _ = d.send(space("74", "acceptance"))
+	wantCommands(t, cmds, acceptance)
+	development := session("74", "development", "Implement development for issue #74")
+	development.Mate = "developer"
+	cmds, _ = d.send(space("74", "development"))
+	wantCommands(t, cmds, development)
+
+	d.send(core.SessionStarted{IssueKey: "74", Action: "development"})
+	cmds, _ = d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	check := runCheck("74")
+	check.Mate = "developer"
+	wantCommands(t, cmds, check)
+}
+
 func TestAE1CheckThatFailsFailsItsActionWithTheChecksReason(t *testing.T) {
 	d := newDriver(t, checked(), 2)
 	checking(d, succeeded)

@@ -86,6 +86,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	a.phase = PhaseStarting
 	s.command(StartSession{
 		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
+		Mate: a.mate,
 	})
 }
 
@@ -135,7 +136,7 @@ func (s *step) sessionEnded(in SessionEnded) {
 		a.phase = PhaseChecking
 		s.command(RunCheck{
 			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.check, Log: a.log,
-			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch,
+			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Mate: a.mate,
 		})
 	}
 }

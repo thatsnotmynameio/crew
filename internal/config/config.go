@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -47,6 +48,13 @@ type Config struct {
 	// Tracker is tracker.name, the tracker adapter's name, "github" by
 	// default. It is not checked against the registered adapters.
 	Tracker string
+	// Mate is config.mate, the default mate: it acts for crew's own writes on
+	// the tracker and for every action that names no mate of its own. Empty,
+	// the default, means the boss. Its spelling is not checked here.
+	Mate string
+	// Mates is every mate the config names, each once, the default first and
+	// then the actions' own in workflow order. It is empty when Mate is.
+	Mates []string
 	// Workflow is the stages in file order. Every state is non-empty text,
 	// spelled everywhere as it is first written, since labels that differ
 	// only in case are one label. The stages cannot loop or take an issue
@@ -86,6 +94,7 @@ type settings struct {
 	UsageInStatus       located[bool]   `yaml:"usage_in_status"`
 	Harness             located[string] `yaml:"harness"`
 	Model               yaml.Node       `yaml:"model"`
+	Mate                located[string] `yaml:"mate"`
 }
 
 // located is a scalar that remembers its line, for errors found after
@@ -148,8 +157,9 @@ func parse(root *yaml.Node) (*Config, error) {
 	errs = append(errs, err)
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
 	errs = append(errs, err)
-	cfg.Workflow, err = workflow(&doc.Workflow, table)
+	cfg.Workflow, err = workflow(&doc.Workflow, table, cfg.Mate)
 	errs = append(errs, err)
+	cfg.Mates = namedMates(cfg.Mate, cfg.Workflow)
 	// With an invalid workflow, the extras are checked only on their own.
 	cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow)
 	errs = append(errs, err)
@@ -191,11 +201,30 @@ func engineSettings(s *settings, cfg *Config) []error {
 	if s.Harness.line > 0 {
 		cfg.Harness = s.Harness.value
 	}
+	cfg.Mate = s.Mate.value
 	return []error{
 		positive(s.PollIntervalSeconds, "config.poll_interval_seconds", "must be a positive number of seconds"),
 		positive(s.MaxParallelIssues, "config.max_parallel_issues", "must be a positive number of issues"),
 		positive(s.RunTimeLimitSeconds, "config.run_time_limit_seconds", "must be a positive number of seconds"),
 	}
+}
+
+// namedMates lists the mate def, the default, and then each action's own
+// mate in workflow order, each once. Without a default no action has a mate,
+// so the list is empty.
+func namedMates(def string, workflow []crew.Stage) []string {
+	if def == "" {
+		return nil
+	}
+	out := []string{def}
+	for _, s := range workflow {
+		for _, a := range s.Actions {
+			if !slices.Contains(out, a.Mate) {
+				out = append(out, a.Mate)
+			}
+		}
+	}
+	return out
 }
 
 // positive reports msg for the key at path when it is set and not above zero.
