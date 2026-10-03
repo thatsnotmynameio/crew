@@ -16,6 +16,9 @@ execution: code
 - **Means:** the GitHub tracker's poll also returns the open pull requests that carry a stage's label. crew's core, config and prompts treat each one as it treats an issue.
 - **Product authority:** the boss, through the brainstorm of #35. Tying a session's cost to the pull request it worked on is #84, not this work.
 - **Open blockers:** none.
+- **Execution profile:** one change to the GitHub adapter (KTD1, KTD2), then the docs. The core, the engine, the config and the ports do not change.
+- **Stop conditions:** stop and report if `gh issue view` or `gh issue edit` turn out not to accept a pull request's number (KTD3), or if a listing that also returns pull requests would need a change outside the GitHub adapter.
+- **Who ships:** the implementer opens one pull request that closes #35. Merging is the boss's.
 
 ---
 
@@ -87,3 +90,98 @@ This plan lets a stage take a pull request. The rest is the current understandin
 - `internal/adapter/git/workspace.go:93`: every workspace is a new branch from the default branch.
 - `docs/guide/crew.mdx:8`, `:10`, `:377`, `:380`, and `CONCEPTS.md` "Mirrored label": the text that R8 and R9 change.
 - `docs/plans/2026-10-02-2014-feat-pull-request-state-plan.md`: the mirrored label and the stop comment (#31).
+
+Product Contract unchanged.
+
+---
+
+## Planning Contract
+
+### Key Technical Decisions
+
+- KTD1. **One GraphQL query lists both kinds.** `issuesQuery` gains a `pullRequests(first: 100, states: OPEN, labels: $labels, orderBy: {field: CREATED_AT, direction: ASC})` connection next to `issues`, under the same `repository`, so a poll is still one `gh api graphql` call. Each pull request node reads `number`, `title`, `url`, `createdAt`, `author { login }` and `labels(first: 100)`, and nothing about Priority or blocking, so a pull request decodes with `Priority` 0 and `Blocked` false (R3, R4). Checked live on 2026-10-03: the combined query runs on this repository with the same `$labels` variable for both connections.
+- KTD2. **The author rule is applied in the adapter.** `Repository.pullRequests` has no `createdBy` filter, unlike `issues(filterBy:)`, so `List` drops every pull request whose `author.login` is not the login `gh` runs as (R1, AE2). A pull request whose author is gone decodes with no login and is dropped. Rejected: the search API (`is:pr author:<login> label:...`), which filters by author on the server but is eventually consistent, so a label the boss just added might not show at the next poll.
+- KTD3. **`Move` stays as it is.** `gh issue view <n> --json state,labels` answers for a pull request number (checked live: #85 returned `"state":"MERGED"` and its labels), and `gh issue edit` updates a pull request through the same lookup, so the existing swap moves a pull request with no new branch (R2). A merged or closed pull request is not `OPEN`, so `Move` returns `port.ErrMovedMeanwhile` as it does for a closed issue. The implementer confirms in the scripted tests that the arguments are unchanged for a pull request, and must not switch a pull request's move to `gh pr edit`: `Move` does not know the kind of the item, and no kind travels in `crew.Issue`.
+- KTD4. **`ReportPullRequests` asks for `issueOrPullRequest`.** `pullRequestsQuery` reads `repository.issueOrPullRequest(number:)` with an `... on Issue` fragment holding today's fields. When the number is a pull request, the fragment is empty, the reply has no closing pull requests, and the report writes nothing and returns nil (R6, AE3). Without this, `repository.issue(number:)` fails with "Could not resolve to an Issue" for a pull request number, which `pullRequests` turns into `port.ErrMovedMeanwhile` on every move of a pull request. A number that is neither now fails with "Could not resolve to an issue or pull request" (checked live with #99999), so the stderr match becomes case-insensitive on "could not resolve to an issue", which covers both messages and keeps a deleted issue as `port.ErrMovedMeanwhile`.
+- KTD5. **The listing keeps the oldest first across both kinds.** `List` appends the pull requests after the issues and sorts the whole slice by `Created`, oldest first, with the key as a tie-break. The core orders the candidates itself (priority, later stage, oldest), so this order only makes `List`'s reply deterministic for its tests and logs.
+- KTD6. **The adapter keeps no record of which items are pull requests.** Every write either works on both kinds through the same call (`Move`, the comments API in `postComment` and `status.go`) or asks GitHub (KTD4). A cache filled by `List` would be empty after a restart, when the core retries owed calls before its first listing.
+
+### Assumptions
+
+- In this repository no label the mirror copies is a stage's `label` (the Product Contract's mirror decision), so this change makes crew take no pull request here until the boss labels one.
+- A pull request crew takes gets a worktree branch named like an issue's, `crew/issue-<number>-<action>`, because the workspace does not change. The name is not shown to anyone but the prompt and the check (`CREW_BRANCH`).
+- The 100-item window applies to each kind on its own: at most 100 issues and 100 pull requests per poll. Pull requests other people opened count against the window before KTD2 drops them, so a repository with more than 100 open labeled pull requests from others can hide the boss's. Recorded in the Risks.
+
+### Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| `gh issue edit` stops accepting pull request numbers in a later `gh` release, so moving a pull request fails. | The scripted tests pin the arguments; a real failure is loud, since `Move` returns gh's error and the move is retried and reported, not lost. |
+| More than 100 open pull requests from other people carry crew's labels, filling the window before the author filter (KTD2). | Accepted: crew's labels are the boss's own. The guide says the listing keeps the oldest 100 of each kind. |
+| A pull request is both a taken item and the target of an issue's mirror, and the issue's move overwrites the label crew gave it. | The boss's configuration, per the Product Contract's mirror decision; the guide says so (U2). |
+
+---
+
+## Implementation Units
+
+### U1. The GitHub adapter lists pull requests and leaves them out of the mirror
+
+- **Goal:** `List` returns the boss's open pull requests that carry a stage's label, as items like issues, and a pull request's moves write nothing to other pull requests.
+- **Requirements:** R1, R2, R3, R4, R5, R6, R7; KTD1 to KTD6.
+- **Dependencies:** none.
+- **Files:** `internal/adapter/github/tracker.go`, `internal/adapter/github/tracker_test.go`, `internal/adapter/github/pullrequest.go`, `internal/adapter/github/pullrequest_test.go`.
+- **Approach:**
+  1. Add the `pullRequests` connection to `issuesQuery` and to `issuesReply` (KTD1), keeping the rule from `docs/solutions/integration-issues/issue-field-total-count-fails-listing-on-user-repositories.md`: no `totalCount` anywhere in the query.
+  2. In `List`, build a `crew.Issue` from each pull request node whose author's login is the viewer's (KTD2), with the same key, ref and state mapping as an issue, then sort the merged slice (KTD5). Share the label-to-states loop between the two kinds rather than copying it.
+  3. Switch `pullRequestsQuery` and its reply type to `issueOrPullRequest` with an `... on Issue` fragment, and widen the "could not resolve" match (KTD4).
+  4. Update the package comment, `List`'s and `ReportPullRequests`' doc comments, and `issuesQuery`'s comment to say what they now do with pull requests. `Move` gets one sentence saying it moves a pull request the same way (KTD3).
+- **Patterns to follow:** `TestListSendsOneQueryFilteredByLoginAndLabels` and `TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt` for scripted `gh` replies; `TestAnIssueWithoutAPullRequestGetsOnlyTheQuery` for a report that makes only the query.
+- **Test scenarios:**
+  - Covers AE1. A reply with an open pull request #90 by the viewer carrying a stage's label lists an item with key `90`, ref `#90`, its title, URL, creation time and state, and with priority 0 and not blocked.
+  - Covers AE2. A pull request whose author is another login, and one whose author is null, are not listed.
+  - A reply with issues and pull requests lists them together, oldest first, and a pull request with two stage labels lists both states, as an issue does (the core then skips it).
+  - The query sent by `List` holds both connections, the labels and login arguments, and no `totalCount`; it is still one `gh` call per `List`.
+  - Covers AE1. `Move` of key `90` from a reply where #90 is an open pull request runs the same `gh issue view` and `gh issue edit` arguments as for an issue, and a merged #90 (`state` `MERGED`) returns `port.ErrMovedMeanwhile` with no edit.
+  - Covers AE3. `ReportPullRequests` for key `90`, whose `issueOrPullRequest` reply is a pull request (an empty object), makes only the query, posts no comment, edits no label and returns nil, with or without `End`.
+  - Covers AE4. An issue whose closing pull request #90 is mirrored a stage's label: the existing mirror tests keep passing on the `issueOrPullRequest` reply shape, and a later `List` reply carrying #90 with that label lists #90.
+  - The query failing with "Could not resolve to an issue or pull request with the number of 99999" is `port.ErrMovedMeanwhile`; the old "Could not resolve to an Issue" message still is; any other failure stays transient (extend `TestTheQuerysErrorsAreClassified`).
+- **Verification:** the adapter's tests pass under `-race`, and the changed lines of both files are covered by the tests above.
+
+### U2. The guide, the README and CONCEPTS.md say crew polls pull requests
+
+- **Goal:** every page that says crew polls only issues, or never takes work from a pull request's labels, says what crew now does.
+- **Requirements:** R8, R9.
+- **Dependencies:** U1.
+- **Files:** `docs/guide/crew.mdx`, `README.md`, `CONCEPTS.md`, `docs/develop/architecture.mdx`.
+- **Approach:**
+  1. `docs/guide/crew.mdx`: the intro (line 8) and the scope paragraph (line 10) say crew polls the issues and pull requests you labeled. The poll's step 1 says it lists the open issues and pull requests you opened, and that a pull request has no priority and is never blocked (R4). The prompt fields table says the fields hold the pull request's values for a pull request. Its example of working on the pull request's own branch, since the worktree branches from the default branch, is `gh pr checkout {{.Issue.Key}} --detach`, then pushing with `git push origin HEAD:<branch>`, the branch read from `gh pr view {{.Issue.Key}} --json headRefName`. The guide says why: git checks out a branch in one worktree only, and a pull request crew opened keeps its branch checked out in crew's worktree, which crew never removes, so a plain `gh pr checkout` fails there.
+  2. "The pull requests" section drops "does not watch them" and "never takes work or a state from a pull request's labels". It says that a stage's label on a pull request makes crew take it, and that a pull request crew takes gets a status comment and failure report like an issue. It says that an issue's move replaces the label crew gave a pull request that closes it (the mirror decision). It also says that a pull request still carrying the mirrored crew label is skipped as carrying two crew labels (the poll's step 2), so the boss replaces that label with the stage's label instead of adding it.
+  3. `README.md` line 3: the issues and pull requests you labeled.
+  4. `CONCEPTS.md`: the Stage entry says a stage takes the issues and pull requests that carry its label. The Mirrored label entry drops "crew never takes work or a state from a pull request's labels" and keeps that crew replaces a hand-set crew label at the issue's next move.
+  5. `docs/develop/architecture.mdx`: the `Tracker` port line says `List` returns the open items in some states, and that the GitHub adapter's items are issues and pull requests.
+- **Patterns to follow:** the guide's existing voice (short declarative sentences, "you" for the boss); MDX rule: keep `{{` in backticks.
+- **Test expectation:** none -- documentation only; `pnpm docs:check` covers links and MDX.
+- **Verification:** no page under `docs/`, nor `README.md` or `CONCEPTS.md`, still says crew polls only issues or never takes work from a pull request's labels, and `pnpm docs:check` passes.
+
+---
+
+## Verification Contract
+
+| Gate | Command | Applies to |
+| --- | --- | --- |
+| Tests | `go test -race ./...` | U1 |
+| Format | `gofmt -l cmd internal tools` prints nothing | U1 |
+| Vet | `go vet ./...` | U1 |
+| Lint and layering | `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run` | U1 |
+| Coverage | the coverage profile, then `go-test-coverage` (total >= 90%) and `tools/diffcover` on the branch diff (changed lines >= 90%), as AGENTS.md lists | U1 |
+| Docs | `pnpm docs:check` | U2 |
+
+---
+
+## Definition of Done
+
+- AE1 to AE4 each have an adapter test named in U1, and they pass.
+- `internal/core`, `internal/engine`, `internal/config`, `internal/port` and `internal/crew` have no diff.
+- The docs of R8 and R9 describe the shipped behaviour, and no page keeps the old claims.
+- All gates in the Verification Contract pass.
+- No dead code or abandoned attempt is left in the diff.
