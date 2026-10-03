@@ -232,6 +232,6 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 // sameStatus reports whether a and b show the same, whenever computed (R5).
 func sameStatus(a, b crew.Status) bool {
 	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Stage == b.Stage &&
-		a.Kind == b.Kind && a.Slots == b.Slots && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
+		a.Kind == b.Kind && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
 		slices.Equal(a.Actions, b.Actions)
 }

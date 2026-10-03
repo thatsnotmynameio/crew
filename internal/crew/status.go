@@ -5,22 +5,18 @@ import (
 	"time"
 )
 
-// Status is where an issue crew queued or took stands, for the tracker to
-// show the boss in one place it edits in place. The tracker adapter formats
-// it in its own markup and computes elapsed times from Updated.
+// Status is where an issue crew took stands, for the tracker to show the boss
+// in one place it edits in place. The tracker adapter formats it in its own
+// markup and computes elapsed times from Updated.
 type Status struct {
 	// IssueKey and IssueRef identify the issue, as in Issue.
 	IssueKey string
 	IssueRef string
-	// Stage is the name of the stage the issue is queued for, runs or ran.
+	// Stage is the name of the stage that runs or ran on the issue.
 	Stage string
 	// Kind says which of the fields below apply.
 	Kind StatusKind
-	// Slots is how many issues crew runs at once; set when Kind is
-	// StatusQueued, as the issue waits for one of them to free up.
-	Slots int
-	// Actions are the stage's actions, in its action order; set when Kind is
-	// StatusRunning or StatusEnded.
+	// Actions are the stage's actions, in its action order.
 	Actions []ActionStatus
 	// To is the state the issue moves to once the stage ended; set when Kind
 	// is StatusEnded.
@@ -31,10 +27,10 @@ type Status struct {
 	// Updated is when crew computed this status.
 	Updated time.Time
 	// Run identifies the stage run this status belongs to: it stays the same
-	// from the issue's first queued or running status for a stage until the
-	// status after that stage ended, and differs between crew processes. A
-	// tracker that keeps a history of stage runs edits the run's entry, or
-	// starts a new one.
+	// from the issue's first running status for a stage until the status
+	// after that stage ended, and differs between crew processes. A tracker
+	// that keeps a history of stage runs edits the run's entry, or starts a
+	// new one.
 	Run string
 }
 
@@ -43,10 +39,8 @@ type StatusKind int
 
 // The kinds of status.
 const (
-	// StatusQueued: the issue is in a stage's label and waits for a free slot.
-	StatusQueued StatusKind = iota
 	// StatusRunning: the stage took the issue and its actions run.
-	StatusRunning
+	StatusRunning StatusKind = iota
 	// StatusEnded: every action of the stage ended.
 	StatusEnded
 )

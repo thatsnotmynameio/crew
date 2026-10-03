@@ -57,12 +57,12 @@ type entry struct {
 
 // ReportStatus implements port.StatusReporter. It keeps one entry per stage
 // run in the issue's status comment: it replaces the latest entry when that
-// entry is of status's run, or is the queued entry of status's stage, and
-// appends one otherwise. A latest entry still running from another run, as
-// when crew stopped before that run ended, first becomes one line saying so.
-// When the edit would make the comment longer than GitHub allows, it leaves
-// the comment as it is and creates a new one that continues it, holding only
-// the new entry.
+// entry is of status's run, or is an earlier crew version's queued entry of
+// status's stage, and appends one otherwise. A latest entry still running
+// from another run, as when crew stopped before that run ended, first
+// becomes one line saying so. When the edit would make the comment longer
+// than GitHub allows, it leaves the comment as it is and creates a new one
+// that continues it, holding only the new entry.
 //
 // It remembers each issue's comment, by issue key, with the body it last
 // wrote; without one, it lists the issue's comments and takes the newest one
@@ -204,7 +204,7 @@ func nextStatus(current string, status crew.Status, text string) (string, bool) 
 	}
 	switch {
 	case latest != nil && (latest.run == status.Run ||
-		latest.kind == kindName(crew.StatusQueued) && latest.stage == status.Stage):
+		latest.kind == legacyQueuedKind && latest.stage == status.Stage):
 		latest.text = text
 	default:
 		if latest != nil && latest.kind == kindName(crew.StatusRunning) {
@@ -315,11 +315,15 @@ func markerLine(s crew.Status) string {
 		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(s.Stage))
 }
 
+// legacyQueuedKind marks the entry of an issue an earlier crew version
+// reported as queued, waiting for a free slot. crew no longer writes it, but
+// such an entry may still end a comment, and taking that issue for the same
+// stage replaces it.
+const legacyQueuedKind = "queued"
+
 // kindName names a status kind in an entry marker.
 func kindName(k crew.StatusKind) string {
 	switch k {
-	case crew.StatusQueued:
-		return "queued"
 	case crew.StatusRunning:
 		return "running"
 	default:
@@ -368,9 +372,6 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 	b.WriteString(markerLine(s) + "\n")
 	stage := codeSpan(s.Stage)
 	switch s.Kind {
-	case crew.StatusQueued:
-		fmt.Fprintf(&b, "crew: %s is queued for %s, waiting for a free slot: crew runs at most %s at once.\n",
-			s.IssueRef, stage, plural(s.Slots, "issue"))
 	case crew.StatusRunning:
 		fmt.Fprintf(&b, "crew: %s is running on %s.\n", stage, s.IssueRef)
 	case crew.StatusEnded:
