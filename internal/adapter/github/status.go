@@ -51,6 +51,9 @@ var errCommentGone = errors.New("the status comment is gone")
 type cachedStatus struct {
 	id   int64
 	body string
+	// author is the login crew last wrote the comment as or, for a comment
+	// it read, the login that wrote it.
+	author string
 }
 
 // entry is one entry of a status comment: its text, verbatim, and what its
@@ -72,13 +75,16 @@ type entry struct {
 // that continues it, holding only the new entry.
 //
 // It remembers each issue's comment, by issue key, with the body it last
-// wrote; without one, it lists the issue's comments and takes the newest one
-// by the authenticated gh user whose body ends with the marker line, and
-// creates the comment when there is none. An edit of a comment that is gone
-// forgets it, then looks for the comment again or creates it, once. The
-// issue gone (HTTP 404 or 410 on listing or creating) is
-// port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked issue, but
-// not a rate limit) is port.ErrRefused, and any other error is transient.
+// wrote and the login it wrote it as; without one, it lists the issue's
+// comments and takes the newest one by gh's login or one of the mates whose
+// body ends with the marker line, and creates the comment when there is
+// none. It writes as the writer, and a comment another login wrote is not
+// edited: a new comment continues it, holding only the new entry (KTD10). An
+// edit of a comment that is gone forgets it, then looks for the comment
+// again or creates it, once. The issue gone (HTTP 404 or 410 on listing or
+// creating) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
+// issue, but not a rate limit) is port.ErrRefused, and any other error is
+// transient.
 func (t *Tracker) ReportStatus(ctx context.Context, status crew.Status) error {
 	text := t.renderStatus(status)
 	err := t.writeStatus(ctx, status, text)
@@ -107,12 +113,19 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 			return t.createStatus(ctx, issueKey, joinStatus("", []string{text}))
 		}
 	}
+	writer, err := t.writerLogin(ctx)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(c.author, writer) {
+		return t.createStatus(ctx, issueKey, continueStatus(status, text, "which another account wrote"))
+	}
 	body, continues := nextStatus(c.body, status, text)
 	if continues {
 		return t.createStatus(ctx, issueKey, body)
 	}
-	out, err := t.gh.call(ctx, "api", "--method", "PATCH", fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", c.id),
-		"-f", "body="+body)
+	out, mate, err := t.gh.write(ctx, "api", "--method", "PATCH",
+		fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", c.id), "-f", "body="+body)
 	if err != nil {
 		if httpStatus(string(out.Stderr)) == http.StatusNotFound {
 			t.forgetStatus(issueKey)
@@ -120,29 +133,58 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 		}
 		return fmt.Errorf("edit comment %d: %w", c.id, classify(err, out, false))
 	}
-	t.rememberStatus(issueKey, cachedStatus{id: c.id, body: body})
+	author, err := t.loginOf(ctx, mate)
+	if err != nil {
+		return err
+	}
+	t.rememberStatus(issueKey, cachedStatus{id: c.id, body: body, author: author})
 	return nil
 }
 
 // createStatus creates a status comment on the issue with body and caches
-// it, with its id, which gh prints.
+// it, with its id, which gh prints, and the login it was created as.
 func (t *Tracker) createStatus(ctx context.Context, issueKey, body string) error {
-	id, err := t.postComment(ctx, issueKey, body)
+	id, mate, err := t.postComment(ctx, issueKey, body)
 	if err != nil {
 		return fmt.Errorf("create the status comment: %w", err)
 	}
-	t.rememberStatus(issueKey, cachedStatus{id: id, body: body})
+	author, err := t.loginOf(ctx, mate)
+	if err != nil {
+		return err
+	}
+	t.rememberStatus(issueKey, cachedStatus{id: id, body: body, author: author})
 	return nil
 }
 
-// findStatus lists the issue's comments and returns the newest one by the
-// authenticated gh user whose body ends with the marker line, and whether
-// there is one.
+// writerLogin returns the login the tracker writes as now: the mate's, or
+// gh's own.
+func (t *Tracker) writerLogin(ctx context.Context) (string, error) {
+	if w, ok := t.gh.mate(); ok {
+		return w.Login, nil
+	}
+	return t.gh.viewer(ctx)
+}
+
+// loginOf returns the login a write went as: mate, the login gh.write
+// returned, or gh's own when that is "".
+func (t *Tracker) loginOf(ctx context.Context, mate string) (string, error) {
+	if mate != "" {
+		return mate, nil
+	}
+	return t.gh.viewer(ctx)
+}
+
+// findStatus lists the issue's comments, as the boss, and returns the
+// newest one by gh's login or one of the mates whose body ends with the
+// marker line, and whether there is one.
 func (t *Tracker) findStatus(ctx context.Context, issueKey string) (cachedStatus, bool, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
 		return cachedStatus{}, false, err
 	}
+	t.mu.Lock()
+	crewLogins := append([]string{login}, t.mates...)
+	t.mu.Unlock()
 	out, err := t.gh.call(ctx, "api", "--method", "GET", "--paginate",
 		"repos/{owner}/{repo}/issues/"+issueKey+"/comments?per_page=100")
 	if err != nil {
@@ -167,9 +209,9 @@ func (t *Tracker) findStatus(ctx context.Context, issueKey string) (cachedStatus
 			return cachedStatus{}, false, fmt.Errorf("unreadable output: %w", err)
 		}
 		for _, c := range page {
-			if c.User.Login == login && c.ID > newest.id &&
+			if containsFold(crewLogins, c.User.Login) && c.ID > newest.id &&
 				strings.HasSuffix(strings.TrimRight(c.Body, " \t\r\n"), statusMarker) {
-				newest = cachedStatus{id: c.ID, body: c.Body}
+				newest = cachedStatus{id: c.ID, body: c.Body, author: c.User.Login}
 			}
 		}
 	}
@@ -227,11 +269,18 @@ func nextStatus(current string, status crew.Status, text string) (string, bool) 
 	}
 	body := joinStatus(preamble, texts)
 	if len(body) > maxCommentBytes && len(entries) > 1 {
-		preamble = fmt.Sprintf("%s\ncrew: this comment continues crew's earlier status comment on %s, which is full.\n\n",
-			continuesMarker, status.IssueRef)
-		return joinStatus(preamble, []string{text}), true
+		return continueStatus(status, text, "which is full"), true
 	}
 	return body, false
+}
+
+// continueStatus returns the body of a new status comment holding status's
+// entry, text, that continues crew's earlier one, about which why says why
+// crew no longer edits it.
+func continueStatus(status crew.Status, text, why string) string {
+	preamble := fmt.Sprintf("%s\ncrew: this comment continues crew's earlier status comment on %s, %s.\n\n",
+		continuesMarker, status.IssueRef, why)
+	return joinStatus(preamble, []string{text})
 }
 
 // joinStatus returns a status comment's body: the preamble, the entries'
