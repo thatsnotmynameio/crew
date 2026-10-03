@@ -288,3 +288,130 @@ func TestAFreedQueueSlotAfterASkippedTickListsAtOnce(t *testing.T) {
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "3"), Result: core.ResultDone})
 	wantCommands(t, cmds, core.ListIssues{States: []crew.State{needsTriage, ready}})
 }
+
+// queuesOf returns the queues m's view shows, failing unless their free
+// slots are want's.
+func queuesOf(t *testing.T, m *core.Model, free ...int) []core.QueueView {
+	t.Helper()
+	queues := m.View().Queues
+	got := make([]int, 0, len(queues))
+	for _, q := range queues {
+		got = append(got, q.Free())
+	}
+	if !slices.Equal(got, free) {
+		t.Errorf("free slots: got %v, want %v", got, free)
+	}
+	return queues
+}
+
+// queueOf returns the queue the view names for the held issue keyed key.
+func queueOf(t *testing.T, m *core.Model, key string) string {
+	t.Helper()
+	for _, iv := range m.View().Issues {
+		if iv.Issue.Key == key {
+			return iv.Queue
+		}
+	}
+	t.Fatalf("issue %s is not held", key)
+	return ""
+}
+
+func wantQueues(t *testing.T, got []core.QueueView, want ...core.QueueView) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("queues: got %+v, want %+v", got, want)
+	}
+}
+
+// Covers AE1 (core side).
+func TestTheViewShowsEachQueuesSlotsAndBusyCountAndEachIssuesQueue(t *testing.T) {
+	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
+	// The later stage is taken first.
+	d.hold([]crew.Issue{issue("1", 1, ready), issue("7", 7, needsTriage)})
+
+	wantQueues(t, queuesOf(t, d.m, 0, 1),
+		core.QueueView{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		core.QueueView{Name: crew.DefaultQueue, Slots: 2, Busy: 1})
+	if got := queueOf(t, d.m, "7"); got != crew.ClerkQueue {
+		t.Errorf("queue of #7: got %q, want clerk", got)
+	}
+	if got := queueOf(t, d.m, "1"); got != crew.DefaultQueue {
+		t.Errorf("queue of #1: got %q, want default", got)
+	}
+}
+
+// Covers AE2.
+func TestAnIssueWhoseTakeIsInFlightOrOwedHoldsABusySlot(t *testing.T) {
+	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
+	cmds, _ := d.poll(issue("7", 7, needsTriage))
+	if c := claimOf(t, d.m, "7"); c != core.ClaimTaking {
+		t.Fatalf("claim of #7: got %v, want taking", c)
+	}
+	wantQueues(t, queuesOf(t, d.m, 0, 2),
+		core.QueueView{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
+
+	d.send(core.CallResult{ID: moveID(t, cmds, "7"), Result: core.ResultFailed, Reason: "timeout"})
+	if c := claimOf(t, d.m, "7"); c != core.ClaimOwed {
+		t.Fatalf("claim of #7: got %v, want owed", c)
+	}
+	wantQueues(t, queuesOf(t, d.m, 0, 2),
+		core.QueueView{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
+}
+
+func TestAReleasedIssueFreesItsQueuesSlot(t *testing.T) {
+	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
+	d.running(issue("7", 7, needsTriage))
+	verdict, _ := d.send(core.SessionEnded{IssueKey: "7", Action: "triage", Outcome: succeeded})
+	d.send(core.CallResult{ID: moveID(t, verdict, "7"), Result: core.ResultDone})
+
+	wantHeld(t, d.m)
+	wantQueues(t, queuesOf(t, d.m, 1, 2),
+		core.QueueView{Name: crew.ClerkQueue, Slots: 1},
+		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
+}
+
+// viewQueueCases are workflows and the queues the view shows for them
+// before any take.
+var viewQueueCases = []struct {
+	name     string
+	workflow []crew.Stage
+	limit    int
+	want     []core.QueueView
+	free     []int
+}{
+	{
+		// AE3: no stage names clerk, so it gets no line.
+		name:     "only the queues some stage runs in",
+		workflow: queued(defaultQueue(2), defaultQueue(2)),
+		limit:    3,
+		want:     []core.QueueView{{Name: crew.DefaultQueue, Slots: 2}},
+		free:     []int{2},
+	},
+	{
+		// AE4: the other queues take every slot.
+		name:     "a default of 0 slots still has its line",
+		workflow: queued(crew.Queue{Name: "review", Slots: 2}, defaultQueue(0)),
+		limit:    2,
+		want:     []core.QueueView{{Name: "review", Slots: 2}, {Name: crew.DefaultQueue}},
+		free:     []int{2, 0},
+	},
+	{
+		name:     "stages without a queue share one unnamed queue of the global limit",
+		workflow: queued(crew.Queue{}, crew.Queue{}),
+		limit:    2,
+		want:     []core.QueueView{{Slots: 2}},
+		free:     []int{2},
+	},
+}
+
+func TestTheViewShowsTheQueuesTheStagesRunIn(t *testing.T) {
+	for _, tt := range viewQueueCases {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newDriver(t, tt.workflow, tt.limit)
+
+			wantQueues(t, queuesOf(t, d.m, tt.free...), tt.want...)
+		})
+	}
+}

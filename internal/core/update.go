@@ -463,7 +463,7 @@ func (m *Model) full() bool {
 	if len(m.issues) >= m.maxParallel {
 		return true
 	}
-	for q := range m.queueSlots {
+	for q := range m.queues {
 		if !m.queueFull(q) {
 			return false
 		}
@@ -471,17 +471,22 @@ func (m *Model) full() bool {
 	return true
 }
 
-// queueFull reports whether queue q has no free slot: the held issues, in
-// any claim, whose stage runs in q reach its slots (KTD3). A queue of 0
-// slots is always full.
+// queueFull reports whether queue q has no free slot: its busy slots reach
+// its slots. A queue of 0 slots is always full.
 func (m *Model) queueFull(q int) bool {
+	return m.busy(q) >= m.queues[q].Slots
+}
+
+// busy returns how many slots of queue q are busy: the held issues, in any
+// claim, whose stage runs in q (KTD3).
+func (m *Model) busy(q int) int {
 	held := 0
 	for _, h := range m.issues {
 		if m.queueOf[h.stage] == q {
 			held++
 		}
 	}
-	return held >= m.queueSlots[q]
+	return held
 }
 
 // held returns the held issue keyed key, or nil.
