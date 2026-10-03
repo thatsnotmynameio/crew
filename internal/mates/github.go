@@ -89,7 +89,7 @@ type Installation struct {
 func (c *Client) Convert(ctx context.Context, code string) (Conversion, error) {
 	var conv Conversion
 	path := "/app-manifests/" + url.PathEscape(code) + "/conversions"
-	if err := c.do(ctx, http.MethodPost, path, nil, nil, http.StatusCreated, &conv); err != nil {
+	if err := c.do(ctx, http.MethodPost, path, auth{}, nil, http.StatusCreated, &conv); err != nil {
 		return Conversion{}, fmt.Errorf("convert the app manifest: %w", err)
 	}
 	return conv, nil
@@ -101,7 +101,7 @@ func (c *Client) Convert(ctx context.Context, code string) (Conversion, error) {
 func (c *Client) RepoInstallation(ctx context.Context, m Mate, owner, name string) (Installation, error) {
 	var inst Installation
 	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/installation"
-	err := c.do(ctx, http.MethodGet, path, &m, nil, http.StatusOK, &inst)
+	err := c.do(ctx, http.MethodGet, path, auth{mate: &m}, nil, http.StatusOK, &inst)
 	if se, ok := errors.AsType[*statusError](err); ok && se.code == http.StatusNotFound {
 		return Installation{}, fmt.Errorf("%s on %s/%s: %w", m.Name, owner, name, ErrNotInstalled)
 	}
@@ -111,26 +111,80 @@ func (c *Client) RepoInstallation(ctx context.Context, m Mate, owner, name strin
 	return inst, nil
 }
 
+// Grant is an installation token GitHub minted.
+type Grant struct {
+	// Token is the token. It never prints.
+	Token Token `json:"token"`
+	// ExpiresAt is when the token stops working, an hour after it was
+	// minted.
+	ExpiresAt time.Time `json:"expires_at"`
+	// Permissions are the permissions the token grants.
+	Permissions map[string]string `json:"permissions"`
+}
+
 // AccessToken mints an installation token of m's installation id, limited
-// to the repository called name, and discards it: a minted token proves m
-// can act on the repository. It wraps ErrKeyRejected when GitHub rejected
-// m's key.
-func (c *Client) AccessToken(ctx context.Context, m Mate, id int64, name string) error {
+// to the repository called name and to the permissions every mate asks
+// for. It wraps ErrKeyRejected when GitHub rejected m's key.
+func (c *Client) AccessToken(ctx context.Context, m Mate, id int64, name string) (Grant, error) {
 	path := "/app/installations/" + strconv.FormatInt(id, 10) + "/access_tokens"
-	body := map[string][]string{"repositories": {name}}
-	if err := c.do(ctx, http.MethodPost, path, &m, body, http.StatusCreated, nil); err != nil {
-		return fmt.Errorf("mint a token of %s for %s: %w", m.Name, name, err)
+	body := map[string]any{"repositories": []string{name}, "permissions": permissions()}
+	var g Grant
+	if err := c.do(ctx, http.MethodPost, path, auth{mate: &m}, body, http.StatusCreated, &g); err != nil {
+		return Grant{}, fmt.Errorf("mint a token of %s for %s: %w", m.Name, name, err)
 	}
-	return nil
+	return g, nil
+}
+
+// BotUserID returns the user id of the bot of the app slug, asked with
+// token, an installation token of that app. It refuses a slug that is not
+// lowercase letters, digits and hyphens, and a reply whose id is not a
+// positive integer, since both go into a commit trailer.
+func (c *Client) BotUserID(ctx context.Context, token Token, slug string) (int64, error) {
+	if !validSlug(slug) {
+		return 0, fmt.Errorf("the app slug %q holds more than lowercase letters, digits and hyphens", slug)
+	}
+	var user struct {
+		ID int64 `json:"id"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(slug+"[bot]"), auth{token: token}, nil,
+		http.StatusOK, &user); err != nil {
+		return 0, fmt.Errorf("find the user of %s[bot]: %w", slug, err)
+	}
+	if user.ID <= 0 {
+		return 0, fmt.Errorf("GitHub gave %s[bot] the user id %d", slug, user.ID)
+	}
+	return user.ID, nil
+}
+
+// validSlug reports whether slug is an app slug crew can put in a file,
+// a shell string or a trailer: lowercase letters, digits and hyphens.
+func validSlug(slug string) bool {
+	if slug == "" {
+		return false
+	}
+	for _, r := range slug {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// auth is how a request authenticates: signed with a fresh app JWT of mate
+// when it is not nil, else with token when it is not empty, else not at
+// all.
+type auth struct {
+	mate  *Mate
+	token Token
 }
 
 // do sends a method request to path with body as JSON, none when nil,
-// signed as signer when it is not nil. A reply of status want is decoded
-// into out unless out is nil; any other status is an error.
-func (c *Client) do(ctx context.Context, method, path string, signer *Mate, body any, want int, out any) error {
+// authenticated as a says. A reply of status want is decoded into out
+// unless out is nil; any other status is an error.
+func (c *Client) do(ctx context.Context, method, path string, a auth, body any, want int, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	req, err := c.request(ctx, method, path, signer, body)
+	req, err := c.request(ctx, method, path, a, body)
 	if err != nil {
 		return err
 	}
@@ -140,7 +194,7 @@ func (c *Client) do(ctx context.Context, method, path string, signer *Mate, body
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != want {
-		return replyError(resp, signer != nil)
+		return replyError(resp, a.mate != nil)
 	}
 	if out == nil {
 		return nil
@@ -151,9 +205,9 @@ func (c *Client) do(ctx context.Context, method, path string, signer *Mate, body
 	return nil
 }
 
-// request builds a request with the headers GitHub's API asks for, signed
-// with a fresh app JWT of signer when it is not nil.
-func (c *Client) request(ctx context.Context, method, path string, signer *Mate, body any) (*http.Request, error) {
+// request builds a request with the headers GitHub's API asks for,
+// authenticated as a says.
+func (c *Client) request(ctx context.Context, method, path string, a auth, body any) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -173,12 +227,15 @@ func (c *Client) request(ctx context.Context, method, path string, signer *Mate,
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if signer != nil {
-		jwt, err := AppJWT(signer.PrivateKey, signer.ClientID, c.now())
+	switch {
+	case a.mate != nil:
+		jwt, err := AppJWT(a.mate.PrivateKey, a.mate.ClientID, c.now())
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+jwt)
+	case a.token != "":
+		req.Header.Set("Authorization", "token "+string(a.token))
 	}
 	return req, nil
 }

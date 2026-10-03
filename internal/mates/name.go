@@ -3,7 +3,10 @@
 // repository: crew creates it through GitHub's manifest flow, keeps its
 // private key on the boss's machine, and signs as it to reach GitHub's API.
 //
-// crew does not act as its mates yet: nothing in the engine sees them.
+// Act makes the mates a repository's config names act for crew: it mints
+// each one a token limited to the repository, writes gh config directories
+// holding it, renews it while crew runs, and builds the git environment that
+// adds the mate as co-author of every commit.
 package mates
 
 import (
