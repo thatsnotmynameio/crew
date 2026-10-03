@@ -332,3 +332,15 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 		})
 	}
 }
+
+// Covers AE10 (TUI side): a startup warning shows under the top line.
+func TestAStartupWarningShowsUnderTheTopLine(t *testing.T) {
+	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
+	h.model = New(h.updates, func() {}, func() {}, func() time.Time { return h.clock }, zone,
+		"mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository")
+	h.send(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	h.send(updateMsg(runningSnapshot()))
+
+	golden(t, "warning", h.view())
+}

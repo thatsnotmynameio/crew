@@ -22,12 +22,16 @@ type Source interface {
 	Dropped() int
 }
 
-// Run prints every event of src to w, one line per event, stamped with the
-// event's own time in loc. Each time it has drained the queue and Dropped
+// Run prints each of warnings, crew's startup warnings, as one line stamped
+// with now, then every event of src to w, one line per event, stamped with
+// the event's own time in loc. Each time it has drained the queue and Dropped
 // has grown, it prints one line, stamped with now, saying how many events
 // were dropped. It returns nil once src's channel is closed, or the first
 // write error.
-func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time) error {
+func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time, warnings ...string) error {
+	if err := warn(w, now().In(loc), warnings); err != nil {
+		return err
+	}
 	ch := src.Updates()
 	reported := 0
 	// Dropped events are newer than the ones still queued, so the count is
@@ -55,6 +59,16 @@ func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time) erro
 		}
 	}
 	return reportDrops()
+}
+
+// warn prints each of warnings as one line stamped with at.
+func warn(w io.Writer, at time.Time, warnings []string) error {
+	for _, warning := range warnings {
+		if err := line(w, at, "warning: "+warning); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func line(w io.Writer, at time.Time, text string) error {
