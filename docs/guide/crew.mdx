@@ -119,6 +119,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | `config.max_parallel_issues` | `2` | How many issues crew works on at once, split into [queues](#queues). It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
 | `config.clerk_slots` | `1` | The slots of the `clerk` queue, for bookkeeping stages. At least 1, and below `max_parallel_issues`. See [Queues](#queues). |
 | `config.queues` | none | More queues, each a name and its slots, such as `review: 2`. See [Queues](#queues). |
+| `config.mate` | none | The default [mate](#act-as-mates): crew's own writes on GitHub act as it, and so does every action that names no mate. |
 | `config.usage_in_status` | `false` | Adds each ended action's cost, tokens and pull request to the [status comment](#the-status-comment). |
 | `config.harness` | `claude` | The coding agent that runs sessions. `claude` is the only one today. |
 | `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
@@ -137,7 +138,7 @@ Each stage has:
 | `moves_to` | The label the issue carries while the actions run. It cannot be any stage's `label`, or that stage would take the issue too. |
 | `on_success` | The label the issue moves to when every action succeeded. It cannot be the stage's own `label`. |
 | `on_failure` | The label the issue moves to when any action failed, with crew's comment. It cannot be the stage's own `label`, but it can be another stage's: `on_failure: ready` on the `review` stage sends a failed review back to `implement`. |
-| `actions` | At least one action, each with a `name` (unique in the stage), a `prompt`, and optionally a `check` (see [Checks](#checks)). |
+| `actions` | At least one action, each with a `name` (unique in the stage), a `prompt`, and optionally a `check` (see [Checks](#checks)) and a `mate` that its session and check act as (see [Act as mates](#act-as-mates)). |
 | `queue` | Optional. The [queue](#queues) the stage runs in: `clerk`, `default` or one under `config.queues`. Without it, the stage runs in `default`. |
 | `description` | Optional. The work the stage takes, in a few words, such as `a bug to reproduce and fix`. crew does not use it: the [`/cw-create-issue`](/guide/create-issue) skill shows it when it lists the types of issue. |
 | `issue_template` | Optional. The file name of a Markdown issue template in `.github/ISSUE_TEMPLATE/`, such as `bug.md`. crew does not use it: `/cw-create-issue` fills it for an issue of this stage. |
@@ -255,7 +256,7 @@ An action's `check` is a shell command crew runs after the action's session succ
 ```
 
 - **Where it runs:** with `sh -c`, in the action's worktree, once its session has ended. A session that failed runs no check.
-- **What it gets:** your environment, plus `CREW_ISSUE_REF` (`#42`), `CREW_ISSUE_KEY` (`42`), `CREW_ISSUE_URL` and `CREW_BRANCH` (the worktree's branch, such as `crew/issue-42-development`). The check is not a template: write `$CREW_ISSUE_REF`, not `{{.Issue.Ref}}`. No issue text, such as the title, ever becomes part of the command.
+- **What it gets:** your environment, plus `CREW_ISSUE_REF` (`#42`), `CREW_ISSUE_KEY` (`42`), `CREW_ISSUE_URL`, `CREW_BRANCH` (the worktree's branch, such as `crew/issue-42-development`), and `CREW_BOSS` and `CREW_MATES` (see [Who the boss is](#who-the-boss-is)). It acts on GitHub as its action's session does, as its [mate](#act-as-mates) when it has one. The check is not a template: write `$CREW_ISSUE_REF`, not `{{.Issue.Ref}}`. No issue text, such as the title, ever becomes part of the command.
 - **How it passes:** it exits with 0. It fails when it exits with anything else, cannot start, or runs for more than 10 minutes, a limit you cannot change. A failed check fails the action, as a failed session does: the issue moves to `on_failure`, and crew does not run the action again.
 - **Its output:** stdout and stderr go to the action's log, after the session's. The reason crew gives is `the check failed:` followed by the last line the check printed, from stdout or stderr. That line goes into the issue's [status comment](#the-status-comment), which may be public. So keep your tools' output out of the last line, and end a failing check by echoing its own one-line reason, as above. A check that runs out of time or cannot start says so instead.
 - **What it trusts:** the check runs in the worktree the session wrote. A check that calls a script from the repository runs the session's copy of it. The check catches a session that stopped early, not one that tries to fool it.
@@ -282,17 +283,93 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - a `description` is empty, or an `issue_template` is not a file name ending in `.md` (it holds a `/` or `\`, for example). crew does not check that the template file exists;
 - a prompt, in an action or under `prompts`, is empty, does not parse, or uses a field that does not exist;
 - an action's `check` is present but empty;
+- an action names a `mate` while `config.mate` names none, or a mate's name is not lowercase letters, digits and hyphens;
+- CODEOWNERS cannot be read, or its `*` rule names a team crew cannot list (see [Who the boss is](#who-the-boss-is));
 - a [queue](#queues) rule is broken: `clerk_slots`, `default`'s slots, a queue's slots or name, or a stage's `queue`;
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
 
 At the same check, crew creates the labels your workflow names and the extra labels that the repository does not have yet, each `on_failure` label included, and no other.
 
+## Act as mates
+
+Without mates, crew, its sessions and its checks act on GitHub as your `gh` login. GitHub does not notify you about your own activity, so a failure report rarely reaches you, and it does not let you approve a pull request you opened. A [mate](/guide/mates) is a GitHub identity of crew's own. Name mates in the config, and crew acts as them:
+
+```yaml
+config:
+  mate: ops
+workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}} and open a pull request that closes it."
+        mate: developer
+      - name: acceptance
+        prompt: "Write the acceptance tests for {{.Issue.Ref}}."
+```
+
+- **`config.mate`** is the default mate. crew's own writes on GitHub act as it: the labels it creates, its label moves, the status comment, the failure report, the stop comment and the labels it mirrors on pull requests. So does every action that names no mate, `acceptance` above.
+- **An action's `mate`** acts for that action's session and its check, `developer` for `development` above. Two actions of one stage can act as different mates, such as a developer and a reviewer: a mate cannot approve a pull request it opened.
+- **An action can name a mate only with a default.** An action's `mate` without `config.mate` stops crew at startup.
+- **A name is a mate on this machine.** crew finds it among the mates stored on this machine for the owner of the repository, so the same config works in every repository of that owner where the mate is installed.
+- **Without a mate,** crew, its sessions and its checks act as your `gh` login, as before.
+
+### What acts as whom
+
+- **crew's reads,** such as the poll and the labels and comments it lists, go as your `gh` login, so a mate's missing organization permissions cannot break the poll. `gh` must stay logged in as you.
+- **crew's writes** go as the default mate. When GitHub refuses the mate's token, crew renews it and tries once more. When the mate is still refused, lacks a permission, or lost access to the repository, crew makes the write again as you, and every later write of the run too, until crew restarts.
+- **A session and its check** act as the action's mate in every `gh` call, for as long as they run: crew renews each token before its hour is up. They get a token limited to this repository, never the mate's key, and act as the mate even when your shell exports `GH_TOKEN` or `GITHUB_TOKEN`. A pull request a session opens has the mate as its author, so you can approve it.
+- **Commits stay yours:** authored by you and pushed with your own git credentials. Every commit made in a workspace acting as a mate ends with the mate as co-author, whatever makes it, a skill's own `git commit` included:
+
+  ```text
+  Co-authored-by: crew-developer[bot] <123+crew-developer[bot]@users.noreply.github.com>
+  ```
+
+  The trailer comes from a `commit-msg` hook crew sets through git's environment, which needs git 2.54 or newer. Your own hooks still run.
+
+crew never puts a token or a key in a prompt or a log, and it redacts GitHub tokens and private keys from what a session or a check says before that reaches a comment, the live view or the event lines.
+
+### Who the boss is
+
+crew takes the issues and pull requests that the boss or a configured mate opened. The boss is every user the `*` rule of the repository's CODEOWNERS names, on its default branch. crew reads the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` that exists, and its last `*` line, as GitHub does. A team, such as `@org/devs`, counts as its members, which `gh` lists only with the `read:org` scope: run `gh auth refresh -s read:org` when crew says it cannot. Email owners are skipped. Without CODEOWNERS, or with a `*` rule that names no user, the boss is your `gh` login. This holds whether or not the config names a mate. crew reads CODEOWNERS when it starts.
+
+Sessions and checks get the logins in two variables, each a list separated by spaces: `CREW_BOSS`, the boss's, and `CREW_MATES`, those of the mates that act this run, each as `<slug>[bot]`. In a session acting as a mate, `@me` is the mate, so a prompt that lists the issues crew takes uses them instead:
+
+```sh
+for login in $CREW_BOSS $CREW_MATES; do gh issue list --state open --author "$login"; done
+```
+
+### When a mate cannot act
+
+crew still starts when a mate it names cannot act, and acts as your `gh` login wherever that mate would. It warns at the top of the live view, and in the first lines of `--plain` output, naming the mate, what is wrong and the fix:
+
+- **No key on this machine:** run `crew mates create <name>` in this repository.
+- **Not installed on the repository:** run `crew mates create <name>` in this repository to install it.
+- **GitHub rejected its key,** as after you deleted the app or revoked its key: delete the mate's file and run `crew mates create <name>` again.
+- **It could not get a token,** as when GitHub fails, or the token grants other permissions than every mate asks for: crew acts as you this run, and a restart tries again.
+- **Its commits carry no co-author,** with git older than 2.54, or when GitHub did not give the bot's user id. The mate still acts. Update git, or restart crew.
+
+A mate that cannot act at startup is not tried again until crew restarts. crew warns only at startup: when a mate's writes start failing later, crew's writes go as you without a warning, and you see them on GitHub as yours.
+
+### Before you name a mate
+
+- **Log `gh` in** with `gh auth login`. A login that exists only as an exported `GH_TOKEN` gives a session acting as a mate no way to push.
+- **Pushes keep your credentials.** When your git config runs `gh auth git-credential` as the credential helper for github.com, as `gh auth setup-git` sets it, crew points that helper at your own `gh` config in a session acting as a mate, so `git push` pushes as you. Other helpers and SSH remotes are left alone.
+- **Push before `gh pr create`.** `gh pr create` pushing a branch itself pushes as the mate, which cannot push code. Have prompts push with `git push` first.
+- **Don't export `GH_TOKEN` in a profile the session's shell loads.** crew removes it from a session's environment, but a profile that sets it again makes the session's `gh` act as you.
+- **A commit made with `--no-verify`** skips the hook and carries no co-author.
+
+crew keeps the run's tokens in a private directory only your OS user can read, under `$XDG_RUNTIME_DIR` or else the system's temporary directory, never inside the repository, and removes it when it exits. After a crash or SIGKILL the tokens stay there until they expire, within the hour. A session runs as your OS user, so it could read a mate's key file: see [the key's risk](/guide/mates#the-keys-risk).
+
 ## What crew does on each poll
 
 While every queue a stage runs in is full, a poll lists no issues, since it could take none. It still updates the running issues' status comments and retries what is owed, and says so in a line such as `poll: skipped, 2 of 2 slots busy`, which counts only the slots of the queues your stages run in. When crew lets go of an issue after such a poll, it lists at once instead of waiting for the next poll. Otherwise, a poll goes like this:
 
-1. It lists the open issues and pull requests **you** opened that carry a stage's `label`. Those other people opened are ignored, whatever their labels, and so are those whose only crew label is an extra.
+1. It lists the open issues and pull requests that [the boss](#who-the-boss-is) or a configured [mate](#act-as-mates) opened and that carry a stage's `label`. Those other people opened are ignored, whatever their labels, and so are those whose only crew label is an extra.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
 3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). A pull request is never blocked. The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked.
 4. It takes each issue whose stage's [queue](#queues) has a free slot, and passes over the others, so a full queue does not hold back the stages of another queue. It goes through them in this order: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority, and every pull request, goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. crew writes nothing on the issues left waiting: they keep their label, and a later poll with a free slot in their queue takes them.
@@ -379,9 +456,9 @@ Updated 2026-10-02 14:43 UTC.
 
 The hidden lines mark the entries and the comment. The session's words have your repository's path written as `.` and your home directory as `~`, and sit in a code block, so nothing in them renders or mentions anyone. Editing a comment notifies no one; the failure report is what notifies you.
 
-crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as, and keeps what it holds. An entry left running by a crew that crashed or was killed says that crew stopped following that stage once the next stage run starts. A comment written before crew kept entries becomes the first entry. A queued entry that an earlier crew version wrote, while the issue waited for a free slot, becomes the running entry when crew takes the issue for that stage. Edits you make by hand inside the comment are not kept.
+crew finds its comment again after a restart by the hidden last line, among the comments of your `gh` login and of the configured mates, and keeps what it holds. An entry left running by a crew that crashed or was killed says that crew stopped following that stage once the next stage run starts. A comment written before crew kept entries becomes the first entry. A queued entry that an earlier crew version wrote, while the issue waited for a free slot, becomes the running entry when crew takes the issue for that stage. Edits you make by hand inside the comment are not kept.
 
-A comment that would grow past GitHub's limit of 65,536 characters is left as it is, and crew continues in a new status comment that says so. From then on, crew writes only to the new one. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew takes it again. crew does not touch the comment of an issue it does not take, so a queued entry an earlier version left there stays as it is.
+A comment that would grow past GitHub's limit of 65,536 characters is left as it is, and crew continues in a new status comment that says so. So does a comment another login wrote, such as yours before you named a default mate: crew does not edit it and continues as the login it now writes as. From then on, crew writes only to the new one. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew takes it again. crew does not touch the comment of an issue it does not take, so a queued entry an earlier version left there stays as it is.
 
 ### The pull requests
 
@@ -407,7 +484,7 @@ A pull request opened while a stage runs gets its label at the issue's next move
 
 #### A pull request as the work
 
-A stage takes an open pull request **you** opened that carries its `label`, as it takes an issue. crew moves the pull request through the stage's labels, runs the stage's actions on it, and keeps a status comment and, when the stage fails, a failure report on it. Its [prompt fields](#prompts) are the pull request's. A pull request has no priority and is never blocked.
+A stage takes an open pull request that the boss or a mate opened and that carries its `label`, as it takes an issue. crew moves the pull request through the stage's labels, runs the stage's actions on it, and keeps a status comment and, when the stage fails, a failure report on it. Its [prompt fields](#prompts) are the pull request's. A pull request has no priority and is never blocked.
 
 - **Swap the label, don't add one:** a pull request that closes an issue crew moved already carries that issue's crew label, and a pull request with two crew labels is skipped. Replace the mirrored label with the stage's `label`.
 - **Nothing is mirrored from it:** moving a pull request gives no other pull request a label and posts no stop comment, since a pull request closes no issue.
@@ -550,6 +627,7 @@ A session that runs long keeps crew running past the limit, and so does a move t
 
 ## Limits
 
+- **CODEOWNERS is read at startup.** A change to who the boss is takes effect when crew restarts.
 - **One crew per repository.** Two crews in one repository take the same issues. Nothing stops you from starting a second one.
 - **No recovery after a crash on its own.** An issue left in a `moves_to` state, such as `in progress`, by a crash or a forced exit stays there until you relabel it, and its status comment keeps saying its actions run until its next stage run starts. Relabeling it with its stage's `label` resumes its actions in their worktrees.
 - **No time limit on a session.** A session runs until it ends or you stop crew. `config.run_time_limit_seconds` limits crew, not its sessions: it does not cut a running session short.
