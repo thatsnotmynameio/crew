@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -33,8 +34,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/registry"
 )
 
-// version is set at build time with -ldflags "-X main.version=vX.Y.Z".
-var version = "dev"
+// version is set at build time with -ldflags "-X main.version=vX.Y.Z", as
+// the release builds do. Without it, crewVersion falls back to Go's build
+// info.
+var version string
 
 // signalBuffer holds the two signals crew acts on, the one that stops it and
 // the one that forces the exit, so neither is lost while crew is busy.
@@ -64,10 +67,25 @@ func run(args []string) int {
 		return app.ExitConfig
 	}
 	if *showVersion {
-		_, _ = fmt.Fprintln(stdout, "crew", version)
+		info, _ := debug.ReadBuildInfo()
+		_, _ = fmt.Fprintln(stdout, "crew", crewVersion(version, info))
 		return app.ExitClean
 	}
 	return start(*plain, stdout, stderr)
+}
+
+// crewVersion is the version crew prints: the one stamped at build time,
+// otherwise the module version Go recorded in info (go install …@vX.Y.Z
+// records vX.Y.Z, and a go build in a checkout a version derived from it),
+// otherwise "dev". info is nil when the binary carries no build info.
+func crewVersion(stamped string, info *debug.BuildInfo) string {
+	if stamped != "" {
+		return stamped
+	}
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
 }
 
 // start catches the stop signals, finds the repository's root and runs crew
