@@ -25,7 +25,7 @@ pnpm docs:preview     # live preview of the docs
 ```
 
 - **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
-- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `codacy` job uploads the results to Codacy.
+- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `codacy` job uploads the coverage to Codacy, which analyses the code on its own servers.
 - **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`; `docs/develop/quality.mdx` says which tool owns which finding.
 
 ## Architecture
