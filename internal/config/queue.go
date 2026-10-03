@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -20,12 +21,11 @@ type queueTable []crew.Queue
 
 // find returns the queue called name.
 func (t queueTable) find(name string) (crew.Queue, bool) {
-	for _, q := range t {
-		if q.Name == name {
-			return q, true
-		}
+	i := slices.IndexFunc(t, func(q crew.Queue) bool { return q.Name == name })
+	if i < 0 {
+		return crew.Queue{}, false
 	}
-	return crew.Queue{}, false
+	return t[i], true
 }
 
 // names lists the queues' names, for an error about a queue that does not
@@ -67,7 +67,8 @@ func clerkSlots(s *settings, limit int) (int, bool, error) {
 	switch {
 	case clerk.line == 0 && limit > 0 && limit <= defaultClerkSlots:
 		return defaultClerkSlots, false, keyError("config.max_parallel_issues", s.MaxParallelIssues.line,
-			fmt.Sprintf("must be at least %d, to leave room for the 1-slot clerk queue", defaultClerkSlots+1))
+			fmt.Sprintf("must be at least %d, to leave room for the %d-slot clerk queue",
+				defaultClerkSlots+1, defaultClerkSlots))
 	case clerk.line == 0:
 		return defaultClerkSlots, limit > 0, nil
 	case clerk.value < 1:
