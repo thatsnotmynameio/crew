@@ -18,7 +18,7 @@ import (
 // journal returns the run journal of root, one decoded object per line.
 func journal(t *testing.T, root string) []map[string]any {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, ".crew", "logs", "runs.jsonl"))
+	data, err := os.ReadFile(filepath.Clean(filepath.Join(root, ".crew", "logs", "runs.jsonl")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestAE7NewLinesAreAppendedAndEarlierOnesKeptAsTheyWere(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 
-		data, err := os.ReadFile(filepath.Join(cfg.Root, ".crew", "logs", "runs.jsonl"))
+		data, err := os.ReadFile(filepath.Clean(filepath.Join(cfg.Root, ".crew", "logs", "runs.jsonl")))
 		if err != nil {
 			t.Fatal(err)
 		}
