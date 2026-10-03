@@ -104,14 +104,6 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	args := []string{"api", "graphql",
-		"-f", "query=" + issuesQuery,
-		// gh fills {owner} and {repo} from the repository, through -F only.
-		"-F", "owner={owner}", "-F", "name={repo}",
-		"-f", "login=" + login}
-	for _, s := range states {
-		args = append(args, "-f", "labels[]="+string(s))
-	}
 	var reply struct {
 		Data struct {
 			Repository struct {
@@ -132,7 +124,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 			} `json:"repository"`
 		} `json:"data"`
 	}
-	if err := t.gh.decode(ctx, &reply, args...); err != nil {
+	if err := t.gh.decode(ctx, &reply, issuesArgs(login, states)...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	nodes := reply.Data.Repository.Issues.Nodes
@@ -149,6 +141,24 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 		issues = append(issues, issue)
 	}
 	return issues, nil
+}
+
+// fieldArgs is how many arguments one gh api field takes: the flag and
+// key=value.
+const fieldArgs = 2
+
+// issuesArgs returns the gh arguments of List's query, for login's issues
+// carrying any of the states' labels.
+func issuesArgs(login string, states []crew.State) []string {
+	labels := make([]string, 0, fieldArgs*len(states))
+	for _, s := range states {
+		labels = append(labels, "-f", "labels[]="+string(s))
+	}
+	return slices.Concat([]string{"api", "graphql",
+		"-f", "query=" + issuesQuery,
+		// gh fills {owner} and {repo} from the repository, through -F only.
+		"-F", "owner={owner}", "-F", "name={repo}",
+		"-f", "login=" + login}, labels)
 }
 
 // Move implements port.Tracker. It reads the issue's state and labels; a
@@ -181,6 +191,49 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 	}
 	if err := t.editLabels(ctx, "issue", issueKey, remove, to); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
+	}
+	return nil
+}
+
+// ReportFailure implements port.Tracker: one Markdown comment naming each
+// failed action and its log, without its reason. The issue gone (HTTP 404
+// or 410) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
+// issue, but not a rate limit) is port.ErrRefused, and any other error is
+// transient.
+func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
+	if _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
+		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
+	}
+	return nil
+}
+
+// Prepare implements port.Preparer. It checks that gh is installed and
+// logged in, then creates the labels of states and the extras the repository
+// lacks, comparing names case-insensitively, and no other label.
+func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
+	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return fmt.Errorf("tracker github needs the gh CLI, which is not on PATH: %w", err)
+		}
+		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
+	}
+	var present []ghLabel
+	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
+		return fmt.Errorf("tracker github: read the repository's labels: %w", err)
+	}
+	have := make(map[string]bool, len(present))
+	for _, l := range present {
+		have[strings.ToLower(l.Name)] = true
+	}
+	for _, s := range slices.Concat(states, []crew.State(t.extras)) {
+		name := string(s)
+		if have[strings.ToLower(name)] {
+			continue
+		}
+		if _, err := t.gh.call(ctx, "label", "create", name); err != nil {
+			return fmt.Errorf("tracker github: create the label %q: %w", name, err)
+		}
+		have[strings.ToLower(name)] = true
 	}
 	return nil
 }
@@ -243,47 +296,4 @@ func missingLabel(stderr, label string) bool {
 	stderr = strings.ToLower(stderr)
 	return strings.Contains(stderr, "'"+strings.ToLower(label)+"' not found") ||
 		strings.Contains(stderr, "labels not found")
-}
-
-// ReportFailure implements port.Tracker: one Markdown comment naming each
-// failed action and its log, without its reason. The issue gone (HTTP 404
-// or 410) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
-// issue, but not a rate limit) is port.ErrRefused, and any other error is
-// transient.
-func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
-	if _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
-		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
-	}
-	return nil
-}
-
-// Prepare implements port.Preparer. It checks that gh is installed and
-// logged in, then creates the labels of states and the extras the repository
-// lacks, comparing names case-insensitively, and no other label.
-func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
-	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return fmt.Errorf("tracker github needs the gh CLI, which is not on PATH: %w", err)
-		}
-		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
-	}
-	var present []ghLabel
-	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
-		return fmt.Errorf("tracker github: read the repository's labels: %w", err)
-	}
-	have := make(map[string]bool, len(present))
-	for _, l := range present {
-		have[strings.ToLower(l.Name)] = true
-	}
-	for _, s := range slices.Concat(states, []crew.State(t.extras)) {
-		name := string(s)
-		if have[strings.ToLower(name)] {
-			continue
-		}
-		if _, err := t.gh.call(ctx, "label", "create", name); err != nil {
-			return fmt.Errorf("tracker github: create the label %q: %w", name, err)
-		}
-		have[strings.ToLower(name)] = true
-	}
-	return nil
 }

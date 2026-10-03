@@ -101,7 +101,7 @@ func (r Result) String() string {
 	case ResultFailed:
 		return "failed"
 	}
-	return "unknown"
+	return unknownName
 }
 
 // CallResult is how a Move or a ReportFailure command ended, correlated by

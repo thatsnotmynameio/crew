@@ -188,8 +188,10 @@ func appendLine(f *os.File, data []byte) error {
 	if err := startLine(f); err != nil {
 		return err
 	}
-	_, err := f.Write(append(data, '\n'))
-	return err
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("append the line: %w", err)
+	}
+	return nil
 }
 
 // startLine makes the next write to f, a file opened for reading and
@@ -198,18 +200,20 @@ func appendLine(f *os.File, data []byte) error {
 func startLine(f *os.File) error {
 	info, err := f.Stat()
 	if err != nil {
-		return err
+		return fmt.Errorf("find the end of the last line: %w", err)
 	}
 	if info.Size() == 0 {
 		return nil
 	}
 	last := make([]byte, 1)
 	if _, err := f.ReadAt(last, info.Size()-1); err != nil && !errors.Is(err, io.EOF) {
-		return err
+		return fmt.Errorf("find the end of the last line: %w", err)
 	}
 	if last[0] == '\n' {
 		return nil
 	}
-	_, err = f.Write([]byte{'\n'})
-	return err
+	if _, err := f.Write([]byte{'\n'}); err != nil {
+		return fmt.Errorf("end the last line: %w", err)
+	}
+	return nil
 }

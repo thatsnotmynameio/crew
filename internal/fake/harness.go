@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 
@@ -94,12 +95,6 @@ func (h *Harness) IgnoreStop(ignore bool) {
 	h.ignoreStop = ignore
 }
 
-func (h *Harness) ignoresStop() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.ignoreStop
-}
-
 // Sessions returns every session started so far, in start order.
 func (h *Harness) Sessions() []*Session {
 	h.mu.Lock()
@@ -123,7 +118,7 @@ func (h *Harness) Next(ctx context.Context) (*Session, error) {
 		select {
 		case <-started:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("wait for a session: %w", ctx.Err())
 		}
 	}
 }
@@ -144,6 +139,12 @@ func (h *Harness) Start(_ context.Context, run port.Run) (port.Session, error) {
 		return UsageSession{s}, nil
 	}
 	return s, nil
+}
+
+func (h *Harness) ignoresStop() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.ignoreStop
 }
 
 // Session is a session of the fake harness.

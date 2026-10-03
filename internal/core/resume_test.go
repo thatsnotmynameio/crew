@@ -48,12 +48,12 @@ func resumeDriver(t *testing.T, past ...core.RunRecord) *driver {
 	return &driver{t: t, m: core.New(crewWorkflow(), 2, core.RecordingRuns(past), core.Reopening()), now: t0}
 }
 
-// run is a record of a run of action in stage on issue key, in the
-// workspace the engine would name issue-<key>-<workspace>.
-func run(event core.RunEvent, key, stage, action, workspace string) core.RunRecord {
+// startedRun is the start record of a run of action in stage on issue key,
+// in the workspace the engine would name issue-<key>-<workspace>.
+func startedRun(key, stage, action, workspace string) core.RunRecord {
 	name := "issue-" + key + "-" + workspace
 	return core.RunRecord{
-		Event: event, At: t0, IssueKey: key, IssueRef: "#" + key, Stage: stage, Action: action,
+		Event: core.RunStarted, At: t0, IssueKey: key, IssueRef: "#" + key, Stage: stage, Action: action,
 		Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }
@@ -115,8 +115,8 @@ func records(cmds []core.Command) []core.RunRecord {
 }
 
 func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
-	failedRun := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("no pull request was found"))
-	d := resumeDriver(t, run(core.RunStarted, "9", "development", "lfg", "lfg"), failedRun)
+	failedRun := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("no pull request was found"))
+	d := resumeDriver(t, startedRun("9", "development", "lfg", "lfg"), failedRun)
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
 	wantCommands(t, cmds, core.ReopenWorkspace{
@@ -136,7 +136,7 @@ func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 		"(`../../logs/issue-9-lfg.log` from this worktree), above the line crew wrote there when this session started. " +
 		"Check the worktree's state with `git status` and `git log` before you go on, " +
 		"and continue from where it stopped instead of starting over."
-	started := run(core.RunStarted, "9", "development", "lfg", "lfg")
+	started := startedRun("9", "development", "lfg", "lfg")
 	started.At = d.now
 	wantCommands(t, cmds,
 		core.RecordRun{Record: started},
@@ -156,7 +156,7 @@ func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 }
 
 func TestAE2ASucceededRunStartsFresh(t *testing.T) {
-	d := resumeDriver(t, endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), succeeded))
+	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), succeeded))
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Action: "lfg"})
@@ -167,7 +167,7 @@ func TestAE2ASucceededRunStartsFresh(t *testing.T) {
 }
 
 func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
-	d := resumeDriver(t, endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke")))
+	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke")))
 	d.takeIssue(issue("9", 1, readyForDev))
 
 	cmds, events := d.send(core.WorkspaceGone{IssueKey: "9", Action: "lfg"})
@@ -183,40 +183,43 @@ func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
 }
 
 func TestAE4AnotherStagesActionOfTheSameNameStartsFresh(t *testing.T) {
-	d := resumeDriver(t, endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke")))
+	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke")))
 
 	cmds := d.takeIssue(issue("9", 1, readyForFix))
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForFix), Action: "lfg"})
 }
 
 func TestAE5ARunThatNeverRecordedItsEndResumesAsCrashed(t *testing.T) {
-	d := resumeDriver(t, run(core.RunStarted, "9", "development", "lfg", "lfg"))
+	d := resumeDriver(t, startedRun("9", "development", "lfg", "lfg"))
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
 	wantCommands(t, cmds, core.ReopenWorkspace{
 		IssueKey: "9", Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-	if p := startOf(t, cmds).Prompt; !strings.Contains(p, `That run failed: "crew stopped before the run ended: it crashed or was killed".`) {
+	crashed := `That run failed: "crew stopped before the run ended: it crashed or was killed".`
+	if p := startOf(t, cmds).Prompt; !strings.Contains(p, crashed) {
 		t.Fatalf("prompt does not give the crash reason:\n%s", p)
 	}
 }
 
 func TestAE6EachActionOfAStageIsDecidedOnItsOwn(t *testing.T) {
 	d := resumeDriver(t,
-		endedRun(run(core.RunStarted, "5", "implement", "acceptance", "acceptance"), failed("tests fail")),
-		endedRun(run(core.RunStarted, "5", "implement", "development", "development"), succeeded),
+		endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail")),
+		endedRun(startedRun("5", "implement", "development", "development"), succeeded),
 	)
 
 	cmds := d.takeIssue(issue("5", 1, ready))
 	wantCommands(t, cmds,
-		core.ReopenWorkspace{IssueKey: "5", Action: "acceptance", Workspace: "issue-5-acceptance", Branch: "crew/issue-5-acceptance"},
+		core.ReopenWorkspace{
+			IssueKey: "5", Action: "acceptance", Workspace: "issue-5-acceptance", Branch: "crew/issue-5-acceptance",
+		},
 		core.CreateWorkspace{Issue: issue("5", 1, ready), Action: "development"},
 	)
 }
 
 func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) {
-	d := resumeDriver(t, endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("first reason")))
+	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("first reason")))
 	d.takeIssue(issue("9", 1, readyForDev))
 	d.send(reopened("9", "lfg", "lfg"))
 	d.send(core.SessionStarted{IssueKey: "9", Action: "lfg"})
@@ -240,7 +243,7 @@ func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) 
 }
 
 func TestAModelThatCannotReopenCreatesForAFailedRun(t *testing.T) {
-	past := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke"))
+	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
 	d := &driver{t: t, m: core.New(crewWorkflow(), 2, core.RecordingRuns([]core.RunRecord{past})), now: t0}
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
@@ -248,8 +251,8 @@ func TestAModelThatCannotReopenCreatesForAFailedRun(t *testing.T) {
 }
 
 func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
-	devFailed := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke"))
-	fixStarted := run(core.RunStarted, "9", "fix", "lfg", "lfg")
+	devFailed := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
+	fixStarted := startedRun("9", "fix", "lfg", "lfg")
 	fixStarted.At = t0.Add(time.Hour)
 
 	t.Run("in the journal", func(t *testing.T) {
@@ -274,7 +277,7 @@ func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
 }
 
 func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
-	past := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("the session's reason"))
+	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("the session's reason"))
 
 	t.Run("failed to start", func(t *testing.T) {
 		d := resumeDriver(t, past)
@@ -307,7 +310,7 @@ func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 }
 
 func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T) {
-	past := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke"))
+	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
 	d := resumeDriver(t, past)
 	d.takeIssue(issue("9", 1, readyForDev))
 
@@ -325,7 +328,7 @@ func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T
 }
 
 func TestAStopThenAGoneWorkspaceCreatesNothing(t *testing.T) {
-	past := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke"))
+	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
 	d := resumeDriver(t, past)
 	d.takeIssue(issue("9", 1, readyForDev))
 	d.send(core.StopRequested{})
@@ -354,7 +357,7 @@ func TestAFreshRunIsRecordedFromItsWorkspaceToItsEnd(t *testing.T) {
 	cmds, _ = d.send(core.SessionEnded{IssueKey: "9", Action: "lfg", Outcome: succeeded})
 	end := records(cmds)
 
-	wantStart := run(core.RunStarted, "9", "development", "lfg", "lfg")
+	wantStart := startedRun("9", "development", "lfg", "lfg")
 	wantStart.At = t0.Add(4 * time.Second)
 	wantEnd := endedRun(wantStart, succeeded)
 	wantEnd.At = t0.Add(6 * time.Second)
@@ -366,7 +369,7 @@ func TestAFreshRunIsRecordedFromItsWorkspaceToItsEnd(t *testing.T) {
 
 func TestARecordThatFailsToWriteIsReported(t *testing.T) {
 	d := resumeDriver(t)
-	r := run(core.RunStarted, "9", "development", "lfg", "lfg")
+	r := startedRun("9", "development", "lfg", "lfg")
 
 	_, events := d.send(core.RecordFailed{Record: r, Reason: "disk full"})
 	wantEvents(t, events, core.RunNotRecorded{
@@ -375,8 +378,9 @@ func TestARecordThatFailsToWriteIsReported(t *testing.T) {
 }
 
 func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
-	past := endedRun(run(core.RunStarted, "5", "implement", "acceptance", "acceptance"), failed("tests fail"))
-	d := &driver{t: t, m: core.New(crewWorkflow(), 2, core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.ReportingStatus()), now: t0}
+	past := endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail"))
+	m := core.New(crewWorkflow(), 2, core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.ReportingStatus())
+	d := &driver{t: t, m: m, now: t0}
 	// last answers every status write and keeps the newest status.
 	var last crew.Status
 	answer := func(cmds []core.Command) {
@@ -415,7 +419,8 @@ func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 
 	reason := "the check failed: no pull requests found for branch \"crew/issue-9-lfg\""
 	cmds, _ := d.send(core.CheckEnded{IssueKey: "9", Action: "lfg", Outcome: failed(reason)})
-	if got := records(cmds); len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason != reason {
+	got := records(cmds)
+	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason != reason {
 		t.Fatalf("records = %#v, want one failed end with the check's reason", got)
 	}
 	d.settle(cmds)
@@ -425,7 +430,8 @@ func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 		IssueKey: "9", Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-	if p := startOf(t, cmds).Prompt; !strings.Contains(p, `That run failed: "the check failed: no pull requests found for branch \"crew/issue-9-lfg\"".`) {
+	quoted := `That run failed: "the check failed: no pull requests found for branch \"crew/issue-9-lfg\"".`
+	if p := startOf(t, cmds).Prompt; !strings.Contains(p, quoted) {
 		t.Fatalf("prompt does not quote the check's reason:\n%s", p)
 	}
 }

@@ -171,12 +171,14 @@ func resumeParagraph(prev RunRecord, branch, log, logFromDir string) string {
 	if branch != "" {
 		fmt.Fprintf(&b, ", on branch `%s`", branch)
 	}
-	fmt.Fprintf(&b, ". That run failed: %q. Its output is in the log `%s` of the repository's main checkout", oneLine(prev.reason()), log)
+	fmt.Fprintf(&b, ". That run failed: %q.", oneLine(prev.reason()))
+	fmt.Fprintf(&b, " Its output is in the log `%s` of the repository's main checkout", log)
 	if logFromDir != "" {
 		fmt.Fprintf(&b, " (`%s` from this worktree)", logFromDir)
 	}
 	b.WriteString(", above the line crew wrote there when this session started. ")
-	b.WriteString("Check the worktree's state with `git status` and `git log` before you go on, and continue from where it stopped instead of starting over.")
+	b.WriteString("Check the worktree's state with `git status` and `git log` before you go on, ")
+	b.WriteString("and continue from where it stopped instead of starting over.")
 	return b.String()
 }
 

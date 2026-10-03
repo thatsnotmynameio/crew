@@ -28,7 +28,7 @@ var worktreeMade = time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 // returns.
 func find(t *testing.T, branch string, since time.Time, prs ...string) (crew.PullRequest, []string) {
 	t.Helper()
-	tr, gh := build(t, "", reply{prefix: prList, stdout: "[" + strings.Join(prs, ",") + "]"})
+	tr, gh := build(t, reply{prefix: prList, stdout: "[" + strings.Join(prs, ",") + "]"})
 	pr, err := tr.FindPullRequest(context.Background(), branch, since)
 	if err != nil {
 		t.Fatalf("FindPullRequest = %v, want no error", err)
@@ -125,7 +125,7 @@ func TestACrossRepositoryPullRequestIsNotFromTheBranch(t *testing.T) {
 }
 
 func TestAFailedLookupIsAnError(t *testing.T) {
-	tr, gh := build(t, "", reply{prefix: prList, stderr: "HTTP 502: Bad Gateway"})
+	tr, gh := build(t, reply{prefix: prList, stderr: "HTTP 502: Bad Gateway"})
 	pr, err := tr.FindPullRequest(context.Background(), "crew/issue-31-lfg", worktreeMade)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 502: Bad Gateway") {
 		t.Errorf("FindPullRequest = %v, want an error carrying gh's stderr", err)

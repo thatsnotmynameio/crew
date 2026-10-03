@@ -228,7 +228,7 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 				t.Fatalf("Run: %v", err)
 			}
 
-			got := lastStatus(t, tr.ReportingTracker, "1").Actions[0]
+			got := lastStatus(t, tr.ReportingTracker).Actions[0]
 			want := crew.ActionStatus{Name: "development", State: crew.ActionSucceeded}
 			if on {
 				want.Spend, want.PullRequest = used.Spend(), pr

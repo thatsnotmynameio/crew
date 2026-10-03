@@ -28,7 +28,8 @@ type output struct {
 func (o *output) Write(p []byte) (int, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.buf.Write(p)
+	n, _ := o.buf.Write(p) // a bytes.Buffer's Write always returns a nil error
+	return n, nil
 }
 
 func (o *output) String() string {
@@ -254,7 +255,8 @@ func TestKillAllEndsEveryStartedChild(t *testing.T) {
 // process with its own process group, as a terminal's foreground job, and
 // sends that group the SIGINT a terminal's Ctrl-C sends.
 func TestInterruptOfCrewsProcessGroupDoesNotReachTheChild(t *testing.T) {
-	helper := exec.Command(os.Args[0], "-test.run=^TestHelperCrew$")
+	//nolint:gosec // os.Args[0] is this test binary, re-run as the helper process
+	helper := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestHelperCrew$")
 	helper.Env = append(os.Environ(), "CREW_PROC_HELPER=1")
 	helper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := helper.StdoutPipe()

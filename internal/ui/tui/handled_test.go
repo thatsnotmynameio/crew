@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +28,9 @@ func entry(key, title, stage string, to crew.State, taken, ended int) core.Handl
 // action and reason.
 func failedEntry(key, title string, taken, ended int, failures ...string) core.HandledView {
 	e := entry(key, title, "implement", "needs attention", taken, ended)
-	for i := 0; i < len(failures); i += 2 {
-		e.Failures = append(e.Failures, crew.ActionFailure{Action: failures[i], Reason: failures[i+1]})
+	for len(failures) >= 2 {
+		e.Failures = append(e.Failures, crew.ActionFailure{Action: failures[0], Reason: failures[1]})
+		failures = failures[2:]
 	}
 	return e
 }
@@ -190,7 +192,8 @@ func TestARecentEventWithAMultiLineReasonTakesOneRow(t *testing.T) {
 	u := runningSnapshot()
 	u.Snapshot.Recent = append(u.Snapshot.Recent, core.ActionEnded{
 		At: start, IssueRef: "#1", Stage: "implement", Action: "code",
-		Outcome: crew.Outcome{Reason: "git fetch: exit status 128: ssh: Could not resolve hostname\nfatal: Could not read from remote repository."},
+		Outcome: crew.Outcome{Reason: "git fetch: exit status 128: ssh: Could not resolve hostname\n" +
+			"fatal: Could not read from remote repository."},
 	})
 	full := fitted(t, 200, 0, u)
 	rows := strings.Count(full, "\n") + 1
@@ -220,7 +223,7 @@ func manySnapshot() engine.Update {
 	}
 	for n := 13; n <= 20; n++ {
 		u.Snapshot.Handled = append(u.Snapshot.Handled,
-			acted(entry(fmt.Sprint(n), fmt.Sprintf("Success number %d", n), "development", "crew:waiting review", 60, 40-n),
+			acted(entry(strconv.Itoa(n), fmt.Sprintf("Success number %d", n), "development", "crew:waiting review", 60, 40-n),
 				core.HandledAction{Name: "lfg", Spend: spent(float64(n)/2, int64(n)*1_000_000), PullRequest: found(fmt.Sprint("#", n+30))}))
 	}
 	for _, e := range u.Snapshot.Handled {
@@ -238,7 +241,7 @@ func fitted(t *testing.T, width, height int, u engine.Update) string {
 	if n := strings.Count(view, "\n") + 1; height > 0 && n > height {
 		t.Errorf("view has %d lines, over the window's %d:\n%s", n, height, view)
 	}
-	for _, l := range strings.Split(view, "\n") {
+	for l := range strings.SplitSeq(view, "\n") {
 		if n := utf8.RuneCountInString(l); n > width {
 			t.Errorf("line is %d columns wide, over %d: %q", n, width, l)
 		}
@@ -257,7 +260,9 @@ func TestA24RowWindowGivesUpRecentEventsAndCollapsesOldSuccesses(t *testing.T) {
 	if strings.Contains(view, "Recent events") {
 		t.Errorf("view still shows Recent events:\n%s", view)
 	}
-	for _, want := range []string{"#11", "tests fail on Go 1.27", "#12", `no field "Body"`, "  … and 4 more in crew:waiting review"} {
+	for _, want := range []string{
+		"#11", "tests fail on Go 1.27", "#12", `no field "Body"`, "  … and 4 more in crew:waiting review",
+	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
 		}

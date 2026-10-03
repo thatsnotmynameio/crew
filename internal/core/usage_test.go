@@ -184,7 +184,7 @@ func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testi
 		}
 	})
 	t.Run("resumed", func(t *testing.T) {
-		past := endedRun(run(core.RunStarted, "9", "development", "lfg", "lfg"), failed("broke"))
+		past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
 		d := &driver{t: t, m: core.New(crewWorkflow(), 2,
 			core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.FindingPullRequests()), now: t0}
 		d.takeIssue(issue("9", 1, readyForDev))

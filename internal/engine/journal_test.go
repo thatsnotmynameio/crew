@@ -19,7 +19,9 @@ func journalEngine(t *testing.T) *Engine {
 	return &Engine{cfg: Config{Root: t.TempDir()}}
 }
 
-func record(event core.RunEvent, key, action string) core.RunRecord {
+// record is a record of event for the lfg action of the issue keyed key.
+func record(event core.RunEvent, key string) core.RunRecord {
+	const action = "lfg"
 	name := "issue-" + key + "-" + action
 	r := core.RunRecord{
 		Event: event, At: time.Date(2026, 10, 2, 21, 5, 0, 0, time.UTC), IssueKey: key, IssueRef: "#" + key,
@@ -34,9 +36,9 @@ func record(event core.RunEvent, key, action string) core.RunRecord {
 func TestTheJournalReadsBackWhatWasAppendedInOrder(t *testing.T) {
 	e := journalEngine(t)
 	want := []core.RunRecord{
-		record(core.RunStarted, "9", "lfg"),
-		record(core.RunStarted, "10", "lfg"),
-		record(core.RunEnded, "9", "lfg"),
+		record(core.RunStarted, "9"),
+		record(core.RunStarted, "10"),
+		record(core.RunEnded, "9"),
 	}
 	want[2].Succeeded = false
 	for _, r := range want {
@@ -66,7 +68,7 @@ func TestTheJournalReadsBackWhatWasAppendedInOrder(t *testing.T) {
 
 func TestAJournalLineCutShortIsSkippedAndTheNextAppendStartsItsOwnLine(t *testing.T) {
 	e := journalEngine(t)
-	first := record(core.RunStarted, "9", "lfg")
+	first := record(core.RunStarted, "9")
 	if err := e.appendJournal(first); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +84,7 @@ func TestAJournalLineCutShortIsSkippedAndTheNextAppendStartsItsOwnLine(t *testin
 		t.Fatal(err)
 	}
 
-	next := record(core.RunStarted, "10", "lfg")
+	next := record(core.RunStarted, "10")
 	if err := e.appendJournal(next); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +118,7 @@ func TestAJournalThatCannotBeReadFailsPrepareNamingIt(t *testing.T) {
 }
 
 func TestAReportedZeroCostIsWrittenAndAnUnreportedOneLeftOut(t *testing.T) {
-	r := record(core.RunEnded, "9", "lfg")
+	r := record(core.RunEnded, "9")
 	r.SessionStarted = r.At.Add(-time.Minute)
 	r.Usage = crew.Usage{HasCost: true}
 	data, err := json.Marshal(lineOf(r, "run"))
@@ -130,7 +132,7 @@ func TestAReportedZeroCostIsWrittenAndAnUnreportedOneLeftOut(t *testing.T) {
 
 func TestAnEndWithoutAWorkspaceIsWrittenAndSkippedOnRead(t *testing.T) {
 	e := journalEngine(t)
-	r := record(core.RunEnded, "9", "lfg")
+	r := record(core.RunEnded, "9")
 	r.Workspace, r.Branch, r.Log = "", "", ""
 	if err := e.appendJournal(r); err != nil {
 		t.Fatal(err)
