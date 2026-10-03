@@ -347,3 +347,58 @@ func TestRunPastItsDeadlineKillsTheCommand(t *testing.T) {
 		t.Errorf("Run took %v, want it to end at the deadline", elapsed)
 	}
 }
+
+// pids waits for the file at path to hold "<child> <grandchild>", as the
+// detached tests' command writes it, and returns both pids.
+func pids(t *testing.T, path string) (int, int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if f := strings.Fields(string(data)); err == nil && len(f) == 2 {
+			child, cerr := strconv.Atoi(f[0])
+			grandchild, gerr := strconv.Atoi(f[1])
+			if cerr != nil || gerr != nil {
+				t.Fatalf("bad pids %q", data)
+			}
+			return child, grandchild
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the detached command never wrote its pids")
+	return 0, 0
+}
+
+func TestStartDetachedLeavesWhatTheCommandStartedRunning(t *testing.T) {
+	var g proc.Group
+	path := filepath.Join(t.TempDir(), "pids")
+	// The command starts a grandchild and exits at once, as xdg-open does
+	// once it has started the browser.
+	c := sh(`sleep 30 & echo "$$ $!" > "$1.tmp" && mv "$1.tmp" "$1"`)
+	c.Args = append(c.Args, "sh", path)
+	if err := proc.StartDetached(c); err != nil {
+		t.Fatalf("StartDetached: %v", err)
+	}
+	child, grandchild := pids(t, path)
+	t.Cleanup(func() { _ = syscall.Kill(grandchild, syscall.SIGKILL) })
+
+	gone(t, child, "detached command") // reaped, so no zombie stays
+	g.KillAll()                        // the Group never recorded it
+	if !alive(grandchild) {
+		t.Fatal("the detached command's grandchild ended with it")
+	}
+	// setsid also makes the command the leader of a new process group.
+	pgid, err := syscall.Getpgid(grandchild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pgid != child || pgid == syscall.Getpgrp() {
+		t.Errorf("the grandchild's process group is %d, want the detached command's own %d", pgid, child)
+	}
+}
+
+func TestStartDetachedOfAMissingCommandFails(t *testing.T) {
+	if err := proc.StartDetached(proc.Command{Name: "crew-no-such-command"}); err == nil {
+		t.Error("StartDetached succeeded, want an error")
+	}
+}
