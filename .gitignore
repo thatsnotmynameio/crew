@@ -22,8 +22,6 @@ Thumbs.db
 # Docs (docs.page CLI)
 node_modules/
 
-# Coverage reports (Sonar)
-coverage.xml
-.coverage
-coverage/
+# Coverage profile (go test -coverprofile), uploaded to Codacy by CI
+coverage.out
 .context/compound-engineering/
