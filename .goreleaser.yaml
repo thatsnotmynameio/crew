@@ -1,10 +1,7 @@
-# What a release builds and publishes. The Release workflow
-# (.github/workflows/release.yml) runs GoReleaser on a local tag vX.Y.Z,
-# with the notes it asked GitHub for. Each release ships crew for macOS and
-# Linux on amd64 and arm64, one tar.gz per platform, and checksums.txt.
-# Nothing is published unless every archive built: the release stays a draft
-# while its assets upload, and GitHub creates the tag only when GoReleaser
-# publishes it. Try it locally with a snapshot build (docs/develop/index.mdx).
+# What a release builds and publishes: crew for macOS and Linux on amd64 and
+# arm64, one tar.gz per platform, and checksums.txt. The Release workflow
+# (.github/workflows/release.yml) runs it and says when a release happens.
+# Try it locally with a snapshot build (docs/develop/index.mdx).
 version: 2
 
 project_name: crew
