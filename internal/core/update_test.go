@@ -398,6 +398,10 @@ func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
 
 	cmds, _ = d.poll(issue("4", 1, ready))
 	wantCommands(t, cmds, core.Move{IssueKey: "4", From: ready, To: inProgress})
+
+	d = newDriver(t, draft(), 1)
+	cmds, _ = d.poll(prioritized(blocked, 1), issue("5", 2, ready))
+	wantCommands(t, cmds, core.Move{IssueKey: "5", From: ready, To: inProgress})
 }
 
 func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
@@ -728,7 +732,13 @@ func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 	}
 }
 
-func TestPicksLaterStagesFirstThenTheOldestIssue(t *testing.T) {
+// prioritized returns i with priority p, 1 the highest.
+func prioritized(i crew.Issue, p int) crew.Issue {
+	i.Priority = p
+	return i
+}
+
+func TestPicksTheHighestPriorityThenLaterStagesThenTheOldestIssue(t *testing.T) {
 	tests := []struct {
 		name   string
 		issues []crew.Issue
@@ -743,6 +753,35 @@ func TestPicksLaterStagesFirstThenTheOldestIssue(t *testing.T) {
 			name:   "oldest first within a stage",
 			issues: []crew.Issue{issue("8", 9, ready), issue("7", 3, ready)},
 			want:   core.Move{IssueKey: "7", From: ready, To: inProgress},
+		},
+		{
+			// AE1: an Urgent issue passes an unprioritized one of a later stage.
+			name:   "priority before a later stage",
+			issues: []crew.Issue{issue("6", 1, readyToReview), prioritized(issue("5", 2, ready), 1)},
+			want:   core.Move{IssueKey: "5", From: ready, To: inProgress},
+		},
+		{
+			// AE2: same priority and stage, the older issue first.
+			name:   "oldest first at the same priority and stage",
+			issues: []crew.Issue{prioritized(issue("8", 9, ready), 2), prioritized(issue("7", 3, ready), 2)},
+			want:   core.Move{IssueKey: "7", From: ready, To: inProgress},
+		},
+		{
+			// AE3: same priority, the later stage first.
+			name:   "later stage first at the same priority",
+			issues: []crew.Issue{prioritized(issue("5", 1, ready), 3), prioritized(issue("6", 2, readyToReview), 3)},
+			want:   core.Move{IssueKey: "6", From: readyToReview, To: inReview},
+		},
+		{
+			// AE4: the lowest priority still passes an older issue with none.
+			name:   "any priority before none",
+			issues: []crew.Issue{issue("5", 1, ready), prioritized(issue("6", 9, ready), 4)},
+			want:   core.Move{IssueKey: "6", From: ready, To: inProgress},
+		},
+		{
+			name:   "higher priority before an older lower one",
+			issues: []crew.Issue{prioritized(issue("5", 1, ready), 2), prioritized(issue("6", 9, ready), 1)},
+			want:   core.Move{IssueKey: "6", From: ready, To: inProgress},
 		},
 	}
 	for _, tt := range tests {

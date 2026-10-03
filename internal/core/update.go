@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"slices"
 	"time"
 
@@ -182,9 +183,11 @@ func (s *step) windDown() {
 }
 
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: later stages first, then the oldest issue first (KTD8). A blocked
-// issue is neither taken nor queued, and is taken at a later poll once
-// nothing blocks it. It takes nothing once the run time is up.
+// issues: the highest priority first, an issue without one last; then, at
+// the same priority, later stages first; then the oldest issue first (KTD8).
+// The rest are queued for their own stage. A blocked issue is neither taken
+// nor queued, and is taken at a later poll once nothing blocks it. It takes
+// nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -196,32 +199,56 @@ func (s *step) listed(issues []crew.Issue) {
 			s.emit(IssueSkipped{At: s.at, IssueKey: issue.Key, IssueRef: issue.Ref, States: slices.Clone(issue.States)})
 		}
 	}
-	taken := 0
-	for si := len(m.stages) - 1; si >= 0; si-- {
-		var candidates []crew.Issue
+	type candidate struct {
+		stage int
+		issue crew.Issue
+	}
+	var candidates []candidate
+	for si, stage := range m.stages {
 		for _, issue := range issues {
-			if len(issue.States) == 1 && issue.States[0] == m.stages[si].Label && !issue.Blocked {
-				candidates = append(candidates, issue)
-			}
-		}
-		slices.SortStableFunc(candidates, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
-		for _, issue := range candidates {
-			if len(m.issues) >= m.maxParallel {
-				break
-			}
-			if m.held(issue.Key) != nil {
-				continue
-			}
-			s.take(si, issue)
-			taken++
-		}
-		for _, issue := range candidates {
-			if m.held(issue.Key) == nil {
-				s.queued(si, issue)
+			if len(issue.States) == 1 && issue.States[0] == stage.Label && !issue.Blocked {
+				candidates = append(candidates, candidate{si, issue})
 			}
 		}
 	}
+	slices.SortStableFunc(candidates, func(a, b candidate) int {
+		if c := comparePriority(a.issue.Priority, b.issue.Priority); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.stage, a.stage); c != 0 {
+			return c
+		}
+		return a.issue.Created.Compare(b.issue.Created)
+	})
+	taken := 0
+	for _, c := range candidates {
+		if len(m.issues) >= m.maxParallel {
+			break
+		}
+		if m.held(c.issue.Key) != nil {
+			continue
+		}
+		s.take(c.stage, c.issue)
+		taken++
+	}
+	for _, c := range candidates {
+		if m.held(c.issue.Key) == nil {
+			s.queued(c.stage, c.issue)
+		}
+	}
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
+}
+
+// comparePriority orders two issue priorities, the higher first: 1 before
+// 2, and any priority before 0, which is none.
+func comparePriority(a, b int) int {
+	if (a == 0) != (b == 0) {
+		if a == 0 {
+			return 1
+		}
+		return -1
+	}
+	return cmp.Compare(a, b)
 }
 
 // take holds issue for stage si and moves it to the stage's moves_to.
