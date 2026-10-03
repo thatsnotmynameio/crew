@@ -13,7 +13,7 @@ const logDir = ".crew/logs"
 // The permissions of the log directory and of the files in it: logs hold
 // what sessions printed, so only the boss reads them.
 const (
-	logDirPerm  = 0o750
+	logDirPerm  = 0o700
 	logFilePerm = 0o600
 )
 

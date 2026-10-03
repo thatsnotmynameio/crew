@@ -22,7 +22,7 @@ var (
 
 // dirMode is the permission of a workspace's directory: the owner's, and
 // read-only for the group.
-const dirMode = 0o750
+const dirMode = 0o700
 
 // Workspace creates plain directories under a root, such as t.TempDir(). It
 // is not in the registry, as no config key selects a workspace; tests build
