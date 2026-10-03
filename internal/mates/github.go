@@ -133,7 +133,7 @@ func (c *Client) do(ctx context.Context, method, path string, signer *Mate, body
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) //nolint:gosec // G704: the host is the client's base; paths escape what they carry
 	if err != nil {
 		return fmt.Errorf("GitHub API: %w", err)
 	}
@@ -161,6 +161,7 @@ func (c *Client) request(ctx context.Context, method, path string, signer *Mate,
 		}
 		reader = bytes.NewReader(data)
 	}
+	//nolint:gosec // G704: the host is the client's base, and every path escapes what it carries
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
 	if err != nil {
 		return nil, fmt.Errorf("GitHub API request: %w", err)
