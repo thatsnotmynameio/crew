@@ -44,7 +44,7 @@ jobs:
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: |
-          pnpm exec codacy tools gh thatsnotmynameio crew --import --skip-approval 2>&1 | tee "$RUNNER_TEMP/import.log"
+          pnpm exec codacy tools gh ${{ github.repository_owner }} ${{ github.event.repository.name }} --import --skip-approval 2>&1 | tee "$RUNNER_TEMP/import.log"
           if grep -q "error(s)" "$RUNNER_TEMP/import.log"; then
             echo "::error::The Codacy import did not apply every tool; see the errors above and docs/develop/quality.mdx." >&2
             exit 1
