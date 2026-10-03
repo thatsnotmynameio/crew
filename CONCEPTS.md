@@ -66,7 +66,7 @@ It is a new comment, so the tracker notifies the boss, and it never quotes what 
 
 ### Mirrored label
 
-The crew label an issue's open pull requests carry, which crew sets to the issue's own crew label each time it moves the issue.
+The crew label an issue's pull requests carry, which crew sets to the issue's own crew label each time it moves the issue. An issue's pull requests are the open ones in its own repository that are linked as closing it; merged and closed ones, and those in other repositories, are not.
 
 It goes from the issue to its pull requests only: crew never takes work or a state from a pull request's labels, and replaces a crew label put on a pull request by hand at the issue's next move.
 
