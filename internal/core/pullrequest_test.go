@@ -318,6 +318,56 @@ func TestStopWaitsForAReportInFlightWithNoIssueHeld(t *testing.T) {
 	}
 }
 
+func TestAReportThatFailsInFlightAfterAStopGetsOneFinalTry(t *testing.T) {
+	d := newPullRequestDriver(t, draft(), 2)
+	want := pullRequestReportOf(t, d.succeededStage())
+	d.send(core.StopRequested{})
+
+	cmds, _ := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "down"})
+	if got := pullRequestReportOf(t, cmds); !reflect.DeepEqual(got, want) {
+		t.Fatalf("final try:\n got %#v\nwant %#v", got, want)
+	}
+	if d.m.Stopped() {
+		t.Fatal("stopped with the final try in flight")
+	}
+
+	cmds, events := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "still down"})
+	noPullRequestReport(t, cmds)
+	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
+		Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: readyToReview,
+	}})
+	if !d.m.Stopped() || !containsStopped(events) {
+		t.Fatal("not stopped once the final try failed")
+	}
+}
+
+func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
+	d := newPullRequestDriver(t, draft(), 2)
+	landed := d.takeLanded()
+	take := pullRequestReportOf(t, landed)
+	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
+	d.send(core.StopRequested{})
+
+	cmds, _ := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "down"})
+	if got := pullRequestReportOf(t, cmds); got.ID != take.ID {
+		t.Fatalf("final try sent report %q, want the take report %q", got.ID, take.ID)
+	}
+
+	cmds, _ = d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "still down"})
+	verdict := pullRequestReportOf(t, cmds)
+	wantReport(t, verdict, crew.PullRequestReport{
+		IssueKey: "74", IssueRef: "#74", State: readyToReview, End: allSucceeded,
+	})
+	if d.m.Stopped() {
+		t.Fatal("stopped with the verdict report in flight")
+	}
+
+	_, events := d.answerPullRequests("74", core.ResultDone)
+	if !d.m.Stopped() || !containsStopped(events) {
+		t.Fatal("not stopped once the verdict report landed")
+	}
+}
+
 func TestAnOwedTakeReportLeavesTheIssueRunning(t *testing.T) {
 	d := newPullRequestDriver(t, draft(), 2)
 	landed := d.takeLanded()

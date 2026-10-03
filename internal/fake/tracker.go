@@ -66,8 +66,8 @@ type Move struct {
 type Tracker struct {
 	mu         sync.Mutex
 	issues     []*trackedIssue
-	moveErrs   map[string][]error
-	reportErrs map[string][]error
+	moveErrs   failures
+	reportErrs failures
 	moves      []Move
 	reports    []crew.FailureReport
 }
@@ -80,7 +80,7 @@ type trackedIssue struct {
 
 // NewTracker returns a tracker holding issues, all open.
 func NewTracker(issues ...crew.Issue) *Tracker {
-	t := &Tracker{moveErrs: map[string][]error{}, reportErrs: map[string][]error{}}
+	t := &Tracker{}
 	for _, i := range issues {
 		t.Add(i)
 	}
@@ -157,7 +157,7 @@ func (t *Tracker) Issue(key string) (crew.Issue, bool) {
 func (t *Tracker) FailMoves(key string, errs ...error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.moveErrs[key] = append(t.moveErrs[key], errs...)
+	t.moveErrs.add(key, errs...)
 }
 
 // FailReports makes the next failure reports on the issue with key fail, as
@@ -165,7 +165,7 @@ func (t *Tracker) FailMoves(key string, errs ...error) {
 func (t *Tracker) FailReports(key string, errs ...error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.reportErrs[key] = append(t.reportErrs[key], errs...)
+	t.reportErrs.add(key, errs...)
 }
 
 // Moves returns the moves applied so far, in order. Failed moves are not
@@ -213,7 +213,7 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if err := pop(t.moveErrs, issueKey); err != nil {
+	if err := t.moveErrs.pop(issueKey); err != nil {
 		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, err)
 	}
 	ti := t.find(issueKey)
@@ -236,7 +236,7 @@ func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) 
 func (t *Tracker) ReportFailure(_ context.Context, report crew.FailureReport) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if err := pop(t.reportErrs, report.IssueKey); err != nil {
+	if err := t.reportErrs.pop(report.IssueKey); err != nil {
 		return fmt.Errorf("report failure on issue %s: %w", report.IssueKey, err)
 	}
 	report.Failures = slices.Clone(report.Failures)
@@ -253,13 +253,25 @@ func (t *Tracker) find(key string) *trackedIssue {
 	return nil
 }
 
+// failures are scripted errors by issue key, each returned by one call, in
+// order. Its zero value is ready to use; its owner guards it with its mutex.
+type failures map[string][]error
+
+// add queues errs for the next calls for key.
+func (f *failures) add(key string, errs ...error) {
+	if *f == nil {
+		*f = failures{}
+	}
+	(*f)[key] = append((*f)[key], errs...)
+}
+
 // pop removes and returns the first scripted error for key, if any.
-func pop(scripted map[string][]error, key string) error {
-	errs := scripted[key]
+func (f failures) pop(key string) error {
+	errs := f[key]
 	if len(errs) == 0 {
 		return nil
 	}
-	scripted[key] = errs[1:]
+	f[key] = errs[1:]
 	return errs[0]
 }
 
@@ -317,7 +329,7 @@ func NewPreparingTracker(issues ...crew.Issue) PreparingTracker {
 // scripted with FailStatuses comes first. Its zero value is ready to use.
 type StatusBoard struct {
 	mu       sync.Mutex
-	errs     map[string][]error
+	errs     failures
 	statuses map[string][]crew.Status
 }
 
@@ -325,7 +337,7 @@ type StatusBoard struct {
 func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := pop(b.errs, status.IssueKey); err != nil {
+	if err := b.errs.pop(status.IssueKey); err != nil {
 		return fmt.Errorf("report status on issue %s: %w", status.IssueKey, err)
 	}
 	if b.statuses == nil {
@@ -340,10 +352,7 @@ func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error 
 func (b *StatusBoard) FailStatuses(key string, errs ...error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.errs == nil {
-		b.errs = map[string][]error{}
-	}
-	b.errs[key] = append(b.errs[key], errs...)
+	b.errs.add(key, errs...)
 }
 
 // Statuses returns the statuses written for key, in order.
@@ -377,7 +386,7 @@ func NewReportingTracker(issues ...crew.Issue) ReportingTracker {
 // ready to use.
 type PullRequestBoard struct {
 	mu      sync.Mutex
-	errs    map[string][]error
+	errs    failures
 	reports map[string][]crew.PullRequestReport
 }
 
@@ -385,7 +394,7 @@ type PullRequestBoard struct {
 func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.PullRequestReport) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := pop(b.errs, report.IssueKey); err != nil {
+	if err := b.errs.pop(report.IssueKey); err != nil {
 		return fmt.Errorf("report pull requests of issue %s: %w", report.IssueKey, err)
 	}
 	if b.reports == nil {
@@ -401,10 +410,7 @@ func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.Pul
 func (b *PullRequestBoard) FailPullRequests(key string, errs ...error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.errs == nil {
-		b.errs = map[string][]error{}
-	}
-	b.errs[key] = append(b.errs[key], errs...)
+	b.errs.add(key, errs...)
 }
 
 // PullRequestReports returns the pull request reports recorded for key, in
