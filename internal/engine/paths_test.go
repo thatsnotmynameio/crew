@@ -64,6 +64,12 @@ func TestScrubRedactsTokensBeforeTheCut(t *testing.T) {
 			t.Errorf("scrub(%q) = %q, want it redacted", tok, got)
 		}
 	}
+	// A stateless installation token, ghs_APPID_JWT, goes whole, and the
+	// dot ending the sentence stays.
+	stateless := "ghs_12345_eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiIxMjM0NSJ9-_x.c2lnbmF0dXJl-_"
+	if got := e.scrub("token " + stateless + "."); got != "token [redacted token]." {
+		t.Errorf("scrub(%q) = %q, want it redacted whole", stateless, got)
+	}
 	if got := e.scrub("a ghost_town and highs_"); got != "a ghost_town and highs_" {
 		t.Errorf("scrub = %q, want words that are no tokens left alone", got)
 	}

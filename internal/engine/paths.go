@@ -77,8 +77,10 @@ func (e *Engine) scrub(text string) string {
 
 // githubToken matches GitHub's tokens by their prefixes: personal, OAuth,
 // user-to-server, installation and refresh tokens, and fine-grained
-// personal access tokens.
-var githubToken = regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)`)
+// personal access tokens. A stateless installation token, ghs_APPID_JWT,
+// holds base64url segments joined by dots; a dot is matched only between
+// segments, so one ending a sentence stays.
+var githubToken = regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*|github_pat_[A-Za-z0-9_]+)`)
 
 // privateKey matches a PEM private key block, or its start up to the end
 // of the text when the text ends inside it.
