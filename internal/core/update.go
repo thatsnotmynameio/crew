@@ -161,7 +161,7 @@ func (s *step) stopActions(h *heldIssue) {
 		case PhaseChecking:
 			a.stopped = true
 			s.command(StopCheck{IssueKey: h.issue.Key, Action: a.name})
-		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseEnded:
+		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing, PhaseEnded:
 			// No session or check runs: its next input sees the stop.
 		}
 	}
@@ -427,6 +427,9 @@ func (s *step) judge(h *heldIssue) {
 	}
 	h.verdict = &HandledView{
 		Issue: h.issue.Clone(), Stage: stage.Name, To: stage.OnSuccess, Taken: h.taken, Ended: s.at,
+	}
+	for _, a := range h.actions {
+		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
 	}
 	if len(report.Failures) == 0 {
 		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})

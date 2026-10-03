@@ -46,6 +46,10 @@ func TestASucceededStageIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
 	want := core.HandledView{
 		Issue: i1, Stage: "implement", To: readyToReview, Move: crew.MoveDone, Taken: taken, Ended: ended,
+		Actions: []core.HandledAction{
+			{Name: "acceptance", Spend: crew.Spend{Sessions: 1}},
+			{Name: "development", Spend: crew.Spend{Sessions: 1}},
+		},
 	}
 	got := onlyEntry(t, d)
 	if !reflect.DeepEqual(got, want) {

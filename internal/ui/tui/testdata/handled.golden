@@ -1,5 +1,5 @@
 crew: 2 issues held, up 12m, 48m left (q or ctrl+c stops)
-handled 4: 1 move given up, 1 needs attention, 1 ready to merge, 1 ready to rev…
+handled 4 ($19.86, 24.1M tokens): 1 move given up, 1 needs attention, 1 ready t…
 
 Issues
   implement
@@ -13,13 +13,16 @@ Actions
   #2 review/check     waiting
 
 Handled
-  move given up    #6  implement 5m00s   Drop the old flag
+  move given up    #6  implement 5m00s   $3.10, 4.5M tokens    #44  Drop the ol…
     move to ready to review given up: issue closed
-  needs attention  #5  implement 10m00s  Parse the config once
+  needs attention  #5  implement 10m00s  $0.84, 1.2M tokens         Parse the c…
     tests failed: exited 1: tests fail
     code failed: prompt did not render
-  ready to merge   #8  review 6m00s      Trim the README
-  ready to review  #7  implement 9m00s   Log the poll interval
+    tests: no pull request
+  ready to merge   #8  review 6m00s      $0.42, 48.2K tokens   #46  Trim the RE…
+  ready to review  #7  implement 9m00s   $13.50, 18.1M tokens       Log the pol…
+    code: pull request #45
+    tests: no pull request
 
 Recent events
   14:22:58 implement took #1 "Add login form" (ready -> in progress)

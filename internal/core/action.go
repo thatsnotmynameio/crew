@@ -25,12 +25,15 @@ func (s *step) actionInput(in Input) {
 		s.sessionEnded(in)
 	case CheckEnded:
 		s.checkEnded(in)
+	case PullRequestFound:
+		s.pullRequestFound(in)
 	}
 }
 
 // workspaceGone creates a fresh workspace for an action whose failed run's
 // workspace no longer exists (R4), or, after a stop, fails the action
-// without one, which records nothing, so the failed run stays resumable.
+// without one: its end is written without a workspace and not remembered, so
+// the failed run stays resumable.
 func (s *step) workspaceGone(in WorkspaceGone) {
 	h, a := s.m.action(in.IssueKey, in.Action, PhaseReopening)
 	if a == nil {
@@ -59,6 +62,9 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 		return
 	}
 	a.workspace, a.dir, a.branch = in.Workspace, in.Dir, in.Branch
+	if !in.Resumed {
+		a.since = in.At
+	}
 	if !m.stopping {
 		// A session that never starts writes no log, so a stopped action
 		// names none.
@@ -103,11 +109,18 @@ func (s *step) sessionStarted(in SessionStarted) {
 
 // sessionEnded ends the action whose session ended, or, when the session
 // succeeded and the action has a check, runs the check first (R2). After a
-// stop, a check is not started and the action counts as stopped (R8).
+// stop, a check is not started and the action counts as stopped (R8). It
+// keeps what the session used, and looks up the pull request the action
+// opened, whatever its outcome (R5, KTD3).
 func (s *step) sessionEnded(in SessionEnded) {
 	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting, PhaseRunning)
 	if a == nil {
 		return
+	}
+	a.usage = in.Usage
+	if s.m.finding {
+		a.finding = true
+		s.command(FindPullRequest{IssueKey: h.issue.Key, Action: a.name, Branch: a.branch, Since: a.since})
 	}
 	cause := crew.CauseSession
 	if s.m.stopping {
@@ -141,19 +154,35 @@ func (s *step) checkEnded(in CheckEnded) {
 	s.end(h, a, in.Outcome, crew.CauseCheck)
 }
 
-// end ends action a of h with outcome, records the end of a run that had a
-// workspace, and judges h once every action ended. cause says what made it
-// fail when the outcome is a failure. A run without a workspace records
-// nothing, so the key's last record stays as it was.
+// pullRequestFound keeps the pull request the lookup found, and ends the
+// action when its outcome was waiting for it (KTD3).
+func (s *step) pullRequestFound(in PullRequestFound) {
+	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking, PhaseFinishing)
+	if a == nil || !a.finding {
+		return
+	}
+	a.finding, a.pr = false, in.PullRequest
+	if a.phase == PhaseFinishing {
+		s.end(h, a, a.outcome, a.cause)
+	}
+}
+
+// end ends action a of h with outcome, records the end of its run, and
+// judges h once every action ended. cause says what made it fail when the
+// outcome is a failure. While its pull request is being looked up, the
+// action waits in PhaseFinishing instead, and the lookup's result ends it.
 func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.FailureCause) {
-	a.phase = PhaseEnded
 	a.outcome = outcome
 	if !outcome.Succeeded {
 		a.cause = cause
 	}
-	if a.workspace != "" {
-		s.record(h, a, RunEnded)
+	if a.finding {
+		a.phase = PhaseFinishing
+		return
 	}
+	a.phase = PhaseEnded
+	s.m.spent = s.m.spent.Add(a.spend())
+	s.record(h, a, RunEnded)
 	s.emit(ActionEnded{
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,

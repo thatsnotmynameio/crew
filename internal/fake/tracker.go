@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
@@ -27,6 +28,11 @@ var (
 	_ port.Preparer       = ReportingTracker{}
 	_ port.StatusReporter = ReportingTracker{}
 
+	_ port.PullRequestFinder   = (*PullRequests)(nil)
+	_ port.Tracker             = FindingTracker{}
+	_ port.Preparer            = FindingTracker{}
+	_ port.StatusReporter      = FindingTracker{}
+	_ port.PullRequestFinder   = FindingTracker{}
 	_ port.PullRequestReporter = (*PullRequestBoard)(nil)
 	_ port.Tracker             = PullRequestTracker{}
 	_ port.StatusReporter      = PullRequestTracker{}
@@ -378,6 +384,86 @@ type ReportingTracker struct {
 // Prepare and status writes succeed until told otherwise.
 func NewReportingTracker(issues ...crew.Issue) ReportingTracker {
 	return ReportingTracker{PreparingTracker: NewPreparingTracker(issues...), StatusBoard: &StatusBoard{}}
+}
+
+// Lookup is one pull request lookup a PullRequests received.
+type Lookup struct {
+	Branch string
+	Since  time.Time
+}
+
+// LookupScript is how a fake pull request lookup goes.
+type LookupScript struct {
+	// Found is what the lookup returns; its zero value, not looked up, is
+	// returned as no pull request, as a tracker that looked finds one or
+	// none.
+	Found crew.PullRequest
+	// Err, when set, makes the lookup fail with it.
+	Err error
+	// Block makes the lookup wait until its context ends, as one that
+	// outlasts the engine's timeout.
+	Block bool
+}
+
+// PullRequests is a scriptable port.PullRequestFinder, to embed in a fake
+// tracker: each lookup goes as scripted for its branch, and an unscripted
+// branch has no pull request. It records every lookup. Its zero value is
+// ready to use.
+type PullRequests struct {
+	mu      sync.Mutex
+	scripts map[string]LookupScript
+	lookups []Lookup
+}
+
+// ScriptLookup makes every later lookup of branch go as s.
+func (p *PullRequests) ScriptLookup(branch string, s LookupScript) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.scripts == nil {
+		p.scripts = map[string]LookupScript{}
+	}
+	p.scripts[branch] = s
+}
+
+// Lookups returns the lookups received so far, in the order they started.
+func (p *PullRequests) Lookups() []Lookup {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.lookups)
+}
+
+// FindPullRequest implements port.PullRequestFinder.
+func (p *PullRequests) FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error) {
+	p.mu.Lock()
+	p.lookups = append(p.lookups, Lookup{Branch: branch, Since: since})
+	s := p.scripts[branch]
+	p.mu.Unlock()
+	switch {
+	case s.Block:
+		<-ctx.Done()
+		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, ctx.Err())
+	case s.Err != nil:
+		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, s.Err)
+	case s.Found.Lookup == crew.PullRequestNotLookedUp:
+		return crew.PullRequest{Lookup: crew.PullRequestNone}, nil
+	}
+	return s.Found, nil
+}
+
+// FindingTracker is a ReportingTracker that also implements
+// port.PullRequestFinder, for the tests about the pull request an action
+// opened. A plain *Tracker, PreparingTracker or ReportingTracker does not
+// implement it.
+type FindingTracker struct {
+	ReportingTracker
+	*PullRequests
+}
+
+// NewFindingTracker returns a FindingTracker holding issues, whose Prepare
+// and status writes succeed until told otherwise and which finds no pull
+// request until a lookup is scripted.
+func NewFindingTracker(issues ...crew.Issue) FindingTracker {
+	return FindingTracker{ReportingTracker: NewReportingTracker(issues...), PullRequests: &PullRequests{}}
 }
 
 // PullRequestBoard is a scriptable port.PullRequestReporter, to embed in a

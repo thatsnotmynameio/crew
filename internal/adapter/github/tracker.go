@@ -6,9 +6,10 @@
 // reports failures as Markdown comments and keeps a status comment on each
 // issue, with one entry per stage run. It puts the open pull requests that
 // close an issue in the issue's crew label, and comments on them when a stage
-// ends that nobody watches them any more. It works on the repository gh
-// resolves from crew's working directory, and runs every gh call through the
-// shared process helper.
+// ends that nobody watches them any more. It finds the pull request an action
+// opened from its branch. It works on the repository gh resolves from crew's
+// working directory, and runs every gh call through the shared process
+// helper.
 package github
 
 import (
@@ -28,12 +29,14 @@ import (
 )
 
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
-// port.StatusReporter and a port.PullRequestReporter.
+// port.StatusReporter, a port.PullRequestReporter and a
+// port.PullRequestFinder.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
 	_ port.StatusReporter      = (*Tracker)(nil)
 	_ port.PullRequestReporter = (*Tracker)(nil)
+	_ port.PullRequestFinder   = (*Tracker)(nil)
 )
 
 // issuesQuery lists the login's open issues carrying any of the labels,
@@ -164,6 +167,9 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 // key=value.
 const fieldArgs = 2
 
+// stateOpen is the state GitHub gives an open issue or pull request.
+const stateOpen = "OPEN"
+
 // issuesArgs returns the gh arguments of List's query, for login's issues
 // carrying any of the states' labels.
 func issuesArgs(login string, states []crew.State) []string {
@@ -230,7 +236,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 	if err := t.gh.decode(ctx, &issue, "issue", "view", issueKey, "--json", "state,labels"); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
-	if issue.State != "OPEN" {
+	if issue.State != stateOpen {
 		return fmt.Errorf("%s: it is %s: %w", move, strings.ToLower(issue.State), port.ErrMovedMeanwhile)
 	}
 	remove, states := t.swap(issue.Labels, to)

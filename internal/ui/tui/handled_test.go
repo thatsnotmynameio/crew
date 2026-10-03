@@ -42,14 +42,28 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 }
 
 // handledSnapshot is runningSnapshot 12 minutes into a one-hour run, with
-// four issues handled: a failure, a given-up move and two successes.
+// four issues handled: a failure whose code action never had a session, a
+// given-up move and two successes, one of two actions. An earlier stage of
+// #8 spent $2.00 this run.
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
-		failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1: tests fail", "code", "prompt did not render"),
-		givenUpEntry(entry("6", "Drop the old flag", "implement", "ready to review", 25, 20), "issue closed"),
-		entry("8", "Trim the README", "review", "ready to merge", 9, 3),
-		entry("7", "Log the poll interval", "implement", "ready to review", 15, 6),
+		acted(
+			failedEntry("5", "Parse the config once", 40, 30,
+				"tests", "exited 1: tests fail", "code", "prompt did not render"),
+			core.HandledAction{Name: "tests", Spend: spent(0.84, 1_200_000), PullRequest: noPullRequest},
+			core.HandledAction{Name: "code"}),
+		acted(givenUpEntry(entry("6", "Drop the old flag", "implement", "ready to review", 25, 20), "issue closed"),
+			core.HandledAction{Name: "code", Spend: spent(3.1, 4_500_000), PullRequest: found("#44")}),
+		acted(entry("8", "Trim the README", "review", "ready to merge", 9, 3),
+			core.HandledAction{Name: "review", Spend: spent(0.42, 48_200), PullRequest: found("#46")}),
+		acted(entry("7", "Log the poll interval", "implement", "ready to review", 15, 6),
+			core.HandledAction{Name: "code", Spend: spent(12.4, 17_200_000), PullRequest: found("#45")},
+			core.HandledAction{Name: "tests", Spend: spent(1.1, 900_000), PullRequest: noPullRequest}),
+	}
+	u.Snapshot.Spent = spent(2, 300_000)
+	for _, e := range u.Snapshot.Handled {
+		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
 	}
 	return u
 }
@@ -146,7 +160,8 @@ func TestAFailedStageWhoseMoveWasGivenUpShowsItsFailuresThenTheGiveUp(t *testing
 }
 
 func TestANarrowWindowCutsTheSuccessCountsBeforeTheFailures(t *testing.T) {
-	h := newHarness(t, 52)
+	// 75 columns leave the counts, past this run's spend, 41 columns.
+	h := newHarness(t, 75)
 
 	h.send(updateMsg(handledSnapshot()))
 
@@ -203,12 +218,20 @@ func TestARecentEventWithAMultiLineReasonTakesOneRow(t *testing.T) {
 func manySnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
-		failedEntry("11", "Parse the config once", 90, 50, "lfg", `exited 1: "tests fail on Go 1.27"`),
-		failedEntry("12", "Drop the old --dry flag", 60, 59, "lfg", `prompt did not render: no field "Body"`),
+		acted(failedEntry("11", "Parse the config once", 90, 50, "lfg", `exited 1: "tests fail on Go 1.27"`),
+			core.HandledAction{Name: "lfg", Spend: spent(4.05, 6_100_000), PullRequest: noPullRequest}),
+		acted(failedEntry("12", "Drop the old --dry flag", 60, 59, "lfg", `prompt did not render: no field "Body"`),
+			core.HandledAction{Name: "lfg"}),
 	}
 	for n := 13; n <= 20; n++ {
 		u.Snapshot.Handled = append(u.Snapshot.Handled,
-			entry(strconv.Itoa(n), fmt.Sprintf("Success number %d", n), "development", "crew:waiting review", 60, 40-n))
+			acted(entry(strconv.Itoa(n), fmt.Sprintf("Success number %d", n), "development", "crew:waiting review", 60, 40-n),
+				core.HandledAction{
+					Name: "lfg", Spend: spent(float64(n)/2, int64(n)*1_000_000), PullRequest: found("#" + strconv.Itoa(n+30)),
+				}))
+	}
+	for _, e := range u.Snapshot.Handled {
+		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
 	}
 	return u
 }
@@ -302,5 +325,142 @@ func TestANarrowShortWindowRendersWithoutPanicking(t *testing.T) {
 		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
 			fitted(t, size[0], size[1], manySnapshot())
 		})
+	}
+}
+
+// spent is one session that reported cost dollars and tokens tokens.
+func spent(cost float64, tokens int64) crew.Spend {
+	return crew.Usage{Cost: cost, HasCost: true, Tokens: crew.Tokens{Output: tokens}, HasTokens: true}.Spend()
+}
+
+// found is the pull request ref, as a lookup found it.
+func found(ref string) crew.PullRequest {
+	return crew.PullRequest{Lookup: crew.PullRequestFound, Ref: ref, URL: "https://github.com/o/r/pull/" + ref[1:]}
+}
+
+var noPullRequest = crew.PullRequest{Lookup: crew.PullRequestNone}
+
+// acted is e with its stage's actions.
+func acted(e core.HandledView, actions ...core.HandledAction) core.HandledView {
+	e.Actions = actions
+	return e
+}
+
+// handledView renders a snapshot handling entries, in a window wide enough
+// for their whole lines.
+func handledView(t *testing.T, entries ...core.HandledView) string {
+	t.Helper()
+	u := runningSnapshot()
+	u.Snapshot.Handled = entries
+	return fitted(t, 120, 40, u)
+}
+
+// Covers AE1.
+func TestAnEntryShowsItsActionsCostTokensAndPullRequest(t *testing.T) {
+	view := handledView(t, acted(entry("31", "Add login form", "development", "ready to review", 15, 5),
+		core.HandledAction{Name: "lfg", Spend: spent(12.4, 17_200_000), PullRequest: found("#45")}))
+
+	want := "\n  ready to review  #31  development 10m00s  $12.40, 17.2M tokens  #45  Add login form\n"
+	if !strings.Contains(view, want) {
+		t.Errorf("view lacks the entry with its cost, tokens and pull request:\n%s", view)
+	}
+}
+
+// Covers AE2.
+func TestAnEntryWhoseActionOpenedNoPullRequestSaysSo(t *testing.T) {
+	view := handledView(t, acted(entry("31", "Add login form", "development", "ready to review", 15, 5),
+		core.HandledAction{Name: "lfg", Spend: spent(12.4, 17_200_000), PullRequest: noPullRequest}))
+
+	want := "\n  ready to review  #31  development 10m00s  $12.40, 17.2M tokens  no pull request  Add login form\n"
+	if !strings.Contains(view, want) {
+		t.Errorf("view lacks the entry saying it opened no pull request:\n%s", view)
+	}
+}
+
+// Covers AE4.
+func TestATwoActionEntryWithOneCostNotReportedShowsThePartialCostAndEachPullRequest(t *testing.T) {
+	view := handledView(t, acted(entry("31", "Add login form", "development", "ready to review", 15, 5),
+		core.HandledAction{Name: "lfg", Spend: spent(12.4, 17_200_000), PullRequest: found("#45")},
+		core.HandledAction{Name: "docs", Spend: crew.Usage{}.Spend(), PullRequest: noPullRequest}))
+
+	want := "\n  ready to review  #31  development 10m00s  $12.40 (partial), 17.2M tokens (partial)  Add login form\n" +
+		"    lfg: pull request #45\n" +
+		"    docs: no pull request\n"
+	if !strings.Contains(view, want) {
+		t.Errorf("view lacks the partial entry and its two pull request lines:\n%s", view)
+	}
+}
+
+// Covers AE6.
+func TestAnEntryWithNoCostReportedSaysSo(t *testing.T) {
+	tokens := crew.Usage{Tokens: crew.Tokens{Input: 300, CacheRead: 17_000_000}, HasTokens: true}.Spend()
+	view := handledView(t, acted(entry("31", "Add login form", "development", "ready to review", 15, 5),
+		core.HandledAction{Name: "lfg", Spend: tokens, PullRequest: found("#45")}))
+
+	if !strings.Contains(view, "  #31  development 10m00s  cost not reported, 17M tokens  #45  Add login form\n") {
+		t.Errorf("view lacks the entry saying its cost was not reported:\n%s", view)
+	}
+}
+
+func TestAnActionThatNeverHadASessionShowsNoPullRequest(t *testing.T) {
+	view := handledView(t,
+		acted(failedEntry("5", "Parse the config once", 40, 30, "code", "prompt did not render"),
+			core.HandledAction{Name: "code"}),
+		acted(entry("31", "Add login form", "development", "ready to review", 15, 5),
+			core.HandledAction{Name: "lfg", Spend: spent(12.4, 17_200_000), PullRequest: found("#45")},
+			core.HandledAction{Name: "docs"}))
+
+	want := "\n  needs attention  #5   implement 10m00s                          Parse the config once\n" +
+		"    code failed: prompt did not render\n" +
+		"  ready to review  #31  development 10m00s  $12.40, 17.2M tokens  Add login form\n" +
+		"    lfg: pull request #45\n" +
+		"\n"
+	if !strings.Contains(view, want) {
+		t.Errorf("view shows a spend or pull request for an action without a session:\n%s", view)
+	}
+}
+
+// Covers AE7.
+func TestTheCountsLineShowsThisRunsSpendIncludingReplacedEntries(t *testing.T) {
+	u := runningSnapshot()
+	// #31's earlier stage spent $3.00; its entry now holds its later stage.
+	u.Snapshot.Spent = spent(3, 800_000).Add(spent(12.4, 17_200_000))
+	u.Snapshot.Handled = []core.HandledView{acted(entry("31", "Add login form", "development", "ready to review", 15, 5),
+		core.HandledAction{Name: "lfg", Spend: spent(12.4, 17_200_000), PullRequest: found("#45")})}
+
+	view := fitted(t, 80, 40, u)
+
+	if got, want := line(t, view, 1), "handled 1 ($15.40, 18M tokens): 1 ready to review"; got != want {
+		t.Errorf("counts line = %q, want %q", got, want)
+	}
+}
+
+func TestANarrowWindowCutsTheStateCountsBeforeTheSpend(t *testing.T) {
+	u := handledSnapshot()
+	u.Snapshot.Spent = spent(15.4, 18_000_000)
+
+	got := line(t, fitted(t, 40, 40, u), 1)
+
+	if !strings.HasPrefix(got, "handled 4 ($15.40, 18M tokens): ") {
+		t.Errorf("counts line = %q, want this run's spend before the state counts", got)
+	}
+}
+
+// Covers R12 and R13 for the fitting: each pull request line takes a row.
+func TestFittingCountsThePullRequestLines(t *testing.T) {
+	u := manySnapshot()
+	for i := 2; i < len(u.Snapshot.Handled); i++ {
+		u.Snapshot.Handled[i].Actions = []core.HandledAction{
+			{Name: "lfg", Spend: spent(1, 1_000), PullRequest: found("#4" + strconv.Itoa(i))},
+			{Name: "docs", Spend: spent(1, 1_000), PullRequest: noPullRequest},
+		}
+	}
+
+	// 15 fixed lines and 4 for the failures leave 5 rows: one success
+	// with its two pull request lines, and one collapsed line.
+	view := fitted(t, 80, 24, u)
+
+	if !strings.HasSuffix(view, "    docs: no pull request\n  … and 7 more in crew:waiting review") {
+		t.Errorf("view does not end with one success and the other seven collapsed:\n%s", view)
 	}
 }
