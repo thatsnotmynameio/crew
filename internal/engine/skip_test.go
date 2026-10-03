@@ -68,7 +68,8 @@ func TestAFreedSlotWithNoSkippedTickWaitsForTheNextTick(t *testing.T) {
 		first.End(crew.Outcome{Succeeded: true, Reason: "done"})
 		time.Sleep(650*time.Second - time.Since(t0))
 
-		if got, want := offsets(t0, tr.spans()), []time.Duration{0, 300 * time.Second, 600 * time.Second}; !reflect.DeepEqual(got, want) {
+		want := []time.Duration{0, 300 * time.Second, 600 * time.Second}
+		if got := offsets(t0, tr.spans()); !reflect.DeepEqual(got, want) {
 			t.Errorf("listings started at %v, want %v", got, want)
 		}
 		r.engine.Stop()
