@@ -117,6 +117,13 @@ var invalidSettings = []rejectCase{
 		wants: []string{"config.max_parallel_issues", "line 3", "duplicate", "line 2"},
 	},
 	{
+		name: "config.mate of the wrong type",
+		body: `config:
+  mate: {name: ops}
+` + oneStage,
+		wants: []string{"config.mate", "line 2"},
+	},
+	{
 		name: "poll interval not positive",
 		body: `config:
   poll_interval_seconds: 0

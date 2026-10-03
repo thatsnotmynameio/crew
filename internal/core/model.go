@@ -93,6 +93,7 @@ type actionRun struct {
 	said      string // what its running session last said
 	outcome   crew.Outcome
 	check     string            // its check command; empty when it has none
+	mate      string            // the mate its session and check act as; empty for the boss
 	stopped   bool              // a StopCheck was sent for its check
 	cause     crew.FailureCause // what made it fail, once it ended failed
 	// prev is the key's run record from before this run, set when the run

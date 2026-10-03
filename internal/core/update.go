@@ -306,7 +306,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	stage := m.stages[si]
 	h := &heldIssue{issue: issue.Clone(), stage: si, claim: ClaimTaking, taken: s.at}
 	for _, a := range stage.Actions {
-		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check})
+		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, mate: a.Mate})
 	}
 	m.issues = append(m.issues, h)
 	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Stage: stage.Name, From: stage.Label, To: stage.MovesTo})
