@@ -47,7 +47,7 @@ Put the templates in `.github/ISSUE_TEMPLATE/`, where GitHub looks for them. Hav
 
 Both keys are optional. Without a description, the skill shows a stage by its name and an extra by its label. Without a template, it writes a free-form body.
 
-For a worked example, see how the crew repository sets up its own work: the `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` at its root. Those choices are crew's, not defaults: the `crew:waiting brainstorm` extra, one template per stage, and a feature template laid out like a compound-engineering requirements plan. Copy only what fits your workflow.
+For a worked example, see how the crew repository sets up its own work: the `.crew/config.yaml` and `.github/ISSUE_TEMPLATE/` at its root. Those choices are crew's, not defaults: the `crew:brainstorm:ready` extra, one template per stage, and a feature template laid out like a compound-engineering requirements plan. Copy only what fits your workflow.
 
 A crew binary older than these keys refuses a config that uses them, as unknown keys, and exits with 2. Rebuild crew from `main` (see [Install](/guide/crew#install)) before you pull a config that uses them.
 
@@ -82,7 +82,7 @@ It creates the issue at once, with no preview and no confirmation. To fix a mist
 
 ```text
 /cw-update-issue-plan
-/cw-update-issue-plan crew:ready for development
+/cw-update-issue-plan crew:development:ready
 ```
 
 It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. A `moves_to` label that your own session put on the issue, such as one `/cw-brainstorm` set, does not stop it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
@@ -97,7 +97,7 @@ It refuses a label that is neither a stage's nor an extra's, and leaves an issue
 
 The issue can be `#42`, `42` or its URL. Without one, the skill asks which issue. When the config has no `prompts.brainstorm`, it says so and stops.
 
-The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:waiting brainstorm`. It then moves the issue to `crew:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm has written its plan file, `/cw-update-issue-plan` copies it into the issue, and the repository's `prompts.update_issue_plan` moves the issue to `crew:brainstorm:done`. That hands it to crew's triage stage, which finds what blocks it and what it blocks. Until then, the issue stays in `crew:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
+The crew repository's own prompt, as a worked example, goes on only when the issue carries `crew:brainstorm:ready`. It then moves the issue to `crew:brainstorm:in progress`, so you can see it is being brainstormed, and runs `/compound-engineering:ce-brainstorm` on it. When the brainstorm has written its plan file, `/cw-update-issue-plan` copies it into the issue, and the repository's `prompts.update_issue_plan` moves the issue to `crew:triage:ready`. That hands it to crew's triage stage, which finds what blocks it and what it blocks. Until then, the issue stays in `crew:brainstorm:in progress`, which no stage takes; if you drop the brainstorm, put its label back by hand.
 
 Install it like `/cw-create-issue`, linking `.agents/skills/cw-brainstorm` into `~/.claude/skills/`.
 
