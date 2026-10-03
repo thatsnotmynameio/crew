@@ -124,9 +124,12 @@ func check(profilePath, modulePath string, diff io.Reader) (result, error) {
 		return result{}, fmt.Errorf("read the coverage profile %s: %w", profilePath, err)
 	}
 
-	changed, err := parseDiff(diff)
+	changed, files, err := parseDiff(diff)
 	if err != nil {
 		return result{}, fmt.Errorf("read the diff: %w", err)
+	}
+	if files == 0 {
+		return result{}, errors.New("the diff names no file: an empty diff means it was not produced")
 	}
 
 	var res result
@@ -248,9 +251,11 @@ func lineOf(position string) (int, error) {
 }
 
 // parseDiff lists the lines a unified diff adds or changes, by their number
-// in the new file. Removed lines leave nothing to cover.
-func parseDiff(r io.Reader) ([]lineKey, error) {
+// in the new file, and counts the files it names. Removed lines leave nothing
+// to cover.
+func parseDiff(r io.Reader) ([]lineKey, int, error) {
 	var changed []lineKey
+	files := 0
 	var file string
 	next := 0
 	afterOld := false
@@ -266,10 +271,11 @@ func parseDiff(r io.Reader) ([]lineKey, error) {
 		case header:
 			file = strings.TrimPrefix(strings.TrimPrefix(text, "+++ "), "b/")
 			next = 0
+			files++
 		case strings.HasPrefix(text, "@@ "):
 			start, err := hunkStart(text)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			next = start
 		case strings.HasPrefix(text, "+") && file != "" && next > 0:
@@ -280,10 +286,10 @@ func parseDiff(r io.Reader) ([]lineKey, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan: %w", err)
+		return nil, 0, fmt.Errorf("scan: %w", err)
 	}
 
-	return changed, nil
+	return changed, files, nil
 }
 
 // hunkStart reads the new file's first line from a hunk header such as

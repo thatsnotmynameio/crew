@@ -144,6 +144,7 @@ var badInputs = []struct {
 	{"bad end line", "mode: set\n" + module + "/a.go:1.1,y.10 1 1\n", addLines(1), "end line"},
 	{"bad statements", "mode: set\n" + module + "/a.go:1.1,1.10 s 1\n", addLines(1), "malformed block"},
 	{"bad count", "mode: set\n" + module + "/a.go:1.1,1.10 1 c\n", addLines(1), "malformed block"},
+	{"empty diff", "mode: set\n", "", "names no file"},
 	{"hunk header without new range", "mode: set\n", "--- a/a.go\n+++ b/a.go\n@@ -1 @@\n", "malformed hunk header"},
 	{"hunk header with bad start", "mode: set\n", "--- a/a.go\n+++ b/a.go\n@@ -1 +x,2 @@\n", "malformed hunk header"},
 }
