@@ -1,0 +1,198 @@
+package core_test
+
+import (
+	"testing"
+
+	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
+)
+
+// The labels of the fix review stage, which takes pull requests.
+const (
+	fixReviewReady crew.State = "fix review ready"
+	fixing         crew.State = "fixing review"
+)
+
+// withFixReview is the draft workflow plus a fix review stage that takes
+// pull requests.
+func withFixReview() []crew.Stage {
+	return append(draft(), crew.Stage{
+		Name: "fix review", Label: fixReviewReady, MovesTo: fixing, OnSuccess: readyToReview,
+		OnFailure: needsAttention, Takes: crew.KindPullRequest,
+		Actions: []crew.Action{{Name: "fix", Prompt: "Fix the review comments on {{.Issue.Ref}}"}},
+	})
+}
+
+// pullRequest returns a pull request keyed key, opened minute minutes after
+// t0.
+func pullRequest(key string, minute int, states ...crew.State) crew.Issue {
+	pr := issue(key, minute, states...)
+	pr.Kind = crew.KindPullRequest
+	return pr
+}
+
+// otherKinds returns the IssueOfOtherKind events in events.
+func otherKinds(events []core.Event) []core.Event {
+	var out []core.Event
+	for _, e := range events {
+		if _, ok := e.(core.IssueOfOtherKind); ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Covers AE1 of #92.
+func TestAPullRequestInTheLabelOfAStageThatTakesIssuesIsLeftAloneWithANotice(t *testing.T) {
+	d := newDriver(t, draft(), 2)
+
+	cmds, events := d.poll(pullRequest("90", 1, ready))
+	wantCommands(t, cmds)
+	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
+		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		Label: ready, Stage: "implement", Takes: crew.KindIssue,
+	})
+	wantHeld(t, d.m)
+}
+
+// Covers AE2 of #92.
+func TestAStageThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
+	d := newDriver(t, withFixReview(), 2)
+
+	cmds, events := d.poll(pullRequest("90", 1, fixReviewReady))
+	wantCommands(t, cmds, core.Move{IssueKey: "90", From: fixReviewReady, To: fixing})
+	hasEvent(t, events, core.IssueTaken{
+		At: d.now, Issue: pullRequest("90", 1, fixReviewReady), Stage: "fix review",
+		From: fixReviewReady, To: fixing,
+	})
+	if n := otherKinds(events); n != nil {
+		t.Fatalf("notices for a pull request of the stage's kind: %#v", n)
+	}
+	wantHeld(t, d.m, "90")
+}
+
+// Covers AE3 of #92.
+func TestAnIssueInTheLabelOfAStageThatTakesPullRequestsGetsTheNoticeOnce(t *testing.T) {
+	d := newDriver(t, withFixReview(), 2)
+
+	cmds, events := d.poll(issue("42", 1, fixReviewReady))
+	wantCommands(t, cmds)
+	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
+		At: d.now, IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
+		Label: fixReviewReady, Stage: "fix review", Takes: crew.KindPullRequest,
+	})
+
+	cmds, events = d.poll(issue("42", 1, fixReviewReady))
+	wantCommands(t, cmds)
+	wantEvents(t, otherKinds(events))
+	wantHeld(t, d.m)
+}
+
+func TestTheNoticeShowsAgainOnceAListingFoundTheItemWithoutTheLabel(t *testing.T) {
+	tests := []struct {
+		name    string
+		between []crew.Issue
+	}{
+		{name: "the item was not listed", between: nil},
+		{name: "the item was in another state", between: []crew.Issue{pullRequest("90", 1, needsAttention)}},
+		{name: "the item carried two crew labels", between: []crew.Issue{pullRequest("90", 1, ready, needsAttention)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newDriver(t, draft(), 2)
+			_, events := d.poll(pullRequest("90", 1, ready))
+			if len(otherKinds(events)) != 1 {
+				t.Fatalf("first listing: notices %#v, want one", otherKinds(events))
+			}
+
+			_, events = d.poll(tt.between...)
+			wantEvents(t, otherKinds(events))
+
+			_, events = d.poll(pullRequest("90", 1, ready))
+			wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
+				At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+				Label: ready, Stage: "implement", Takes: crew.KindIssue,
+			})
+		})
+	}
+}
+
+func TestAnItemMovedToTheLabelOfAnotherStageOfTheOtherKindGetsANewNotice(t *testing.T) {
+	d := newDriver(t, draft(), 2)
+	d.poll(pullRequest("90", 1, ready))
+
+	_, events := d.poll(pullRequest("90", 1, readyToReview))
+	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
+		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		Label: readyToReview, Stage: "review", Takes: crew.KindIssue,
+	})
+}
+
+func TestAFailedOrSkippedListingDoesNotRepeatTheNotice(t *testing.T) {
+	d := newDriver(t, draft(), 1)
+	cmds, events := d.poll(issue("1", 1, ready), pullRequest("90", 2, ready))
+	if len(otherKinds(events)) != 1 {
+		t.Fatalf("first listing: notices %#v, want one", otherKinds(events))
+	}
+	d.settle(cmds)
+
+	// Every slot is busy: the tick lists nothing.
+	cmds, _ = d.send(core.Tick{})
+	wantListings(t, cmds, 0)
+	// Releasing #1 lists at once; that listing fails.
+	cmds, _ = d.release("1")
+	wantListings(t, cmds, 1)
+	d.send(core.ListFailed{Reason: "timeout"})
+
+	_, events = d.poll(pullRequest("90", 2, ready))
+	wantEvents(t, otherKinds(events))
+}
+
+// Covers AE5 of #92: the mirror gave #90 the label of the issue it closes,
+// whose stage takes issues.
+func TestAMirroredPullRequestGetsTheNoticeWhileItsIssueIsTaken(t *testing.T) {
+	d := newDriver(t, draft(), 2)
+
+	cmds, events := d.poll(issue("42", 1, ready), pullRequest("90", 2, ready))
+	wantCommands(t, cmds, core.Move{IssueKey: "42", From: ready, To: inProgress})
+	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
+		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		Label: ready, Stage: "implement", Takes: crew.KindIssue,
+	})
+	wantHeld(t, d.m, "42")
+}
+
+func TestAnItemWithTwoCrewLabelsGetsOnlyTheTwoLabelSkip(t *testing.T) {
+	d := newDriver(t, withFixReview(), 2)
+
+	cmds, events := d.poll(issue("42", 1, ready, fixReviewReady))
+	wantCommands(t, cmds)
+	hasEvent(t, events, core.IssueSkipped{
+		At: d.now, IssueKey: "42", IssueRef: "#42", States: []crew.State{ready, fixReviewReady},
+	})
+	wantEvents(t, otherKinds(events))
+}
+
+func TestABlockedIssueInTheLabelOfAStageThatTakesPullRequestsGetsTheNotice(t *testing.T) {
+	d := newDriver(t, withFixReview(), 2)
+	blocked := issue("42", 1, fixReviewReady)
+	blocked.Blocked = true
+
+	_, events := d.poll(blocked)
+	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
+		At: d.now, IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
+		Label: fixReviewReady, Stage: "fix review", Takes: crew.KindPullRequest,
+	})
+}
+
+func TestAnItemOfTheOtherKindTakesNoSlot(t *testing.T) {
+	d := newDriver(t, draft(), 1)
+	urgent := pullRequest("90", 1, ready)
+	urgent.Priority = 1
+	later := issue("42", 2, ready)
+	later.Priority = 2
+
+	cmds, _ := d.poll(urgent, later)
+	wantCommands(t, cmds, core.Move{IssueKey: "42", From: ready, To: inProgress})
+	wantHeld(t, d.m, "42")
+}

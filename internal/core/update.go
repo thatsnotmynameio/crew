@@ -211,7 +211,8 @@ func (s *step) windDown() {
 	s.stop()
 }
 
-// listed skips issues in two states (R15) and takes free slots' worth of
+// listed skips issues in two states (R15), reports the items in the label of
+// a stage of the other kind (#92), and takes free slots' worth of
 // issues, each while its stage's queue has a free slot (R6): the highest
 // priority first, an issue without one last; then, at the same priority,
 // later stages first; then the oldest issue first (KTD8). It reports nothing
@@ -224,6 +225,7 @@ func (s *step) listed(issues []crew.Issue) {
 		return
 	}
 	s.skipped(issues)
+	s.otherKind(issues)
 	taken := s.takeWaiting(s.waiting(issues))
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
 }
@@ -244,13 +246,13 @@ type candidate struct {
 	issue crew.Issue
 }
 
-// waiting returns the unblocked issues waiting in a stage's state, in the
-// order listed takes them.
+// waiting returns the unblocked items of a stage's kind waiting in its state,
+// in the order listed takes them.
 func (s *step) waiting(issues []crew.Issue) []candidate {
 	var candidates []candidate
 	for si, stage := range s.m.stages {
 		for _, issue := range issues {
-			if len(issue.States) == 1 && issue.States[0] == stage.Label && !issue.Blocked {
+			if len(issue.States) == 1 && issue.States[0] == stage.Label && issue.Kind == stage.Takes && !issue.Blocked {
 				candidates = append(candidates, candidate{si, issue})
 			}
 		}
