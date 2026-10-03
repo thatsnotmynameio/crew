@@ -55,7 +55,8 @@ func prTracker(t *testing.T, script ...reply) (*Tracker, *fakeGh) {
 // prsJSON is the query's reply for issue #42 of o/r with the given closing
 // pull request nodes.
 func prsJSON(nodes ...string) string {
-	return `{"data":{"repository":{"issue":{"url":"` + issue42URL + `","repository":{"nameWithOwner":"o/r"},` +
+	return `{"data":{"repository":{"issueOrPullRequest":{"url":"` + issue42URL +
+		`","repository":{"nameWithOwner":"o/r"},` +
 		`"closedByPullRequestsReferences":{"nodes":[` + strings.Join(nodes, ",") + `]}}}}}`
 }
 
@@ -184,6 +185,34 @@ func TestAnIssueWithoutAPullRequestGetsOnlyTheQuery(t *testing.T) {
 	}
 	if len(gh.calls) != 1 {
 		t.Errorf("calls = %q, want only the query", gh.calls)
+	}
+}
+
+// Covers AE3 of #35: a pull request crew moved closes no issue, so its
+// report writes to no other pull request, with or without the stage's end.
+func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
+	for name, end := range map[string]*crew.StageEnd{
+		"taken": nil,
+		"ended": {Stage: "development", Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// GitHub resolves #90 to a pull request, which the Issue
+			// fragment leaves empty.
+			tr, gh := prTracker(t, reply{prefix: prQuery, stdout: `{"data":{"repository":{"issueOrPullRequest":{}}}}`})
+			report := crew.PullRequestReport{ID: "p1", IssueKey: "90", IssueRef: "#90", State: crewWaitingReview, End: end}
+			if err := tr.ReportPullRequests(context.Background(), report); err != nil {
+				t.Fatalf("ReportPullRequests: %v", err)
+			}
+			if len(gh.calls) != 1 {
+				t.Errorf("calls = %q, want only the query", gh.calls)
+			}
+			query := strings.Join(fieldValues(gh.calls[0], "query"), "")
+			for _, want := range []string{"issueOrPullRequest(number: $number)", "... on Issue"} {
+				if !strings.Contains(query, want) {
+					t.Errorf("query does not contain %q:\n%s", want, query)
+				}
+			}
+		})
 	}
 }
 
@@ -364,10 +393,10 @@ func TestTheQuerysErrorsAreClassified(t *testing.T) {
 		reply reply
 		want  error
 	}{
-		"an issue GitHub cannot resolve": {reply{prefix: prQuery,
-			stdout: `{"data":{"repository":{"issue":null}},` +
-				`"errors":[{"type":"NOT_FOUND","message":"Could not resolve to an Issue with the number of 42."}]}`,
-			stderr: "gh: Could not resolve to an Issue with the number of 42."}, port.ErrMovedMeanwhile},
+		"a number GitHub resolves to neither": {reply{prefix: prQuery,
+			stdout: `{"data":{"repository":{"issueOrPullRequest":null}},` +
+				`"errors":[{"type":"NOT_FOUND","message":"Could not resolve to an issue or pull request with the number of 42."}]}`,
+			stderr: "gh: Could not resolve to an issue or pull request with the number of 42."}, port.ErrMovedMeanwhile},
 		"anything else": {reply{prefix: prQuery, stderr: "HTTP 502: Bad Gateway"}, nil},
 	} {
 		t.Run(name, func(t *testing.T) {

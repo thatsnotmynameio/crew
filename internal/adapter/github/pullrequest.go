@@ -16,18 +16,21 @@ import (
 
 // pullRequestsQuery reads an issue's URL and repository, and the pull
 // requests GitHub links as closing it, with their state, repository and
-// labels. GitHub lists merged and closed ones too.
+// labels. GitHub lists merged and closed ones too. The number may be a pull
+// request's, which closes no issue: its fragment is empty.
 const pullRequestsQuery = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
-    issue(number: $number) {
-      url
-      repository { nameWithOwner }
-      closedByPullRequestsReferences(first: 100) {
-        nodes {
-          number
-          state
-          repository { nameWithOwner }
-          labels(first: 100) { nodes { name } }
+    issueOrPullRequest(number: $number) {
+      ... on Issue {
+        url
+        repository { nameWithOwner }
+        closedByPullRequestsReferences(first: 100) {
+          nodes {
+            number
+            state
+            repository { nameWithOwner }
+            labels(first: 100) { nodes { name } }
+          }
         }
       }
     }
@@ -42,13 +45,14 @@ type pullRequest struct {
 
 // ReportPullRequests implements port.PullRequestReporter. One GraphQL query
 // finds the open pull requests in the issue's repository that GitHub links
-// as closing it. Each, in number order, gets the swap Move makes, through
-// gh pr edit, unless its only crew label is already report.State's; then,
-// when report.End is set, the stop comment, unless this report's ID already
+// as closing it; a pull request crew moved closes none, so it gets only the
+// query. Each, in number order, gets the swap Move makes, through gh pr edit,
+// unless its only crew label is already report.State's; then, when
+// report.End is set, the stop comment, unless this report's ID already
 // posted it there. It writes every pull request even when one fails, and
 // returns a transient error when any write failed transiently, so the report
-// is retried, and otherwise the first refusal or moved-meanwhile error. An
-// issue GitHub cannot resolve is port.ErrMovedMeanwhile, and gh saying a
+// is retried, and otherwise the first refusal or moved-meanwhile error. A
+// number GitHub cannot resolve is port.ErrMovedMeanwhile, and gh saying a
 // label does not exist is a refusal, as in Move.
 func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error {
 	what := fmt.Sprintf("update the pull requests of issue #%s to %s", report.IssueKey, report.State)
@@ -111,7 +115,7 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 		"-F", "owner={owner}", "-F", "name={repo}",
 		"-F", "number="+issueKey)
 	if err != nil {
-		if strings.Contains(string(out.Stderr), "Could not resolve to an Issue") {
+		if strings.Contains(string(out.Stderr), "Could not resolve to an issue or pull request") {
 			return "", nil, fmt.Errorf("find its pull requests: %w: %w", port.ErrMovedMeanwhile, err)
 		}
 		return "", nil, fmt.Errorf("find its pull requests: %w", err)
@@ -136,7 +140,7 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 							} `json:"labels"`
 						} `json:"nodes"`
 					} `json:"closedByPullRequestsReferences"`
-				} `json:"issue"`
+				} `json:"issueOrPullRequest"`
 			} `json:"repository"`
 		} `json:"data"`
 	}
