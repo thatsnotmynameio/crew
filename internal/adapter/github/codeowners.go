@@ -32,11 +32,7 @@ func (t *Tracker) findBoss(ctx context.Context) ([]string, error) {
 				return nil, err
 			}
 		}
-		for _, l := range logins {
-			if !containsFold(boss, l) {
-				boss = append(boss, l)
-			}
-		}
+		boss = appendFold(boss, logins...)
 	}
 	if len(boss) == 0 {
 		return []string{login}, nil
@@ -92,6 +88,17 @@ func catchAllOwners(text string) []string {
 		}
 	}
 	return owners
+}
+
+// appendFold appends to logins each of more it does not hold yet, ignoring
+// case.
+func appendFold(logins []string, more ...string) []string {
+	for _, l := range more {
+		if !containsFold(logins, l) {
+			logins = append(logins, l)
+		}
+	}
+	return logins
 }
 
 // containsFold reports whether logins holds login, ignoring case, as GitHub

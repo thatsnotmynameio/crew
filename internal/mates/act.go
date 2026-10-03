@@ -109,9 +109,11 @@ type acted struct {
 	mate Mate
 	// inst is its installation on the repository.
 	inst int64
-	// dirs are its gh config directories: its sessions', then, for the
-	// default mate, crew's own.
-	dirs []string
+	// sessionsDir is the gh config directory of its sessions and checks.
+	sessionsDir string
+	// writerDir, for the default mate alone, is the gh config directory of
+	// crew's own writes; "" for any other mate.
+	writerDir string
 	// expires is when its token stops working.
 	expires time.Time
 }
@@ -226,16 +228,16 @@ func (r *resolver) resolve(ctx context.Context, name string) error {
 		r.a.Warnings = append(r.a.Warnings, warning)
 		return nil
 	}
-	s := &acted{mate: m, inst: inst, dirs: []string{filepath.Join(r.a.dir, name, "sessions")}}
+	s := &acted{mate: m, inst: inst, sessionsDir: filepath.Join(r.a.dir, name, "sessions")}
 	if name == r.o.Default {
-		s.dirs = append(s.dirs, filepath.Join(r.a.dir, name, "crew"))
+		s.writerDir = filepath.Join(r.a.dir, name, "crew")
 	}
 	g, err := r.a.mintChecked(ctx, s)
 	if err != nil {
 		r.a.Warnings = append(r.a.Warnings, tokenWarning(m, r.o.Store, err))
 		return nil
 	}
-	for _, dir := range s.dirs {
+	for _, dir := range s.dirs() {
 		if err := os.MkdirAll(dir, dirPerm); err != nil {
 			return fmt.Errorf("make the gh directory of mate %s: %w", name, err)
 		}
@@ -290,7 +292,7 @@ func tokenWarning(m Mate, store *Store, err error) string {
 // mate returns s's acting mate, whose token is token. It warns when the
 // mate's commits will carry no co-author.
 func (r *resolver) mate(ctx context.Context, s *acted, token Token) ActingMate {
-	login := s.mate.Slug + "[bot]"
+	login := botLogin(s.mate.Slug)
 	var entries []configEntry
 	if r.git.hooks {
 		id, err := r.o.Client.BotUserID(ctx, token, s.mate.Slug)
@@ -310,12 +312,12 @@ func (r *resolver) mate(ctx context.Context, s *acted, token Token) ActingMate {
 	am := ActingMate{
 		Name:  s.mate.Name,
 		Login: login,
-		Env: append([]string{"GH_CONFIG_DIR=" + s.dirs[0]},
+		Env: append([]string{"GH_CONFIG_DIR=" + s.sessionsDir},
 			configEnv(r.o.Getenv("GIT_CONFIG_COUNT"), entries)...),
 		Unset: mateUnset(),
 	}
-	if len(s.dirs) > 1 {
-		am.WriterEnv = []string{"GH_CONFIG_DIR=" + s.dirs[1]}
+	if s.writerDir != "" {
+		am.WriterEnv = []string{"GH_CONFIG_DIR=" + s.writerDir}
 	}
 	return am
 }
@@ -419,15 +421,24 @@ func formatPermissions(perms map[string]string) string {
 	return strings.Join(pairs, " ")
 }
 
+// dirs returns s's gh config directories: its sessions', then crew's own
+// when it has one.
+func (s *acted) dirs() []string {
+	if s.writerDir == "" {
+		return []string{s.sessionsDir}
+	}
+	return []string{s.sessionsDir, s.writerDir}
+}
+
 // write writes g's token into each of s's directories and records when it
 // expires. Each hosts.yml is replaced by a rename, so a gh reading it never
 // sees half a file.
 func (s *acted) write(g Grant) error {
-	login := s.mate.Slug + "[bot]"
+	login := botLogin(s.mate.Slug)
 	token := string(g.Token)
 	data := []byte("github.com:\n    users:\n        " + login + ":\n            oauth_token: " + token +
 		"\n    git_protocol: https\n    oauth_token: " + token + "\n    user: " + login + "\n")
-	for _, dir := range s.dirs {
+	for _, dir := range s.dirs() {
 		tmp, err := writeTemp(dir, "hosts", data)
 		if err != nil {
 			return fmt.Errorf("write the token of mate %s: %w", s.mate.Name, err)

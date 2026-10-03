@@ -110,7 +110,7 @@ func runsGh(command string) bool {
 // coAuthorTrailer returns GitHub's co-author trailer of the bot of the app
 // slug, whose user id is id.
 func coAuthorTrailer(slug string, id int64) string {
-	login := slug + "[bot]"
+	login := botLogin(slug)
 	return fmt.Sprintf("Co-authored-by: %s <%d+%s@users.noreply.github.com>", login, id, login)
 }
 

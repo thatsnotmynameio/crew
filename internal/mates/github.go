@@ -69,7 +69,7 @@ type Conversion struct {
 func (c Conversion) Mate(name string) Mate {
 	return Mate{
 		Name: name, Owner: c.Owner.Login, OwnerID: c.Owner.ID, AppID: c.AppID, ClientID: c.ClientID,
-		Slug: c.Slug, AppName: c.AppName, HTMLURL: c.HTMLURL, BotLogin: c.Slug + "[bot]",
+		Slug: c.Slug, AppName: c.AppName, HTMLURL: c.HTMLURL, BotLogin: botLogin(c.Slug),
 		CreatedAt: c.CreatedAt, PrivateKey: c.Key,
 	}
 }
@@ -146,7 +146,7 @@ func (c *Client) BotUserID(ctx context.Context, token Token, slug string) (int64
 	var user struct {
 		ID int64 `json:"id"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(slug+"[bot]"), auth{token: token}, nil,
+	if err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(botLogin(slug)), auth{token: token}, nil,
 		http.StatusOK, &user); err != nil {
 		return 0, fmt.Errorf("find the user of %s[bot]: %w", slug, err)
 	}
@@ -159,15 +159,13 @@ func (c *Client) BotUserID(ctx context.Context, token Token, slug string) (int64
 // validSlug reports whether slug is an app slug crew can put in a file,
 // a shell string or a trailer: lowercase letters, digits and hyphens.
 func validSlug(slug string) bool {
-	if slug == "" {
-		return false
-	}
-	for _, r := range slug {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
-			return false
-		}
-	}
-	return true
+	return slug != "" && !strings.ContainsFunc(slug, func(r rune) bool { return !nameRune(r) })
+}
+
+// botLogin returns the login of the bot of the app slug, such as
+// crew-ops[bot].
+func botLogin(slug string) string {
+	return slug + "[bot]"
 }
 
 // auth is how a request authenticates: signed with a fresh app JWT of mate

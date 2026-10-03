@@ -124,7 +124,7 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 	if continues {
 		return t.createStatus(ctx, issueKey, body)
 	}
-	out, mate, err := t.gh.write(ctx, "api", "--method", "PATCH",
+	out, login, err := t.gh.write(ctx, "api", "--method", "PATCH",
 		fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", c.id), "-f", "body="+body)
 	if err != nil {
 		if httpStatus(string(out.Stderr)) == http.StatusNotFound {
@@ -133,7 +133,7 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 		}
 		return fmt.Errorf("edit comment %d: %w", c.id, classify(err, out, false))
 	}
-	author, err := t.loginOf(ctx, mate)
+	author, err := t.loginOf(ctx, login)
 	if err != nil {
 		return err
 	}
@@ -144,11 +144,11 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 // createStatus creates a status comment on the issue with body and caches
 // it, with its id, which gh prints, and the login it was created as.
 func (t *Tracker) createStatus(ctx context.Context, issueKey, body string) error {
-	id, mate, err := t.postComment(ctx, issueKey, body)
+	id, login, err := t.postComment(ctx, issueKey, body)
 	if err != nil {
 		return fmt.Errorf("create the status comment: %w", err)
 	}
-	author, err := t.loginOf(ctx, mate)
+	author, err := t.loginOf(ctx, login)
 	if err != nil {
 		return err
 	}
@@ -165,11 +165,11 @@ func (t *Tracker) writerLogin(ctx context.Context) (string, error) {
 	return t.gh.viewer(ctx)
 }
 
-// loginOf returns the login a write went as: mate, the login gh.write
-// returned, or gh's own when that is "".
-func (t *Tracker) loginOf(ctx context.Context, mate string) (string, error) {
-	if mate != "" {
-		return mate, nil
+// loginOf returns the login a write went as: login, the mate's login
+// gh.write returned, or gh's own when that is "".
+func (t *Tracker) loginOf(ctx context.Context, login string) (string, error) {
+	if login != "" {
+		return login, nil
 	}
 	return t.gh.viewer(ctx)
 }

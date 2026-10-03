@@ -13,7 +13,7 @@ import (
 // itself: 404 or 410 is port.ErrMovedMeanwhile, a 403 that is not a rate
 // limit is port.ErrRefused, and any other error is transient.
 func (t *Tracker) postComment(ctx context.Context, number, body string) (int64, string, error) {
-	out, mate, err := t.gh.write(ctx, "api", "--method", "POST", "repos/{owner}/{repo}/issues/"+number+"/comments",
+	out, login, err := t.gh.write(ctx, "api", "--method", "POST", "repos/{owner}/{repo}/issues/"+number+"/comments",
 		"-f", "body="+body, "--jq", ".id")
 	if err != nil {
 		return 0, "", classify(err, out, true)
@@ -22,5 +22,5 @@ func (t *Tracker) postComment(ctx context.Context, number, body string) (int64, 
 	if err != nil {
 		return 0, "", fmt.Errorf("gh printed no comment id: %w", err)
 	}
-	return id, mate, nil
+	return id, login, nil
 }

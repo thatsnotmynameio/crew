@@ -355,10 +355,10 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 }
 
 // ReportFailure implements port.Tracker: one Markdown comment, posted as the
-// writer, naming each failed action and its log, without its reason. The issue gone (HTTP 404
-// or 410) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
-// issue, but not a rate limit) is port.ErrRefused, and any other error is
-// transient.
+// writer, naming each failed action and its log, without its reason. The
+// issue gone (HTTP 404 or 410) is port.ErrMovedMeanwhile, a refusal (HTTP
+// 403, such as a locked issue, but not a rate limit) is port.ErrRefused, and
+// any other error is transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
 	if _, _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
 		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
@@ -419,12 +419,7 @@ func (t *Tracker) authors(ctx context.Context) ([]string, error) {
 		}
 		boss = []string{login}
 	}
-	for _, m := range mates {
-		if !containsFold(boss, m) {
-			boss = append(boss, m)
-		}
-	}
-	return boss, nil
+	return appendFold(boss, mates...), nil
 }
 
 // item returns the issue or pull request n as a crew.Issue in the states its
