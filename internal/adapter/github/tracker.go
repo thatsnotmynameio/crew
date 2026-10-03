@@ -1,15 +1,15 @@
-// Package github is the tracker adapter for GitHub issues, through the gh
-// CLI. A workflow state is the label of the same name, compared ignoring
-// case as GitHub does, and crew's labels are the workflow's states plus the
-// config's extra labels, which are never states. It lists the open issues
-// the authenticated gh user opened, moves them by swapping crew's labels,
-// reports failures as Markdown comments and keeps a status comment on each
-// issue, with one entry per stage run. It puts the open pull requests that
-// close an issue in the issue's crew label, and comments on them when a stage
-// ends that nobody watches them any more. It finds the pull request an action
-// opened from its branch. It works on the repository gh resolves from crew's
-// working directory, and runs every gh call through the shared process
-// helper.
+// Package github is the tracker adapter for GitHub issues and pull requests,
+// through the gh CLI. A workflow state is the label of the same name,
+// compared ignoring case as GitHub does, and crew's labels are the workflow's
+// states plus the config's extra labels, which are never states. It lists the
+// open issues and pull requests the authenticated gh user opened, as items
+// alike, moves them by swapping crew's labels, reports failures as Markdown
+// comments and keeps a status comment on each item, with one entry per stage
+// run. It puts the open pull requests that close an issue in the issue's crew
+// label, and comments on them when a stage ends that nobody watches them any
+// more. It finds the pull request an action opened from its branch. It works
+// on the repository gh resolves from crew's working directory, and runs every
+// gh call through the shared process helper.
 package github
 
 import (
@@ -39,8 +39,10 @@ var (
 	_ port.PullRequestFinder   = (*Tracker)(nil)
 )
 
-// issuesQuery lists the login's open issues carrying any of the labels,
-// oldest first. GitHub's labels filter matches an issue with any of them.
+// issuesQuery lists the login's open issues carrying any of the labels, and
+// the open pull requests carrying any of them, each kind oldest first.
+// GitHub's labels filter matches an item with any of them. Pull requests
+// cannot be filtered by author, so each carries its author's login.
 // A dependency summary's blockedBy counts only the open issues blocking it.
 // An issue holds at most one value per issue field, and an organization has
 // at most 25 fields. A single select value carries its option's id and its
@@ -67,6 +69,17 @@ const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $la
         }
       }
     }
+    pullRequests(first: 100, states: OPEN, labels: $labels,
+                 orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes {
+        number
+        title
+        url
+        createdAt
+        author { login }
+        labels(first: 100) { nodes { name } }
+      }
+    }
   }
 }`
 
@@ -76,13 +89,8 @@ type issuesReply struct {
 		Repository struct {
 			Issues struct {
 				Nodes []struct {
-					Number    int       `json:"number"`
-					Title     string    `json:"title"`
-					URL       string    `json:"url"`
-					CreatedAt time.Time `json:"createdAt"`
-					Labels    struct {
-						Nodes []ghLabel `json:"nodes"`
-					} `json:"labels"`
+					itemNode
+
 					Dependencies struct {
 						BlockedBy int `json:"blockedBy"`
 					} `json:"issueDependenciesSummary"`
@@ -91,8 +99,29 @@ type issuesReply struct {
 					} `json:"issueFieldValues"`
 				} `json:"nodes"`
 			} `json:"issues"`
+			PullRequests struct {
+				Nodes []struct {
+					itemNode
+
+					Author struct {
+						Login string `json:"login"`
+					} `json:"author"`
+				} `json:"nodes"`
+			} `json:"pullRequests"`
 		} `json:"repository"`
 	} `json:"data"`
+}
+
+// itemNode holds what issuesQuery reads of an issue and of a pull request
+// alike.
+type itemNode struct {
+	Number    int       `json:"number"`
+	Title     string    `json:"title"`
+	URL       string    `json:"url"`
+	CreatedAt time.Time `json:"createdAt"`
+	Labels    struct {
+		Nodes []ghLabel `json:"nodes"`
+	} `json:"labels"`
 }
 
 // ghLabel is a label as gh prints it in JSON.
@@ -130,14 +159,16 @@ func factory(run proc.Runner) port.TrackerFactory {
 }
 
 // List implements port.Tracker with one GraphQL query: the open issues the
-// authenticated gh user opened that carry any of the states' labels, oldest
-// first, at most 100. Each issue's key is its number, its reference
-// #<number>, and its states every workflow state its labels name, in the
-// workflow's spelling. Its other labels, extras included, are no states and
-// are ignored. It is blocked while an open issue blocks it, as GitHub's
-// issue dependencies record. Its priority is the position of its value of
-// the issue field Priority among that field's options, the first being 1;
-// an issue without one has priority 0.
+// authenticated gh user opened that carry any of the states' labels, at most
+// 100, and the open pull requests that user opened that carry any of them,
+// among the 100 oldest pull requests carrying any of them, all oldest first.
+// Each item's key is its number, its reference #<number>, and its states
+// every workflow state its labels name, in the workflow's spelling. Its other
+// labels, extras included, are no states and are ignored. An issue is
+// blocked while an open issue blocks it, as GitHub's issue dependencies
+// record. Its priority is the position of its value of the issue field
+// Priority among that field's options, the first being 1; an issue without
+// one has priority 0. A pull request has priority 0 and is never blocked.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
@@ -147,20 +178,21 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	if err := t.gh.decode(ctx, &reply, issuesArgs(login, states)...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	nodes := reply.Data.Repository.Issues.Nodes
-	issues := make([]crew.Issue, 0, len(nodes))
-	for _, n := range nodes {
-		key := strconv.Itoa(n.Number)
-		issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt,
-			Blocked: n.Dependencies.BlockedBy > 0, Priority: priority(n.FieldValues.Nodes)}
-		for _, l := range n.Labels.Nodes {
-			if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
-				issue.States = append(issue.States, s)
-			}
-		}
-		issues = append(issues, issue)
+	repo := reply.Data.Repository
+	items := make([]crew.Issue, 0, len(repo.Issues.Nodes)+len(repo.PullRequests.Nodes))
+	for _, n := range repo.Issues.Nodes {
+		issue := t.item(n.itemNode)
+		issue.Blocked = n.Dependencies.BlockedBy > 0
+		issue.Priority = priority(n.FieldValues.Nodes)
+		items = append(items, issue)
 	}
-	return issues, nil
+	for _, n := range repo.PullRequests.Nodes {
+		if n.Author.Login == login {
+			items = append(items, t.item(n.itemNode))
+		}
+	}
+	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
+	return items, nil
 }
 
 // fieldArgs is how many arguments one gh api field takes: the flag and
@@ -218,15 +250,17 @@ func priority(values []fieldValue) int {
 	return 0
 }
 
-// Move implements port.Tracker. It reads the issue's state and labels; a
-// closed issue moved meanwhile. An open issue whose only state label is to's,
-// whatever extras it carries, is already moved, as when an earlier attempt
-// landed although gh reported an error, so Move returns nil without an edit
-// and a retry is safe (KTD8). Any other issue without from's label moved
-// meanwhile. Otherwise one gh issue edit removes every other crew label the
-// issue carries, extras included, and adds to's, leaving the labels that are
-// not crew's alone. gh saying a label does not exist is a refusal: the label
-// must be created, which retrying cannot do.
+// Move implements port.Tracker. It moves a pull request as it moves an issue,
+// since gh issue view and gh issue edit accept a pull request's number. It
+// reads the issue's state and labels; a closed issue, or a closed or merged
+// pull request, moved meanwhile. An open issue whose only state label is
+// to's, whatever extras it carries, is already moved, as when an earlier
+// attempt landed although gh reported an error, so Move returns nil without
+// an edit and a retry is safe (KTD8). Any other issue without from's label
+// moved meanwhile. Otherwise one gh issue edit removes every other crew label
+// the issue carries, extras included, and adds to's, leaving the labels that
+// are not crew's alone. gh saying a label does not exist is a refusal: the
+// label must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
 	var issue struct {
 		State  string    `json:"state"`
@@ -293,6 +327,19 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		have[strings.ToLower(name)] = true
 	}
 	return nil
+}
+
+// item returns the issue or pull request n as a crew.Issue in the states its
+// labels name, each once, in label order.
+func (t *Tracker) item(n itemNode) crew.Issue {
+	key := strconv.Itoa(n.Number)
+	issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
+	for _, l := range n.Labels.Nodes {
+		if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
+			issue.States = append(issue.States, s)
+		}
+	}
+	return issue
 }
 
 // editLabels runs one gh <kind> edit of number, an issue's or a pull

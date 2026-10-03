@@ -177,13 +177,18 @@ func issuesJSON(nodes ...string) string {
 }
 
 func issueNode(number int, created string, labels ...string) string {
+	return fmt.Sprintf(`{"number":%d,"title":"Issue %d","url":"https://github.com/o/r/issues/%d",`+
+		`"createdAt":%q,"labels":{"nodes":[%s]}}`,
+		number, number, number, created, labelNodes(labels...))
+}
+
+// labelNodes returns the label nodes of a listed item, as GitHub returns them.
+func labelNodes(labels ...string) string {
 	names := make([]string, len(labels))
 	for i, l := range labels {
 		names[i] = fmt.Sprintf(`{"name":%q}`, l)
 	}
-	return fmt.Sprintf(`{"number":%d,"title":"Issue %d","url":"https://github.com/o/r/issues/%d",`+
-		`"createdAt":%q,"labels":{"nodes":[%s]}}`,
-		number, number, number, created, strings.Join(names, ","))
+	return strings.Join(names, ",")
 }
 
 // fieldValues returns the values of every -f/-F field named key in args.
@@ -235,15 +240,7 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 		{Key: "14", Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
 			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{readyToReview}},
 	}
-	if len(got) != len(want) {
-		t.Fatalf("List = %+v, want %+v", got, want)
-	}
-	for i := range want {
-		if got[i].Key != want[i].Key || got[i].Ref != want[i].Ref || got[i].Title != want[i].Title ||
-			got[i].URL != want[i].URL || !got[i].Created.Equal(want[i].Created) || !slices.Equal(got[i].States, want[i].States) {
-			t.Errorf("issue %d = %+v, want %+v", i, got[i], want[i])
-		}
-	}
+	wantItems(t, got, want)
 }
 
 func TestListResolvesTheLoginOnce(t *testing.T) {
@@ -421,11 +418,12 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 
 func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 	for name, view := range map[string]string{
-		"closed":          `{"state":"CLOSED","labels":[{"name":"ready"}]}`,
-		"no longer ready": `{"state":"OPEN","labels":[{"name":"needs attention"}]}`,
-		"in no state":     `{"state":"OPEN","labels":[{"name":"bug"}]}`,
-		"in to and other": `{"state":"OPEN","labels":[{"name":"in progress"},{"name":"in review"}]}`,
-		"closed in to":    `{"state":"CLOSED","labels":[{"name":"in progress"}]}`,
+		"closed":                `{"state":"CLOSED","labels":[{"name":"ready"}]}`,
+		"no longer ready":       `{"state":"OPEN","labels":[{"name":"needs attention"}]}`,
+		"in no state":           `{"state":"OPEN","labels":[{"name":"bug"}]}`,
+		"in to and other":       `{"state":"OPEN","labels":[{"name":"in progress"},{"name":"in review"}]}`,
+		"closed in to":          `{"state":"CLOSED","labels":[{"name":"in progress"}]}`,
+		"a merged pull request": `{"state":"MERGED","labels":[{"name":"ready"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t, reply{prefix: []string{"issue", "view", "3"}, stdout: view})
