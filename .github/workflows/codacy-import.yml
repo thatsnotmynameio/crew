@@ -36,8 +36,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Through pnpm so that codacy-analysis is on the PATH: the import asks it
-      # which tools exist, to disable the ones the file leaves out.
+      # which tools exist, to disable the ones the file leaves out. The CLI
+      # exits 0 even when some tools fail to apply (for example a tool a
+      # coding standard forces on), so its report decides the step's result.
       - name: import
+        shell: bash
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        run: pnpm exec codacy tools gh thatsnotmynameio crew --import --skip-approval
+        run: |
+          pnpm exec codacy tools gh thatsnotmynameio crew --import --skip-approval 2>&1 | tee "$RUNNER_TEMP/import.log"
+          if grep -q "error(s)" "$RUNNER_TEMP/import.log"; then
+            echo "::error::The Codacy import did not apply every tool; see the errors above and docs/develop/quality.mdx." >&2
+            exit 1
+          fi

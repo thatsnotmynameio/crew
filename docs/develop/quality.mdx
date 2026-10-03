@@ -70,7 +70,7 @@ These cannot be set from a file. They are recorded here as the source of truth.
 
 Codacy analyses each commit itself; CI sends it only the coverage. The `go` job holds no secret: on a Dependabot pull request the updated module runs there. It saves the coverage profile as an artifact. The `codacy` job, the only one that sees `CODACY_PROJECT_TOKEN`, runs no code from the repository: it downloads Codacy's coverage reporter at a pinned version, checks its checksum, and uploads the profile for the analysed commit. It runs even when the `go` job failed, and each `main` commit's run is never cancelled, so every commit has the coverage Codacy compares pull requests against.
 
-The `Codacy import` workflow applies `.codacy/codacy.config.json` to Codacy whenever the file changes on `main`. Both stay off until the repository variable `CODACY_ENABLED` is `true`.
+The `Codacy import` workflow applies `.codacy/codacy.config.json` to Codacy whenever the file changes on `main`. It fails when Codacy refuses any tool, for example one a coding standard keeps on; crew follows no coding standard, so that its configuration file decides every tool. Both stay off until the repository variable `CODACY_ENABLED` is `true`.
 
 ## Setting up Codacy
 
@@ -84,7 +84,7 @@ The boss does this once, in this order:
 6. Create the gate policy in the table above and apply it to crew.
 7. Set the repository variable `CODACY_ENABLED` to `true`.
 8. Run the `Codacy import` workflow by hand, so Codacy applies the tool configuration.
-9. Compare `pnpm exec codacy tools gh thatsnotmynameio crew` with `.codacy/codacy.config.json`, and turn off, with a recorded reason, any tool the import left on.
+9. If the import reports a tool that a coding standard enables, unlink crew from that standard (organization **Policies**, tab **Coding standards**, edit the standard, **Select and apply to repositories**) and run the import again. Codacy links new repositories to its Default coding standard.
 10. Check that the first analysis of `main` shows no issues and no duplication. Fix anything left in a pull request.
 11. Watch a code pull request reach a verdict on `Codacy Static Code Analysis`.
 12. Add `codacy` and `Codacy Static Code Analysis` to the `checks` ruleset with `bootstrap.sh --checks`, in `thatsnotmynameio/.github`.
