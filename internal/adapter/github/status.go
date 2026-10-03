@@ -442,8 +442,8 @@ func writeMove(b *strings.Builder, s crew.Status) {
 
 // failedAction words the failed action a, named by subject, as the status
 // comment and the stop comment both give it: why it failed, in crew's words,
-// then its log: "**`lfg`** failed: crew stopped it. Its log is
-// `.crew/logs/issue-42-lfg.log`." is how a stopped lfg reads.
+// then its log. A stopped lfg reads: **`lfg`** failed: crew stopped it. Its
+// log is `.crew/logs/issue-42-lfg.log`.
 func failedAction(subject string, a crew.ActionStatus) string {
 	line := fmt.Sprintf("%s failed%s.", subject, failureCause(a))
 	if a.Log == "" {

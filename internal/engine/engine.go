@@ -6,8 +6,7 @@
 // One goroutine, Run's loop, owns the core. Every result reaches it through
 // one inbox and is stamped with its arrival time there. Each command runs in
 // its own goroutine on a command context that only Run's return cancels, so
-// a stop request never cancels the verdict moves it is waiting for. The loop
-// hands that context to each command it launches.
+// a stop request never cancels the verdict moves it is waiting for.
 package engine
 
 import (

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,13 +15,8 @@ const module = "github.com/thatsnotmynameio/crew"
 // profile writes a coverage profile with the given blocks and returns its path.
 func profile(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "coverage.out")
-	err := os.WriteFile(path, []byte("mode: atomic\n"+body), 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	return path
+	return rawProfile(t, "mode: atomic\n"+body)
 }
 
 // blocks writes one single-line block for each line from 1 to n of a.go,
@@ -32,20 +28,16 @@ func blocks(n, covered int) string {
 		if line <= covered {
 			count = 1
 		}
-		b.WriteString(module + "/a.go:" + itoa(line) + ".1," + itoa(line) + ".10 1 " + itoa(count) + "\n")
+		fmt.Fprintf(&b, "%s/a.go:%d.1,%d.10 1 %d\n", module, line, line, count)
 	}
 
 	return b.String()
 }
 
-func itoa(n int) string {
-	return strconv.Itoa(n)
-}
-
 // addLines is a diff that adds lines 1 to n of a.go.
 func addLines(n int) string {
 	var b strings.Builder
-	b.WriteString("diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -0,0 +1," + itoa(n) + " @@\n")
+	b.WriteString("diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -0,0 +1," + strconv.Itoa(n) + " @@\n")
 	for range n {
 		b.WriteString("+x\n")
 	}

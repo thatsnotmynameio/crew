@@ -121,6 +121,7 @@ func loopText(e core.Event) string {
 	return fmt.Sprintf("%T", e)
 }
 
+// actionStarted is the line for an action that started.
 func actionStarted(e core.ActionStarted) string {
 	if e.Resumed {
 		return fmt.Sprintf("%s %s/%s resumed in worktree %s on branch %s, log %s",
@@ -129,6 +130,7 @@ func actionStarted(e core.ActionStarted) string {
 	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Stage, e.Action, e.Branch, e.Log)
 }
 
+// actionEnded is the line for an action that ended, with its result.
 func actionEnded(e core.ActionEnded) string {
 	// The reason is shown for successes too: without a check, a clean end is
 	// the only success signal, so its last message is what tells the boss
@@ -140,6 +142,7 @@ func actionEnded(e core.ActionEnded) string {
 	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Stage, e.Action, verdict), e.Outcome.Reason)
 }
 
+// issueSkipped is the line for an issue crew left alone, and why.
 func issueSkipped(e core.IssueSkipped) string {
 	states := make([]string, len(e.States))
 	for i, s := range e.States {
