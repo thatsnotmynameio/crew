@@ -353,7 +353,8 @@ func (s *step) taken(h *heldIssue, c *call) {
 
 // workspaceGone creates a fresh workspace for an action whose failed run's
 // workspace no longer exists (R4), or, after a stop, fails the action
-// without one, which records nothing, so the failed run stays resumable.
+// without one: its end is written without a workspace and not remembered, so
+// the failed run stays resumable.
 func (s *step) workspaceGone(in WorkspaceGone) {
 	h, a := s.m.action(in.IssueKey, in.Action, PhaseReopening)
 	if a == nil {
