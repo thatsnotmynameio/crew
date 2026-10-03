@@ -128,5 +128,8 @@ func (s *server) created(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.saved = true
+	// The target is GitHub's install page for the app GitHub just created:
+	// its host is fixed, and only the escaped slug comes from GitHub's reply.
+	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
 	http.Redirect(w, r, s.installURL(m), http.StatusFound)
 }
