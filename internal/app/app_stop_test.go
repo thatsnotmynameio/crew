@@ -172,14 +172,20 @@ func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T
 		t.Errorf("exit code = %d, want 1", code)
 	}
 	killed(t, sleeper)
+	releaseAfterTUI(t, r, session)
+}
+
+// releaseAfterTUI ends session after a forced exit from the TUI. The engine
+// outlives the forced exit, which a real crew would not, and records the
+// released session's end; it waits for that to land before the repository
+// is removed. The TUI prints no "crew: stopped" for release to wait for.
+func releaseAfterTUI(t *testing.T, r *crewRun, session *fake.Session) {
+	t.Helper()
 	session.End(crew.Outcome{Reason: "released by the test"})
-	// The engine outlives the forced exit, which a real crew would not, and
-	// records the released session's end; let it land before the
-	// repository is removed.
 	journal := filepath.Join(r.opts.Root, ".crew", "logs", "runs.jsonl")
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		if data, _ := os.ReadFile(journal); strings.Contains(string(data), `"event":"ended"`) {
-			break
+			return
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("the released session's end never reached %s", journal)
