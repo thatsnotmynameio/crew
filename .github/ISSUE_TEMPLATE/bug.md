@@ -1,7 +1,7 @@
 ---
 name: Bug
 about: A bug to fix. crew reproduces it with a failing test, fixes it and opens a pull request.
-labels: ["crew:ready for fix"]
+labels: ["crew:fix:ready"]
 ---
 
 ## What happened
