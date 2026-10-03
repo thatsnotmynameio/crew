@@ -67,7 +67,8 @@ func TestAStageTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.
 	if n := tr.listed(); n != 0 {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
-	if stderr := r.stderr.String(); !strings.Contains(stderr, `workflow[0].takes (line 12): "prs" must be issues or pull_requests`) {
+	want := `workflow[0].takes (line 12): "prs" must be issues or pull_requests`
+	if stderr := r.stderr.String(); !strings.Contains(stderr, want) {
 		t.Errorf("stderr = %q, want it to name workflow[0].takes and its line", stderr)
 	}
 }

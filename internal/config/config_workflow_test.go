@@ -290,7 +290,7 @@ func TestLoadGivesEveryStageTheKindItTakes(t *testing.T) {
 		takes string
 		want  crew.Kind
 	}{
-		{name: "a stage without takes takes issues", takes: "", want: crew.KindIssue},
+		{name: "a stage without the key takes issues", takes: "", want: crew.KindIssue},
 		{name: "takes: issues", takes: "takes: issues", want: crew.KindIssue},
 		{name: "takes: pull_requests", takes: "takes: pull_requests", want: crew.KindPullRequest},
 		{name: "takes with no value takes issues", takes: "takes:", want: crew.KindIssue},

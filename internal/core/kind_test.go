@@ -23,10 +23,9 @@ func withFixReview() []crew.Stage {
 	})
 }
 
-// pullRequest returns a pull request keyed key, opened minute minutes after
-// t0.
-func pullRequest(key string, minute int, states ...crew.State) crew.Issue {
-	pr := issue(key, minute, states...)
+// pr90 returns pull request #90, opened minute minutes after t0.
+func pr90(minute int, states ...crew.State) crew.Issue {
+	pr := issue("90", minute, states...)
 	pr.Kind = crew.KindPullRequest
 	return pr
 }
@@ -46,7 +45,7 @@ func otherKinds(events []core.Event) []core.Event {
 func TestAPullRequestInTheLabelOfAStageThatTakesIssuesIsLeftAloneWithANotice(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 
-	cmds, events := d.poll(pullRequest("90", 1, ready))
+	cmds, events := d.poll(pr90(1, ready))
 	wantCommands(t, cmds)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
@@ -59,10 +58,10 @@ func TestAPullRequestInTheLabelOfAStageThatTakesIssuesIsLeftAloneWithANotice(t *
 func TestAStageThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 	d := newDriver(t, withFixReview(), 2)
 
-	cmds, events := d.poll(pullRequest("90", 1, fixReviewReady))
+	cmds, events := d.poll(pr90(1, fixReviewReady))
 	wantCommands(t, cmds, core.Move{IssueKey: "90", From: fixReviewReady, To: fixing})
 	hasEvent(t, events, core.IssueTaken{
-		At: d.now, Issue: pullRequest("90", 1, fixReviewReady), Stage: "fix review",
+		At: d.now, Issue: pr90(1, fixReviewReady), Stage: "fix review",
 		From: fixReviewReady, To: fixing,
 	})
 	if n := otherKinds(events); n != nil {
@@ -94,13 +93,13 @@ func TestTheNoticeShowsAgainOnceAListingFoundTheItemWithoutTheLabel(t *testing.T
 		between []crew.Issue
 	}{
 		{name: "the item was not listed", between: nil},
-		{name: "the item was in another state", between: []crew.Issue{pullRequest("90", 1, needsAttention)}},
-		{name: "the item carried two crew labels", between: []crew.Issue{pullRequest("90", 1, ready, needsAttention)}},
+		{name: "the item was in another state", between: []crew.Issue{pr90(1, needsAttention)}},
+		{name: "the item carried two crew labels", between: []crew.Issue{pr90(1, ready, needsAttention)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newDriver(t, draft(), 2)
-			_, events := d.poll(pullRequest("90", 1, ready))
+			_, events := d.poll(pr90(1, ready))
 			if len(otherKinds(events)) != 1 {
 				t.Fatalf("first listing: notices %#v, want one", otherKinds(events))
 			}
@@ -108,7 +107,7 @@ func TestTheNoticeShowsAgainOnceAListingFoundTheItemWithoutTheLabel(t *testing.T
 			_, events = d.poll(tt.between...)
 			wantEvents(t, otherKinds(events))
 
-			_, events = d.poll(pullRequest("90", 1, ready))
+			_, events = d.poll(pr90(1, ready))
 			wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 				At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
 				Label: ready, Stage: "implement", Takes: crew.KindIssue,
@@ -119,9 +118,9 @@ func TestTheNoticeShowsAgainOnceAListingFoundTheItemWithoutTheLabel(t *testing.T
 
 func TestAnItemMovedToTheLabelOfAnotherStageOfTheOtherKindGetsANewNotice(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	d.poll(pullRequest("90", 1, ready))
+	d.poll(pr90(1, ready))
 
-	_, events := d.poll(pullRequest("90", 1, readyToReview))
+	_, events := d.poll(pr90(1, readyToReview))
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
 		Label: readyToReview, Stage: "review", Takes: crew.KindIssue,
@@ -130,7 +129,7 @@ func TestAnItemMovedToTheLabelOfAnotherStageOfTheOtherKindGetsANewNotice(t *test
 
 func TestAFailedOrSkippedListingDoesNotRepeatTheNotice(t *testing.T) {
 	d := newDriver(t, draft(), 1)
-	cmds, events := d.poll(issue("1", 1, ready), pullRequest("90", 2, ready))
+	cmds, events := d.poll(issue("1", 1, ready), pr90(2, ready))
 	if len(otherKinds(events)) != 1 {
 		t.Fatalf("first listing: notices %#v, want one", otherKinds(events))
 	}
@@ -144,7 +143,7 @@ func TestAFailedOrSkippedListingDoesNotRepeatTheNotice(t *testing.T) {
 	wantListings(t, cmds, 1)
 	d.send(core.ListFailed{Reason: "timeout"})
 
-	_, events = d.poll(pullRequest("90", 2, ready))
+	_, events = d.poll(pr90(2, ready))
 	wantEvents(t, otherKinds(events))
 }
 
@@ -153,7 +152,7 @@ func TestAFailedOrSkippedListingDoesNotRepeatTheNotice(t *testing.T) {
 func TestAMirroredPullRequestGetsTheNoticeWhileItsIssueIsTaken(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 
-	cmds, events := d.poll(issue("42", 1, ready), pullRequest("90", 2, ready))
+	cmds, events := d.poll(issue("42", 1, ready), pr90(2, ready))
 	wantCommands(t, cmds, core.Move{IssueKey: "42", From: ready, To: inProgress})
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
@@ -187,7 +186,7 @@ func TestABlockedIssueInTheLabelOfAStageThatTakesPullRequestsGetsTheNotice(t *te
 
 func TestAnItemOfTheOtherKindTakesNoSlot(t *testing.T) {
 	d := newDriver(t, draft(), 1)
-	urgent := pullRequest("90", 1, ready)
+	urgent := pr90(1, ready)
 	urgent.Priority = 1
 	later := issue("42", 2, ready)
 	later.Priority = 2
