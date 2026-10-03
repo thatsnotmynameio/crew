@@ -1,6 +1,7 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -142,7 +143,7 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 			prs = append(prs, pullRequest{number: n.Number, labels: n.Labels.Nodes})
 		}
 	}
-	slices.SortFunc(prs, func(a, b pullRequest) int { return a.number - b.number })
+	slices.SortFunc(prs, func(a, b pullRequest) int { return cmp.Compare(a.number, b.number) })
 	return issue.URL, prs, nil
 }
 
@@ -153,13 +154,7 @@ func (t *Tracker) mirror(ctx context.Context, pr pullRequest, to crew.State) err
 	if len(remove) == 0 && slices.Equal(states, []crew.State{to}) {
 		return nil
 	}
-	target := string(to)
-	args := slices.Concat([]string{"pr", "edit", strconv.Itoa(pr.number)}, remove,
-		[]string{"--add-label=" + labelArg(target)})
-	if out, err := t.gh.call(ctx, args...); err != nil {
-		if missingLabel(string(out.Stderr), target) {
-			return fmt.Errorf("edit pull request #%d: %w: %w", pr.number, port.ErrRefused, err)
-		}
+	if err := t.editLabels(ctx, "pr", strconv.Itoa(pr.number), remove, to); err != nil {
 		return fmt.Errorf("edit pull request #%d: %w", pr.number, err)
 	}
 	return nil

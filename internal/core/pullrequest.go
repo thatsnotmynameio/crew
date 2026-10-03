@@ -26,17 +26,20 @@ type pendingReport struct {
 }
 
 // reportPullRequests queues the report that follows h's move to to, which
-// landed, unless pull request reports are off (KTD2). end is set when the
-// move ended h's stage. The report's ID is fixed for its life (KTD7).
-func (s *step) reportPullRequests(h *heldIssue, to crew.State, end *crew.StageEnd) {
+// landed, unless pull request reports are off (KTD2). ended is set when the
+// move ended h's stage, so the report carries how it ended. The report's ID
+// is fixed for its life (KTD7).
+func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	m := s.m
 	if m.pullRequests == nil {
 		return
 	}
 	m.lastID++
 	r := crew.PullRequestReport{
-		ID: strconv.FormatUint(uint64(m.lastID), 10), IssueKey: h.issue.Key, IssueRef: h.issue.Ref,
-		State: to, End: end,
+		ID: strconv.FormatUint(uint64(m.lastID), 10), IssueKey: h.issue.Key, IssueRef: h.issue.Ref, State: to,
+	}
+	if ended {
+		r.End = s.stageEnd(h)
 	}
 	sl := m.pullRequests[r.IssueKey]
 	if sl == nil {

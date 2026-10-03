@@ -277,7 +277,7 @@ func (s *step) callResult(r CallResult) {
 		} else {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 			s.ended(h, c.to, crew.MoveDone)
-			s.reportPullRequests(h, c.to, s.stageEnd(h))
+			s.reportPullRequests(h, c.to, true)
 			h.verdict.Move = crew.MoveDone
 		}
 		h.settle(c)
@@ -319,7 +319,7 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
-	s.reportPullRequests(h, c.to, nil)
+	s.reportPullRequests(h, c.to, false)
 	h.settle(c)
 	if m.stopping {
 		for _, a := range h.actions {

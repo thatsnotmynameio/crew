@@ -19,8 +19,8 @@ type Input interface {
 }
 
 // Tick is a poll: the core lists issues, unless a listing is outstanding,
-// retries its owed calls and pull request reports (KTD8) and reports the status of its running
-// issues. Ticks after a stop request do nothing.
+// retries its owed calls and pull request reports (KTD8) and reports the
+// status of its running issues. Ticks after a stop request do nothing.
 type Tick struct {
 	At time.Time
 	// Said is what the running sessions last said, for their issues'

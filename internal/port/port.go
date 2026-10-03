@@ -4,9 +4,8 @@
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter,
 // PullRequestReporter, Narrator or Reopener, that the engine detects by type
-// assertion. An adapter
-// therefore never wraps another adapter value, because a wrapper hides the
-// optional interfaces of what it wraps.
+// assertion. An adapter therefore never wraps another adapter value, because
+// a wrapper hides the optional interfaces of what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.

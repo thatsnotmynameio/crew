@@ -176,13 +176,24 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		}
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
+	if err := t.editLabels(ctx, "issue", issueKey, remove, to); err != nil {
+		return fmt.Errorf("%s: %w", move, err)
+	}
+	return nil
+}
+
+// editLabels runs one gh <kind> edit of number, an issue's or a pull
+// request's, that removes the labels remove names, as swap returns them, and
+// adds to's. gh saying to's label does not exist is a refusal: the label must
+// be created, which retrying cannot do.
+func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []string, to crew.State) error {
 	target := string(to)
-	args := slices.Concat([]string{"issue", "edit", issueKey}, remove, []string{"--add-label=" + labelArg(target)})
+	args := slices.Concat([]string{kind, "edit", number}, remove, []string{"--add-label=" + labelArg(target)})
 	if out, err := t.gh.call(ctx, args...); err != nil {
 		if missingLabel(string(out.Stderr), target) {
-			return fmt.Errorf("%s: %w: %w", move, port.ErrRefused, err)
+			return fmt.Errorf("%w: %w", port.ErrRefused, err)
 		}
-		return fmt.Errorf("%s: %w", move, err)
+		return err
 	}
 	return nil
 }
