@@ -1,19 +1,23 @@
 # crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
-# Every label crew uses starts with `crew:`. Each stage ends in `crew:waiting
-# review`, which means the issue waits for the boss, or in `crew:failed`.
-# The extra label `crew:waiting brainstorm` parks an idea no stage takes.
-# `crew:brainstorm:done` marks a brainstormed feature and starts the triage
-# stage, which finds what blocks it and what it blocks. Adding a stage's label
-# later promotes it, and crew then takes the extra off. Each stage and extra
-# names its template in .github/ISSUE_TEMPLATE/, which /cw-create-issue and
-# /cw-update-issue-plan fill. crew does not run the prompts under `prompts`:
-# /cw-brainstorm runs `brainstorm` in the boss's own session, and
-# /cw-update-issue-plan runs `update_issue_plan` there once the plan is in
-# the issue. The lfg actions of development and fix have a check: they
-# succeed only when their pull request is open and closes the issue.
-# triage and audit ci run in the 1-slot clerk queue, so a long development
-# session never holds them up; development, fix and knowledge base share
-# the 2 slots of default.
+# Every label crew uses is `crew:<stage>:<state>`, so it says which stage an
+# issue is in and where it stands there. Each stage takes `crew:<stage>:ready`,
+# moves the issue to `crew:<stage>:in progress` and ends in
+# `crew:<stage>:waiting review`, which means the issue waits for the boss, or
+# in `crew:<stage>:failed`.
+# The extra label `crew:brainstorm:ready` parks an idea no stage takes. Once its
+# brainstorm is done, the prompts below hand it to `crew:triage:ready`, and the
+# triage stage finds what blocks it and what it blocks. Adding a stage's label
+# later promotes it, and crew then takes the extra off. GitHub also holds each
+# stage's `done` label and the brainstorm's other states, which no stage or
+# prompt uses yet. Each stage and extra names its template in
+# .github/ISSUE_TEMPLATE/, which /cw-create-issue and /cw-update-issue-plan
+# fill. crew does not run the prompts under `prompts`: /cw-brainstorm runs
+# `brainstorm` in the boss's own session, and /cw-update-issue-plan runs
+# `update_issue_plan` there once the plan is in the issue. The lfg actions of
+# development and fix have a check: they succeed only when their pull request
+# is open and closes the issue. triage and audit ci run in the 1-slot clerk
+# queue, so a long development session never holds them up; development, fix
+# and knowledge base share the 2 slots of default.
 config:
   poll_interval_seconds: 300
   max_parallel_issues: 3
@@ -22,27 +26,27 @@ config:
 tracker:
   name: github
 extra_labels:
-  - label: "crew:waiting brainstorm"
+  - label: "crew:brainstorm:ready"
     description: an idea to brainstorm later
     issue_template: idea.md
 prompts:
   brainstorm: |-
-    Read {{.Issue.Ref}} with `gh issue view {{.Issue.Key}} --json state,labels`. When it is closed, or does not carry the label `crew:waiting brainstorm`, say so, name the crew labels it carries, and stop without changing anything.
+    Read {{.Issue.Ref}} with `gh issue view {{.Issue.Key}} --json state,labels`. When it is closed, or does not carry the label `crew:brainstorm:ready`, say so, name the crew labels it carries, and stop without changing anything.
 
-    Otherwise move it to `crew:in progress`: `gh issue edit {{.Issue.Key}} --remove-label "crew:waiting brainstorm" --add-label "crew:in progress"`. When that fails, report the error and stop.
+    Otherwise move it to `crew:brainstorm:in progress`: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:ready" --add-label "crew:brainstorm:in progress"`. When that fails, report the error and stop.
 
     Then run /compound-engineering:ce-brainstorm {{.Issue.Ref}} ({{.Issue.URL}}). The issue's title and body are the idea to brainstorm.
   update_issue_plan: |-
-    Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's triage stage takes it at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
+    Move {{.Issue.Ref}} to `crew:triage:ready`, so crew's triage stage takes it at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:in progress" --add-label "crew:triage:ready"`. When that fails, report the error and stop.
 workflow:
   - name: triage
     queue: clerk
     description: a brainstormed feature whose dependencies to find
     issue_template: feature.md
-    label: "crew:brainstorm:done"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
+    label: "crew:triage:ready"
+    moves_to: "crew:triage:in progress"
+    on_success: "crew:triage:waiting review"
+    on_failure: "crew:triage:failed"
     actions:
       - name: triage
         prompt: |-
@@ -58,10 +62,10 @@ workflow:
   - name: development
     description: a feature whose brainstorm is done
     issue_template: feature.md
-    label: "crew:ready for development"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
+    label: "crew:development:ready"
+    moves_to: "crew:development:in progress"
+    on_success: "crew:development:waiting review"
+    on_failure: "crew:development:failed"
     actions:
       - name: lfg
         prompt: |-
@@ -84,10 +88,10 @@ workflow:
   - name: fix
     description: a bug to reproduce and fix
     issue_template: bug.md
-    label: "crew:ready for fix"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
+    label: "crew:fix:ready"
+    moves_to: "crew:fix:in progress"
+    on_success: "crew:fix:waiting review"
+    on_failure: "crew:fix:failed"
     actions:
       - name: lfg
         prompt: |-
@@ -113,10 +117,10 @@ workflow:
     queue: clerk
     description: an audit of the GitHub Actions
     issue_template: ci-audit.md
-    label: "crew:ready for ci audit"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
+    label: "crew:ci audit:ready"
+    moves_to: "crew:ci audit:in progress"
+    on_success: "crew:ci audit:waiting review"
+    on_failure: "crew:ci audit:failed"
     actions:
       - name: audit
         prompt: |-
@@ -131,10 +135,10 @@ workflow:
   - name: knowledge base
     description: a solved problem to record as a learning
     issue_template: knowledge-base.md
-    label: "crew:ready for knowledge base"
-    moves_to: "crew:in progress"
-    on_success: "crew:waiting review"
-    on_failure: "crew:failed"
+    label: "crew:knowledge base:ready"
+    moves_to: "crew:knowledge base:in progress"
+    on_success: "crew:knowledge base:waiting review"
+    on_failure: "crew:knowledge base:failed"
     actions:
       - name: compound
         prompt: |-

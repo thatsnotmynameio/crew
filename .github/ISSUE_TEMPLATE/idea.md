@@ -1,7 +1,7 @@
 ---
 name: Idea
 about: An idea to brainstorm later. crew leaves it alone until it gets a stage's label.
-labels: ["crew:waiting brainstorm"]
+labels: ["crew:brainstorm:ready"]
 ---
 
 ## The idea

@@ -1,7 +1,7 @@
 ---
 name: Knowledge base
 about: A solved problem to record as a learning in docs/solutions/. crew writes it and opens a pull request.
-labels: ["crew:ready for knowledge base"]
+labels: ["crew:knowledge base:ready"]
 ---
 
 ## The solved problem
