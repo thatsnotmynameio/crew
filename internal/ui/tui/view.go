@@ -50,41 +50,41 @@ func (m Model) fitted() []string {
 	}
 	attention, rest := entries[:split], entries[split:]
 	for _, e := range attention {
-		fixed = append(fixed, cols.line(e))
-		fixed = append(fixed, reasons(e)...)
+		fixed = append(fixed, cols.rows(e)...)
 	}
 	if len(entries) == 0 {
 		fixed = append(fixed, "  none")
 	}
 	recent := m.recent()
 	h := m.height
+	all := withRest(fixed, rest, cols, 0)
 
 	// Everything fits, or there is no height to fit.
-	if h <= 0 || len(fixed)+len(rest)+2+len(recent) <= h {
-		return append(withRest(fixed, rest, cols, 0), recentRegion(recent)...)
+	if h <= 0 || len(all)+2+len(recent) <= h {
+		return append(all, recentRegion(recent)...)
 	}
 	// Recent events keeps its newest rows that fit, with its header.
-	if left := h - len(fixed) - len(rest) - 2; left > 0 {
-		return append(withRest(fixed, rest, cols, 0), recentRegion(recent[len(recent)-left:])...)
+	if left := h - len(all) - 2; left > 0 {
+		return append(all, recentRegion(recent[len(recent)-left:])...)
 	}
 	// The oldest entries that need no attention collapse, as few as fit.
 	for k := 0; k <= len(rest); k++ {
-		if len(fixed)+len(rest)-k+len(collapsed(rest[len(rest)-k:])) <= h {
-			return withRest(fixed, rest, cols, k)
+		if out := withRest(fixed, rest, cols, k); len(out) <= h {
+			return out
 		}
 	}
 	// Even the entries that need attention do not fit: cut at the bottom.
-	all := withRest(fixed, rest, cols, len(rest))
+	all = withRest(fixed, rest, cols, len(rest))
 	keep := h - 1
 	return append(all[:keep:keep], fmt.Sprintf("… %d lines cut", len(all)-keep))
 }
 
-// withRest returns fixed, then the entries of rest but its last k, then one
-// line per state of those k.
+// withRest returns fixed, then the rows of the entries of rest but its last
+// k, then one line per state of those k.
 func withRest(fixed []string, rest []core.HandledView, cols columns, k int) []string {
 	out := slices.Clone(fixed)
 	for _, e := range rest[:len(rest)-k] {
-		out = append(out, cols.line(e))
+		out = append(out, cols.rows(e)...)
 	}
 	return append(out, collapsed(rest[len(rest)-k:])...)
 }
@@ -130,12 +130,17 @@ func (m Model) top() string {
 	}
 }
 
-// counts is the second line: how many issues crew handled, by the state each
-// went to. Given-up moves come first, then the states of entries that need
-// attention, so a narrow window cuts the counts of successes first.
+// counts is the second line: how many issues crew handled and what the
+// sessions that ended this run spent, then the issues by the state each went
+// to. Given-up moves come first, then the states of entries that need
+// attention, so a narrow window cuts the counts of successes first, and the
+// spend last.
 func (m Model) counts() string {
 	handled := m.snap.Handled
 	line := fmt.Sprintf("handled %d", len(handled))
+	if spent := m.snap.Spent.String(); spent != "" {
+		line += " (" + spent + ")"
+	}
 	if len(handled) == 0 {
 		return line
 	}
@@ -253,8 +258,9 @@ func trueFirst(a, b bool) int {
 	return 1
 }
 
-// columns are the widths of a Handled line's padded columns.
-type columns struct{ state, ref, stage int }
+// columns are the widths of a Handled line's padded columns. The spend and
+// pull request columns are left out when no entry fills them.
+type columns struct{ state, ref, stage, spend, pr int }
 
 func columnsOf(entries []core.HandledView) columns {
 	var c columns
@@ -262,15 +268,34 @@ func columnsOf(entries []core.HandledView) columns {
 		c.state = max(c.state, utf8.RuneCountInString(stateOf(e)))
 		c.ref = max(c.ref, utf8.RuneCountInString(e.Issue.Ref))
 		c.stage = max(c.stage, utf8.RuneCountInString(stageOf(e)))
+		c.spend = max(c.spend, utf8.RuneCountInString(e.Spend().String()))
+		c.pr = max(c.pr, utf8.RuneCountInString(pullRequestOf(e)))
 	}
 	return c
 }
 
-// line is e's Handled line: its state, ref, stage and duration, then title,
-// which sits last so a narrow window cuts it first.
-func (c columns) line(e core.HandledView) string {
-	return fmt.Sprintf("  %-*s  %-*s  %-*s  %s", c.state, stateOf(e), c.ref, e.Issue.Ref, c.stage, stageOf(e), e.Issue.Title)
+// rows are e's rows in the Handled region: its line, then its reasons, then
+// its actions' pull requests.
+func (c columns) rows(e core.HandledView) []string {
+	return slices.Concat([]string{c.line(e)}, reasons(e), pullRequests(e))
 }
+
+// line is e's Handled line: its state, ref, stage and duration, spend and
+// pull request, then title, which sits last so a narrow window cuts it
+// first.
+func (c columns) line(e core.HandledView) string {
+	cells := []string{pad(stateOf(e), c.state), pad(e.Issue.Ref, c.ref), pad(stageOf(e), c.stage)}
+	if c.spend > 0 {
+		cells = append(cells, pad(e.Spend().String(), c.spend))
+	}
+	if c.pr > 0 {
+		cells = append(cells, pad(pullRequestOf(e), c.pr))
+	}
+	return "  " + strings.Join(append(cells, e.Issue.Title), "  ")
+}
+
+// pad pads s with spaces to width runes.
+func pad(s string, width int) string { return fmt.Sprintf("%-*s", width, s) }
 
 func stateOf(e core.HandledView) string {
 	if e.Move == crew.MoveDropped {
@@ -290,6 +315,34 @@ func reasons(e core.HandledView) []string {
 	}
 	if e.Move == crew.MoveDropped {
 		out = append(out, fmt.Sprintf("    move to %s given up: %s", e.To, oneLine(e.DropReason)))
+	}
+	return out
+}
+
+// pullRequestOf is the pull request on e's line: that of its one action,
+// when it had a session; a stage of several actions gives each its own row.
+func pullRequestOf(e core.HandledView) string {
+	if len(e.Actions) != 1 || e.Actions[0].Spend.Sessions == 0 {
+		return ""
+	}
+	pr := e.Actions[0].PullRequest
+	if pr.Lookup == crew.PullRequestFound {
+		return pr.Ref
+	}
+	return pr.String()
+}
+
+// pullRequests are the lines under an entry of several actions: one per
+// action that had a session, with its pull request.
+func pullRequests(e core.HandledView) []string {
+	if len(e.Actions) < 2 {
+		return nil
+	}
+	var out []string
+	for _, a := range e.Actions {
+		if a.Spend.Sessions > 0 {
+			out = append(out, fmt.Sprintf("    %s: %s", a.Name, a.PullRequest))
+		}
 	}
 	return out
 }
