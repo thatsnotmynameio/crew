@@ -39,7 +39,8 @@ func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time) erro
 		}
 		n := dropped - reported
 		reported = dropped
-		return line(w, now().In(loc), fmt.Sprintf("%d %s dropped because this output fell behind", n, Plural(n, "event was", "events were")))
+		text := fmt.Sprintf("%d %s dropped because this output fell behind", n, Plural(n, "event was", "events were"))
+		return line(w, now().In(loc), text)
 	}
 	for u := range ch {
 		for _, e := range u.Events {
@@ -66,37 +67,42 @@ func line(w io.Writer, at time.Time, text string) error {
 // Text describes e as one English sentence, without a timestamp. The TUI
 // uses it for its recent events too.
 func Text(e core.Event) string {
+	if text, ok := issueText(e); ok {
+		return text
+	}
+	return loopText(e)
+}
+
+// issueText describes the events about one issue and its actions, and
+// reports false for any other event.
+func issueText(e core.Event) (string, bool) {
 	switch e := e.(type) {
 	case core.IssueTaken:
-		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Stage, e.Issue.Ref, e.Issue.Title, e.From, e.To)
+		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Stage, e.Issue.Ref, e.Issue.Title, e.From, e.To), true
 	case core.ActionStarted:
-		if e.Resumed {
-			return fmt.Sprintf("%s %s/%s resumed in worktree %s on branch %s, log %s", e.IssueRef, e.Stage, e.Action, e.Workspace, e.Branch, e.Log)
-		}
-		return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Stage, e.Action, e.Branch, e.Log)
+		return actionStarted(e), true
 	case core.WorkspaceMissing:
-		return fmt.Sprintf("%s %s/%s: worktree %s is gone, creating a new one", e.IssueRef, e.Stage, e.Action, e.Workspace)
+		return fmt.Sprintf("%s %s/%s: worktree %s is gone, creating a new one",
+			e.IssueRef, e.Stage, e.Action, e.Workspace), true
 	case core.RunNotRecorded:
-		return withReason(fmt.Sprintf("could not record %s %s/%s's run, so a restart may not resume it", e.IssueRef, e.Stage, e.Action), e.Reason)
+		return withReason(fmt.Sprintf("could not record %s %s/%s's run, so a restart may not resume it",
+			e.IssueRef, e.Stage, e.Action), e.Reason), true
 	case core.ActionEnded:
-		// The reason is shown for successes too: without a check, a clean
-		// end is the only success signal, so its last message is what tells
-		// the boss whether the work was done.
-		verdict := "failed"
-		if e.Outcome.Succeeded {
-			verdict = "succeeded"
-		}
-		return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Stage, e.Action, verdict), e.Outcome.Reason)
+		return actionEnded(e), true
 	case core.IssueMoved:
-		return fmt.Sprintf("%s moved from %s to %s", e.IssueRef, e.From, e.To)
+		return fmt.Sprintf("%s moved from %s to %s", e.IssueRef, e.From, e.To), true
 	case core.FailureReported:
-		return "reported the failure on " + e.IssueRef
+		return "reported the failure on " + e.IssueRef, true
 	case core.IssueSkipped:
-		states := make([]string, len(e.States))
-		for i, s := range e.States {
-			states[i] = string(s)
-		}
-		return fmt.Sprintf("skipped %s: it carries %d crew labels (%s)", e.IssueRef, len(e.States), strings.Join(states, ", "))
+		return issueSkipped(e), true
+	}
+	return "", false
+}
+
+// loopText describes the events of the engine's loop and its tracker calls,
+// and names the type of any event it does not know.
+func loopText(e core.Event) string {
+	switch e := e.(type) {
 	case core.PollDone:
 		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
 	case core.ListingFailed:
@@ -115,14 +121,43 @@ func Text(e core.Event) string {
 	return fmt.Sprintf("%T", e)
 }
 
+func actionStarted(e core.ActionStarted) string {
+	if e.Resumed {
+		return fmt.Sprintf("%s %s/%s resumed in worktree %s on branch %s, log %s",
+			e.IssueRef, e.Stage, e.Action, e.Workspace, e.Branch, e.Log)
+	}
+	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Stage, e.Action, e.Branch, e.Log)
+}
+
+func actionEnded(e core.ActionEnded) string {
+	// The reason is shown for successes too: without a check, a clean end is
+	// the only success signal, so its last message is what tells the boss
+	// whether the work was done.
+	verdict := "failed"
+	if e.Outcome.Succeeded {
+		verdict = "succeeded"
+	}
+	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Stage, e.Action, verdict), e.Outcome.Reason)
+}
+
+func issueSkipped(e core.IssueSkipped) string {
+	states := make([]string, len(e.States))
+	for i, s := range e.States {
+		states[i] = string(s)
+	}
+	return fmt.Sprintf("skipped %s: it carries %d crew labels (%s)",
+		e.IssueRef, len(e.States), strings.Join(states, ", "))
+}
+
 func call(c core.Call) string {
 	switch c.Kind {
 	case core.CallReport:
 		return "reporting the failure on " + c.IssueRef
 	case core.CallPullRequests:
 		return fmt.Sprintf("updating the pull requests of %s to %s", c.IssueRef, c.To)
+	default: // core.CallMove
+		return fmt.Sprintf("moving %s from %s to %s", c.IssueRef, c.From, c.To)
 	}
-	return fmt.Sprintf("moving %s from %s to %s", c.IssueRef, c.From, c.To)
 }
 
 func result(r core.Result) string {
@@ -133,8 +168,9 @@ func result(r core.Result) string {
 		return "the tracker refused"
 	case core.ResultFailed:
 		return "it failed"
+	default: // core.ResultDone: a success never reaches these lines
+		return r.String()
 	}
-	return r.String()
 }
 
 func withReason(text, reason string) string {

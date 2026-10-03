@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -71,11 +72,7 @@ func quits(cmd tea.Cmd) bool {
 		case tea.QuitMsg:
 			return true
 		case tea.BatchMsg:
-			for _, c := range msg {
-				if quits(c) {
-					return true
-				}
-			}
+			return slices.ContainsFunc(msg, quits)
 		}
 		return false
 	case <-time.After(100 * time.Millisecond):
@@ -100,11 +97,15 @@ func runningSnapshot() engine.Update {
 		}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
-			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement", From: "ready", To: "in progress"},
-			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
-			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "code", Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
+			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement",
+				From: "ready", To: "in progress"},
+			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "tests",
+				Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
+			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "code",
+				Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
 			core.PollDone{At: start.Add(-10 * time.Second), Listed: 2, Taken: 1},
-			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Stage: "review", From: "ready to review", To: "in review"},
+			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Stage: "review",
+				From: "ready to review", To: "in review"},
 		},
 	}}
 }
@@ -317,7 +318,7 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 			h.send(updateMsg(snap))
 			view := h.view()
 
-			for _, l := range strings.Split(view, "\n") {
+			for l := range strings.SplitSeq(view, "\n") {
 				if n := utf8.RuneCountInString(l); n > width {
 					t.Errorf("line is %d columns wide, over %d: %q", n, width, l)
 				}

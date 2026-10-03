@@ -90,7 +90,7 @@ type Options struct {
 // kills every process in Group and returns ExitFailure at once. Any other
 // way out that skips the engine's stop sequence, a panic included, also
 // kills them first.
-func Run(ctx context.Context, o Options) (code int) {
+func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns // the deferred recover sets the exit code
 	defer func() {
 		if r := recover(); r != nil {
 			o.Group.KillAll()
@@ -116,7 +116,7 @@ func Run(ctx context.Context, o Options) (code int) {
 // came just as the checks succeeded still stops the run. When the checks
 // end early, it kills every process in Group, since a check's process may
 // outlive its context.
-func prepare(ctx context.Context, eng *engine.Engine, o Options) (signalled bool, err error) {
+func prepare(ctx context.Context, eng *engine.Engine, o Options) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, prepareTimeout)
 	defer cancel()
 	got := make(chan bool, 1)
@@ -130,9 +130,9 @@ func prepare(ctx context.Context, eng *engine.Engine, o Options) (signalled bool
 			got <- false
 		}
 	}()
-	err = eng.Prepare(ctx)
+	err := eng.Prepare(ctx)
 	close(checked)
-	signalled = <-got
+	signalled := <-got
 	if err == nil || ctx.Err() == nil {
 		return signalled, err
 	}
@@ -152,7 +152,8 @@ func build(o Options) (*engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
+	states := crew.WorkflowStates(cfg.Workflow)
+	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, states, cfg.Extras)
 	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
 	if err := errors.Join(trackerErr, harnessErr); err != nil {
 		return nil, err
@@ -175,67 +176,106 @@ func build(o Options) (*engine.Engine, error) {
 // the stop signals meanwhile. stopping tells that a first signal came
 // already, so the engine stops at once and the next signal forces the exit.
 func run(ctx context.Context, eng *engine.Engine, o Options, stopping bool) int {
-	var forced atomic.Bool
-	force := func() {
-		forced.Store(true)
-		o.Group.KillAll()
-	}
-
-	// quit, when set, ends the renderer early; the line renderer needs no
-	// such end, as it holds no terminal state.
-	var render func() error
-	var quit func()
-	if o.Terminal && !o.Plain {
-		program := tui.NewProgram(tui.New(eng.SubscribeLatest(), eng.Stop, force, time.Now, time.Local), o.Stdin, o.Stdout)
-		render, quit = program.Run, program.Quit
-	} else {
-		queue := eng.SubscribeQueue(lineQueue)
-		render = func() error { return lines.Run(queue, o.Stdout, time.Local, time.Now) }
-	}
+	r := &runner{eng: eng, o: o, code: ExitClean}
+	render := r.renderer()
 	if stopping {
-		eng.Stop()
+		r.stop()
 	}
 	engineDone := goSafely(func() error { return eng.Run(ctx) })
 	rendered := goSafely(render)
 
-	code := ExitClean
 	for engineDone != nil || rendered != nil {
 		select {
 		case <-o.Signals:
-			if !stopping {
-				stopping = true
-				eng.Stop()
+			if !r.stopping {
+				r.stop()
 				continue
 			}
-			force()
-			if quit != nil && rendered != nil {
-				quit()
-				<-rendered // the TUI has restored the terminal
-			}
-			return o.forcedExit()
+			return r.forceExit(rendered)
 		case err := <-engineDone:
 			engineDone = nil
-			if err != nil {
-				// The engine did not finish its stop sequence, so its
-				// sessions may still run.
-				o.Group.KillAll()
-				o.errorf("the engine failed: %v", err)
-				code = ExitFailure
-			}
+			r.engineEnded(err)
 		case err := <-rendered:
 			rendered = nil
-			if forced.Load() {
+			if r.forced.Load() {
 				return o.forcedExit()
 			}
-			if err != nil {
-				o.errorf("%v; stopping", err)
-				code = ExitFailure
-				stopping = true
-				eng.Stop()
-			}
+			r.renderEnded(err)
 		}
 	}
-	return code
+	return r.code
+}
+
+// runner is the state of one run: whether the engine was asked to stop,
+// whether the exit was forced, and the exit code so far.
+type runner struct {
+	eng      *engine.Engine
+	o        Options
+	forced   atomic.Bool
+	stopping bool
+	// quit, when set, ends the renderer early; the line renderer needs no
+	// such end, as it holds no terminal state.
+	quit func()
+	code int
+}
+
+// renderer returns the TUI on a terminal without Plain, and the event lines
+// otherwise.
+func (r *runner) renderer() func() error {
+	if r.o.Terminal && !r.o.Plain {
+		model := tui.New(r.eng.SubscribeLatest(), r.eng.Stop, r.force, time.Now, time.Local)
+		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
+		r.quit = program.Quit
+		return program.Run
+	}
+	queue := r.eng.SubscribeQueue(lineQueue)
+	return func() error { return lines.Run(queue, r.o.Stdout, time.Local, time.Now) }
+}
+
+// stop asks the engine to stop.
+func (r *runner) stop() {
+	r.stopping = true
+	r.eng.Stop()
+}
+
+// force kills every process in Group and marks the exit as forced.
+func (r *runner) force() {
+	r.forced.Store(true)
+	r.o.Group.KillAll()
+}
+
+// forceExit forces the exit. When the TUI still runs, it waits for it to
+// end, so the terminal is restored first.
+func (r *runner) forceExit(rendered <-chan error) int {
+	r.force()
+	if r.quit != nil && rendered != nil {
+		r.quit()
+		<-rendered // the TUI has restored the terminal
+	}
+	return r.o.forcedExit()
+}
+
+// engineEnded handles the engine's return.
+func (r *runner) engineEnded(err error) {
+	if err == nil {
+		return
+	}
+	// The engine did not finish its stop sequence, so its sessions may
+	// still run.
+	r.o.Group.KillAll()
+	r.o.errorf("the engine failed: %v", err)
+	r.code = ExitFailure
+}
+
+// renderEnded handles the renderer's return before a forced exit: a
+// renderer that failed stops the engine.
+func (r *runner) renderEnded(err error) {
+	if err == nil {
+		return
+	}
+	r.o.errorf("%v; stopping", err)
+	r.code = ExitFailure
+	r.stop()
 }
 
 func (o Options) forcedExit() int {
