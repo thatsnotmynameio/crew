@@ -103,7 +103,9 @@ jobs:
   codacy:
     name: codacy
     needs: go
-    if: ${{ !cancelled() && vars.CODACY_ENABLED == 'true' }}
+    # Dependabot's pull requests get no Actions secrets, and Codacy does not
+    # analyse them (it analyses only commits by its organization's members).
+    if: ${{ !cancelled() && vars.CODACY_ENABLED == 'true' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -146,3 +148,39 @@ jobs:
           else
             echo "No coverage profile: the tests did not run." >&2
           fi
+
+  # Waits for Codacy's own check on the pull request's head commit and repeats
+  # its verdict, so the "checks" ruleset can require Codacy through a GitHub
+  # Actions job. A required job that is skipped counts as passing, which lets
+  # Dependabot's pull requests through: Codacy never analyses them. Off until
+  # the repository variable CODACY_ENABLED is true.
+  codacy-gate:
+    name: codacy gate
+    if: ${{ github.event_name == 'pull_request' && vars.CODACY_ENABLED == 'true' && github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Codacy Static Code Analysis
+        shell: bash
+        run: |
+          url="repos/$REPO/commits/$SHA/check-runs?check_name=Codacy%20Static%20Code%20Analysis"
+          for _ in $(seq 1 72); do
+            run=$(gh api "$url" --jq '.check_runs | sort_by(.started_at) | last // empty | "\(.status) \(.conclusion) \(.details_url)"')
+            read -r status conclusion details <<< "$run"
+            if [ "$status" = "completed" ]; then
+              echo "Codacy: $conclusion ($details)"
+              case "$conclusion" in
+                success|neutral) exit 0 ;;
+                *) echo "::error::Codacy Static Code Analysis is $conclusion: $details" >&2; exit 1 ;;
+              esac
+            fi
+            sleep 15
+          done
+          echo "::error::Codacy reported no verdict on $SHA within 18 minutes." >&2
+          exit 1
