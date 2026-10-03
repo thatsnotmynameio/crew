@@ -125,3 +125,80 @@ func TestMalformedProfileNamesTheFile(t *testing.T) {
 		t.Fatalf("code %d, stderr %q; want 2 naming %s", code, stderr.String(), path)
 	}
 }
+
+// rawProfile writes body as the whole profile, with no mode line added.
+func rawProfile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "coverage.out")
+	err := os.WriteFile(path, []byte(body), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return path
+}
+
+var badInputs = []struct {
+	name    string
+	profile string
+	diff    string
+	want    string
+}{
+	{"empty profile", "", addLines(1), "it is empty"},
+	{"no mode line", module + "/a.go:1.1,1.10 1 1\n", addLines(1), "does not start with a mode line"},
+	{"block without fields", "mode: set\n" + module + "/a.go:1.1,1.10\n", addLines(1), "malformed block"},
+	{"span without comma", "mode: set\n" + module + "/a.go:1.1 1 1\n", addLines(1), "no comma in the span"},
+	{"bad start line", "mode: set\n" + module + "/a.go:x.1,1.10 1 1\n", addLines(1), "start line"},
+	{"bad end line", "mode: set\n" + module + "/a.go:1.1,y.10 1 1\n", addLines(1), "end line"},
+	{"bad statements", "mode: set\n" + module + "/a.go:1.1,1.10 s 1\n", addLines(1), "malformed block"},
+	{"bad count", "mode: set\n" + module + "/a.go:1.1,1.10 1 c\n", addLines(1), "malformed block"},
+	{"hunk header without new range", "mode: set\n", "--- a/a.go\n+++ b/a.go\n@@ -1 @@\n", "malformed hunk header"},
+	{"hunk header with bad start", "mode: set\n", "--- a/a.go\n+++ b/a.go\n@@ -1 +x,2 @@\n", "malformed hunk header"},
+}
+
+func TestBadInputFailsWithItsReason(t *testing.T) {
+	for _, tc := range badInputs {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			args := []string{"-profile", rawProfile(t, tc.profile)}
+			code := run(args, strings.NewReader(tc.diff), &stdout, &stderr)
+			if code != exitError || !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("code %d, stderr %q; want %d and %q", code, stderr.String(), exitError, tc.want)
+			}
+		})
+	}
+}
+
+func TestMissingProfileFails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	missing := filepath.Join(t.TempDir(), "none.out")
+	code := run([]string{"-profile", missing}, strings.NewReader(""), &stdout, &stderr)
+	if code != exitError || !strings.Contains(stderr.String(), "open the coverage profile") {
+		t.Fatalf("code %d, stderr %q; want %d and the open error", code, stderr.String(), exitError)
+	}
+}
+
+func TestUnknownFlagFails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-nope"}, strings.NewReader(""), &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("code %d; want %d", code, exitError)
+	}
+}
+
+func TestBlockWithoutStatementsIsNotCoverable(t *testing.T) {
+	body := module + "/a.go:1.1,1.10 0 0\n" + module + "/a.go:2.1,2.10 1 1\n"
+	code, out := runCheck(t, body, addLines(2))
+	if code != exitPass || !strings.Contains(out, "1 of 1") {
+		t.Fatalf("code %d, output %q; want %d and 1 of 1", code, out, exitPass)
+	}
+}
+
+func TestThresholdFlagSetsTheMinimum(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	args := []string{"-profile", profile(t, blocks(20, 17)), "-threshold", "80"}
+	code := run(args, strings.NewReader(addLines(20)), &stdout, &stderr)
+	if code != exitPass || !strings.Contains(stdout.String(), "minimum 80.0%") {
+		t.Fatalf("code %d, output %q; want %d at minimum 80.0%%", code, stdout.String(), exitPass)
+	}
+}
