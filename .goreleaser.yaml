@@ -1,0 +1,44 @@
+# What a release builds and publishes. The Release workflow
+# (.github/workflows/release.yml) runs GoReleaser on a local tag vX.Y.Z,
+# with the notes it asked GitHub for. Each release ships crew for macOS and
+# Linux on amd64 and arm64, one tar.gz per platform, and checksums.txt.
+# Nothing is published unless every archive built: the release stays a draft
+# while its assets upload, and GitHub creates the tag only when GoReleaser
+# publishes it. Try it locally with a snapshot build (docs/develop/index.mdx).
+version: 2
+
+project_name: crew
+
+builds:
+  - main: ./cmd/crew
+    binary: crew
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin] # no Windows: internal/proc needs Unix process groups
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # The v-prefixed tag, so crew --version prints crew vX.Y.Z.
+    ldflags: ["-s -w -X main.version={{ .Tag }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# No version in the names: releases/latest/download/<name> is then a stable
+# URL for the install command in docs/guide/crew.mdx.
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  name_template: "{{ .Tag }}"
+  # The tag stays local until the release is published, then GitHub creates
+  # it at the built commit.
+  target_commitish: "{{ .Commit }}"
+  # A re-run finishes the draft a failed upload left, with this run's notes
+  # and assets.
+  use_existing_draft: true
+  replace_existing_artifacts: true
+  mode: replace
