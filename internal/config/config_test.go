@@ -85,6 +85,7 @@ func TestLoadDraftConfig(t *testing.T) {
 		{
 			Name: "implement", Label: "ready", MovesTo: "in progress",
 			OnSuccess: "ready to review", OnFailure: "needs attention",
+			Queue: crew.Queue{Name: "default", Slots: 1},
 			Actions: []crew.Action{
 				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
@@ -93,6 +94,7 @@ func TestLoadDraftConfig(t *testing.T) {
 		{
 			Name: "review", Label: "ready to review", MovesTo: "in review",
 			OnSuccess: "ready to merge", OnFailure: "needs attention",
+			Queue: crew.Queue{Name: "default", Slots: 1},
 			Actions: []crew.Action{
 				{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"},
 			},

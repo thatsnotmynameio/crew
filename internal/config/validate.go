@@ -19,6 +19,7 @@ type stageDoc struct {
 	MovesTo       located[string] `yaml:"moves_to"`
 	OnSuccess     located[string] `yaml:"on_success"`
 	OnFailure     located[string] `yaml:"on_failure"`
+	Queue         located[string] `yaml:"queue"`
 	Actions       yaml.Node       `yaml:"actions"`
 }
 
@@ -38,7 +39,7 @@ type actionDoc struct {
 // What each kind of list item must be, said when an item is not a mapping.
 const (
 	stageShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
-		"and optionally description and issue_template"
+		"and optionally description, issue_template and queue"
 	actionShape = "must be an action with name and prompt"
 	extraShape  = "must be an extra label with label, and optionally description and issue_template"
 )
@@ -52,8 +53,9 @@ type parsedStage struct {
 	doc  stageDoc
 }
 
-// workflow decodes and validates workflow:, reporting every error it finds.
-func workflow(n *yaml.Node) ([]crew.Stage, error) {
+// workflow decodes and validates workflow:, giving each stage its queue from
+// table, and reports every error it finds.
+func workflow(n *yaml.Node, table queueTable) ([]crew.Stage, error) {
 	if n.Kind == 0 {
 		return nil, errors.New("workflow: missing; list at least one stage")
 	}
@@ -63,7 +65,7 @@ func workflow(n *yaml.Node) ([]crew.Stage, error) {
 	var errs []error
 	parsed := make([]parsedStage, 0, len(n.Content))
 	for i, item := range n.Content {
-		stage, err := parseStage(item, fmt.Sprintf("workflow[%d]", i))
+		stage, err := parseStage(item, fmt.Sprintf("workflow[%d]", i), table)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -84,7 +86,7 @@ func workflow(n *yaml.Node) ([]crew.Stage, error) {
 	return stages, nil
 }
 
-func parseStage(n *yaml.Node, path string) (parsedStage, error) {
+func parseStage(n *yaml.Node, path string, table queueTable) (parsedStage, error) {
 	var doc stageDoc
 	if err := decodeItem(n, path, stageShape, &doc); err != nil {
 		return parsedStage{}, err
@@ -107,6 +109,8 @@ func parseStage(n *yaml.Node, path string) (parsedStage, error) {
 	p.OnSuccess, err = state(doc.OnSuccess, path+".on_success", n.Line)
 	collect(err)
 	p.OnFailure, err = state(doc.OnFailure, path+".on_failure", n.Line)
+	collect(err)
+	p.Queue, err = stageQueue(doc.Queue, path, table)
 	collect(err)
 	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line)
 	collect(err)

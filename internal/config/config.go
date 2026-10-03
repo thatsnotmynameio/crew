@@ -32,7 +32,7 @@ type Config struct {
 	// PollInterval is config.poll_interval_seconds, 300 seconds by default.
 	PollInterval time.Duration
 	// MaxParallelIssues is config.max_parallel_issues, 2 by default. It counts
-	// issues, not sessions.
+	// issues, not sessions, and is split into the stages' queues.
 	MaxParallelIssues int
 	// RunTimeLimit is config.run_time_limit_seconds: how long crew runs from
 	// its first poll before it winds down. Zero, the default, is no limit.
@@ -50,7 +50,8 @@ type Config struct {
 	// Workflow is the stages in file order. Every state is non-empty text,
 	// spelled everywhere as it is first written, since labels that differ
 	// only in case are one label. The stages cannot loop or take an issue
-	// twice, and every prompt renders.
+	// twice, and every prompt renders. Every stage has its queue: the one it
+	// names, or default, with the queue's slots.
 	Workflow []crew.Stage
 	// Extras is extra_labels' labels in file order: labels for parked work
 	// that no stage takes. Each is written as in the file, is none of the
@@ -74,10 +75,13 @@ type document struct {
 	Prompts     yaml.Node `yaml:"prompts"`
 }
 
-// settings is the config: section. model is the harness adapter's.
+// settings is the config: section. model is the harness adapter's. queues
+// maps a declared queue's name to its slots, in file order.
 type settings struct {
 	PollIntervalSeconds located[int]    `yaml:"poll_interval_seconds"`
 	MaxParallelIssues   located[int]    `yaml:"max_parallel_issues"`
+	ClerkSlots          located[int]    `yaml:"clerk_slots"`
+	Queues              yaml.Node       `yaml:"queues"`
 	RunTimeLimitSeconds located[int]    `yaml:"run_time_limit_seconds"`
 	UsageInStatus       located[bool]   `yaml:"usage_in_status"`
 	Harness             located[string] `yaml:"harness"`
@@ -137,12 +141,14 @@ func parse(root *yaml.Node) (*Config, error) {
 		Tracker:           defaultTracker,
 	}
 	errs := engineSettings(&doc.Config, cfg)
+	table, queueErrs := queues(&doc.Config, cfg.MaxParallelIssues)
+	errs = append(errs, queueErrs...)
 	var err error
 	cfg.HarnessSection, err = harnessSection(&doc)
 	errs = append(errs, err)
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
 	errs = append(errs, err)
-	cfg.Workflow, err = workflow(&doc.Workflow)
+	cfg.Workflow, err = workflow(&doc.Workflow, table)
 	errs = append(errs, err)
 	// With an invalid workflow, the extras are checked only on their own.
 	cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow)
