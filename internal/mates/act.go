@@ -409,11 +409,14 @@ func (a *Acting) mintChecked(ctx context.Context, s *acted) (Grant, error) {
 	return g, nil
 }
 
-// usableToken reports whether token can go into hosts.yml as it is: one or
-// more letters, digits and underscores, as GitHub's tokens are.
+// usableToken reports whether token can go into hosts.yml as it is: ghs_
+// and one or more letters, digits, underscores, hyphens and dots, as
+// GitHub's installation tokens are, the stateless ghs_APPID_JWT ones
+// included.
 func usableToken(token Token) bool {
-	return token != "" && !strings.ContainsFunc(string(token), func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_'
+	rest, ok := strings.CutPrefix(string(token), "ghs_")
+	return ok && rest != "" && !strings.ContainsFunc(rest, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.'
 	})
 }
 

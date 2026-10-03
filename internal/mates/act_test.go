@@ -71,6 +71,48 @@ func TestActAsksForATokenOfTheRepositoryWithCrewsPermissions(t *testing.T) {
 	}
 }
 
+// statelessToken has the shape of GitHub's stateless installation tokens,
+// ghs_APPID_JWT, whose JWT holds dots and base64url hyphens.
+const statelessToken = "ghs_12345_header-_.payload-_.signature-_"
+
+func TestActWritesAStatelessToken(t *testing.T) {
+	r := newActRun(t, "ops")
+	r.saveOps(t)
+	r.opts.mint = func(context.Context, Mate, int64, string) (Grant, error) {
+		return Grant{Token: statelessToken, ExpiresAt: time.Now().Add(time.Hour), Permissions: permissions()}, nil
+	}
+	a := r.mustAct(t)
+	if len(a.Mates) != 1 || len(a.Warnings) != 0 {
+		t.Fatalf("Act = %+v, %q; want ops acting with no warning", a.Mates, a.Warnings)
+	}
+	checkGhDir(t, r.opts.TempDir, envValue(a.Mates[0].Env, "GH_CONFIG_DIR"), statelessToken)
+}
+
+func TestUsableToken(t *testing.T) {
+	tests := []struct {
+		token Token
+		want  bool
+	}{
+		{Token("ghs_" + strings.Repeat("A", 36)), true},
+		{statelessToken, true},
+		{"", false},
+		{"ghs_", false},
+		{"-", false},
+		{"abc.def", false},
+		{"ghs_a\nuser: someone", false},
+		{"ghs_a b", false},
+		{"ghs_a:b", false},
+		{"ghs_a#b", false},
+		{`ghs_a"b`, false},
+		{"ghs_a'b", false},
+	}
+	for _, tt := range tests {
+		if got := usableToken(tt.token); got != tt.want {
+			t.Errorf("usableToken(%q) = %v, want %v", string(tt.token), got, tt.want)
+		}
+	}
+}
+
 func TestActWarnsAndActsAsTheBossForAnUnusableMate(t *testing.T) {
 	const asked = "actions:read checks:read contents:read issues:write metadata:read pull_requests:write statuses:read"
 	tests := []struct {
