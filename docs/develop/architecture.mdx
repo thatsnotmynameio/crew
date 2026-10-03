@@ -20,14 +20,14 @@ A new tracker or coding agent is one new adapter package plus one line in the re
 | --- | --- |
 | `cmd/crew` | The binary: flags, signals, the repository root, the `git` workspace and the `shell` checker. It calls `app.Run`. |
 | `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. |
-| `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes, failure reports and statuses. |
+| `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes, failure reports, statuses and pull request reports. |
 | `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow and extra-label checks, prompt templates. |
-| `internal/port` | The port interfaces, the optional `Preparer`, `StatusReporter` and `Narrator`, the `Checker`, the sentinel errors and the factory types. |
+| `internal/port` | The port interfaces, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Narrator` and `Reopener`, the `Checker`, the sentinel errors and the factory types. |
 | `internal/registry` | Maps adapter names to factories. `default.go` is the production list. |
 | `internal/core` | The pure reducer: model, inputs, commands and events. |
 | `internal/engine` | The loop, command execution, crew's files under `.crew/`, and the update stream. |
 | `internal/proc` | The one way to start a child process: its own process group, stop with a deadline, kill all. |
-| `internal/adapter/github` | Tracker over `gh`. |
+| `internal/adapter/github` | Tracker over `gh`, with status comments and pull request reports. |
 | `internal/adapter/claude` | Harness over `claude -p`. |
 | `internal/adapter/git` | Workspace over `git worktree`. |
 | `internal/adapter/shell` | Checker over `sh -c`. |
@@ -83,8 +83,8 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 
 `core.Model.Update(input)` returns the commands to run and the events to publish. It never touches a process, the network, a file or the clock: the engine stamps every input with its arrival time. Its tests are tables, with no goroutines.
 
-- **Inputs:** `Tick`, `StopRequested`, `TimeUp`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `StatusResult`, `WorkspaceReady`, `WorkspaceGone`, `WorkspaceFailed`, `RecordFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`, `CheckEnded`.
-- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `ReportStatus`, `CreateWorkspace`, `ReopenWorkspace`, `RecordRun`, `StartSession`, `StopSession`, `RunCheck`, `StopCheck`.
+- **Inputs:** `Tick`, `StopRequested`, `TimeUp`, and the results of commands: `IssuesListed`, `ListFailed`, `CallResult`, `StatusResult`, `PullRequestsResult`, `WorkspaceReady`, `WorkspaceGone`, `WorkspaceFailed`, `RecordFailed`, `SessionStarted`, `SessionFailedToStart`, `SessionEnded`, `CheckEnded`.
+- **Commands:** `ListIssues`, `Move`, `ReportFailure`, `ReportStatus`, `ReportPullRequests`, `CreateWorkspace`, `ReopenWorkspace`, `RecordRun`, `StartSession`, `StopSession`, `RunCheck`, `StopCheck`.
 - **Events:** `IssueTaken`, `ActionStarted`, `WorkspaceMissing`, `RunNotRecorded`, `ActionEnded`, `IssueMoved`, `FailureReported`, `IssueSkipped`, `PollDone`, `ListingFailed`, `CallOwed`, `CallDropped`, `StatusFailed`, `WindingDown`, `Stopped`.
 
 Each issue the core holds has a claim, kept apart from the tracker's states:
@@ -126,11 +126,13 @@ The core picks later stages first, then the oldest issue. It never takes an issu
 
 With status reporting on, the core also keeps a status slot per issue key, apart from the issues it holds, so a queued issue has one and a status write never holds a slot of `max_parallel_issues`. It reports an issue as queued when a listing leaves it waiting, as running once its take lands and at every tick, and as ended when it is judged and again once the verdict move settles. Each status carries the id of its stage run: a run starts with the issue's first queued or running status for a stage, and with the first status after an ended one, and ids differ across crew processes. Each slot has at most one `ReportStatus` in flight; the newest status of each run waits for it, oldest run first, so an earlier run's ended status lands before the next run's. A queued or ended status is sent only when it differs from the last one, ignoring its time. A failed queued or running status is written again at the next poll. A failed ended status is retried at every tick, and once more at stop. Successful writes emit no event; the first failure after a success emits `StatusFailed`.
 
+With pull request reports on, every move that lands is followed by a `ReportPullRequests`: a take's with the stage's `moves_to`, a verdict's with its state and how the stage ended, each action as its ended status shows it. A verdict move that is given up sends none. The core keeps a pull request slot per issue key, apart from the issues it holds, so a report never holds the issue, changes its claim, or takes a slot of `max_parallel_issues`. Each slot has at most one report in flight and sends them in the order their moves landed, so a verdict's label never lands before the take's. Each report has an id, unique in the process and kept across retries, so the tracker can tell a retry from a new report. A report that fails transiently is owed: it holds back the issue's later reports, is retried at every tick, and gets one more try at stop. A refusal, a "moved meanwhile" or a failed final try drops it. Owed and dropped reports emit `CallOwed` and `CallDropped` with the kind `CallPullRequests`, and owed ones show in `View.Owed`; a report that lands emits no event.
+
 When the core releases an issue whose stage ended, it keeps a handled entry for it in `View.Handled`: the stage, the state the verdict moved it to, the failed actions, whether the verdict move landed or was given up, and the time from the take to the verdict. The entry replaces the issue's earlier one, and the view leaves it out while the issue is held again. A take that is given up keeps no entry. The entries last as long as the `Model`, so one run.
 
 The core also keeps the last run record of each issue, stage and action, seeded from the run journal and updated by every `RecordRun` it issues: a start once the action's workspace is ready, and an end when the action ends, for runs that had a workspace. When a stage takes an issue, an action whose last record is a failed end, or a start with no end, gets `ReopenWorkspace` for that run's workspace instead of `CreateWorkspace`, when the workspace can reopen. `WorkspaceReady` with `Resumed` appends the resume paragraph to the action's prompt. `WorkspaceGone` emits `WorkspaceMissing` and creates a fresh workspace, unless crew is stopping. A start in a workspace retires any other key's record naming it, since names repeat once a workspace is gone. A run whose session never started keeps the reason of the last session in its workspace.
 
-`TimeUp` starts a wind-down. The core takes no new issue and stops listing, but keeps retrying owed calls and statuses at each tick and lets every held issue run and be judged. Once no held issue has an action left to end, it enters the stop sequence, so owed calls and statuses get their final try. `View.Stopping` stays false unless a stop was requested; `View.TimeUp` tells the renderers why crew is ending.
+`TimeUp` starts a wind-down. The core takes no new issue and stops listing, but keeps retrying owed calls, statuses and pull request reports at each tick and lets every held issue run and be judged. Once no held issue has an action left to end, it enters the stop sequence, so owed calls, statuses and pull request reports get their final try. `View.Stopping` stays false unless a stop was requested; `View.TimeUp` tells the renderers why crew is ending.
 
 ## The engine loop
 
@@ -145,7 +147,7 @@ The core also keeps the last run record of each issue, stage and action, seeded 
 - The run journal, `.crew/logs/runs.jsonl`, is read by `Prepare`, which builds the core from it. The loop writes each `RecordRun` itself rather than in a goroutine, so a run's end never lands before its start, and each append starts on a fresh line after a write cut short by a crash.
 - A `RunCheck` runs through the `Checker` within a fixed 10 minutes, its output appended to the action's log. The engine words the verdict: the check passed, failed with the last line it printed, printed nothing, ran out of time, or could not start. A `StopCheck` cancels the check's context.
 - At each tick, the engine asks every running session that implements `Narrator` what it last said, shortens its paths the same way, and passes the texts on the `Tick`.
-- `Run` returns once the core holds no issue, no owed call and no status write, and no command goroutine is left.
+- `Run` returns once the core holds no issue, no owed call, no status write and no pull request report, and no command goroutine is left.
 
 ## The update stream
 
@@ -160,16 +162,17 @@ The engine never imports Bubble Tea. Only `internal/ui/tui` does, and it starts 
 
 `internal/port` holds three small interfaces, with only what every adapter must provide:
 
-- `Tracker`: `List` the open issues in some states, `Move` an issue from one state to another, `ReportFailure` from a structured report the adapter formats in its own markup. `Move` and `ReportFailure` wrap `port.ErrMovedMeanwhile` or `port.ErrRefused`; any other error is transient. A state is free text, written in the workflow as the tracker shows it: a label's name on GitHub. The tracker is built knowing the workflow's states, `crew.WorkflowStates`, which are crew's states, and the config's extra labels, which are crew's labels but never states. `List` reports only the states, never an extra. `Move` touches only the states and the extras: it removes every extra the issue carries, and a retried move that finds the issue already in its target state succeeds whatever extras it carries.
+- `Tracker`: `List` the open issues in some states, `Move` an issue from one state to another, `ReportFailure` from a structured report the adapter formats in its own markup, as a new comment. `Move` and `ReportFailure` wrap `port.ErrMovedMeanwhile` or `port.ErrRefused`; any other error is transient. A state is free text, written in the workflow as the tracker shows it: a label's name on GitHub. The tracker is built knowing the workflow's states, `crew.WorkflowStates`, which are crew's states, and the config's extra labels, which are crew's labels but never states. `List` reports only the states, never an extra. `Move` touches only the states and the extras: it removes every extra the issue carries, and a retried move that finds the issue already in its target state succeeds whatever extras it carries.
 - `Harness`: `Start` a session in a directory with a prompt and an output writer. The `Session` can be waited on for a `crew.Outcome` and stopped within the caller's deadline.
 - `Workspace`: `Create` a fresh workspace for an issue and an action, and return its name, directory and branch.
 
 A fourth port, `Checker`, runs an action's check: a shell command, in the action's workspace, with the issue's ref, key and URL and the branch in its environment. It returns nil when the command exited 0, an error wrapping `port.ErrCheckFailed` when it exited otherwise, and the context's error when the context ended first. `cmd/crew` builds it like the workspace.
 
-Anything an adapter may or may not support is a separate, optional interface. Today there are four:
+Anything an adapter may or may not support is a separate, optional interface. Today there are five:
 
 - `Preparer`, on any adapter: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`. A tracker also creates or checks the extra labels it was built with.
 - `StatusReporter`, on a tracker: `ReportStatus` writes a structured `crew.Status` to the issue's status comment, in the tracker's own markup. The comment keeps one entry per stage run: the tracker edits the latest entry when the status is of its run, appends one otherwise, and continues a full comment in a new one. Its errors are classified as `Move`'s are. Without it, the core reports no status.
+- `PullRequestReporter`, on a tracker: `ReportPullRequests` shows a `crew.PullRequestReport` on the open pull requests that close the issue. It puts each in the report's state, removing every other crew state and extra, as `Move` does on the issue, and, when the report ends a stage, posts a new stop comment on each. A retry of the same report, by its id, posts no comment twice. Its errors are classified as `Move`'s are. Without it, crew writes nothing to pull requests.
 - `Narrator`, on a harness's `Session`: `Said` returns what the session last said, on one line, and may be called while the session runs.
 - `Reopener`, on a workspace: `Reopen` returns a workspace it created before, as it is now, or an error wrapping `port.ErrWorkspaceGone` when it no longer exists. `git` reads `git worktree list` and changes nothing. Without it, a failed action starts over in a fresh workspace.
 

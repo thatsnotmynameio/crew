@@ -1,0 +1,50 @@
+package crew
+
+import "slices"
+
+// PullRequestReport is what crew shows on the open pull requests that close
+// an issue, once it moved the issue: the state the issue moved to, mirrored
+// as the pull requests' own state, and, when the move ended a stage, how the
+// stage ended. The tracker adapter finds the pull requests and formats the
+// report in its own markup.
+type PullRequestReport struct {
+	// ID identifies the report across its retries: it is unique within one
+	// crew process and stays the same each time the report is sent again.
+	ID string
+	// IssueKey and IssueRef identify the issue, as in Issue.
+	IssueKey string
+	IssueRef string
+	// State is the crew state the issue moved to. Each pull request is put
+	// in it, and in no other crew state.
+	State State
+	// End is how the stage ended when the move ended one; nil for the move
+	// that takes the issue.
+	End *StageEnd
+}
+
+// StageEnd is how a stage ended on an issue, for a pull request report.
+type StageEnd struct {
+	// Stage is the stage's name.
+	Stage string
+	// Actions are the stage's actions, in its action order, as an ended
+	// Status carries them: each succeeded or failed, and a failed one with
+	// its cause, its log and, for a failed check, the check's reason. The
+	// stage failed when any action failed.
+	Actions []ActionStatus
+}
+
+// Failed reports whether any action of the stage failed.
+func (e StageEnd) Failed() bool {
+	return slices.ContainsFunc(e.Actions, func(a ActionStatus) bool { return a.State == ActionFailed })
+}
+
+// Clone returns a copy of r with its own End and Actions, so the copy shares
+// no memory with r.
+func (r PullRequestReport) Clone() PullRequestReport {
+	if r.End != nil {
+		end := *r.End
+		end.Actions = slices.Clone(end.Actions)
+		r.End = &end
+	}
+	return r
+}

@@ -35,6 +35,8 @@ func (m *Model) Update(in Input) ([]Command, []Event) {
 		s.callResult(in)
 	case StatusResult:
 		s.statusResult(in)
+	case PullRequestsResult:
+		s.pullRequestsResult(in)
 	case WorkspaceReady:
 		s.workspaceReady(in)
 	case WorkspaceFailed:
@@ -79,9 +81,9 @@ func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
 // tick lists issues, unless a listing is outstanding or the run time is up,
-// retries the owed calls and statuses that are not in flight (KTD8, KTD5),
-// and reports the status of each running issue with what its sessions last
-// said (R6).
+// retries the owed calls, statuses and pull request reports that are not in
+// flight (KTD8, KTD5), and reports the status of each running issue with what
+// its sessions last said (R6).
 func (s *step) tick(said []Said) {
 	m := s.m
 	if m.stopping {
@@ -111,12 +113,13 @@ func (s *step) tick(said []Said) {
 		}
 	}
 	s.retryStatuses()
+	s.retryPullRequests()
 }
 
 // stop starts nothing new from now on, stops the running sessions and
-// checks, and gives each owed call not in flight its final try (R9). Issues
-// whose actions have all ended are already being judged, so their verdicts
-// go on.
+// checks, and gives each owed call, status and pull request report not in
+// flight its final try (R9). Issues whose actions have all ended are already
+// being judged, so their verdicts go on.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {
@@ -148,6 +151,7 @@ func (s *step) stop() {
 		}
 	}
 	s.retryStatuses()
+	s.retryPullRequests()
 }
 
 // timeUp ends the run time (R2): from now on nothing new is taken, while the
@@ -273,6 +277,7 @@ func (s *step) callResult(r CallResult) {
 		} else {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 			s.ended(h, c.to, crew.MoveDone)
+			s.reportPullRequests(h, c.to, true)
 			h.verdict.Move = crew.MoveDone
 		}
 		h.settle(c)
@@ -308,11 +313,13 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 	h.settle(c)
 }
 
-// taken starts h's actions once its take move is done, or, after a stop,
-// ends them unstarted so the issue moves to its stage's on_failure (R9).
+// taken reports the take on h's pull requests and starts h's actions once
+// its take move is done, or, after a stop, ends them unstarted so the issue
+// moves to its stage's on_failure (R9).
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+	s.reportPullRequests(h, c.to, false)
 	h.settle(c)
 	if m.stopping {
 		for _, a := range h.actions {

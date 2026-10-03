@@ -116,8 +116,11 @@ func Text(e core.Event) string {
 }
 
 func call(c core.Call) string {
-	if c.Kind == core.CallReport {
+	switch c.Kind {
+	case core.CallReport:
 		return "reporting the failure on " + c.IssueRef
+	case core.CallPullRequests:
+		return fmt.Sprintf("updating the pull requests of %s to %s", c.IssueRef, c.To)
 	}
 	return fmt.Sprintf("moving %s from %s to %s", c.IssueRef, c.From, c.To)
 }

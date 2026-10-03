@@ -431,7 +431,7 @@ func TestMoveToAMissingLabelIsRefused(t *testing.T) {
 func TestAFailingGhCallIsTransientAndCarriesItsStderr(t *testing.T) {
 	tr, _ := build(t, "",
 		reply{prefix: []string{"issue", "view", "3"}, stderr: "HTTP 502: Bad Gateway"},
-		reply{prefix: []string{"issue", "comment", "3"}, stderr: "HTTP 502: Bad Gateway"},
+		reply{prefix: []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/3/comments"}, stderr: "HTTP 502: Bad Gateway"},
 		reply{prefix: []string{"api", "user"}, stderr: "HTTP 502: Bad Gateway"},
 	)
 	errs := map[string]error{
@@ -490,7 +490,8 @@ func fenced(t *testing.T, markdown string) []string {
 }
 
 func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
-	tr, gh := build(t, "", reply{prefix: []string{"issue", "comment", "12"}})
+	postComment := []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/12/comments"}
+	tr, gh := build(t, "", reply{prefix: postComment, stdout: "901\n"})
 	reasons := []string{
 		"ran `go test ./...` and got: FAIL token=s3cret",
 		"tests did not build",
@@ -508,15 +509,14 @@ func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReportFailure: %v", err)
 	}
-	comments := gh.callsTo("issue", "comment", "12")
+	if n := len(gh.calls); n != 1 {
+		t.Fatalf("made %d gh calls, want 1: %q", n, gh.calls)
+	}
+	comments := gh.callsTo(postComment...)
 	if len(comments) != 1 {
 		t.Fatalf("posted %d comments, want 1", len(comments))
 	}
-	args := comments[0]
-	body, ok := strings.CutPrefix(args[len(args)-1], "--body=")
-	if !ok {
-		t.Fatalf("comment args %q do not end with --body=", args)
-	}
+	body := statusBody(t, comments[0])
 
 	want := "crew: 3 actions failed on #12.\n" +
 		"\n**`development`** failed. Its log is `.crew/logs/issue-12-development.log`.\n" +
@@ -529,6 +529,34 @@ func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
 		if strings.Contains(body, reason) {
 			t.Errorf("comment carries the session's words %q:\n%s", reason, body)
 		}
+	}
+}
+
+func TestReportFailureErrorsAreClassifiedFromTheHTTPStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stderr string
+		want   error // nil: transient
+	}{
+		"issue gone":     {stderr: "gh: Not Found (HTTP 404)\n", want: port.ErrMovedMeanwhile},
+		"issue locked":   {stderr: "gh: Unable to create comment because issue is locked. (HTTP 403)\n", want: port.ErrRefused},
+		"rate limited":   {stderr: "gh: You have exceeded a secondary rate limit. (HTTP 403)\n"},
+		"no HTTP status": {stderr: "error connecting to api.github.com\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tr, _ := build(t, "",
+				reply{prefix: []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/42/comments"}, stderr: tc.stderr})
+			err := tr.ReportFailure(context.Background(), crew.FailureReport{
+				IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{{Action: "development"}},
+			})
+			if err == nil || !strings.Contains(err.Error(), "report failure on issue #42") {
+				t.Fatalf("ReportFailure = %v, want an error naming issue #42", err)
+			}
+			for _, sentinel := range []error{port.ErrMovedMeanwhile, port.ErrRefused} {
+				if got, want := errors.Is(err, sentinel), errors.Is(tc.want, sentinel); got != want {
+					t.Errorf("errors.Is(%v, %v) = %t, want %t", err, sentinel, got, want)
+				}
+			}
+		})
 	}
 }
 
