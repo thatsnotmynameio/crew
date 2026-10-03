@@ -16,7 +16,7 @@ tags: [codacy, lizard, golangci-lint, funlen, cyclop, complexity, codacy-analysi
 
 ## Context
 
-crew's quality gate measures function size twice. golangci-lint runs in CI's `go` job, and its results reach Codacy as an upload. Codacy's server also runs Lizard, a complexity tool that was kept on the server when the gate was designed. The plan requires that the two never disagree, so an agent that passes the local checks also passes the gate (R1 and R15 in `docs/plans/2026-10-02-2153-feat-codacy-strict-config-plan.md`). Lizard has three quirks that make "the same limits" harder than copying numbers, and none of them shows in the configuration.
+crew's quality gate measures function size twice. golangci-lint runs in CI's `go` job, a required check. Codacy's server also runs Lizard, a complexity tool that was kept on the server when the gate was designed. The plan requires that the two never disagree, so an agent that passes the local checks also passes the gate (R1 and R15 in `docs/plans/2026-10-02-2153-feat-codacy-strict-config-plan.md`). Lizard has three quirks that make "the same limits" harder than copying numbers, and none of them shows in the configuration.
 
 ## Guidance
 
