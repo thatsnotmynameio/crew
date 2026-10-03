@@ -45,6 +45,7 @@ func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,
 				reply{prefix: []string{"auth", "status"}},
+				login, noCodeowners,
 				reply{prefix: []string{"label", "list"}, stdout: tc.present},
 				reply{prefix: []string{"label", "create"}},
 			)

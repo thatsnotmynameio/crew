@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -45,6 +46,10 @@ type Command struct {
 	// set and win over Env: a child in a background process group that read
 	// the terminal would stop forever.
 	Env []string
+	// Unset names variables of crew's environment the child must not
+	// inherit, such as a token that would act as someone else. It removes
+	// only what crew has: Env and the prompt settings are still added.
+	Unset []string
 }
 
 // Output is what a command run to completion printed.
@@ -263,10 +268,14 @@ func (g *Group) reap(p *Process, cmd *exec.Cmd, pipes []*pipe, copies *sync.Wait
 	close(p.done)
 }
 
-// environ returns c's environment: crew's, then c.Env, then the settings
-// that keep git and gh from prompting.
+// environ returns c's environment: crew's without the variables c.Unset
+// names, then c.Env, then the settings that keep git and gh from prompting.
 func environ(c Command) []string {
-	return append(append(os.Environ(), c.Env...), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		name, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(c.Unset, name)
+	})
+	return append(append(env, c.Env...), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
 }
 
 // signal sends sig to process group pgid. A group that is already gone is

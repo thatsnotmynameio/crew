@@ -425,4 +425,50 @@ var invalidActions = []rejectCase{
 `,
 		wants: []string{"workflow[0].actions[1].name", "line 10", "actions[0]"},
 	},
+	{
+		// Covers #80's AE2: an action's own mate needs a default mate.
+		name: "an action names a mate without config.mate",
+		body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+        mate: developer
+`,
+		wants: []string{"workflow[0].actions[0].mate", "line 10", "config.mate"},
+	},
+	{
+		name: "mate of the wrong type",
+		body: `config:
+  mate: ops
+workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+        mate: [developer]
+`,
+		wants: []string{"workflow[0].actions[0].mate", "line 12"},
+	},
+	{
+		name: "an action that is not a mapping",
+		body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    actions:
+      - development
+`,
+		wants: []string{"workflow[0].actions[0]", "line 8", "optionally check and mate"},
+	},
 }

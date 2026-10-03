@@ -30,22 +30,29 @@ type Manifest struct {
 
 // NewManifest returns the manifest of the mate called name for the account
 // owner, which sends the browser back to redirectURL. Every mate asks for
-// the permissions crew and its sessions use through gh, and none to push
-// code or change workflows.
+// the same permissions.
 func NewManifest(name, owner, redirectURL string) Manifest {
 	return Manifest{
 		Name:        AppName(name),
 		URL:         homepage,
 		RedirectURL: redirectURL,
 		Description: "crew mate " + name + " for " + owner + ": an identity of crew, the coding-agent runner.",
-		Permissions: map[string]string{
-			"issues":        permWrite,
-			"pull_requests": permWrite,
-			"contents":      permRead,
-			"checks":        permRead,
-			"statuses":      permRead,
-			"actions":       permRead,
-			"metadata":      permRead,
-		},
+		Permissions: permissions(),
+	}
+}
+
+// permissions returns the repository permissions every mate asks for, in
+// its manifest and in each token crew mints: those crew and its sessions
+// use through gh, and none to push code or change workflows. Each call
+// returns a new map.
+func permissions() map[string]string {
+	return map[string]string{
+		"issues":        permWrite,
+		"pull_requests": permWrite,
+		"contents":      permRead,
+		"checks":        permRead,
+		"statuses":      permRead,
+		"actions":       permRead,
+		"metadata":      permRead,
 	}
 }

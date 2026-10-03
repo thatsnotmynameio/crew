@@ -5,11 +5,11 @@ description: Give crew GitHub identities of its own, called mates, with crew mat
 
 # Mates
 
-Today crew acts on GitHub as you: it labels, comments and starts sessions as your `gh` login, and so do its sessions and checks. A mate is a GitHub identity of crew's own. It is a private GitHub App owned by the account that owns your repository, and it acts as `<slug>[bot]`, such as `crew-tester[bot]`. You can have many mates, one per role, such as a developer and a tester.
+Without mates, crew acts on GitHub as you: it labels and comments as your `gh` login, and so do its sessions and checks. A mate is a GitHub identity of crew's own. It is a private GitHub App owned by the account that owns your repository, and it acts as `<slug>[bot]`, such as `crew-tester[bot]`. You can have many mates, one per role, such as a developer and a tester.
 
 `crew mates create <name>` creates a mate and installs it on the current repository.
 
-**crew does not act as its mates yet.** crew, its sessions and its checks still act on GitHub as your `gh` login, whether or not mates exist. Acting as mates is issue #80.
+Creating a mate changes nothing by itself. Name it in `.crew/config.yaml` and crew acts as it: see [Act as mates](/guide/crew#act-as-mates).
 
 ## Before you create one
 
@@ -93,6 +93,10 @@ crew keeps each mate in one file on your machine, outside any repository, at `<u
 
 The file holds the app's identity and its private key. Only your OS user can read it: the file is mode 0600 and its directories 0700. crew never prints the key, never logs it and never writes it into a repository. The key never leaves your machine. To use a mate on another machine, create another one there.
 
+### The key's risk
+
+crew never gives a session or a check the key: they get a token limited to the one repository, which expires within the hour. But a session runs as your OS user, so it could read the key's file, as it could read your own `gh` token. A leaked key acts as the mate on every repository of its owner where the mate is installed, with the permissions above, until you revoke it. If you suspect a leak, [revoke the mate](#revoke-a-mate).
+
 ## Run it again
 
 A mate belongs to its owner, so its name is per owner. When the owner already has a mate of that name on this machine, `crew mates create` creates no new app. It goes straight to installing that mate on the current repository, opens the install page itself, and confirms. Run it again:
@@ -108,7 +112,7 @@ When crew fails after GitHub created the app but before it saved the mate, such 
 
 ## Revoke a mate
 
-On GitHub, delete the app, or revoke its private key, in the app's settings (the owner's **Settings**, then **Developer settings**, then **GitHub Apps**). Then delete the mate's file on your machine.
+On GitHub, delete the app, or revoke its private key, in the app's settings (the owner's **Settings**, then **Developer settings**, then **GitHub Apps**). Then delete the mate's file on your machine. A crew that names the mate then warns that it cannot act and acts as you in its place.
 
 ## Over SSH
 

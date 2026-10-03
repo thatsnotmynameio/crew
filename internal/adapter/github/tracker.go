@@ -2,14 +2,19 @@
 // through the gh CLI. A workflow state is the label of the same name,
 // compared ignoring case as GitHub does, and crew's labels are the workflow's
 // states plus the config's extra labels, which are never states. It lists the
-// open issues and pull requests the authenticated gh user opened, as items
-// alike, moves them by swapping crew's labels, reports failures as Markdown
-// comments and keeps a status comment on each item, with one entry per stage
-// run. It puts the open pull requests that close an issue in the issue's crew
-// label, and comments on them when a stage ends that nobody watches them any
-// more. It finds the pull request an action opened from its branch. It works
-// on the repository gh resolves from crew's working directory, and runs every
-// gh call through the shared process helper.
+// open issues and pull requests the boss or one of crew's mates opened, as
+// items alike, moves them by swapping crew's labels, reports failures as
+// Markdown comments and keeps a status comment on each item, with one entry
+// per stage run. It puts the open pull requests that close an issue in the
+// issue's crew label, and comments on them when a stage ends that nobody
+// watches them any more. It finds the pull request an action opened from its
+// branch. It works on the repository gh resolves from crew's working
+// directory, and runs every gh call through the shared process helper.
+//
+// The boss is every user the catch-all rule of the repository's CODEOWNERS
+// names, or gh's login without one. The tracker reads as gh's login and
+// writes as the mate the engine hands it, if any, falling back to gh's login
+// when that mate cannot write.
 package github
 
 import (
@@ -29,87 +34,119 @@ import (
 )
 
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
-// port.StatusReporter, a port.PullRequestReporter and a
-// port.PullRequestFinder.
+// port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
+// a port.Acting and a port.BossFinder.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
 	_ port.StatusReporter      = (*Tracker)(nil)
 	_ port.PullRequestReporter = (*Tracker)(nil)
 	_ port.PullRequestFinder   = (*Tracker)(nil)
+	_ port.Acting              = (*Tracker)(nil)
+	_ port.BossFinder          = (*Tracker)(nil)
 )
 
-// issuesQuery lists the login's open issues carrying any of the labels, and
-// the open pull requests carrying any of them, each kind oldest first.
-// GitHub's labels filter matches an item with any of them. Pull requests
-// cannot be filtered by author, so each carries its author's login.
-// A dependency summary's blockedBy counts only the open issues blocking it.
-// An issue holds at most one value per issue field, and an organization has
-// at most 25 fields. A single select value carries its option's id and its
-// field, with the field's options in order. The query must not ask for the
-// values' totalCount: on a repository a user owns, that fails the query.
-const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $labels: [String!]) {
-  repository(owner: $owner, name: $name) {
-    issues(first: 100, states: OPEN, filterBy: {createdBy: $login, labels: $labels},
-           orderBy: {field: CREATED_AT, direction: ASC}) {
-      nodes {
-        number
-        title
-        url
-        createdAt
-        labels(first: 100) { nodes { name } }
-        issueDependenciesSummary { blockedBy }
-        issueFieldValues(first: 25) {
-          nodes {
-            ... on IssueFieldSingleSelectValue {
-              optionId
-              field { ... on IssueFieldSingleSelect { name options { id } } }
-            }
-          }
-        }
+// issueFields are what issuesQuery reads of an issue. A dependency
+// summary's blockedBy counts only the open issues blocking it. An issue
+// holds at most one value per issue field, and an organization has at most
+// 25 fields. A single select value carries its option's id and its field,
+// with the field's options in order. The query must not ask for the values'
+// totalCount: on a repository a user owns, that fails the query.
+const issueFields = `fragment issueFields on Issue {
+  number
+  title
+  url
+  createdAt
+  labels(first: 100) { nodes { name } }
+  issueDependenciesSummary { blockedBy }
+  issueFieldValues(first: 25) {
+    nodes {
+      ... on IssueFieldSingleSelectValue {
+        optionId
+        field { ... on IssueFieldSingleSelect { name options { id } } }
       }
     }
-    pullRequests(first: 100, states: OPEN, labels: $labels,
+  }
+}`
+
+// pullRequestsAlias is the field of issuesQuery's reply that lists the pull
+// requests; issuesAlias followed by an author's index lists that author's
+// issues.
+const (
+	pullRequestsAlias = "pullRequests"
+	issuesAlias       = "issues"
+)
+
+// issuesQuery returns the query listing the open issues each of authors
+// opened carrying any of the labels, one aliased issues field per author,
+// and the open pull requests carrying any of them, each list oldest first.
+// GitHub's labels filter matches an item with any of them. Pull requests
+// cannot be filtered by author, so each carries its author.
+func issuesQuery(authors int) string {
+	var vars, fields strings.Builder
+	for i := range authors {
+		fmt.Fprintf(&vars, ", $author%d: String!", i)
+		fmt.Fprintf(&fields, `
+    %s%d: issues(first: 100, states: OPEN, filterBy: {createdBy: $author%d, labels: $labels},
+           orderBy: {field: CREATED_AT, direction: ASC}) { nodes { ...issueFields } }`, issuesAlias, i, i)
+	}
+	return `query($owner: String!, $name: String!, $labels: [String!]` + vars.String() + `) {
+  repository(owner: $owner, name: $name) {` + fields.String() + `
+    ` + pullRequestsAlias + `: pullRequests(first: 100, states: OPEN, labels: $labels,
                  orderBy: {field: CREATED_AT, direction: ASC}) {
       nodes {
         number
         title
         url
         createdAt
-        author { login }
+        author { __typename login }
         labels(first: 100) { nodes { name } }
       }
     }
   }
-}`
+}
+` + issueFields
+}
 
-// issuesReply is issuesQuery's reply.
+// issuesReply is issuesQuery's reply: its repository's fields by alias.
 type issuesReply struct {
 	Data struct {
-		Repository struct {
-			Issues struct {
-				Nodes []struct {
-					itemNode
-
-					Dependencies struct {
-						BlockedBy int `json:"blockedBy"`
-					} `json:"issueDependenciesSummary"`
-					FieldValues struct {
-						Nodes []fieldValue `json:"nodes"`
-					} `json:"issueFieldValues"`
-				} `json:"nodes"`
-			} `json:"issues"`
-			PullRequests struct {
-				Nodes []struct {
-					itemNode
-
-					Author struct {
-						Login string `json:"login"`
-					} `json:"author"`
-				} `json:"nodes"`
-			} `json:"pullRequests"`
+		Repository map[string]struct {
+			Nodes []listNode `json:"nodes"`
 		} `json:"repository"`
 	} `json:"data"`
+}
+
+// listNode is an issue or a pull request as issuesQuery reads it. An
+// issue's has no author, and a pull request's no dependencies and no field
+// values.
+type listNode struct {
+	itemNode
+
+	Dependencies struct {
+		BlockedBy int `json:"blockedBy"`
+	} `json:"issueDependenciesSummary"`
+	FieldValues struct {
+		Nodes []fieldValue `json:"nodes"`
+	} `json:"issueFieldValues"`
+	Author *struct {
+		Typename string `json:"__typename"`
+		Login    string `json:"login"`
+	} `json:"author"`
+}
+
+// authorLogin returns the login of n's author as GitHub's REST API and
+// issue filters write it: a bot's with [bot] after it, so the user crew-ops
+// and the bot crew-ops[bot] differ. A deleted account has none.
+func (n listNode) authorLogin() string {
+	switch {
+	case n.Author == nil:
+		return ""
+	case n.Author.Typename == "Bot":
+		return n.Author.Login + "[bot]"
+	default:
+		return n.Author.Login
+	}
 }
 
 // itemNode holds what issuesQuery reads of an issue and of a pull request
@@ -138,6 +175,8 @@ type Tracker struct {
 	mu       sync.Mutex
 	comments map[string]cachedStatus // status comments by issue key, as last written or read
 	stopped  map[string][]int        // pull requests given a report's stop comment, by report ID
+	boss     []string                // the boss's logins, once Prepare found them
+	mates    []string                // the logins of the mates the config names
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -158,41 +197,68 @@ func factory(run proc.Runner) port.TrackerFactory {
 	}
 }
 
-// List implements port.Tracker with one GraphQL query: the open issues the
-// authenticated gh user opened that carry any of the states' labels, at most
-// 100, and the open pull requests that user opened that carry any of them,
-// among the 100 oldest pull requests carrying any of them, all oldest first.
-// Each item's key is its number, its reference #<number>, and its states
-// every workflow state its labels name, in the workflow's spelling. Its other
-// labels, extras included, are no states and are ignored. An issue is
-// blocked while an open issue blocks it, as GitHub's issue dependencies
+// List implements port.Tracker with one GraphQL query: the open issues
+// that carry any of the states' labels and that the boss or one of the
+// mates opened, at most 100 per author, and the open pull requests the boss
+// or one of the mates opened that carry any of them, among the 100 oldest
+// pull requests carrying any of them, all oldest first. Before Prepare found
+// the boss, the boss is gh's login. An issue two authors' lists hold counts
+// once. Each item's key is its number, its reference #<number>, and its
+// states every workflow state its labels name, in the workflow's spelling.
+// Its other labels, extras included, are no states and are ignored. An issue
+// is blocked while an open issue blocks it, as GitHub's issue dependencies
 // record. Its priority is the position of its value of the issue field
 // Priority among that field's options, the first being 1; an issue without
 // one has priority 0. A pull request has priority 0 and is never blocked.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
-	login, err := t.gh.viewer(ctx)
+	authors, err := t.authors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	var reply issuesReply
-	if err := t.gh.decode(ctx, &reply, issuesArgs(login, states)...); err != nil {
+	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, states)...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	repo := reply.Data.Repository
-	items := make([]crew.Issue, 0, len(repo.Issues.Nodes)+len(repo.PullRequests.Nodes))
-	for _, n := range repo.Issues.Nodes {
-		issue := t.item(n.itemNode)
-		issue.Blocked = n.Dependencies.BlockedBy > 0
-		issue.Priority = priority(n.FieldValues.Nodes)
-		items = append(items, issue)
+	var items []crew.Issue
+	seen := map[int]bool{}
+	for i := range authors {
+		for _, n := range repo[issuesAlias+strconv.Itoa(i)].Nodes {
+			if seen[n.Number] {
+				continue
+			}
+			seen[n.Number] = true
+			issue := t.item(n.itemNode)
+			issue.Blocked = n.Dependencies.BlockedBy > 0
+			issue.Priority = priority(n.FieldValues.Nodes)
+			items = append(items, issue)
+		}
 	}
-	for _, n := range repo.PullRequests.Nodes {
-		if n.Author.Login == login {
+	for _, n := range repo[pullRequestsAlias].Nodes {
+		if login := n.authorLogin(); login != "" && containsFold(authors, login) {
 			items = append(items, t.item(n.itemNode))
 		}
 	}
 	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
 	return items, nil
+}
+
+// ActAs implements port.Acting: the tracker's writes go as writer, the boss
+// when it is the zero Identity, and List also takes the items the logins in
+// mates opened.
+func (t *Tracker) ActAs(writer port.Identity, mates []string) {
+	t.gh.actAs(writer)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mates = slices.Clone(mates)
+}
+
+// Boss implements port.BossFinder: the boss's logins as Prepare found them,
+// none before.
+func (t *Tracker) Boss() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.boss)
 }
 
 // fieldArgs is how many arguments one gh api field takes: the flag and
@@ -202,18 +268,20 @@ const fieldArgs = 2
 // stateOpen is the state GitHub gives an open issue or pull request.
 const stateOpen = "OPEN"
 
-// issuesArgs returns the gh arguments of List's query, for login's issues
-// carrying any of the states' labels.
-func issuesArgs(login string, states []crew.State) []string {
-	labels := make([]string, 0, fieldArgs*len(states))
+// issuesArgs returns the gh arguments of List's query, for the issues of
+// authors carrying any of the states' labels.
+func issuesArgs(authors []string, states []crew.State) []string {
+	vars := make([]string, 0, fieldArgs*(len(states)+len(authors)))
 	for _, s := range states {
-		labels = append(labels, "-f", "labels[]="+string(s))
+		vars = append(vars, "-f", "labels[]="+string(s))
+	}
+	for i, a := range authors {
+		vars = append(vars, "-f", "author"+strconv.Itoa(i)+"="+a)
 	}
 	return slices.Concat([]string{"api", "graphql",
-		"-f", "query=" + issuesQuery,
+		"-f", "query=" + issuesQuery(len(authors)),
 		// gh fills {owner} and {repo} from the repository, through -F only.
-		"-F", "owner={owner}", "-F", "name={repo}",
-		"-f", "login=" + login}, labels)
+		"-F", "owner={owner}", "-F", "name={repo}"}, vars)
 }
 
 // priorityField is the name of the issue field crew ranks issues by,
@@ -286,21 +354,23 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 	return nil
 }
 
-// ReportFailure implements port.Tracker: one Markdown comment naming each
-// failed action and its log, without its reason. The issue gone (HTTP 404
-// or 410) is port.ErrMovedMeanwhile, a refusal (HTTP 403, such as a locked
-// issue, but not a rate limit) is port.ErrRefused, and any other error is
-// transient.
+// ReportFailure implements port.Tracker: one Markdown comment, posted as the
+// writer, naming each failed action and its log, without its reason. The
+// issue gone (HTTP 404 or 410) is port.ErrMovedMeanwhile, a refusal (HTTP
+// 403, such as a locked issue, but not a rate limit) is port.ErrRefused, and
+// any other error is transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
-	if _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
+	if _, _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
 		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
 	}
 	return nil
 }
 
 // Prepare implements port.Preparer. It checks that gh is installed and
-// logged in, then creates the labels of states and the extras the repository
-// lacks, comparing names case-insensitively, and no other label.
+// logged in, then finds the boss in CODEOWNERS, then creates the labels of
+// states and the extras the repository lacks, comparing names
+// case-insensitively, and no other label. It reads as the boss and creates
+// the labels as the writer.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -308,6 +378,13 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		}
 		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
 	}
+	boss, err := t.findBoss(ctx)
+	if err != nil {
+		return fmt.Errorf("tracker github: find the boss: %w", err)
+	}
+	t.mu.Lock()
+	t.boss = boss
+	t.mu.Unlock()
 	var present []ghLabel
 	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
 		return fmt.Errorf("tracker github: read the repository's labels: %w", err)
@@ -321,12 +398,28 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		if have[strings.ToLower(name)] {
 			continue
 		}
-		if _, err := t.gh.call(ctx, "label", "create", name); err != nil {
+		if _, _, err := t.gh.write(ctx, "label", "create", name); err != nil {
 			return fmt.Errorf("tracker github: create the label %q: %w", name, err)
 		}
 		have[strings.ToLower(name)] = true
 	}
 	return nil
+}
+
+// authors returns the logins whose items List takes: the boss's, gh's login
+// until Prepare found them, then the mates', each once, ignoring case.
+func (t *Tracker) authors(ctx context.Context) ([]string, error) {
+	t.mu.Lock()
+	boss, mates := slices.Clone(t.boss), slices.Clone(t.mates)
+	t.mu.Unlock()
+	if len(boss) == 0 {
+		login, err := t.gh.viewer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		boss = []string{login}
+	}
+	return appendFold(boss, mates...), nil
 }
 
 // item returns the issue or pull request n as a crew.Issue in the states its
@@ -349,7 +442,7 @@ func (t *Tracker) item(n itemNode) crew.Issue {
 func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []string, to crew.State) error {
 	target := string(to)
 	args := slices.Concat([]string{kind, "edit", number}, remove, []string{"--add-label=" + labelArg(target)})
-	if out, err := t.gh.call(ctx, args...); err != nil {
+	if out, _, err := t.gh.write(ctx, args...); err != nil {
 		if missingLabel(string(out.Stderr), target) {
 			return fmt.Errorf("%w: %w", port.ErrRefused, err)
 		}

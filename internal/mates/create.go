@@ -227,7 +227,7 @@ func (f *Flow) install(ctx context.Context, repo Repo, m Mate, open bool) error 
 		inst, err = f.poll(ctx, repo, m)
 	}
 	if err == nil {
-		err = f.API.AccessToken(ctx, m, inst.ID, repo.Name)
+		_, err = f.API.AccessToken(ctx, m, inst.ID, repo.Name)
 	}
 	switch {
 	case errors.Is(err, ErrKeyRejected):
