@@ -183,12 +183,11 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	full := append([]string{"-c", "user.name=crew test", "-c", "user.email=test@example.com",
 		"-c", "commit.gpgsign=false"}, args...)
-	cmd := exec.Command("git", full...)
+	cmd := exec.CommandContext(t.Context(), "git", full...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 			t.Fatalf("git %q in %s: %v: %s", args, dir, err, exit.Stderr)
 		}
 		t.Fatalf("git %q in %s: %v", args, dir, err)
@@ -380,9 +379,11 @@ func TestReopenGoneWorktree(t *testing.T) {
 		remove func(t *testing.T, root string, space port.Space)
 	}{
 		{name: "removed with git", remove: func(t *testing.T, root string, space port.Space) {
+			t.Helper()
 			gitIn(t, root, "worktree", "remove", "--force", space.Dir)
 		}},
 		{name: "folder deleted without git", remove: func(t *testing.T, _ string, space port.Space) {
+			t.Helper()
 			if err := os.RemoveAll(space.Dir); err != nil {
 				t.Fatal(err)
 			}

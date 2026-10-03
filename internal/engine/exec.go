@@ -32,62 +32,78 @@ type sessionKey struct {
 	issue, action string
 }
 
-// launch runs cmd in its own goroutine on the command context (KTD7). Each
-// goroutine posts its results with blocking sends, the last one final.
-func (e *Engine) launch(cmd core.Command) {
-	var job func()
+// launch runs cmd in its own goroutine on the command context ctx (KTD7).
+// Each goroutine posts its results with blocking sends, the last one final.
+func (e *Engine) launch(ctx context.Context, cmd core.Command) {
+	job := e.job(ctx, cmd)
+	if job == nil {
+		return
+	}
+	e.inflight++
+	e.wg.Go(job)
+}
+
+// job returns the goroutine that runs cmd on the command context ctx, or nil
+// when nothing is left to run once the loop has done its part.
+func (e *Engine) job(ctx context.Context, cmd core.Command) func() {
 	switch c := cmd.(type) {
 	case core.ListIssues:
-		job = func() { e.list(c) }
+		return func() { e.list(ctx, c) }
 	case core.Move:
-		job = func() { e.move(c) }
+		return func() { e.move(ctx, c) }
 	case core.ReportFailure:
-		job = func() { e.report(c) }
+		return func() { e.report(ctx, c) }
 	case core.ReportStatus:
-		job = func() { e.reportStatus(c) }
+		return func() { e.reportStatus(ctx, c) }
 	case core.ReportPullRequests:
-		job = func() { e.reportPullRequests(c) }
+		return func() { e.reportPullRequests(ctx, c) }
 	case core.CreateWorkspace:
-		job = func() { e.createWorkspace(c) }
+		return func() { e.createWorkspace(ctx, c) }
 	case core.ReopenWorkspace:
-		job = func() { e.reopenWorkspace(c) }
+		return func() { e.reopenWorkspace(ctx, c) }
+	case core.StartSession:
+		return func() { e.startSession(ctx, c) }
+	}
+	return e.loopJob(ctx, cmd)
+}
+
+// loopJob does the part of cmd that the loop itself must do, as it owns the
+// sessions, the checks and the order of the journal, and returns the
+// goroutine that runs the rest, or nil when nothing is left.
+func (e *Engine) loopJob(ctx context.Context, cmd core.Command) func() {
+	switch c := cmd.(type) {
 	case core.RecordRun:
 		// Written here, in the loop, so records land in the order the core
 		// asked for them: a run's end never before its start (KTD3).
 		err := e.appendJournal(c.Record)
 		if err == nil {
-			return
+			return nil
 		}
 		failure := core.RecordFailed{Record: c.Record, Reason: e.scrub(err.Error())}
-		job = func() { e.post(failure) }
-	case core.StartSession:
-		job = func() { e.startSession(c) }
+		return func() { e.post(failure) }
 	case core.StopSession:
 		s, ok := e.sessions[sessionKey{c.IssueKey, c.Action}]
 		if !ok {
 			// The core asks to stop only sessions it saw start, so the
 			// session is known; nothing runs otherwise.
-			return
+			return nil
 		}
-		job = func() { e.stopSession(s) }
+		return func() { e.stopSession(ctx, s) }
 	case core.RunCheck:
 		// The check's context is made here, in the loop, so a StopCheck
 		// that follows always finds it.
-		ctx, cancel := context.WithTimeout(e.cmdCtx, checkTimeout)
+		checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 		e.checks[sessionKey{c.IssueKey, c.Action}] = cancel
-		job = func() { e.runCheck(ctx, cancel, c) }
+		return func() { e.runCheck(checkCtx, cancel, c) }
 	case core.StopCheck:
 		// The core asks to stop only checks it started; the check's end
 		// still arrives through its own goroutine, in runCheck.
 		if cancel, ok := e.checks[sessionKey{c.IssueKey, c.Action}]; ok {
 			cancel()
 		}
-		return
-	default:
-		panic(fmt.Sprintf("engine: unknown core command %T", cmd))
+		return nil
 	}
-	e.inflight++
-	e.wg.Go(job)
+	panic(fmt.Sprintf("engine: unknown core command %T", cmd))
 }
 
 // post sends in as the goroutine's final message.
@@ -95,13 +111,14 @@ func (e *Engine) post(in core.Input) {
 	e.inbox <- message{input: in, final: true}
 }
 
-// callContext bounds one tracker or workspace call (KTD7).
-func (e *Engine) callContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(e.cmdCtx, callTimeout)
+// callContext bounds one tracker or workspace call on the command context
+// ctx (KTD7).
+func callContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, callTimeout)
 }
 
-func (e *Engine) list(c core.ListIssues) {
-	ctx, cancel := e.callContext()
+func (e *Engine) list(ctx context.Context, c core.ListIssues) {
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	issues, err := e.cfg.Tracker.List(ctx, c.States)
 	if err != nil {
@@ -111,15 +128,15 @@ func (e *Engine) list(c core.ListIssues) {
 	e.post(core.IssuesListed{Issues: issues})
 }
 
-func (e *Engine) move(c core.Move) {
-	ctx, cancel := e.callContext()
+func (e *Engine) move(ctx context.Context, c core.Move) {
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	err := e.cfg.Tracker.Move(ctx, c.IssueKey, c.From, c.To)
 	e.post(e.callResult(ctx, c.ID, err))
 }
 
-func (e *Engine) report(c core.ReportFailure) {
-	ctx, cancel := e.callContext()
+func (e *Engine) report(ctx context.Context, c core.ReportFailure) {
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	err := e.cfg.Tracker.ReportFailure(ctx, c.Report)
 	e.post(e.callResult(ctx, c.ID, err))
@@ -127,8 +144,8 @@ func (e *Engine) report(c core.ReportFailure) {
 
 // reportStatus writes a status through the tracker's StatusReporter, which
 // the core asks for only when the tracker has one.
-func (e *Engine) reportStatus(c core.ReportStatus) {
-	ctx, cancel := e.callContext()
+func (e *Engine) reportStatus(ctx context.Context, c core.ReportStatus) {
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	err := e.reporter.ReportStatus(ctx, c.Status)
 	result, reason := e.classify(ctx, err)
@@ -138,8 +155,8 @@ func (e *Engine) reportStatus(c core.ReportStatus) {
 // reportPullRequests shows a report on the issue's pull requests through the
 // tracker's PullRequestReporter, which the core asks for only when the
 // tracker has one.
-func (e *Engine) reportPullRequests(c core.ReportPullRequests) {
-	ctx, cancel := e.callContext()
+func (e *Engine) reportPullRequests(ctx context.Context, c core.ReportPullRequests) {
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	err := e.pullRequests.ReportPullRequests(ctx, c.Report)
 	result, reason := e.classify(ctx, err)
@@ -176,8 +193,8 @@ func (e *Engine) reason(ctx context.Context, err error) string {
 	return e.scrub(text)
 }
 
-func (e *Engine) createWorkspace(c core.CreateWorkspace) {
-	ctx, cancel := e.callContext()
+func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
 	if err != nil {
@@ -189,13 +206,13 @@ func (e *Engine) createWorkspace(c core.CreateWorkspace) {
 
 // reopenWorkspace reopens a failed run's workspace through the workspace's
 // port.Reopener, which the core asks for only when the workspace has one.
-func (e *Engine) reopenWorkspace(c core.ReopenWorkspace) {
+func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	r, ok := e.cfg.Workspace.(port.Reopener)
 	if !ok {
 		e.post(core.WorkspaceGone{IssueKey: c.IssueKey, Action: c.Action})
 		return
 	}
-	ctx, cancel := e.callContext()
+	ctx, cancel := callContext(ctx)
 	defer cancel()
 	space, err := r.Reopen(ctx, port.Space{Name: c.Workspace, Branch: c.Branch})
 	switch {
@@ -221,7 +238,7 @@ func (e *Engine) ready(key, action string, space port.Space, resumed bool) core.
 // startSession starts the session with its output going to its log, after
 // a marker line when the session resumes a failed run (KTD8), then waits for
 // it to end in the same goroutine (R19).
-func (e *Engine) startSession(c core.StartSession) {
+func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	log, err := e.openLog(c.Log)
 	if err == nil && c.Resumed {
 		if err = markResumed(log); err != nil {
@@ -232,7 +249,7 @@ func (e *Engine) startSession(c core.StartSession) {
 		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
 		return
 	}
-	s, err := e.cfg.Harness.Start(e.cmdCtx, port.Run{Dir: c.Dir, Prompt: c.Prompt, Output: log})
+	s, err := e.cfg.Harness.Start(ctx, port.Run{Dir: c.Dir, Prompt: c.Prompt, Output: log})
 	if err != nil {
 		_ = log.Close() // nothing was written to it worth keeping
 		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
@@ -249,8 +266,8 @@ func (e *Engine) startSession(c core.StartSession) {
 
 // stopSession stops s within the stop deadline (KTD7). Its end reaches the
 // core through its own Wait, in startSession.
-func (e *Engine) stopSession(s port.Session) {
-	ctx, cancel := context.WithTimeout(e.cmdCtx, stopTimeout)
+func (e *Engine) stopSession(ctx context.Context, s port.Session) {
+	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
 	// The adapter kills the session at the deadline, so Stop's error adds
 	// nothing the session's outcome will not say.
@@ -349,6 +366,12 @@ func (l *lastLine) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// String returns the last non-empty line, counting an unended last line.
+func (l *lastLine) String() string {
+	l.end()
+	return l.last
+}
+
 // end ends the line being written, keeping it when it is not blank. Control
 // characters other than tab are dropped: the line becomes a reason that goes
 // into a gh argument, which cannot hold a NUL, and into a comment.
@@ -363,10 +386,4 @@ func (l *lastLine) end() {
 		l.last = line
 	}
 	l.cur = l.cur[:0]
-}
-
-// String returns the last non-empty line, counting an unended last line.
-func (l *lastLine) String() string {
-	l.end()
-	return l.last
 }

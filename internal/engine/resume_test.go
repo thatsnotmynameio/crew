@@ -66,13 +66,7 @@ func TestAE1ARelabeledFailedRunResumesInItsWorkspaceAndLog(t *testing.T) {
 		if second.Run().Dir != first.Run().Dir {
 			t.Fatalf("resumed in %s, want %s", second.Run().Dir, first.Run().Dir)
 		}
-		prompt := second.Run().Prompt
-		if !strings.HasPrefix(prompt, "Implement development for issue #1\n\ncrew: this session continues") ||
-			!strings.Contains(prompt, `That run failed: "no pull request was found".`) ||
-			!strings.Contains(prompt, "`.crew/logs/issue-1-development.log`") ||
-			!strings.Contains(prompt, "(`../../logs/issue-1-development.log` from this worktree)") {
-			t.Fatalf("prompt does not end with the resume paragraph:\n%s", prompt)
-		}
+		checkResumePrompt(t, second.Run().Prompt)
 		if _, err := fmt.Fprint(second.Run().Output, "second output\n"); err != nil {
 			t.Fatal(err)
 		}
@@ -83,22 +77,45 @@ func TestAE1ARelabeledFailedRunResumesInItsWorkspaceAndLog(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 
-		log, err := os.ReadFile(filepath.Join(r.root, ".crew", "logs", "issue-1-development.log"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(strings.TrimSuffix(string(log), "\n"), "\n")
-		if len(lines) != 3 || lines[0] != "first output" || lines[2] != "second output" {
-			t.Fatalf("log = %q, want the first output, the marker, then the second output", log)
-		}
-		var marker struct{ Type, Subtype string }
-		if err := json.Unmarshal([]byte(lines[1]), &marker); err != nil || marker.Type != "crew" || marker.Subtype != "resumed" {
-			t.Fatalf("marker line = %q, want a crew resumed JSON line", lines[1])
-		}
+		checkResumedLog(t, r.root)
 		if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{readyToReview}) {
 			t.Errorf("issue 1 is in %v, want ready to review", got)
 		}
 	})
+}
+
+// checkResumePrompt checks that prompt is issue 1's development prompt
+// followed by the paragraph resuming its failed run.
+func checkResumePrompt(t *testing.T, prompt string) {
+	t.Helper()
+	if !strings.HasPrefix(prompt, "Implement development for issue #1\n\ncrew: this session continues") ||
+		!strings.Contains(prompt, `That run failed: "no pull request was found".`) ||
+		!strings.Contains(prompt, "`.crew/logs/issue-1-development.log`") ||
+		!strings.Contains(prompt, "(`../../logs/issue-1-development.log` from this worktree)") {
+		t.Fatalf("prompt does not end with the resume paragraph:\n%s", prompt)
+	}
+}
+
+// checkResumedLog checks that the log of issue 1's development under root
+// holds the first run's output, the resume marker, then the second run's.
+func checkResumedLog(t *testing.T, root string) {
+	t.Helper()
+	log, err := os.ReadFile(filepath.Join(root, ".crew", "logs", "issue-1-development.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(log), "\n"), "\n")
+	if len(lines) != 3 || lines[0] != "first output" || lines[2] != "second output" {
+		t.Fatalf("log = %q, want the first output, the marker, then the second output", log)
+	}
+	var marker struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+	}
+	err = json.Unmarshal([]byte(lines[1]), &marker)
+	if err != nil || marker.Type != "crew" || marker.Subtype != "resumed" {
+		t.Fatalf("marker line = %q, want a crew resumed JSON line", lines[1])
+	}
 }
 
 // writeJournal writes lines, each a JSON object, as the run journal of cfg.
@@ -113,7 +130,8 @@ func writeJournal(t *testing.T, root string, lines ...string) {
 	}
 }
 
-const startedLine = `{"v":1,"event":"started","time":"2026-01-01T10:00:00Z","issue":"1","ref":"#1","stage":"implement",` +
+const startedLine = `{"v":1,"event":"started","time":"2026-01-01T10:00:00Z",` +
+	`"issue":"1","ref":"#1","stage":"implement",` +
 	`"action":"development","workspace":"issue-1-development","branch":"crew/issue-1-development",` +
 	`"log":".crew/logs/issue-1-development.log"}`
 
@@ -164,7 +182,7 @@ func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		if n := len(cfg.Workspace.(*fake.Workspace).Spaces()); n != 2 {
+		if n := len(fakeWorkspace(t, cfg).Spaces()); n != 2 {
 			t.Errorf("the workspace created %d spaces, want 2", n)
 		}
 		if !slices.ContainsFunc(r.events(), func(e core.Event) bool {
@@ -202,7 +220,8 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 				reasons = append(reasons, n.Reason)
 			}
 		}
-		if len(reasons) != 2 || !strings.Contains(reasons[0], "./.crew/logs/runs.jsonl") || strings.Contains(reasons[0], cfg.Root) {
+		if len(reasons) != 2 || !strings.Contains(reasons[0], "./.crew/logs/runs.jsonl") ||
+			strings.Contains(reasons[0], cfg.Root) {
 			t.Errorf("RunNotRecorded reasons = %q, want two naming ./.crew/logs/runs.jsonl", reasons)
 		}
 	})
@@ -220,7 +239,7 @@ func TestAWorkspaceThatCannotReopenStartsAFailedRunFresh(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
-		cfg.Workspace = createOnly{w: cfg.Workspace.(*fake.Workspace)}
+		cfg.Workspace = createOnly{w: fakeWorkspace(t, cfg)}
 		r := start(t, cfg)
 
 		first := failOnce(t, r, tr, "", "broke")

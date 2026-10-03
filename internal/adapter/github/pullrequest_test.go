@@ -23,9 +23,10 @@ const (
 
 // The scripted prefixes of the pull request report's gh calls on issue #42.
 var (
-	prQuery       = []string{"api", "graphql"}
-	prEdit        = []string{"pr", "edit"}
-	issue42List   = []string{"api", "--method", "GET", "--paginate", "repos/{owner}/{repo}/issues/42/comments?per_page=100"}
+	prQuery     = []string{"api", "graphql"}
+	prEdit      = []string{"pr", "edit"}
+	issue42List = []string{"api", "--method", "GET", "--paginate",
+		"repos/{owner}/{repo}/issues/42/comments?per_page=100"}
 	issue42URL    = "https://github.com/o/r/issues/42"
 	nobodyWatches = "Nobody watches this pull request any more: new review comments and CI failures need a person."
 )
@@ -44,7 +45,11 @@ func prTracker(t *testing.T, script ...reply) (*Tracker, *fakeGh) {
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
-	return tr.(*Tracker), gh
+	built, ok := tr.(*Tracker)
+	if !ok {
+		t.Fatalf("factory built %T, want *Tracker", tr)
+	}
+	return built, gh
 }
 
 // prsJSON is the query's reply for issue #42 of o/r with the given closing
@@ -64,10 +69,10 @@ func prNode(number int, state, repo string, labels ...crew.State) string {
 		number, state, repo, strings.Join(names, ","))
 }
 
-// ended is a report of #42 moving to state at the end of development, whose
+// ended is report p1 of #42 moving to state at the end of development, whose
 // actions are actions.
-func ended(id string, state crew.State, actions ...crew.ActionStatus) crew.PullRequestReport {
-	return crew.PullRequestReport{ID: id, IssueKey: "42", IssueRef: "#42", State: state,
+func ended(state crew.State, actions ...crew.ActionStatus) crew.PullRequestReport {
+	return crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: state,
 		End: &crew.StageEnd{Stage: "development", Actions: actions}}
 }
 
@@ -75,8 +80,9 @@ func ended(id string, state crew.State, actions ...crew.ActionStatus) crew.PullR
 // included.
 func comments(t *testing.T, gh *fakeGh, number int) []string {
 	t.Helper()
-	var bodies []string
-	for _, c := range gh.callsTo(commentOn(number)...) {
+	calls := gh.callsTo(commentOn(number)...)
+	bodies := make([]string, 0, len(calls))
+	for _, c := range calls {
 		bodies = append(bodies, statusBody(t, c))
 	}
 	return bodies
@@ -90,7 +96,7 @@ func TestAReportMirrorsTheLabelAndPostsTheStopComment(t *testing.T) {
 		reply{prefix: commentOn(50), stdout: "900\n"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
+	report := ended(crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -124,7 +130,7 @@ func TestAStoppedStageSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
 		reply{prefix: commentOn(50), stdout: "900\n"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewFailed, crew.ActionStatus{Name: "lfg", State: crew.ActionFailed,
+	report := ended(crewFailed, crew.ActionStatus{Name: "lfg", State: crew.ActionFailed,
 		Cause: crew.CauseStopped, Log: ".crew/logs/issue-42-lfg.log"})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
@@ -155,7 +161,7 @@ func TestOnlyTheOpenPullRequestsOfTheIssuesRepositoryAreWritten(t *testing.T) {
 		reply{prefix: commentOn(50), stdout: "900\n"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
+	report := ended(crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -172,7 +178,7 @@ func TestOnlyTheOpenPullRequestsOfTheIssuesRepositoryAreWritten(t *testing.T) {
 // Covers AE3: an issue without a closing pull request gets only the query.
 func TestAnIssueWithoutAPullRequestGetsOnlyTheQuery(t *testing.T) {
 	tr, gh := prTracker(t, reply{prefix: prQuery, stdout: prsJSON()})
-	report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "triage", State: crew.ActionSucceeded})
+	report := ended(crewWaitingReview, crew.ActionStatus{Name: "triage", State: crew.ActionSucceeded})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -220,7 +226,7 @@ func TestAPullRequestAlreadyInTheStateIsNotEditedButIsCommented(t *testing.T) {
 		reply{prefix: commentOn(50), stdout: "900\n"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
+	report := ended(crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -247,7 +253,7 @@ func TestTheStopCommentLinksTheStatusCommentItFinds(t *testing.T) {
 				reply{prefix: issue42List, stdout: tc.listed},
 				reply{prefix: commentOn(50), stdout: "900\n"},
 			)
-			report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
+			report := ended(crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
 			if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 				t.Fatalf("ReportPullRequests: %v", err)
 			}
@@ -268,7 +274,7 @@ func TestARetryAfterAFailedEditDoesNotCommentTwice(t *testing.T) {
 		reply{prefix: commentOn(50), stdout: "900\n"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
+	report := ended(crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
 	err := tr.ReportPullRequests(context.Background(), report)
 	if err == nil || errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused) {
 		t.Fatalf("ReportPullRequests = %v, want a transient error", err)
@@ -297,13 +303,14 @@ func TestARetryCommentsOnlyWhereTheCommentFailed(t *testing.T) {
 		reply{prefix: commentOn(51), stderr: "HTTP 502: Bad Gateway"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
+	report := ended(crewWaitingReview, crew.ActionStatus{Name: "lfg", State: crew.ActionSucceeded})
 	err := tr.ReportPullRequests(context.Background(), report)
 	if err == nil || errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused) {
 		t.Fatalf("ReportPullRequests = %v, want a transient error", err)
 	}
-	var numbers []string
-	for _, e := range gh.callsTo(prEdit...) {
+	edits := gh.callsTo(prEdit...)
+	numbers := make([]string, 0, len(edits))
+	for _, e := range edits {
 		numbers = append(numbers, e[2])
 	}
 	if !slices.Equal(numbers, []string{"50", "51"}) {
@@ -358,7 +365,8 @@ func TestTheQuerysErrorsAreClassified(t *testing.T) {
 		want  error
 	}{
 		"an issue GitHub cannot resolve": {reply{prefix: prQuery,
-			stdout: `{"data":{"repository":{"issue":null}},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to an Issue with the number of 42."}]}`,
+			stdout: `{"data":{"repository":{"issue":null}},` +
+				`"errors":[{"type":"NOT_FOUND","message":"Could not resolve to an Issue with the number of 42."}]}`,
 			stderr: "gh: Could not resolve to an Issue with the number of 42."}, port.ErrMovedMeanwhile},
 		"anything else": {reply{prefix: prQuery, stderr: "HTTP 502: Bad Gateway"}, nil},
 	} {
@@ -390,7 +398,7 @@ func TestACheckReasonWithBackticksStaysInItsCodeSpan(t *testing.T) {
 		reply{prefix: commentOn(50), stdout: "900\n"},
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
-	report := ended("p1", crewFailed, crew.ActionStatus{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
+	report := ended(crewFailed, crew.ActionStatus{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
 		Reason: "`gh` found no @someone **pull request**", Log: ".crew/logs/issue-42-lfg.log"})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)

@@ -137,6 +137,9 @@ func (m *Model) Stopped() bool {
 	return m.stopping && len(m.issues) == 0 && !m.statusesBusy() && len(m.pullRequests) == 0
 }
 
+// unknownName is what String gives for a value outside its enumeration.
+const unknownName = "unknown"
+
 // Claim is a held issue's state inside the core.
 type Claim int
 
@@ -171,7 +174,7 @@ func (c Claim) String() string {
 	case ClaimOwed:
 		return "owed"
 	}
-	return "unknown"
+	return unknownName
 }
 
 // Phase is where one action of a held issue stands.
@@ -214,7 +217,7 @@ func (p Phase) String() string {
 	case PhaseEnded:
 		return "ended"
 	}
-	return "unknown"
+	return unknownName
 }
 
 // View is a snapshot of what the core holds, for subscribers (KTD6). It

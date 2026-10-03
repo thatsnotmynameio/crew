@@ -266,12 +266,12 @@ func (f *failures) add(key string, errs ...error) {
 }
 
 // pop removes and returns the first scripted error for key, if any.
-func (f failures) pop(key string) error {
-	errs := f[key]
+func (f *failures) pop(key string) error {
+	errs := (*f)[key]
 	if len(errs) == 0 {
 		return nil
 	}
-	f[key] = errs[1:]
+	(*f)[key] = errs[1:]
 	return errs[0]
 }
 

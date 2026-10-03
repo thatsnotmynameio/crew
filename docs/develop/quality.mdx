@@ -1,0 +1,103 @@
+---
+title: Code quality
+description: The checks every pull request passes, where their rules live, how to run them locally, and how Codacy is set up.
+---
+
+# Code quality
+
+Every pull request meets one bar on complexity, quality, security and code standards. A rule is on only when its findings are ones we would fix, and whatever is on is enforced with zero tolerance. Every rule that is off is listed with its reason, next to where it is configured. The repository has no findings today, so the bar holds everywhere, not only on new code.
+
+## Where each rule lives
+
+Each kind of finding has one owner, so the same problem is never reported twice and the local checks never disagree with the gate. golangci-lint's findings stay in CI's `go` job, which is a required check; Codacy analyses the code on its own servers with the tools below.
+
+| Finding | Owner | Configured in |
+|---|---|---|
+| Go style, correctness, security (gosec), staticcheck | golangci-lint, in CI's `go` job | `.golangci.yml` |
+| Function complexity, length, parameters, file length | golangci-lint (`cyclop`, `gocognit`, `funlen`, `revive`) and Codacy's Lizard, at the same limits | `.golangci.yml`, `.codacy/codacy.config.json` |
+| Duplication | Codacy's duplication engine | `.codacy.yaml` |
+| Code security patterns and secrets | Codacy's Opengrep | `.codacy/codacy.config.json` |
+| Vulnerable or malicious dependencies, secrets | Codacy's Trivy, and govulncheck in CI | `.codacy/codacy.config.json` |
+| GitHub Actions misconfiguration | Codacy's Checkov | `.codacy/codacy.config.json` |
+| Total coverage of at least 90% | go-test-coverage, in CI's `go` job | `.testcoverage.yml` |
+| Coverage of at least 90% of a pull request's changed lines | `tools/diffcover`, in CI's `go` job | its `-threshold` flag |
+
+The limits are 15 for cyclomatic and cognitive complexity, 50 non-comment lines per function, 8 parameters and 500 non-comment lines per file. They apply to tests too.
+
+`.codacy.yaml` holds the analysis scope and the duplication engine's options. `.codacy/codacy.config.json` lists the tools Codacy runs, their patterns and thresholds. Codacy reads `.codacy.yaml` from `main` only, so a change to it takes effect after it merges. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files together.
+
+## Running the checks locally
+
+Run every command from the repository root. The gate runs the same ones.
+
+```sh
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
+go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...
+go run github.com/vladopajic/go-test-coverage/v2@v2.19.0 --config=.testcoverage.yml
+git diff -U0 origin/main...HEAD | go run ./tools/diffcover -profile coverage.out
+pnpm install                                        # once
+pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Opengrep, Trivy and Checkov
+```
+
+The first `analyze` installs the tools under `~/.codacy`; later runs drop `--install-dependencies`. Duplication is the one check that runs only on Codacy.
+
+## Suppressing a finding
+
+Fix the finding. When it is a genuine false positive, suppress that one finding where it is, naming the rule and the reason: `//nolint:gosec // the path comes from the test's own temp dir`. golangci-lint rejects a `//nolint` without both. Never exclude crew's own source from analysis to hide a finding. If a whole rule turns out to be noise, turn it off in the file that owns it, with the reason, in its own pull request.
+
+## Changing the bar
+
+Every limit and every rule that is off is in a file in the repository, so a stricter or looser bar is a pull request like any other. The quality gates are the exception: they live in Codacy's UI. To change one, update the values below in a pull request first, then set them in Codacy.
+
+## Codacy's settings outside the repository
+
+These cannot be set from a file. They are recorded here as the source of truth.
+
+| Setting | Value | Why |
+|---|---|---|
+| Gate policy, applied only to crew | New issues over 0, at least Minor (Info) | Zero tolerance on everything enabled |
+| | New security issues over 0, at least Minor | Zero tolerance on security |
+| | Duplication over 0 | No new clones |
+| | Diff coverage under 90% | 90% of changed lines covered |
+| | Complexity: off | The function limits above already report complex code as issues; an aggregate limit would fail any pull request that adds a function |
+| | Coverage variation: off | The total floor is checked in CI; a variation gate blocks refactors that delete tested code |
+| Run analysis on your build server | Off | Turning it on stops Codacy's own server analysis (Opengrep, Trivy, Checkov, Lizard, duplication); golangci-lint already gates every pull request in CI |
+| GitHub integration | Status checks on | CI's `codacy gate` job reads Codacy's check |
+
+`Codacy Diff Coverage` fails a pull request with no coverable lines, such as a docs-only one, so `tools/diffcover` enforces the 90% on changed lines and that Codacy check stays out of the required set.
+
+## How CI talks to Codacy
+
+Codacy analyses each commit itself; CI sends it only the coverage. The `go` job holds no secret: on a Dependabot pull request the updated module runs there. It saves the coverage profile as an artifact. The `codacy` job, the only one that sees `CODACY_PROJECT_TOKEN`, runs no code from the repository: it downloads Codacy's coverage reporter at a pinned version, checks its checksum, and uploads the profile for the analysed commit. It runs even when the `go` job failed, and each `main` commit's run is never cancelled, so every commit has the coverage Codacy compares pull requests against.
+
+The `codacy gate` job waits for Codacy's `Codacy Static Code Analysis` check on the pull request's head commit and repeats its verdict. The `checks` ruleset requires that job rather than Codacy's own check, because a required job that is skipped counts as passing: both Codacy jobs skip Dependabot's pull requests, which get no Actions secrets and which Codacy never analyses, since it analyses a private repository's commits only from its organization's members (each a paid seat). Dependabot's updates stay covered by govulncheck in the `go` job.
+
+The `Codacy import` workflow applies `.codacy/codacy.config.json` to Codacy whenever the file changes on `main`. It fails when Codacy refuses any tool, for example one a coding standard keeps on; crew follows no coding standard, so that its configuration file decides every tool. Both stay off until the repository variable `CODACY_ENABLED` is `true`.
+
+## Setting up Codacy
+
+The boss does this once, in this order:
+
+1. Add crew to Codacy, in the `thatsnotmynameio` organization.
+2. Create a repository API token with the longest expiry Codacy allows, and record its expiry date below.
+3. Add the token as the Actions secret `CODACY_PROJECT_TOKEN`.
+4. Leave "Run analysis on your build server" off in the repository's settings on Codacy: turning it on stops Codacy's own analysis.
+5. Create the gate policy in the table above and apply it to crew.
+6. Set the repository variable `CODACY_ENABLED` to `true`.
+7. Run the `Codacy import` workflow by hand, so Codacy applies the tool configuration.
+8. If the import reports a tool that a coding standard enables, unlink crew from that standard (organization **Policies**, tab **Coding standards**, edit the standard, **Select and apply to repositories**) and run the import again. Codacy links new repositories to its Default coding standard.
+9. Check that the first analysis of `main` shows no issues and no duplication. Fix anything left in a pull request.
+10. Watch a code pull request reach a verdict on `codacy gate`.
+11. Require the two Codacy jobs, from a clone of `thatsnotmynameio/.github` (`--checks` replaces the list, so it names every check): `scripts/bootstrap.sh thatsnotmynameio/crew --checks "version,actionlint / actionlint,docs / docs.page check,go,codacy,codacy gate"`.
+
+Token expiry: 2027-10-02. Rotate it before then.
+
+## Rotating the Codacy token
+
+Codacy's repository tokens expire within a year. Before the date above:
+
+1. Create a new repository API token in Codacy.
+2. Replace the Actions secret `CODACY_PROJECT_TOKEN` with it.
+3. Delete the old token in Codacy, and update the expiry date above.
+
+If the token expires first, the `codacy` job fails with a message pointing here.

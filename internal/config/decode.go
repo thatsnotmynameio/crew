@@ -51,10 +51,14 @@ func bind(section string, entries []entry) Decode {
 	}
 }
 
+// nodesPerEntry is how many nodes each entry takes in a mapping node's
+// Content: its key, then its value.
+const nodesPerEntry = 2
+
 // entries lists the keys of mapping n, whose own path is path.
 func entries(n *yaml.Node, path string) []entry {
-	out := make([]entry, 0, len(n.Content)/2)
-	for i := 0; i+1 < len(n.Content); i += 2 {
+	out := make([]entry, 0, len(n.Content)/nodesPerEntry)
+	for i := 0; i+1 < len(n.Content); i += nodesPerEntry {
 		out = append(out, entry{key: n.Content[i], value: n.Content[i+1], path: join(path, n.Content[i].Value)})
 	}
 	return out
@@ -91,8 +95,7 @@ func decodeFields(entries []entry, v reflect.Value) error {
 // fieldsByKey maps each YAML key of struct type t to its field's index.
 func fieldsByKey(t reflect.Type) map[string][]int {
 	fields := make(map[string][]int, t.NumField())
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		if !f.IsExported() {
 			continue
 		}
@@ -129,16 +132,22 @@ func decodeValue(n *yaml.Node, path string, v reflect.Value) error {
 		}
 		return decodeValue(n, path, v.Elem())
 	case v.Kind() == reflect.Slice && n.Kind == yaml.SequenceNode && holdsStructs(v.Type().Elem()):
-		items := reflect.MakeSlice(v.Type(), len(n.Content), len(n.Content))
-		for i, item := range n.Content {
-			if err := decodeValue(item, fmt.Sprintf("%s[%d]", path, i), items.Index(i)); err != nil {
-				return err
-			}
-		}
-		v.Set(items)
-		return nil
+		return decodeItems(n, path, v)
 	}
 	return decodeLeaf(n, path, v)
+}
+
+// decodeItems decodes sequence n into slice v item by item, so each item's
+// path names its index.
+func decodeItems(n *yaml.Node, path string, v reflect.Value) error {
+	items := reflect.MakeSlice(v.Type(), len(n.Content), len(n.Content))
+	for i, item := range n.Content {
+		if err := decodeValue(item, fmt.Sprintf("%s[%d]", path, i), items.Index(i)); err != nil {
+			return err
+		}
+	}
+	v.Set(items)
+	return nil
 }
 
 func holdsStructs(t reflect.Type) bool {

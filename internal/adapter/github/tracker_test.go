@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -43,6 +42,7 @@ type fakeGh struct {
 }
 
 func newFakeGh(t *testing.T, script ...reply) *fakeGh {
+	t.Helper()
 	return &fakeGh{t: t, script: script}
 }
 
@@ -142,15 +142,32 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.St
 	return cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras
 }
 
-// build builds the tracker from the tracker section's body, with gh scripted.
-func build(t *testing.T, tracker string, script ...reply) (*Tracker, *fakeGh) {
+// build builds the tracker from a config with an empty tracker section, with
+// gh scripted.
+func build(t *testing.T, script ...reply) (*Tracker, *fakeGh) {
 	t.Helper()
 	gh := newFakeGh(t, script...)
-	tr, err := factory(gh.run)(section(t, tracker))
+	tr, err := factory(gh.run)(section(t, ""))
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
-	return tr.(*Tracker), gh
+	built, ok := tr.(*Tracker)
+	if !ok {
+		t.Fatalf("factory built %T, want *Tracker", tr)
+	}
+	return built, gh
+}
+
+// wantClassified checks that err wraps exactly the port errors want wraps:
+// port.ErrMovedMeanwhile, port.ErrRefused, or neither when want is nil, a
+// transient error.
+func wantClassified(t *testing.T, err, want error) {
+	t.Helper()
+	for _, sentinel := range []error{port.ErrMovedMeanwhile, port.ErrRefused} {
+		if got, want := errors.Is(err, sentinel), errors.Is(want, sentinel); got != want {
+			t.Errorf("errors.Is(%v, %v) = %t, want %t", err, sentinel, got, want)
+		}
+	}
 }
 
 var login = reply{prefix: []string{"api", "user"}, stdout: "me\n"}
@@ -164,7 +181,8 @@ func issueNode(number int, created string, labels ...string) string {
 	for i, l := range labels {
 		names[i] = fmt.Sprintf(`{"name":%q}`, l)
 	}
-	return fmt.Sprintf(`{"number":%d,"title":"Issue %d","url":"https://github.com/o/r/issues/%d","createdAt":%q,"labels":{"nodes":[%s]}}`,
+	return fmt.Sprintf(`{"number":%d,"title":"Issue %d","url":"https://github.com/o/r/issues/%d",`+
+		`"createdAt":%q,"labels":{"nodes":[%s]}}`,
 		number, number, number, created, strings.Join(names, ","))
 }
 
@@ -180,7 +198,7 @@ func fieldValues(args []string, key string) []string {
 }
 
 func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
-	tr, gh := build(t, "", login, reply{
+	tr, gh := build(t, login, reply{
 		prefix: []string{"api", "graphql"},
 		stdout: issuesJSON(
 			issueNode(12, "2026-09-01T10:00:00Z", "ready", "bug"),
@@ -229,7 +247,7 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 }
 
 func TestListResolvesTheLoginOnce(t *testing.T) {
-	tr, gh := build(t, "", login, reply{prefix: []string{"api", "graphql"}, stdout: issuesJSON()})
+	tr, gh := build(t, login, reply{prefix: []string{"api", "graphql"}, stdout: issuesJSON()})
 	for range 2 {
 		if _, err := tr.List(context.Background(), []crew.State{ready}); err != nil {
 			t.Fatalf("List: %v", err)
@@ -251,7 +269,7 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) 
 		"an extra label":             {[]string{"waiting brainstorm", "ready"}, []crew.State{ready}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			tr, _ := build(t, "", login, reply{
+			tr, _ := build(t, login, reply{
 				prefix: []string{"api", "graphql"},
 				stdout: issuesJSON(issueNode(4, "2026-09-01T10:00:00Z", tc.labels...)),
 			})
@@ -269,7 +287,7 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) 
 func TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt(t *testing.T) {
 	// blockedBy counts the open issues blocking it; totalBlockedBy counts
 	// the closed ones too.
-	tr, gh := build(t, "", login, reply{
+	tr, gh := build(t, login, reply{
 		prefix: []string{"api", "graphql"},
 		stdout: issuesJSON(
 			blockedNode(issueNode(4, "2026-09-01T10:00:00Z", "ready"), 1, 2),
@@ -317,7 +335,7 @@ func valuesNode(node string, values ...string) string {
 
 func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
 	urgent, medium, low := priorityOptions[0], priorityOptions[2], priorityOptions[3]
-	tr, gh := build(t, "", login, reply{
+	tr, gh := build(t, login, reply{
 		prefix: []string{"api", "graphql"},
 		stdout: issuesJSON(
 			valuesNode(issueNode(1, "2026-09-01T10:00:00Z", "ready"), selectValue("Priority", urgent, priorityOptions...)),
@@ -383,7 +401,7 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 			[]string{"--remove-label=ready", "--remove-label=Waiting Brainstorm", "--add-label=in progress"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			tr, gh := build(t, "",
+			tr, gh := build(t,
 				reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[` + tc.labels + `]}`},
 				reply{prefix: []string{"issue", "edit", "3"}},
 			)
@@ -408,7 +426,7 @@ func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 		"closed in to":    `{"state":"CLOSED","labels":[{"name":"in progress"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			tr, gh := build(t, "", reply{prefix: []string{"issue", "view", "3"}, stdout: view})
+			tr, gh := build(t, reply{prefix: []string{"issue", "view", "3"}, stdout: view})
 			err := tr.Move(context.Background(), "3", ready, inProgress)
 			if !errors.Is(err, port.ErrMovedMeanwhile) {
 				t.Errorf("Move = %v, want ErrMovedMeanwhile", err)
@@ -429,7 +447,7 @@ func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
 		"in to with an extra added since": `{"name":"in progress"},{"name":"waiting brainstorm"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			tr, gh := build(t, "",
+			tr, gh := build(t,
 				reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[` + labels + `]}`},
 			)
 			if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
@@ -481,7 +499,7 @@ func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
 }
 
 func TestMoveToAMissingLabelIsRefused(t *testing.T) {
-	tr, _ := build(t, "",
+	tr, _ := build(t,
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
 		reply{prefix: []string{"issue", "edit", "3"}, stderr: "could not add label: 'in progress' not found\n"},
 	)
@@ -492,9 +510,10 @@ func TestMoveToAMissingLabelIsRefused(t *testing.T) {
 }
 
 func TestAFailingGhCallIsTransientAndCarriesItsStderr(t *testing.T) {
-	tr, _ := build(t, "",
+	tr, _ := build(t,
 		reply{prefix: []string{"issue", "view", "3"}, stderr: "HTTP 502: Bad Gateway"},
-		reply{prefix: []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/3/comments"}, stderr: "HTTP 502: Bad Gateway"},
+		reply{prefix: []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/3/comments"},
+			stderr: "HTTP 502: Bad Gateway"},
 		reply{prefix: []string{"api", "user"}, stderr: "HTTP 502: Bad Gateway"},
 	)
 	errs := map[string]error{
@@ -524,149 +543,6 @@ func TestUnknownTrackerKeysFailNamingThem(t *testing.T) {
 			_, err := factory(newFakeGh(t).run)(section(t, tc.tracker))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("factory error = %v, want one naming %s", err, tc.want)
-			}
-		})
-	}
-}
-
-// fenced returns the content of each fenced code block in markdown, checking
-// that each closes with exactly its own opening fence.
-func fenced(t *testing.T, markdown string) []string {
-	t.Helper()
-	var blocks []string
-	lines := strings.Split(markdown, "\n")
-	for i := 0; i < len(lines); i++ {
-		fence := strings.TrimRight(lines[i], "abcdefghijklmnopqrstuvwxyz")
-		if len(fence) < 3 || strings.Trim(fence, "`") != "" {
-			continue
-		}
-		end := slices.IndexFunc(lines[i+1:], func(l string) bool {
-			return strings.Trim(l, "`") == "" && len(l) >= len(fence)
-		})
-		if end < 0 {
-			t.Fatalf("fence on line %d never closes:\n%s", i+1, markdown)
-		}
-		blocks = append(blocks, strings.Join(lines[i+1:i+1+end], "\n"))
-		i += end + 1
-	}
-	return blocks
-}
-
-func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
-	postComment := []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/12/comments"}
-	tr, gh := build(t, "", reply{prefix: postComment, stdout: "901\n"})
-	reasons := []string{
-		"ran `go test ./...` and got: FAIL token=s3cret",
-		"tests did not build",
-		"workspace: fetch failed",
-	}
-	err := tr.ReportFailure(context.Background(), crew.FailureReport{
-		IssueKey: "12", IssueRef: "#12",
-		Failures: []crew.ActionFailure{
-			{Action: "development", Reason: reasons[0], Workspace: "issue-12-development", Log: ".crew/logs/issue-12-development.log"},
-			{Action: "acceptance", Reason: reasons[1], Workspace: "issue-12-acceptance", Log: ".crew/logs/issue-12-acceptance.log"},
-			// An action whose workspace was never created has no log.
-			{Action: "lint", Reason: reasons[2]},
-		},
-	})
-	if err != nil {
-		t.Fatalf("ReportFailure: %v", err)
-	}
-	if n := len(gh.calls); n != 1 {
-		t.Fatalf("made %d gh calls, want 1: %q", n, gh.calls)
-	}
-	comments := gh.callsTo(postComment...)
-	if len(comments) != 1 {
-		t.Fatalf("posted %d comments, want 1", len(comments))
-	}
-	body := statusBody(t, comments[0])
-
-	want := "crew: 3 actions failed on #12.\n" +
-		"\n**`development`** failed. Its log is `.crew/logs/issue-12-development.log`.\n" +
-		"\n**`acceptance`** failed. Its log is `.crew/logs/issue-12-acceptance.log`.\n" +
-		"\n**`lint`** failed before it had a log. crew's output says why.\n"
-	if body != want {
-		t.Errorf("comment =\n%s\nwant\n%s", body, want)
-	}
-	for _, reason := range reasons {
-		if strings.Contains(body, reason) {
-			t.Errorf("comment carries the session's words %q:\n%s", reason, body)
-		}
-	}
-}
-
-func TestReportFailureErrorsAreClassifiedFromTheHTTPStatus(t *testing.T) {
-	for name, tc := range map[string]struct {
-		stderr string
-		want   error // nil: transient
-	}{
-		"issue gone":     {stderr: "gh: Not Found (HTTP 404)\n", want: port.ErrMovedMeanwhile},
-		"issue locked":   {stderr: "gh: Unable to create comment because issue is locked. (HTTP 403)\n", want: port.ErrRefused},
-		"rate limited":   {stderr: "gh: You have exceeded a secondary rate limit. (HTTP 403)\n"},
-		"no HTTP status": {stderr: "error connecting to api.github.com\n"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			tr, _ := build(t, "",
-				reply{prefix: []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/42/comments"}, stderr: tc.stderr})
-			err := tr.ReportFailure(context.Background(), crew.FailureReport{
-				IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{{Action: "development"}},
-			})
-			if err == nil || !strings.Contains(err.Error(), "report failure on issue #42") {
-				t.Fatalf("ReportFailure = %v, want an error naming issue #42", err)
-			}
-			for _, sentinel := range []error{port.ErrMovedMeanwhile, port.ErrRefused} {
-				if got, want := errors.Is(err, sentinel), errors.Is(tc.want, sentinel); got != want {
-					t.Errorf("errors.Is(%v, %v) = %t, want %t", err, sentinel, got, want)
-				}
-			}
-		})
-	}
-}
-
-func TestPrepareWithoutAuthTellsTheBossToLogIn(t *testing.T) {
-	tr, gh := build(t, "", reply{prefix: []string{"auth", "status"}, stderr: "You are not logged into any GitHub hosts."})
-	err := tr.Prepare(context.Background(), []crew.State{ready})
-	if err == nil || !strings.Contains(err.Error(), "gh auth login") {
-		t.Errorf("Prepare = %v, want an error telling the boss to run gh auth login", err)
-	}
-	if calls := gh.callsTo("label"); len(calls) != 0 {
-		t.Errorf("touched labels %q without auth", calls)
-	}
-}
-
-func TestPrepareWithoutGhSaysItIsMissing(t *testing.T) {
-	tr, _ := build(t, "", reply{prefix: []string{"auth", "status"}, err: fmt.Errorf("start gh: %w", &exec.Error{Name: "gh", Err: exec.ErrNotFound})})
-	err := tr.Prepare(context.Background(), []crew.State{ready})
-	if err == nil || !strings.Contains(err.Error(), "gh") || strings.Contains(err.Error(), "gh auth login") {
-		t.Errorf("Prepare = %v, want an error saying gh is not installed", err)
-	}
-}
-
-func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
-	for name, tc := range map[string]struct {
-		present string
-		want    []string
-	}{
-		"AE7 only ready": {`[{"name":"ready"}]`, []string{"in progress", "in review", "needs attention", "waiting brainstorm"}},
-		"another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"},{"name":"Waiting Brainstorm"}]`,
-			[]string{"in review", "needs attention"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			tr, gh := build(t, "",
-				reply{prefix: []string{"auth", "status"}},
-				reply{prefix: []string{"label", "list"}, stdout: tc.present},
-				reply{prefix: []string{"label", "create"}},
-			)
-			states := []crew.State{ready, inProgress, inReview, needsAttention}
-			if err := tr.Prepare(context.Background(), states); err != nil {
-				t.Fatalf("Prepare: %v", err)
-			}
-			var created []string
-			for _, c := range gh.callsTo("label", "create") {
-				created = append(created, c[2])
-			}
-			if !slices.Equal(created, tc.want) {
-				t.Errorf("created labels %q, want %q", created, tc.want)
 			}
 		})
 	}

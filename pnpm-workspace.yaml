@@ -1,0 +1,6 @@
+# Dependencies whose install scripts pnpm may run. Both are pulled in by the
+# Codacy Analysis CLI and stay off: @scarf/scarf only sends install telemetry,
+# and unrs-resolver ships prebuilt binaries, so neither script is needed.
+allowBuilds:
+  '@scarf/scarf': false
+  unrs-resolver: false
