@@ -10,7 +10,7 @@ The person who runs crew in their own repositories, writes its workflow and chec
 
 ### Stage
 
-One step of the workflow: it takes the issues and pull requests that carry its label, runs its actions on each, and moves each to its success state when every action succeeded, or to its failure state when any failed.
+One step of the workflow: it takes the items of its kind that carry its label, issues by default or pull requests when it declares them, runs its actions on each, and moves each to its success state when every action succeeded, or to its failure state when any failed.
 
 ### Action
 
@@ -78,7 +78,7 @@ It is a new comment, so the tracker notifies the boss, and it never quotes what 
 
 The crew label an issue's pull requests carry, which crew sets to the issue's own crew label each time it moves the issue. An issue's pull requests are the open ones in its own repository that are linked as closing it; merged and closed ones, and those in other repositories, are not.
 
-It goes from the issue to its pull requests only: crew replaces a crew label put on a pull request by hand at the issue's next move. A pull request that carries a stage's label, mirrored or not, is taken by that stage.
+It goes from the issue to its pull requests only: crew replaces a crew label put on a pull request by hand at the issue's next move. A stage takes the items of its kind that carry its label, so a pull request that carries a stage's label, mirrored or not, is taken only by a stage that takes pull requests; crew leaves it alone otherwise, with a notice.
 
 ### Stop comment
 

@@ -7,7 +7,7 @@ description: Run crew in a repository to move its issues through your workflow, 
 
 crew moves your issues through a workflow you declare in the repository. It polls GitHub for the issues and pull requests you labeled, and for each one it runs the stage's actions in parallel. Each action is a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue on, or to the stage's failure label with a comment saying what failed.
 
-crew runs sessions and moves labels. Opening a pull request, reviewing and merging are your prompts' job and yours. A stage takes a pull request you labeled as it takes an issue. crew also writes to the pull requests that close an issue: it gives them the issue's crew label, and comments on them when a stage ends. See [The pull requests](#the-pull-requests).
+crew runs sessions and moves labels. Opening a pull request, reviewing and merging are your prompts' job and yours. A stage takes issues, or, with `takes: pull_requests`, the pull requests you labeled. crew also writes to the pull requests that close an issue: it gives them the issue's crew label, and comments on them when a stage ends. See [The pull requests](#the-pull-requests).
 
 ## Install
 
@@ -139,6 +139,7 @@ Each stage has:
 | `on_failure` | The label the issue moves to when any action failed, with crew's comment. It cannot be the stage's own `label`, but it can be another stage's: `on_failure: ready` on the `review` stage sends a failed review back to `implement`. |
 | `actions` | At least one action, each with a `name` (unique in the stage), a `prompt`, and optionally a `check` (see [Checks](#checks)). |
 | `queue` | Optional. The [queue](#queues) the stage runs in: `clerk`, `default` or one under `config.queues`. Without it, the stage runs in `default`. |
+| `takes` | Optional. The kind of item the stage takes: `issues`, the default, or `pull_requests`. A stage takes one kind, never both. See [A pull request as the work](#a-pull-request-as-the-work). |
 | `description` | Optional. The work the stage takes, in a few words, such as `a bug to reproduce and fix`. crew does not use it: the [`/cw-create-issue`](/guide/create-issue) skill shows it when it lists the types of issue. |
 | `issue_template` | Optional. The file name of a Markdown issue template in `.github/ISSUE_TEMPLATE/`, such as `bug.md`. crew does not use it: `/cw-create-issue` fills it for an issue of this stage. |
 
@@ -208,7 +209,7 @@ A queue never lends a slot it does not use. While `default` is full, a `clerk` s
 
 ### Prompts
 
-A prompt is a Go template over the issue, or over the pull request when the stage took one:
+A prompt is a Go template over the item the stage took: an issue, or a pull request when the stage has `takes: pull_requests`:
 
 | Field | On GitHub |
 | --- | --- |
@@ -282,6 +283,7 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - a `description` is empty, or an `issue_template` is not a file name ending in `.md` (it holds a `/` or `\`, for example). crew does not check that the template file exists;
 - a prompt, in an action or under `prompts`, is empty, does not parse, or uses a field that does not exist;
 - an action's `check` is present but empty;
+- a stage's `takes` is neither `issues` nor `pull_requests`;
 - a [queue](#queues) rule is broken: `clerk_slots`, `default`'s slots, a queue's slots or name, or a stage's `queue`;
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
@@ -294,12 +296,13 @@ While every queue a stage runs in is full, a poll lists no issues, since it coul
 
 1. It lists the open issues and pull requests **you** opened that carry a stage's `label`. Those other people opened are ignored, whatever their labels, and so are those whose only crew label is an extra.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
-3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). A pull request is never blocked. The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked.
-4. It takes each issue whose stage's [queue](#queues) has a free slot, and passes over the others, so a full queue does not hold back the stages of another queue. It goes through them in this order: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority, and every pull request, goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. crew writes nothing on the issues left waiting: they keep their label, and a later poll with a free slot in their queue takes them.
-5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone. Every move crew makes is then mirrored on the issue's open [pull requests](#the-pull-requests).
-6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt. When the last run of that action, in that stage, on that issue failed, crew [resumes it](#resume-a-failed-action) in that run's worktree instead.
-7. While the actions run, crew updates the issue's status comment at every poll.
-8. When every action of the issue has ended, its check included, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue. Either way, crew then comments on the issue's open pull requests that the stage ended.
+3. It leaves alone an item whose stage takes the other kind: a pull request carrying the `label` of a stage that takes issues, or an issue carrying the `label` of a stage with `takes: pull_requests`. crew does not move it or comment on it, and says so once, in a line such as `left #90 alone: it is a pull request, and ready is the label of implement, which takes issues`. It says so again only after a poll found the item without that label, or after crew restarts.
+4. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). A pull request is never blocked. The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked.
+5. It takes each issue whose stage's [queue](#queues) has a free slot, and passes over the others, so a full queue does not hold back the stages of another queue. It goes through them in this order: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority, and every pull request, goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. crew writes nothing on the issues left waiting: they keep their label, and a later poll with a free slot in their queue takes them.
+6. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone. Every move crew makes is then mirrored on the issue's open [pull requests](#the-pull-requests).
+7. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt. When the last run of that action, in that stage, on that issue failed, crew [resumes it](#resume-a-failed-action) in that run's worktree instead.
+8. While the actions run, crew updates the issue's status comment at every poll.
+9. When every action of the issue has ended, its check included, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue. Either way, crew then comments on the issue's open pull requests that the stage ended.
 
 This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action and its log, relative to the repository:
 
@@ -385,7 +388,7 @@ A comment that would grow past GitHub's limit of 65,536 characters is left as it
 
 ### The pull requests
 
-crew does not open, review or merge pull requests. A stage takes a pull request that carries its label, as it takes an issue: see [A pull request as the work](#a-pull-request-as-the-work). crew also writes to the pull requests that belong to an issue, so the pull request list shows where crew holds the work and whether anyone still watches it.
+crew does not open, review or merge pull requests. A stage with `takes: pull_requests` takes a pull request that carries its label, as a stage takes an issue: see [A pull request as the work](#a-pull-request-as-the-work). crew also writes to the pull requests that belong to an issue, so the pull request list shows where crew holds the work and whether anyone still watches it.
 
 - **Which:** the open pull requests in the repository that GitHub links as closing the issue, whoever opened them. That is the `Closes #42` line in the pull request's body, so keep it in the prompts that open pull requests. Merged and closed pull requests, and pull requests in other repositories, are left alone. An issue without such a pull request gets nothing.
 - **The label:** each time crew moves the issue, it gives each of those pull requests the issue's new crew label and removes every other crew label, extras included, as on the issue. Your other labels stay. The mirror goes one way: a crew label you put on a pull request by hand is replaced at the issue's next move.
@@ -407,11 +410,11 @@ A pull request opened while a stage runs gets its label at the issue's next move
 
 #### A pull request as the work
 
-A stage takes an open pull request **you** opened that carries its `label`, as it takes an issue. crew moves the pull request through the stage's labels, runs the stage's actions on it, and keeps a status comment and, when the stage fails, a failure report on it. Its [prompt fields](#prompts) are the pull request's. A pull request has no priority and is never blocked.
+A stage with `takes: pull_requests` takes an open pull request **you** opened that carries its `label`, as a stage that takes issues takes an issue. A stage without `takes` takes issues only: crew leaves a pull request carrying its `label` alone, and says so (step 3 of [each poll](#what-crew-does-on-each-poll)). crew moves the pull request through the stage's labels, runs the stage's actions on it, and keeps a status comment and, when the stage fails, a failure report on it. Its [prompt fields](#prompts) are the pull request's. A pull request has no priority and is never blocked.
 
-- **Swap the label, don't add one:** a pull request that closes an issue crew moved already carries that issue's crew label, and a pull request with two crew labels is skipped. Replace the mirrored label with the stage's `label`.
+- **Swap the label, don't add one:** a pull request that closes an issue crew moved already carries that issue's crew label, and a pull request with two crew labels is skipped. Replace the mirrored label with the `label` of a stage that takes pull requests.
 - **Nothing is mirrored from it:** moving a pull request gives no other pull request a label and posts no stop comment, since a pull request closes no issue.
-- **The issue's moves still reach it:** when the issue it closes moves, the mirror replaces the label crew gave the pull request with the issue's. And when an issue moves to a stage's `label`, such as `on_success: ready to review` in the example, its pull requests get that label too, so that stage takes them as well as the issue. Keep the labels your issues move to apart from stage labels unless you want that.
+- **The issue's moves still reach it:** when the issue it closes moves, the mirror replaces the label crew gave the pull request with the issue's. And when an issue moves to a stage's `label`, such as `on_success: ready to review` in the example, its pull requests get that label too. A stage that takes issues, like `review` there, takes the issue and leaves each pull request alone with a notice. A stage with `takes: pull_requests` takes the pull requests, and the issue, which keeps that label, gets the notice. Keep the labels your issues move to apart from stage labels unless you want that.
 
 ### Where things go
 

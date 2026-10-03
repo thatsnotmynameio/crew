@@ -9,7 +9,7 @@ description: A Claude Code skill that records a piece of work as a GitHub issue 
 
 The skill was built for the author's own workflow, so its behavior, and the config keys it reads, may still change.
 
-The types are every stage of the workflow and every extra label in `extra_labels`. A stage's type puts its `label` on the issue, so crew starts on it at the next poll with a free slot. An extra parks the issue, such as an idea to brainstorm later: no stage takes it until you add a stage's label.
+The types are every stage of the workflow that takes issues and every extra label in `extra_labels`. A stage with `takes: pull_requests` is not a type, since crew leaves an issue carrying its label alone. A stage's type puts its `label` on the issue, so crew starts on it at the next poll with a free slot. An extra parks the issue, such as an idea to brainstorm later: no stage takes it until you add a stage's label.
 
 ## Install once
 
@@ -85,7 +85,7 @@ It creates the issue at once, with no preview and no confirmation. To fix a mist
 /cw-update-issue-plan crew:development:ready
 ```
 
-It refuses a label that is neither a stage's nor an extra's, and leaves an issue alone while crew is running a session on it. A `moves_to` label that your own session put on the issue, such as one `/cw-brainstorm` set, does not stop it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
+It refuses a label that is neither the label of a stage that takes issues nor an extra's, and leaves an issue alone while crew is running a session on it. A `moves_to` label that your own session put on the issue, such as one `/cw-brainstorm` set, does not stop it. Install it like `/cw-create-issue`, linking `.agents/skills/cw-update-issue-plan` into `~/.claude/skills/`.
 
 ## Brainstorm an issue
 
