@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -35,6 +36,12 @@ const (
 	// which bytes never undercount.
 	maxCommentBytes = 65536
 )
+
+// minFence is the fewest backticks a fenced code block opens with.
+const minFence = 3
+
+// minutesPerHour converts elapsed minutes to hours.
+const minutesPerHour = int(time.Hour / time.Minute)
 
 // errCommentGone means the cached status comment no longer exists, as when
 // someone deleted it.
@@ -107,7 +114,7 @@ func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text stri
 	out, err := t.gh.call(ctx, "api", "--method", "PATCH", fmt.Sprintf("repos/{owner}/{repo}/issues/comments/%d", c.id),
 		"-f", "body="+body)
 	if err != nil {
-		if httpStatus(string(out.Stderr)) == 404 {
+		if httpStatus(string(out.Stderr)) == http.StatusNotFound {
 			t.forgetStatus(issueKey)
 			return fmt.Errorf("edit comment %d: %w: %w", c.id, errCommentGone, err)
 		}
@@ -285,7 +292,7 @@ func parseMarker(s string) (entry, bool) {
 		return entry{}, false
 	}
 	e := entry{marked: true}
-	for _, f := range strings.Fields(fields) {
+	for f := range strings.FieldsSeq(fields) {
 		key, value, ok := strings.Cut(f, "=")
 		if !ok {
 			return entry{}, false
@@ -348,9 +355,9 @@ func httpStatus(stderr string) int {
 func classify(err error, out proc.Output, onIssue bool) error {
 	stderr := string(out.Stderr)
 	switch code := httpStatus(stderr); {
-	case onIssue && (code == 404 || code == 410):
+	case onIssue && (code == http.StatusNotFound || code == http.StatusGone):
 		return fmt.Errorf("%w: %w", port.ErrMovedMeanwhile, err)
-	case code == 403 && !strings.Contains(strings.ToLower(stderr), "rate limit"):
+	case code == http.StatusForbidden && !strings.Contains(strings.ToLower(stderr), "rate limit"):
 		return fmt.Errorf("%w: %w", port.ErrRefused, err)
 	}
 	return err
@@ -366,61 +373,77 @@ func classify(err error, out proc.Output, onIssue bool) error {
 func (t *Tracker) renderStatus(s crew.Status) string {
 	var b strings.Builder
 	b.WriteString(markerLine(s) + "\n")
-	stage := codeSpan(s.Stage)
-	switch s.Kind {
-	case crew.StatusQueued:
-		fmt.Fprintf(&b, "crew: %s is queued for %s, waiting for a free slot: crew runs at most %s at once.\n",
-			s.IssueRef, stage, plural(s.Slots, "issue"))
-	case crew.StatusRunning:
-		fmt.Fprintf(&b, "crew: %s is running on %s.\n", stage, s.IssueRef)
-	case crew.StatusEnded:
-		fmt.Fprintf(&b, "crew: %s ended on %s.\n", stage, s.IssueRef)
-	}
+	writeHeadline(&b, s)
 	for _, a := range s.Actions {
-		// A resumed action's line names its worktree: "**`lfg`** resumed in
-		// worktree `issue-9-lfg` and failed." A fresh one reads "**`lfg`**
-		// failed."
-		name, and := "**"+codeSpan(a.Name)+"**", ""
-		if a.Workspace != "" {
-			name += " resumed in worktree " + codeSpan(a.Workspace)
-			and = " and"
-		}
-		switch {
-		case a.State == crew.ActionSucceeded:
-			fmt.Fprintf(&b, "\n%s%s succeeded.\n", name, and)
-		case a.State == crew.ActionFailed:
-			fmt.Fprintf(&b, "\n%s\n", failedAction(name+and, a))
-		case a.Started.IsZero():
-			fmt.Fprintf(&b, "\n%s%s is running.\n", name, and)
-		default:
-			fmt.Fprintf(&b, "\n%s%s has been running for %s.", name, and, elapsed(s.Updated.Sub(a.Started)))
-			if a.Said == "" {
-				b.WriteString("\n")
-				break
-			}
-			fence := strings.Repeat("`", max(3, longestBacktickRun(a.Said)+1))
-			fmt.Fprintf(&b, " It last said:\n\n%stext\n%s\n%s\n", fence, a.Said, fence)
-		}
+		writeAction(&b, a, s.Updated)
 	}
 	if s.Kind == crew.StatusEnded {
-		to := codeSpan(string(s.To))
-		switch s.Move {
-		case crew.MovePending:
-			fmt.Fprintf(&b, "\n%s is moving to %s.\n", s.IssueRef, to)
-		case crew.MoveDone:
-			fmt.Fprintf(&b, "\n%s moved to %s.\n", s.IssueRef, to)
-		case crew.MoveDropped:
-			fmt.Fprintf(&b, "\ncrew could not move it to %s.\n", to)
-		}
+		writeMove(&b, s)
 	}
 	fmt.Fprintf(&b, "\nUpdated %s UTC.", s.Updated.UTC().Format("2006-01-02 15:04"))
 	return b.String()
 }
 
+// writeHeadline writes the status entry's first line: what the stage does.
+func writeHeadline(b *strings.Builder, s crew.Status) {
+	stage := codeSpan(s.Stage)
+	switch s.Kind {
+	case crew.StatusQueued:
+		fmt.Fprintf(b, "crew: %s is queued for %s, waiting for a free slot: crew runs at most %s at once.\n",
+			s.IssueRef, stage, plural(s.Slots, "issue"))
+	case crew.StatusRunning:
+		fmt.Fprintf(b, "crew: %s is running on %s.\n", stage, s.IssueRef)
+	case crew.StatusEnded:
+		fmt.Fprintf(b, "crew: %s ended on %s.\n", stage, s.IssueRef)
+	}
+}
+
+// writeAction writes the paragraph of action a, as of updated: its state
+// and, when it resumed, its worktree.
+func writeAction(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
+	// A resumed action's line names its worktree: "**`lfg`** resumed in
+	// worktree `issue-9-lfg` and failed." A fresh one reads "**`lfg`**
+	// failed."
+	name, and := "**"+codeSpan(a.Name)+"**", ""
+	if a.Workspace != "" {
+		name += " resumed in worktree " + codeSpan(a.Workspace)
+		and = " and"
+	}
+	switch {
+	case a.State == crew.ActionSucceeded:
+		fmt.Fprintf(b, "\n%s%s succeeded.\n", name, and)
+	case a.State == crew.ActionFailed:
+		fmt.Fprintf(b, "\n%s\n", failedAction(name+and, a))
+	case a.Started.IsZero():
+		fmt.Fprintf(b, "\n%s%s is running.\n", name, and)
+	default:
+		fmt.Fprintf(b, "\n%s%s has been running for %s.", name, and, elapsed(updated.Sub(a.Started)))
+		if a.Said == "" {
+			b.WriteString("\n")
+			return
+		}
+		fence := strings.Repeat("`", max(minFence, longestBacktickRun(a.Said)+1))
+		fmt.Fprintf(b, " It last said:\n\n%stext\n%s\n%s\n", fence, a.Said, fence)
+	}
+}
+
+// writeMove writes where an ended stage's issue moves.
+func writeMove(b *strings.Builder, s crew.Status) {
+	to := codeSpan(string(s.To))
+	switch s.Move {
+	case crew.MovePending:
+		fmt.Fprintf(b, "\n%s is moving to %s.\n", s.IssueRef, to)
+	case crew.MoveDone:
+		fmt.Fprintf(b, "\n%s moved to %s.\n", s.IssueRef, to)
+	case crew.MoveDropped:
+		fmt.Fprintf(b, "\ncrew could not move it to %s.\n", to)
+	}
+}
+
 // failedAction words the failed action a, named by subject, as the status
 // comment and the stop comment both give it: why it failed, in crew's words,
-// then its log, as in "**`lfg`** failed: crew stopped it. Its log is
-// `.crew/logs/issue-42-lfg.log`."
+// then its log: "**`lfg`** failed: crew stopped it. Its log is
+// `.crew/logs/issue-42-lfg.log`." is how a stopped lfg reads.
 func failedAction(subject string, a crew.ActionStatus) string {
 	line := fmt.Sprintf("%s failed%s.", subject, failureCause(a))
 	if a.Log == "" {
@@ -450,8 +473,9 @@ func failureCause(a crew.ActionStatus) string {
 		return ": its session could not start"
 	case crew.CausePrompt:
 		return ": its prompt did not render"
+	default:
+		return ""
 	}
-	return ""
 }
 
 // elapsed renders d in whole minutes, as "less than a minute", "42 minutes"
@@ -462,10 +486,10 @@ func elapsed(d time.Duration) string {
 		return "less than a minute"
 	}
 	var parts []string
-	if h := minutes / 60; h > 0 {
+	if h := minutes / minutesPerHour; h > 0 {
 		parts = append(parts, plural(h, "hour"))
 	}
-	if m := minutes % 60; m > 0 {
+	if m := minutes % minutesPerHour; m > 0 {
 		parts = append(parts, plural(m, "minute"))
 	}
 	return strings.Join(parts, " ")

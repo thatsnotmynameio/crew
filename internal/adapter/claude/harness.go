@@ -115,17 +115,6 @@ type session struct {
 	done    chan struct{} // closed once the process is reaped and judged
 }
 
-// reap waits for the process, whose output is fully copied once Wait
-// returns, and judges it.
-func (s *session) reap() {
-	err := s.process.Wait()
-	s.outcome = judge(s.events.end(), err)
-	if s.stopped.Load() {
-		s.outcome = crew.Outcome{Reason: stoppedReason}
-	}
-	close(s.done)
-}
-
 // Wait implements port.Session.
 func (s *session) Wait() crew.Outcome {
 	<-s.done
@@ -153,6 +142,17 @@ func (s *session) Stop(ctx context.Context) error {
 	}
 	<-s.done
 	return nil
+}
+
+// reap waits for the process, whose output is fully copied once Wait
+// returns, and judges it.
+func (s *session) reap() {
+	err := s.process.Wait()
+	s.outcome = judge(s.events.end(), err)
+	if s.stopped.Load() {
+		s.outcome = crew.Outcome{Reason: stoppedReason}
+	}
+	close(s.done)
 }
 
 // serialWriter passes writes to w one at a time, because stdout and stderr

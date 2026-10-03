@@ -56,41 +56,50 @@ func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullReques
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
-	var transient []error
-	var final error
+	var errs writeErrors
 	link := ""
 	for _, pr := range prs {
-		errs := []error{t.mirror(ctx, pr, report.State)}
-		if report.End != nil && !t.commented(report.ID, pr.number) {
-			var err error
-			if link == "" {
-				link, err = t.statusLink(ctx, report.IssueKey, report.IssueRef, issueURL)
-			}
-			if err == nil {
-				err = t.postStop(ctx, report, pr.number, link)
-			}
-			errs = append(errs, err)
+		errs.add(t.mirror(ctx, pr, report.State))
+		if report.End == nil || t.commented(report.ID, pr.number) {
+			continue
 		}
-		for _, err := range errs {
-			switch {
-			case err == nil:
-			case errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused):
-				if final == nil {
-					final = err
-				}
-			default:
-				transient = append(transient, err)
-			}
+		var err error
+		if link == "" {
+			link, err = t.statusLink(ctx, report.IssueKey, report.IssueRef, issueURL)
 		}
+		if err == nil {
+			err = t.postStop(ctx, report, pr.number, link)
+		}
+		errs.add(err)
 	}
-	if len(transient) > 0 {
-		return fmt.Errorf("%s: %w", what, errors.Join(transient...))
+	if len(errs.transient) > 0 {
+		return fmt.Errorf("%s: %w", what, errors.Join(errs.transient...))
 	}
 	t.forgetStops(report.ID)
-	if final != nil {
-		return fmt.Errorf("%s: %w", what, final)
+	if errs.final != nil {
+		return fmt.Errorf("%s: %w", what, errs.final)
 	}
 	return nil
+}
+
+// writeErrors sorts the errors of a report's writes: the transient ones, and
+// the first refusal or moved-meanwhile error.
+type writeErrors struct {
+	transient []error
+	final     error
+}
+
+// add sorts err, which may be nil.
+func (w *writeErrors) add(err error) {
+	switch {
+	case err == nil:
+	case errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused):
+		if w.final == nil {
+			w.final = err
+		}
+	default:
+		w.transient = append(w.transient, err)
+	}
 }
 
 // pullRequests returns the issue's URL and the open pull requests in its
