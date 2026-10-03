@@ -89,13 +89,8 @@ type issuesReply struct {
 		Repository struct {
 			Issues struct {
 				Nodes []struct {
-					Number    int       `json:"number"`
-					Title     string    `json:"title"`
-					URL       string    `json:"url"`
-					CreatedAt time.Time `json:"createdAt"`
-					Labels    struct {
-						Nodes []ghLabel `json:"nodes"`
-					} `json:"labels"`
+					itemNode
+
 					Dependencies struct {
 						BlockedBy int `json:"blockedBy"`
 					} `json:"issueDependenciesSummary"`
@@ -106,20 +101,27 @@ type issuesReply struct {
 			} `json:"issues"`
 			PullRequests struct {
 				Nodes []struct {
-					Number    int       `json:"number"`
-					Title     string    `json:"title"`
-					URL       string    `json:"url"`
-					CreatedAt time.Time `json:"createdAt"`
-					Author    struct {
+					itemNode
+
+					Author struct {
 						Login string `json:"login"`
 					} `json:"author"`
-					Labels struct {
-						Nodes []ghLabel `json:"nodes"`
-					} `json:"labels"`
 				} `json:"nodes"`
 			} `json:"pullRequests"`
 		} `json:"repository"`
 	} `json:"data"`
+}
+
+// itemNode holds what issuesQuery reads of an issue and of a pull request
+// alike.
+type itemNode struct {
+	Number    int       `json:"number"`
+	Title     string    `json:"title"`
+	URL       string    `json:"url"`
+	CreatedAt time.Time `json:"createdAt"`
+	Labels    struct {
+		Nodes []ghLabel `json:"nodes"`
+	} `json:"labels"`
 }
 
 // ghLabel is a label as gh prints it in JSON.
@@ -179,14 +181,14 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	repo := reply.Data.Repository
 	items := make([]crew.Issue, 0, len(repo.Issues.Nodes)+len(repo.PullRequests.Nodes))
 	for _, n := range repo.Issues.Nodes {
-		issue := t.item(n.Number, n.Title, n.URL, n.CreatedAt, n.Labels.Nodes)
+		issue := t.item(n.itemNode)
 		issue.Blocked = n.Dependencies.BlockedBy > 0
 		issue.Priority = priority(n.FieldValues.Nodes)
 		items = append(items, issue)
 	}
 	for _, n := range repo.PullRequests.Nodes {
 		if n.Author.Login == login {
-			items = append(items, t.item(n.Number, n.Title, n.URL, n.CreatedAt, n.Labels.Nodes))
+			items = append(items, t.item(n.itemNode))
 		}
 	}
 	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
@@ -327,12 +329,12 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	return nil
 }
 
-// item returns the issue or pull request number as a crew.Issue in the
-// states its labels name, each once, in label order.
-func (t *Tracker) item(number int, title, url string, created time.Time, labels []ghLabel) crew.Issue {
-	key := strconv.Itoa(number)
-	issue := crew.Issue{Key: key, Ref: "#" + key, Title: title, URL: url, Created: created}
-	for _, l := range labels {
+// item returns the issue or pull request n as a crew.Issue in the states its
+// labels name, each once, in label order.
+func (t *Tracker) item(n itemNode) crew.Issue {
+	key := strconv.Itoa(n.Number)
+	issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
+	for _, l := range n.Labels.Nodes {
 		if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
 			issue.States = append(issue.States, s)
 		}

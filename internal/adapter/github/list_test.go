@@ -20,17 +20,13 @@ func listJSON(issues, pullRequests []string) string {
 // pullNode is an open pull request node of the listing, opened by author,
 // or by a deleted account when author is empty.
 func pullNode(number int, created, author string, labels ...string) string {
-	names := make([]string, len(labels))
-	for i, l := range labels {
-		names[i] = fmt.Sprintf(`{"name":%q}`, l)
-	}
 	by := "null"
 	if author != "" {
 		by = fmt.Sprintf(`{"login":%q}`, author)
 	}
 	return fmt.Sprintf(`{"number":%d,"title":"Pull request %d","url":"https://github.com/o/r/pull/%d",`+
 		`"createdAt":%q,"author":%s,"labels":{"nodes":[%s]}}`,
-		number, number, number, created, by, strings.Join(names, ","))
+		number, number, number, created, by, labelNodes(labels...))
 }
 
 // wantItems checks that List returned want, in order, field by field.

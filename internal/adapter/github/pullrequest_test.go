@@ -204,7 +204,7 @@ func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
 				t.Fatalf("ReportPullRequests: %v", err)
 			}
 			if len(gh.calls) != 1 {
-				t.Errorf("calls = %q, want only the query", gh.calls)
+				t.Fatalf("calls = %q, want only the query", gh.calls)
 			}
 			query := strings.Join(fieldValues(gh.calls[0], "query"), "")
 			for _, want := range []string{"issueOrPullRequest(number: $number)", "... on Issue"} {

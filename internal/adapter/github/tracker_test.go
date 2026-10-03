@@ -177,13 +177,18 @@ func issuesJSON(nodes ...string) string {
 }
 
 func issueNode(number int, created string, labels ...string) string {
+	return fmt.Sprintf(`{"number":%d,"title":"Issue %d","url":"https://github.com/o/r/issues/%d",`+
+		`"createdAt":%q,"labels":{"nodes":[%s]}}`,
+		number, number, number, created, labelNodes(labels...))
+}
+
+// labelNodes returns the label nodes of a listed item, as GitHub returns them.
+func labelNodes(labels ...string) string {
 	names := make([]string, len(labels))
 	for i, l := range labels {
 		names[i] = fmt.Sprintf(`{"name":%q}`, l)
 	}
-	return fmt.Sprintf(`{"number":%d,"title":"Issue %d","url":"https://github.com/o/r/issues/%d",`+
-		`"createdAt":%q,"labels":{"nodes":[%s]}}`,
-		number, number, number, created, strings.Join(names, ","))
+	return strings.Join(names, ",")
 }
 
 // fieldValues returns the values of every -f/-F field named key in args.
