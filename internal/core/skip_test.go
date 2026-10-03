@@ -37,12 +37,20 @@ func wantListings(t *testing.T, cmds []core.Command, n int) {
 	}
 }
 
+// endActions ends both actions of the running issue key successfully and
+// returns the commands of its verdict.
+func (d *driver) endActions(key string) []core.Command {
+	d.t.Helper()
+	d.send(core.SessionEnded{IssueKey: key, Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueKey: key, Action: "development", Outcome: succeeded})
+	return verdict
+}
+
 // release ends both actions of the running issue key successfully and lands
 // its verdict move, which releases it. It returns what the landing produced.
 func (d *driver) release(key string) ([]core.Command, []core.Event) {
 	d.t.Helper()
-	d.send(core.SessionEnded{IssueKey: key, Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: key, Action: "development", Outcome: succeeded})
+	verdict := d.endActions(key)
 	return d.send(core.CallResult{ID: moveID(d.t, verdict, key), Result: core.ResultDone})
 }
 
@@ -131,8 +139,7 @@ func TestAE4ASecondReleaseAfterAnImmediateListingWaitsForTheNextTick(t *testing.
 // Covers AE6.
 func TestAE6AnIssueWithAnOwedMoveKeepsItsSlot(t *testing.T) {
 	d := busy(t)
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
+	verdict := d.endActions("1")
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	cmds, events := d.send(core.Tick{})
@@ -164,8 +171,7 @@ func TestAReleaseAfterASkippedTickListsNothingOnceTheRunTimeIsUp(t *testing.T) {
 
 func TestAReleaseAfterASkippedTickListsNothingWhileStopping(t *testing.T) {
 	d := busy(t)
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
+	verdict := d.endActions("1")
 	d.send(core.Tick{})
 	d.send(core.StopRequested{})
 

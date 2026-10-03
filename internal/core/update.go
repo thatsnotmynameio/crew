@@ -80,9 +80,9 @@ type step struct {
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
-// tick lists issues, unless a listing is outstanding or the run time is up,
-// or says it skipped the listing while every slot is busy (R1, R3). It then
-// retries the owed calls, statuses and pull request reports that are not in
+// tick lists issues, unless a listing is outstanding or the run time is up;
+// when every slot is busy it says it skipped the listing instead (R1, R3). It
+// then retries the owed calls, statuses and pull request reports that are not in
 // flight (KTD8, KTD5), and reports the status of each running issue with what
 // its sessions last said (R6).
 func (s *step) tick(said []Said) {
