@@ -67,6 +67,31 @@ const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $la
   }
 }`
 
+// issuesReply is issuesQuery's reply.
+type issuesReply struct {
+	Data struct {
+		Repository struct {
+			Issues struct {
+				Nodes []struct {
+					Number    int       `json:"number"`
+					Title     string    `json:"title"`
+					URL       string    `json:"url"`
+					CreatedAt time.Time `json:"createdAt"`
+					Labels    struct {
+						Nodes []ghLabel `json:"nodes"`
+					} `json:"labels"`
+					Dependencies struct {
+						BlockedBy int `json:"blockedBy"`
+					} `json:"issueDependenciesSummary"`
+					FieldValues struct {
+						Nodes []fieldValue `json:"nodes"`
+					} `json:"issueFieldValues"`
+				} `json:"nodes"`
+			} `json:"issues"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
 // ghLabel is a label as gh prints it in JSON.
 type ghLabel struct {
 	Name string `json:"name"`
@@ -123,29 +148,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	for _, s := range states {
 		args = append(args, "-f", "labels[]="+string(s))
 	}
-	var reply struct {
-		Data struct {
-			Repository struct {
-				Issues struct {
-					Nodes []struct {
-						Number    int       `json:"number"`
-						Title     string    `json:"title"`
-						URL       string    `json:"url"`
-						CreatedAt time.Time `json:"createdAt"`
-						Labels    struct {
-							Nodes []ghLabel `json:"nodes"`
-						} `json:"labels"`
-						Dependencies struct {
-							BlockedBy int `json:"blockedBy"`
-						} `json:"issueDependenciesSummary"`
-						FieldValues struct {
-							Nodes []fieldValue `json:"nodes"`
-						} `json:"issueFieldValues"`
-					} `json:"nodes"`
-				} `json:"issues"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
+	var reply issuesReply
 	if err := t.gh.decode(ctx, &reply, args...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
