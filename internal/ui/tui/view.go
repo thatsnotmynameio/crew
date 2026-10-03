@@ -57,15 +57,15 @@ func (m Model) fitted() []string {
 	}
 	recent := m.recent()
 	h := m.height
-	all := withRest(fixed, rest, cols, 0)
+	expanded := withRest(fixed, rest, cols, 0)
 
 	// Everything fits, or there is no height to fit.
-	if h <= 0 || len(all)+2+len(recent) <= h {
-		return append(all, recentRegion(recent)...)
+	if h <= 0 || len(expanded)+2+len(recent) <= h {
+		return append(expanded, recentRegion(recent)...)
 	}
 	// Recent events keeps its newest rows that fit, with its header.
-	if left := h - len(all) - 2; left > 0 {
-		return append(all, recentRegion(recent[len(recent)-left:])...)
+	if left := h - len(expanded) - 2; left > 0 {
+		return append(expanded, recentRegion(recent[len(recent)-left:])...)
 	}
 	// The oldest entries that need no attention collapse, as few as fit.
 	for k := 0; k <= len(rest); k++ {
@@ -74,7 +74,7 @@ func (m Model) fitted() []string {
 		}
 	}
 	// Even the entries that need attention do not fit: cut at the bottom.
-	all = withRest(fixed, rest, cols, len(rest))
+	all := withRest(fixed, rest, cols, len(rest))
 	keep := h - 1
 	return append(all[:keep:keep], fmt.Sprintf("… %d lines cut", len(all)-keep))
 }

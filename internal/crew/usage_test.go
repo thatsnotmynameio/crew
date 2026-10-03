@@ -38,16 +38,16 @@ func TestFormatTokens(t *testing.T) {
 		{17_213_000, "17.2M"}, {129_000_000, "129M"},
 	}
 	for _, tt := range tests {
-		if got := FormatTokens(tt.n); got != tt.want {
-			t.Errorf("FormatTokens(%d) = %q, want %q", tt.n, got, tt.want)
+		if got := formatTokens(tt.n); got != tt.want {
+			t.Errorf("formatTokens(%d) = %q, want %q", tt.n, got, tt.want)
 		}
 	}
 }
 
 func TestFormatCost(t *testing.T) {
 	for usd, want := range map[float64]string{12.4: "$12.40", 0.004: "$0.00", 46.9905864: "$46.99", 0: "$0.00"} {
-		if got := FormatCost(usd); got != want {
-			t.Errorf("FormatCost(%v) = %q, want %q", usd, got, want)
+		if got := formatCost(usd); got != want {
+			t.Errorf("formatCost(%v) = %q, want %q", usd, got, want)
 		}
 	}
 }

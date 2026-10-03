@@ -135,18 +135,18 @@ func lineOf(r core.RunRecord, run string) journalLine {
 	succeeded := r.Succeeded
 	l.Event, l.Succeeded, l.Reason = eventEnded, &succeeded, r.Reason
 	if !r.SessionStarted.IsZero() {
-		l.DurationMS = ptr(r.At.Sub(r.SessionStarted).Milliseconds())
+		l.DurationMS = new(r.At.Sub(r.SessionStarted).Milliseconds())
 	}
 	u := r.Usage
 	if u.HasCost {
-		l.CostUSD = ptr(u.Cost)
+		l.CostUSD = new(u.Cost)
 	}
 	if u.HasTokens {
-		l.InputTokens, l.OutputTokens = ptr(u.Tokens.Input), ptr(u.Tokens.Output)
-		l.CacheReadTokens, l.CacheWriteTokens = ptr(u.Tokens.CacheRead), ptr(u.Tokens.CacheWrite)
+		l.InputTokens, l.OutputTokens = new(u.Tokens.Input), new(u.Tokens.Output)
+		l.CacheReadTokens, l.CacheWriteTokens = new(u.Tokens.CacheRead), new(u.Tokens.CacheWrite)
 	}
 	if u.HasTurns {
-		l.Turns = ptr(u.Turns)
+		l.Turns = new(u.Turns)
 	}
 	l.Models = u.Models
 	switch r.PullRequest.Lookup {
@@ -159,9 +159,6 @@ func lineOf(r core.RunRecord, run string) journalLine {
 	}
 	return l
 }
-
-// ptr returns a pointer to a copy of v.
-func ptr[T any](v T) *T { return &v }
 
 // appendJournal appends r to the run journal, creating it and its directory
 // as needed. Only the loop calls it, so lines land in the order the core

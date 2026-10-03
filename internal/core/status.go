@@ -233,7 +233,7 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 			as.Workspace = a.workspace
 		}
 		if s.m.statusUsage && a.phase == PhaseEnded && !a.started.IsZero() {
-			as.Spend, as.PullRequest = a.usage.Spend(), a.pr
+			as.Spend, as.PullRequest = a.spend(), a.pr
 		}
 		st.Actions = append(st.Actions, as)
 	}

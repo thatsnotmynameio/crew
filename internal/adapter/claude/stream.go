@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -163,16 +164,15 @@ func (s *stream) usage() crew.Usage {
 	if s.last.Cost != nil {
 		u.Cost, u.HasCost = *s.last.Cost, true
 	}
-	for model, m := range s.last.Models {
+	for _, m := range s.last.Models {
 		u.Tokens.Input += m.Input
 		u.Tokens.Output += m.Output
 		u.Tokens.CacheRead += m.CacheRead
 		u.Tokens.CacheWrite += m.CacheWrite
-		u.Models = append(u.Models, model)
 	}
-	if len(u.Models) > 0 {
+	if len(s.last.Models) > 0 {
 		u.HasTokens = true
-		slices.Sort(u.Models)
+		u.Models = slices.Sorted(maps.Keys(s.last.Models))
 	}
 	return u
 }

@@ -494,9 +494,7 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.
 		return
 	}
 	a.phase = PhaseEnded
-	if !a.started.IsZero() {
-		s.m.spent = s.m.spent.Add(a.usage.Spend())
-	}
+	s.m.spent = s.m.spent.Add(a.spend())
 	s.record(h, a, RunEnded)
 	s.emit(ActionEnded{
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
@@ -524,11 +522,7 @@ func (s *step) judge(h *heldIssue) {
 		Issue: h.issue.Clone(), Stage: stage.Name, To: stage.OnSuccess, Taken: h.taken, Ended: s.at,
 	}
 	for _, a := range h.actions {
-		ha := HandledAction{Name: a.name, PullRequest: a.pr}
-		if !a.started.IsZero() {
-			ha.Spend = a.usage.Spend()
-		}
-		h.verdict.Actions = append(h.verdict.Actions, ha)
+		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
 	}
 	if len(report.Failures) == 0 {
 		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})

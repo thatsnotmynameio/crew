@@ -94,11 +94,11 @@ func (s Spend) String() string {
 	}
 	cost := "cost not reported"
 	if s.WithCost > 0 {
-		cost = FormatCost(s.Cost) + partial(s.WithCost, s.Sessions)
+		cost = formatCost(s.Cost) + partial(s.WithCost, s.Sessions)
 	}
 	tokens := "tokens not reported"
 	if s.WithTokens > 0 {
-		tokens = FormatTokens(s.Tokens.Total()) + " tokens" + partial(s.WithTokens, s.Sessions)
+		tokens = formatTokens(s.Tokens.Total()) + " tokens" + partial(s.WithTokens, s.Sessions)
 	}
 	return cost + ", " + tokens
 }
@@ -112,13 +112,13 @@ func partial(with, sessions int) string {
 	return ""
 }
 
-// FormatCost words a cost in US dollars with two decimals, as $12.40.
-func FormatCost(usd float64) string {
+// formatCost words a cost in US dollars with two decimals, as $12.40.
+func formatCost(usd float64) string {
 	return fmt.Sprintf("$%.2f", usd)
 }
 
-// FormatTokens words a token count compactly: 950, 48.2K, 17.2M.
-func FormatTokens(n int64) string {
+// formatTokens words a token count compactly: 950, 48.2K, 17.2M.
+func formatTokens(n int64) string {
 	switch {
 	case n < 1_000:
 		return fmt.Sprint(n)

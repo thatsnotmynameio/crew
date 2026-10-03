@@ -101,6 +101,14 @@ type actionRun struct {
 	pr      crew.PullRequest
 }
 
+// spend is what a's session used, or nothing when no session started.
+func (a *actionRun) spend() crew.Spend {
+	if a.started.IsZero() {
+		return crew.Spend{}
+	}
+	return a.usage.Spend()
+}
+
 // call is a tracker call the core made and has not settled.
 type call struct {
 	id       CallID
