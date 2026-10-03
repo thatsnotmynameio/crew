@@ -9,7 +9,7 @@ Every pull request meets one bar on complexity, quality, security and code stand
 
 ## Where each rule lives
 
-Each kind of finding has one owner, so the same problem is never reported twice and the local checks never disagree with the gate.
+Each kind of finding has one owner, so the same problem is never reported twice and the local checks never disagree with the gate. golangci-lint's findings stay in CI's `go` job, which is a required check; Codacy analyses the code on its own servers with the tools below.
 
 | Finding | Owner | Configured in |
 |---|---|---|
@@ -61,14 +61,14 @@ These cannot be set from a file. They are recorded here as the source of truth.
 | | Diff coverage under 90% | 90% of changed lines covered |
 | | Complexity: off | The function limits above already report complex code as issues; an aggregate limit would fail any pull request that adds a function |
 | | Coverage variation: off | The total floor is checked in CI; a variation gate blocks refactors that delete tested code |
-| Run analysis on your build server | On | Codacy waits for CI's golangci-lint results before analysing a commit |
+| Run analysis on your build server | Off | Turning it on stops Codacy's own server analysis (Opengrep, Trivy, Checkov, Lizard, duplication); golangci-lint already gates every pull request in CI |
 | GitHub integration | Status checks on | The checks the ruleset requires |
 
 `Codacy Diff Coverage` fails a pull request with no coverable lines, such as a docs-only one, so `tools/diffcover` enforces the 90% on changed lines and that Codacy check stays out of the required set.
 
 ## How CI talks to Codacy
 
-The `go` job holds no secret: on a Dependabot pull request the updated module runs there. It saves golangci-lint's JSON results and the coverage profile as artifacts. The `codacy` job, the only one that sees `CODACY_PROJECT_TOKEN`, runs no code from the repository. It downloads Codacy's converter and coverage reporter at pinned versions, checks their checksums, uploads both files for the analysed commit, and then tells Codacy the results are final. It runs even when the `go` job failed, because Codacy waits for that final call on every commit. Each `main` commit's run is never cancelled for the same reason.
+Codacy analyses each commit itself; CI sends it only the coverage. The `go` job holds no secret: on a Dependabot pull request the updated module runs there. It saves the coverage profile as an artifact. The `codacy` job, the only one that sees `CODACY_PROJECT_TOKEN`, runs no code from the repository: it downloads Codacy's coverage reporter at a pinned version, checks its checksum, and uploads the profile for the analysed commit. It runs even when the `go` job failed, and each `main` commit's run is never cancelled, so every commit has the coverage Codacy compares pull requests against.
 
 The `Codacy import` workflow applies `.codacy/codacy.config.json` to Codacy whenever the file changes on `main`. Both stay off until the repository variable `CODACY_ENABLED` is `true`.
 
@@ -80,7 +80,7 @@ The boss does this once, in this order:
 2. In Codacy's organization settings, add Dependabot's commit identity as a committer: Codacy analyses a private repository's commits only from its members.
 3. Create a repository API token with the longest expiry Codacy allows, and record its expiry date below.
 4. Add the token as the Actions secret `CODACY_PROJECT_TOKEN`, and as a Dependabot secret of the same name.
-5. In the repository's settings on Codacy, turn on "Run analysis on your build server".
+5. Leave "Run analysis on your build server" off in the repository's settings on Codacy: turning it on stops Codacy's own analysis.
 6. Create the gate policy in the table above and apply it to crew.
 7. Set the repository variable `CODACY_ENABLED` to `true`.
 8. Run the `Codacy import` workflow by hand, so Codacy applies the tool configuration.
