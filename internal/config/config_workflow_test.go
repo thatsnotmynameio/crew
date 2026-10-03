@@ -264,3 +264,43 @@ var acceptedWorkflows = []struct {
 		},
 	},
 }
+
+// takingStage is a workflow of one stage whose takes key is the YAML line
+// takes, or none when takes is "".
+func takingStage(takes string) string {
+	body := `workflow:
+  - name: fix review
+    label: ready
+    moves_to: in progress
+    on_success: done
+    on_failure: failed
+`
+	if takes != "" {
+		body += "    " + takes + "\n"
+	}
+	return body + `    actions:
+      - name: fix
+        prompt: "Fix {{.Issue.Ref}}"
+`
+}
+
+func TestLoadGivesEveryStageTheKindItTakes(t *testing.T) {
+	tests := []struct {
+		name  string
+		takes string
+		want  crew.Kind
+	}{
+		{name: "a stage without takes takes issues", takes: "", want: crew.KindIssue},
+		{name: "takes: issues", takes: "takes: issues", want: crew.KindIssue},
+		{name: "takes: pull_requests", takes: "takes: pull_requests", want: crew.KindPullRequest},
+		{name: "takes with no value takes issues", takes: "takes:", want: crew.KindIssue},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := load(t, takingStage(tt.takes))
+			if got := cfg.Workflow[0].Takes; got != tt.want {
+				t.Errorf("Takes = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
