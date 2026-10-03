@@ -1,14 +1,17 @@
 crew: 1 issue held, up 4m (q or ctrl+c stops)
 handled 0
 
+Queues
+  default  2 slots  1 busy  1 free
+
 Issues
   development
     running   #9 Add login form
 
 Actions
-  #9 development/docs   reopening workspace
-  #9 development/lfg    resumed in issue-9-lfg, running 3m00s
-  #9 development/tests  running 2m00s
+  #9 development/docs   default  reopening workspace
+  #9 development/lfg    default  resumed in issue-9-lfg, running 3m00s
+  #9 development/tests  default  running 2m00s
 
 Handled
   none

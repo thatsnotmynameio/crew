@@ -175,7 +175,7 @@ func TestANarrowWindowCutsTheSuccessCountsBeforeTheFailures(t *testing.T) {
 
 func TestAReasonWithNewlinesTakesOneLine(t *testing.T) {
 	h := newHarness(t, 80)
-	h.send(tea.WindowSizeMsg{Width: 80, Height: 20})
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{failedEntry("5", "Parse", 40, 30, "tests", "exited 1:\n  tests fail\n")}
 
@@ -185,8 +185,8 @@ func TestAReasonWithNewlinesTakesOneLine(t *testing.T) {
 	if !strings.Contains(view, "\n    tests failed: exited 1: tests fail\n") {
 		t.Errorf("view lacks the reason on one line:\n%s", view)
 	}
-	if n := strings.Count(view, "\n") + 1; n > 20 {
-		t.Errorf("view has %d lines, over the window's 20", n)
+	if n := strings.Count(view, "\n") + 1; n > 24 {
+		t.Errorf("view has %d lines, over the window's 24", n)
 	}
 }
 
@@ -265,7 +265,7 @@ func TestA24RowWindowGivesUpRecentEventsAndCollapsesOldSuccesses(t *testing.T) {
 		t.Errorf("view still shows Recent events:\n%s", view)
 	}
 	for _, want := range []string{
-		"#11", "tests fail on Go 1.27", "#12", `no field "Body"`, "  … and 4 more in crew:waiting review",
+		"#11", "tests fail on Go 1.27", "#12", `no field "Body"`, "  … and 8 more in crew:waiting review",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
@@ -276,7 +276,7 @@ func TestA24RowWindowGivesUpRecentEventsAndCollapsesOldSuccesses(t *testing.T) {
 func TestCollapsedSuccessesTakeOneLinePerState(t *testing.T) {
 	u := manySnapshot()
 	u.Snapshot.Handled[2].To = "crew:merged" // #13, the oldest success
-	view := fitted(t, 80, 24, u)
+	view := fitted(t, 80, 28, u)
 
 	for _, want := range []string{"  … and 4 more in crew:waiting review", "  … and 1 more in crew:merged"} {
 		if !strings.Contains(view, want) {
@@ -286,9 +286,9 @@ func TestCollapsedSuccessesTakeOneLinePerState(t *testing.T) {
 }
 
 func TestATallerWindowShowsEveryEntryAndTheNewestRecentEvents(t *testing.T) {
-	// 15 fixed lines, 2 failed entries with a reason each, 8 successes, and
-	// the Recent events header: 2 rows of events are left at 31.
-	view := fitted(t, 80, 31, manySnapshot())
+	// 19 fixed lines, 2 failed entries with a reason each, 8 successes, and
+	// the Recent events header: 2 rows of events are left at 35.
+	view := fitted(t, 80, 35, manySnapshot())
 
 	if strings.Contains(view, "more in") {
 		t.Errorf("view collapsed entries although they fit:\n%s", view)
@@ -301,13 +301,13 @@ func TestATallerWindowShowsEveryEntryAndTheNewestRecentEvents(t *testing.T) {
 }
 
 func TestAWindowTooShortForTheFailuresIsCutAtTheBottom(t *testing.T) {
-	view := fitted(t, 80, 17, manySnapshot())
+	view := fitted(t, 80, 21, manySnapshot())
 
-	if n := strings.Count(view, "\n") + 1; n != 17 {
-		t.Errorf("view has %d lines, want the window's 17", n)
+	if n := strings.Count(view, "\n") + 1; n != 21 {
+		t.Errorf("view has %d lines, want the window's 21", n)
 	}
-	// 15 fixed lines, 4 for the failures and 1 collapsed line: 4 are cut.
-	if got, want := line(t, view, 16), "… 4 lines cut"; got != want {
+	// 19 fixed lines, 4 for the failures and 1 collapsed line: 4 are cut.
+	if got, want := line(t, view, 20), "… 4 lines cut"; got != want {
 		t.Errorf("last line = %q, want %q", got, want)
 	}
 }
@@ -456,9 +456,9 @@ func TestFittingCountsThePullRequestLines(t *testing.T) {
 		}
 	}
 
-	// 15 fixed lines and 4 for the failures leave 5 rows: one success
+	// 19 fixed lines and 4 for the failures leave 5 rows: one success
 	// with its two pull request lines, and one collapsed line.
-	view := fitted(t, 80, 24, u)
+	view := fitted(t, 80, 28, u)
 
 	if !strings.HasSuffix(view, "    docs: no pull request\n  … and 7 more in crew:waiting review") {
 		t.Errorf("view does not end with one success and the other seven collapsed:\n%s", view)
