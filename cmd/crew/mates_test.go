@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,53 @@ func TestMatesCreateOutsideAGitRepositoryIsAnEnvironmentError(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "crew mates create must run inside a git repository") {
 		t.Errorf("stderr = %q, want the git repository message", stderr)
+	}
+}
+
+// insideGit moves the test into the root of a new git repository, with the
+// user's git config kept out and the mates kept under the test's own config
+// directory, and returns the root.
+func insideGit(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	root := filepath.Join(dir, "repo")
+	t.Setenv("GIT_CEILING_DIRECTORIES", dir)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(dir, "gitconfig"))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+	if out, err := exec.CommandContext(t.Context(), "git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	t.Chdir(root)
+	t.Cleanup(func() { signal.Reset() })
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestMatesCreateAsksGhForTheRepositoryAtItsRoot(t *testing.T) {
+	root := insideGit(t)
+	// gh fails as it does in a repository without a GitHub remote; git is
+	// the real one, later on PATH.
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho \"no git remotes found in $(pwd -P)\" >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	got := runCaptured(t, "mates", "create", "tester")
+	if got.code != app.ExitConfig {
+		t.Errorf("mates create tester with gh failing = %d, want %d", got.code, app.ExitConfig)
+	}
+	for _, want := range []string{"crew: gh could not resolve", "gh auth login", "no git remotes found in " + root} {
+		if !strings.Contains(got.stderr, want) {
+			t.Errorf("stderr = %q, want %q", got.stderr, want)
+		}
+	}
+	if got.stdout != "" {
+		t.Errorf("stdout = %q, want nothing before GitHub is asked anything", got.stdout)
 	}
 }
 

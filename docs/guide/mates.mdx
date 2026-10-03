@@ -54,6 +54,10 @@ The name is 1 to 29 characters: lowercase letters, digits and single hyphens, st
 
 crew waits up to 15 minutes for GitHub to create the app, and up to 15 more for the installation. Ctrl-C, SIGTERM or SIGHUP stops either wait at once.
 
+While it waits for the installation, crew rides out GitHub's passing errors: no reply, a 5xx, a 429 or a rate limit. It keeps looking, and if the wait times out, the error names the last one. Any other error ends the wait at once.
+
+When the stop or the timeout comes while crew is handling GitHub's redirect, crew lets that finish first. If the mate got saved, crew says where and exits with 1: run `crew mates create` with the same name again to install it.
+
 ### What a mate can do
 
 Every mate asks for the same repository permissions:
@@ -114,7 +118,7 @@ crew's page listens on `127.0.0.1` of the machine crew runs on, so a browser on 
 -L 41235:127.0.0.1:41235
 ```
 
-Then open the printed URL in your own browser. When crew cannot open a browser on the remote machine, it says so on stderr:
+Then open the printed URL in your own browser. Keep the same port on both ends: crew's page answers only requests for `127.0.0.1:<port>` or `localhost:<port>` with its own port, and refuses any other host with 421. When crew cannot open a browser on the remote machine, it says so on stderr:
 
 ```text
 crew: could not open the browser (exec: "xdg-open": executable file not found in $PATH); open http://127.0.0.1:41235/ yourself

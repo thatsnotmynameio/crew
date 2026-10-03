@@ -52,7 +52,8 @@ type outcome struct {
 
 // server is the loopback server GitHub's manifest flow comes back to
 // (KTD3). GET / serves the form, and GET /created exchanges the code of
-// GitHub's redirect once its state is the run's; any other path is 404.
+// GitHub's redirect once its state is the run's; any other path is 404,
+// and a request for any host but its own is 421.
 type server struct {
 	form  form
 	state string
@@ -71,19 +72,21 @@ type server struct {
 
 // serve serves on ln until the returned stop is called. The exchange runs
 // with a context that stop cancels, and stop returns once the server has
-// shut down.
+// shut down, after the request being answered, if any. Calling stop again
+// does nothing.
 func (s *server) serve(ctx context.Context, ln net.Listener) func() {
 	ctx, cancel := context.WithCancel(ctx)
+	page := template.Must(template.New("form").Parse(formPage))
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.page)
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) { s.page(w, page) })
 	mux.HandleFunc("GET /created", func(w http.ResponseWriter, r *http.Request) { s.created(ctx, w, r) })
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: readHeaderTimeout}
+	srv := &http.Server{Handler: onlyHosts(ln.Addr(), mux), ReadHeaderTimeout: readHeaderTimeout}
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
 		_ = srv.Serve(ln)
 	}()
-	return func() {
+	return sync.OnceFunc(func() {
 		cancel()
 		sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer scancel()
@@ -91,13 +94,30 @@ func (s *server) serve(ctx context.Context, ln net.Listener) func() {
 			_ = srv.Close()
 		}
 		<-served
-	}
+	})
 }
 
-// page answers with the form.
-func (s *server) page(w http.ResponseWriter, _ *http.Request) {
+// onlyHosts passes to next only the requests for addr, the listener's
+// 127.0.0.1:<port>, or for localhost:<port>, which a browser over an SSH
+// forward may use. Any other host gets 421, so a page of another site that
+// rebinds its name to 127.0.0.1 cannot read the form and its state.
+func onlyHosts(addr net.Addr, next http.Handler) http.Handler {
+	own := addr.String()
+	_, port, _ := net.SplitHostPort(own) // a TCP address always has a port
+	local := net.JoinHostPort("localhost", port)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != own && r.Host != local {
+			http.Error(w, "crew answers only at http://"+own+"/.", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// page answers with the form, filled in by page, the parsed formPage.
+func (s *server) page(w http.ResponseWriter, page *template.Template) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = template.Must(template.New("form").Parse(formPage)).Execute(w, s.form)
+	_ = page.Execute(w, s.form)
 }
 
 // created answers GitHub's redirect. A wrong or missing state gets 400, and

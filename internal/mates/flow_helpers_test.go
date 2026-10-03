@@ -42,6 +42,9 @@ type fakeGitHub struct {
 	installedAt int
 	// lookupStatus, when not 0, answers every lookup.
 	lookupStatus int
+	// statuses, when set, answer the lookups in turn, 200 with the
+	// installation; once they run out, the fields above answer.
+	statuses []int
 	// selection is the installation's repository_selection.
 	selection string
 	// tokenStatus, when not 0, is the token call's status instead of 201.
@@ -91,6 +94,11 @@ func (g *fakeGitHub) lookup(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case g.clock != nil && expiry(r).Before(g.clock()):
 		reply(w, http.StatusUnauthorized, `{"message":"'Expiration time' claim ('exp') is too far in the past"}`)
+	case g.lookups <= len(g.statuses) && g.statuses[g.lookups-1] == http.StatusOK:
+		reply(w, http.StatusOK, `{"id":99,"repository_selection":"`+g.selection+`"}`)
+	case g.lookups <= len(g.statuses):
+		status := g.statuses[g.lookups-1]
+		reply(w, status, `{"message":"`+http.StatusText(status)+`"}`)
 	case g.lookupStatus != 0:
 		reply(w, g.lookupStatus, `{"message":"A JSON web token could not be decoded"}`)
 	case g.installedAt == 0 || g.lookups < g.installedAt:
@@ -231,17 +239,31 @@ func (b *fakeBrowser) created(p page, query url.Values) response {
 // get gets u, without following a redirect.
 func (b *fakeBrowser) get(u string) response {
 	b.t.Helper()
-	req, err := http.NewRequestWithContext(b.t.Context(), http.MethodGet, u, nil)
+	got, err := b.do(u, "")
 	if err != nil {
 		b.t.Fatal(err)
 	}
+	return got
+}
+
+// do gets u, without following a redirect, with host as its Host header
+// unless host is empty. It does not fail the test, so any goroutine may
+// call it.
+func (b *fakeBrowser) do(u, host string) (response, error) {
+	req, err := http.NewRequestWithContext(b.t.Context(), http.MethodGet, u, nil)
+	if err != nil {
+		return response{}, fmt.Errorf("GET %s: %w", u, err)
+	}
+	if host != "" {
+		req.Host = host
+	}
 	resp, err := b.client.Do(req)
 	if err != nil {
-		b.t.Fatalf("GET %s: %v", u, err)
+		return response{}, fmt.Errorf("GET %s: %w", u, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
-	return response{status: resp.StatusCode, location: resp.Header.Get("Location"), body: string(body)}
+	return response{status: resp.StatusCode, location: resp.Header.Get("Location"), body: string(body)}, nil
 }
 
 // flowRun is one create flow with every dependency faked.

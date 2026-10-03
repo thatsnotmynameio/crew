@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -188,6 +189,8 @@ type statusError struct {
 	code    int
 	status  string
 	message string
+	// limited is whether the reply says a rate limit was hit.
+	limited bool
 }
 
 func (e *statusError) Error() string {
@@ -204,9 +207,32 @@ func replyError(resp *http.Response, signed bool) error {
 		Message string `json:"message"`
 	}
 	_ = json.NewDecoder(io.LimitReader(resp.Body, maxErrorBody)).Decode(&reply)
-	err := &statusError{code: resp.StatusCode, status: resp.Status, message: reply.Message}
+	err := &statusError{
+		code: resp.StatusCode, status: resp.Status, message: reply.Message, limited: rateLimited(resp, reply.Message),
+	}
 	if signed && resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("%w: %w", ErrKeyRejected, err)
 	}
 	return err
+}
+
+// rateLimited reports whether resp, with GitHub's message, says a rate
+// limit was hit: no requests remain, GitHub asks to retry later, or its
+// message says so, as for a secondary rate limit.
+func rateLimited(resp *http.Response, message string) bool {
+	return resp.Header.Get("X-Ratelimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "" ||
+		strings.Contains(strings.ToLower(message), "rate limit")
+}
+
+// transient reports whether err, of a call to GitHub's API, may pass on a
+// retry: the call got no reply, or GitHub answered a 5xx, a 429 or a rate
+// limit's 403. A key GitHub rejected, any other reply and any error before
+// the request was sent are not.
+func transient(err error) bool {
+	if se, ok := errors.AsType[*statusError](err); ok {
+		return se.code >= http.StatusInternalServerError || se.code == http.StatusTooManyRequests ||
+			(se.code == http.StatusForbidden && se.limited)
+	}
+	_, ok := errors.AsType[*url.Error](err)
+	return ok
 }

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -221,5 +223,41 @@ func TestRequestsTimeOut(t *testing.T) {
 	c.timeout = 10 * time.Millisecond
 	if _, err := c.Convert(context.Background(), "code123"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Convert on a silent server = %v, want a deadline error", err)
+	}
+}
+
+func TestTransientTellsTheErrorsARetryMayPass(t *testing.T) {
+	limited := func(header, value, message string) error {
+		c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			if header != "" {
+				w.Header().Set(header, value)
+			}
+			reply(w, http.StatusForbidden, `{"message":"`+message+`"}`)
+		})
+		_, err := c.RepoInstallation(context.Background(), testMate(testOwner), testOwner, "crew")
+		return err
+	}
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "no reply", err: fmt.Errorf("GitHub API: %w", &url.Error{Op: "Get", Err: io.ErrUnexpectedEOF}), want: true},
+		{name: "server error", err: &statusError{code: http.StatusBadGateway}, want: true},
+		{name: "too many requests", err: &statusError{code: http.StatusTooManyRequests}, want: true},
+		{name: "rate limit remaining 0", err: limited("X-RateLimit-Remaining", "0", "API rate limit exceeded"), want: true},
+		{name: "retry after", err: limited("Retry-After", "60", "slow down"), want: true},
+		{name: "secondary rate limit", err: limited("", "", "You have exceeded a secondary rate limit"), want: true},
+		{name: "forbidden", err: limited("", "", "Resource not accessible by integration"), want: false},
+		{name: "unprocessable", err: &statusError{code: http.StatusUnprocessableEntity}, want: false},
+		{name: "key rejected", err: fmt.Errorf("%w: %w", ErrKeyRejected, &statusError{code: 401}), want: false},
+		{name: "unreadable reply", err: errors.New("GitHub API: unreadable reply: EOF"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := transient(tt.err); got != tt.want {
+				t.Errorf("transient(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }

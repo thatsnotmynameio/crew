@@ -95,7 +95,8 @@ func (f *Flow) Create(ctx context.Context, root, name string) error {
 
 // create creates the mate called name for repo's owner through the
 // loopback server, and returns it once it is saved. It saves nothing
-// unless GitHub's redirect comes back within CreateTimeout.
+// unless GitHub's redirect comes back within CreateTimeout and before ctx
+// ends.
 func (f *Flow) create(ctx context.Context, repo Repo, name string) (Mate, error) {
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -124,6 +125,14 @@ func (f *Flow) create(ctx context.Context, repo Repo, name string) (Mate, error)
 	f.sayf("opening %s/ to create the app %s for %s on GitHub", base, AppName(name), repo.Owner)
 	f.open(base + "/")
 	f.sayf("waiting for GitHub to create the app")
+	return f.await(ctx, s, stop, name)
+}
+
+// await waits for the outcome of GitHub's redirect to s, for CreateTimeout
+// or until ctx ends. When the wait ends first, it stops s, which waits for
+// a redirect still being handled, and reports that redirect's outcome if
+// one came: the mate may be saved all the same.
+func (f *Flow) await(ctx context.Context, s *server, stop func(), name string) (Mate, error) {
 	timer := time.NewTimer(f.CreateTimeout)
 	defer timer.Stop()
 	select {
@@ -135,12 +144,43 @@ func (f *Flow) create(ctx context.Context, repo Repo, name string) (Mate, error)
 			out.mate.AppName, name, f.Store.Path(out.mate.Owner, name))
 		return out.mate, nil
 	case <-timer.C:
+		stop()
+		if out, ok := lateOutcome(s); ok {
+			return Mate{}, f.savedLate(name, out,
+				fmt.Errorf("timed out after %v while crew handled GitHub's redirect", f.CreateTimeout))
+		}
 		return Mate{}, fmt.Errorf("GitHub did not create the app %s within %v; crew saved nothing", AppName(name),
 			f.CreateTimeout)
 	case <-ctx.Done():
+		stop()
+		if out, ok := lateOutcome(s); ok {
+			return Mate{}, f.savedLate(name, out,
+				fmt.Errorf("stopped while crew handled GitHub's redirect: %w", context.Cause(ctx)))
+		}
 		return Mate{}, fmt.Errorf("stopped before GitHub created the app %s: %w; crew saved nothing",
 			AppName(name), context.Cause(ctx))
 	}
+}
+
+// lateOutcome returns the outcome s delivered, if any, once s is stopped.
+func lateOutcome(s *server) (outcome, bool) {
+	select {
+	case out := <-s.done:
+		return out, true
+	default:
+		return outcome{}, false
+	}
+}
+
+// savedLate returns the error of a wait that ended, as stopped says, while
+// GitHub's redirect was being handled, and that redirect's outcome was out:
+// out's own error, or stopped followed by where the mate is saved.
+func (f *Flow) savedLate(name string, out outcome, stopped error) error {
+	if out.err != nil {
+		return out.err
+	}
+	return fmt.Errorf("%w; GitHub created the app %s and the mate %s is saved at %s: "+
+		"crew mates create %s again installs it", stopped, out.mate.AppName, name, f.Store.Path(out.mate.Owner, name), name)
 }
 
 // keep exchanges code for the app GitHub created and saves it as the mate
@@ -208,24 +248,34 @@ func (f *Flow) install(ctx context.Context, repo Repo, m Mate, open bool) error 
 
 // poll looks m's installation on repo up every PollInterval until it
 // appears, InstallTimeout passes or ctx ends. Every lookup signs a fresh
-// app JWT, as the wait outlasts one.
+// app JWT, as the wait outlasts one. A transient failure of a lookup, such
+// as a 5xx or a rate limit, does not end the wait, but the timeout's error
+// names the last one; any other failure ends it at once.
 func (f *Flow) poll(ctx context.Context, repo Repo, m Mate) (Installation, error) {
 	timeout := time.NewTimer(f.InstallTimeout)
 	defer timeout.Stop()
 	tick := time.NewTicker(f.PollInterval)
 	defer tick.Stop()
+	var failed error // the last transient failure
 	for {
 		select {
 		case <-tick.C:
 		case <-timeout.C:
-			return Installation{}, fmt.Errorf("%s is not installed on %s/%s after %v",
-				m.AppName, repo.Owner, repo.Name, f.InstallTimeout)
+			err := fmt.Errorf("%s is not installed on %s/%s after %v", m.AppName, repo.Owner, repo.Name, f.InstallTimeout)
+			if failed != nil {
+				err = fmt.Errorf("%w; the last lookup that failed: %w", err, failed)
+			}
+			return Installation{}, err
 		case <-ctx.Done():
 			return Installation{}, fmt.Errorf("stopped before %s was installed on %s/%s: %w",
 				m.AppName, repo.Owner, repo.Name, context.Cause(ctx))
 		}
 		inst, err := f.API.RepoInstallation(ctx, m, repo.Owner, repo.Name)
-		if !errors.Is(err, ErrNotInstalled) {
+		switch {
+		case errors.Is(err, ErrNotInstalled):
+		case err != nil && transient(err):
+			failed = err
+		default:
 			return inst, err
 		}
 	}
