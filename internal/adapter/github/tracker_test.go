@@ -312,6 +312,71 @@ func TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt(t *testing.T) {
 	}
 }
 
+// priorityOptions are the option ids of thatsnotmynameio's issue field
+// Priority, in its order: Urgent, High, Medium, Low.
+var priorityOptions = []string{"IFSSO_kgDOBGSEBw", "IFSSO_kgDOBGSECA", "IFSSO_kgDOBGSECQ", "IFSSO_kgDOBGSECg"}
+
+// selectValue is one single select value node as GitHub returns it for an
+// issue's issueFieldValues, shaped like #14's Priority: the option it holds
+// and the field with its options.
+func selectValue(field, optionID string, options ...string) string {
+	ids := make([]string, len(options))
+	for i, o := range options {
+		ids[i] = fmt.Sprintf(`{"id":%q}`, o)
+	}
+	return fmt.Sprintf(`{"optionId":%q,"field":{"name":%q,"options":[%s]}}`, optionID, field, strings.Join(ids, ","))
+}
+
+// valuesNode adds to an issueNode its issue field value nodes.
+func valuesNode(node string, values ...string) string {
+	return strings.TrimSuffix(node, "}") +
+		fmt.Sprintf(`,"issueFieldValues":{"nodes":[%s]}}`, strings.Join(values, ","))
+}
+
+func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
+	urgent, medium, low := priorityOptions[0], priorityOptions[2], priorityOptions[3]
+	unknown := selectValue("Priority", "IFSSO_unknown", priorityOptions...)
+	effort := selectValue("Effort", "IFSSO_high", "IFSSO_high", "IFSSO_low")
+	tr, gh := build(t, login, reply{
+		prefix: []string{"api", "graphql"},
+		stdout: issuesJSON(
+			valuesNode(issueNode(1, "2026-09-01T10:00:00Z", "ready"), selectValue("Priority", urgent, priorityOptions...)),
+			valuesNode(issueNode(2, "2026-09-02T10:00:00Z", "ready"), selectValue("Priority", low, priorityOptions...)),
+			// A date value decodes as an empty object next to Priority.
+			valuesNode(issueNode(3, "2026-09-03T10:00:00Z", "ready"), `{}`, selectValue("Priority", medium, priorityOptions...)),
+			valuesNode(issueNode(4, "2026-09-04T10:00:00Z", "ready"), selectValue("priority", urgent, priorityOptions...)),
+			valuesNode(issueNode(5, "2026-09-05T10:00:00Z", "ready"), unknown),
+			valuesNode(issueNode(6, "2026-09-06T10:00:00Z", "ready"), effort),
+			// AE5: a repository a user owns has no issue fields.
+			valuesNode(issueNode(7, "2026-09-07T10:00:00Z", "ready")),
+			issueNode(8, "2026-09-08T10:00:00Z", "ready"),
+		),
+	})
+	got, err := tr.List(context.Background(), []crew.State{ready})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	query := strings.Join(fieldValues(gh.callsTo("api", "graphql")[0], "query"), "")
+	for _, want := range []string{"issueFieldValues", "optionId", "options { id }"} {
+		if !strings.Contains(query, want) {
+			t.Errorf("query does not contain %q:\n%s", want, query)
+		}
+	}
+	// totalCount on issueFieldValues fails the whole query on a repository
+	// a user owns.
+	if strings.Contains(query, "totalCount") {
+		t.Errorf("query asks for totalCount:\n%s", query)
+	}
+	byKey := map[string]int{}
+	for _, issue := range got {
+		byKey[issue.Key] = issue.Priority
+	}
+	want := map[string]int{"1": 1, "2": 4, "3": 3, "4": 1, "5": 0, "6": 0, "7": 0, "8": 0}
+	if !maps.Equal(byKey, want) {
+		t.Errorf("priorities = %v, want %v", byKey, want)
+	}
+}
+
 // blockedNode adds to an issueNode the dependency summary GitHub returns:
 // open is how many open issues block it, total how many issues do.
 func blockedNode(node string, open, total int) string {

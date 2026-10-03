@@ -38,6 +38,10 @@ One attempt at an action on an issue, from the moment its workspace is ready unt
 
 The isolated checkout an action works in: a git worktree on its own branch, kept after the action run ends. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
 
+### Priority
+
+The rank the tracker gives an issue, which decides first which waiting issue crew takes when a slot is free, ahead of its stage and its age. On GitHub it is the organization's issue field `Priority`, its first option the highest. An issue without one ranks after every issue that has one.
+
 ## Recovery
 
 ### Resume

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"slices"
 	"time"
 
@@ -194,9 +195,11 @@ func (s *step) windDown() {
 }
 
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: later stages first, then the oldest issue first (KTD8). A blocked
-// issue is neither taken nor queued, and is taken at a later poll once
-// nothing blocks it. It takes nothing once the run time is up.
+// issues: the highest priority first, an issue without one last; then, at
+// the same priority, later stages first; then the oldest issue first (KTD8).
+// The rest are queued for their own stage. A blocked issue is neither taken
+// nor queued, and is taken at a later poll once nothing blocks it. It takes
+// nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -204,10 +207,7 @@ func (s *step) listed(issues []crew.Issue) {
 		return
 	}
 	s.skipped(issues)
-	taken := 0
-	for si := range slices.Backward(m.stages) {
-		taken += s.takeStage(si, issues)
-	}
+	taken := s.takeWaiting(s.waiting(issues))
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
 }
 
@@ -221,34 +221,70 @@ func (s *step) skipped(issues []crew.Issue) {
 	}
 }
 
-// takeStage takes stage si's unblocked issues, the oldest first, while slots
-// are free, reports the rest as queued, and returns how many it took.
-func (s *step) takeStage(si int, issues []crew.Issue) int {
-	m := s.m
-	var candidates []crew.Issue
-	for _, issue := range issues {
-		if len(issue.States) == 1 && issue.States[0] == m.stages[si].Label && !issue.Blocked {
-			candidates = append(candidates, issue)
+// candidate is an issue waiting in the state of stage, which crew may take.
+type candidate struct {
+	stage int
+	issue crew.Issue
+}
+
+// waiting returns the unblocked issues waiting in a stage's state, in the
+// order listed takes them.
+func (s *step) waiting(issues []crew.Issue) []candidate {
+	var candidates []candidate
+	for si, stage := range s.m.stages {
+		for _, issue := range issues {
+			if len(issue.States) == 1 && issue.States[0] == stage.Label && !issue.Blocked {
+				candidates = append(candidates, candidate{si, issue})
+			}
 		}
 	}
-	slices.SortStableFunc(candidates, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
+	slices.SortStableFunc(candidates, func(a, b candidate) int {
+		if c := comparePriority(a.issue.Priority, b.issue.Priority); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.stage, a.stage); c != 0 {
+			return c
+		}
+		return a.issue.Created.Compare(b.issue.Created)
+	})
+	return candidates
+}
+
+// takeWaiting takes candidates in order while slots are free, reports the
+// rest as queued for their own stage, and returns how many it took.
+func (s *step) takeWaiting(candidates []candidate) int {
+	m := s.m
 	taken := 0
-	for _, issue := range candidates {
+	for _, c := range candidates {
 		if len(m.issues) >= m.maxParallel {
 			break
 		}
-		if m.held(issue.Key) != nil {
+		if m.held(c.issue.Key) != nil {
 			continue
 		}
-		s.take(si, issue)
+		s.take(c.stage, c.issue)
 		taken++
 	}
-	for _, issue := range candidates {
-		if m.held(issue.Key) == nil {
-			s.queued(si, issue)
+	for _, c := range candidates {
+		if m.held(c.issue.Key) == nil {
+			s.queued(c.stage, c.issue)
 		}
 	}
 	return taken
+}
+
+// comparePriority orders two issue priorities, the higher first: 1 before
+// 2, and any priority before 0, which is none.
+func comparePriority(a, b int) int {
+	switch {
+	case a == b:
+		return 0
+	case a == 0:
+		return 1
+	case b == 0:
+		return -1
+	}
+	return cmp.Compare(a, b)
 }
 
 // take holds issue for stage si and moves it to the stage's moves_to.
