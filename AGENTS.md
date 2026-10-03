@@ -11,17 +11,22 @@ Run every command from the repository root. Go 1.27 (`go.mod`).
 ```sh
 go build ./cmd/crew   # the binary, at the root (ignored by git)
 go test -race ./...   # every test; one package: go test -race ./internal/core; one test: add -run TestName
-gofmt -l cmd internal # prints the unformatted files; must print nothing
+gofmt -l cmd internal tools # prints the unformatted files; must print nothing
 go vet ./...
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run   # lint + layering (depguard)
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-pnpm install          # once: the docs.page CLI
+go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...   # coverage profile
+go run github.com/vladopajic/go-test-coverage/v2@v2.19.0 --config=.testcoverage.yml   # total >= 90%
+git diff -U0 origin/main...HEAD | go run ./tools/diffcover -profile coverage.out   # changed lines >= 90%
+pnpm install          # once: the docs.page CLI and the Codacy CLIs
+pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Opengrep, Trivy, Checkov
 pnpm docs:check       # the docs site's links and MDX
 pnpm docs:preview     # live preview of the docs
 ```
 
 - **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
-- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` and govulncheck.
+- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `codacy` job uploads the results to Codacy.
+- **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`; `docs/develop/quality.mdx` says which tool owns which finding.
 
 ## Architecture
 
@@ -64,9 +69,9 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 ## Releases and CI
 
 - **Releases:** the version is `VERSION`, starting at `0.1.0`. A pull request that changes it is a release. After it merges to `main`, the Release workflow tags `vX.Y.Z` and publishes a GitHub release. The version must be `MAJOR.MINOR.PATCH` and not below the latest release (CI's `version` check).
-- **Shared workflows:** CI, Docs, SonarQube, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
+- **Shared workflows:** CI, Docs, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
 - **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). The `checks` ruleset requires `version`, `actionlint / actionlint`, `docs / docs.page check` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
-- **Sonar:** off until the repository variable `SONAR_ENABLED` is `true`. A Sonar finding that conflicts with a required signature or convention is suppressed in `sonar-project.properties` (`sonar.issue.ignore.multicriteria`), with a comment giving the reason, not in code.
+- **Codacy:** its jobs are off until the repository variable `CODACY_ENABLED` is `true`. Fix a finding; suppress only a genuine false positive, at the finding, naming the rule and the reason (`//nolint:<linter> // <reason>`). Never exclude crew's own source from analysis. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files. The gates live in Codacy's UI and are recorded in `docs/develop/quality.mdx`.
 
 ## Agents
 
