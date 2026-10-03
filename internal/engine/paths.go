@@ -52,7 +52,9 @@ func (e *Engine) openAppend(rel string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), logDirPerm); err != nil {
 		return nil, fmt.Errorf("create the log directory: %w", err)
 	}
+	//nolint:gosec // crew builds the path under .crew/logs
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, logFilePerm)
+
 	if err != nil {
 		return nil, fmt.Errorf("open for appending: %w", err)
 	}

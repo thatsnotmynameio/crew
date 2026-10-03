@@ -31,6 +31,10 @@ const percent = 100.0
 // maxDiffLine is the longest diff line read, in bytes.
 const maxDiffLine = 1 << 20
 
+// blockFields is how many fields follow the file in a profile block: the
+// span, the statements and the count.
+const blockFields = 3
+
 // Exit codes.
 const (
 	exitPass  = 0
@@ -50,8 +54,8 @@ type result struct {
 	covered   int
 }
 
-// Pct is the covered share of the coverable changed lines, in percent.
-func (r result) Pct() float64 {
+// pct is the covered share of the coverable changed lines, in percent.
+func (r result) pct() float64 {
 	if r.coverable == 0 {
 		return percent
 	}
@@ -98,8 +102,8 @@ func report(res result, threshold float64, stdout io.Writer) int {
 	}
 
 	_, _ = fmt.Fprintf(stdout, "diffcover: %d of %d changed coverable lines covered (%.1f%%, minimum %.1f%%)\n",
-		res.covered, res.coverable, res.Pct(), threshold)
-	if res.Pct() < threshold {
+		res.covered, res.coverable, res.pct(), threshold)
+	if res.pct() < threshold {
 		return exitBelow
 	}
 
@@ -109,7 +113,7 @@ func report(res result, threshold float64, stdout io.Writer) int {
 // check reads the profile at profilePath and the diff, and counts the
 // changed lines that are coverable and covered.
 func check(profilePath, modulePath string, diff io.Reader) (result, error) {
-	profile, err := os.Open(profilePath)
+	profile, err := os.Open(profilePath) //nolint:gosec // the profile path is the command's own -profile flag
 	if err != nil {
 		return result{}, fmt.Errorf("open the coverage profile: %w", err)
 	}
@@ -180,12 +184,15 @@ func parseProfile(r io.Reader, modulePath string) (map[lineKey]int, error) {
 // "github.com/x/y/a.go:10.2,12.3 2 1": file, start line and column, end line
 // and column, statements, count.
 func addBlock(lines map[lineKey]int, text, modulePath string) error {
-	colon := strings.LastIndex(text, ":")
-	fields := strings.Fields(text[colon+1:])
-	if colon < 0 || len(fields) != 3 {
+	name, rest, ok := strings.CutLast(text, ":")
+	if !ok {
 		return fmt.Errorf("malformed block %q", text)
 	}
-	file := strings.TrimPrefix(strings.TrimPrefix(text[:colon], modulePath), "/")
+	fields := strings.Fields(rest)
+	if len(fields) != blockFields {
+		return fmt.Errorf("malformed block %q", text)
+	}
+	file := strings.TrimPrefix(strings.TrimPrefix(name, modulePath), "/")
 	start, end, err := blockLines(fields[0])
 	if err != nil {
 		return fmt.Errorf("malformed block %q: %w", text, err)
@@ -217,18 +224,27 @@ func blockLines(span string) (int, int, error) {
 	if !ok {
 		return 0, 0, errors.New("no comma in the span")
 	}
-	startLine, _, _ := strings.Cut(from, ".")
-	start, err := strconv.Atoi(startLine)
+	start, err := lineOf(from)
 	if err != nil {
 		return 0, 0, fmt.Errorf("start line: %w", err)
 	}
-	endLine, _, _ := strings.Cut(to, ".")
-	end, err := strconv.Atoi(endLine)
+	end, err := lineOf(to)
 	if err != nil {
 		return 0, 0, fmt.Errorf("end line: %w", err)
 	}
 
 	return start, end, nil
+}
+
+// lineOf reads the line of a position such as "10.2".
+func lineOf(position string) (int, error) {
+	line, _, _ := strings.Cut(position, ".")
+	n, err := strconv.Atoi(line)
+	if err != nil {
+		return 0, fmt.Errorf("parse %q: %w", position, err)
+	}
+
+	return n, nil
 }
 
 // parseDiff lists the lines a unified diff adds or changes, by their number

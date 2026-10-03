@@ -172,9 +172,10 @@ linters:
   exclusions:
     presets:
       # Only known false positives: unchecked Close/Print-style errors in the
-      # standard library, and patterns golangci-lint documents as noisy.
+      # standard library. (common-false-positives is left out: it turns gosec's
+      # subprocess and file-path rules off everywhere, not only where a
+      # finding is justified.)
       - std-error-handling
-      - common-false-positives
     rules:
       # Tests repeat literal inputs and expectations so each case reads alone.
       - path: _test\.go

@@ -100,7 +100,7 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 // all the workflow's errors are reported together.
 func Load(root string) (*Config, error) {
 	path := filepath.Join(root, ".crew", "config.yaml")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // the path is the repository's own .crew/config.yaml
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read crew config: %w (create it: see docs/guide/crew.mdx in the crew repository)", err)
 	}
