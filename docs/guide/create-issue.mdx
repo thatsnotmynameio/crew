@@ -9,7 +9,7 @@ description: A Claude Code skill that records a piece of work as a GitHub issue 
 
 The skill was built for the author's own workflow, so its behavior, and the config keys it reads, may still change.
 
-The types are every stage of the workflow and every extra label in `extra_labels`. A stage's type puts its `label` on the issue, so crew starts on it at the next poll. An extra parks the issue, such as an idea to brainstorm later: no stage takes it until you add a stage's label.
+The types are every stage of the workflow and every extra label in `extra_labels`. A stage's type puts its `label` on the issue, so crew starts on it at the next poll with a free slot. An extra parks the issue, such as an idea to brainstorm later: no stage takes it until you add a stage's label.
 
 ## Install once
 
@@ -74,11 +74,11 @@ In a Claude Code session in the repository:
 5. It creates the issue with a short title taken from what you wrote and exactly the type's label, no other.
 6. It prints the issue's link and label, and says when the template file was missing, which plan the body was copied from, or that the session wrote a plan the body does not use.
 
-It creates the issue at once, with no preview and no confirmation. To fix a mistake, edit the issue on GitHub. With a stage's label, crew may take the issue at its next poll, so fix a wrong label quickly.
+It creates the issue at once, with no preview and no confirmation. To fix a mistake, edit the issue on GitHub. With a stage's label, crew may take the issue at its next poll with a free slot, so fix a wrong label quickly.
 
 ## Put a plan in an existing issue
 
-`/cw-update-issue-plan [label]` copies the session's plan file into the issue the session is working on, such as an idea you parked and then brainstormed. It finds the issue from the session and asks only when it cannot tell which one. The plan file is the one compound-engineering's `ce-brainstorm` writes when you confirm its synthesis, or the same file after `ce-plan` enriched it. The skill does not write the plan itself: without a plan file it stops and changes nothing, so let the brainstorm write its file first. The body follows the template of the issue's type, and the old body is kept in a comment. An optional `label` then moves the issue to that stage or extra label. Without one, the skill runs `prompts.update_issue_plan` from `.crew/config.yaml` (see [Prompts](/guide/crew#prompts)) when the config has it, filled with the issue as `/cw-brainstorm` fills its prompt, so the label that always comes next needs no typing. Without either, the issue keeps its labels. A stage's label starts crew's work at the next poll.
+`/cw-update-issue-plan [label]` copies the session's plan file into the issue the session is working on, such as an idea you parked and then brainstormed. It finds the issue from the session and asks only when it cannot tell which one. The plan file is the one compound-engineering's `ce-brainstorm` writes when you confirm its synthesis, or the same file after `ce-plan` enriched it. The skill does not write the plan itself: without a plan file it stops and changes nothing, so let the brainstorm write its file first. The body follows the template of the issue's type, and the old body is kept in a comment. An optional `label` then moves the issue to that stage or extra label. Without one, the skill runs `prompts.update_issue_plan` from `.crew/config.yaml` (see [Prompts](/guide/crew#prompts)) when the config has it, filled with the issue as `/cw-brainstorm` fills its prompt, so the label that always comes next needs no typing. Without either, the issue keeps its labels. A stage's label starts crew's work at the next poll with a free slot.
 
 ```text
 /cw-update-issue-plan
