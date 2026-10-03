@@ -162,8 +162,9 @@ func factory(run proc.Runner) port.TrackerFactory {
 // authenticated gh user opened that carry any of the states' labels, at most
 // 100, and the open pull requests that user opened that carry any of them,
 // among the 100 oldest pull requests carrying any of them, all oldest first.
-// Each item's key is its number, its reference #<number>, and its states
-// every workflow state its labels name, in the workflow's spelling. Its other
+// Each item's key is its number, its reference #<number>, its kind issue or
+// pull request, and its states every workflow state its labels name, in the
+// workflow's spelling. Its other
 // labels, extras included, are no states and are ignored. An issue is
 // blocked while an open issue blocks it, as GitHub's issue dependencies
 // record. Its priority is the position of its value of the issue field
@@ -188,7 +189,9 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	}
 	for _, n := range repo.PullRequests.Nodes {
 		if n.Author.Login == login {
-			items = append(items, t.item(n.itemNode))
+			pr := t.item(n.itemNode)
+			pr.Kind = crew.KindPullRequest
+			items = append(items, pr)
 		}
 	}
 	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
