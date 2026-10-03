@@ -47,9 +47,20 @@ CI's `go` job (`.github/workflows/ci.yml`) runs gofmt, `go vet`, golangci-lint, 
 
 ## Releases
 
-The version is `VERSION`. A pull request that bumps it is a release: once it merges to `main`, the Release workflow publishes the tag `vX.Y.Z` and a GitHub release. The version must be `MAJOR.MINOR.PATCH` and not below the latest release.
+The version is `VERSION`. A pull request that bumps it is a release: once it merges to `main`, the Release workflow (`.github/workflows/release.yml`) publishes the tag `vX.Y.Z` and a GitHub release. The version must be `MAJOR.MINOR.PATCH` and not below the latest release. A version that already has its tag publishes nothing.
 
-Users install a release with `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z`. The first tag, `v0.1.0`, predates the Go module, so until the next release they install from `@main`.
+GoReleaser builds and publishes the release from `.goreleaser.yaml`. Each release ships crew for darwin and linux on amd64 and arm64, one archive per platform named without the version (`crew_linux_arm64.tar.gz`), and `checksums.txt`. The binaries print the tag for `crew --version`. The notes are GitHub's generated notes, which the workflow asks for at the released commit and hands to GoReleaser.
+
+Nothing is published unless every archive built. The workflow tags the commit locally only, GoReleaser keeps the release a draft while it uploads the assets, and GitHub creates the tag when GoReleaser publishes it. If an upload fails, the draft stays and no tag exists: re-running the workflow finishes that draft. This is the one workflow that does not use [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github)'s shared release action to publish; it still uses its check.
+
+Try the configuration without publishing anything; the archives land in `dist/`, which git ignores:
+
+```sh
+go run github.com/goreleaser/goreleaser/v2@v2.18.2 check
+go run github.com/goreleaser/goreleaser/v2@v2.18.2 release --snapshot --clean
+```
+
+Users install a release with the command in the Guide's Install section, or with `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z`, which prints `vX.Y.Z` too. A `go build` in a checkout prints the version Go derives from the commit, and `dev` when it records none (`go build -buildvcs=false`).
 
 ## Docs
 

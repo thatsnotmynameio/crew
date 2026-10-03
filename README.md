@@ -8,11 +8,37 @@ The [docs](https://docs.page/thatsnotmynameio/crew) are the reference: the [Guid
 
 ## Quick start
 
-On macOS or Linux, with Go 1.27 or later, and `gh` and `claude` on your `PATH` and logged in:
+On macOS or Linux, on amd64 or arm64, with `gh` and `claude` on your `PATH` and logged in, install the latest release into `/usr/local/bin`. The command checks the download against the release's `checksums.txt`, and `sudo` asks for your password:
 
 ```sh
-go install github.com/thatsnotmynameio/crew/cmd/crew@main
+(
+  set -eu
+  os=$(uname -s | tr '[:upper:]' '[:lower:]')
+  case $(uname -m) in
+    x86_64) arch=amd64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) echo "crew has no build for $(uname -m)" >&2; exit 1 ;;
+  esac
+  archive="crew_${os}_${arch}.tar.gz"
+  url=https://github.com/thatsnotmynameio/crew/releases/latest/download
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  cd "$tmp"
+  curl -fsSLO "$url/$archive"
+  curl -fsSLO "$url/checksums.txt"
+  if command -v sha256sum > /dev/null; then
+    grep " $archive\$" checksums.txt | sha256sum -c -
+  else
+    grep " $archive\$" checksums.txt | shasum -a 256 -c -
+  fi
+  tar -xzf "$archive" crew
+  sudo install -d /usr/local/bin
+  sudo install -m 0755 crew /usr/local/bin/crew
+  crew --version
+)
 ```
+
+With Go 1.27 or later, `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z` builds a release instead, where `vX.Y.Z` is its tag from the [releases page](https://github.com/thatsnotmynameio/crew/releases).
 
 Commit a `.crew/config.yaml` that declares your labels and workflow (the Guide has a complete example), then run `crew` in the repository's main checkout:
 
@@ -40,7 +66,8 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | `.compound-engineering/` | The Compound Engineering plugin's settings for this repository. |
 | `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`) and `actionlint`. Pull requests and pushes to `main`: `go` (gofmt, vet, lint, tests, coverage floors, govulncheck) `codacy` (uploads the coverage to Codacy) and `codacy gate` (repeats Codacy's verdict on a pull request), both when the variable `CODACY_ENABLED` is `true` and skipped for Dependabot. |
 | `.github/workflows/codacy-import.yml` | Pushes to `main` that change `.codacy/codacy.config.json`: applies it to Codacy. |
-| `.github/workflows/release.yml` | Pushes to `main`: publishes `VERSION` as `vX.Y.Z` and a GitHub release when it is new. |
+| `.github/workflows/release.yml` | Pushes to `main`: when `VERSION` is new, GoReleaser builds crew and publishes it as `vX.Y.Z`, a GitHub release with the binaries and `checksums.txt`. |
+| `.goreleaser.yaml` | What a release builds: crew for macOS and Linux on amd64 and arm64, one archive per platform, and `checksums.txt`. |
 | `.github/workflows/docs.yml` | Pull requests: docs.page's check of `docs.json` and `docs/`. |
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
 | `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the docs CLI and the Go modules. |

@@ -19,6 +19,9 @@ Thumbs.db
 # The crew binary built at the root (go build ./cmd/crew)
 /crew
 
+# GoReleaser's output (a local snapshot build)
+/dist/
+
 # Docs (docs.page CLI)
 node_modules/
 
