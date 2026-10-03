@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
@@ -95,6 +96,8 @@ func issueText(e core.Event) (string, bool) {
 		return "reported the failure on " + e.IssueRef, true
 	case core.IssueSkipped:
 		return issueSkipped(e), true
+	case core.IssueOfOtherKind:
+		return issueOfOtherKind(e), true
 	}
 	return "", false
 }
@@ -152,6 +155,20 @@ func issueSkipped(e core.IssueSkipped) string {
 	}
 	return fmt.Sprintf("skipped %s: it carries %d crew labels (%s)",
 		e.IssueRef, len(e.States), strings.Join(states, ", "))
+}
+
+// issueOfOtherKind is the line for an item crew left alone because its
+// label is a stage's that takes the other kind of item.
+func issueOfOtherKind(e core.IssueOfOtherKind) string {
+	article, takes := "an", "issues"
+	if e.Kind == crew.KindPullRequest {
+		article = "a"
+	}
+	if e.Takes == crew.KindPullRequest {
+		takes = "pull requests"
+	}
+	return fmt.Sprintf("left %s alone: it is %s %s, and %s is the label of %s, which takes %s",
+		e.IssueRef, article, e.Kind, e.Label, e.Stage, takes)
 }
 
 func call(c core.Call) string {
