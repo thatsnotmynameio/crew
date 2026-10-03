@@ -113,13 +113,15 @@ type PollDone struct {
 }
 
 // PollSkipped is a tick that did not list because every slot is busy: the
-// issues the core holds reach max_parallel_issues, so a listing could take
-// nothing. The rest of the tick ran as usual.
+// issues the core holds reach max_parallel_issues, or every queue some stage
+// runs in is full, so a listing could take nothing. The rest of the tick ran
+// as usual.
 type PollSkipped struct {
 	At time.Time
 	// Busy is how many issues the core holds.
 	Busy int
-	// Slots is max_parallel_issues.
+	// Slots is how many the stages can use: the slots of the queues they
+	// run in, summed, at most max_parallel_issues (R9).
 	Slots int
 }
 

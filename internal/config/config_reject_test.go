@@ -1,6 +1,11 @@
 package config_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/thatsnotmynameio/crew/internal/config"
+)
 
 // rejectCase is a config that Load must reject, with what its error must
 // say.
@@ -23,6 +28,52 @@ func testRejects(t *testing.T, cases []rejectCase) {
 
 func TestLoadRejectsInvalidSettings(t *testing.T) {
 	testRejects(t, invalidSettings)
+}
+
+func TestLoadRejectsInvalidQueues(t *testing.T) {
+	testRejects(t, invalidQueues)
+}
+
+// One mistake in the queues gives one error, not one more for each sum it
+// upsets.
+func TestLoadReportsAQueueMistakeOnce(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "max_parallel_issues not positive skips the queue sums",
+			body: "config:\n  max_parallel_issues: 0\n  clerk_slots: 1\n" + oneStage,
+			want: "config.max_parallel_issues",
+		},
+		{
+			name: "clerk_slots at the limit skips default's sum",
+			body: "config:\n  max_parallel_issues: 3\n  clerk_slots: 3\n" + oneStage,
+			want: "config.clerk_slots",
+		},
+		{
+			name: "a limit of 1 without clerk_slots",
+			body: "config:\n  max_parallel_issues: 1\n" + oneStage,
+			want: "config.max_parallel_issues",
+		},
+		{
+			name: "a stage naming a queue whose slots are wrong",
+			body: "config:\n  queues: {review: 0}\n" + queuedStages("review"),
+			want: "config.queues.review",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.Load(writeRoot(t, tt.body))
+			if err == nil {
+				t.Fatal("Load succeeded, want an error")
+			}
+			if got := err.Error(); !strings.Contains(got, tt.want) || strings.Contains(got, "\n") {
+				t.Errorf("error %q, want one error, on %s", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestLoadRejectsInvalidExtraLabels(t *testing.T) {
@@ -113,6 +164,89 @@ var invalidSettings = []rejectCase{
   model: claude-opus-5-5
 ` + oneStage,
 		wants: []string{"harness.model", "line 2", "config.model"},
+	},
+}
+
+// invalidQueues are errors in config.clerk_slots and config.queues.
+var invalidQueues = []rejectCase{
+	{
+		// Covers AE5.
+		name: "queues that leave default fewer than 0 slots",
+		body: `config:
+  max_parallel_issues: 3
+  clerk_slots: 2
+  queues: {review: 2}
+` + oneStage,
+		wants: []string{"config.queues", "line 4", "3 - 2 - 2 = -1"},
+	},
+	{
+		// Covers AE6.
+		name: "clerk_slots at max_parallel_issues",
+		body: `config:
+  max_parallel_issues: 3
+  clerk_slots: 3
+` + oneStage,
+		wants: []string{"config.clerk_slots", "line 3", "below max_parallel_issues (3)"},
+	},
+	{
+		name: "clerk_slots of 0",
+		body: `config:
+  clerk_slots: 0
+` + oneStage,
+		wants: []string{"config.clerk_slots", "line 2", "positive"},
+	},
+	{
+		name: "a limit of 1 leaves no room for the 1-slot clerk",
+		body: `config:
+  max_parallel_issues: 1
+` + oneStage,
+		wants: []string{"config.max_parallel_issues", "line 2", "1-slot clerk"},
+	},
+	{
+		name: "a queue of 0 slots",
+		body: `config:
+  queues: {review: 0}
+` + oneStage,
+		wants: []string{"config.queues.review", "line 2", "positive"},
+	},
+	{
+		name: "a queue named clerk",
+		body: `config:
+  queues: {clerk: 1}
+` + oneStage,
+		wants: []string{"config.queues.clerk", "line 2", "config.clerk_slots"},
+	},
+	{
+		name: "a queue named default in another case",
+		body: `config:
+  max_parallel_issues: 3
+  queues: {Default: 1}
+` + oneStage,
+		wants: []string{"config.queues.Default", "line 3", "default queue"},
+	},
+	{
+		name: "two queues share a name",
+		body: `config:
+  max_parallel_issues: 5
+  queues:
+    review: 1
+    review: 2
+` + oneStage,
+		wants: []string{"config.queues.review", "line 5", "duplicate key", "line 4"},
+	},
+	{
+		name: "queues is a list",
+		body: `config:
+  queues: [review]
+` + oneStage,
+		wants: []string{"config.queues", "line 2", "must be a mapping"},
+	},
+	{
+		name: "a queue's slots are not a number",
+		body: `config:
+  queues: {review: two}
+` + oneStage,
+		wants: []string{"config.queues.review", "line 2", "two"},
 	},
 }
 
