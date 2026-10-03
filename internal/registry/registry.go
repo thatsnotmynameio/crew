@@ -67,7 +67,8 @@ func lookup[F any](factories map[string]F, kind, key, name string) (F, error) {
 		if len(factories) > 0 {
 			registered = strings.Join(slices.Sorted(maps.Keys(factories)), ", ")
 		}
-		return factory, fmt.Errorf("%s: no %s is named %q; the registered %s adapters are: %s", key, kind, name, kind, registered)
+		return factory, fmt.Errorf("%s: no %s is named %q; the registered %s adapters are: %s",
+			key, kind, name, kind, registered)
 	}
 	return factory, nil
 }
