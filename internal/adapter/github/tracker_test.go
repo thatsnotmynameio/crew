@@ -347,13 +347,13 @@ func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
 	if strings.Contains(query, "totalCount") {
 		t.Errorf("query asks for totalCount:\n%s", query)
 	}
-	priority := map[string]int{}
+	byKey := map[string]int{}
 	for _, issue := range got {
-		priority[issue.Key] = issue.Priority
+		byKey[issue.Key] = issue.Priority
 	}
 	want := map[string]int{"1": 1, "2": 4, "3": 3, "4": 1, "5": 0, "6": 0, "7": 0, "8": 0}
-	if !maps.Equal(priority, want) {
-		t.Errorf("priorities = %v, want %v", priority, want)
+	if !maps.Equal(byKey, want) {
+		t.Errorf("priorities = %v, want %v", byKey, want)
 	}
 }
 

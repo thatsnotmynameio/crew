@@ -242,10 +242,12 @@ func (s *step) listed(issues []crew.Issue) {
 // comparePriority orders two issue priorities, the higher first: 1 before
 // 2, and any priority before 0, which is none.
 func comparePriority(a, b int) int {
-	if (a == 0) != (b == 0) {
-		if a == 0 {
-			return 1
-		}
+	switch {
+	case a == b:
+		return 0
+	case a == 0:
+		return 1
+	case b == 0:
 		return -1
 	}
 	return cmp.Compare(a, b)
