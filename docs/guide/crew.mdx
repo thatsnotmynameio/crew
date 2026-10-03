@@ -7,7 +7,7 @@ description: Run crew in a repository to move its issues through your workflow, 
 
 crew moves your issues through a workflow you declare in the repository. It polls GitHub for the issues you labeled, and for each one it runs the stage's actions in parallel. Each action is a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue on, or to the stage's failure label with a comment saying what failed.
 
-crew only runs sessions and moves labels. Opening a pull request, reviewing and merging are your prompts' job and yours.
+crew runs sessions and moves labels. Opening a pull request, reviewing and merging are your prompts' job and yours. crew still writes to the pull requests that close an issue: it gives them the issue's crew label, and comments on them when a stage ends. See [The pull requests](#the-pull-requests).
 
 ## Install
 
@@ -183,7 +183,7 @@ When you stop crew, a running check is ended too, and its action counts as stopp
 
 ### What "succeeded" means
 
-An action succeeded when its session ended cleanly, Claude Code's last result is not an error and `claude` exited with 0, and its check, if it has one, passed. Without a check, crew does not look for a pull request or any other evidence of the work.
+An action succeeded when its session ended cleanly, Claude Code's last result is not an error and `claude` exited with 0, and its check, if it has one, passed. Without a check, crew does not look for a pull request or any other evidence of the work. The labels and comments crew writes to [pull requests](#the-pull-requests) never decide whether an action succeeded.
 
 So a session without a check can succeed without doing its work. For example, `--permission-mode auto` denies a tool, and the agent gives up politely, or the session ends its turn while a command runs in the background. Give such actions a check that looks for the work, write prompts that say what done looks like, and read the last message crew prints for every action that ends, successes included.
 
@@ -212,10 +212,10 @@ At the same check, crew creates the labels your workflow names and the extra lab
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
 3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked; one queued before it became blocked keeps its last status comment.
 4. It takes issues while slots are free: later stages first, so reviews are not starved behind new work, then the oldest issue first. An issue left waiting gets a [status comment](#the-status-comment) saying it is queued for its stage.
-5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone.
+5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone. Every move crew makes is then mirrored on the issue's open [pull requests](#the-pull-requests).
 6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt. When the last run of that action, in that stage, on that issue failed, crew [resumes it](#resume-a-failed-action) in that run's worktree instead.
 7. While the actions run, crew updates the issue's status comment at every poll.
-8. When every action of the issue has ended, its check included, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue.
+8. When every action of the issue has ended, its check included, crew judges it. If all succeeded, the issue moves to `on_success`. Otherwise it moves to `on_failure`, and crew comments on the issue. Either way, crew then comments on the issue's open pull requests that the stage ended.
 
 This failure report is a new comment, apart from the status comment, so GitHub notifies you of it. It names each failed action and its log, relative to the repository:
 
@@ -227,7 +227,7 @@ crew: 1 action failed on #42.
 
 The comment carries nothing the session said: no last message, no commands, no output. Why an action failed is in its log, in crew's output and, in crew's own words, in the status comment. An action whose worktree could not be created has no log, and the comment says it failed before it had a log.
 
-A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. One that cannot work, because the issue was closed or relabeled meanwhile, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
+A move or comment that fails, for example because GitHub is down, is retried at every poll and once more when crew stops. So is a label or comment on a pull request, which never holds back or undoes the issue's move. One that cannot work, because the issue was closed or relabeled meanwhile or GitHub refused it, is dropped and reported. A status comment that says an issue is queued or running is not retried: the next poll writes it again.
 
 To retry a failed issue, swap its `on_failure` label, such as `needs attention`, for the stage's `label`, such as `ready`. Each failed action then resumes where it stopped, and each action that succeeded starts over.
 
@@ -299,6 +299,28 @@ The hidden lines mark the entries and the comment. The session's words have your
 crew finds its comment again after a restart by the hidden last line, among the comments of the `gh` user it runs as, and keeps what it holds. An entry left running by a crew that crashed or was killed says that crew stopped following that stage once the next stage run starts. A comment written before crew kept entries becomes the first entry. Edits you make by hand inside the comment are not kept.
 
 A comment that would grow past GitHub's limit of 65,536 characters is left as it is, and crew continues in a new status comment that says so. From then on, crew writes only to the new one. If you delete the comment, crew creates a new one at its next update. An issue crew handled before it had status comments gets none until crew queues or takes it again, and an issue whose label you remove while it is queued keeps its last status comment.
+
+### The pull requests
+
+crew does not open, review or merge pull requests, and does not watch them. It writes to the ones that belong to an issue, so the pull request list shows where crew holds the work and whether anyone still watches it.
+
+- **Which:** the open pull requests in the repository that GitHub links as closing the issue, whoever opened them. That is the `Closes #42` line in the pull request's body, so keep it in the prompts that open pull requests. Merged and closed pull requests, and pull requests in other repositories, are left alone. An issue without such a pull request gets nothing.
+- **The label:** each time crew moves the issue, it gives each of those pull requests the issue's new crew label and removes every other crew label, extras included, as on the issue. Your other labels stay. The mirror goes one way: crew never takes work or a state from a pull request's labels, and a crew label you put on a pull request by hand is replaced at the issue's next move.
+- **The stop comment:** when a stage ends, after the issue moved, crew posts a new comment on each of those pull requests, so GitHub notifies you. In a crew session the session's watch over the pull request has ended with the session, so the comment says nobody watches it any more:
+
+```markdown
+crew: `development` failed on #42, which moved to `crew:failed`, as did this pull request.
+
+**`lfg`** failed: crew stopped it. Its log is `.crew/logs/issue-42-lfg.log`.
+
+Nobody watches this pull request any more: new review comments and CI failures need a person.
+
+#42's [status comment](https://github.com/you/repo/issues/42#issuecomment-123) has the details.
+```
+
+A stage that succeeded says `succeeded` and lists no action. Like the failure report, the comment carries nothing a session said. A rerun of the stage posts a new comment when it ends.
+
+A pull request opened while a stage runs gets its label at the issue's next move, usually the stage's end. A merged pull request keeps the last label it got, such as `ready to review`. crew does not clean it up. A pull request that closes several issues carries the label of the issue crew moved last.
 
 ### Where things go
 
@@ -399,8 +421,8 @@ Press Ctrl-C (or `q` in the live view), or send SIGTERM or SIGHUP. Closing the t
 
 1. It starts nothing new.
 2. Issues whose actions have all ended are judged as usual.
-3. Running sessions and checks get 10 seconds to stop before they are killed. Their issues move to their stage's `on_failure`, with a comment saying crew stopped them, and their status comments show the move. When `on_failure` is another stage's `label`, such as `ready`, that stage takes the issue again at the next poll.
-4. Moves and comments still owed get one last try.
+3. Running sessions and checks get 10 seconds to stop before they are killed. Their issues move to their stage's `on_failure`, with a comment saying crew stopped them, and their status comments show the move. Their open pull requests get the `on_failure` label and a comment saying the stage failed because crew stopped it. When `on_failure` is another stage's `label`, such as `ready`, that stage takes the issue again at the next poll.
+4. Moves and comments still owed, on issues and pull requests, get one last try.
 
 This can take a while if GitHub is slow: every `gh` and `git` call has up to 10 minutes. Press Ctrl-C (or `q`) again, or send a second SIGTERM or SIGHUP, to force the exit. crew kills every process it started and exits at once, so the issues it was working on stay in their `moves_to` state until you relabel them.
 

@@ -93,6 +93,9 @@ type Engine struct {
 	// finder is the tracker's port.PullRequestFinder; nil when the tracker
 	// has none, and the core then looks up no pull request (R6).
 	finder port.PullRequestFinder
+	// pullRequests is the tracker's port.PullRequestReporter; nil when the
+	// tracker has none, and the core then makes no pull request report.
+	pullRequests port.PullRequestReporter
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
@@ -112,7 +115,9 @@ type Engine struct {
 
 // New returns an engine for cfg. It starts nothing until Run. When the
 // tracker implements port.StatusReporter, the engine reports each issue's
-// status through it (KTD1). When the workspace implements port.Reopener, a
+// status through it (KTD1). When it implements port.PullRequestReporter, the
+// engine follows each move that landed with a report on the issue's pull
+// requests through it. When the workspace implements port.Reopener, a
 // failed run's action resumes in that run's workspace (KTD4). When the
 // tracker implements port.PullRequestFinder, the engine looks up the pull
 // request each action opened.
@@ -126,6 +131,10 @@ func New(cfg Config) *Engine {
 			opts = append(opts, core.ReportingUsage())
 		}
 	}
+	pullRequests, _ := cfg.Tracker.(port.PullRequestReporter)
+	if pullRequests != nil {
+		opts = append(opts, core.ReportingPullRequests())
+	}
 	if _, ok := cfg.Workspace.(port.Reopener); ok {
 		opts = append(opts, core.Reopening())
 	}
@@ -133,15 +142,16 @@ func New(cfg Config) *Engine {
 		opts = append(opts, core.FindingPullRequests())
 	}
 	return &Engine{
-		cfg:      cfg,
-		stream:   newStream(),
-		stop:     make(chan struct{}),
-		reporter: reporter,
-		finder:   finder,
-		opts:     opts,
-		inbox:    make(chan message, inboxSize),
-		sessions: map[sessionKey]port.Session{},
-		checks:   map[sessionKey]context.CancelFunc{},
+		cfg:          cfg,
+		stream:       newStream(),
+		stop:         make(chan struct{}),
+		reporter:     reporter,
+		pullRequests: pullRequests,
+		finder:       finder,
+		opts:         opts,
+		inbox:        make(chan message, inboxSize),
+		sessions:     map[sessionKey]port.Session{},
+		checks:       map[sessionKey]context.CancelFunc{},
 	}
 }
 

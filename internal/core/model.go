@@ -32,6 +32,10 @@ type Model struct {
 	// statuses holds each issue's status slot, by issue key; nil when
 	// status reporting is off (KTD3).
 	statuses map[string]*statusSlot
+	// pullRequests holds each issue's pull request slot, by issue key, while
+	// it has a report not settled; nil when pull request reports are off
+	// (KTD3).
+	pullRequests map[string]*pullRequestSlot
 	// handled holds one entry per issue whose stage ended this run, in the
 	// order the issues were released.
 	handled []HandledView
@@ -158,12 +162,19 @@ func ReportingStatus() Option {
 	return func(m *Model) { m.statuses = map[string]*statusSlot{} }
 }
 
+// ReportingPullRequests has the model follow each move that landed with a
+// ReportPullRequests command, for a tracker that reports on pull requests
+// (KTD1, KTD2).
+func ReportingPullRequests() Option {
+	return func(m *Model) { m.pullRequests = map[string]*pullRequestSlot{} }
+}
+
 // Stopped reports whether a stop, requested or ending a wind-down, has
-// completed: the core holds no issue, no owed call and no status write in
-// flight or owed. The engine returns once Stopped is true and none of its
-// commands is still running.
+// completed: the core holds no issue, no owed call, no status write in
+// flight or owed and no pull request report not settled. The engine returns
+// once Stopped is true and none of its commands is still running.
 func (m *Model) Stopped() bool {
-	return m.stopping && len(m.issues) == 0 && !m.statusesBusy()
+	return m.stopping && len(m.issues) == 0 && !m.statusesBusy() && len(m.pullRequests) == 0
 }
 
 // Claim is a held issue's state inside the core.
@@ -261,7 +272,8 @@ type View struct {
 	TimeUp bool
 	// Issues are the held issues, in the order they were taken.
 	Issues []IssueView
-	// Owed are the tracker calls waiting for a retry.
+	// Owed are the tracker calls waiting for a retry: the held issues'
+	// moves and failure reports, then the pull request reports.
 	Owed []Call
 	// Handled are the issues whose stage ended this run, one entry per
 	// issue holding its latest stage, in the order they were released. An
@@ -373,6 +385,7 @@ func (m *Model) View() View {
 			}
 		}
 	}
+	v.Owed = append(v.Owed, m.owedPullRequests()...)
 	for _, e := range m.handled {
 		if m.held(e.Issue.Key) == nil {
 			v.Handled = append(v.Handled, e.clone())

@@ -45,6 +45,8 @@ func (e *Engine) launch(cmd core.Command) {
 		job = func() { e.report(c) }
 	case core.ReportStatus:
 		job = func() { e.reportStatus(c) }
+	case core.ReportPullRequests:
+		job = func() { e.reportPullRequests(c) }
 	case core.CreateWorkspace:
 		job = func() { e.createWorkspace(c) }
 	case core.ReopenWorkspace:
@@ -133,6 +135,17 @@ func (e *Engine) reportStatus(c core.ReportStatus) {
 	err := e.reporter.ReportStatus(ctx, c.Status)
 	result, reason := e.classify(ctx, err)
 	e.post(core.StatusResult{IssueKey: c.Status.IssueKey, Result: result, Reason: reason})
+}
+
+// reportPullRequests shows a report on the issue's pull requests through the
+// tracker's PullRequestReporter, which the core asks for only when the
+// tracker has one.
+func (e *Engine) reportPullRequests(c core.ReportPullRequests) {
+	ctx, cancel := e.callContext()
+	defer cancel()
+	err := e.pullRequests.ReportPullRequests(ctx, c.Report)
+	result, reason := e.classify(ctx, err)
+	e.post(core.PullRequestsResult{IssueKey: c.Report.IssueKey, Result: result, Reason: reason})
 }
 
 // callResult maps a tracker call's error onto the core's result classes.

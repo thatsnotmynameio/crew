@@ -2,10 +2,10 @@
 // through: a Tracker for issues, a Harness for coding-agent sessions and a
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
-// separate optional interface, such as Preparer, StatusReporter, Narrator
-// or Reopener, that the engine detects by type assertion. An adapter
-// therefore never wraps another adapter value, because a wrapper hides the
-// optional interfaces of what it wraps.
+// separate optional interface, such as Preparer, StatusReporter,
+// PullRequestReporter, Narrator or Reopener, that the engine detects by type
+// assertion. An adapter therefore never wraps another adapter value, because
+// a wrapper hides the optional interfaces of what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.
@@ -157,6 +157,22 @@ type StatusReporter interface {
 	// comment in a new one. The engine never has two calls for one issue in
 	// flight. Its errors are classified as Tracker.Move's are.
 	ReportStatus(ctx context.Context, status crew.Status) error
+}
+
+// PullRequestReporter is an optional interface of a Tracker: it shows crew's
+// state on the open pull requests that close an issue. A tracker without it
+// writes nothing to pull requests, and crew works as it does without them.
+type PullRequestReporter interface {
+	// ReportPullRequests puts each open pull request that closes report's
+	// issue in report.State, as Move puts the issue, removing every other
+	// crew state and extra it carries without touching what is not crew's.
+	// When report.End is set, it also posts a new comment on each saying
+	// that the stage ended and nobody watches the pull request any more. An
+	// issue without such a pull request gets nothing. A retry of the same
+	// report, by its ID, posts no comment twice. The engine never has two
+	// calls for one issue in flight. Its errors are classified as
+	// Tracker.Move's are.
+	ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace
