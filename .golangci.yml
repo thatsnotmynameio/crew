@@ -155,6 +155,33 @@ linters:
               desc: adapters never import each other
             - pkg: github.com/thatsnotmynameio/crew/internal/config
               desc: adapters get their section through port.Decode, not config
+        mates:
+          files:
+            - "**/internal/mates/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/port
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/registry
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/app
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: mates import only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: mates import only the standard library and proc
+        mates-users:
+          files:
+            - "!**/cmd/crew/**"
+            - "!**/internal/mates/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/mates
+              desc: only cmd/crew uses mates; nothing in the engine sees them
         fakes:
           files:
             - "!$test"

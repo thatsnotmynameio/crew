@@ -4,6 +4,7 @@
 // Usage:
 //
 //	crew [--plain] [--version]
+//	crew mates create <name>
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a TUI;
 // otherwise, or with --plain, it prints timestamped event lines. The first
@@ -11,6 +12,11 @@
 // exit. A closed output stops it cleanly as well. It
 // exits 0 on a clean stop, 1 on a runtime failure or a forced exit, and 2 on
 // a config or environment error.
+//
+// crew mates create <name> creates a mate, a GitHub identity of crew's own,
+// for the GitHub repository of the git repository it runs in, and installs
+// it there. It exits 0 once the mate is ready, 2 when nothing was asked of
+// GitHub yet, and 1 on any later failure.
 package main
 
 import (
@@ -51,8 +57,17 @@ func main() {
 // code.
 func run(args []string) int {
 	stdout, stderr := os.Stdout, os.Stderr
+	// The subcommand comes before crew's own flags, so every other argument
+	// list is parsed as it always was.
+	if len(args) > 0 && args[0] == "mates" {
+		return runMates(args[1:], stdout, stderr)
+	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	flags.Usage = func() {
+		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew mates create <name>\n\nFlags:\n")
+		flags.PrintDefaults()
+	}
 	plain := flags.Bool("plain", false, "print timestamped event lines instead of the TUI")
 	showVersion := flags.Bool("version", false, "print crew's version and exit")
 	if err := flags.Parse(args); err != nil {
@@ -102,12 +117,11 @@ func start(plain bool, stdout, stderr *os.File) int {
 
 	ctx := context.Background()
 	var group proc.Group
-	out, err := group.Run(ctx, proc.Command{Name: "git", Args: []string{"rev-parse", "--show-toplevel"}})
+	root, err := repoRoot(ctx, group.Run)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "crew must run inside a git repository: %v\n", err)
 		return app.ExitConfig
 	}
-	root := strings.TrimSpace(string(out.Stdout))
 	home, _ := os.UserHomeDir() // without one, nothing is shortened to ~
 
 	return app.Run(ctx, app.Options{
@@ -123,4 +137,14 @@ func start(plain bool, stdout, stderr *os.File) int {
 		Group:     &group,
 		Signals:   signals,
 	})
+}
+
+// repoRoot returns the root of the git repository crew runs in, asking git
+// through run.
+func repoRoot(ctx context.Context, run proc.Runner) (string, error) {
+	out, err := run(ctx, proc.Command{Name: "git", Args: []string{"rev-parse", "--show-toplevel"}})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out.Stdout)), nil
 }

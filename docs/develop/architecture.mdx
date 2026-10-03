@@ -18,7 +18,7 @@ A new tracker or coding agent is one new adapter package plus one line in the re
 
 | Package | What it holds |
 | --- | --- |
-| `cmd/crew` | The binary: flags, signals, the repository root, the `git` workspace and the `shell` checker. It calls `app.Run`. |
+| `cmd/crew` | The binary: flags, signals, the repository root, the `git` workspace and the `shell` checker. It calls `app.Run`, or the mates flow for `crew mates create`. |
 | `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. |
 | `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes, failure reports, statuses and pull request reports. |
 | `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow and extra-label checks, queue sizes, prompt templates. |
@@ -26,7 +26,8 @@ A new tracker or coding agent is one new adapter package plus one line in the re
 | `internal/registry` | Maps adapter names to factories. `default.go` is the production list. |
 | `internal/core` | The pure reducer: model, inputs, commands and events. |
 | `internal/engine` | The loop, command execution, crew's files under `.crew/`, and the update stream. |
-| `internal/proc` | The one way to start a child process: its own process group, stop with a deadline, kill all. |
+| `internal/proc` | The one way to start a child process: its own process group, stop with a deadline, kill all. `StartDetached` starts one crew does not wait for, such as the browser opener. |
+| `internal/mates` | `crew mates create`: mate names, the app manifest, the loopback page for GitHub's manifest flow, GitHub's API signed as the mate, and the mates' files under the user config directory. Nothing in the engine sees it. |
 | `internal/adapter/github` | Tracker over `gh`, with status comments and pull request reports. |
 | `internal/adapter/claude` | Harness over `claude -p`. |
 | `internal/adapter/git` | Workspace over `git worktree`. |
@@ -58,6 +59,8 @@ flowchart TB
   CFG --> CREW["internal/crew"]
   CORE --> CREW
   PORT --> CREW
+  MAIN --> MATES["internal/mates"]
+  MATES --> PROC
 ```
 
 golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these rules does not hold:
@@ -70,6 +73,7 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 - Adapters never import each other, and their non-test code never imports `config`: an adapter gets its section through `port.Decode`.
 - Only tests import `internal/fake`.
 - Only `internal/ui/tui` imports Bubble Tea.
+- `internal/mates` imports none of `core`, `engine`, `config`, `port`, `registry`, `app`, the adapters or the UI, and only `cmd/crew` imports it.
 
 ## Startup
 
@@ -78,6 +82,8 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 3. The registry builds the tracker and the harness from their names and sections, and hands the tracker the workflow's states and the extra labels. `cmd/crew` builds the `git` workspace and the `shell` checker directly: there is only one of each, and no key selects them.
 4. The engine runs every adapter's `Preparer`, within 10 minutes, which a first signal cuts short. Any error so far exits with 2, before the TUI starts. A timeout or a signal there also kills every process in the group first, since a check's process may still run.
 5. `app` starts the engine and one renderer, the TUI on a terminal and the line printer otherwise, and handles the stop signals until both return. The first signal stops the engine cleanly, a signal that came as the checks succeeded included; the second kills every process in the group and exits with 1. A renderer that fails, such as on a closed output, stops the engine cleanly and exits with 1.
+
+`crew mates create <name>` takes none of these steps. When `mates` is the first argument, `cmd/crew` hands the rest to the mates command before it parses crew's flags, so every other argument list is parsed as before. The command checks the name, finds the repository root the same way, catches SIGINT, SIGTERM and SIGHUP into a cancelled context, and runs `mates.Flow` with a `proc.Group`, the mates' store and a client of GitHub's API. It loads no config and starts no engine. An `*mates.EnvError`, found before anything was asked of GitHub's pages, exits with 2, any later error with 1. The guide's [Mates](/guide/mates) page describes the flow.
 
 ## The core
 

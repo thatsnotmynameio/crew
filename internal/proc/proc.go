@@ -5,6 +5,10 @@
 // spawned stop with it. A Group records the children it started, so a forced
 // exit can kill every one of them.
 //
+// The one exception is StartDetached, for a program that hands work to the
+// desktop, such as the browser opener: it runs in a session of its own, and
+// no Group records, waits for or kills it.
+//
 // It works on Unix systems (darwin and linux), where process groups exist.
 package proc
 
@@ -77,7 +81,7 @@ func (g *Group) Start(c Command, stdout, stderr io.Writer) (*Process, error) {
 	//nolint:noctx // Stop and KillAll end the child's whole group; a context would kill its pid alone
 	cmd := exec.Command(c.Name, c.Args...) //nolint:gosec // running the program its callers name is proc's job
 	cmd.Dir = c.Dir
-	cmd.Env = append(append(os.Environ(), c.Env...), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
+	cmd.Env = environ(c)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	pipes, err := attachPipes(cmd, stdout, stderr)
@@ -148,6 +152,26 @@ func (g *Group) KillAll() {
 	for _, p := range live {
 		<-p.done
 	}
+}
+
+// StartDetached starts c in a session of its own, with stdin, stdout and
+// stderr on the null device, and returns once it has started. No Group
+// records it: crew neither waits for it nor kills it, so what it starts,
+// such as the browser xdg-open opens, outlives it, and a command that stays
+// in the foreground, as xdg-open can until the browser closes, holds nothing
+// up. Only a failure to start is an error. A goroutine reaps the command
+// once it exits, so it leaves no zombie.
+func StartDetached(c Command) error {
+	//nolint:noctx // a detached command is never killed, so no context may end it
+	cmd := exec.Command(c.Name, c.Args...) //nolint:gosec // running the program its callers name is proc's job
+	cmd.Dir = c.Dir
+	cmd.Env = environ(c)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start %s: %w", c.Name, err)
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // Runner is the shape of Group.Run, so a caller can take a Group's Run and
@@ -237,6 +261,12 @@ func (g *Group) reap(p *Process, cmd *exec.Cmd, pipes []*pipe, copies *sync.Wait
 	delete(g.live, p)
 	g.mu.Unlock()
 	close(p.done)
+}
+
+// environ returns c's environment: crew's, then c.Env, then the settings
+// that keep git and gh from prompting.
+func environ(c Command) []string {
+	return append(append(os.Environ(), c.Env...), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
 }
 
 // signal sends sig to process group pgid. A group that is already gone is
