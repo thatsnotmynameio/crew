@@ -274,3 +274,37 @@ func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 		t.Error("a PreparingTracker reports statuses; only a ReportingTracker should")
 	}
 }
+
+func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedBoss(t *testing.T) {
+	tr := fake.NewActingTracker(issue("80", ready))
+	var acting port.Acting = tr
+	var finder port.BossFinder = tr
+	ops := port.Identity{Mate: "ops", Login: "crew-ops[bot]", Env: []string{"GH_CONFIG_DIR=/run/crew/ops"}}
+	mates := []string{"crew-ops[bot]", "crew-developer[bot]"}
+
+	if got := finder.Boss(); len(got) != 0 {
+		t.Errorf("Boss before SetBoss = %q, want none", got)
+	}
+	acting.ActAs(ops, mates)
+	mates[0] = "changed after the call"
+	tr.SetBoss("octocat", "hubot")
+
+	want := []fake.ActAsCall{{Writer: ops, Mates: []string{"crew-ops[bot]", "crew-developer[bot]"}}}
+	if got := tr.ActAsCalls(); !reflect.DeepEqual(got, want) {
+		t.Errorf("ActAsCalls = %+v, want %+v", got, want)
+	}
+	if got := finder.Boss(); !reflect.DeepEqual(got, []string{"octocat", "hubot"}) {
+		t.Errorf("Boss = %q, want octocat and hubot", got)
+	}
+	if err := port.Prepare(context.Background(), []crew.State{ready}, tr); err != nil {
+		t.Errorf("Prepare = %v, want an acting tracker to prepare", err)
+	}
+	for _, other := range []any{fake.NewTracker(), fake.NewReportingTracker()} {
+		if _, ok := other.(port.Acting); ok {
+			t.Errorf("%T acts as a mate; only an ActingTracker should", other)
+		}
+		if _, ok := other.(port.BossFinder); ok {
+			t.Errorf("%T finds the boss; only an ActingTracker should", other)
+		}
+	}
+}

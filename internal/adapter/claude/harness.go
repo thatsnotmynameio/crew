@@ -89,7 +89,7 @@ func (h *harness) Prepare(context.Context, []crew.State) error {
 }
 
 // Start implements port.Harness. It runs claude in run.Dir with the
-// harness's model. Everything claude prints, stdout and stderr, goes to
+// harness's model, acting as run.Identity. Everything claude prints, stdout and stderr, goes to
 // run.Output, and stdout also goes through the stream parser as it is
 // printed, so the verdict never re-reads the log.
 func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error) {
@@ -98,7 +98,7 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	}
 	out := &serialWriter{w: run.Output}
 	events := &stream{}
-	p, err := h.spawn(command(run.Prompt, h.model, run.Dir), io.MultiWriter(out, events), out)
+	p, err := h.spawn(command(run, h.model), io.MultiWriter(out, events), out)
 	if err != nil {
 		return nil, err
 	}

@@ -37,6 +37,14 @@ var (
 	_ port.Tracker             = PullRequestTracker{}
 	_ port.StatusReporter      = PullRequestTracker{}
 	_ port.PullRequestReporter = PullRequestTracker{}
+
+	_ port.Acting         = (*Acting)(nil)
+	_ port.BossFinder     = (*Acting)(nil)
+	_ port.Tracker        = ActingTracker{}
+	_ port.Preparer       = ActingTracker{}
+	_ port.StatusReporter = ActingTracker{}
+	_ port.Acting         = ActingTracker{}
+	_ port.BossFinder     = ActingTracker{}
 )
 
 // TrackerSettings is the fake tracker's config section. It has no key, as
@@ -524,4 +532,67 @@ type PullRequestTracker struct {
 // otherwise.
 func NewPullRequestTracker(issues ...crew.Issue) PullRequestTracker {
 	return PullRequestTracker{ReportingTracker: NewReportingTracker(issues...), PullRequestBoard: &PullRequestBoard{}}
+}
+
+// ActAsCall is one call to port.Acting's ActAs an Acting received.
+type ActAsCall struct {
+	Writer port.Identity
+	Mates  []string
+}
+
+// Acting is a scriptable port.Acting and port.BossFinder, to embed in a fake
+// tracker. It records each ActAs call and returns the boss's logins set by
+// SetBoss. Its zero value is ready to use, and finds no boss.
+type Acting struct {
+	mu    sync.Mutex
+	boss  []string
+	calls []ActAsCall
+}
+
+// ActAs implements port.Acting.
+func (a *Acting) ActAs(writer port.Identity, mates []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls = append(a.calls, ActAsCall{Writer: writer, Mates: slices.Clone(mates)})
+}
+
+// Boss implements port.BossFinder: it returns what SetBoss last set.
+func (a *Acting) Boss() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.boss)
+}
+
+// SetBoss sets the boss's logins Boss returns.
+func (a *Acting) SetBoss(logins ...string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.boss = slices.Clone(logins)
+}
+
+// ActAsCalls returns the ActAs calls received so far, in order.
+func (a *Acting) ActAsCalls() []ActAsCall {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]ActAsCall, len(a.calls))
+	for i, c := range a.calls {
+		c.Mates = slices.Clone(c.Mates)
+		out[i] = c
+	}
+	return out
+}
+
+// ActingTracker is a ReportingTracker that also implements port.Acting and
+// port.BossFinder, for the tests about crew acting as its mates. A plain
+// *Tracker, PreparingTracker or ReportingTracker does not implement them.
+type ActingTracker struct {
+	ReportingTracker
+	*Acting
+}
+
+// NewActingTracker returns an ActingTracker holding issues, whose Prepare
+// and status writes succeed until told otherwise and which finds no boss
+// until SetBoss.
+func NewActingTracker(issues ...crew.Issue) ActingTracker {
+	return ActingTracker{ReportingTracker: NewReportingTracker(issues...), Acting: &Acting{}}
 }

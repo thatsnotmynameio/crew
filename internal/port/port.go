@@ -3,9 +3,10 @@
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter,
-// PullRequestReporter, Narrator or Reopener, that the engine detects by type
-// assertion. An adapter therefore never wraps another adapter value, because
-// a wrapper hides the optional interfaces of what it wraps.
+// PullRequestReporter, Acting, BossFinder, Narrator or Reopener, that the
+// engine detects by type assertion. An adapter therefore never wraps another
+// adapter value, because a wrapper hides the optional interfaces of what it
+// wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.
@@ -84,6 +85,33 @@ type Run struct {
 	// harness writes to it from one goroutine at a time and stops writing
 	// once Wait has returned.
 	Output io.Writer
+	// Identity is who the session acts as on the tracker; the zero Identity
+	// is the boss.
+	Identity Identity
+	// Boss and Mates are the boss's logins and the logins of the mates the
+	// config names. The session gets them as CREW_BOSS and CREW_MATES, each
+	// joined by single spaces, so a prompt can name the issues crew takes.
+	Boss  []string
+	Mates []string
+}
+
+// Identity is who a child process, such as a session or a check, acts as on
+// the tracker: one of crew's mates, or, as the zero Identity, the boss. The
+// zero Identity changes nothing. An Identity never holds a key or a token,
+// only where the child finds one.
+type Identity struct {
+	// Mate is the mate's name, as the config names it.
+	Mate string
+	// Login is the login the mate acts as, such as crew-ops[bot].
+	Login string
+	// Env holds KEY=value entries added to the child's environment.
+	Env []string
+	// Unset names the variables of crew's environment the child must not
+	// inherit, such as a token of the boss's.
+	Unset []string
+	// Renew, when not nil, renews the identity's token at once, such as when
+	// the tracker was refused for an expired one.
+	Renew func(ctx context.Context) error
 }
 
 // Session is a running harness session.
@@ -175,6 +203,25 @@ type PullRequestReporter interface {
 	ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error
 }
 
+// Acting is an optional interface of a Tracker: it acts as one of crew's
+// mates. A tracker without it acts as the boss and takes only the boss's
+// items, and crew works as it does without mates.
+type Acting interface {
+	// ActAs makes the tracker's own writes, such as its moves, comments and
+	// failure reports, as writer, the zero Identity being the boss, and
+	// makes it take the items the logins in mates opened as well as the
+	// boss's. The engine calls it once, before Prepare.
+	ActAs(writer Identity, mates []string)
+}
+
+// BossFinder is an optional interface of a Tracker: it tells who the boss
+// is. A tracker without it names no boss.
+type BossFinder interface {
+	// Boss returns the boss's logins as Prepare found them. The engine calls
+	// it once Prepare succeeded.
+	Boss() []string
+}
+
 // Reopener is an optional interface of a Workspace: it reopens a workspace
 // it created before, so a failed action can resume where it stopped. A
 // workspace without it creates a fresh workspace for every action.
@@ -250,4 +297,11 @@ type Check struct {
 	// Output receives everything the command prints, stdout and stderr
 	// together, from one goroutine at a time; nil discards it.
 	Output io.Writer
+	// Identity is who the command acts as on the tracker, the same as its
+	// action's session; the zero Identity is the boss.
+	Identity Identity
+	// Boss and Mates are the boss's logins and the logins of the mates the
+	// config names, as in Run.
+	Boss  []string
+	Mates []string
 }

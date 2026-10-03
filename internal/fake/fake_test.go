@@ -361,6 +361,31 @@ func TestCheckerRunsEachCheckAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
 	}
 }
 
+func TestHarnessAndCheckerRecordTheIdentityAndTheLogins(t *testing.T) {
+	developer := port.Identity{
+		Mate: "developer", Login: "crew-developer[bot]",
+		Env: []string{"GH_CONFIG_DIR=/run/crew/developer"},
+	}
+	boss, mates := []string{"octocat"}, []string{"crew-developer[bot]"}
+	run := port.Run{Prompt: "Implement #80", Identity: developer, Boss: boss, Mates: mates}
+	check := port.Check{Branch: "crew/issue-80-lfg", Identity: developer, Boss: boss, Mates: mates}
+	h, c := fake.NewHarness(), fake.NewChecker()
+
+	if _, err := h.Start(context.Background(), run); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := c.Check(context.Background(), check); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+
+	if got := h.Sessions()[0].Run(); !reflect.DeepEqual(got, run) {
+		t.Errorf("run = %+v, want %+v", got, run)
+	}
+	if got := c.Checks()[0]; !reflect.DeepEqual(got, check) {
+		t.Errorf("check = %+v, want %+v", got, check)
+	}
+}
+
 func TestCheckerScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
 	c := fake.NewChecker()
 	c.Script("crew/hangs", fake.CheckScript{Block: true})
