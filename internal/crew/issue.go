@@ -18,8 +18,13 @@ type Issue struct {
 	Title string
 	// URL is the issue's web address.
 	URL string
-	// Created is when the issue was opened; the oldest issue is taken first.
+	// Created is when the issue was opened. Among issues of the same
+	// priority and stage, the oldest is taken first.
 	Created time.Time
+	// Priority is the issue's rank as the tracker sets it: 1 is the highest
+	// and larger numbers rank lower. 0 means no priority, which ranks after
+	// every priority. A tracker that knows no priority leaves it 0.
+	Priority int
 	// States are the crew states the issue is in. A healthy issue is in
 	// exactly one; an issue in two or more is skipped and reported.
 	States []State
