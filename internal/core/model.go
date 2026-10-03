@@ -30,6 +30,14 @@ type Model struct {
 	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
 	stopped     bool         // the Stopped event was emitted
 	lastID      CallID
+	// queueOf holds the queue each stage runs in, by stage index, as an
+	// index into queueSlots (KTD2). maxParallel caps every queue together.
+	queueOf []int
+	// queueSlots holds the slots of each queue some stage runs in.
+	queueSlots []int
+	// slots is what the stages can use: queueSlots summed, at most
+	// maxParallel (KTD4).
+	slots int
 	// statuses holds each issue's status slot, by issue key; nil when
 	// status reporting is off (KTD3).
 	statuses map[string]*statusSlot
@@ -127,7 +135,8 @@ type call struct {
 }
 
 // New returns a model for workflow, whose stages are in config order and
-// already validated, taking at most maxParallelIssues issues at once (R6).
+// already validated, taking at most maxParallelIssues issues at once (R6),
+// and for each stage at most its queue's slots (R6, KTD2).
 func New(workflow []crew.Stage, maxParallelIssues int, opts ...Option) *Model {
 	stages := make([]crew.Stage, len(workflow))
 	for i, s := range workflow {
@@ -135,10 +144,38 @@ func New(workflow []crew.Stage, maxParallelIssues int, opts ...Option) *Model {
 		stages[i] = s
 	}
 	m := &Model{stages: stages, maxParallel: maxParallelIssues}
+	m.queueOf, m.queueSlots, m.slots = queues(stages, maxParallelIssues)
 	for _, o := range opts {
 		o(m)
 	}
 	return m
+}
+
+// queues returns the queue each of stages runs in, as an index into slots;
+// the slots of each queue some stage runs in, told apart by name; and what
+// the stages can use, the sum of those slots at most maxParallelIssues
+// (KTD2, KTD4). The stages with the zero Queue share one queue of
+// maxParallelIssues slots, so the global cap alone limits them.
+func queues(stages []crew.Stage, maxParallelIssues int) ([]int, []int, int) {
+	queueOf := make([]int, len(stages))
+	var slots []int
+	usable := 0
+	index := map[string]int{}
+	for i, s := range stages {
+		n := s.Queue.Slots
+		if s.Queue == (crew.Queue{}) {
+			n = maxParallelIssues
+		}
+		q, ok := index[s.Queue.Name]
+		if !ok {
+			q = len(slots)
+			index[s.Queue.Name] = q
+			slots = append(slots, n)
+			usable += n
+		}
+		queueOf[i] = q
+	}
+	return queueOf, slots, min(usable, maxParallelIssues)
 }
 
 // Option changes a new Model.

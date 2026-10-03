@@ -42,6 +42,12 @@ The isolated checkout an action works in: a git worktree on its own branch, kept
 
 The rank the tracker gives an issue, which decides first which waiting issue crew takes when a slot is free, ahead of its stage and its age. On GitHub it is the organization's issue field `Priority`, its first option the highest. An issue without one ranks after every issue that has one.
 
+### Queue
+
+A fixed share of `max_parallel_issues` that only the stages in it can use. Every stage runs in one queue: `clerk`, crew's bookkeeping queue, `default`, which gets the slots the other queues leave, or one the boss declares.
+
+A queue never lends an idle slot to another queue, so a slot is guaranteed to a stage only by its queue's size.
+
 ## Recovery
 
 ### Resume

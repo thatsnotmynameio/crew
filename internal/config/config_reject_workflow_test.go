@@ -273,6 +273,39 @@ var invalidStages = []rejectCase{
 `,
 		wants: []string{"workflow[0].description", "line 3", "empty"},
 	},
+	{
+		// Covers AE7.
+		name: "a stage names a queue that does not exist",
+		body: `config:
+  queues: {docs: 1}
+workflow:
+  - name: review
+    label: ready to review
+    moves_to: in review
+    on_success: ready to merge
+    on_failure: needs attention
+    queue: review
+    actions:
+      - name: custom_review
+        prompt: "Review {{.Issue.Ref}}"
+`,
+		wants: []string{"workflow[0].queue", "line 9", `"review"`, "clerk, docs, default"},
+	},
+	{
+		name: "an empty queue",
+		body: `workflow:
+  - name: implement
+    label: ready
+    moves_to: in progress
+    on_success: ready to review
+    on_failure: needs attention
+    queue: ""
+    actions:
+      - name: development
+        prompt: "Implement {{.Issue.Ref}}"
+`,
+		wants: []string{"workflow[0].queue", "line 7", "empty"},
+	},
 }
 
 // invalidActions are errors in a stage's actions.

@@ -23,6 +23,31 @@ type Stage struct {
 	OnFailure State
 	// Actions run in parallel, each in its own workspace and session.
 	Actions []Action
+	// Queue is the queue the stage runs in: the share of the global limit
+	// its issues may hold. The zero Queue is no queue: the stage is limited
+	// only by the global limit, which it shares with every other such stage.
+	Queue Queue
+}
+
+// The queues every workflow has.
+const (
+	// ClerkQueue is crew's queue for bookkeeping work.
+	ClerkQueue = "clerk"
+	// DefaultQueue gets the slots the other queues leave, and runs every
+	// stage that names no queue.
+	DefaultQueue = "default"
+)
+
+// Queue is a fixed share of the global limit on the issues crew holds at
+// once. Only the stages in a queue use its slots, and it never lends an idle
+// one to another queue.
+type Queue struct {
+	// Name identifies the queue: ClerkQueue, DefaultQueue or a queue the
+	// config declares.
+	Name string
+	// Slots is how many issues the queue's stages may hold at once, possibly
+	// zero.
+	Slots int
 }
 
 // Action is one session a stage runs for an issue.

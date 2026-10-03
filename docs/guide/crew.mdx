@@ -86,7 +86,9 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | --- | --- | --- |
 | `config.poll_interval_seconds` | `300` | Seconds between polls. Must be positive. |
 | `config.run_time_limit_seconds` | none | How long crew runs, counted from its first poll, before it winds down (see [Run it for a set time](#run-it-for-a-set-time)). Must be positive: `28800` is 8 hours. Without it, crew runs until you stop it. |
-| `config.max_parallel_issues` | `2` | How many issues crew works on at once. It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
+| `config.max_parallel_issues` | `2` | How many issues crew works on at once, split into [queues](#queues). It counts issues, not sessions: an issue whose stage has two actions takes one slot. |
+| `config.clerk_slots` | `1` | The slots of the `clerk` queue, for bookkeeping stages. At least 1, and below `max_parallel_issues`. See [Queues](#queues). |
+| `config.queues` | none | More queues, each a name and its slots, such as `review: 2`. See [Queues](#queues). |
 | `config.usage_in_status` | `false` | Adds each ended action's cost, tokens and pull request to the [status comment](#the-status-comment). |
 | `config.harness` | `claude` | The coding agent that runs sessions. `claude` is the only one today. |
 | `config.model` | `claude-opus-5-5` | The model every session runs, passed to `claude --model`. |
@@ -106,6 +108,7 @@ Each stage has:
 | `on_success` | The label the issue moves to when every action succeeded. It cannot be the stage's own `label`. |
 | `on_failure` | The label the issue moves to when any action failed, with crew's comment. It cannot be the stage's own `label`, but it can be another stage's: `on_failure: ready` on the `review` stage sends a failed review back to `implement`. |
 | `actions` | At least one action, each with a `name` (unique in the stage), a `prompt`, and optionally a `check` (see [Checks](#checks)). |
+| `queue` | Optional. The [queue](#queues) the stage runs in: `clerk`, `default` or one under `config.queues`. Without it, the stage runs in `default`. |
 | `description` | Optional. The work the stage takes, in a few words, such as `a bug to reproduce and fix`. crew does not use it: the [`/cw-create-issue`](/guide/create-issue) skill shows it when it lists the types of issue. |
 | `issue_template` | Optional. The file name of a Markdown issue template in `.github/ISSUE_TEMPLATE/`, such as `bug.md`. crew does not use it: `/cw-create-issue` fills it for an issue of this stage. |
 
@@ -135,6 +138,43 @@ crew's labels are the ones your stages name in `label`, `moves_to`, `on_success`
 An extra label parks an issue that no stage takes, such as an idea that waits for a brainstorm. No stage takes an issue whose only crew label is an extra. To start work on it, add a stage's `label`: that stage takes the issue at the next poll with a free slot, even with the extra still on it. Every move crew makes removes the extras an issue carries, together with its other crew labels, so the issue leaves the extra behind when a stage takes it.
 
 So declare as an extra only a label you keep for crew. If you declare a label you already use, such as `bug`, crew removes it from every issue it moves.
+
+### Queues
+
+`max_parallel_issues` is split into queues, and each stage runs in one of them. A queue's slots are only for its own stages: a long development session can never take the slot of a quick bookkeeping stage, such as a triage that finds an issue's blockers. Two queues are always there:
+
+- `clerk`, for bookkeeping. It has `config.clerk_slots` slots, 1 unless you set it.
+- `default`, which gets the slots the other queues leave: `max_parallel_issues` minus `clerk_slots` minus the slots of every queue under `config.queues`. A stage that names no `queue` runs here.
+
+You can declare more under `config.queues`, each with its slots:
+
+```yaml
+config:
+  max_parallel_issues: 5
+  clerk_slots: 1
+  queues:
+    review: 2
+workflow:
+  - name: triage
+    queue: clerk
+    # ...
+  - name: review
+    queue: review
+    # ...
+  - name: implement
+    # ...
+```
+
+Here `triage` has 1 slot, `review` 2, and `implement` runs in `default`, which has the 2 slots left.
+
+A queue never lends a slot it does not use. While `default` is full, a `clerk` slot stays free for the next triage, even with development issues waiting. So a slot is guaranteed only by the size of a stage's queue, and the total never goes over `max_parallel_issues`. A queue that no stage names, such as `clerk` in a config that names no queue, keeps its slots idle: with only `max_parallel_issues: 2`, `clerk` has 1 slot and every stage shares the other 1.
+
+`default` may have 0 slots, when the other queues take them all. Its stages then never run, and crew does not warn you. crew refuses to start when:
+
+- `clerk_slots` is below 1, or not below `max_parallel_issues`. With `max_parallel_issues: 1`, the 1-slot `clerk` leaves no room, so raise the limit to at least 2.
+- `default` would have fewer than 0 slots.
+- a queue under `config.queues` has fewer than 1 slot, or is named `clerk` or `default`, in any case.
+- a stage names a queue that does not exist.
 
 ### Prompts
 
@@ -201,6 +241,7 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - a `description` is empty, or an `issue_template` is not a file name ending in `.md` (it holds a `/` or `\`, for example). crew does not check that the template file exists;
 - a prompt, in an action or under `prompts`, is empty, does not parse, or uses a field that does not exist;
 - an action's `check` is present but empty;
+- a [queue](#queues) rule is broken: `clerk_slots`, `default`'s slots, a queue's slots or name, or a stage's `queue`;
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
 
@@ -208,12 +249,12 @@ At the same check, crew creates the labels your workflow names and the extra lab
 
 ## What crew does on each poll
 
-While crew holds as many issues as `max_parallel_issues`, a poll lists no issues, since it could take none. It still updates the running issues' status comments and retries what is owed, and says so in a line such as `poll: skipped, 2 of 2 slots busy`. When crew lets go of an issue after such a poll, it lists at once instead of waiting for the next poll. Otherwise, a poll goes like this:
+While every queue a stage runs in is full, a poll lists no issues, since it could take none. It still updates the running issues' status comments and retries what is owed, and says so in a line such as `poll: skipped, 2 of 2 slots busy`, which counts only the slots of the queues your stages run in. When crew lets go of an issue after such a poll, it lists at once instead of waiting for the next poll. Otherwise, a poll goes like this:
 
 1. It lists the open issues **you** opened that carry a stage's `label`. Issues other people opened are ignored, whatever their labels, and so are issues whose only crew label is an extra.
 2. It skips an issue that carries two crew labels, such as `ready` and `needs attention`, and says so. Remove one, and a later poll takes it. Extra labels do not count, and neither do labels no stage names: an issue labeled `paused` and `ready` is taken when no stage names `paused`, and so is one labeled `waiting brainstorm` and `ready` when `waiting brainstorm` is an extra.
 3. It skips an issue that an open issue blocks, as GitHub records it under the issue's relationships ("blocked by"). The issue keeps its label, and a later poll takes it once every issue blocking it is closed. crew writes no status comment for it while it is blocked.
-4. It takes issues while slots are free: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. crew writes nothing on the issues left waiting: they keep their label, and a later poll with a free slot takes them.
+4. It takes each issue whose stage's [queue](#queues) has a free slot, and passes over the others, so a full queue does not hold back the stages of another queue. It goes through them in this order: the highest priority first; then, at the same priority, later stages first, so reviews are not starved behind new work; then the oldest issue first. The priority is the issue's GitHub issue field `Priority`, which your organization defines, ranked by the order of the field's options: with Urgent, High, Medium and Low, Urgent goes first. An issue without a priority goes after every issue that has one. A repository without issue fields, such as one you own as a user, or an organization without a single select field named `Priority`, works as before: no issue has a priority. crew writes nothing on the issues left waiting: they keep their label, and a later poll with a free slot in their queue takes them.
 5. Taking an issue moves it to the stage's `moves_to`. A move removes every other crew label, extras included, and adds the new one, and leaves your other labels alone. Every move crew makes is then mirrored on the issue's open [pull requests](#the-pull-requests).
 6. For each action, crew creates a worktree and a branch from origin's latest default branch, and starts a session there with the action's prompt. When the last run of that action, in that stage, on that issue failed, crew [resumes it](#resume-a-failed-action) in that run's worktree instead.
 7. While the actions run, crew updates the issue's status comment at every poll.
@@ -465,5 +506,5 @@ A session that runs long keeps crew running past the limit, and so does a move t
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
 - **Not built yet from the old dispatcher:** pausing and resuming on usage limits, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
 - **At most 100 issues per poll**, the oldest first. With more waiting, a newer issue of high priority is not seen until older ones leave the list.
-- **Priority decides only the next free slot.** It never stops a running session to make room for a higher-priority issue.
+- **Priority decides only the next free slot.** It never stops a running session to make room for a higher-priority issue, and it never moves an issue into another queue's free slot.
 - **Sessions are headless.** They cannot ask you anything or talk to each other. The [acceptance tester](/guide/acceptance-tester) agent is interactive, so do not point an action at it.

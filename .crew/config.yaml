@@ -11,9 +11,12 @@
 # /cw-update-issue-plan runs `update_issue_plan` there once the plan is in
 # the issue. The lfg actions of development and fix have a check: they
 # succeed only when their pull request is open and closes the issue.
+# triage and audit ci run in the 1-slot clerk queue, so a long development
+# session never holds them up; development, fix and knowledge base share
+# the 2 slots of default.
 config:
   poll_interval_seconds: 300
-  max_parallel_issues: 2
+  max_parallel_issues: 3
   harness: claude
   model: claude-opus-5-5
 tracker:
@@ -33,6 +36,7 @@ prompts:
     Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's triage stage takes it at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
 workflow:
   - name: triage
+    queue: clerk
     description: a brainstormed feature whose dependencies to find
     issue_template: feature.md
     label: "crew:brainstorm:done"
@@ -106,6 +110,7 @@ workflow:
           *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
           esac
   - name: audit ci
+    queue: clerk
     description: an audit of the GitHub Actions
     issue_template: ci-audit.md
     label: "crew:ready for ci audit"

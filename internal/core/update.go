@@ -92,7 +92,7 @@ func (s *step) tick(said []Said) {
 	if !m.listing && !m.timeUp {
 		if m.full() {
 			m.skipped++
-			s.emit(PollSkipped{At: s.at, Busy: len(m.issues), Slots: m.maxParallel})
+			s.emit(PollSkipped{At: s.at, Busy: len(m.issues), Slots: m.slots})
 		} else {
 			s.listIssues()
 		}
@@ -212,11 +212,11 @@ func (s *step) windDown() {
 }
 
 // listed skips issues in two states (R15) and takes free slots' worth of
-// issues: the highest priority first, an issue without one last; then, at
-// the same priority, later stages first; then the oldest issue first (KTD8).
-// It reports nothing for the issues it leaves, a blocked one included: a
-// later listing with a free slot takes them. It takes nothing once the run
-// time is up.
+// issues, each while its stage's queue has a free slot (R6): the highest
+// priority first, an issue without one last; then, at the same priority,
+// later stages first; then the oldest issue first (KTD8). It reports nothing
+// for the issues it leaves, a blocked one included: a later listing with a
+// free slot takes them. It takes nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -267,8 +267,9 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 	return candidates
 }
 
-// takeWaiting takes candidates in order while slots are free, and returns
-// how many it took. It reports nothing for the rest.
+// takeWaiting takes candidates in order while slots are free, passing over
+// each one whose stage's queue is full, and returns how many it took
+// (KTD3). It reports nothing for the rest.
 func (s *step) takeWaiting(candidates []candidate) int {
 	m := s.m
 	taken := 0
@@ -276,7 +277,7 @@ func (s *step) takeWaiting(candidates []candidate) int {
 		if m.full() {
 			break
 		}
-		if m.held(c.issue.Key) != nil {
+		if m.held(c.issue.Key) != nil || m.queueFull(m.queueOf[c.stage]) {
 			continue
 		}
 		s.take(c.stage, c.issue)
@@ -455,10 +456,32 @@ func (s *step) judge(h *heldIssue) {
 	s.ended(h, stage.OnFailure, crew.MovePending)
 }
 
-// full reports whether every slot is busy: the issues held, in any claim,
-// reach max_parallel_issues, so a listing could take nothing (R1, R7).
+// full reports whether every slot is busy, so a listing could take nothing:
+// the issues held, in any claim, reach max_parallel_issues, or every queue
+// some stage runs in is full (R1, R7, KTD4).
 func (m *Model) full() bool {
-	return len(m.issues) >= m.maxParallel
+	if len(m.issues) >= m.maxParallel {
+		return true
+	}
+	for q := range m.queueSlots {
+		if !m.queueFull(q) {
+			return false
+		}
+	}
+	return true
+}
+
+// queueFull reports whether queue q has no free slot: the held issues, in
+// any claim, whose stage runs in q reach its slots (KTD3). A queue of 0
+// slots is always full.
+func (m *Model) queueFull(q int) bool {
+	held := 0
+	for _, h := range m.issues {
+		if m.queueOf[h.stage] == q {
+			held++
+		}
+	}
+	return held >= m.queueSlots[q]
 }
 
 // held returns the held issue keyed key, or nil.
