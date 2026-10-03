@@ -46,6 +46,8 @@ linters:
     # crew is English-only and shows the boss times in their local zone on
     # purpose; this linter is for internationalised code.
     - gosmopolitan
+    # Deprecated in favour of gomodguard_v2, which default: all already runs.
+    - gomodguard
   settings:
     revive:
       enable-default-rules: true
