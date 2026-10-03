@@ -147,6 +147,9 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 // key=value.
 const fieldArgs = 2
 
+// stateOpen is the state GitHub gives an open issue or pull request.
+const stateOpen = "OPEN"
+
 // issuesArgs returns the gh arguments of List's query, for login's issues
 // carrying any of the states' labels.
 func issuesArgs(login string, states []crew.State) []string {
@@ -179,7 +182,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 	if err := t.gh.decode(ctx, &issue, "issue", "view", issueKey, "--json", "state,labels"); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
-	if issue.State != "OPEN" {
+	if issue.State != stateOpen {
 		return fmt.Errorf("%s: it is %s: %w", move, strings.ToLower(issue.State), port.ErrMovedMeanwhile)
 	}
 	remove, states := t.swap(issue.Labels, to)

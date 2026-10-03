@@ -48,7 +48,9 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
-		acted(failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1: tests fail", "code", "prompt did not render"),
+		acted(
+			failedEntry("5", "Parse the config once", 40, 30,
+				"tests", "exited 1: tests fail", "code", "prompt did not render"),
 			core.HandledAction{Name: "tests", Spend: spent(0.84, 1_200_000), PullRequest: noPullRequest},
 			core.HandledAction{Name: "code"}),
 		acted(givenUpEntry(entry("6", "Drop the old flag", "implement", "ready to review", 25, 20), "issue closed"),
@@ -224,7 +226,9 @@ func manySnapshot() engine.Update {
 	for n := 13; n <= 20; n++ {
 		u.Snapshot.Handled = append(u.Snapshot.Handled,
 			acted(entry(strconv.Itoa(n), fmt.Sprintf("Success number %d", n), "development", "crew:waiting review", 60, 40-n),
-				core.HandledAction{Name: "lfg", Spend: spent(float64(n)/2, int64(n)*1_000_000), PullRequest: found(fmt.Sprint("#", n+30))}))
+				core.HandledAction{
+					Name: "lfg", Spend: spent(float64(n)/2, int64(n)*1_000_000), PullRequest: found("#" + strconv.Itoa(n+30)),
+				}))
 	}
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
@@ -447,7 +451,7 @@ func TestFittingCountsThePullRequestLines(t *testing.T) {
 	u := manySnapshot()
 	for i := 2; i < len(u.Snapshot.Handled); i++ {
 		u.Snapshot.Handled[i].Actions = []core.HandledAction{
-			{Name: "lfg", Spend: spent(1, 1_000), PullRequest: found("#4" + fmt.Sprint(i))},
+			{Name: "lfg", Spend: spent(1, 1_000), PullRequest: found("#4" + strconv.Itoa(i))},
 			{Name: "docs", Spend: spent(1, 1_000), PullRequest: noPullRequest},
 		}
 	}

@@ -38,6 +38,16 @@ func ended(lines []map[string]any) []map[string]any {
 	return slices.DeleteFunc(slices.Clone(lines), func(l map[string]any) bool { return l["event"] != "ended" })
 }
 
+// holds fails when line lacks a key of want or holds another value for it.
+func holds(t *testing.T, line, want map[string]any) {
+	t.Helper()
+	for k, v := range want {
+		if !reflect.DeepEqual(line[k], v) {
+			t.Errorf("%s = %#v, want %#v", k, line[k], v)
+		}
+	}
+}
+
 // lacks fails when line has any of keys.
 func lacks(t *testing.T, line map[string]any, keys ...string) {
 	t.Helper()
@@ -87,11 +97,7 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 			"pull_request": "#45", "pull_request_url": "https://example.test/pull/45", "pull_request_lookup": "found",
 			"duration_ms": 90_000.0, "succeeded": true,
 		}
-		for k, v := range want {
-			if !reflect.DeepEqual(end[0][k], v) {
-				t.Errorf("%s = %#v, want %#v", k, end[0][k], v)
-			}
-		}
+		holds(t, end[0], want)
 		if run := lines[0]["run"]; run == nil || run == "" || end[0]["run"] != run {
 			t.Errorf("run = %v then %v, want one run id on every line", run, end[0]["run"])
 		}

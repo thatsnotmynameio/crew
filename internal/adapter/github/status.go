@@ -394,12 +394,14 @@ func usage(a crew.ActionStatus) string {
 	if a.Spend.Sessions == 0 {
 		return ""
 	}
-	pr := "not looked up"
+	var pr string
 	switch a.PullRequest.Lookup {
 	case crew.PullRequestFound:
 		pr = "[" + a.PullRequest.Ref + "](" + a.PullRequest.URL + ")"
 	case crew.PullRequestNone:
 		pr = "none"
+	default:
+		pr = "not looked up"
 	}
 	return " Usage: " + a.Spend.String() + ". Pull request: " + pr + "."
 }

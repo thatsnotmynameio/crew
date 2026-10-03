@@ -49,7 +49,7 @@ func (t *Tracker) FindPullRequest(ctx context.Context, branch string, since time
 		p := &prs[i]
 		switch {
 		case p.CrossRepo:
-		case p.State == "OPEN":
+		case p.State == stateOpen:
 			if open == nil || p.newer(*open) {
 				open = p
 			}

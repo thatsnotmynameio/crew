@@ -194,7 +194,7 @@ func (s *step) running(h *heldIssue) {
 			st.Actions[i].Started, st.Actions[i].Said = a.started, a.said
 		case PhaseChecking:
 			st.Actions[i].Started = a.started
-		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseEnded:
+		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing, PhaseEnded:
 			// No session runs: the action has no start time to report.
 		}
 	}

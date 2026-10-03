@@ -309,11 +309,14 @@ func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T)
 	if _, err := finder.FindPullRequest(ctx, "crew/issue-32-lfg", time.Time{}); err == nil {
 		t.Error("failing lookup = nil error, want the scripted error")
 	}
-	if got, err := finder.FindPullRequest(ctx, "crew/issue-9-lfg", since); err != nil || got.Lookup != crew.PullRequestNone {
-		t.Errorf("unscripted lookup = %+v, %v; want no pull request", got, err)
+	none, err := finder.FindPullRequest(ctx, "crew/issue-9-lfg", since)
+	if err != nil || none.Lookup != crew.PullRequestNone {
+		t.Errorf("unscripted lookup = %+v, %v; want no pull request", none, err)
 	}
 	want := []fake.Lookup{
-		{Branch: "crew/issue-31-lfg", Since: since}, {Branch: "crew/issue-32-lfg"}, {Branch: "crew/issue-9-lfg", Since: since},
+		{Branch: "crew/issue-31-lfg", Since: since},
+		{Branch: "crew/issue-32-lfg"},
+		{Branch: "crew/issue-9-lfg", Since: since},
 	}
 	if got := tr.Lookups(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Lookups = %+v, want %+v", got, want)

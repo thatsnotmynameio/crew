@@ -346,7 +346,7 @@ func pullRequestOf(e core.HandledView) string {
 // pullRequests are the lines under an entry of several actions: one per
 // action that had a session, with its pull request.
 func pullRequests(e core.HandledView) []string {
-	if len(e.Actions) < 2 {
+	if len(e.Actions) <= 1 {
 		return nil
 	}
 	var out []string

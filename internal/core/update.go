@@ -160,7 +160,7 @@ func (s *step) stopActions(h *heldIssue) {
 		case PhaseChecking:
 			a.stopped = true
 			s.command(StopCheck{IssueKey: h.issue.Key, Action: a.name})
-		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseEnded:
+		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing, PhaseEnded:
 			// No session or check runs: its next input sees the stop.
 		}
 	}

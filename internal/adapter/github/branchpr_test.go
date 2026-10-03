@@ -16,7 +16,8 @@ var prList = []string{"pr", "list"}
 
 // prJSON is one pull request as gh pr list prints it.
 func prJSON(number int, state, created string, crossRepo bool) string {
-	return fmt.Sprintf(`{"number":%d,"url":"https://github.com/o/r/pull/%d","state":%q,"createdAt":%q,"isCrossRepository":%t}`,
+	return fmt.Sprintf(`{"number":%d,"url":"https://github.com/o/r/pull/%d","state":%q,`+
+		`"createdAt":%q,"isCrossRepository":%t}`,
 		number, number, state, created, crossRepo)
 }
 

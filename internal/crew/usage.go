@@ -2,6 +2,7 @@ package crew
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -96,11 +97,11 @@ func (s Spend) String() string {
 	if s.WithCost > 0 {
 		cost = formatCost(s.Cost) + partial(s.WithCost, s.Sessions)
 	}
-	tokens := "tokens not reported"
+	count := "tokens not reported"
 	if s.WithTokens > 0 {
-		tokens = formatTokens(s.Tokens.Total()) + " tokens" + partial(s.WithTokens, s.Sessions)
+		count = formatTokens(s.Tokens.Total()) + " tokens" + partial(s.WithTokens, s.Sessions)
 	}
-	return cost + ", " + tokens
+	return cost + ", " + count
 }
 
 // partial marks a sum of with values out of sessions as partial when some
@@ -117,15 +118,21 @@ func formatCost(usd float64) string {
 	return fmt.Sprintf("$%.2f", usd)
 }
 
+// thousand and million are the steps of formatTokens' K and M.
+const (
+	thousand = 1_000
+	million  = 1_000_000
+)
+
 // formatTokens words a token count compactly: 950, 48.2K, 17.2M.
 func formatTokens(n int64) string {
 	switch {
-	case n < 1_000:
-		return fmt.Sprint(n)
-	case n < 1_000_000:
-		return compact(float64(n)/1_000) + "K"
+	case n < thousand:
+		return strconv.FormatInt(n, 10)
+	case n < million:
+		return compact(float64(n)/thousand) + "K"
 	default:
-		return compact(float64(n)/1_000_000) + "M"
+		return compact(float64(n)/million) + "M"
 	}
 }
 
