@@ -53,6 +53,12 @@ linters:
         # Matched to Codacy's Lizard parameter-count pattern.
         - name: argument-limit
           arguments: [8]
+        # Matched to Codacy's Lizard file-length pattern (non-comment lines).
+        - name: file-length-limit
+          arguments:
+            - max: 500
+              skipComments: true
+              skipBlankLines: true
     exhaustive:
       # A switch with a default branch already handles every other value.
       default-signifies-exhaustive: true
@@ -168,11 +174,6 @@ linters:
       - std-error-handling
       - common-false-positives
     rules:
-      # Table-driven tests are long and branchy by design; their size is not
-      # complexity a reader has to hold. Codacy's Lizard excludes them too
-      # (.codacy.yaml).
-      - path: _test\.go
-        linters: [funlen, gocognit, cyclop, nestif, maintidx]
       # Tests repeat literal inputs and expectations so each case reads alone.
       - path: _test\.go
         linters: [goconst]
