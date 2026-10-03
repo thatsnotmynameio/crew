@@ -11,13 +11,43 @@ crew runs sessions and moves labels. Opening a pull request, reviewing and mergi
 
 ## Install
 
-You need Go 1.27 or later:
+On macOS or Linux, on amd64 or arm64, this downloads the latest release for your machine, checks it against the release's `checksums.txt`, and installs `crew` into `/usr/local/bin`. `sudo` asks for your password.
 
 ```sh
-go install github.com/thatsnotmynameio/crew/cmd/crew@main
+(
+  set -eu
+  os=$(uname -s | tr '[:upper:]' '[:lower:]')
+  case $(uname -m) in
+    x86_64) arch=amd64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) echo "crew has no build for $(uname -m)" >&2; exit 1 ;;
+  esac
+  archive="crew_${os}_${arch}.tar.gz"
+  url=https://github.com/thatsnotmynameio/crew/releases/latest/download
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  cd "$tmp"
+  curl -fsSLO "$url/$archive"
+  curl -fsSLO "$url/checksums.txt"
+  if command -v sha256sum > /dev/null; then
+    grep " $archive\$" checksums.txt | sha256sum -c -
+  else
+    grep " $archive\$" checksums.txt | shasum -a 256 -c -
+  fi
+  tar -xzf "$archive" crew
+  sudo install -d /usr/local/bin
+  sudo install -m 0755 crew /usr/local/bin/crew
+  crew --version
+)
 ```
 
-This puts `crew` in `$(go env GOPATH)/bin`. Install from `@main` for now: the only release, `v0.1.0`, predates crew's Go code. From the next release on, `@vX.Y.Z` works too.
+With Go 1.27 or later, you can build a release instead, where `vX.Y.Z` is the release's tag:
+
+```sh
+go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z
+```
+
+This puts `crew` in `$(go env GOPATH)/bin`.
 
 ## Before you run it
 
@@ -455,7 +485,7 @@ With `--plain`, or when the output is not a terminal, crew prints one line per e
 14:23:04 crew: #42 implement/acceptance started on branch crew/issue-42-acceptance, log .crew/logs/issue-42-acceptance.log
 ```
 
-`crew --version` prints the version, which is `dev` for a `go install` build.
+`crew --version` prints the version: the release's tag for a downloaded release or a `go install …@vX.Y.Z` build, and `dev` for a build that records no version.
 
 ### Stop it
 

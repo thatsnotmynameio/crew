@@ -1,7 +1,12 @@
-# Every push to main (a merged pull request): VERSION is published as tag
-# vX.Y.Z and a GitHub release, unless that version already has its tag. A pull
-# request bumps VERSION to release. When the project has build jobs, add them
-# here and make publish need them.
+# Every push to main (a merged pull request): VERSION is released as tag
+# vX.Y.Z and a GitHub release, unless that version already has its tag, in
+# which case nothing is published. A pull request bumps VERSION to release.
+# GoReleaser (.goreleaser.yaml) builds crew for macOS and Linux and publishes
+# the archives and checksums.txt with GitHub's generated notes. Nothing is
+# published unless every asset built: the tag stays local until GoReleaser
+# publishes the release, and a re-run finishes a release a failed upload left
+# as a draft. Unlike CI, this does not use the shared release action's
+# publish mode, only its check.
 name: Release
 
 on:
@@ -21,7 +26,7 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: write # the tag and the release
     steps:
@@ -29,6 +34,46 @@ jobs:
         with:
           fetch-depth: 0 # the release rule reads the v* tags
           persist-credentials: false
+      # VERSION is MAJOR.MINOR.PATCH and not below the latest release.
       - uses: thatsnotmynameio/.github/actions/release@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
         with:
-          mode: publish
+          mode: check
+      - name: Find the tag to publish
+        id: tag
+        run: |
+          tag="v$(tr -d '[:space:]' < VERSION)"
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "$tag is already released: nothing to publish."
+          else
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+      # Local only: GitHub creates the tag when the release is published.
+      - name: Tag the release locally
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: git tag "$TAG"
+      # Asked here, not by GoReleaser: it leaves out the target commit, so for
+      # a tag GitHub does not have yet the notes would run to the default
+      # branch's head instead of the commit built here.
+      - name: Release notes
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh api "repos/$REPO/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > "$RUNNER_TEMP/notes.md"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.tag.outputs.tag != ''
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        if: steps.tag.outputs.tag != ''
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          args: release --clean --release-notes ${{ runner.temp }}/notes.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

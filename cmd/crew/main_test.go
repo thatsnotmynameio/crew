@@ -3,6 +3,7 @@ package main
 import (
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/app"
@@ -23,6 +24,33 @@ func TestRunExitsBeforeStartingOnFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := run(tt.args); got != tt.want {
 				t.Errorf("run(%q) = %d, want %d", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVersionPrefersTheStampThenTheModuleVersion(t *testing.T) {
+	const pseudo = "v0.1.1-0.20261003000000-abcdef123456+dirty"
+	module := func(version string) *debug.BuildInfo {
+		return &debug.BuildInfo{Main: debug.Module{Path: "github.com/thatsnotmynameio/crew", Version: version}}
+	}
+	tests := []struct {
+		name    string
+		stamped string
+		info    *debug.BuildInfo
+		want    string
+	}{
+		{name: "stamped release", stamped: "v0.2.0", info: module("v0.1.0"), want: "v0.2.0"},
+		{name: "go install of a tag", info: module("v0.2.0"), want: "v0.2.0"},
+		{name: "go build in a checkout", info: module(pseudo), want: pseudo},
+		{name: "devel build", info: module("(devel)"), want: "dev"},
+		{name: "no module version", info: module(""), want: "dev"},
+		{name: "no build info", want: "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := crewVersion(tt.stamped, tt.info); got != tt.want {
+				t.Errorf("crewVersion(%q, %v) = %q, want %q", tt.stamped, tt.info, got, tt.want)
 			}
 		})
 	}
