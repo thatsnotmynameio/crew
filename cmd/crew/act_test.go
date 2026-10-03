@@ -19,6 +19,7 @@ func TestAppMatesGivesEachMateItsIdentityAndCrewTheDefaults(t *testing.T) {
 			{Name: "developer", Login: "crew-developer[bot]", Env: []string{"GH_CONFIG_DIR=/run/developer/sessions"},
 				Unset: []string{"GH_TOKEN"}},
 		},
+		Logins:   []string{"crew-ops[bot]", "crew-developer[bot]", "crew-qa[bot]"},
 		Warnings: []string{"mate qa has no key on this machine"},
 	}
 	m := appMates(a)
@@ -36,7 +37,7 @@ func TestAppMatesGivesEachMateItsIdentityAndCrewTheDefaults(t *testing.T) {
 	if err := m.Writer.Renew(context.Background()); err == nil || !strings.Contains(err.Error(), "mate ops") {
 		t.Errorf("Writer.Renew = %v, want it to renew ops", err)
 	}
-	if !slices.Equal(m.Warnings, a.Warnings) || m.Close == nil {
+	if !slices.Equal(m.Warnings, a.Warnings) || !slices.Equal(m.Logins, a.Logins) || m.Close == nil {
 		t.Errorf("Warnings = %q, want a's, and a Close", m.Warnings)
 	}
 	m.Close()

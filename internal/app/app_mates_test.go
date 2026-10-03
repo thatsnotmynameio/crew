@@ -103,7 +103,8 @@ func TestEachActionActsAsItsMateAndCrewAsTheDefault(t *testing.T) {
 		h := fake.NewHarness()
 		checker := fake.NewChecker()
 		res := &resolver{mates: app.Mates{Writer: opsWriter,
-			Identities: map[string]port.Identity{"ops": opsID, "developer": devID}}}
+			Identities: map[string]port.Identity{"ops": opsID, "developer": devID},
+			Logins:     []string{"crew-ops[bot]", "crew-developer[bot]"}}}
 		r := options(t, matedAction, tr, h)
 		r.opts.Plain, r.opts.Checker, r.opts.Mates = true, checker, res.resolve
 		r.start()
@@ -201,6 +202,37 @@ func TestAMateThatCannotActWarnsAndCrewActsAsTheBoss(t *testing.T) {
 		first, _, _ := strings.Cut(r.stdout.String(), "\n")
 		if !stamped.MatchString(first) || !strings.HasSuffix(first, "crew: warning: "+warning) {
 			t.Errorf("first line = %q, want the stamped warning", first)
+		}
+	})
+}
+
+// A mate stored on this machine that cannot act this run, such as one not
+// installed on the repository, still has the issues it opened taken.
+func TestAMateThatCannotActStillHasItsIssuesTaken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewActingTracker(issue("1", ready))
+		h := fake.NewHarness()
+		res := &resolver{mates: app.Mates{Logins: []string{"crew-ops[bot]"},
+			Warnings: []string{"mate ops is not installed on thatsnotmynameio/crew"}}}
+		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  mate: ops\n", 1), tr, h)
+		r.opts.Mates = res.resolve
+		r.start()
+
+		session := next(t, h)
+		session.End(success)
+		synctest.Wait()
+		r.signals <- syscall.SIGTERM
+		if code := <-r.code; code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+		calls := tr.ActAsCalls()
+		if len(calls) != 1 || !sameIdentity(calls[0].Writer, port.Identity{}) ||
+			!slices.Equal(calls[0].Mates, []string{"crew-ops[bot]"}) {
+			t.Errorf("ActAs calls = %+v, want one with the boss and ops's login", calls)
+		}
+		if run := session.Run(); !sameIdentity(run.Identity, port.Identity{}) ||
+			!slices.Equal(run.Mates, []string{"crew-ops[bot]"}) {
+			t.Errorf("session ran as %+v with mates %q, want the boss and ops's login", run.Identity, run.Mates)
 		}
 	})
 }

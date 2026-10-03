@@ -90,6 +90,10 @@ type ActingMate struct {
 type Acting struct {
 	// Mates are the mates that act, in the order they were configured.
 	Mates []ActingMate
+	// Logins are the bot logins of the configured mates stored on this
+	// machine, in the order they were configured, whether or not they act:
+	// crew still takes the issues a mate that cannot act this run opened.
+	Logins []string
 	// Warnings say, one line each, which configured mate cannot act or
 	// adds no co-author, why, and the fix.
 	Warnings []string
@@ -268,6 +272,7 @@ func (r *resolver) find(ctx context.Context, name string) (Mate, int64, string) 
 		return Mate{}, 0, fmt.Sprintf("mate %s cannot act: its file %s holds an invalid app slug; "+
 			"delete it and run `crew mates create %s` in this repository", name, r.o.Store.Path(m.Owner, name), name)
 	}
+	r.a.Logins = append(r.a.Logins, botLogin(m.Slug))
 	inst, err := r.o.Client.RepoInstallation(ctx, m, r.repo.Owner, r.repo.Name)
 	if errors.Is(err, ErrNotInstalled) {
 		return Mate{}, 0, fmt.Sprintf("mate %s is not installed on %s/%s; "+

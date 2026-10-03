@@ -49,6 +49,9 @@ func TestActGivesAStoredInstalledMateItsGhDirectory(t *testing.T) {
 	if !slices.Equal(a.Warnings, want) {
 		t.Errorf("Warnings = %q, want %q", a.Warnings, want)
 	}
+	if !slices.Equal(a.Logins, []string{opsLogin}) {
+		t.Errorf("Logins = %q, want ops's alone, as developer has no key here", a.Logins)
+	}
 }
 
 func TestActAsksForATokenOfTheRepositoryWithCrewsPermissions(t *testing.T) {
@@ -108,6 +111,10 @@ func TestActWarnsAndActsAsTheBossForAnUnusableMate(t *testing.T) {
 			want := strings.ReplaceAll(tt.want, "<path>", r.store.Path(testOwner, "ops"))
 			if len(a.Mates) != 0 || !slices.Equal(a.Warnings, []string{want}) {
 				t.Errorf("Act = %+v, %q; want no mate and %q", a.Mates, a.Warnings, want)
+			}
+			// A stored mate that cannot act still has its issues taken.
+			if wantLogins := []string{opsLogin}; tt.saved != slices.Equal(a.Logins, wantLogins) {
+				t.Errorf("Logins = %q, want ops's login exactly when its file is stored", a.Logins)
 			}
 		})
 	}

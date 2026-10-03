@@ -94,6 +94,10 @@ type Mates struct {
 	// Writer is what crew's own writes on the tracker act as: the default
 	// mate, or the zero Identity, the boss, when it cannot act.
 	Writer port.Identity
+	// Logins are the logins of the configured mates crew knows, whether or
+	// not they act this run: crew takes the issues they opened, and every
+	// session and check gets them as CREW_MATES.
+	Logins []string
 	// Warnings say, one line each, which mate cannot act or adds no
 	// co-author, why, and the fix.
 	Warnings []string
@@ -221,12 +225,6 @@ func (b built) mates(ctx context.Context, o Options) (Mates, error) {
 // engine builds the engine of the config and its adapters, whose actions
 // act as mates.
 func (b built) engine(o Options, mates Mates) *engine.Engine {
-	var logins []string
-	for _, name := range b.cfg.Mates {
-		if id, ok := mates.Identities[name]; ok {
-			logins = append(logins, id.Login)
-		}
-	}
 	return engine.New(engine.Config{
 		Workflow:          b.cfg.Workflow,
 		MaxParallelIssues: b.cfg.MaxParallelIssues,
@@ -242,7 +240,7 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 		ActAs:             len(b.cfg.Mates) > 0,
 		Writer:            mates.Writer,
 		Identities:        mates.Identities,
-		MateLogins:        logins,
+		MateLogins:        mates.Logins,
 	})
 }
 

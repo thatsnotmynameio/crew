@@ -82,8 +82,9 @@ type Config struct {
 	// Identities are the identities of the mates that act, by name. An
 	// action whose mate is not among them runs as the boss.
 	Identities map[string]port.Identity
-	// MateLogins are the logins of the mates that act, which every session
-	// and check gets as CREW_MATES.
+	// MateLogins are the logins of the configured mates crew knows, whether
+	// or not they act: the tracker takes the items they opened, and every
+	// session and check gets them as CREW_MATES.
 	MateLogins []string
 }
 

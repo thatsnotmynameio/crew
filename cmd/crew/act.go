@@ -36,7 +36,7 @@ func actingMates(run proc.Runner, root string) func(context.Context, string, []s
 // writes, which renews its token through a. None holds a key or a token,
 // only the gh config directory that holds the token.
 func appMates(a *mates.Acting) app.Mates {
-	m := app.Mates{Identities: map[string]port.Identity{}, Warnings: a.Warnings, Close: a.Close}
+	m := app.Mates{Identities: map[string]port.Identity{}, Logins: a.Logins, Warnings: a.Warnings, Close: a.Close}
 	for _, am := range a.Mates {
 		m.Identities[am.Name] = port.Identity{Mate: am.Name, Login: am.Login, Env: am.Env, Unset: am.Unset}
 		if am.WriterEnv == nil {
