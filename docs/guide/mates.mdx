@@ -100,6 +100,8 @@ When the mate is already installed there, crew opens nothing and only confirms.
 
 When GitHub rejects the saved key, because the app was deleted or its key revoked, crew says so. Delete the mate's file and run `crew mates create` again to create a new mate.
 
+When crew fails after GitHub created the app but before it saved the mate, such as when GitHub's API errs while crew fetches the app's key, the app is left on GitHub without a key. crew says so and links the owner's apps page: delete the app there before you run `crew mates create` again, or GitHub refuses its name.
+
 ## Revoke a mate
 
 On GitHub, delete the app, or revoke its private key, in the app's settings (the owner's **Settings**, then **Developer settings**, then **GitHub Apps**). Then delete the mate's file on your machine.

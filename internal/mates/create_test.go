@@ -201,11 +201,26 @@ func TestCreateFailsWhenTheConversionFails(t *testing.T) {
 	if err == nil || isEnvError(err) || !strings.Contains(err.Error(), "Validation Failed") {
 		t.Fatalf("Create = %v, want the conversion's failure", err)
 	}
+	// GitHub created the app before its redirect, so its key is lost.
+	advice := "GitHub may have created the app crew-tester for " + testOwner + " already: delete it at " +
+		testWeb + "/organizations/" + testOwner + "/settings/apps before running crew mates create tester again"
+	if !strings.Contains(err.Error(), advice) {
+		t.Errorf("Create = %v, want the advice %q", err, advice)
+	}
 	if got := r.browser.redirects[0]; got.status == http.StatusFound {
 		t.Errorf("/created answered %+v, want no redirect to the install page", got)
 	}
 	if _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoMate) {
 		t.Errorf("Load = %v, want nothing saved", err)
+	}
+}
+
+func TestAFailedConversionOnAUserRepositoryPointsAtTheUsersApps(t *testing.T) {
+	r := newRun(t, "matheus", false)
+	r.api.convStatus = http.StatusBadGateway
+	err := r.create(t, "tester")
+	if want := "delete it at " + testWeb + "/settings/apps before"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("Create = %v, want %q", err, want)
 	}
 }
 

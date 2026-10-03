@@ -150,7 +150,11 @@ func (f *Flow) create(ctx context.Context, repo Repo, name string) (Mate, error)
 func (f *Flow) keep(ctx context.Context, repo Repo, name, code string) (Mate, error) {
 	conv, err := f.API.Convert(ctx, code)
 	if err != nil {
-		return Mate{}, fmt.Errorf("%w; crew saved nothing", err)
+		// GitHub creates the app before its redirect, so its key may be
+		// lost with the conversion.
+		return Mate{}, fmt.Errorf("%w; crew saved nothing, but GitHub may have created the app %s for %s already: "+
+			"delete it at %s before running crew mates create %s again", err, AppName(name), repo.Owner,
+			f.appsURL(repo), name)
 	}
 	m := conv.Mate(name)
 	if err := f.Store.Save(m); err != nil {
@@ -235,6 +239,14 @@ func (f *Flow) createURL(repo Repo, state string) string {
 		path = "/organizations/" + url.PathEscape(repo.Owner) + path
 	}
 	return f.Web + path + "?" + url.Values{"state": {state}}.Encode()
+}
+
+// appsURL returns GitHub's page that lists the apps of repo's owner.
+func (f *Flow) appsURL(repo Repo) string {
+	if repo.Org {
+		return f.Web + "/organizations/" + url.PathEscape(repo.Owner) + "/settings/apps"
+	}
+	return f.Web + "/settings/apps"
 }
 
 // installURL returns GitHub's page that installs m.
