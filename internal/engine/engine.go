@@ -6,7 +6,8 @@
 // One goroutine, Run's loop, owns the core. Every result reaches it through
 // one inbox and is stamped with its arrival time there. Each command runs in
 // its own goroutine on a command context that only Run's return cancels, so
-// a stop request never cancels the verdict moves it is waiting for.
+// a stop request never cancels the verdict moves it is waiting for. The loop
+// hands that context to each command it launches.
 package engine
 
 import (
@@ -92,7 +93,6 @@ type Engine struct {
 	// The fields below are owned by Run's loop.
 	model    *core.Model
 	inbox    chan message
-	cmdCtx   context.Context
 	inflight int // command goroutines whose final message is still due
 	wg       sync.WaitGroup
 	sessions map[sessionKey]port.Session
@@ -153,7 +153,6 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	cmdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	e.cmdCtx = cmdCtx
 
 	ticker := time.NewTicker(e.cfg.PollInterval)
 	defer ticker.Stop()
@@ -167,22 +166,22 @@ func (e *Engine) Run(ctx context.Context) error {
 		timeUp = timer.C
 	}
 	e.started = time.Now()
-	e.step(core.Tick{})
+	e.step(cmdCtx, core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
 		case <-ticker.C:
-			e.step(core.Tick{Said: e.said()})
+			e.step(cmdCtx, core.Tick{Said: e.said()})
 		case <-stop:
 			stop = nil
-			e.step(core.StopRequested{})
+			e.step(cmdCtx, core.StopRequested{})
 		case <-done:
 			done = nil
-			e.step(core.StopRequested{})
+			e.step(cmdCtx, core.StopRequested{})
 		case <-timeUp:
 			timeUp = nil
-			e.step(core.TimeUp{Limit: e.cfg.RunTimeLimit})
+			e.step(cmdCtx, core.TimeUp{Limit: e.cfg.RunTimeLimit})
 		case m := <-e.inbox:
-			e.receive(m)
+			e.receive(cmdCtx, m)
 		}
 	}
 	e.wg.Wait()
@@ -270,8 +269,9 @@ func (e *Engine) said() []core.Said {
 	return out
 }
 
-// receive handles a message from a command goroutine.
-func (e *Engine) receive(m message) {
+// receive handles a message from a command goroutine; ctx is the command
+// context.
+func (e *Engine) receive(ctx context.Context, m message) {
 	if m.final {
 		e.inflight--
 	}
@@ -285,15 +285,15 @@ func (e *Engine) receive(m message) {
 	case core.CheckEnded:
 		delete(e.checks, sessionKey{in.IssueKey, in.Action})
 	}
-	e.step(m.input)
+	e.step(ctx, m.input)
 }
 
 // step feeds in to the core, stamped with the time now, launches the
-// commands it returns and publishes the update.
-func (e *Engine) step(in core.Input) {
+// commands it returns on the command context ctx and publishes the update.
+func (e *Engine) step(ctx context.Context, in core.Input) {
 	cmds, events := e.model.Update(in.Stamped(time.Now()))
 	for _, c := range cmds {
-		e.launch(c)
+		e.launch(ctx, c)
 	}
 	e.recent = append(e.recent, events...)
 	if n := len(e.recent) - recentEvents; n > 0 {

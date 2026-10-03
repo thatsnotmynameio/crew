@@ -10,6 +10,13 @@ import (
 // logDir is where session logs go, relative to the repository root (KTD12).
 const logDir = ".crew/logs"
 
+// The permissions of the log directory and of the files in it: logs hold
+// what sessions printed, so only the boss reads them.
+const (
+	logDirPerm  = 0o750
+	logFilePerm = 0o600
+)
+
 // logPath returns the repository-relative path of the log of the sessions
 // running in workspace. A log holds every session of its workspace: a
 // resumed session's output goes after the failed run's (R10).
@@ -42,10 +49,14 @@ func (e *Engine) openLog(rel string) (*os.File, error) {
 // and appending, creating it and its directory as needed.
 func (e *Engine) openAppend(rel string) (*os.File, error) {
 	path := filepath.Join(e.cfg.Root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), logDirPerm); err != nil {
 		return nil, fmt.Errorf("create the log directory: %w", err)
 	}
-	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, logFilePerm)
+	if err != nil {
+		return nil, fmt.Errorf("open for appending: %w", err)
+	}
+	return f, nil
 }
 
 // scrub shortens the local paths in text before it enters the core: the
@@ -70,14 +81,18 @@ func lastWords(text string) string {
 	return "…" + string(runes[len(runes)-maxSaid+1:])
 }
 
-// replaceDir replaces dir in text with with wherever it appears as a whole
+// minDir is the length of the shortest dir replaceDir replaces: shorter is
+// empty or the filesystem root.
+const minDir = 2
+
+// replaceDir replaces dir in text with short wherever it appears as a whole
 // path prefix: not preceded by a path byte, and not followed by a name
 // byte, so /home/jo leaves /home/joe and /mnt/home/jo alone. Dots ending a
 // sentence do not continue the name: /repo. and /repo... are /repo, while
 // /repo.git is another path. An empty dir, or the filesystem root, is left
 // as is.
-func replaceDir(text, dir, with string) string {
-	if len(dir) < 2 {
+func replaceDir(text, dir, short string) string {
+	if len(dir) < minDir {
 		return text
 	}
 	var b strings.Builder
@@ -89,7 +104,7 @@ func replaceDir(text, dir, with string) string {
 		end := i + len(dir)
 		if (i == 0 || !pathByte(text[i-1])) && endsName(text[end:]) {
 			b.WriteString(text[:i])
-			b.WriteString(with)
+			b.WriteString(short)
 		} else {
 			b.WriteString(text[:end])
 		}
