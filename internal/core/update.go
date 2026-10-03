@@ -74,8 +74,9 @@ type step struct {
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
-// tick lists issues, unless a listing is outstanding or the run time is up,
-// retries the owed calls, statuses and pull request reports that are not in
+// tick lists issues, unless a listing is outstanding or the run time is up;
+// when every slot is busy it says it skipped the listing instead (R1, R3). It
+// then retries the owed calls, statuses and pull request reports that are not in
 // flight (KTD8, KTD5), and reports the status of each running issue with what
 // its sessions last said (R6).
 func (s *step) tick(said []Said) {
@@ -89,7 +90,12 @@ func (s *step) tick(said []Said) {
 		}
 	}
 	if !m.listing && !m.timeUp {
-		s.listIssues()
+		if m.full() {
+			m.skipped++
+			s.emit(PollSkipped{At: s.at, Busy: len(m.issues), Slots: m.maxParallel})
+		} else {
+			s.listIssues()
+		}
 	}
 	for _, h := range m.issues {
 		s.retryOwed(h, false)
@@ -101,15 +107,26 @@ func (s *step) tick(said []Said) {
 	s.retryPullRequests()
 }
 
-// listIssues asks for the issues in every stage's state.
+// listIssues asks for the issues in every stage's state, and starts the count
+// of skipped listings again (R6).
 func (s *step) listIssues() {
 	m := s.m
 	m.listing = true
+	m.skipped = 0
 	states := make([]crew.State, len(m.stages))
 	for i, st := range m.stages {
 		states[i] = st.Label
 	}
 	s.command(ListIssues{States: states})
+}
+
+// freed lists at once when a released issue freed a slot after a tick
+// skipped its listing (R4); otherwise the next tick lists (R5).
+func (s *step) freed() {
+	m := s.m
+	if m.skipped > 0 && !m.listing && !m.timeUp && !m.stopping {
+		s.listIssues()
+	}
 }
 
 // retryOwed attempts h's owed calls that are not in flight, each as its final
@@ -197,9 +214,9 @@ func (s *step) windDown() {
 // listed skips issues in two states (R15) and takes free slots' worth of
 // issues: the highest priority first, an issue without one last; then, at
 // the same priority, later stages first; then the oldest issue first (KTD8).
-// The rest are queued for their own stage. A blocked issue is neither taken
-// nor queued, and is taken at a later poll once nothing blocks it. It takes
-// nothing once the run time is up.
+// It reports nothing for the issues it leaves, a blocked one included: a
+// later listing with a free slot takes them. It takes nothing once the run
+// time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -250,13 +267,13 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 	return candidates
 }
 
-// takeWaiting takes candidates in order while slots are free, reports the
-// rest as queued for their own stage, and returns how many it took.
+// takeWaiting takes candidates in order while slots are free, and returns
+// how many it took. It reports nothing for the rest.
 func (s *step) takeWaiting(candidates []candidate) int {
 	m := s.m
 	taken := 0
 	for _, c := range candidates {
-		if len(m.issues) >= m.maxParallel {
+		if m.full() {
 			break
 		}
 		if m.held(c.issue.Key) != nil {
@@ -264,11 +281,6 @@ func (s *step) takeWaiting(candidates []candidate) int {
 		}
 		s.take(c.stage, c.issue)
 		taken++
-	}
-	for _, c := range candidates {
-		if m.held(c.issue.Key) == nil {
-			s.queued(c.stage, c.issue)
-		}
 	}
 	return taken
 }
@@ -362,6 +374,7 @@ func (s *step) callResult(r CallResult) {
 	}
 	if len(h.calls) == 0 {
 		m.release(h)
+		s.freed()
 	}
 }
 
@@ -440,6 +453,12 @@ func (s *step) judge(h *heldIssue) {
 	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnFailure})
 	s.call(h, &call{kind: CallReport, report: report})
 	s.ended(h, stage.OnFailure, crew.MovePending)
+}
+
+// full reports whether every slot is busy: the issues held, in any claim,
+// reach max_parallel_issues, so a listing could take nothing (R1, R7).
+func (m *Model) full() bool {
+	return len(m.issues) >= m.maxParallel
 }
 
 // held returns the held issue keyed key, or nil.

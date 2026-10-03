@@ -97,38 +97,46 @@ func developmentEnded() crew.Status {
 		To: needsAttention, Move: crew.MoveDone, Updated: updated}
 }
 
-// fix is #74's fix stage in run, queued, or running its address action that
-// said said.
-func fix(kind crew.StatusKind, run, said string) crew.Status {
-	s := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "fix", Kind: kind, Run: run, Slots: 2, Updated: updated}
-	if kind != crew.StatusQueued {
-		s.Actions = []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: said}}
-	}
-	return s
+// fix is #74's fix stage in run, running its address action that said said.
+func fix(run, said string) crew.Status {
+	return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "fix", Kind: crew.StatusRunning, Run: run,
+		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: said}},
+		Updated: updated}
+}
+
+// legacyQueued is the queued entry an earlier crew version wrote for #74
+// waiting for stage in run r2, as that version rendered it.
+func legacyQueued(stage string) string {
+	return "<!-- crew:entry run=r2 kind=queued stage=" + stage + " -->\n" +
+		"crew: #74 is queued for `" + stage + "`, waiting for a free slot: crew runs at most 2 issues at once.\n\n" +
+		"Updated 2026-10-02 14:03 UTC."
 }
 
 func TestTheFirstStatusCreatesACommentWithOneEntry(t *testing.T) {
 	tr, gh := fresh(t)
-	report(t, tr, fix(crew.StatusQueued, "r2", ""))
+	report(t, tr, fix("r2", ""))
 	creates := gh.callsTo(createComment...)
 	if len(creates) != 1 {
 		t.Fatalf("created %d comments, want 1", len(creates))
 	}
 	body := statusBody(t, creates[0])
-	if want := tr.renderStatus(fix(crew.StatusQueued, "r2", "")) + tail; body != want {
+	if want := tr.renderStatus(fix("r2", "")) + tail; body != want {
 		t.Errorf("created body =\n%s\nwant\n%s", body, want)
 	}
 }
 
-func TestQueuedThenRunningInOneRunEditsOneEntry(t *testing.T) {
+func TestRunningThenEndedInOneRunEditsOneEntry(t *testing.T) {
 	tr, gh := fresh(t)
-	report(t, tr, fix(crew.StatusQueued, "r2", ""), fix(crew.StatusRunning, "r2", "Reading the review."))
+	ended := fix("r2", "")
+	ended.Kind, ended.To, ended.Move = crew.StatusEnded, needsAttention, crew.MoveDone
+	ended.Actions[0] = crew.ActionStatus{Name: "address", State: crew.ActionSucceeded}
+	report(t, tr, fix("r2", "Reading the review."), ended)
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/101") {
 		t.Fatalf("edits = %q, want one of comment 101", edits)
 	}
 	body := statusBody(t, edits[0])
-	if want := tr.renderStatus(fix(crew.StatusRunning, "r2", "Reading the review.")) + tail; body != want {
+	if want := tr.renderStatus(ended) + tail; body != want {
 		t.Errorf("edited body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -139,15 +147,9 @@ func TestANewStageRunIsAppendedAfterTheEndedOne(t *testing.T) {
 	report(t, tr, developmentEnded())
 	development := strings.TrimSuffix(writes(t, gh)[0], tail)
 
-	report(t, tr, fix(crew.StatusQueued, "r2", ""))
-	want := development + separator + tr.renderStatus(fix(crew.StatusQueued, "r2", "")) + tail
+	report(t, tr, fix("r2", "Reading the review."))
+	want := development + separator + tr.renderStatus(fix("r2", "Reading the review.")) + tail
 	if got := writes(t, gh)[1]; got != want {
-		t.Errorf("body after queuing fix =\n%s\nwant\n%s", got, want)
-	}
-
-	report(t, tr, fix(crew.StatusRunning, "r2", "Reading the review."))
-	want = development + separator + tr.renderStatus(fix(crew.StatusRunning, "r2", "Reading the review.")) + tail
-	if got := writes(t, gh)[2]; got != want {
 		t.Errorf("body once fix runs =\n%s\nwant\n%s", got, want)
 	}
 	if !strings.Contains(development, "**`lfg`** failed: `no open pull request closes #74`.") {
@@ -157,10 +159,9 @@ func TestANewStageRunIsAppendedAfterTheEndedOne(t *testing.T) {
 
 // Covers AE8.
 func TestARestartedTrackerEditsOnlyTheLatestEntry(t *testing.T) {
-	before := commentAfter(t, developmentEnded(),
-		fix(crew.StatusQueued, "r2", ""), fix(crew.StatusRunning, "r2", "Reading the review."))
+	before := commentAfter(t, developmentEnded(), fix("r2", "Reading the review."))
 	tr, gh := restarted(t, before)
-	report(t, tr, fix(crew.StatusRunning, "r2", "Pushing the fix."))
+	report(t, tr, fix("r2", "Pushing the fix."))
 
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/12") {
@@ -173,16 +174,16 @@ func TestARestartedTrackerEditsOnlyTheLatestEntry(t *testing.T) {
 	if got[0] != was[0] {
 		t.Errorf("development entry changed:\n%s\nwant\n%s", got[0], was[0])
 	}
-	if want := tr.renderStatus(fix(crew.StatusRunning, "r2", "Pushing the fix.")); got[1] != want {
+	if want := tr.renderStatus(fix("r2", "Pushing the fix.")); got[1] != want {
 		t.Errorf("fix entry =\n%s\nwant\n%s", got[1], want)
 	}
 }
 
 // KTD5: crew stopped before the fix run ended, so its entry still runs.
 func TestARunningEntryOfAnEarlierProcessSaysCrewStoppedFollowingIt(t *testing.T) {
-	before := commentAfter(t, developmentEnded(), fix(crew.StatusRunning, "r2", "Reading the review."))
+	before := commentAfter(t, developmentEnded(), fix("r2", "Reading the review."))
 	tr, gh := restarted(t, before)
-	report(t, tr, fix(crew.StatusRunning, "r3", "Starting over."))
+	report(t, tr, fix("r3", "Starting over."))
 
 	body := writes(t, gh)[0]
 	got := entries(body)
@@ -196,7 +197,7 @@ func TestARunningEntryOfAnEarlierProcessSaysCrewStoppedFollowingIt(t *testing.T)
 	if got[1] != want {
 		t.Errorf("stale fix entry =\n%s\nwant\n%s", got[1], want)
 	}
-	if want := tr.renderStatus(fix(crew.StatusRunning, "r3", "Starting over.")); got[2] != want {
+	if want := tr.renderStatus(fix("r3", "Starting over.")); got[2] != want {
 		t.Errorf("new fix entry =\n%s\nwant\n%s", got[2], want)
 	}
 }
@@ -205,21 +206,38 @@ func TestARunningEntryOfAnEarlierProcessSaysCrewStoppedFollowingIt(t *testing.T)
 func TestLastWordsShapedLikeAnEntryMarkerAreEntryText(t *testing.T) {
 	tr, gh := fresh(t)
 	said := "<!-- crew:entry run=r9 kind=queued stage=review -->"
-	report(t, tr, fix(crew.StatusRunning, "r2", said), fix(crew.StatusRunning, "r2", "Pushing the fix."))
+	report(t, tr, fix("r2", said), fix("r2", "Pushing the fix."))
 	body := writes(t, gh)[1]
-	if want := tr.renderStatus(fix(crew.StatusRunning, "r2", "Pushing the fix.")) + tail; body != want {
+	if want := tr.renderStatus(fix("r2", "Pushing the fix.")) + tail; body != want {
 		t.Errorf("edited body =\n%s\nwant\n%s", body, want)
 	}
 }
 
-func TestARestartedTrackerReplacesTheQueuedEntryOfTheSameStage(t *testing.T) {
-	before := commentAfter(t, developmentEnded(), fix(crew.StatusQueued, "r2", ""))
-	tr, gh := restarted(t, before)
-	report(t, tr, fix(crew.StatusQueued, "r3", ""))
+// Covers R13: crew takes an issue an earlier version left queued for the
+// same stage, so the running entry replaces the queued one.
+func TestARunningStatusReplacesALegacyQueuedEntryOfTheSameStage(t *testing.T) {
+	development := strings.TrimSuffix(commentAfter(t, developmentEnded()), tail)
+	tr, gh := restarted(t, development+separator+legacyQueued("fix")+tail)
+	report(t, tr, fix("r3", "Reading the review."))
 
 	body := writes(t, gh)[0]
-	want := entries(before)[0] + separator + tr.renderStatus(fix(crew.StatusQueued, "r3", "")) + tail
-	if body != want {
+	if got := entries(body); len(got) != 2 {
+		t.Fatalf("body has %d entries, want 2:\n%s", len(got), body)
+	}
+	if want := development + separator + tr.renderStatus(fix("r3", "Reading the review.")) + tail; body != want {
+		t.Errorf("body =\n%s\nwant\n%s", body, want)
+	}
+}
+
+// A legacy queued entry of another stage is not the stage crew took, so it
+// stays as it is and the running entry follows it.
+func TestARunningStatusAppendsAfterALegacyQueuedEntryOfAnotherStage(t *testing.T) {
+	queued := legacyQueued("implement")
+	tr, gh := restarted(t, queued+tail)
+	report(t, tr, fix("r3", "Reading the review."))
+
+	body := writes(t, gh)[0]
+	if want := queued + separator + tr.renderStatus(fix("r3", "Reading the review.")) + tail; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -228,17 +246,16 @@ func TestARestartedTrackerReplacesTheQueuedEntryOfTheSameStage(t *testing.T) {
 func TestACommentWithoutEntriesIsKeptAsTheFirstEntry(t *testing.T) {
 	legacy := "crew: `implement` ended on #74.\n\n**`development`** failed.\n\nUpdated 2026-10-01 09:12 UTC."
 	tr, gh := restarted(t, legacy+tail)
-	report(t, tr, queued74())
+	report(t, tr, running74(time.Time{}, ""))
 
-	want := legacy + separator + tr.renderStatus(queued74()) + tail
+	want := legacy + separator + tr.renderStatus(running74(time.Time{}, "")) + tail
 	if body := writes(t, gh)[0]; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 
 	// The entry after the old text is the latest one: a status of its run
 	// replaces it rather than adding another.
-	running := queued74()
-	running.Kind = crew.StatusRunning
+	running := running74(updated.Add(-time.Minute), "Reading the plan.")
 	report(t, tr, running, running)
 	want = legacy + separator + tr.renderStatus(running) + tail
 	for i, body := range writes(t, gh)[1:] {
@@ -249,22 +266,22 @@ func TestACommentWithoutEntriesIsKeptAsTheFirstEntry(t *testing.T) {
 }
 
 func TestAStageNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
-	queued := func(run string) crew.Status {
-		s := fix(crew.StatusQueued, run, "")
+	running := func(run string) crew.Status {
+		s := fix(run, "")
 		s.Stage = "fix --> now"
 		return s
 	}
-	before := commentAfter(t, queued("r2"))
+	before := commentAfter(t, running("r2"))
 	marker, _, _ := strings.Cut(before, "\n")
 	if n := strings.Count(marker, "-->"); n != 1 {
 		t.Errorf("marker line %q holds %d comment ends, want 1", marker, n)
 	}
 
-	// Only the same stage's queued entry is replaced, so this reads the
-	// stage back from the marker.
-	tr, gh := restarted(t, before)
-	report(t, tr, queued("r3"))
-	if body, want := writes(t, gh)[0], tr.renderStatus(queued("r3"))+tail; body != want {
+	// Only the same stage's legacy queued entry is replaced, so this reads
+	// the stage back from the marker.
+	tr, gh := restarted(t, strings.Replace(before, "kind=running", "kind=queued", 1))
+	report(t, tr, running("r3"))
+	if body, want := writes(t, gh)[0], tr.renderStatus(running("r3"))+tail; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -273,7 +290,7 @@ func TestAStageNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
 func TestAFullCommentIsContinuedInANewOne(t *testing.T) {
 	full := "crew: an older status " + strings.Repeat("that went on and on, ", 3200) + "\n\nUpdated 2026-10-01 09:12 UTC."
 	tr, gh := restarted(t, full+tail)
-	report(t, tr, fix(crew.StatusQueued, "r2", ""))
+	report(t, tr, fix("r2", ""))
 
 	creates := gh.callsTo(createComment...)
 	if len(creates) != 1 {
@@ -282,16 +299,16 @@ func TestAFullCommentIsContinuedInANewOne(t *testing.T) {
 	created := statusBody(t, creates[0])
 	preamble := "<!-- crew:continues -->\n" +
 		"crew: this comment continues crew's earlier status comment on #74, which is full.\n\n"
-	if want := preamble + tr.renderStatus(fix(crew.StatusQueued, "r2", "")) + tail; created != want {
+	if want := preamble + tr.renderStatus(fix("r2", "")) + tail; created != want {
 		t.Errorf("created body =\n%s\nwant\n%s", created, want)
 	}
 
-	report(t, tr, fix(crew.StatusRunning, "r2", "Reading the review."))
+	report(t, tr, fix("r2", "Reading the review."))
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/102") {
 		t.Fatalf("edits = %q, want one of comment 102 and none of the full comment 12", edits)
 	}
-	want := preamble + tr.renderStatus(fix(crew.StatusRunning, "r2", "Reading the review.")) + tail
+	want := preamble + tr.renderStatus(fix("r2", "Reading the review.")) + tail
 	if body := statusBody(t, edits[0]); body != want {
 		t.Errorf("edited body =\n%s\nwant\n%s", body, want)
 	}
@@ -302,7 +319,7 @@ func TestAFullCommentIsContinuedInANewOne(t *testing.T) {
 func TestAnEntryOverTheLimitAloneIsEditedInPlace(t *testing.T) {
 	tr, gh := fresh(t)
 	long := strings.Repeat("word ", 14000)
-	report(t, tr, fix(crew.StatusRunning, "r2", long), fix(crew.StatusRunning, "r2", long+"!"))
+	report(t, tr, fix("r2", long), fix("r2", long+"!"))
 	if n := len(gh.callsTo(createComment...)); n != 1 {
 		t.Errorf("created %d comments, want 1", n)
 	}
@@ -322,8 +339,8 @@ func TestAFailedWriteLeavesTheCommentAsItWas(t *testing.T) {
 	report(t, tr, developmentEnded())
 	development := strings.TrimSuffix(writes(t, gh)[0], tail)
 	for _, s := range []crew.Status{
-		fix(crew.StatusRunning, "r2", "Reading the review."),
-		fix(crew.StatusRunning, "r3", "Starting over."),
+		fix("r2", "Reading the review."),
+		fix("r3", "Starting over."),
 	} {
 		if err := tr.ReportStatus(context.Background(), s); err == nil {
 			t.Fatalf("ReportStatus(%s) = nil, want the edit's error", s.Run)
@@ -331,7 +348,7 @@ func TestAFailedWriteLeavesTheCommentAsItWas(t *testing.T) {
 	}
 
 	w := writes(t, gh)
-	want := development + separator + tr.renderStatus(fix(crew.StatusRunning, "r3", "Starting over.")) + tail
+	want := development + separator + tr.renderStatus(fix("r3", "Starting over.")) + tail
 	if w[2] != want {
 		t.Errorf("body after a failed write =\n%s\nwant\n%s", w[2], want)
 	}
