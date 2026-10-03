@@ -37,6 +37,10 @@ type Config struct {
 	// RunTimeLimit is config.run_time_limit_seconds: how long crew runs from
 	// its first poll before it winds down. Zero, the default, is no limit.
 	RunTimeLimit time.Duration
+	// UsageInStatus is config.usage_in_status: whether the status comment
+	// shows each ended action's cost, tokens and pull request. False by
+	// default.
+	UsageInStatus bool
 	// Harness is config.harness, the harness adapter's name, "claude" by
 	// default. It is not checked against the registered adapters.
 	Harness string
@@ -75,6 +79,7 @@ type settings struct {
 	PollIntervalSeconds located[int]    `yaml:"poll_interval_seconds"`
 	MaxParallelIssues   located[int]    `yaml:"max_parallel_issues"`
 	RunTimeLimitSeconds located[int]    `yaml:"run_time_limit_seconds"`
+	UsageInStatus       located[bool]   `yaml:"usage_in_status"`
 	Harness             located[string] `yaml:"harness"`
 	Model               yaml.Node       `yaml:"model"`
 }
@@ -176,6 +181,7 @@ func engineSettings(s *settings, cfg *Config) []error {
 	if s.RunTimeLimitSeconds.line > 0 {
 		cfg.RunTimeLimit = time.Duration(s.RunTimeLimitSeconds.value) * time.Second
 	}
+	cfg.UsageInStatus = s.UsageInStatus.value
 	if s.Harness.line > 0 {
 		cfg.Harness = s.Harness.value
 	}

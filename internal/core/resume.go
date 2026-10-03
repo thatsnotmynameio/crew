@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // crashedReason is the reason of a run that recorded its start and never its
@@ -23,8 +25,9 @@ const (
 )
 
 // RunRecord is one line of the run journal: how a run of Action, in Stage,
-// on the issue, started or ended (KTD1). A run is recorded only once it has
-// a workspace, so every record names one.
+// on the issue, started or ended (KTD1). A run's start is recorded once it
+// has a workspace; its end is recorded whatever happened, and names no
+// workspace when the action never got one.
 type RunRecord struct {
 	Event    RunEvent
 	At       time.Time
@@ -40,6 +43,13 @@ type RunRecord struct {
 	// Succeeded and Reason are the action's outcome; set on RunEnded only.
 	Succeeded bool
 	Reason    string
+	// SessionStarted is when the action's session started, Usage what it
+	// used and PullRequest what its lookup found; set on RunEnded only.
+	// SessionStarted is zero when no session started, and then Usage is
+	// empty too.
+	SessionStarted time.Time
+	Usage          crew.Usage
+	PullRequest    crew.PullRequest
 }
 
 // runKey identifies the runs one record replaces: those of an action, in a
@@ -121,7 +131,9 @@ func (m *Model) resumable(h *heldIssue, a *actionRun) (RunRecord, bool) {
 // record remembers a's run event and asks the engine to write it, when the
 // model records runs. An ended run whose session never started keeps the
 // reason of the last session in its workspace, which says more than how
-// this run failed to start (KTD6).
+// this run failed to start (KTD6). The end of a run without a workspace is
+// written but not remembered: it would replace the key's last record, and
+// stop a failed run from resuming.
 func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
 	m := s.m
 	if m.lastRuns == nil {
@@ -137,8 +149,14 @@ func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
 		if p := a.prev; a.started.IsZero() && p != nil && p.Workspace == a.workspace && p.failed() {
 			r.Reason = p.reason()
 		}
+		r.SessionStarted, r.PullRequest = a.started, a.pr
+		if !a.started.IsZero() {
+			r.Usage = a.usage
+		}
 	}
-	m.remember(r)
+	if r.Workspace != "" {
+		m.remember(r)
+	}
 	s.command(RecordRun{Record: r})
 }
 

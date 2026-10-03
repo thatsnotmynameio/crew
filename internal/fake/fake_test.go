@@ -272,6 +272,70 @@ func TestNarratingHarnessSessionsSayWhatTheTestSets(t *testing.T) {
 	}
 }
 
+func TestUsageHarnessSessionsReportWhatTheTestSets(t *testing.T) {
+	h := fake.NewUsageHarness()
+	s := start(t, h, "implement #1")
+	r, ok := s.(port.UsageReporter)
+	if !ok {
+		t.Fatal("a usage harness's session is not a port.UsageReporter")
+	}
+	if got := r.Usage(); !reflect.DeepEqual(got, crew.Usage{}) {
+		t.Errorf("Usage before SetUsage = %+v, want nothing reported", got)
+	}
+	want := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{Input: 10, Output: 20}, HasTokens: true,
+		Models: []string{"claude-opus"}}
+	h.Sessions()[0].SetUsage(want)
+	if got := r.Usage(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Usage = %+v, want %+v", got, want)
+	}
+
+	if _, ok := start(t, fake.NewHarness(), "implement #2").(port.UsageReporter); ok {
+		t.Error("a plain harness's session is a port.UsageReporter")
+	}
+}
+
+func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T) {
+	tr := fake.NewFindingTracker()
+	var finder port.PullRequestFinder = tr
+	pr45 := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.com/pull/45"}
+	tr.ScriptLookup("crew/issue-31-lfg", fake.LookupScript{Found: pr45})
+	tr.ScriptLookup("crew/issue-32-lfg", fake.LookupScript{Err: errors.New("HTTP 502")})
+	since := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	if got, err := finder.FindPullRequest(ctx, "crew/issue-31-lfg", since); err != nil || got != pr45 {
+		t.Errorf("scripted lookup = %+v, %v; want #45", got, err)
+	}
+	if _, err := finder.FindPullRequest(ctx, "crew/issue-32-lfg", time.Time{}); err == nil {
+		t.Error("failing lookup = nil error, want the scripted error")
+	}
+	none, err := finder.FindPullRequest(ctx, "crew/issue-9-lfg", since)
+	if err != nil || none.Lookup != crew.PullRequestNone {
+		t.Errorf("unscripted lookup = %+v, %v; want no pull request", none, err)
+	}
+	want := []fake.Lookup{
+		{Branch: "crew/issue-31-lfg", Since: since},
+		{Branch: "crew/issue-32-lfg"},
+		{Branch: "crew/issue-9-lfg", Since: since},
+	}
+	if got := tr.Lookups(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Lookups = %+v, want %+v", got, want)
+	}
+	if _, ok := any(fake.NewReportingTracker()).(port.PullRequestFinder); ok {
+		t.Error("a ReportingTracker finds pull requests; only a FindingTracker should")
+	}
+}
+
+func TestALookupScriptedToBlockWaitsUntilItsContextEnds(t *testing.T) {
+	tr := fake.NewFindingTracker()
+	tr.ScriptLookup("crew/hangs", fake.LookupScript{Block: true})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := tr.FindPullRequest(ctx, "crew/hangs", time.Time{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("blocking lookup = %v, want the context's error", err)
+	}
+}
+
 func TestCheckerRunsEachCheckAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
 	c := fake.NewChecker()
 	c.Script("crew/fails", fake.CheckScript{Print: "no pull request\n", Exit: 1})

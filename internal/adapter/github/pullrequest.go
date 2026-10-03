@@ -148,7 +148,7 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 	for _, n := range issue.Closing.Nodes {
 		// gh pr edit and the comment work on crew's repository, so a pull
 		// request elsewhere would name another one with the same number.
-		if n.State == "OPEN" && n.Repository.NameWithOwner == issue.Repository.NameWithOwner {
+		if n.State == stateOpen && n.Repository.NameWithOwner == issue.Repository.NameWithOwner {
 			prs = append(prs, pullRequest{number: n.Number, labels: n.Labels.Nodes})
 		}
 	}

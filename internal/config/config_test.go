@@ -205,6 +205,25 @@ func TestLoadAcceptsPrompts(t *testing.T) {
 	}
 }
 
+func TestLoadReadsUsageInStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "left out", body: oneStage, want: false},
+		{name: "on", body: "config:\n  usage_in_status: true\n" + oneStage, want: true},
+		{name: "off", body: "config:\n  usage_in_status: false\n" + oneStage, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, tt.body).UsageInStatus; got != tt.want {
+				t.Errorf("UsageInStatus = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 	tests := []struct {
 		name string

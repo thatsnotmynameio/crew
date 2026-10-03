@@ -77,6 +77,11 @@ type ActionStatus struct {
 	// Workspace is the name of the workspace the action resumed in; empty
 	// when it did not resume.
 	Workspace string
+	// Spend is what its session used, and PullRequest the pull request it
+	// opened; set only for an ended action whose session started, when crew
+	// is set to show them.
+	Spend       Spend
+	PullRequest PullRequest
 }
 
 // FailureCause is what made an action fail, for a tracker to word itself.
