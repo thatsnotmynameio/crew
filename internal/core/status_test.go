@@ -144,6 +144,18 @@ func TestQueuedIssueUnderAnotherStageGetsANewStatus(t *testing.T) {
 	})
 }
 
+func TestPrioritizedIssuesTakeTheSlotsAndALaterStageIssueIsQueuedForItsStage(t *testing.T) {
+	d := newStatusDriver(t, draft(), 2)
+	urgent, review, high := issue("1", 3, ready), issue("2", 1, readyToReview), issue("3", 2, ready)
+	urgent.Priority, high.Priority = 1, 2
+
+	cmds, _ := d.poll(review, high, urgent)
+	wantHeld(t, d.m, "1", "3")
+	wantStatus(t, statusOf(t, cmds, "2"), crew.Status{
+		IssueKey: "2", IssueRef: "#2", Stage: "review", Kind: crew.StatusQueued, Slots: 2, Updated: d.now,
+	})
+}
+
 func TestTakenIssueGetsItsFirstStatusOnceItsTakeLands(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
 
