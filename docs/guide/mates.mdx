@@ -1,0 +1,135 @@
+---
+title: Mates
+description: Give crew GitHub identities of its own, called mates, with crew mates create.
+---
+
+# Mates
+
+Today crew acts on GitHub as you: it labels, comments and starts sessions as your `gh` login, and so do its sessions and checks. A mate is a GitHub identity of crew's own. It is a private GitHub App owned by the account that owns your repository, and it acts as `<slug>[bot]`, such as `crew-tester[bot]`. You can have many mates, one per role, such as a developer and a tester.
+
+`crew mates create <name>` creates a mate and installs it on the current repository.
+
+**crew does not act as its mates yet.** crew, its sessions and its checks still act on GitHub as your `gh` login, whether or not mates exist. Acting as mates is issue #80.
+
+## Before you create one
+
+- **A git repository on GitHub,** one that `gh` resolves: an `origin` remote on GitHub, or a default repository set with `gh repo set-default`. crew needs no `.crew/config.yaml` for mates.
+- **`gh`, logged in** (`gh auth login`). crew asks it which repository and owner you are in.
+- **The right to create and install GitHub Apps for the owner.** On your own account, that is you. On an organization, you must be an owner or an app manager.
+- **A browser on the same machine,** signed in to GitHub as someone with that right. Over SSH, see [Over SSH](#over-ssh).
+
+## Create a mate
+
+Run it anywhere inside the repository:
+
+```sh
+crew mates create tester
+```
+
+The name is 1 to 29 characters: lowercase letters, digits and single hyphens, starting and ending with a letter or digit. crew rejects any other name, and says why, before it opens anything.
+
+1. crew starts a page on `127.0.0.1` and opens it in your browser. The page sends you on to GitHub's page for creating an app, with everything filled in. If the browser does not open, crew says so: open the printed URL yourself.
+
+   ```text
+   crew: opening http://127.0.0.1:41235/ to create the app crew-tester for thatsnotmynameio on GitHub
+   crew: waiting for GitHub to create the app
+   ```
+
+2. On GitHub's page, check the app and create it. GitHub suggests the name `crew-<name>`. App names are unique across GitHub, so change it there if it is taken: crew records the name and bot login GitHub actually created.
+
+   ```text
+   crew: GitHub created the app crew-tester; the mate tester is saved at /home/you/.config/crew/mates/thatsnotmynameio/tester.json
+   crew: install crew-tester on thatsnotmynameio/crew at https://github.com/apps/crew-tester/installations/new
+   crew: choose "Only select repositories" and select crew
+   crew: waiting for crew-tester to be installed on thatsnotmynameio/crew
+   ```
+
+3. GitHub then takes your browser to the page that installs the app. Choose **Only select repositories**, pick the current repository and install.
+
+4. crew sees the installation, checks that the mate's key can get a token for the repository, and says the mate is ready:
+
+   ```text
+   crew: mate tester is ready on thatsnotmynameio/crew as crew-tester[bot]
+   ```
+
+crew waits up to 15 minutes for GitHub to create the app, and up to 15 more for the installation. Ctrl-C, SIGTERM or SIGHUP stops either wait at once.
+
+### What a mate can do
+
+Every mate asks for the same repository permissions:
+
+| Permission | Access |
+| --- | --- |
+| Issues | Read and write |
+| Pull requests | Read and write |
+| Contents | Read |
+| Checks | Read |
+| Commit statuses | Read |
+| Actions | Read |
+| Metadata | Read |
+
+A mate cannot push code or change workflows. It has no webhook, and only its owner can install it.
+
+### Installed on every repository
+
+If you choose **All repositories** on the install page, crew still finishes, but warns you on stderr:
+
+```text
+crew: warning: crew-tester is installed on every repository of thatsnotmynameio, so the mate tester can act on all of them; its installation settings on GitHub can limit it to selected repositories
+```
+
+Limit it in the app's installation settings on GitHub.
+
+## Where the key lives
+
+crew keeps each mate in one file on your machine, outside any repository, at `<user config dir>/crew/mates/<owner>/<name>.json`, where `<owner>` is the owner's login in lower case:
+
+- **Linux:** `~/.config/crew/mates/`, or `$XDG_CONFIG_HOME/crew/mates/` when `XDG_CONFIG_HOME` is set.
+- **macOS:** `~/Library/Application Support/crew/mates/`.
+
+The file holds the app's identity and its private key. Only your OS user can read it: the file is mode 0600 and its directories 0700. crew never prints the key, never logs it and never writes it into a repository. The key never leaves your machine. To use a mate on another machine, create another one there.
+
+## Run it again
+
+A mate belongs to its owner, so its name is per owner. When the owner already has a mate of that name on this machine, `crew mates create` creates no new app. It goes straight to installing that mate on the current repository, opens the install page itself, and confirms. Run it again:
+
+- **to finish an installation** that did not cover the repository, or that timed out;
+- **to install a mate on another repository** of the same owner.
+
+When the mate is already installed there, crew opens nothing and only confirms.
+
+When GitHub rejects the saved key, because the app was deleted or its key revoked, crew says so. Delete the mate's file and run `crew mates create` again to create a new mate.
+
+## Revoke a mate
+
+On GitHub, delete the app, or revoke its private key, in the app's settings (the owner's **Settings**, then **Developer settings**, then **GitHub Apps**). Then delete the mate's file on your machine.
+
+## Over SSH
+
+crew's page listens on `127.0.0.1` of the machine crew runs on, so a browser on your own machine cannot reach it. Forward the port crew prints. In an SSH session that is already open, type the OpenSSH escape `~C` at the start of a line, then:
+
+```text
+-L 41235:127.0.0.1:41235
+```
+
+Then open the printed URL in your own browser. When crew cannot open a browser on the remote machine, it says so on stderr:
+
+```text
+crew: could not open the browser (exec: "xdg-open": executable file not found in $PATH); open http://127.0.0.1:41235/ yourself
+```
+
+After GitHub creates the app, it sends your browser to `127.0.0.1` again, so keep the forward open until crew says the mate is saved.
+
+## A repository of another account
+
+GitHub creates a user's app for whoever is signed in to the browser. If you run `crew mates create` in a repository of your own account while the browser is signed in as someone else, GitHub creates the app for that other account. crew keeps the mate under the account GitHub created it for, says which, and exits with 1. Running `crew mates create` with the same name in a repository of that account installs it there.
+
+## Exit codes
+
+| Code | When |
+| --- | --- |
+| `0` | The mate is ready on the repository. |
+| `1` | Something failed after the browser opened: you cancelled or stopped crew, a wait timed out, GitHub returned an error, the mate is not installed on the repository, or crew could not save the mate. |
+| `2` | Nothing was asked of GitHub yet: a usage error, an invalid name, not inside a git repository, `gh` missing or logged out, no GitHub repository `gh` resolves, an unreadable saved mate, or no free port on `127.0.0.1`. |
+
+When the installation fails or times out, crew keeps the mate and prints the install URL. Run `crew mates create` again to finish.
