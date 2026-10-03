@@ -39,6 +39,10 @@ var (
 // issuesQuery lists the login's open issues carrying any of the labels,
 // oldest first. GitHub's labels filter matches an issue with any of them.
 // A dependency summary's blockedBy counts only the open issues blocking it.
+// An issue holds at most one value per issue field, and an organization has
+// at most 25 fields. A single select value carries its option's id and its
+// field, with the field's options in order. The query must not ask for the
+// values' totalCount: on a repository a user owns, that fails the query.
 const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $labels: [String!]) {
   repository(owner: $owner, name: $name) {
     issues(first: 100, states: OPEN, filterBy: {createdBy: $login, labels: $labels},
@@ -50,6 +54,14 @@ const issuesQuery = `query($owner: String!, $name: String!, $login: String!, $la
         createdAt
         labels(first: 100) { nodes { name } }
         issueDependenciesSummary { blockedBy }
+        issueFieldValues(first: 25) {
+          nodes {
+            ... on IssueFieldSingleSelectValue {
+              optionId
+              field { ... on IssueFieldSingleSelect { name options { id } } }
+            }
+          }
+        }
       }
     }
   }
@@ -95,7 +107,9 @@ func factory(run proc.Runner) port.TrackerFactory {
 // #<number>, and its states every workflow state its labels name, in the
 // workflow's spelling. Its other labels, extras included, are no states and
 // are ignored. It is blocked while an open issue blocks it, as GitHub's
-// issue dependencies record.
+// issue dependencies record. Its priority is the position of its value of
+// the issue field Priority among that field's options, the first being 1;
+// an issue without one has priority 0.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
@@ -124,6 +138,9 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 						Dependencies struct {
 							BlockedBy int `json:"blockedBy"`
 						} `json:"issueDependenciesSummary"`
+						FieldValues struct {
+							Nodes []fieldValue `json:"nodes"`
+						} `json:"issueFieldValues"`
 					} `json:"nodes"`
 				} `json:"issues"`
 			} `json:"repository"`
@@ -137,7 +154,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	for _, n := range nodes {
 		key := strconv.Itoa(n.Number)
 		issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt,
-			Blocked: n.Dependencies.BlockedBy > 0}
+			Blocked: n.Dependencies.BlockedBy > 0, Priority: priority(n.FieldValues.Nodes)}
 		for _, l := range n.Labels.Nodes {
 			if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
 				issue.States = append(issue.States, s)
@@ -146,6 +163,40 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 		issues = append(issues, issue)
 	}
 	return issues, nil
+}
+
+// priorityField is the name of the issue field crew ranks issues by,
+// compared ignoring case.
+const priorityField = "Priority"
+
+// fieldValue is an issue field value as issuesQuery reads it. A value of
+// another type than single select decodes empty.
+type fieldValue struct {
+	OptionID string `json:"optionId"`
+	Field    struct {
+		Name    string `json:"name"`
+		Options []struct {
+			ID string `json:"id"`
+		} `json:"options"`
+	} `json:"field"`
+}
+
+// priority returns the rank of the Priority value among values: its
+// option's position in the field's options, the first being 1. Without a
+// Priority value, or with one whose option is not among the field's, it is 0.
+func priority(values []fieldValue) int {
+	for _, v := range values {
+		if !strings.EqualFold(v.Field.Name, priorityField) {
+			continue
+		}
+		for i, o := range v.Field.Options {
+			if o.ID == v.OptionID {
+				return i + 1
+			}
+		}
+		return 0
+	}
+	return 0
 }
 
 // Move implements port.Tracker. It reads the issue's state and labels; a
