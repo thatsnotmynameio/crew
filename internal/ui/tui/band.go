@@ -96,10 +96,11 @@ func (m Model) pill(e core.HandledView) string {
 	if i := strings.LastIndex(state, ":"); i >= 0 {
 		state = state[i+1:]
 	}
+	pill := m.styles.successPill
 	if e.NeedsAttention() {
-		return m.styles.errorPill.Render(strings.ToUpper(state))
+		pill = m.styles.errorPill
 	}
-	return m.styles.successPill.Render(strings.ToUpper(state))
+	return pill.Render(strings.ToUpper(state))
 }
 
 // needsBoss reports whether e needs the boss: it needs attention and no
