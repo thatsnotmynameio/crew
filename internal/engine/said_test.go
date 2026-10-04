@@ -20,6 +20,7 @@ const saidEvery = 2 * time.Second
 // narrates, with a latest-wins subscription of the test's own.
 type narrating struct {
 	*rig
+
 	cfg     engine.Config
 	latest  <-chan engine.Update
 	session *fake.Session
