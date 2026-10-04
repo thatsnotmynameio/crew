@@ -13,17 +13,12 @@ Actions ────────────────────────
  ⠋ #1  Add login form    implement/tests   default   running 7m00s  crew/1-tests
  ○ #2  Fix the flaky s…  review/check      clerk     waiting        
 
-Queues ─── 2 of 3 busy   Handled ──────────────────────────────────── 4 · $19.86
+Queues ─── 2 of 3 busy   Handled ──────────────────────── 4 · $19.86 · ↑↓ scroll
  default  ■□  1/2          GIVEN UP          #6 Drop the old flag     implement…
  clerk    ■   1/1           × move to ready to review given up: issue closed
                            NEEDS ATTENTION   #5 Parse the config on…  implement…
                             × tests failed: exited 1: tests fail
                             × code failed: prompt did not render
-                             tests: no pull request
-                           READY TO MERGE    #8 Trim the README       review 6m…
-                           READY TO REVIEW   #7 Log the poll interv…  implement…
-                             code: #45
-                             tests: no pull request
 
 Events ──────────────────────────────────────────────────────────────── 5 events
  14:22:58 implement took #1 "Add login form" (ready -> in progress)

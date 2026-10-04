@@ -108,11 +108,11 @@ func (m Model) scrolled(msg tea.KeyPressMsg) Model {
 // those the window has room for (KTD8).
 func (m Model) scrollLimit() int {
 	b := m.budget()
-	switch {
-	case m.focus == focusHandled && b.handled >= 0:
+	switch m.focus {
+	case focusHandled:
 		return max(len(m.handledRows())-b.handled, 0)
-	case m.focus == focusEvents && b.events >= 0:
-		return max(m.eventCount()-b.events, 0)
+	case focusEvents:
+		return max(len(m.snap.Recent)-b.events, 0)
 	}
 	return 0
 }
