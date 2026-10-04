@@ -1,7 +1,7 @@
 # golangci-lint v2 (v2.14.0 in CI; locally: go run
 # github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run).
 # depguard enforces the package layering of the engine plan (KTD17): imports
-# point inward, and only the TUI imports bubbletea.
+# point inward, and only the TUI imports Bubble Tea, Lip Gloss and Bubbles.
 version: "2"
 
 linters:
@@ -189,12 +189,16 @@ linters:
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal/fake
               desc: the fakes are for tests only
-        bubbletea:
+        charm:
           files:
             - "!**/internal/ui/tui/**"
           deny:
             - pkg: charm.land/bubbletea
               desc: only the TUI imports bubbletea
+            - pkg: charm.land/lipgloss
+              desc: only the TUI imports lipgloss
+            - pkg: charm.land/bubbles
+              desc: only the TUI imports bubbles
 
   exclusions:
     presets:

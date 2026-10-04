@@ -37,7 +37,7 @@ go test -race ./internal/core
 go test -race ./internal/core -run TestName
 ```
 
-The TUI's views are golden files under `internal/ui/tui/testdata/`. After a deliberate change to the view, rewrite them and review the diff:
+The TUI's views are golden files under `internal/ui/tui/testdata/`. They hold the layout with the colours, styles and links stripped, which is also what a terminal without colour shows; tests that need a colour or a link check the raw view. After a deliberate change to the view, rewrite them and review the diff:
 
 ```sh
 go test ./internal/ui/tui -update

@@ -112,6 +112,7 @@ func (s *step) tick(said []Said) {
 func (s *step) listIssues() {
 	m := s.m
 	m.listing = true
+	m.listings++
 	m.skipped = 0
 	states := make([]crew.State, len(m.stages))
 	for i, st := range m.stages {
@@ -211,16 +212,18 @@ func (s *step) windDown() {
 	s.stop()
 }
 
-// listed skips issues in two states (R15), reports the items in the label of
-// a stage of the other kind (#92), and takes free slots' worth of
-// issues, each while its stage's queue has a free slot (R6): the highest
-// priority first, an issue without one last; then, at the same priority,
-// later stages first; then the oldest issue first (KTD8). It reports nothing
-// for the issues it leaves, a blocked one included: a later listing with a
-// free slot takes them. It takes nothing once the run time is up.
+// listed marks the handled entries whose issue left its state (KTD4), skips
+// issues in two states (R15), reports the items in the label of a stage of
+// the other kind (#92), and takes free slots' worth of issues, each while
+// its stage's queue has a free slot (R6): the highest priority first, an
+// issue without one last; then, at the same priority, later stages first;
+// then the oldest issue first (KTD8). It reports nothing for the issues it
+// leaves, a blocked one included: a later listing with a free slot takes
+// them. It takes nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
+	m.gone(issues)
 	if m.stopping || m.timeUp {
 		return
 	}
@@ -357,7 +360,7 @@ func (s *step) callResult(r CallResult) {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 			s.ended(h, c.to, crew.MoveDone)
 			s.reportPullRequests(h, c.to, true)
-			h.verdict.Move = crew.MoveDone
+			h.verdict.Move, h.landed = crew.MoveDone, m.listings
 		}
 		h.settle(c)
 	case ResultFailed:
@@ -389,6 +392,7 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 	if c.kind == CallMove && !c.take {
 		s.ended(h, c.to, crew.MoveDropped)
 		h.verdict.Move, h.verdict.DropReason = crew.MoveDropped, r.Reason
+		h.landed = s.m.listings
 	}
 	h.settle(c)
 }
@@ -536,8 +540,8 @@ func (m *Model) release(h *heldIssue) {
 	if h.verdict == nil {
 		return
 	}
-	m.handled = slices.DeleteFunc(m.handled, func(e HandledView) bool { return e.Issue.Key == h.issue.Key })
-	m.handled = append(m.handled, *h.verdict)
+	m.handled = slices.DeleteFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
+	m.handled = append(m.handled, handledEntry{view: *h.verdict, landed: h.landed})
 }
 
 // ended reports whether every action of h has ended.

@@ -1,18 +1,18 @@
-crew: run time is up, winding down: 1 issue held, up 1h15m (q or ctrl+c stops)
-handled 0
+crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 1h15m   WINDING DOWN 
 
-Queues
-  default  2 slots  1 busy  1 free
+Workflow ───────────────────────────────────────────────────────────── 1 in play
+ implement                       review                        
+ ──────────────────────────────  ──────────────────────────────
+ ▌ #42 Add login form                                          
+ ▌ ⠋ running                                                   
 
-Issues
-  implement
-    running   #42 Add login form
+Actions ────────────────────────────────────────────────────────────── 1 running
+ ⠋ #42  Add login fo…  implement/code   default   running 1h15m00s  crew/42-code
 
-Actions
-  #42 implement/code  default  running 1h15m00s
+Queues ─── 1 of 2 busy   Handled ───────────────────────────────────────────── 0
+ default  ■□  1/2         none
 
-Handled
-  none
+Events ───────────────────────────────────────────────────────────────── 1 event
+ 14:15:00 run time of 1h0m0s is up: taking no new issues, winding down
 
-Recent events
-  14:15:00 run time of 1h0m0s is up: taking no new issues, winding down
+q stop · tab focus · ↑↓ scroll · ←→ board · ? help

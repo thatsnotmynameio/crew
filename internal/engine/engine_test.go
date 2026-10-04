@@ -98,7 +98,13 @@ func config(t *testing.T, tracker port.Tracker, workflow ...crew.Stage) engine.C
 // start runs an engine for cfg. The test must stop it and call wait.
 func start(t *testing.T, cfg engine.Config) *rig {
 	t.Helper()
-	e := engine.New(cfg)
+	return run(t, cfg, engine.New(cfg))
+}
+
+// run runs e, the engine New made for cfg, as start does, for tests that
+// subscribe to it first.
+func run(t *testing.T, cfg engine.Config, e *engine.Engine) *rig {
+	t.Helper()
 	latest := e.SubscribeLatest()
 	queue := e.SubscribeQueue(1024)
 	ctx, cancel := context.WithCancel(context.Background())

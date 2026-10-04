@@ -9,9 +9,12 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
+
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -27,6 +30,13 @@ var zone = time.FixedZone("test", -3*60*60)
 // start is the clock's time when a test begins.
 var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 
+// testWorkflow is the workflow of the test snapshots: implement takes
+// "ready", review takes "ready to review".
+var testWorkflow = []crew.Stage{
+	{Name: "implement", Label: "ready", OnSuccess: "ready to review", OnFailure: "needs attention"},
+	{Name: "review", Label: "ready to review", OnSuccess: "ready to merge", OnFailure: "needs attention"},
+}
+
 // harness drives a Model directly through Update and View, with a clock the
 // test moves and counters for the stop and force callbacks.
 type harness struct {
@@ -38,10 +48,19 @@ type harness struct {
 	forces  int
 }
 
-func newHarness(t *testing.T, width int) *harness {
+func newHarness(t *testing.T, width int, warnings ...string) *harness {
+	t.Helper()
+	return newWorkflowHarness(t, width, testWorkflow, warnings...)
+}
+
+func newWorkflowHarness(t *testing.T, width int, workflow []crew.Stage, warnings ...string) *harness {
 	t.Helper()
 	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
-	h.model = New(h.updates, func() { h.stops++ }, func() { h.forces++ }, func() time.Time { return h.clock }, zone)
+	h.model = New(Config{
+		Updates: h.updates, Stop: func() { h.stops++ }, Force: func() { h.forces++ },
+		Now: func() time.Time { return h.clock }, Location: zone,
+		Workflow: workflow, Repository: "crew", Warnings: warnings,
+	})
 	h.send(tea.WindowSizeMsg{Width: width, Height: 40})
 	return h
 }
@@ -53,7 +72,12 @@ func (h *harness) send(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (h *harness) view() string { return h.model.View().Content }
+// view is the view's text with its colours, styles and links stripped: the
+// layout, and what tells sections and states apart without colour (AE6).
+func (h *harness) view() string { return ansi.Strip(h.raw()) }
+
+// raw is the view as the terminal gets it.
+func (h *harness) raw() string { return h.model.View().Content }
 
 var ctrlC = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 
@@ -166,16 +190,6 @@ func resumingSnapshot() engine.Update {
 	}}
 }
 
-// R11 and KTD10: the Actions region says when a workspace is being reopened
-// and names the workspace a running action resumed in.
-func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
-	h := newHarness(t, 120)
-
-	h.send(updateMsg(resumingSnapshot()))
-
-	golden(t, "resuming", h.view())
-}
-
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
@@ -194,15 +208,6 @@ func windingDownSnapshot() engine.Update {
 	}}
 }
 
-// Covers AE3 (TUI side).
-func TestAfterTheRunTimeIsUpTheHeaderSaysCrewIsWindingDown(t *testing.T) {
-	h := newHarness(t, 80)
-
-	h.send(updateMsg(windingDownSnapshot()))
-
-	golden(t, "winding-down", h.view())
-}
-
 func TestARequestedStopWhileWindingDownShowsTheStoppingHeader(t *testing.T) {
 	h := newHarness(t, 80)
 	u := windingDownSnapshot()
@@ -210,8 +215,8 @@ func TestARequestedStopWhileWindingDownShowsTheStoppingHeader(t *testing.T) {
 
 	h.send(updateMsg(u))
 
-	if got, want := strings.SplitN(h.view(), "\n", 2)[0], "crew: stopping…"; got != want {
-		t.Errorf("header = %q, want %q", got, want)
+	if got, _, _ := strings.Cut(h.view(), "\n"); !strings.HasSuffix(got, "STOPPING ") {
+		t.Errorf("header = %q, want it to end in the STOPPING pill", got)
 	}
 }
 
@@ -244,7 +249,7 @@ func TestAnActionRunningItsCheckShowsAsCheckingWithItsElapsedTime(t *testing.T) 
 
 	h.send(updateMsg(u))
 
-	if view := h.view(); !strings.Contains(view, "#1 implement/code   default  checking 5m00s") {
+	if view := h.view(); !strings.Contains(view, "implement/code    default   checking 5m00s") {
 		t.Errorf("view lacks the checking action with its elapsed time:\n%s", view)
 	}
 }
@@ -259,9 +264,7 @@ func TestCtrlCPostsOneStopAndKeepsRunningUntilTheEngineStops(t *testing.T) {
 	if h.stops != 1 {
 		t.Fatalf("stop called %d times, want 1", h.stops)
 	}
-	if !strings.Contains(h.view(), "stopping…") {
-		t.Errorf("view does not say stopping…:\n%s", h.view())
-	}
+	contains(t, h.view(), "STOPPING", "q or ctrl+c again forces the exit")
 
 	// The engine keeps publishing while it stops; the TUI keeps rendering.
 	stopping := runningSnapshot()
@@ -326,11 +329,11 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 			view := h.view()
 
 			for l := range strings.SplitSeq(view, "\n") {
-				if n := utf8.RuneCountInString(l); n > width {
+				if n := lipgloss.Width(l); n > width {
 					t.Errorf("line is %d columns wide, over %d: %q", n, width, l)
 				}
 			}
-			if width >= 40 && !strings.Contains(view, "#1 A very long issue") {
+			if width >= 40 && !strings.Contains(view, "#1 A very long") {
 				t.Errorf("view at width %d lacks the start of #1's title:\n%s", width, view)
 			}
 			if strings.Contains(view, snap.Snapshot.Issues[0].Issue.Title) {
@@ -340,14 +343,39 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 	}
 }
 
-// Covers AE10 (TUI side): a startup warning shows under the top line.
-func TestAStartupWarningShowsUnderTheTopLine(t *testing.T) {
-	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
-	h.model = New(h.updates, func() {}, func() {}, func() time.Time { return h.clock }, zone,
+// Covers R2: a startup warning shows under the header.
+func TestAStartupWarningShowsUnderTheHeader(t *testing.T) {
+	h := newHarness(t, 120,
 		"mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository")
-	h.send(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	h.send(updateMsg(runningSnapshot()))
 
 	golden(t, "warning", h.view())
+}
+
+func TestInitStartsWaitingTickingAndSpinning(t *testing.T) {
+	h := newHarness(t, 80)
+
+	if h.model.Init() == nil {
+		t.Error("Init returned no command")
+	}
+}
+
+// Covers R5: the spinner of the running actions turns on its ticks.
+func TestASpinnerTickTurnsTheRunningSpinners(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(updateMsg(runningSnapshot()))
+
+	tick, ok := h.current().spinner.Tick().(spinner.TickMsg)
+	if !ok {
+		t.Fatal("the spinner's tick is not a spinner.TickMsg")
+	}
+	if h.send(tick) == nil {
+		t.Error("the spinner scheduled no next frame")
+	}
+
+	view := h.view()
+	if strings.Contains(view, "⠋ running") || !strings.Contains(view, "⠙ running") {
+		t.Errorf("the spinner did not turn to its next frame:\n%s", view)
+	}
 }

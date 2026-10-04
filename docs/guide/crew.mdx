@@ -141,6 +141,7 @@ Each stage has:
 | `actions` | At least one action, each with a `name` (unique in the stage), a `prompt`, and optionally a `check` (see [Checks](#checks)) and a `mate` that its session and check act as (see [Act as mates](#act-as-mates)). |
 | `queue` | Optional. The [queue](#queues) the stage runs in: `clerk`, `default` or one under `config.queues`. Without it, the stage runs in `default`. |
 | `takes` | Optional. The kind of item the stage takes: `issues`, the default, or `pull_requests`. A stage takes one kind, never both. See [A pull request as the work](#a-pull-request-as-the-work). |
+| `on_board` | Optional. `false` hides the stage from the live view's board: it gets no column, an issue it holds gets no card, and its ends send no notification. Its actions still show in Actions and its events in Events. Stages show by default. See [Run it](#run-it). |
 | `description` | Optional. The work the stage takes, in a few words, such as `a bug to reproduce and fix`. crew does not use it: the [`/cw-create-issue`](/guide/create-issue) skill shows it when it lists the types of issue. |
 | `issue_template` | Optional. The file name of a Markdown issue template in `.github/ISSUE_TEMPLATE/`, such as `bug.md`. crew does not use it: `/cw-create-issue` fills it for an issue of this stage. |
 
@@ -552,40 +553,64 @@ Run `crew` anywhere inside the repository's main checkout. In one of crew's work
 crew
 ```
 
-On a terminal, crew shows a live view: its queues and their free slots, the issues it holds by stage, the running actions with their queue and elapsed time, the issues it handled since it started, and the latest events. The view only displays. You act on issues through their labels on GitHub.
-
-The top line says how many issues crew holds and how long it has been up, and, with `config.run_time_limit_seconds`, how much run time is left. The line under it counts the issues crew handled, with the cost and tokens of every session that ended since crew started, then the issues by the state each went to, as your workflow names it:
+On a terminal, crew shows a live view: one screen of sections, one under the other. The view only displays. You act on issues through their labels on GitHub.
 
 ```text
-crew: 2 issues held, up 3h12m, 48m left (q or ctrl+c stops)
-handled 10 ($70.05, 138.1M tokens): 2 crew:failed, 8 crew:waiting review
+crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 12m • 48m left • $19.86 • 24.1M tokens  ? help
+
+Workflow ───────────────────────────────────────────────── 3 in play · 1 waiting
+ triage                          development                     fix
+ ──────────────────────────────  ──────────────────────────────  ──────────────
+ ▌ #12 Stage labels              ▌ #1 Add login form             ▌ #2 Flaky str…
+ ▌ ⠋ running                     ▌ ⠋ running                     ▌ ◌ taking
+ ▌ #9 Retry the poll
+ ▌ → crew:triage:done
+
+Actions ────────────────────────────────────────────────── 2 running · 1 waiting
+ ⠋ #1   Add login form  development/lfg  developer  running 5m00s  crew/1-lfg
+   └ Running go test -race ./internal/core; 2 failures left in model_test.go
+ ⠋ #12  Stage labels    triage/triage    clerk      running 2m10s  crew/12-triage
+ ○ #2   Flaky stream    fix/lfg          developer  waiting
+
+Queues ──── 3 of 5 busy   Handled ─────────────────────────────────── 3 · $17.04
+ clerk      ■   1/1        NEEDS ATTENTION   #5 Parse the config  development 1…
+ developer  ■■  2/2         × lfg failed: exited 1: tests fail
+ default    □□  0/2        WAITING REVIEW    #7 Log the poll      development 9…
+                           DONE              #9 Retry the poll    triage 3m00s …
+
+Events ──────────────────────────────────────────────────────────────── 3 events
+ 14:25:00 #1 development/lfg started on branch crew/1-lfg, log .crew/logs/1-lfg.log
+ 14:29:50 poll: listed 3 issues, took 2
+ 14:29:50 triage took #12 "Stage labels" (crew:triage:ready -> crew:triage:in progress)
+
+q stop · tab focus · ↑↓ scroll · ←→ board · ? help
 ```
 
-Queues lists each [queue](#queues) a stage runs in, on one line: its name, its size (the slots it has), how many slots are busy and how many are free. A slot is busy from the moment crew takes an issue for a stage in that queue until it lets go of the issue, whether the issue's actions have started or not, which is the count crew uses to decide whether the queue can take another issue. A queue of 0 slots, such as a `default` the other queues left empty, still has its line. Each row of Actions names the queue its issue holds a slot in.
+The header shows the repository, how long crew has been up and, with `config.run_time_limit_seconds`, how much run time is left, then the cost and tokens of every session that ended since crew started. Startup warnings stay under it for as long as crew runs. Each section opens with its title and a rule that ends in a short summary. Colours follow the terminal's background, light or dark; with `NO_COLOR`, or on a terminal without colour, the titles, icons and labels still tell everything apart. Issue and pull request numbers link to their page in terminals that support links.
 
-```text
-Queues
-  clerk    1 slot   1 busy  0 free
-  default  2 slots  1 busy  1 free
+Workflow has one column per stage of your workflow, in the order of `.crew/config.yaml`, and a card for each issue crew has in play. A card shows the issue's number and title, and how crew holds it: `⠋ running`, `◌ taking`, `⠋ judging`, `! owed` while a move waits for a retry, or `■ stopping`. When a stage ends and moves the issue to another stage's `label`, the card stays in its column with `→` and that label until the next stage takes the issue, then slides to the new column. It leaves the board when the issue moves to a label no stage takes, such as a failed or waiting-review label, when crew gave the move up, or when the issue is closed or relabelled outside crew. Issues crew has not taken, such as those waiting in a `label`, are not on the board: GitHub shows them. A stage with [`on_board: false`](#keys) has no column and its issues no card. When the columns do not fit the window, the empty ones drop and the summary says how many; when the rest still do not fit, the board scrolls sideways with `←` and `→`.
 
-Actions
-  #7 triage/triage    clerk    running 1m12s
-  #1 development/lfg  default  running 24m03s
-```
+Actions lists every action that has not ended: its issue, its stage and action, the [queue](#queues) its issue holds a slot in, its state with the elapsed time, and its branch. A running session shows the last thing it said on the line under it, with tokens and keys redacted, as in the [status comment](#the-status-comment). Queues shows each queue's busy slots `■` and free slots `□`. A slot is busy from the moment crew takes an issue for a stage in that queue until it lets go of the issue, whether the issue's actions have started or not, which is the count crew uses to decide whether the queue can take another issue.
 
-Handled lists each issue whose stage ended, on one line: the state it went to, its number, the stage and how long it took, the cost and tokens of the stage's sessions, the pull request of a stage with one action, and its title. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again; the line above still counts what its earlier stages cost. The issues that need you come first: a stage that failed, with one line per failed action and its reason, and a move crew gave up, because the issue was closed or moved meanwhile or GitHub refused it. A given-up move shows `move given up` where the state would be, and is counted on its own. A stage with several actions shows each action's pull request on a line of its own. The status comment on each issue keeps the detail.
-
-```text
-Handled
-  crew:failed          #28  development 41m10s  $6.89, 12.7M tokens  no pull request  Parse the config once
-    lfg failed: exited 1: tests fail on Go 1.27
-  crew:waiting review  #36  development 8m12s   $8.21, 18.4M tokens  #45              Log the poll interval
-  … and 3 more in crew:waiting review
-```
+Handled lists each issue whose stage ended: a label saying how it ended, its number and title, the stage and how long it took, the cost and tokens of the stage's sessions, and the pull request of a stage with one action. The issues that need you come first: `NEEDS ATTENTION` for a stage that failed, with one line per failed action and its reason after `×`, and `GIVEN UP` for a move crew gave up because the issue was closed or moved meanwhile or GitHub refused it. Any other ending shows the last part of the label the issue moved to, such as `WAITING REVIEW`. A stage with several actions shows each action's pull request on a line of its own. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again; the header still counts what its earlier stages cost. The status comment on each issue keeps the detail. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
 
 The cost is the harness's figure, shown as it reports it and always next to the tokens, which add up all four kinds the [run journal](#where-things-go) keeps apart. A stage where some session reported no cost shows the known cost marked `(partial)`, and one where none did says `cost not reported`. A running action shows no cost: its numbers appear once it ends. An action that never had a session adds nothing and shows no pull request.
 
-The view fits the window. When rows run out, the latest events go first. Then the oldest handled issues that do not need you collapse into one line per state. The issues that need you never collapse; if even they do not fit, the view is cut at the bottom with a line saying how many lines were cut. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
+Events shows the latest 100 events, the newest at the bottom.
+
+The view fits the window. When rows run out, Events and then Handled shrink to two rows each and scroll. Then the session lines under Actions go, then each board column shows fewer cards with `+N more`, and only then is the view cut, with a line saying how many lines were cut. The keys:
+
+| Key | What it does |
+| --- | --- |
+| `q`, Ctrl-C | Stop crew; a second press forces the exit. See [Stop it](#stop-it). |
+| `tab`, `shift+tab` | Move the focus between Handled and Events. The focused section's title has a `▸`. |
+| `↑` `↓` or `k` `j`, `pgup` `pgdown`, `home` `end` | Scroll the focused section. Events follows the newest event until you scroll up, and again from `end`. |
+| `←` `→` or `h` `l` | Scroll the board sideways. |
+| `?` | Show the keys, and hide them again. |
+
+No key acts on an issue, a pull request, a workspace or a log.
+
+crew also tells the terminal what it is doing, where the terminal supports it. The tab title reads like `crew · 2 running · 1 waiting · 1 needs attention`, or `crew · idle`, `crew · stopping` or `crew · winding down`. The tab's progress indicator shows activity while actions run, and an error while an issue in Handled needs you. While the terminal is not focused, each stage that ends sends a desktop notification saying how it ended. Stages with `on_board: false` send none, and nothing is sent once you asked crew to stop. Notifications use OSC 9, which terminals such as iTerm2, WezTerm, Ghostty and Windows Terminal show, and tmux does not pass on. crew knows the terminal is not focused only when the terminal reports focus, so a terminal that never does gets no notification.
 
 With `--plain`, or when the output is not a terminal, crew prints one line per event instead:
 

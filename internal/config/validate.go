@@ -21,6 +21,7 @@ type stageDoc struct {
 	OnFailure     located[string] `yaml:"on_failure"`
 	Queue         located[string] `yaml:"queue"`
 	Takes         located[string] `yaml:"takes"`
+	OnBoard       located[bool]   `yaml:"on_board"`
 	Actions       yaml.Node       `yaml:"actions"`
 }
 
@@ -41,7 +42,7 @@ type actionDoc struct {
 // What each kind of list item must be, said when an item is not a mapping.
 const (
 	stageShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
-		"and optionally description, issue_template, queue and takes"
+		"and optionally description, issue_template, queue, takes and on_board"
 	actionShape = "must be an action with name and prompt, and optionally check and mate"
 	extraShape  = "must be an extra label with label, and optionally description and issue_template"
 )
@@ -117,6 +118,8 @@ func parseStage(n *yaml.Node, path string, table queueTable, mate string) (parse
 	collect(err)
 	p.Takes, err = stageTakes(doc.Takes, path)
 	collect(err)
+	// on_board defaults to true: only a written false hides the stage.
+	p.OffBoard = doc.OnBoard.line != 0 && !doc.OnBoard.value
 	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line, mate)
 	collect(err)
 	return p, errors.Join(errs...)

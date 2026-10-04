@@ -38,6 +38,9 @@ const (
 	// runs even while crew stops, so a hung gh delays a stop by no more
 	// (KTD3).
 	lookupTimeout = 15 * time.Second
+	// saidInterval is how often the loop refreshes what the running
+	// sessions last said for the latest-wins subscribers (KTD5).
+	saidInterval = 2 * time.Second
 	// inboxSize buffers results. Senders are bounded (running sessions plus
 	// a few commands) and the loop always drains, so blocking sends cannot
 	// deadlock; the buffer only spares them waiting on a busy step.
@@ -124,8 +127,9 @@ type Engine struct {
 	sessions map[sessionKey]port.Session
 	checks   map[sessionKey]context.CancelFunc // ends each running check
 	recent   []core.Event
-	started  time.Time // when the first poll ran
-	run      string    // this crew run's id in the run journal: started, in RFC 3339
+	lastSaid []core.Said // what the sessions last said, as of the latest said refresh
+	started  time.Time   // when the first poll ran
+	run      string      // this crew run's id in the run journal: started, in RFC 3339
 }
 
 // New returns an engine for cfg. It starts nothing until Run. When the
@@ -193,6 +197,8 @@ func (e *Engine) Run(ctx context.Context) error {
 
 	ticker := time.NewTicker(e.cfg.PollInterval)
 	defer ticker.Stop()
+	saidTicker := time.NewTicker(saidInterval)
+	defer saidTicker.Stop()
 	stop, done := e.stop, ctx.Done()
 	// The run time counts from the first poll, so the preparers do not use
 	// it up. A nil channel never fires: without a limit, nothing winds down.
@@ -209,6 +215,8 @@ func (e *Engine) Run(ctx context.Context) error {
 		select {
 		case <-ticker.C:
 			e.step(cmdCtx, core.Tick{Said: e.said()})
+		case <-saidTicker.C:
+			e.refreshSaid()
 		case <-stop:
 			stop = nil
 			e.step(cmdCtx, core.StopRequested{})
@@ -235,8 +243,10 @@ func (e *Engine) Stop() {
 // SubscribeLatest returns a latest-wins subscription, for the TUI: it holds
 // only the newest update not yet received, each publish replacing the
 // previous one, and every update carries the full snapshot, so nothing a
-// renderer of the snapshot needs is lost. The channel is closed when Run
-// returns. Subscribe before Run.
+// renderer of the snapshot needs is lost. Besides the update of every step,
+// it gets one without events whenever what the running sessions last said
+// changes, checked every saidInterval; ordered queues never get those. The
+// channel is closed when Run returns. Subscribe before Run.
 func (e *Engine) SubscribeLatest() <-chan Update {
 	return e.stream.subscribeLatest()
 }
@@ -345,11 +355,27 @@ func (e *Engine) step(ctx context.Context, in core.Input) {
 	if n := len(e.recent) - recentEvents; n > 0 {
 		e.recent = e.recent[n:]
 	}
-	e.stream.publish(Update{
-		Events: events,
-		Snapshot: Snapshot{
-			View: e.model.View(), Recent: slices.Clone(e.recent),
-			Started: e.started, RunTimeLimit: e.cfg.RunTimeLimit,
-		},
-	})
+	e.stream.publish(Update{Events: events, Snapshot: e.snapshot()})
+}
+
+// refreshSaid stores what the running sessions last said and, when it
+// changed, publishes an update without events to the latest-wins
+// subscribers only, without stepping the core (KTD5). The ordered queues
+// never get it, so it cannot crowd out their events.
+func (e *Engine) refreshSaid() {
+	said := e.said()
+	if slices.Equal(said, e.lastSaid) {
+		return
+	}
+	e.lastSaid = said
+	e.stream.publishLatest(Update{Snapshot: e.snapshot()})
+}
+
+// snapshot returns the engine's view now, sharing no memory with the core
+// or with an earlier snapshot.
+func (e *Engine) snapshot() Snapshot {
+	return Snapshot{
+		View: e.model.View(), Recent: slices.Clone(e.recent),
+		Started: e.started, RunTimeLimit: e.cfg.RunTimeLimit, Said: slices.Clone(e.lastSaid),
+	}
 }
