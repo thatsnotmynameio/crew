@@ -55,11 +55,20 @@ func newHarness(t *testing.T, width int, warnings ...string) *harness {
 
 func newWorkflowHarness(t *testing.T, width int, workflow []crew.Stage, warnings ...string) *harness {
 	t.Helper()
+	return newConfiguredHarness(t, width, workflow, nil, warnings...)
+}
+
+// newConfiguredHarness is newWorkflowHarness with board's columns
+// configured.
+func newConfiguredHarness(
+	t *testing.T, width int, workflow []crew.Stage, board []crew.BoardColumn, warnings ...string,
+) *harness {
+	t.Helper()
 	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
 	h.model = New(Config{
 		Updates: h.updates, Stop: func() { h.stops++ }, Force: func() { h.forces++ },
 		Now: func() time.Time { return h.clock }, Location: zone,
-		Workflow: workflow, Repository: "crew", Warnings: warnings,
+		Workflow: workflow, Board: board, Repository: "crew", Warnings: warnings,
 	})
 	h.send(tea.WindowSizeMsg{Width: width, Height: 40})
 	return h

@@ -37,9 +37,9 @@ func newOutsideState() *outsideState {
 
 // notifications returns one desktop notification for each Handled entry not
 // seen before, while the terminal has no focus (R25, KTD6). An entry of a
-// stage hidden from the board sends none, and none does once a stop was
-// asked for. Every entry counts as seen, so focus coming back sends nothing
-// late.
+// stage with on_board: false sends none, whatever the board draws (R14,
+// KTD9), and none does once a stop was asked for. Every entry counts as
+// seen, so focus coming back sends nothing late.
 func (m Model) notifications() []tea.Cmd {
 	var out []tea.Cmd
 	for _, e := range m.snap.Handled {
@@ -48,12 +48,20 @@ func (m Model) notifications() []tea.Cmd {
 			continue
 		}
 		m.outside.seen[k] = true
-		if m.outside.focused || m.stopping || m.snap.Stopping || !m.shown(m.columnIndex(e.Stage)) {
+		if m.outside.focused || m.stopping || m.snap.Stopping || m.muted(e.Stage) {
 			continue
 		}
 		out = append(out, tea.Raw(ansi.Notify(noteText(e))))
 	}
 	return out
+}
+
+// muted reports whether the stage named name sends no notification: it is
+// not in the workflow, or on_board: false hides it from the board of the
+// stages (R14).
+func (m Model) muted(name string) bool {
+	i := m.columnIndex(name)
+	return i < 0 || m.cfg.Workflow[i].OffBoard
 }
 
 // noteText says which stage ended on which issue and how (R25), cleaned and
