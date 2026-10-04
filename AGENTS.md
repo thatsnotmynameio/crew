@@ -32,20 +32,21 @@ pnpm docs:preview     # live preview of the docs
 
 Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
-- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace, the `shell` checker and `app.Options.Mates` (through `internal/mates`) and calls `app.Run`. `crew mates create <name>` is chosen before the flags and runs the `internal/mates` flow instead.
-- `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
+- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace, the `shell` checker and `app.Options.Mates` (through `internal/mates`) and calls `app.Run`. `crew mates create <name>` is chosen before the flags and runs the `internal/mates` flow instead; `crew worktrees clean` is chosen the same way and goes through `app.Clean`.
+- `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment); `Clean` wires `crew worktrees clean`: config, tracker (never prepared, no mates), workspace, the journal's unended runs through `engine.UnendedRuns`.
 - `internal/crew`: the domain (states, issues, stages, actions, outcomes, failure reports, statuses).
 - `internal/config`: `.crew/config.yaml`, strict decoding, engine defaults, workflow checks; hands each adapter its section as a `port.Decode`.
-- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `BossFinder`, `Narrator`, `Reopener`, `UsageReporter` and `PullRequestFinder`, sentinel errors, factory types.
+- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `BossFinder`, `Narrator`, `Reopener`, `UsageReporter`, `PullRequestFinder` and `Sweeper`, sentinel errors, factory types.
 - `internal/registry`: name to factory; `default.go` is the production list.
 - `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
 - `internal/proc`: the only way to start a child process (own process group, stop with deadline, kill all; `StartDetached` for the browser opener).
 - `internal/mates`: `crew mates create`, crew's own GitHub identities (private GitHub Apps): names, manifest, loopback page, GitHub API signed as the mate, the mates' files under the user config dir; `Act`, which makes the configured mates act: repository tokens renewed in private gh config directories, and the git environment of the co-author hook.
+- `internal/worktrees`: `crew worktrees clean`'s rule and flow: list crew's worktrees through `port.Sweeper`, decide each one (removed only when its branch's pull request merged; its branch only when nothing is after the merged head), ask, check again, remove, report.
 - `internal/adapter/{github,claude,git,shell}`: the adapters.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
-- **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea, Lip Gloss and Bubbles; only tests import `fake`; `mates` imports only the standard library and `proc`, and only `cmd/crew` imports it.
+- **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea, Lip Gloss and Bubbles; only tests import `fake`; `mates` imports only the standard library and `proc`, and only `cmd/crew` imports it; `worktrees` imports only `crew` and `port` of crew's.
 - **New adapter:** one package under `internal/adapter/` with a `Factory(group)`, plus one entry in `internal/registry/default.go`. Optional capabilities are separate interfaces found by type assertion: never wrap an adapter value, never add "not implemented" stubs.
 
 ## Tests

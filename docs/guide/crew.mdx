@@ -231,7 +231,7 @@ prompt: >-
   `git push origin HEAD:$(gh pr view {{.Issue.Key}} --json headRefName --jq .headRefName)`.
 ```
 
-Keep `--detach`. git checks out a branch in one worktree only, and a pull request crew opened keeps its branch checked out in the worktree of the session that opened it, which crew never removes. A plain `gh pr checkout` fails there.
+Keep `--detach`. git checks out a branch in one worktree only, and a pull request crew opened keeps its branch checked out in the worktree of the session that opened it. crew never removes that worktree on its own, and [`crew worktrees clean`](#clean-up-worktrees) removes it only once the pull request merged. A plain `gh pr checkout` fails there.
 
 The top-level `prompts` maps a name to a prompt that a skill runs, not crew. Some work needs you at the keyboard, such as a brainstorm, so it cannot be an unattended action. [`/cw-brainstorm`](/guide/create-issue#brainstorm-an-issue) fills `prompts.brainstorm` with an issue and runs it in your session:
 
@@ -416,6 +416,8 @@ git worktree remove --force .crew/worktrees/issue-42-development
 
 crew then creates a new worktree, `issue-42-development-2` while the old branch exists, and says so in its output. The old branch, and any pull request from it, are yours to clean up.
 
+When you merge the pull request of a failed run anyway, [`crew worktrees clean`](#clean-up-worktrees) removes its worktree like any other, and the action starts over too.
+
 crew knows how runs ended from its run journal, `.crew/logs/runs.jsonl`, so a resume works after a restart. Runs that ended before your crew version had the journal are not in it, so their actions start over. Renaming a stage or an action in the config starts its actions over too.
 
 If crew was killed, for example with SIGKILL, its sessions can outlive it. Make sure none still runs in the worktree before you relabel the issue, or two sessions will work in it.
@@ -505,7 +507,7 @@ For action `development` on issue #42:
 | Session log | `.crew/logs/issue-42-development.log` |
 | Run journal | `.crew/logs/runs.jsonl`, for every run |
 
-The name is the issue's key and the action's name, lowercased, with anything outside `a-z`, `0-9` and `-` turned into `-`. When a name is taken, crew adds `-2`, `-3` and so on. A resumed action keeps its worktree, branch and log. crew never removes worktrees: they are your evidence when an issue needs attention, and a failed action resumes in its own. Remove them with `git worktree remove` when you are done.
+The name is the issue's key and the action's name, lowercased, with anything outside `a-z`, `0-9` and `-` turned into `-`. When a name is taken, crew adds `-2`, `-3` and so on. A resumed action keeps its worktree, branch and log. crew never removes worktrees on its own: they are your evidence when an issue needs attention, and a failed action resumes in its own. [`crew worktrees clean`](#clean-up-worktrees) removes those whose pull request merged, once you confirm. Remove the others with `git worktree remove` when you are done.
 
 The run journal has one JSON line when a run's worktree is ready and one when its action ends, whatever its outcome. crew only appends to it, and never rewrites or trims it, so it holds every run of every crew process in this repository. For example:
 
@@ -544,6 +546,56 @@ Add crew's local files to `.gitignore`, and keep `.crew/config.yaml` committed:
 .crew/logs/
 .crew/worktrees/
 ```
+
+## Clean up worktrees
+
+crew itself never removes a worktree. `crew worktrees clean` removes the ones whose work has landed, once you confirm. Run it in the repository's main checkout, as you run crew:
+
+```sh
+crew worktrees clean
+```
+
+It looks at every worktree in `.crew/worktrees/`, whether or not the run journal knows its run, and finds the pull request opened from its branch. It finds it as crew does after an action: an open one first, otherwise the newest closed or merged one created since the worktree was made. It lists each worktree with what it will do and why, and asks:
+
+```text
+4 worktrees in /home/you/repo/.crew/worktrees:
+  remove worktree and branch    issue-13-lfg     pull request #20 merged; crew/issue-13-lfg has nothing after its head
+  keep                          issue-14-triage  no pull request from crew/issue-14-triage
+  remove worktree, keep branch  issue-23-lfg     pull request #29 merged; its head commit is not in this repository, so crew/issue-23-lfg stays
+  keep                          issue-34-lfg     a run started in it at 2026-10-03 23:37 and has not ended: an action may be using it (if crew is not running, the run was cut short and you can remove it by hand)
+Remove 2 worktrees and delete 1 branch? [y/N] y
+
+  removed worktree and branch    issue-13-lfg     pull request #20 merged; crew/issue-13-lfg has nothing after its head
+  kept                           issue-14-triage  no pull request from crew/issue-14-triage
+  removed worktree, kept branch  issue-23-lfg     pull request #29 merged; its head commit is not in this repository, so crew/issue-23-lfg stays
+  kept                           issue-34-lfg     a run started in it at 2026-10-03 23:37 and has not ended: an action may be using it (if crew is not running, the run was cut short and you can remove it by hand)
+Removed 2 worktrees and deleted 1 branch.
+```
+
+A worktree goes only when the pull request from its branch merged. Its local branch goes with it only when the branch has nothing after the pull request's head commit, however the pull request was merged. A branch with commits after the head stays, and the reason gives their count. So does a branch whose pull request's head commit is not in your repository: the command never fetches.
+
+It keeps a worktree, and its branch, for the first of these reasons that holds:
+
+- **Its folder is missing, or git lists it as prunable.** Run `git worktree prune`.
+- **git does not list the folder as a worktree.** Run `git worktree repair` if the repository moved.
+- **Its HEAD is detached,** as after a session checked out a pull request with `--detach`, so there is no branch to find a pull request from.
+- **A run started in it and has not ended,** as the run journal says: an action may be using it, so crew may be running. If crew is not running, the run was cut short by a crash or a kill, and you can remove the worktree by hand. A journal that cannot be read keeps every worktree.
+- **It holds uncommitted changes or untracked files.** Files git ignores, such as build output, do not count.
+- **crew cannot tell when it was made,** so it cannot find its pull request.
+- **Its pull request could not be looked up,** for example because `gh` is logged out. The reason gives the error.
+- **Its branch has no pull request, an open one, or one closed without merging.** This keeps the worktrees of stages that open no pull request, such as a triage. Remove them with `git worktree remove` when you are done.
+
+It asks only at a terminal, and only when there is something to remove. `y` or `yes`, in any case, is a yes. Any other answer, or an empty line, removes nothing. Without a terminal, as under cron or in a script, it prints the list, removes nothing, and says that removing worktrees needs a confirmation at a terminal. When nothing qualifies, it prints the list and `Nothing to remove.`
+
+On a yes, it checks each worktree again just before it removes it, from the start, its pull request included. A worktree that no longer qualifies, because it gained a file or an action started in it after the list, stays, and the report says it changed since the list. The command never forces a removal, so git itself refuses a worktree that holds uncommitted or untracked files. Ctrl-C, SIGTERM or SIGHUP stops it before its next removal, never in the middle of one.
+
+It reads GitHub as you, with your own `gh` login, never a mate's. It changes nothing on GitHub: it never deletes a remote branch and never touches a pull request or an issue.
+
+| Code | When |
+| --- | --- |
+| `0` | It ran to the end, and every check, lookup and removal worked. This includes an answer other than yes, no terminal, and nothing to remove. |
+| `1` | It kept a worktree or a branch because a check, a lookup or a removal failed, or a signal stopped it. |
+| `2` | A wrong argument, not inside a git repository, a config that does not load, a tracker that cannot look up pull requests, or worktrees that cannot be listed; nothing was listed. |
 
 ## Run it
 
@@ -663,7 +715,7 @@ A session that runs long keeps crew running past the limit, and so does a move t
 | `1` | crew failed while running, or you forced the exit. |
 | `2` | The config, a flag or the environment is wrong; nothing was polled. |
 
-`crew mates create`, which gives crew GitHub identities of its own, has its own exit codes: see [Mates](/guide/mates#exit-codes).
+`crew mates create`, which gives crew GitHub identities of its own, has its own exit codes: see [Mates](/guide/mates#exit-codes). So does `crew worktrees clean`: see [Clean up worktrees](#clean-up-worktrees).
 
 ## Limits
 

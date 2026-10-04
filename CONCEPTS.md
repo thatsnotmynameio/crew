@@ -40,6 +40,8 @@ One attempt at an action on an issue, from the moment its workspace is ready unt
 
 The isolated checkout an action works in: a git worktree on its own branch, kept after the action run ends. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
 
+crew never removes a workspace on its own. `crew worktrees clean` removes, on the boss's confirmation, those whose pull request merged, with their branches when nothing was added after the merge.
+
 ### Priority
 
 The rank the tracker gives an issue, which decides first which waiting issue crew takes when a slot is free, ahead of its stage and its age. On GitHub it is the organization's issue field `Priority`, its first option the highest. An issue without one ranks after every issue that has one.
@@ -56,7 +58,7 @@ A queue never lends an idle slot to another queue, so a slot is guaranteed to a 
 
 What crew does when a stage takes an issue whose last action run of one of its actions failed: it runs that action again in the failed action run's workspace, as that run left it, instead of a fresh one, and tells the new session that it continues earlier work. Only the same action in the same stage on the same issue resumes an action run; one that succeeded is never resumed.
 
-Resuming is triggered only by the stage's label going back on the issue; crew never resumes on its own. Removing the workspace before that makes the action start over.
+Resuming is triggered only by the stage's label going back on the issue; crew never resumes on its own. Removing the workspace before that, by hand or with `crew worktrees clean`, makes the action start over.
 
 ### Run journal
 

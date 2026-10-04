@@ -18,19 +18,20 @@ A new tracker or coding agent is one new adapter package plus one line in the re
 
 | Package | What it holds |
 | --- | --- |
-| `cmd/crew` | The binary: flags, signals, the repository root, the `git` workspace, the `shell` checker, and `app.Options.Mates`, which makes the configured mates act through `internal/mates`. It calls `app.Run`, or the mates flow for `crew mates create`. |
-| `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. |
+| `cmd/crew` | The binary: flags, signals, the repository root, the `git` workspace, the `shell` checker, and `app.Options.Mates`, which makes the configured mates act through `internal/mates`. It calls `app.Run`, the mates flow for `crew mates create`, or `app.Clean` for `crew worktrees clean`. |
+| `internal/app` | The wiring: config, registry, engine, renderer, and the stop signals. Returns the exit code. `Clean` wires `crew worktrees clean`. |
 | `internal/crew` | The domain: states as the workflow writes them, the workflow's states (`WorkflowStates`), issues, stages, actions, outcomes, failure reports, statuses and pull request reports. |
 | `internal/config` | Loads `.crew/config.yaml`: strict decoding, the engine's defaults, workflow and extra-label checks, queue sizes, prompt templates. |
-| `internal/port` | The port interfaces, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `BossFinder`, `Narrator`, `Reopener`, `UsageReporter` and `PullRequestFinder`, the `Checker`, `Identity`, the sentinel errors and the factory types. |
+| `internal/port` | The port interfaces, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `BossFinder`, `Narrator`, `Reopener`, `UsageReporter`, `PullRequestFinder` and `Sweeper`, the `Checker`, `Identity`, the sentinel errors and the factory types. |
 | `internal/registry` | Maps adapter names to factories. `default.go` is the production list. |
 | `internal/core` | The pure reducer: model, inputs, commands and events. |
-| `internal/engine` | The loop, command execution, crew's files under `.crew/`, and the update stream. |
+| `internal/engine` | The loop, command execution, crew's files under `.crew/`, and the update stream. `UnendedRuns` reads the run journal's unended runs for `crew worktrees clean`. |
 | `internal/proc` | The one way to start a child process: its own process group, stop with a deadline, kill all. `StartDetached` starts one crew does not wait for, such as the browser opener. |
 | `internal/mates` | `crew mates create`: mate names, the app manifest, the loopback page for GitHub's manifest flow, GitHub's API signed as the mate, and the mates' files under the user config directory. `Act` makes the configured mates act: their tokens, renewed while crew runs, in private gh config directories, and the git environment of the co-author hook. The engine never imports it: `cmd/crew` hands its result to `app` as plain values. |
+| `internal/worktrees` | `crew worktrees clean`: the rule that decides what becomes of each worktree, and the flow that lists, asks, checks again, removes and reports. It reaches git and the tracker only through `port.Sweeper` and `port.PullRequestFinder`. |
 | `internal/adapter/github` | Tracker over `gh`, with status comments and pull request reports. |
 | `internal/adapter/claude` | Harness over `claude -p`. |
-| `internal/adapter/git` | Workspace over `git worktree`. |
+| `internal/adapter/git` | Workspace over `git worktree`: creates, reopens, lists, inspects and removes crew's worktrees. |
 | `internal/adapter/shell` | Checker over `sh -c`. |
 | `internal/ui/lines` | The timestamped line renderer. |
 | `internal/ui/tui` | The live view, built with Bubble Tea, Lip Gloss and Bubbles. |
@@ -61,6 +62,9 @@ flowchart TB
   PORT --> CREW
   MAIN --> MATES["internal/mates"]
   MATES --> PROC
+  APP --> WT["internal/worktrees"]
+  WT --> PORT
+  WT --> CREW
 ```
 
 golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these rules does not hold:
@@ -74,6 +78,7 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 - Only tests import `internal/fake`.
 - Only `internal/ui/tui` imports Bubble Tea, Lip Gloss and Bubbles.
 - `internal/mates` imports none of `core`, `engine`, `config`, `port`, `registry`, `app`, the adapters or the UI, and only `cmd/crew` imports it.
+- `internal/worktrees` imports only `internal/crew` and `internal/port` of crew's packages.
 
 ## Startup
 
@@ -84,6 +89,8 @@ golangci-lint's `depguard` (`.golangci.yml`) breaks the build when one of these 
 5. `app` starts the engine and one renderer, the TUI on a terminal and the line printer otherwise, handing it the mates' startup warnings (and the TUI the workflow and the repository's directory name), and handles the stop signals until both return. The first signal stops the engine cleanly, a signal that came as the checks succeeded included; the second kills every process in the group and exits with 1. A renderer that fails, such as on a closed output, stops the engine cleanly and exits with 1.
 
 `crew mates create <name>` takes none of these steps. When `mates` is the first argument, `cmd/crew` hands the rest to the mates command before it parses crew's flags, so every other argument list is parsed as before. The command checks the name, finds the repository root the same way, catches SIGINT, SIGTERM and SIGHUP into a cancelled context, and runs `mates.Flow` with a `proc.Group`, the mates' store and a client of GitHub's API. It loads no config and starts no engine. An `*mates.EnvError`, found before anything was asked of GitHub's pages, exits with 2, any later error with 1. The guide's [Mates](/guide/mates) page describes the flow.
+
+`crew worktrees clean` is chosen the same way, before crew's flags, when `worktrees` is the first argument; any argument but `clean` exits with 2. `cmd/crew` finds the repository root, catches SIGINT, SIGTERM and SIGHUP into a cancelled context, and calls `app.Clean` with the default registry, the `git` workspace, stdin and whether stdin is a terminal. `app.Clean` loads the config and builds the tracker through the registry, but never calls its `Preparer`, which may create labels, and never calls `Options.Mates`, so `gh` reads GitHub as the boss. It builds no harness, checker or engine. It finds `PullRequestFinder` on the tracker and `Sweeper` on the workspace, and runs `worktrees.Clean` with them and `engine.UnendedRuns`, which reads the run journal's unended runs. `worktrees.Clean` lists the worktrees, decides each, asks, and on a yes reads the journal and the worktrees again, decides each worktree it is about to remove again, and removes what both decisions allow, on a context the signal does not cancel, so a removal under way finishes. A config that does not load, a tracker without `PullRequestFinder`, a workspace without `Sweeper` or a listing that fails exits with 2 before anything is listed; a failed check, lookup or removal, or a signal, exits with 1. The guide's [Clean up worktrees](/guide/crew#clean-up-worktrees) describes the rule.
 
 ## The core
 
@@ -187,7 +194,7 @@ The engine never imports Bubble Tea. Only `internal/ui/tui` does, with Lip Gloss
 
 A fourth port, `Checker`, runs an action's check: a shell command, in the action's workspace, with the issue's ref, key and URL and the branch in its environment. It returns nil when the command exited 0, an error wrapping `port.ErrCheckFailed` when it exited otherwise, and the context's error when the context ended first. `cmd/crew` builds it like the workspace.
 
-Anything an adapter may or may not support is a separate, optional interface. Today there are nine:
+Anything an adapter may or may not support is a separate, optional interface. Today there are ten:
 
 - `Preparer`, on any adapter: it checks the adapter's tools before the first poll, and receives the workflow's states, `crew.WorkflowStates`. A tracker also creates or checks the extra labels it was built with.
 - `StatusReporter`, on a tracker: `ReportStatus` writes a structured `crew.Status` to the issue's status comment, in the tracker's own markup. The comment keeps one entry per stage run: the tracker edits the latest entry when the status is of its run, or when it is a queued entry an earlier crew version wrote for the status's stage, appends one otherwise, and continues a full comment in a new one. Its errors are classified as `Move`'s are. Without it, the core reports no status.
@@ -196,8 +203,9 @@ Anything an adapter may or may not support is a separate, optional interface. To
 - `BossFinder`, on a tracker: `Boss` returns the boss's logins once `Prepare` found them, which the engine passes to every session and check as `CREW_BOSS`. `github` reads them from CODEOWNERS' `*` rule. Without it, crew names no boss.
 - `Narrator`, on a harness's `Session`: `Said` returns what the session last said, on one line, and may be called while the session runs.
 - `UsageReporter`, on a harness's `Session`: `Usage` returns what the session used, a `crew.Usage` whose cost, tokens and turns are each optional, once `Wait` has returned. A session that was stopped, killed or crashed before its final result reports nothing. `claude` reads the last `result` event's `total_cost_usd` and `modelUsage`, which cover the whole session, and adds up `num_turns` over every result. Without it, crew shows the usage as not reported.
-- `PullRequestFinder`, on a tracker: `FindPullRequest` returns the pull request opened from a branch: an open one first, otherwise the newest closed or merged one created at or after a time, which is zero for a resumed workspace. `github` makes one `gh pr list --head` call and skips forks. Without it, every pull request is not looked up.
+- `PullRequestFinder`, on a tracker: `FindPullRequest` returns the pull request opened from a branch, with its state and head commit: an open one first, otherwise the newest closed or merged one created at or after a time, which is zero for a resumed workspace. `github` makes one `gh pr list --head` call and skips forks. Without it, every pull request is not looked up.
 - `Reopener`, on a workspace: `Reopen` returns a workspace it created before, as it is now, or an error wrapping `port.ErrWorkspaceGone` when it no longer exists. `git` reads `git worktree list` and changes nothing. Without it, a failed action starts over in a fresh workspace.
+- `Sweeper`, on a workspace: `Workspaces` lists every workspace it created that still exists in any form, with whether its tool records it, whether its folder is gone, whether it holds uncommitted or untracked files, its branch's tip, and when it was made. `Beyond` counts a branch's commits after a commit, or returns an error wrapping `port.ErrCommitUnknown` when the repository lacks that commit. `Remove` removes a workspace without forcing, and deletes its local branch when asked. `git` reads `git worktree list` and the folders under `.crew/worktrees/`, takes a worktree's creation time from the modification time of the `commondir` file in its admin directory, counts with `git rev-list --count` and never fetches, and removes with `git worktree remove` and `git branch -D`, never touching origin. Without it, `crew worktrees clean` exits with 2.
 
 The engine finds optional interfaces by type assertion, so it never wraps an adapter value, which would hide them. An adapter carries no "not implemented" stubs. Each one has compile-time guards:
 
