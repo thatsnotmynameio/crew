@@ -126,6 +126,7 @@ Everything but `workflow` is optional. A minimal file is a `workflow` alone.
 | `tracker.name` | `github` | Where issues live. `github` is the only one today. |
 | `harness` | none | A top-level section for harness-specific settings. `claude` takes none, and the model goes in `config.model`. |
 | `extra_labels` | none | Labels for parked work that no stage takes, such as an idea waiting for a brainstorm. See below. |
+| `board` | none | The columns of the live view's board, each a name and the labels whose open issues it shows. Without it, the board has one column per stage. See [The board](#the-board). |
 | `prompts` | none | Named prompts that a skill runs in your own Claude Code session, such as `brainstorm` for [`/cw-brainstorm`](/guide/create-issue#brainstorm-an-issue). See [Prompts](#prompts). |
 | `workflow` | required | The stages, at least one. |
 
@@ -141,7 +142,7 @@ Each stage has:
 | `actions` | At least one action, each with a `name` (unique in the stage), a `prompt`, and optionally a `check` (see [Checks](#checks)) and a `mate` that its session and check act as (see [Act as mates](#act-as-mates)). |
 | `queue` | Optional. The [queue](#queues) the stage runs in: `clerk`, `default` or one under `config.queues`. Without it, the stage runs in `default`. |
 | `takes` | Optional. The kind of item the stage takes: `issues`, the default, or `pull_requests`. A stage takes one kind, never both. See [A pull request as the work](#a-pull-request-as-the-work). |
-| `on_board` | Optional. `false` hides the stage from the live view's board: it gets no column, an issue it holds gets no card, and its ends send no notification. Its actions still show in Actions and its events in Events. Stages show by default. See [Run it](#run-it). |
+| `on_board` | Optional. `false` hides the stage from the live view's board: it gets no column, an issue it holds gets no card, and its ends send no notification. Its actions still show in Actions and its events in Events. Stages show by default. With a [`board`](#the-board), the stage still sends no notification, but `on_board` no longer changes the board. See [Run it](#run-it). |
 | `description` | Optional. The work the stage takes, in a few words, such as `a bug to reproduce and fix`. crew does not use it: the [`/cw-create-issue`](/guide/create-issue) skill shows it when it lists the types of issue. |
 | `issue_template` | Optional. The file name of a Markdown issue template in `.github/ISSUE_TEMPLATE/`, such as `bug.md`. crew does not use it: `/cw-create-issue` fills it for an issue of this stage. |
 
@@ -171,6 +172,29 @@ crew's labels are the ones your stages name in `label`, `moves_to`, `on_success`
 An extra label parks an issue that no stage takes, such as an idea that waits for a brainstorm. No stage takes an issue whose only crew label is an extra. To start work on it, add a stage's `label`: that stage takes the issue at the next poll with a free slot, even with the extra still on it. Every move crew makes removes the extras an issue carries, together with its other crew labels, so the issue leaves the extra behind when a stage takes it.
 
 So declare as an extra only a label you keep for crew. If you declare a label you already use, such as `bug`, crew removes it from every issue it moves.
+
+### The board
+
+By default the live view's board has one column per stage and shows only the issues crew has in play. `board` sets its columns yourself, to see the issues you care about while crew runs, such as parked ideas, open bugs and finished work:
+
+```yaml
+board:
+  - name: ideas
+    labels: [crew:brainstorm:ready]
+  - name: bugs
+    labels: [bug]
+  - name: done
+    labels: [crew:brainstorm:done, crew:triage:done]
+```
+
+Each column has:
+
+| Key | What it does |
+| --- | --- |
+| `name` | Required. The column's title, unique on the board. |
+| `labels` | Required. One or more labels, written as on GitHub. Any label works, crew's own or not. crew does not check that it exists on GitHub, so a label no issue carries gives an empty column. |
+
+The columns are drawn left to right in the file's order. A column holds a card for each open issue that carries at least one of its labels, opened by the boss or a mate, the same issues crew takes. An issue with the labels of several columns has a card in each, and an issue with none of them has no card, even while crew works on it: its work still shows in Actions. Pull requests never get a card. With `board` set, the stages no longer shape the board: they add, hide and order no column, whatever their `on_board`. Labels compare ignoring case, as GitHub compares them, and a label that is also a stage's or an extra's takes the spelling the workflow or the extra gives it.
 
 ### Queues
 
@@ -282,6 +306,8 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - a stage lacks `label`, `moves_to`, `on_success` or `on_failure`;
 - the workflow would loop or take an issue twice (the `label`, `moves_to`, `on_success` and `on_failure` rules above);
 - an extra label is a label a stage names, or another extra's label, ignoring case;
+- `board` is an empty list, a column has no `name`, no label or an empty label, or two columns share a name (the message names the column);
+- `board` is set and the tracker cannot list issues by any label;
 - a `description` is empty, or an `issue_template` is not a file name ending in `.md` (it holds a `/` or `\`, for example). crew does not check that the template file exists;
 - a prompt, in an action or under `prompts`, is empty, does not parse, or uses a field that does not exist;
 - an action's `check` is present but empty;
@@ -590,6 +616,8 @@ The header shows the repository, how long crew has been up and, with `config.run
 
 Workflow has one column per stage of your workflow, in the order of `.crew/config.yaml`, and a card for each issue crew has in play. A card shows the issue's number and title, and how crew holds it: `⠋ running`, `◌ taking`, `⠋ judging`, `! owed` while a move waits for a retry, or `■ stopping`. When a stage ends and moves the issue to another stage's `label`, the card stays in its column with `→` and that label until the next stage takes the issue, then slides to the new column. It leaves the board when the issue moves to a label no stage takes, such as a failed or waiting-review label, when crew gave the move up, or when the issue is closed or relabelled outside crew. Issues crew has not taken, such as those waiting in a `label`, are not on the board: GitHub shows them. A stage with [`on_board: false`](#keys) has no column and its issues no card. When the columns do not fit the window, the empty ones drop and the summary says how many; when the rest still do not fit, the board scrolls sideways with `←` and `→`.
 
+With [`board`](#the-board) in the config, Workflow shows your columns instead, in the file's order, and a card for each open issue with a column's labels, oldest first. crew reads them from GitHub at each poll, even when it is too busy to take an issue. A move crew makes shows at once; a label changed on GitHub, or an issue closed there, shows after the next poll. A card shows the issue's number and title, and how crew holds it while it does; a card of an issue crew does not hold shows its number and title alone. No card waits with `→`: a card sits wherever the issue's labels put it, and slides when they move it to another column. A column with more cards than fit ends in `+N more`, hiding the newest. The summary counts the issues with a card, and says `board not read` while the last read from GitHub failed; the board then keeps what it last read. Empty columns drop and the board scrolls as above.
+
 Actions lists every action that has not ended: its issue, its stage and action, the [queue](#queues) its issue holds a slot in, its state with the elapsed time, and its branch. A running session shows the last thing it said on the line under it, with tokens and keys redacted, as in the [status comment](#the-status-comment). Queues shows each queue's busy slots `■` and free slots `□`. A slot is busy from the moment crew takes an issue for a stage in that queue until it lets go of the issue, whether the issue's actions have started or not, which is the count crew uses to decide whether the queue can take another issue.
 
 Handled lists each issue whose stage ended: a label saying how it ended, its number and title, the stage and how long it took, the cost and tokens of the stage's sessions, and the pull request of a stage with one action. The issues that need you come first: `NEEDS ATTENTION` for a stage that failed, with one line per failed action and its reason after `×`, and `GIVEN UP` for a move crew gave up because the issue was closed or moved meanwhile or GitHub refused it. Any other ending shows the last part of the label the issue moved to, such as `WAITING REVIEW`. A stage with several actions shows each action's pull request on a line of its own. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again; the header still counts what its earlier stages cost. The status comment on each issue keeps the detail. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
@@ -675,5 +703,6 @@ A session that runs long keeps crew running past the limit, and so does a move t
 - **Only `github` and `claude`.** Other trackers and coding agents are not built yet.
 - **Not built yet from the old dispatcher:** pausing and resuming on usage limits, promoting to `ready to merge` when pull requests pass their checks, and per-stage progress.
 - **At most 100 issues per poll**, the oldest first. With more waiting, a newer issue of high priority is not seen until older ones leave the list.
+- **At most 100 issues per author on the [board](#the-board)**, the oldest first. With more open issues on its labels, the newest do not show.
 - **Priority decides only the next free slot.** It never stops a running session to make room for a higher-priority issue, and it never moves an issue into another queue's free slot.
 - **Sessions are headless.** They cannot ask you anything or talk to each other. The [acceptance tester](/guide/acceptance-tester) agent is interactive, so do not point an action at it.
