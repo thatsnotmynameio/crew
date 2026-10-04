@@ -5,6 +5,7 @@
 //
 //	crew [--plain] [--version]
 //	crew mates create <name>
+//	crew worktrees clean
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a TUI;
 // otherwise, or with --plain, it prints timestamped event lines. The first
@@ -17,6 +18,14 @@
 // for the GitHub repository of the git repository it runs in, and installs
 // it there. It exits 0 once the mate is ready, 2 when nothing was asked of
 // GitHub yet, and 1 on any later failure.
+//
+// crew worktrees clean lists crew's worktrees of the git repository it runs
+// in, each with what it would do and why, asks, and on a yes removes those
+// whose pull request merged. Without a terminal to ask, it removes nothing.
+// The first Ctrl-C, SIGTERM or SIGHUP stops it before its next removal. It
+// exits 0 when every check, lookup and removal it made worked, 1 when one
+// failed or a signal stopped it, and 2 on a config or environment error,
+// before it lists anything.
 package main
 
 import (
@@ -57,15 +66,19 @@ func main() {
 // code.
 func run(args []string) int {
 	stdout, stderr := os.Stdout, os.Stderr
-	// The subcommand comes before crew's own flags, so every other argument
+	// The subcommands come before crew's own flags, so every other argument
 	// list is parsed as it always was.
 	if len(args) > 0 && args[0] == "mates" {
 		return runMates(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "worktrees" {
+		return runWorktrees(args[1:], os.Stdin, term.IsTerminal(int(os.Stdin.Fd())), stdout, stderr)
+	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew mates create <name>\n\nFlags:\n")
+		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew mates create <name>\n"+
+			"  crew worktrees clean\n\nFlags:\n")
 		flags.PrintDefaults()
 	}
 	plain := flags.Bool("plain", false, "print timestamped event lines instead of the TUI")
