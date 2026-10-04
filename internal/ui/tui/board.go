@@ -136,6 +136,9 @@ func (m Model) boardLayout(cards []card) boardLayout {
 // board is the Workflow section: its summary and its rows, with at most
 // limit cards a column; limit < 0 means no limit (KTD8).
 func (m Model) board(limit int) (string, []string) {
+	if !slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool { return !s.OffBoard }) {
+		return "", []string{" " + m.styles.muted.Render("every stage is hidden")}
+	}
 	cards := m.cards()
 	l := m.boardLayout(cards)
 	held := 0
@@ -150,9 +153,6 @@ func (m Model) board(limit int) (string, []string) {
 	}
 	if l.dropped > 0 {
 		summary += fmt.Sprintf(" · %d empty %s not shown", l.dropped, lines.Plural(l.dropped, "stage", "stages"))
-	}
-	if !slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool { return !s.OffBoard }) {
-		return "", []string{" " + m.styles.muted.Render("every stage is hidden")}
 	}
 	return summary, m.boardRows(l, cards, limit)
 }

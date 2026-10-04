@@ -44,7 +44,8 @@ func lightPalette() palette {
 
 // styles are the Lip Gloss styles the view draws with, one per role.
 type styles struct {
-	palette
+	// gradientFrom and gradientTo are the header run's stops (R3).
+	gradientFrom, gradientTo color.Color
 
 	text, title, muted, subtle   lipgloss.Style
 	accent, strongAccent         lipgloss.Style
@@ -66,8 +67,8 @@ func newStyles(dark bool) styles {
 		return lipgloss.NewStyle().Background(c).Foreground(p.pillInk).Bold(true).Padding(0, 1)
 	}
 	return styles{
-		palette: p,
-		text:    fg(p.text), title: fg(p.title).Bold(true), muted: fg(p.muted), subtle: fg(p.subtle),
+		gradientFrom: p.gradientFrom, gradientTo: p.gradientTo,
+		text: fg(p.text), title: fg(p.title).Bold(true), muted: fg(p.muted), subtle: fg(p.subtle),
 		accent: fg(p.accent), strongAccent: fg(p.strongAccent),
 		success: fg(p.success), warning: fg(p.warning), error: fg(p.error),
 		chip: lipgloss.NewStyle().Foreground(p.chipText).Background(p.chipBack).Padding(0, 1),

@@ -68,12 +68,13 @@ func (m Model) handledSection(width int) (string, []string) {
 		details = append(details, m.handledDetails(e))
 	}
 	pillW, refW := widest(pills), widest(refs)
-	titleW := min(max(width-(len(" ")+pillW+len("  ")+refW+len(" ")+len("  ")+widest(details)), minHandledTitle),
-		widest(titles))
+	// A row is " " pill cellGap ref " " title cellGap details.
+	others := len(" ") + pillW + len(cellGap) + refW + len(" ") + len(cellGap) + widest(details)
+	titleW := min(max(width-others, minHandledTitle), widest(titles))
 	var out []string
 	for i, e := range entries {
-		out = append(out, " "+pad(pills[i], pillW)+"  "+pad(m.styles.link(refs[i], e.Issue.URL), refW)+" "+
-			pad(m.styles.text.Render(titles[i]), titleW)+"  "+details[i])
+		out = append(out, " "+pad(pills[i], pillW)+cellGap+pad(m.styles.link(refs[i], e.Issue.URL), refW)+" "+
+			pad(m.styles.text.Render(titles[i]), titleW)+cellGap+details[i])
 		out = append(out, m.reasons(e)...)
 		out = append(out, m.pullRequests(e)...)
 	}

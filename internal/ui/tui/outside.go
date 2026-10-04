@@ -59,16 +59,14 @@ func (m Model) notifications() []tea.Cmd {
 // noteText says which stage ended on which issue and how (R25), cleaned and
 // capped, since the title comes from outside crew (KTD14).
 func noteText(e core.HandledView) string {
-	what := fmt.Sprintf("crew: %s ended on %s %s", e.Stage, e.Issue.Ref, e.Issue.Title)
+	verb, how := "ended", "moved to "+string(e.To)
 	switch {
 	case e.Move == crew.MoveDropped:
-		what += fmt.Sprintf("; its move to %s was given up", e.To)
+		how = fmt.Sprintf("its move to %s was given up", e.To)
 	case len(e.Failures) > 0:
-		what = fmt.Sprintf("crew: %s failed on %s %s; moved to %s", e.Stage, e.Issue.Ref, e.Issue.Title, e.To)
-	default:
-		what += "; moved to " + string(e.To)
+		verb = "failed"
 	}
-	return capped(what)
+	return capped(fmt.Sprintf("crew: %s %s on %s %s; %s", e.Stage, verb, e.Issue.Ref, e.Issue.Title, how))
 }
 
 // attention counts the Handled entries that need the boss, hidden stages

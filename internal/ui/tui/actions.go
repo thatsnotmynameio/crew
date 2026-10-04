@@ -13,8 +13,10 @@ import (
 const (
 	// chipPadding is the space either side of a queue's name in its chip.
 	chipPadding = 2
-	// actionGaps is the gaps between an action's six cells.
-	actionGaps = 5
+	// actionCells is the cells of an action's row, cellGap apart.
+	actionCells = 6
+	// cellGap is the space between a row's cells.
+	cellGap = "  "
 	// minActionTitle is the narrowest an action's title gets.
 	minActionTitle = 12
 )
@@ -78,7 +80,8 @@ func (m Model) actionsSection(said bool) (string, []string) {
 	}
 	refW, nameW, queueW, stateW := widest(refs), widest(names), widest(queues)+chipPadding, widest(states)
 	// The title takes what the other columns and their gaps leave.
-	others := lipgloss.Width(" ○ ") + refW + nameW + queueW + stateW + widest(branches(acts)) + len("  ")*actionGaps
+	others := lipgloss.Width(" ○ ") + refW + nameW + queueW + stateW + widest(branches(acts)) +
+		len(cellGap)*(actionCells-1)
 	titleW := min(max(m.width-others, minActionTitle), widest(titles))
 	var out []string
 	for i, a := range acts {
@@ -87,7 +90,7 @@ func (m Model) actionsSection(said bool) (string, []string) {
 			pad(s.muted.Render(names[i]), nameW), pad(s.chip.Render(queues[i]), queueW),
 			pad(s.text.Render(states[i]), stateW), s.muted.Render(clean(a.Branch)),
 		}
-		out = append(out, " "+m.actionIcon(a.Phase)+" "+strings.Join(cells, "  "))
+		out = append(out, " "+m.actionIcon(a.Phase)+" "+strings.Join(cells, cellGap))
 		if text := m.said(a); said && text != "" {
 			out = append(out, "   "+s.muted.Render("└ "+text))
 		}

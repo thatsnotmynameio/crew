@@ -8,7 +8,7 @@ import (
 )
 
 // halves centres the help overlay.
-const halves = 2
+const halves = 2 // the overlay's offset is half the room left around it
 
 // keyMap holds the view's keys (R19 to R22, KTD11). None of them acts
 // outside crew's own process.
@@ -52,15 +52,22 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.back):
 		m.focus = (m.focus + focusEvents) % (focusEvents + 1)
 	case key.Matches(msg, m.keys.left):
-		m.boardOffset = max(m.boardLayout(m.cards()).offset-1, 0)
+		m = m.scrollBoard(-1)
 	case key.Matches(msg, m.keys.right):
-		// The layout clamps the offset to the columns there are.
-		m.boardOffset = m.boardLayout(m.cards()).offset + 1
-		m.boardOffset = m.boardLayout(m.cards()).offset
+		m = m.scrollBoard(1)
 	default:
 		m = m.scrolled(msg)
 	}
 	return m, nil
+}
+
+// scrollBoard returns m with the board moved delta columns sideways, as
+// far as its columns allow: the layout clamps the offset (KTD9).
+func (m Model) scrollBoard(delta int) Model {
+	cards := m.cards()
+	m.boardOffset = m.boardLayout(cards).offset + delta
+	m.boardOffset = m.boardLayout(cards).offset
+	return m
 }
 
 // scrolled returns m with the focused section moved by a row, a page or to
@@ -105,7 +112,7 @@ func (m Model) scrollLimit() int {
 	case m.focus == focusHandled && b.handled >= 0:
 		return max(len(m.handledRows())-b.handled, 0)
 	case m.focus == focusEvents && b.events >= 0:
-		return max(len(m.eventRows())-b.events, 0)
+		return max(m.eventCount()-b.events, 0)
 	}
 	return 0
 }

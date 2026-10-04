@@ -15,6 +15,8 @@ const (
 	// cutRows are the rows a cut view ends with: the line saying how many
 	// were cut, and the key-help line.
 	cutRows = 2
+	// cardRows are the rows a card takes on the board.
+	cardRows = 2
 )
 
 // budget is how much of each section the view draws: the rows of Events
@@ -69,7 +71,7 @@ func (m Model) budget() budget {
 		return b
 	}
 	over := func() int { return len(m.rows(b)) - m.height }
-	events, handled := len(m.eventRows()), len(m.handledRows())
+	events, handled := m.eventCount(), len(m.handledRows())
 	if o := over(); o > 0 {
 		b.events = max(min(minScroll, events), events-o)
 	}
@@ -79,8 +81,10 @@ func (m Model) budget() budget {
 	if over() > 0 {
 		b.said = false
 	}
-	for cards := m.tallestColumn() - 1; cards >= 1 && over() > 0; cards-- {
-		b.cards = cards
+	// Capping a column at c of its t cards saves cardRows*(t-c) rows and
+	// adds the "+N more" row.
+	if o, t := over(), m.tallestColumn(); o > 0 && t > 1 {
+		b.cards = max(t-(o+cardRows)/cardRows, 1)
 	}
 	return b
 }
@@ -101,7 +105,7 @@ func (m Model) rows(b budget) []string {
 	out = append(out, m.band(b.handled)...)
 	events := b.events
 	if events < 0 {
-		events = len(m.eventRows())
+		events = m.eventCount()
 	}
 	summary, rows := m.eventsSection(events)
 	out = append(out, "", m.rule("Events", summary, m.width, m.focus == focusEvents))
