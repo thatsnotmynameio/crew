@@ -66,7 +66,7 @@ func boardColumn(doc columnDoc, path string, itemLine int, firstPath map[string]
 	var errs []error
 	name, err := required(doc.Name, path+".name", itemLine)
 	errs = append(errs, err)
-	if first, ok := firstPath[name]; ok && name != "" {
+	if first, ok := firstPath[name]; ok {
 		errs = append(errs, keyError(path+".name", doc.Name.line, fmt.Sprintf("%q is already %s.name", name, first)))
 	} else if name != "" {
 		firstPath[name] = path

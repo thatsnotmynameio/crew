@@ -172,9 +172,9 @@ func New(cfg Config) *Engine {
 	if finder != nil {
 		opts = append(opts, core.FindingPullRequests())
 	}
-	board, _ := cfg.Tracker.(port.BoardLister)
-	if len(cfg.Board) == 0 {
-		board = nil
+	var board port.BoardLister
+	if len(cfg.Board) > 0 {
+		board, _ = cfg.Tracker.(port.BoardLister)
 	}
 	if board != nil {
 		crewLabels := slices.Concat(crew.WorkflowStates(cfg.Workflow), cfg.Extras)
