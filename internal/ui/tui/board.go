@@ -264,8 +264,8 @@ func (m Model) boardRow(l boardLayout, cells []string, names bool) string {
 }
 
 // cardLines are a card's two rows: its reference and title, then its claim
-// or the label it waits in (R11, KTD13), or the bar alone when crew does
-// not hold its issue (KTD9).
+// or the label it waits in (R11, KTD13), or ○ idle when crew does not hold
+// its issue (#126).
 func (m Model) cardLines(c card, width int) (string, string) {
 	s := m.styles
 	bar := s.subtle.Render("▌")
@@ -278,7 +278,7 @@ func (m Model) cardLines(c card, width int) (string, string) {
 	case c.waiting:
 		state = s.warning.Render("→ " + fitLeft(string(c.label), width-lipgloss.Width("▌ → ")))
 	case !c.held:
-		return top, fit(bar, width)
+		state = s.muted.Render("○ idle")
 	case c.claim == core.ClaimRunning || c.claim == core.ClaimJudging:
 		state = m.spin() + " " + s.muted.Render(c.claim.String())
 	case c.claim == core.ClaimStopping:
