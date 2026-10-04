@@ -45,7 +45,7 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 - `internal/adapter/{github,claude,git,shell}`: the adapters.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
-- **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea; only tests import `fake`; `mates` imports only the standard library and `proc`, and only `cmd/crew` imports it.
+- **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea, Lip Gloss and Bubbles; only tests import `fake`; `mates` imports only the standard library and `proc`, and only `cmd/crew` imports it.
 - **New adapter:** one package under `internal/adapter/` with a `Factory(group)`, plus one entry in `internal/registry/default.go`. Optional capabilities are separate interfaces found by type assertion: never wrap an adapter value, never add "not implemented" stubs.
 
 ## Tests
@@ -55,7 +55,7 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 - **Time:** the engine loop, and `app` where timing matters, run under `testing/synctest` (fake clock, so `time.Sleep` there costs nothing; leaked goroutines fail).
 - **Adapters:** scripted `gh` and `git` runners, and recorded `stream-json` fixtures in `internal/adapter/claude/testdata/`.
 - **Real git:** only in temporary repositories (`t.TempDir()`, a local bare `origin`), with `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM` set so the user's config cannot leak in.
-- **Golden files:** the TUI's views in `internal/ui/tui/testdata/`; rewrite with `go test ./internal/ui/tui -update` and review the diff.
+- **Golden files:** the TUI's views in `internal/ui/tui/testdata/`, with escape codes stripped; rewrite with `go test ./internal/ui/tui -update` and review the diff.
 
 ## Docs
 
