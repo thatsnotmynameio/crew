@@ -306,3 +306,79 @@ func TestAForcedExitStillClosesTheMates(t *testing.T) {
 	}
 	r.release(session)
 }
+
+// runOnce runs crew on r until its one session, from h, succeeded, then
+// stops it, and returns what it printed.
+func runOnce(t *testing.T, r *crewRun, h *fake.Harness) string {
+	t.Helper()
+	r.start()
+	next(t, h).End(success)
+	synctest.Wait()
+	r.signals <- syscall.SIGTERM
+	if code := <-r.code; code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+	}
+	return r.stdout.String()
+}
+
+// The engine learns which mates cannot act at startup and reads the mates'
+// renewals: a mate that cannot act is never said to stop acting, while one
+// that acts is.
+func TestAMateThatCannotActIsNeverSaidToStopAndOneThatActsIs(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewActingTracker(issue("1", ready))
+		h := fake.NewHarness()
+		devWarning := "mate developer could not renew its token: GitHub is down"
+		res := &resolver{mates: app.Mates{
+			Identities: map[string]port.Identity{"developer": devID},
+			Unable:     map[string]string{"ops": "no key"},
+			Failing: func() map[string]string {
+				return map[string]string{"ops": "mate ops could not renew its token", "developer": devWarning}
+			},
+		}}
+		r := options(t, matedAction, tr, h)
+		r.opts.Plain, r.opts.Checker, r.opts.Mates = true, fake.NewChecker(), res.resolve
+
+		out := runOnce(t, r, h)
+
+		containsAll(t, out, "mate developer stopped acting: "+devWarning)
+		if strings.Contains(out, "mate ops stopped acting") {
+			t.Errorf("stdout says ops stopped acting, which never acted:\n%s", out)
+		}
+	})
+}
+
+// crew's writes as the default mate going back to the boss is said once.
+func TestTheDefaultMatesWritesGoingBackToTheBossIsSaid(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewActingTracker(issue("1", ready))
+		warning := "mate ops lacks a permission: run `crew mates create ops`; crew writes as you until it restarts"
+		tr.SetWriterLost(warning)
+		h := fake.NewHarness()
+		res := &resolver{mates: app.Mates{Writer: opsWriter,
+			Identities: map[string]port.Identity{"ops": opsID, "developer": devID}}}
+		r := options(t, matedAction, tr, h)
+		r.opts.Plain, r.opts.Checker, r.opts.Mates = true, fake.NewChecker(), res.resolve
+
+		out := runOnce(t, r, h)
+
+		if n := strings.Count(out, "mate ops stopped acting: "+warning); n != 1 {
+			t.Errorf("stdout says ops stopped acting %d times, want once:\n%s", n, out)
+		}
+	})
+}
+
+// Without mates, nothing acts as a mate, so nothing stops acting.
+func TestWithoutMatesNoMateStopsActing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewActingTracker(issue("1", ready))
+		tr.SetWriterLost("crew writes as you until it restarts")
+		h := fake.NewHarness()
+		r := options(t, oneAction, tr, h)
+		r.opts.Plain = true
+
+		if out := runOnce(t, r, h); strings.Contains(out, "stopped acting") {
+			t.Errorf("stdout says a mate stopped acting, without mates:\n%s", out)
+		}
+	})
+}
