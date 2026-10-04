@@ -164,12 +164,11 @@ func factory(run proc.Runner) port.TrackerFactory {
 // among the 100 oldest pull requests carrying any of them, all oldest first.
 // Each item's key is its number, its reference #<number>, its kind issue or
 // pull request, and its states every workflow state its labels name, in the
-// workflow's spelling. Its other
-// labels, extras included, are no states and are ignored. An issue is
-// blocked while an open issue blocks it, as GitHub's issue dependencies
-// record. Its priority is the position of its value of the issue field
-// Priority among that field's options, the first being 1; an issue without
-// one has priority 0. A pull request has priority 0 and is never blocked.
+// workflow's spelling. Its other labels, extras included, are no states and
+// are ignored. An issue is blocked while an open issue blocks it, as GitHub's
+// issue dependencies record. Its priority is the position of its value of the
+// issue field Priority among that field's options, the first being 1; an
+// issue without one has priority 0. A pull request has priority 0 and is never blocked.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
