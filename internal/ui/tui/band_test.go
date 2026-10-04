@@ -19,7 +19,7 @@ func TestHandledIssuesRenderTheGoldenView(t *testing.T) {
 // Covers R5 and R16: attention first, each entry with its pill, then its
 // reasons after an ×.
 func TestHandledPutsAttentionFirstWithAPillPerEnding(t *testing.T) {
-	view := fitted(t, 160, 0, handledSnapshot())
+	view := handledText(t, 160, handledSnapshot())
 
 	gu := strings.Index(view, " GIVEN UP ")
 	na := strings.Index(view, " NEEDS ATTENTION ")

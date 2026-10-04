@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -154,6 +155,16 @@ func handledView(t *testing.T, entries ...core.HandledView) string {
 	u := runningSnapshot()
 	u.Snapshot.Handled = entries
 	return fitted(t, 160, 0, u)
+}
+
+// handledText is every Handled row of u in a window width wide, past the
+// rows the view has room for, with its styles stripped.
+func handledText(t *testing.T, width int, u engine.Update) string {
+	t.Helper()
+	h := newHarness(t, width)
+	h.send(updateMsg(u))
+	_, rows := h.current().handledSection(width)
+	return ansi.Strip(strings.Join(rows, "\n"))
 }
 
 // contains fails t unless view holds each of wants.

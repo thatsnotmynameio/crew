@@ -578,10 +578,13 @@ Queues ──── 3 of 5 busy   Handled ────────────�
  default    □□  0/2        WAITING REVIEW    #7 Log the poll      development 9…
                            DONE              #9 Retry the poll    triage 3m00s …
 
+
 Events ──────────────────────────────────────────────────────────────── 3 events
  14:25:00 #1 development/lfg started on branch crew/1-lfg, log .crew/logs/1-lfg.log
  14:29:50 poll: listed 3 issues, took 2
  14:29:50 triage took #12 "Stage labels" (crew:triage:ready -> crew:triage:in progress)
+
+
 
 q stop · tab focus · ↑↓ scroll · ←→ board · ? help
 ```
@@ -598,7 +601,9 @@ The cost is the harness's figure, shown as it reports it and always next to the 
 
 Events shows the latest 100 events, the newest at the bottom.
 
-The view fits the window. When rows run out, Events and then Handled shrink to two rows each and scroll. Then the session lines under Actions go, then each board column shows fewer cards with `+N more`, and only then is the view cut, with a line saying how many lines were cut. The keys:
+Events and Handled each take five rows, however many they have, so the view holds still while crew works. Their rows fill from the top, with blank rows below until there are five. Past five, the section scrolls, and its title says `↑↓ scroll`. Events follows the newest event until you scroll up.
+
+The view fits the window. When rows run out, Events and then Handled give up rows, as many as the window needs and down to two each. Then the session lines under Actions go, then each board column shows fewer cards with `+N more`, and only then is the view cut, with a line saying how many lines were cut. The keys:
 
 | Key | What it does |
 | --- | --- |

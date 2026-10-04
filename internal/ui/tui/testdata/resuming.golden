@@ -11,9 +11,16 @@ Actions ────────────────────────
 
 Queues ─── 1 of 2 busy   Handled ───────────────────────────────────────────────────────────────────────────────────── 0
  default  ■□  1/2         none
+                         
+                         
+                         
+                         
 
 Events ──────────────────────────────────────────────────────────────────────────────────────────────────────── 2 events
  14:27:00 #9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log
  14:28:00 #9 development/tests started on branch crew/issue-9-tests, log .crew/logs/issue-9-tests.log
+
+
+
 
 q stop · tab focus · ↑↓ scroll · ←→ board · ? help
