@@ -6,9 +6,9 @@ import (
 	"text/template"
 )
 
-// Stage is one step of the workflow. It takes an issue in its Label state,
-// moves it to MovesTo while its actions run, and moves it to OnSuccess once
-// every action has succeeded, or to OnFailure when any failed.
+// Stage is one step of the workflow. It takes an item of its Takes kind in
+// its Label state, moves it to MovesTo while its actions run, and moves it to
+// OnSuccess once every action has succeeded, or to OnFailure when any failed.
 type Stage struct {
 	// Name identifies the stage in events and the TUI.
 	Name string
@@ -27,6 +27,9 @@ type Stage struct {
 	// its issues may hold. The zero Queue is no queue: the stage is limited
 	// only by the global limit, which it shares with every other such stage.
 	Queue Queue
+	// Takes is the kind of item the stage takes: it takes only the items of
+	// that kind in its Label state. The zero Kind takes issues.
+	Takes Kind
 }
 
 // The queues every workflow has.

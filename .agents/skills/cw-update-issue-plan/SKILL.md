@@ -14,7 +14,7 @@ Run `gh` with the repository root as the working directory. Read files with your
 
 1. Find the repository root with `git rev-parse --show-toplevel`.
 2. Read `<root>/.crew/config.yaml`. When the file is missing, say that crew is not configured in this repository and stop. When it does not parse as YAML, say so with the parser's error and stop. Change nothing in either case.
-3. Build the types: each entry of `workflow` is a type through its `label`, and each entry of the top-level `extra_labels` is a type through its `label`. Each type may have an `issue_template`, a file name in `<root>/.github/ISSUE_TEMPLATE/`.
+3. Build the types: each entry of `workflow` that takes issues is a type through its `label`, and each entry of the top-level `extra_labels` is a type through its `label`. Each type may have an `issue_template`, a file name in `<root>/.github/ISSUE_TEMPLATE/`. A stage takes issues when it has no `takes` or has `takes: issues`; a stage with `takes: pull_requests` is not a type, since crew leaves an issue carrying its label alone.
 4. Build crew's labels: every stage's `label`, `moves_to`, `on_success` and `on_failure`, and every extra's `label`. Compare labels ignoring case, as GitHub does.
 5. Take the top-level `prompts.update_issue_plan`, when present and not empty. It is a Go template over the issue, the same as an action's prompt in crew, and may use only `{{.Issue.Ref}}`, `{{.Issue.Key}}`, `{{.Issue.Title}}` and `{{.Issue.URL}}`; spacing inside the braces does not matter. When it holds any other `{{ }}`, say that crew accepts only these four fields, name what it found, and stop. Change nothing.
 
@@ -28,7 +28,7 @@ Read it with `gh issue view <number> --json number,title,state,body,labels,url`.
 
 With no argument, the skill changes no label itself: step 8 runs `prompts.update_issue_plan` when the config has one, and otherwise the issue keeps its labels.
 
-With an argument, it must be the `label` of a stage or of an extra. Otherwise say so, list the valid labels, and stop. When the issue carries a stage's `moves_to` label, crew is running a session on it: say so and stop without changing anything. The one exception is a label this session put on the issue, such as the prompt `/cw-brainstorm` ran moving it to a `moves_to` label while the user brainstorms: then this session is the one working on it, so go on.
+With an argument, it must be the `label` of a stage that takes issues or of an extra. Otherwise say so, list the valid labels, and stop. When the issue carries a stage's `moves_to` label, crew is running a session on it: say so and stop without changing anything. The one exception is a label this session put on the issue, such as the prompt `/cw-brainstorm` ran moving it to a `moves_to` label while the user brainstorms: then this session is the one working on it, so go on.
 
 ## 4. Find the plan file
 

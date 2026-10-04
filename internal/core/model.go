@@ -64,6 +64,10 @@ type Model struct {
 	statusUsage bool
 	// spent sums what every session that ended this run used (R14).
 	spent crew.Spend
+	// otherKinds holds, by item key, the stage label of each item the last
+	// listing found in the label of a stage of the other kind, which was
+	// reported then or before (#92).
+	otherKinds map[string]crew.State
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls

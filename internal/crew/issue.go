@@ -32,6 +32,32 @@ type Issue struct {
 	// not taken until every issue blocking it is closed. A tracker that
 	// knows no dependencies leaves it false.
 	Blocked bool
+	// Kind is whether the item is an issue or a pull request. Only a stage
+	// that takes its kind takes it. A tracker that knows no pull requests
+	// leaves it KindIssue.
+	Kind Kind
+}
+
+// Kind is the kind of item a tracker lists: an issue or a pull request.
+type Kind int
+
+// The kinds of item. The zero Kind is an issue.
+const (
+	// KindIssue is an issue.
+	KindIssue Kind = iota
+	// KindPullRequest is a pull request.
+	KindPullRequest
+)
+
+// String names the kind for renderers: "issue" or "pull request".
+func (k Kind) String() string {
+	switch k {
+	case KindIssue:
+		return "issue"
+	case KindPullRequest:
+		return "pull request"
+	}
+	return "unknown"
 }
 
 // Clone returns a copy of i with its own States, so the copy shares no slice

@@ -54,6 +54,25 @@ func TestAConfigWithTrackerLabelsExitsTwoNamingTheKey(t *testing.T) {
 	}
 }
 
+// Covers AE4 of #92.
+func TestAStageTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.T) {
+	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
+	body := strings.Replace(oneAction, "    on_failure: needs attention\n",
+		"    on_failure: needs attention\n    takes: prs\n", 1)
+	r := options(t, body, tr, fake.NewHarness())
+
+	if code := app.Run(context.Background(), r.opts); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if n := tr.listed(); n != 0 {
+		t.Errorf("the tracker listed %d times, want none", n)
+	}
+	want := `workflow[0].takes (line 12): "prs" must be issues or pull_requests`
+	if stderr := r.stderr.String(); !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to name workflow[0].takes and its line", stderr)
+	}
+}
+
 func TestAFailingEnvironmentCheckExitsTwoBeforeAnyListing(t *testing.T) {
 	tr := fake.NewPreparingTracker(issue("1", ready))
 	counter := &listCounter{Tracker: tr.Tracker}
