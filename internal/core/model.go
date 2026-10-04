@@ -71,6 +71,8 @@ type Model struct {
 	otherKinds map[string]crew.State
 	// board is the board the model reads; nil when it reads none (KTD4).
 	board *board
+	// mates is what the model knows of the identities crew acts as (KTD3).
+	mates mates
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -354,6 +356,9 @@ type View struct {
 	// BoardFailure says why the last board read failed; empty once a read
 	// succeeds (KTD5).
 	BoardFailure string
+	// Mates are the configured mates, the default first, in config order,
+	// then the boss's entry (KTD3).
+	Mates []MateView
 }
 
 // HandledView is an issue whose stage ended this run, as that stage left it.
@@ -500,6 +505,7 @@ func (m *Model) View() View {
 	if m.board != nil {
 		v.Board, v.BoardFailure = m.board.view(), m.board.failure
 	}
+	v.Mates = m.matesView()
 	return v
 }
 

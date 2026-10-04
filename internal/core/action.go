@@ -183,6 +183,7 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.
 	}
 	a.phase = PhaseEnded
 	s.m.spent = s.m.spent.Add(a.spend())
+	s.m.mates.credit(s.m.mates.identity(a.mate), a.spend())
 	s.record(h, a, RunEnded)
 	s.emit(ActionEnded{
 		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,

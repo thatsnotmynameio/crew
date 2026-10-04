@@ -83,6 +83,18 @@ type BoardListFailed struct {
 	Reason string
 }
 
+// MatesChecked is a reading of the mates' live state, sent when it differs
+// from the last one (KTD1, KTD3).
+type MatesChecked struct {
+	At time.Time
+	// WritesLost is the warning crew wrote when its writes as the default
+	// mate went back to the boss; empty while they go as the default mate.
+	WritesLost string
+	// NotRenewed holds, by mate, the warning of its last renewal, for each
+	// mate whose last renewal failed.
+	NotRenewed map[string]string
+}
+
 // Result classifies how a tracker call (a Move, a ReportFailure or a
 // ReportPullRequests) ended.
 // The engine maps the port's errors onto it: nil is ResultDone,
@@ -269,6 +281,9 @@ func (i BoardListed) Stamped(at time.Time) Input { i.At = at; return i }
 func (i BoardListFailed) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i MatesChecked) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -311,6 +326,7 @@ func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
 func (i BoardListed) arrival() time.Time          { return i.At }
 func (i BoardListFailed) arrival() time.Time      { return i.At }
+func (i MatesChecked) arrival() time.Time         { return i.At }
 func (i CallResult) arrival() time.Time           { return i.At }
 func (i StatusResult) arrival() time.Time         { return i.At }
 func (i PullRequestsResult) arrival() time.Time   { return i.At }

@@ -196,6 +196,25 @@ type Stopped struct {
 	At time.Time
 }
 
+// MateStopped is a mate that stopped acting during the run: crew's writes as
+// the default mate went back to the boss, or the mate's token was not
+// renewed (R9, R11). It is emitted once per problem, when the mate gains it.
+type MateStopped struct {
+	At   time.Time
+	Mate string
+	// Reason is the short reason: "writes as you" or "token not renewed".
+	Reason string
+	// Warning is the full reason and its fix.
+	Warning string
+}
+
+// MateActsAgain is a mate whose state returned to acting during the run:
+// its token was renewed after a failure (R10).
+type MateActsAgain struct {
+	At   time.Time
+	Mate string
+}
+
 // CallKind tells a Move, a ReportFailure and a ReportPullRequests apart in a
 // Call.
 type CallKind int
@@ -285,6 +304,12 @@ func (e WindingDown) Time() time.Time { return e.At }
 // Time implements Event.
 func (e Stopped) Time() time.Time { return e.At }
 
+// Time implements Event.
+func (e MateStopped) Time() time.Time { return e.At }
+
+// Time implements Event.
+func (e MateActsAgain) Time() time.Time { return e.At }
+
 func (IssueTaken) event()       {}
 func (ActionStarted) event()    {}
 func (ActionEnded) event()      {}
@@ -302,3 +327,5 @@ func (CallDropped) event()      {}
 func (StatusFailed) event()     {}
 func (WindingDown) event()      {}
 func (Stopped) event()          {}
+func (MateStopped) event()      {}
+func (MateActsAgain) event()    {}
