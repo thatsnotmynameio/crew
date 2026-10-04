@@ -9,8 +9,8 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 // is generation m.listings; one asked for before the move landed predates it
 // and marks nothing. Each later listing decides anew, so an issue found in
 // To again is no longer gone. A held issue's entry is left alone: its
-// stage's new entry replaces it, or keeps it when that stage is hidden from
-// the board and ends well.
+// stage's new entry replaces it, or keeps it when both ended well and that
+// stage is hidden from the board.
 func (m *Model) gone(issues []crew.Issue) {
 	alone := map[string]crew.State{}
 	for _, issue := range issues {

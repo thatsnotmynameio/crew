@@ -324,3 +324,17 @@ func TestAHiddenStageThatSucceedsOnAnIssueWithNoEntryAddsItsOwn(t *testing.T) {
 		t.Fatalf("entry: got %#v, want review's, not gone", got)
 	}
 }
+
+func TestAHiddenStageThatSucceedsReplacesAnEarlierEntryNeedingAttention(t *testing.T) {
+	d := newDriver(t, hiddenReview(), 2)
+	reviewed(d, failed("changes requested"))
+
+	d.running(issue("1", 1, readyToReview))
+	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "custom_review", Outcome: succeeded})
+	d.settle(verdict)
+
+	got := onlyEntry(t, d)
+	if got.Stage != "review" || got.To != readyToMerge || got.NeedsAttention() {
+		t.Fatalf("entry after the retried hidden review: got %#v, want review's success", got)
+	}
+}
