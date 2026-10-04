@@ -347,3 +347,29 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 		t.Errorf("ListBoard keys = %v, want %v", order, wantOrder)
 	}
 }
+
+// Adding an issue whose key the tracker holds replaces it: open again, with
+// the new states and no extras or other labels.
+func TestAddingAKnownIssueReplacesItOpenWithoutExtrasOrLabels(t *testing.T) {
+	tr := fake.NewBoardTracker(issue("1", ready))
+	tr.SetExtras("1", waitingBrainstorm)
+	tr.SetLabels("1", "bug")
+	tr.Close("1")
+
+	tr.Add(issue("1", readyToReview))
+
+	got, ok := tr.Issue("1")
+	if !ok || !reflect.DeepEqual(got.States, []crew.State{readyToReview}) {
+		t.Fatalf("issue 1 = %+v (found %t), want it in %q", got, ok, readyToReview)
+	}
+	if extras := tr.Extras("1"); len(extras) != 0 {
+		t.Errorf("extras = %q, want none", extras)
+	}
+	board, err := tr.ListBoard(context.Background(), []string{"bug", string(readyToReview)})
+	if err != nil {
+		t.Fatalf("ListBoard: %v", err)
+	}
+	if len(board) != 1 || !reflect.DeepEqual(board[0].Labels, []string{string(readyToReview)}) {
+		t.Errorf("board = %+v, want issue 1 open with only %q", board, readyToReview)
+	}
+}
