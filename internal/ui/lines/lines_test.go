@@ -232,3 +232,15 @@ func TestEachStartupWarningPrintsOnceBeforeTheFirstEvent(t *testing.T) {
 		"12:00:03 crew: stopped",
 	})
 }
+
+func TestLinePrintsOneStampedLineInItsTimesLocation(t *testing.T) {
+	var out strings.Builder
+
+	if err := lines.Line(&out, at("09:00:01").In(zone), "checking the gh login"); err != nil {
+		t.Fatalf("Line: %v", err)
+	}
+
+	if want := "09:00:01 crew: checking the gh login\n"; out.String() != want {
+		t.Errorf("Line printed %q, want %q", out.String(), want)
+	}
+}

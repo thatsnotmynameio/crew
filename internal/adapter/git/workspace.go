@@ -48,14 +48,17 @@ func New(group *proc.Group, root string) *Workspace {
 
 // Prepare implements port.Preparer. It checks that the root is inside a git
 // checkout with an origin remote, and resolves origin's default branch.
-// states is not used.
+// It reports each of the two steps on ctx as it starts; Create, which may
+// resolve the default branch later, reports none. states is not used.
 func (w *Workspace) Prepare(ctx context.Context, _ []crew.State) error {
+	port.Step(ctx, "checking the git checkout and its origin")
 	if _, err := w.git(ctx, "rev-parse", "--show-toplevel"); err != nil {
 		return fmt.Errorf("%s is not inside a git checkout: %w", w.root, err)
 	}
 	if _, err := w.git(ctx, "remote", "get-url", "origin"); err != nil {
 		return fmt.Errorf("the git checkout at %s has no origin remote: %w", w.root, err)
 	}
+	port.Step(ctx, "resolving origin's default branch")
 	if err := w.acquire(ctx); err != nil {
 		return err
 	}

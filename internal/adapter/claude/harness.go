@@ -80,8 +80,10 @@ type harness struct {
 	spawn spawner
 }
 
-// Prepare implements port.Preparer: it checks that claude is on PATH.
-func (h *harness) Prepare(context.Context, []crew.State) error {
+// Prepare implements port.Preparer: it checks that claude is on PATH, and
+// reports that step on ctx.
+func (h *harness) Prepare(ctx context.Context, _ []crew.State) error {
+	port.Step(ctx, "looking for claude on PATH")
 	if _, err := exec.LookPath(binary); err != nil {
 		return fmt.Errorf("the claude harness runs the %s CLI, which is not on PATH: %w", binary, err)
 	}

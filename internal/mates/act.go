@@ -60,6 +60,10 @@ type ActOptions struct {
 	TempDir string
 	// Getenv reads crew's environment, such as os.Getenv.
 	Getenv func(string) string
+	// Step, when not nil, is called with each step of Act just before it
+	// starts, in plain words such as "making mate ops act", so a slow start
+	// shows what it waits on. nil reports nothing.
+	Step func(step string)
 
 	// mint, when not nil, replaces Client.AccessToken, so tests drive the
 	// renewal loop without the network.
@@ -144,10 +148,12 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	if o.Getenv == nil {
 		o.Getenv = os.Getenv
 	}
+	o.step("resolving the repository for the mates")
 	repo, err := ResolveRepo(ctx, o.Run, o.Root)
 	if err != nil {
 		return nil, err
 	}
+	o.step("checking git for the mates")
 	git, err := probeGit(ctx, o.Run, o.Root)
 	if err != nil {
 		return nil, err
@@ -156,6 +162,7 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	if err != nil {
 		return nil, err
 	}
+	o.step("making a private directory for the mates' tokens")
 	dir, err := runDir(o)
 	if err != nil {
 		return nil, err
@@ -166,6 +173,7 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	}
 	r := resolver{o: o, repo: repo, git: git, boss: boss, a: a}
 	for _, name := range o.Names {
+		o.step(fmt.Sprintf("making mate %s act", name))
 		if err := r.resolve(ctx, name); err != nil {
 			_ = os.RemoveAll(dir)
 			return nil, err
@@ -173,6 +181,13 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	}
 	a.start(ctx)
 	return a, nil
+}
+
+// step reports step through o.Step, when it is set.
+func (o ActOptions) step(step string) {
+	if o.Step != nil {
+		o.Step(step)
+	}
 }
 
 // runDir makes the run's private directory, mode 0700, and refuses one

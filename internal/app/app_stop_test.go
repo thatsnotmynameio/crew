@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -149,9 +150,13 @@ func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
 		t.Errorf("#1 is in %v when crew returned, want needs attention", got)
 	}
 	// What the TUI draws is its own tests' business; here the output only
-	// shows that the TUI ran instead of the line renderer.
-	if out := r.stdout.String(); !strings.Contains(out, "\x1b[") || strings.Contains(out, " crew: ") {
-		t.Errorf("stdout is not the TUI's alone:\n%q", out)
+	// shows that the boot log came first, then the TUI instead of the line
+	// renderer.
+	out := r.stdout.String()
+	boot, tui, ok := strings.Cut(out, "\x1b[")
+	want := []string{"loading .crew/config.yaml", "reading the run journal"}
+	if got := unstamped(t, boot); !ok || !slices.Equal(got, want) || strings.Contains(tui, " crew: ") {
+		t.Errorf("stdout is not the boot log %q then the TUI's alone:\n%q", want, out)
 	}
 }
 

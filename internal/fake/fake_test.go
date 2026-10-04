@@ -193,6 +193,26 @@ func TestPreparationRecordsStatesAndFailsWhenScripted(t *testing.T) {
 	}
 }
 
+func TestPreparationReportsItsStepOnlyWhenScripted(t *testing.T) {
+	h := fake.NewPreparingHarness()
+	var steps []string
+	ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
+
+	if err := h.Prepare(ctx, nil); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if steps != nil {
+		t.Fatalf("steps = %q, want none from an unscripted Prepare", steps)
+	}
+	h.ReportStep("checking claude")
+	if err := h.Prepare(ctx, nil); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if want := []string{"checking claude"}; !reflect.DeepEqual(steps, want) {
+		t.Errorf("steps = %q, want %q", steps, want)
+	}
+}
+
 func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	root := t.TempDir()
 	ws := fake.NewWorkspace(root)
