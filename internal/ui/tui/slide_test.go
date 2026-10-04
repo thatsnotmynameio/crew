@@ -8,6 +8,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
 // sliding returns a harness whose #12 moved from triage to development.
@@ -107,5 +108,47 @@ func TestASlideFromADroppedMiddleColumnStartsBetweenItsNeighbours(t *testing.T) 
 	x := len([]rune(lead))
 	if col := cardColumn(t, boardOf(t, h.view()), "#7"); x >= 1+col*(maxColumn+columnGap) {
 		t.Errorf("marker at column %d starts at or past its destination column:\n%s", x, row)
+	}
+}
+
+// triageReview is AE3's board.
+var triageReview = []crew.BoardColumn{
+	{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:in progress"}},
+	{Name: "review", Labels: []string{"crew:development:waiting review"}},
+}
+
+// Covers AE3 and KTD7: an issue that had no card for a while slides from
+// the columns it was last in.
+func TestAE3ACardSlidesFromTheColumnsItWasLastIn(t *testing.T) {
+	h := newConfiguredHarness(t, 120, crewWorkflow, triageReview)
+	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
+		labeled(twelve, "crew:triage:in progress"))))
+	if got := cardColumns(boardOf(t, h.view()), "#12"); len(got) != 1 || got[0] != 0 {
+		t.Fatalf("#12's cards are in columns %v, want triage (0)", got)
+	}
+
+	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
+	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
+		t.Errorf("the board shows #12 while development holds it:\n%s", board)
+	}
+
+	cmd := h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "crew:development:waiting review"))))
+	if got := h.current().memory.slides; len(got) != 1 || got[0].from != 0 || got[0].to != 1 {
+		t.Errorf("slides = %+v, want one from triage (0) to review (1)", got)
+	}
+	if !schedulesSlideTick(cmd) {
+		t.Error("the move scheduled no slide frame")
+	}
+}
+
+// Covers KTD7: a card that only gains or only loses a column has nowhere
+// to slide from or to.
+func TestACardThatOnlyGainsOrLosesAColumnDoesNotSlide(t *testing.T) {
+	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	for _, labels := range [][]string{{"crew:brainstorm:ready"}, {"crew:brainstorm:ready", "bug"}, {"bug"}} {
+		h.send(updateMsg(onBoard(engine.Update{}, labeled(twentyOne, labels...))))
+		if got := h.current().memory.slides; len(got) != 0 {
+			t.Errorf("with labels %v, slides = %+v, want none", labels, got)
+		}
 	}
 }

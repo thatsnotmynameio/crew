@@ -46,6 +46,10 @@ func (s *step) runInput(in Input) bool {
 	case ListFailed:
 		s.m.listing = false
 		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
+	case BoardListed:
+		s.m.boardListed(in.Issues)
+	case BoardListFailed:
+		s.m.boardListFailed(in.Reason)
 	case CallResult:
 		s.callResult(in)
 	case StatusResult:
@@ -74,11 +78,12 @@ type step struct {
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Event)      { s.events = append(s.events, e) }
 
-// tick lists issues, unless a listing is outstanding or the run time is up;
-// when every slot is busy it says it skipped the listing instead (R1, R3). It
-// then retries the owed calls, statuses and pull request reports that are not in
-// flight (KTD8, KTD5), and reports the status of each running issue with what
-// its sessions last said (R6).
+// tick reads the board (KTD4), then lists issues, unless a listing is
+// outstanding or the run time is up; when every slot is busy it says it
+// skipped the listing instead (R1, R3). It then retries the owed calls,
+// statuses and pull request reports that are not in flight (KTD8, KTD5), and
+// reports the status of each running issue with what its sessions last said
+// (R6).
 func (s *step) tick(said []Said) {
 	m := s.m
 	if m.stopping {
@@ -89,6 +94,7 @@ func (s *step) tick(said []Said) {
 			a.said = x.Text
 		}
 	}
+	s.readBoard()
 	if !m.listing && !m.timeUp {
 		if m.full() {
 			m.skipped++
@@ -358,6 +364,7 @@ func (s *step) callResult(r CallResult) {
 			s.emit(FailureReported{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref})
 		} else {
 			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+			m.boardMoved(h.issue, c.to)
 			s.ended(h, c.to, crew.MoveDone)
 			s.reportPullRequests(h, c.to, true)
 			h.verdict.Move, h.landed = crew.MoveDone, m.listings
@@ -397,12 +404,14 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 	h.settle(c)
 }
 
-// taken reports the take on h's pull requests and starts h's actions once
-// its take move is done, or, after a stop, ends them unstarted so the issue
-// moves to its stage's on_failure (R9).
+// taken applies the take to the board (KTD4), reports it on h's pull
+// requests and starts h's actions once its take move is done, or, after a
+// stop, ends them unstarted so the issue moves to its stage's on_failure
+// (R9).
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+	m.boardMoved(h.issue, c.to)
 	s.reportPullRequests(h, c.to, false)
 	h.settle(c)
 	if m.stopping {

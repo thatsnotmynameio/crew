@@ -1,0 +1,28 @@
+crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew  ? help
+
+Workflow ───────────────────────────────────────────── 3 issues · board not read
+ ideas                      bugs                       done                     
+ ─────────────────────────  ─────────────────────────  ─────────────────────────
+ ▌ #21 Retry the poll       ▌ #21 Retry the poll       ▌ #22 Typo in help       
+ ▌                          ▌                          ▌                        
+                            ▌ #20 Crash on start                                
+                            ▌ ⠋ running                                         
+
+Actions ────────────────────────────────────────────────────────────── 1 running
+ ⠋ #20  Crash on start  fix/lfg   clerk   running 1m00s  
+
+Queues ─── 0 of 0 busy   Handled ───────────────────────────────────────────── 0
+ none                     none
+                         
+                         
+                         
+                         
+
+Events ──────────────────────────────────────────────────────────────── 0 events
+ none
+
+
+
+
+
+q stop · tab focus · ↑↓ scroll · ←→ board · ? help

@@ -22,34 +22,58 @@ type slideTickMsg struct{}
 // column.
 type slide struct {
 	key, ref string
-	// from and to are workflow indexes.
+	// from and to are column indexes, as a card's.
 	from, to int
 	frame    int
 }
 
 // boardMemory is what the board remembers across snapshots: each issue's
-// last column this run, and the slides running. The program owns one Model
+// last columns this run, and the slides running. The program owns one Model
 // at a time, so the copies of a Model share it safely.
 type boardMemory struct {
-	last    map[string]int
+	// last holds each issue's columns when it last had a card, in board
+	// order (KTD7).
+	last    map[string][]int
 	slides  []slide
 	ticking bool
 }
 
-func newBoardMemory() *boardMemory { return &boardMemory{last: map[string]int{}} }
+func newBoardMemory() *boardMemory { return &boardMemory{last: map[string][]int{}} }
 
-// moved starts a slide for each card that shows in another column than the
-// last one it had this run, remembers each card's column, and returns the
-// frame tick when a slide needs one.
+// moved starts the slides of each issue whose cards show in other columns
+// than the last ones it had this run, remembers each issue's columns, and
+// returns the frame tick when a slide needs one.
 func (b *boardMemory) moved(cards []card) tea.Cmd {
+	columns := map[string][]int{}
+	var order []card
 	for _, c := range cards {
-		if prev, ok := b.last[c.issue.Key]; ok && prev != c.column {
-			b.slides = slices.DeleteFunc(b.slides, func(s slide) bool { return s.key == c.issue.Key })
-			b.slides = append(b.slides, slide{key: c.issue.Key, ref: c.issue.Ref, from: prev, to: c.column})
+		if _, ok := columns[c.issue.Key]; !ok {
+			order = append(order, c)
 		}
-		b.last[c.issue.Key] = c.column
+		columns[c.issue.Key] = append(columns[c.issue.Key], c.column)
+	}
+	for _, c := range order {
+		now := columns[c.issue.Key]
+		b.slide(c.issue.Key, c.issue.Ref, b.last[c.issue.Key], now)
+		b.last[c.issue.Key] = now
 	}
 	return b.schedule()
+}
+
+// slide pairs the columns an issue left with the columns it entered, k-th
+// with k-th in board order, and replaces the issue's running slides with a
+// slide for each pair; with no pair, it leaves them be (KTD7).
+func (b *boardMemory) slide(key, ref string, was, now []int) {
+	left := slices.DeleteFunc(slices.Clone(was), func(c int) bool { return slices.Contains(now, c) })
+	entered := slices.DeleteFunc(slices.Clone(now), func(c int) bool { return slices.Contains(was, c) })
+	pairs := min(len(left), len(entered))
+	if pairs == 0 {
+		return
+	}
+	b.slides = slices.DeleteFunc(b.slides, func(s slide) bool { return s.key == key })
+	for k := range pairs {
+		b.slides = append(b.slides, slide{key: key, ref: ref, from: left[k], to: entered[k]})
+	}
 }
 
 // advance moves every slide one frame, ends the finished ones, and returns
@@ -123,8 +147,8 @@ func (m Model) marked(row []rune, marks []bool) string {
 	return b.String()
 }
 
-// columnX is the x of workflow column c on the underline row: its own x
-// when drawn; the left edge for a hidden stage or a column left of every
+// columnX is the x of column c on the underline row: its own x when
+// drawn; the left edge for a hidden stage or a column left of every
 // drawn one; else the gap where it falls among the drawn columns, which is
 // the right edge past the last one (KTD10).
 func (m Model) columnX(l boardLayout, prefix, c int) int {

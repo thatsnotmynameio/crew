@@ -3,6 +3,8 @@ package tui
 import (
 	"testing"
 	"time"
+
+	"github.com/thatsnotmynameio/crew/internal/core"
 )
 
 // durations pairs each duration with how elapsed and short format it.
@@ -32,4 +34,18 @@ func TestDurationsFormatInWholeSecondsMinutesAndHours(t *testing.T) {
 			t.Errorf("short(%v) = %q, want %q", tt.d, got, tt.short)
 		}
 	}
+}
+
+// A configured board (KTD9): #20 held and running in bugs, #21 unheld in
+// ideas and bugs, #22 in done, while the last board read failed.
+func TestAConfiguredBoardRendersTheGoldenView(t *testing.T) {
+	h := newConfiguredHarness(t, 80, crewWorkflow, ideasBugsDone)
+	u := onBoard(held(twenty, "fix", "lfg", core.ClaimRunning),
+		labeled(twentyOne, "crew:brainstorm:ready", "bug"), labeled(twenty, "bug"),
+		labeled(twentyTwo, "crew:triage:done"))
+	u.Snapshot.BoardFailure = "gh: rate limited"
+
+	h.send(updateMsg(u))
+
+	golden(t, "configured-board", h.view())
 }
