@@ -65,6 +65,12 @@ type Config struct {
 	// that no stage takes. Each is written as in the file, is none of the
 	// workflow's states and is no other extra, ignoring case.
 	Extras []crew.State
+	// Board is board's columns in file order: the live view's board, drawn
+	// from the issues carrying each column's labels instead of the stages.
+	// Nil, without board, keeps the board of the stages. Every label is
+	// spelled once across the board, as the workflow or the extras spell it
+	// when it is one of their labels ignoring case.
+	Board []crew.BoardColumn
 	// HarnessSection decodes the harness adapter's settings: config.model plus
 	// the keys of the optional top-level harness: section.
 	HarnessSection Decode
@@ -81,6 +87,7 @@ type document struct {
 	Workflow    yaml.Node `yaml:"workflow"`
 	ExtraLabels yaml.Node `yaml:"extra_labels"`
 	Prompts     yaml.Node `yaml:"prompts"`
+	Board       yaml.Node `yaml:"board"`
 }
 
 // settings is the config: section. model is the harness adapter's. queues
@@ -163,6 +170,8 @@ func parse(root *yaml.Node) (*Config, error) {
 	// With an invalid workflow, the extras are checked only on their own.
 	cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow)
 	errs = append(errs, err)
+	cfg.Board, err = board(&doc.Board, cfg.Workflow, cfg.Extras)
+	errs = append(errs, err)
 	errs = append(errs, prompts(&doc.Prompts))
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
@@ -179,7 +188,7 @@ func decodeDocument(root *yaml.Node, doc *document) error {
 	top := root.Content[0]
 	if top.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: the config must be a mapping with "+
-			"config, tracker, harness, workflow, extra_labels and prompts", top.Line)
+			"config, tracker, harness, workflow, extra_labels, prompts and board", top.Line)
 	}
 	return decodeFields(entries(top, ""), reflect.ValueOf(doc).Elem())
 }
