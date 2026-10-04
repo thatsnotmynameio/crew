@@ -26,9 +26,9 @@ func (p ghPullRequest) state() crew.PullRequestState {
 	switch p.State {
 	case stateOpen:
 		return crew.PullRequestOpen
-	case "CLOSED":
+	case stateClosed:
 		return crew.PullRequestClosed
-	case "MERGED":
+	case stateMerged:
 		return crew.PullRequestMerged
 	default:
 		return crew.PullRequestStateUnknown

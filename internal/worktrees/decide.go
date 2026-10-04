@@ -53,30 +53,33 @@ func decide(ctx context.Context, f port.Found, j journal, prs port.PullRequestFi
 	if d, kept := local(f, j); kept {
 		return d
 	}
-	keeping := func(reason string, failed bool) decision {
-		return decision{found: f, action: keep, reason: reason, failed: failed}
-	}
 	branch := f.Space.Branch
 	pr, err := prs.FindPullRequest(ctx, branch, f.Created)
 	switch {
 	case err != nil:
-		return keeping("its pull request could not be looked up: "+err.Error(), true)
+		return keeping(f, "its pull request could not be looked up: "+err.Error(), true)
 	case pr.Lookup != crew.PullRequestFound:
-		return keeping("no pull request from "+branch, false)
+		return keeping(f, "no pull request from "+branch, false)
 	case pr.State == crew.PullRequestOpen:
-		return keeping(pr.String()+" is open", false)
+		return keeping(f, pr.String()+" is open", false)
 	case pr.State == crew.PullRequestClosed:
-		return keeping(pr.String()+" was closed without merging", false)
+		return keeping(f, pr.String()+" was closed without merging", false)
 	case pr.State != crew.PullRequestMerged:
-		return keeping(pr.String()+" is not known to be merged", false)
+		return keeping(f, pr.String()+" is not known to be merged", false)
 	}
 	return merged(ctx, f, pr, sweeper)
+}
+
+// keeping keeps f and its branch, for reason; failed means the reason is a
+// lookup, a check or a removal that failed.
+func keeping(f port.Found, reason string, failed bool) decision {
+	return decision{found: f, action: keep, reason: reason, failed: failed}
 }
 
 // local keeps f, with the reason, when a check that needs no lookup fails.
 func local(f port.Found, j journal) (decision, bool) {
 	kept := func(reason string, failed bool) (decision, bool) {
-		return decision{found: f, action: keep, reason: reason, failed: failed}, true
+		return keeping(f, reason, failed), true
 	}
 	switch {
 	case f.Gone:

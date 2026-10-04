@@ -10,6 +10,7 @@ package worktrees
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -121,17 +122,14 @@ func (o Options) removeAll(ctx context.Context, listed []decision) []decision {
 			done = append(done, first)
 			continue
 		}
-		kept := func(reason string, failed bool) decision {
-			return decision{found: first.found, action: keep, reason: reason, failed: failed}
-		}
 		f, ok := byName[first.found.Space.Name]
 		switch {
 		case ctx.Err() != nil:
-			done = append(done, kept("stopped before it was removed", false))
+			done = append(done, keeping(first.found, "stopped before it was removed", false))
 		case listErr != nil:
-			done = append(done, kept("it could not be checked again: "+listErr.Error(), true))
+			done = append(done, keeping(first.found, "it could not be checked again: "+listErr.Error(), true))
 		case !ok:
-			done = append(done, kept(changed("it is no longer there"), false))
+			done = append(done, keeping(first.found, changed("it is no longer there"), false))
 		default:
 			done = append(done, o.remove(ctx, first, f, j))
 		}
@@ -148,15 +146,15 @@ func (o Options) remove(ctx context.Context, first decision, f port.Found, j jou
 	if d.action == keep {
 		return d
 	}
-	kept := func(reason string, failed bool) decision {
-		return decision{found: d.found, action: keep, reason: reason, failed: failed}
-	}
 	if ctx.Err() != nil {
-		return kept("stopped before it was removed", d.failed)
+		return keeping(d.found, "stopped before it was removed", d.failed)
 	}
 	err := o.Sweeper.Remove(context.WithoutCancel(ctx), d.found.Space, d.action == removeAll)
+	if errors.Is(err, port.ErrBranchKept) {
+		return decision{found: d.found, action: removeWorktree, reason: d.reason + "; " + err.Error(), failed: true}
+	}
 	if err != nil {
-		return kept("removing it failed: "+err.Error(), true)
+		return keeping(d.found, "removing it failed: "+err.Error(), true)
 	}
 	return d
 }
@@ -216,6 +214,8 @@ func tally(ds []decision) (int, int) {
 	return worktrees, branches
 }
 
+// anyFailed reports whether a lookup, a check or a removal failed for any of
+// ds.
 func anyFailed(ds []decision) bool {
 	for _, d := range ds {
 		if d.failed {

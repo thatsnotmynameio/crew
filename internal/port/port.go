@@ -239,6 +239,11 @@ type Reopener interface {
 // tracker and never fetched. An adapter wraps it with %w and its own context.
 var ErrCommitUnknown = errors.New("the commit is not in the repository")
 
+// ErrBranchKept is the error class of Sweeper.Remove when it removed the
+// workspace but could not delete its branch, so the branch is still there.
+// An adapter wraps it with %w together with the cause.
+var ErrBranchKept = errors.New("its branch could not be deleted")
+
 // Sweeper is an optional interface of a Workspace: it lists the workspaces it
 // created, tells what each holds, and removes one. A workspace without it
 // cannot have its workspaces cleaned by crew.
@@ -257,7 +262,8 @@ type Sweeper interface {
 	// removing nothing, when the workspace holds modified, staged or
 	// untracked files. When deleteBranch, it then deletes space.Branch
 	// locally, whatever commits it holds, and never the tracker's copy.
-	// Errors carry the tool's own message.
+	// When the workspace went but the branch could not be deleted, the
+	// error wraps ErrBranchKept. Errors carry the tool's own message.
 	Remove(ctx context.Context, space Space, deleteBranch bool) error
 }
 

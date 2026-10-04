@@ -427,6 +427,23 @@ func TestCleanReportsARemovalGitRefusesAndStillRunsTheOthers(t *testing.T) {
 	)
 }
 
+func TestCleanReportsAWorktreeRemovedWhoseBranchCouldNotBeDeleted(t *testing.T) {
+	r := newRig(t, worktree("issue-42-development"))
+	r.merge("issue-42-development", "#45")
+	r.ws.FailBranchDelete("issue-42-development", errors.New("fatal: cannot lock ref"))
+
+	res, out := r.clean(t, "yes\n")
+
+	wantResult(t, res, Failed)
+	wantRemovals(t, r.ws, fake.Removal{Name: "issue-42-development"})
+	wantLines(t, out,
+		"  removed worktree, kept branch  issue-42-development  pull request #45 merged; "+
+			"crew/issue-42-development has nothing after its head; "+
+			"its branch could not be deleted: fatal: cannot lock ref",
+		"Removed 1 worktree.",
+	)
+}
+
 func TestCleanTakesOnlyYOrYesInAnyCaseAsAYes(t *testing.T) {
 	for _, c := range []struct {
 		answer string

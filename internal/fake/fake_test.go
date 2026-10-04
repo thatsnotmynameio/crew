@@ -325,6 +325,22 @@ func TestWorkspaceRecordsRemovalsAndFailsThoseScriptedToFail(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRemovesTheWorkspaceButKeepsABranchScriptedToFail(t *testing.T) {
+	ws := fake.NewWorkspace(t.TempDir())
+	locked := errors.New("fatal: cannot lock ref")
+	ws.FailBranchDelete("issue-1-lfg", locked)
+
+	err := ws.Remove(context.Background(), port.Space{Name: "issue-1-lfg", Branch: "crew/issue-1-lfg"}, true)
+
+	if !errors.Is(err, port.ErrBranchKept) || !errors.Is(err, locked) {
+		t.Errorf("Remove = %v, want port.ErrBranchKept and the scripted error", err)
+	}
+	want := []fake.Removal{{Name: "issue-1-lfg"}}
+	if got := ws.Removals(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Removals = %+v, want %+v", got, want)
+	}
+}
+
 func TestNarratingHarnessSessionsSayWhatTheTestSets(t *testing.T) {
 	h := fake.NewNarratingHarness()
 	s := start(t, h, "implement #1")

@@ -155,7 +155,7 @@ func (w *Workspace) Remove(ctx context.Context, space port.Space, deleteBranch b
 		return nil
 	}
 	if _, err := w.git(ctx, "branch", "-D", space.Branch); err != nil {
-		return fmt.Errorf("delete branch %s: %w", space.Branch, err)
+		return fmt.Errorf("%w: delete branch %s: %w", port.ErrBranchKept, space.Branch, err)
 	}
 	return nil
 }

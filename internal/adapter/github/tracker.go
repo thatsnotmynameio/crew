@@ -268,8 +268,13 @@ func (t *Tracker) Boss() []string {
 // key=value.
 const fieldArgs = 2
 
-// stateOpen is the state GitHub gives an open issue or pull request.
-const stateOpen = "OPEN"
+// The states GitHub gives an issue or a pull request: open, closed, and,
+// for a pull request only, merged.
+const (
+	stateOpen   = "OPEN"
+	stateClosed = "CLOSED"
+	stateMerged = "MERGED"
+)
 
 // issuesArgs returns the gh arguments of List's query, for the issues of
 // authors carrying any of the states' labels.

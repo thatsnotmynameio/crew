@@ -330,7 +330,11 @@ func TestSweepErrorsCarryGitStderr(t *testing.T) {
 		}},
 		{name: "deleting the branch", fail: "branch -D", call: func(t *testing.T, w *Workspace) error {
 			t.Helper()
-			return w.Remove(t.Context(), port.Space{Name: "issue-7-development", Branch: "crew/issue-7-development"}, true)
+			err := w.Remove(t.Context(), port.Space{Name: "issue-7-development", Branch: "crew/issue-7-development"}, true)
+			if !errors.Is(err, port.ErrBranchKept) {
+				t.Errorf("Remove = %v, want port.ErrBranchKept: the worktree went, the branch did not", err)
+			}
+			return err
 		}},
 	}
 	for _, tt := range tests {

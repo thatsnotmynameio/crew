@@ -37,6 +37,7 @@ type Workspace struct {
 	listings   []Listing
 	beyond     map[string]beyondScript
 	failRemove map[string]error
+	failBranch map[string]error
 	removals   []Removal
 }
 
@@ -179,13 +180,30 @@ func (w *Workspace) FailRemove(name string, err error) {
 	w.failRemove[name] = err
 }
 
+// FailBranchDelete makes every later Remove of the workspace named name
+// that deletes its branch remove the workspace, then fail with err wrapped in
+// port.ErrBranchKept, keeping the branch.
+func (w *Workspace) FailBranchDelete(name string, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.failBranch == nil {
+		w.failBranch = map[string]error{}
+	}
+	w.failBranch[name] = err
+}
+
 // Remove implements port.Sweeper: it records the removal, unless FailRemove
-// scripted it to fail. The scripted listings do not change.
+// scripted it to fail, or FailBranchDelete to keep the branch. The scripted
+// listings do not change.
 func (w *Workspace) Remove(_ context.Context, space port.Space, deleteBranch bool) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err := w.failRemove[space.Name]; err != nil {
 		return fmt.Errorf("remove workspace %s: %w", space.Name, err)
+	}
+	if err := w.failBranch[space.Name]; err != nil && deleteBranch {
+		w.removals = append(w.removals, Removal{Name: space.Name})
+		return fmt.Errorf("%w: %w", port.ErrBranchKept, err)
 	}
 	w.removals = append(w.removals, Removal{Name: space.Name, DeleteBranch: deleteBranch})
 	return nil
