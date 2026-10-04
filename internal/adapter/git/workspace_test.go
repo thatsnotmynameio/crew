@@ -106,6 +106,45 @@ func TestCreateFetchesThenAddsWorktreeFromOriginDefault(t *testing.T) {
 	}
 }
 
+func TestPrepareReportsItsSteps(t *testing.T) {
+	all := []string{"checking the git checkout and its origin", "resolving origin's default branch"}
+	for name, tc := range map[string]struct {
+		fail map[string]string
+		want []string
+	}{
+		"with origin":    {nil, all},
+		"without origin": {map[string]string{"remote get-url origin": "error: No such remote 'origin'"}, all[:1]},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w, _ := scriptedWorkspace(t, &scripted{fail: tc.fail})
+			var steps []string
+			ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
+
+			err := w.Prepare(ctx, nil)
+
+			if (err != nil) != (tc.fail != nil) {
+				t.Errorf("Prepare = %v, want an error only without origin", err)
+			}
+			if !slices.Equal(steps, tc.want) {
+				t.Errorf("steps = %q, want %q", steps, tc.want)
+			}
+		})
+	}
+}
+
+func TestCreateReportsNoStep(t *testing.T) {
+	w, _ := scriptedWorkspace(t, &scripted{})
+	var steps []string
+	ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
+
+	if _, err := w.Create(ctx, crew.Issue{Key: "7"}, "development"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(steps) != 0 {
+		t.Errorf("Create reported steps %q, want none", steps)
+	}
+}
+
 func TestCreateNames(t *testing.T) {
 	tests := []struct {
 		name     string
