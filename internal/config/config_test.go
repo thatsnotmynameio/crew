@@ -226,6 +226,25 @@ func TestLoadReadsUsageInStatus(t *testing.T) {
 	}
 }
 
+func TestLoadReadsWhetherAStageIsOnTheBoard(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{name: "left out", key: "", want: false},
+		{name: "on", key: "on_board: true", want: false},
+		{name: "off", key: "on_board: false", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, takingStage(tt.key)).Workflow[0].OffBoard; got != tt.want {
+				t.Errorf("OffBoard = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 	tests := []struct {
 		name string
@@ -415,6 +434,13 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 			if got := a.Check != ""; got != want {
 				t.Errorf("%s/%s has a check: %v, want %v", s.Name, a.Name, got, want)
 			}
+		}
+	}
+	// The promote stages only hand an issue on, so the live view hides them.
+	for _, s := range cfg.Workflow {
+		want := strings.HasPrefix(s.Name, "promote ")
+		if s.OffBoard != want {
+			t.Errorf("%s is off the board: %v, want %v", s.Name, s.OffBoard, want)
 		}
 	}
 }

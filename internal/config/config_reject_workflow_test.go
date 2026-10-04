@@ -45,6 +45,16 @@ var invalidStages = []rejectCase{
 		wants: []string{"workflow[0].takes", `"prs"`, "workflow[0].on_failure", "required"},
 	},
 	{
+		name:  "on_board not a boolean",
+		body:  takingStage("on_board: maybe"),
+		wants: []string{"workflow[0].on_board", "line 7", "maybe"},
+	},
+	{
+		name:  "a stage that is not a mapping",
+		body:  "workflow:\n  - implement\n",
+		wants: []string{"workflow[0]", "line 2", "must be a stage", "takes and on_board"},
+	},
+	{
 		name:  "no workflow",
 		body:  "config:\n  max_parallel_issues: 2\n",
 		wants: []string{"workflow", "at least one stage"},

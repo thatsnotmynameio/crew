@@ -30,6 +30,10 @@ type Stage struct {
 	// Takes is the kind of item the stage takes: it takes only the items of
 	// that kind in its Label state. The zero Kind takes issues.
 	Takes Kind
+	// OffBoard hides the stage from the live view's board: no column, and
+	// no card for an issue it holds. Only the live view reads it; the zero
+	// value shows the stage.
+	OffBoard bool
 }
 
 // The queues every workflow has.

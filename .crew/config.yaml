@@ -12,6 +12,8 @@
 # `crew:development:ready`. A promote stage's session does nothing: crew makes
 # the move itself when the session ends. crew skips an issue an open issue
 # blocks, so a blocked feature waits in its label until its blockers close.
+# The promote stages have `on_board: false`: the live view's board shows no
+# column for them, and no card for an issue they hold.
 # Each stage and extra names its template in .github/ISSUE_TEMPLATE/, which
 # /cw-create-issue and /cw-update-issue-plan fill. crew does not run the
 # prompts under `prompts`: /cw-brainstorm runs `brainstorm` in the boss's own
@@ -57,6 +59,7 @@ workflow:
     moves_to: "crew:brainstorm:promoting"
     on_success: "crew:triage:ready"
     on_failure: "crew:brainstorm:failed"
+    on_board: false
     actions:
       - name: promote
         prompt: |-
@@ -90,6 +93,7 @@ workflow:
     moves_to: "crew:triage:promoting"
     on_success: "crew:development:ready"
     on_failure: "crew:triage:failed"
+    on_board: false
     actions:
       - name: promote
         prompt: |-
