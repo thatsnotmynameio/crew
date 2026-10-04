@@ -145,3 +145,91 @@ func TestAnEndWithoutAWorkspaceIsWrittenAndSkippedOnRead(t *testing.T) {
 		t.Fatalf("readJournal = %#v, %v, want it skipped", got, err)
 	}
 }
+
+// appendAll appends records to e's journal, the first at start and each
+// next one a minute later.
+func appendAll(t *testing.T, e *Engine, start time.Time, records ...core.RunRecord) {
+	t.Helper()
+	for i, r := range records {
+		r.At = start.Add(time.Duration(i) * time.Minute)
+		if err := e.appendJournal(r); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+}
+
+func TestUnendedRunsAreTheWorkspacesWhoseLatestRecordIsAStart(t *testing.T) {
+	e := journalEngine(t)
+	start := time.Date(2026, 10, 3, 14, 2, 0, 0, time.UTC)
+	appendAll(t, e, start,
+		record(core.RunStarted, "9"),  // ended below: not returned
+		record(core.RunStarted, "10"), // ended, then resumed: the second start
+		record(core.RunEnded, "9"),
+		record(core.RunEnded, "10"),
+		record(core.RunStarted, "11"), // never ended
+		record(core.RunStarted, "10"),
+	)
+
+	got, err := UnendedRuns(e.cfg.Root)
+	if err != nil {
+		t.Fatalf("UnendedRuns: %v", err)
+	}
+	want := map[string]time.Time{
+		"issue-11-lfg": start.Add(4 * time.Minute),
+		"issue-10-lfg": start.Add(5 * time.Minute),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnendedRuns = %v, want %v", got, want)
+	}
+}
+
+func TestUnendedRunsSkipALineCutShortAndCountTheLinesAroundIt(t *testing.T) {
+	e := journalEngine(t)
+	start := time.Date(2026, 10, 3, 14, 2, 0, 0, time.UTC)
+	appendAll(t, e, start, record(core.RunStarted, "9"), record(core.RunStarted, "10"))
+	path := filepath.Join(e.cfg.Root, ".crew", "logs", "runs.jsonl")
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The end of issue 9's run, cut short by a crash.
+	if _, err := f.WriteString(`{"v":1,"event":"ended","issue":"9","workspace":"issue-9-lfg"`); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ended := record(core.RunEnded, "10")
+	ended.At = start.Add(time.Hour)
+	if err := e.appendJournal(ended); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := UnendedRuns(e.cfg.Root)
+	if err != nil {
+		t.Fatalf("UnendedRuns: %v", err)
+	}
+	if want := map[string]time.Time{"issue-9-lfg": start}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnendedRuns = %v, want %v", got, want)
+	}
+}
+
+func TestAMissingJournalHoldsNoUnendedRuns(t *testing.T) {
+	got, err := UnendedRuns(t.TempDir())
+	if err != nil || len(got) != 0 {
+		t.Fatalf("UnendedRuns = %v, %v, want none and no error", got, err)
+	}
+}
+
+func TestAJournalThatCannotBeReadFailsUnendedRunsNamingIt(t *testing.T) {
+	root := t.TempDir()
+	// A directory where the journal goes cannot be read as a file.
+	if err := os.MkdirAll(filepath.Join(root, ".crew", "logs", "runs.jsonl"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := UnendedRuns(root)
+	if err == nil || !strings.Contains(err.Error(), ".crew/logs/runs.jsonl") || got != nil {
+		t.Fatalf("UnendedRuns = %v, %v, want an error naming .crew/logs/runs.jsonl", got, err)
+	}
+}

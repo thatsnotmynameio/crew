@@ -73,11 +73,38 @@ const (
 	lookupNotLookedUp = "not looked up"
 )
 
-// readJournal returns the run journal's records in the order they were
-// written. A missing journal holds none. A line that does not parse, such as
-// one cut short by a crash, is skipped.
+// readJournal returns the records of the run journal under the engine's
+// root, as readJournalAt does.
 func (e *Engine) readJournal() ([]core.RunRecord, error) {
-	data, err := os.ReadFile(filepath.Join(e.cfg.Root, filepath.FromSlash(journalPath)))
+	return readJournalAt(e.cfg.Root)
+}
+
+// UnendedRuns returns, for each workspace whose latest record in the run
+// journal under the repository root is a start, when that run started: a run
+// that has not ended, so an action may still be using the workspace. A
+// missing journal holds none.
+func UnendedRuns(root string) (map[string]time.Time, error) {
+	records, err := readJournalAt(root)
+	if err != nil {
+		return nil, err
+	}
+	runs := make(map[string]time.Time)
+	for _, r := range records {
+		if r.Event == core.RunStarted {
+			runs[r.Workspace] = r.At
+		} else {
+			delete(runs, r.Workspace)
+		}
+	}
+	return runs, nil
+}
+
+// readJournalAt returns the records of the run journal under the repository
+// root in the order they were written. A missing journal holds none. A line
+// that does not parse, such as one cut short by a crash, is skipped.
+func readJournalAt(root string) ([]core.RunRecord, error) {
+	//nolint:gosec // G304: crew builds the path, its journal under the repository root
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(journalPath)))
 	// A file where the log directory goes is no journal either; the session
 	// logs that cannot be created there are reported as they fail.
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
