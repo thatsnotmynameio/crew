@@ -151,7 +151,8 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheStageHoldingIt(t *testing.T)
 	take, _ := d.poll(issue("1", 1, readyToReview))
 	taken := d.now
 	if got := onlyEntry(t, d); got.Stage != "implement" || got.HeldBy != "review" {
-		t.Fatalf("entry while #1 is held again: got stage %q, held by %q; want implement, held by review", got.Stage, got.HeldBy)
+		t.Fatalf("entry while #1 is held again: got stage %q, held by %q; want implement, held by review",
+			got.Stage, got.HeldBy)
 	}
 	d.settle(take)
 	verdict, _ = d.send(core.SessionEnded{IssueKey: "1", Action: "custom_review", Outcome: failed("changes requested")})
@@ -160,7 +161,8 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheStageHoldingIt(t *testing.T)
 
 	got := onlyEntry(t, d)
 	if got.Stage != "review" || got.To != needsAttention || got.Taken != taken || got.Ended != ended || got.HeldBy != "" {
-		t.Fatalf("entry after review: got %#v, want review, needs attention, taken %v, ended %v, held by none", got, taken, ended)
+		t.Fatalf("entry after review: got %#v, want review, needs attention, taken %v, ended %v, held by none",
+			got, taken, ended)
 	}
 	want := []crew.ActionFailure{failure("1", "custom_review", "changes requested")}
 	if !reflect.DeepEqual(got.Failures, want) {
