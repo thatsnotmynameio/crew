@@ -24,7 +24,7 @@ execution: code
 
 ## Product Contract
 
-Product Contract unchanged from issue #114. Its deferred-to-planning questions are answered by KTD5 to KTD10, and one case R5 does not name is an assumption (KTD7).
+Product Contract from issue #114, updated to match the requirements plan merged meanwhile in #127 (`docs/plans/2026-10-04-1050-feat-mates-section-plan.md`): R5 cuts the stages and actions first, R11 adds a line when a mate acts again, and R14 names the live view's keys. Its deferred-to-planning questions are answered by KTD5 to KTD10, and one case R5 does not name is an assumption (KTD7).
 
 ### Summary
 
@@ -60,7 +60,7 @@ During the run, two failures stay silent. When GitHub keeps refusing the default
 **One entry**
 
 - R4. An entry's first line shows the name, a short state (`acting`, or `cannot act` with a short reason such as `no key`), and this run's totals per R7. The `you` entry has no state.
-- R5. An entry's second line lists the stages and actions that act as it, as `stage/action`, marks the default mate's line with crew's own writes, and ends with the actions running as it now, each with its issue reference. A line that does not fit the window ends in `…`.
+- R5. An entry's second line lists the stages and actions that act as it, as `stage/action`, marks the default mate's line with crew's own writes, and ends with the actions running as it now, each with its issue reference. When the line does not fit the window, the list of stages and actions is cut with `…` first, so the actions running now stay visible.
 - R6. An action counts as running on an entry from when its session starts until it ends, its check included.
 - R7. The totals count the actions that ended this run as that identity: how many, their cost and their tokens. Cost and tokens follow the header and Handled: a cost some session did not report is marked `(partial)`, and none at all reads `cost not reported`. The totals start at zero each time crew starts.
 - R8. A mate that cannot act at startup shows `cannot act` and its short reason. Its second line says its stages and actions act as `you`, and those actions run and count on the `you` entry.
@@ -69,13 +69,13 @@ During the run, two failures stay silent. When GitHub keeps refusing the default
 
 - R9. A mate stops acting during the run when crew's writes as the default mate fall back to the boss, or when a token of a session or check acting as the mate fails to renew. Its entry's state changes then, with a short reason, such as `writes as you` or `token not renewed`.
 - R10. A mate whose token renews after a failure acts again: its entry's state returns to `acting`, and its header warning goes. A writes fallback lasts until crew restarts, as today.
-- R11. When a mate stops acting during the run, the header gains a warning with the full reason and the fix, in the words of today's startup warnings, and Events gains a line saying which mate stopped acting and why. `--plain` prints that line like any event.
+- R11. When a mate stops acting during the run, the header gains a warning with the full reason and the fix, in the words of today's startup warnings. Events gains a line each time a mate stops acting, saying which mate and why, and each time it acts again. `--plain` prints those lines like any event.
 - R12. A mate's startup warning stays under the header for the whole run, as today, next to its entry's short state.
 
 **Fit and the rest**
 
 - R13. When rows run out, the existing order holds (Events, then Handled, then Actions' session lines, then board cards), then each Mates entry drops its second line, and only then is the view cut.
-- R14. No key acts on a mate, and the view adds no way to create or fix one: `crew mates create` stays the way.
+- R14. No key of the live view acts on a mate, and the view adds no way to create or fix one: `crew mates create` stays the way.
 - R15. `--plain` keeps its startup warning lines, and Actions, Queues, Handled, the board and Events are otherwise unchanged.
 - R16. `docs/guide/crew.mdx` documents the section in "Run it", and "When a mate cannot act" no longer says crew warns only at startup and describes the mid-run warnings.
 
@@ -309,7 +309,7 @@ Mates ────────────────────────�
 - **Files:** `internal/ui/tui/mates.go` (new), `internal/ui/tui/layout.go`, `internal/ui/tui/mates_test.go` (new), `internal/ui/tui/layout_test.go`, `internal/ui/tui/board_test.go`, `internal/ui/tui/helpers_test.go`, `internal/ui/tui/model_test.go`, `internal/ui/tui/testdata/*.golden`.
 - **Approach:**
   1. `rows` draws the startup warnings, then each entry's live warnings with the same `warning:` style, then the section, then Workflow.
-  2. The section: rule with the summary (KTD6); per entry a first line with the name padded to the longest, the state (none for `you`, which shows its login) and the totals in `crew.Spend`'s words with the action count, or no totals while no action has ended on the entry, as the header shows none before the first session ends; a second line indented, cut with `…` by `fit`.
+  2. The section: rule with the summary (KTD6); per entry a first line with the name padded to the longest, the state (none for `you`, which shows its login) and the totals in `crew.Spend`'s words with the action count, or no totals while no action has ended on the entry, as the header shows none before the first session ends; a second line indented, whose stages and actions are cut with `…` first when it is too wide, so the running actions stay whole (R5).
   3. `budget` gains the second-lines flag, cleared after the card cap (KTD11).
   4. Rewrite the golden files with `-update` and review each diff; re-derive the pinned window heights.
 - **Patterns to follow:** `queuesSection` and `handledSection` for section idioms; `clean` for outside text; `rule`.
@@ -318,7 +318,7 @@ Mates ────────────────────────�
   - Covers AE3. A mate unable to act renders `cannot act: no key` and `→ you`, and its startup warning stays under the header.
   - Covers AE4. A snapshot whose default mate writes as you renders that state and a header warning line.
   - The summary reads `2 acting · 1 cannot act`, and `no mates` with only `you`.
-  - A second line wider than the window ends in `…`.
+  - A second line wider than the window cuts its stages and actions with `…` and keeps the running actions whole.
   - Covers AE6. With a window short enough, after Events, Handled, the said lines and the cards shrink, the entries lose their second lines before the view is cut.
   - `TestEverySectionShowsInOrder` lists `Mates` between the warnings and Workflow.
 - **Verification:** the TUI tests pass, golden diffs show only the new section and the expected shifts, and no key binding changed.

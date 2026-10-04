@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -39,7 +41,7 @@ func (m Model) matesSection(details bool) (string, []string) {
 		}
 		out = append(out, fit(" "+first, m.width))
 		if details {
-			out = append(out, fit("   "+m.mateDetails(e), m.width))
+			out = append(out, fit("   "+m.mateDetails(e, m.width-len("   ")), m.width))
 		}
 	}
 	return summary, out
@@ -102,10 +104,11 @@ func (m Model) mateTotals(s crew.Spend) string {
 	return strings.Join(parts, m.styles.muted.Render(" · "))
 }
 
-// mateDetails is e's second row: crew's writes when they go as it, the
-// stage/action pairs that act as it, after "→ you:" on a mate that cannot
-// act, then the actions running as it now, or "none" (R5, KTD7).
-func (m Model) mateDetails(e core.MateView) string {
+// mateDetails is e's second row, in width cells: crew's writes when they go
+// as it, the stage/action pairs that act as it, after "→ you:" on a mate
+// that cannot act, then the actions running as it now, or "none". A row too
+// wide cuts its pairs first, so the running actions stay whole (R5, KTD7).
+func (m Model) mateDetails(e core.MateView, width int) string {
 	s := m.styles
 	var parts []string
 	if e.Writes {
@@ -119,21 +122,31 @@ func (m Model) mateDetails(e core.MateView) string {
 		parts = append(parts, p)
 	}
 	line := strings.Join(parts, s.muted.Render(" · "))
-	if len(e.Running) > 0 {
-		running := make([]string, 0, len(e.Running))
-		for _, r := range e.Running {
-			running = append(running, s.link(r.IssueRef, m.issueURL(r.IssueRef))+" "+
-				s.text.Render(clean(r.Stage+"/"+r.Action)))
-		}
-		if line != "" {
-			line += cellGap
-		}
-		line += s.accent.Render("▸ ") + strings.Join(running, s.muted.Render(" · "))
-	}
-	if line == "" {
+	running := m.mateRunning(e.Running)
+	switch {
+	case running == "" && line == "":
 		return s.muted.Render("none")
+	case running == "":
+		return fit(line, width)
+	case line == "":
+		return fit(running, width)
 	}
-	return line
+	return fit(line, max(width-lipgloss.Width(cellGap+running), 1)) + cellGap + running
+}
+
+// mateRunning is the actions running as an entry, after "▸ ", or "" when
+// none runs.
+func (m Model) mateRunning(actions []core.RunningAction) string {
+	if len(actions) == 0 {
+		return ""
+	}
+	s := m.styles
+	running := make([]string, 0, len(actions))
+	for _, r := range actions {
+		running = append(running, s.link(r.IssueRef, m.issueURL(r.IssueRef))+" "+
+			s.text.Render(clean(r.Stage+"/"+r.Action)))
+	}
+	return s.accent.Render("▸ ") + strings.Join(running, s.muted.Render(" · "))
 }
 
 // issueURL is the URL of the held issue whose reference is ref, or "".

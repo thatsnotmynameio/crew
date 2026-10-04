@@ -171,6 +171,27 @@ func TestASecondLineWiderThanTheWindowEndsInAnEllipsis(t *testing.T) {
 	}
 }
 
+// Covers R5: a second line too wide for the window cuts its stages and
+// actions first, so the actions running now stay whole.
+func TestASecondLineTooWideCutsItsPairsAndKeepsTheRunningActions(t *testing.T) {
+	pairs := []string{"implement/code", "implement/tests", "implement/docs", "review/review", "review/security"}
+	running := core.RunningAction{IssueRef: "#1", Stage: "implement", Action: "code"}
+	view := fitted(t, 60, 0, withMates(core.MateView{
+		Name: "you", You: true, Writes: true, Pairs: pairs, Running: []core.RunningAction{running},
+	}))
+
+	rows := matesOf(t, view)
+	if len(rows) != 2 {
+		t.Fatalf("Mates has %d rows, want 2:\n%s", len(rows), view)
+	}
+	if !strings.HasSuffix(rows[1], "▸ #1 implement/code") || !strings.Contains(rows[1], "…") {
+		t.Errorf("second line %q does not end with the running action after cut pairs", rows[1])
+	}
+	if lipgloss.Width(rows[1]) > 60 {
+		t.Errorf("second line %q is wider than 60 cells", rows[1])
+	}
+}
+
 // shortWindow is AE1's mates with a said line, ten handled issues, 30
 // events and three cards in implement.
 func shortWindow() engine.Update {
