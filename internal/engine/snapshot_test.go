@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 )
@@ -77,6 +78,29 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsReason(t *testing.T) {
 		}
 		if want := []string{"development: tests fail"}; !reflect.DeepEqual(reasons, want) {
 			t.Errorf("failures = %v, want %v", reasons, want)
+		}
+	})
+}
+
+func TestASnapshotKeepsTheLast100Events(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := start(t, config(t, fake.NewTracker(), develop))
+		time.Sleep(150 * poll)
+		r.engine.Stop()
+		final, err := r.wait()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		var all []core.Event
+		for u := range r.queue.Updates() {
+			all = append(all, u.Events...)
+		}
+		if len(all) <= 100 {
+			t.Fatalf("the run had %d events, want more than 100", len(all))
+		}
+		if got, want := final.Snapshot.Recent, all[len(all)-100:]; !reflect.DeepEqual(got, want) {
+			t.Errorf("recent holds %d events, want the last 100 of %d", len(got), len(all))
 		}
 	})
 }

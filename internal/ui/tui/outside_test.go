@@ -1,0 +1,227 @@
+package tui
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
+)
+
+// raws runs cmd and returns the raw sequences it, or the commands it
+// batches or sequences, writes to the terminal. A command that blocks, such
+// as waiting for the next update, writes nothing.
+func raws(cmd tea.Cmd) []string {
+	if cmd == nil {
+		return nil
+	}
+	got := make(chan tea.Msg, 1)
+	go func() { got <- cmd() }()
+	var msg tea.Msg
+	select {
+	case msg = <-got:
+	case <-time.After(100 * time.Millisecond):
+		return nil
+	}
+	var cmds []tea.Cmd
+	switch msg := msg.(type) {
+	case tea.RawMsg:
+		seq, _ := msg.Msg.(string)
+		return []string{seq}
+	case tea.BatchMsg:
+		cmds = msg
+	default:
+		cmds = sequenced(msg)
+	}
+	var out []string
+	for _, c := range cmds {
+		out = append(out, raws(c)...)
+	}
+	return out
+}
+
+// ended is a snapshot where stage ended on #12, moved to to, at the minute
+// ended before start.
+func ended(stage string, to crew.State, endedAt int) engine.Update {
+	u := handledBy(twelve, stage, to)
+	u.Snapshot.Handled[0].Ended = start.Add(-time.Duration(endedAt) * time.Minute)
+	return u
+}
+
+// Covers AE5.
+func TestAE5AStageEndNotifiesWhileUnfocusedButAHiddenStagesDoesNot(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h.send(tea.BlurMsg{})
+
+	notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
+	if len(notes) != 1 || !strings.HasPrefix(notes[0], "\x1b]9;") ||
+		!strings.Contains(notes[0], "triage ended on #12 Stage labels; moved to crew:triage:done") {
+		t.Errorf("notifications = %q, want one OSC 9 for triage on #12", notes)
+	}
+
+	if notes := raws(h.send(updateMsg(ended("promote triage", "crew:development:ready", 1)))); len(notes) != 0 {
+		t.Errorf("the hidden promote triage notified: %q", notes)
+	}
+}
+
+func TestAStageEndNotifiesNothingWhileFocused(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h.send(tea.BlurMsg{})
+	h.send(tea.FocusMsg{})
+
+	if notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3)))); len(notes) != 0 {
+		t.Errorf("a focused terminal got %q", notes)
+	}
+}
+
+func TestWithoutAnyFocusReportAStageEndNotifiesNothing(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+
+	if notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3)))); len(notes) != 0 {
+		t.Errorf("a terminal that never reported focus got %q", notes)
+	}
+}
+
+func TestTheSameStageEndNotifiesOnce(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h.send(tea.BlurMsg{})
+
+	first := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
+	second := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
+
+	if len(first) != 1 || len(second) != 0 {
+		t.Errorf("notified %d then %d times, want once", len(first), len(second))
+	}
+}
+
+func TestOnceAStopIsAskedForNothingNotifies(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h.send(tea.BlurMsg{})
+	u := ended("triage", "crew:triage:failed", 3)
+	u.Snapshot.Stopping = true
+
+	if notes := raws(h.send(updateMsg(u))); len(notes) != 0 {
+		t.Errorf("a stopping crew notified %q", notes)
+	}
+}
+
+// The last update's notification is written before the model reads the
+// closed channel and quits (KTD6).
+func TestTheLastUpdatesNotificationComesBeforeTheQuit(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h.send(tea.BlurMsg{})
+	cmd := h.send(updateMsg(ended("triage", "crew:triage:done", 3)))
+	close(h.updates)
+
+	seq := sequenced(cmd())
+	if len(seq) != 2 {
+		t.Fatalf("the update returned no sequence of the notification then the wait: %#v", seq)
+	}
+	if notes := raws(seq[0]); len(notes) != 1 {
+		t.Errorf("the sequence's first step wrote %q, want the notification", notes)
+	}
+	if got := seq[1](); got != (engineStoppedMsg{}) {
+		t.Errorf("the sequence's second step returned %#v, want the engine-stopped message", got)
+	}
+}
+
+func TestANotificationIsCleanedOfControlCharacters(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h.send(tea.BlurMsg{})
+	u := ended("triage", "crew:triage:done", 3)
+	u.Snapshot.Handled[0].Issue.Title = "Stage\x07 labels\x1b]0;evil\x07"
+
+	notes := raws(h.send(updateMsg(u)))
+
+	if len(notes) != 1 || strings.Count(notes[0], "\x07") != 1 || strings.Count(notes[0], "\x1b") != 1 {
+		t.Errorf("notification = %q, want only its own OSC 9 framing", notes)
+	}
+}
+
+func TestFailuresAndGivenUpMovesSayHowTheStageEnded(t *testing.T) {
+	failed := failedEntry("5", "Parse", 10, 1, "lfg", "tests")
+	if got := noteText(failed); got != "crew: implement failed on #5 Parse; moved to needs attention" {
+		t.Errorf("failed note = %q", got)
+	}
+	dropped := givenUpEntry(entry("6", "Drop", "implement", "ready to review", 10, 1), "closed")
+	if got := noteText(dropped); got != "crew: implement ended on #6 Drop; its move to ready to review was given up" {
+		t.Errorf("given-up note = %q", got)
+	}
+}
+
+// Covers R23 and KTD7.
+func TestTheWindowTitleSaysCrewsState(t *testing.T) {
+	h := newHarness(t, 80)
+	if got := h.model.View().WindowTitle; got != "crew · idle" {
+		t.Errorf("idle title = %q", got)
+	}
+
+	u := handledSnapshot()
+	h.send(updateMsg(u))
+	if got, want := h.model.View().WindowTitle, "crew · 2 running · 1 waiting · 2 needs attention"; got != want {
+		t.Errorf("title = %q, want %q", got, want)
+	}
+
+	h.send(windingDown())
+	if got := h.model.View().WindowTitle; got != "crew · winding down" {
+		t.Errorf("winding-down title = %q", got)
+	}
+
+	h.send(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if got := h.model.View().WindowTitle; got != "crew · stopping" {
+		t.Errorf("stopping title = %q", got)
+	}
+}
+
+func windingDown() updateMsg { return updateMsg(windingDownSnapshot()) }
+
+func TestAHiddenStagesFailureCountsAsNeedingAttention(t *testing.T) {
+	h := newWorkflowHarness(t, 80, crewWorkflow)
+	u := ended("promote triage", "crew:triage:failed", 1)
+	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "promote", Reason: "boom"}}
+
+	h.send(updateMsg(u))
+
+	if got := h.model.View().WindowTitle; got != "crew · 1 needs attention" {
+		t.Errorf("title = %q, want the hidden stage's failure counted", got)
+	}
+}
+
+// Covers R24 and KTD7.
+func TestTheTabProgressFollowsCrewsState(t *testing.T) {
+	h := newHarness(t, 80)
+	if p := h.model.View().ProgressBar; p != nil {
+		t.Errorf("idle progress = %+v, want none", p)
+	}
+
+	h.send(updateMsg(runningSnapshot()))
+	if p := h.model.View().ProgressBar; p == nil || p.State != tea.ProgressBarIndeterminate {
+		t.Errorf("progress while actions run = %+v, want indeterminate", p)
+	}
+
+	h.send(updateMsg(handledSnapshot()))
+	if p := h.model.View().ProgressBar; p == nil || p.State != tea.ProgressBarError {
+		t.Errorf("progress while an entry needs attention = %+v, want error", p)
+	}
+	if !h.model.View().ReportFocus {
+		t.Error("the view does not ask for focus reports")
+	}
+}
+
+// sequenced returns the commands of the message tea.Sequence sends, whose
+// type Bubble Tea does not export, or nil for any other message.
+func sequenced(msg tea.Msg) []tea.Cmd {
+	v := reflect.ValueOf(msg)
+	if !v.IsValid() || v.Kind() != reflect.Slice || v.Type().Name() != "sequenceMsg" {
+		return nil
+	}
+	out := make([]tea.Cmd, v.Len())
+	for i := range out {
+		out[i], _ = reflect.TypeAssert[tea.Cmd](v.Index(i))
+	}
+	return out
+}

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"sync/atomic"
 	"time"
@@ -146,7 +147,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	return run(ctx, eng, o, signalled, mates.Warnings)
+	return run(ctx, eng, o, signalled, b.cfg.Workflow, mates.Warnings)
 }
 
 // prepare runs the environment checks, check, within prepareTimeout, and a
@@ -248,8 +249,10 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 // the stop signals meanwhile. stopping tells that a first signal came
 // already, so the engine stops at once and the next signal forces the exit.
 // The renderer shows warnings before anything else.
-func run(ctx context.Context, eng *engine.Engine, o Options, stopping bool, warnings []string) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings}
+func run(
+	ctx context.Context, eng *engine.Engine, o Options, stopping bool, workflow []crew.Stage, warnings []string,
+) int {
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, workflow: workflow}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -292,13 +295,18 @@ type runner struct {
 	code int
 	// warnings are the startup warnings the renderer shows.
 	warnings []string
+	// workflow is the configured stages, for the live view's board.
+	workflow []crew.Stage
 }
 
 // renderer returns the TUI on a terminal without Plain, and the event lines
 // otherwise.
 func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
-		model := tui.New(r.eng.SubscribeLatest(), r.eng.Stop, r.force, time.Now, time.Local, r.warnings...)
+		model := tui.New(tui.Config{
+			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Now: time.Now, Location: time.Local,
+			Workflow: r.workflow, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
+		})
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
 		r.quit = program.Quit
 		return program.Run
