@@ -175,6 +175,31 @@ linters:
               desc: mates import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/ui
               desc: mates import only the standard library and proc
+        worktrees:
+          files:
+            - "**/internal/worktrees/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/registry
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/app
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/proc
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/mates
+              desc: worktrees import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/fake
+              desc: worktrees import only the domain and the ports
         mates-users:
           files:
             - "!**/cmd/crew/**"
