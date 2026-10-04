@@ -1,0 +1,28 @@
+crew: 2 issues held, up 12m, 48m left (q or ctrl+c stops)
+warning: mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository
+handled 0
+
+Queues
+  default  2 slots  1 busy  1 free
+  clerk    1 slot   1 busy  0 free
+
+Issues
+  implement
+    running   #1 Add login form
+  review
+    taking    #2 Fix the flaky stream test
+
+Actions
+  #1 implement/code   default  running 5m00s
+  #1 implement/tests  default  running 7m00s
+  #2 review/check     clerk    waiting
+
+Handled
+  none
+
+Recent events
+  14:22:58 implement took #1 "Add login form" (ready -> in progress)
+  14:23:00 #1 implement/tests started on branch crew/1-tests, log .crew/logs/1-tests.log
+  14:25:00 #1 implement/code started on branch crew/1-code, log .crew/logs/1-code.log
+  14:29:50 poll: listed 2 issues, took 1
+  14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in review)

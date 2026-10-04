@@ -78,6 +78,32 @@ type Options struct {
 	// first ends the environment checks, or asks the engine to stop; the
 	// second forces the exit.
 	Signals <-chan os.Signal
+	// Mates makes the mates the config names act: names lists each once,
+	// the default mate def first. It runs among the environment checks, on
+	// their context, and only when the config names a mate. nil makes such
+	// a config an environment error.
+	Mates func(ctx context.Context, def string, names []string) (Mates, error)
+}
+
+// Mates are the mates that act this run, as Options.Mates made them.
+type Mates struct {
+	// Identities are the identities of the mates that act, by name: what
+	// their actions' sessions and checks act as. A mate that cannot act has
+	// none, and its actions act as the boss.
+	Identities map[string]port.Identity
+	// Writer is what crew's own writes on the tracker act as: the default
+	// mate, or the zero Identity, the boss, when it cannot act.
+	Writer port.Identity
+	// Logins are the logins of the configured mates crew knows, whether or
+	// not they act this run: crew takes the issues they opened, and every
+	// session and check gets them as CREW_MATES.
+	Logins []string
+	// Warnings say, one line each, which mate cannot act or adds no
+	// co-author, why, and the fix.
+	Warnings []string
+	// Close stops renewing the mates' tokens and removes them. nil does
+	// nothing.
+	Close func()
 }
 
 // Run runs crew until it stops and returns its exit code. A config or
@@ -98,25 +124,37 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 			code = ExitFailure
 		}
 	}()
-	eng, err := build(o)
+	b, err := build(o)
 	if err != nil {
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	signalled, err := prepare(ctx, eng, o)
+	var eng *engine.Engine
+	var mates Mates
+	signalled, err := prepare(ctx, o, func(ctx context.Context) error {
+		if mates, err = b.mates(ctx, o); err != nil {
+			return err
+		}
+		eng = b.engine(o, mates)
+		return eng.Prepare(ctx)
+	})
+	if mates.Close != nil {
+		// After the engine's stop sequence, on every way out of Run.
+		defer mates.Close()
+	}
 	if err != nil {
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	return run(ctx, eng, o, signalled)
+	return run(ctx, eng, o, signalled, mates.Warnings)
 }
 
-// prepare runs the environment checks within prepareTimeout, and a first
-// signal meanwhile ends them. It reports whether a signal came, so one that
-// came just as the checks succeeded still stops the run. When the checks
-// end early, it kills every process in Group, since a check's process may
-// outlive its context.
-func prepare(ctx context.Context, eng *engine.Engine, o Options) (bool, error) {
+// prepare runs the environment checks, check, within prepareTimeout, and a
+// first signal meanwhile ends them. It reports whether a signal came, so one
+// that came just as the checks succeeded still stops the run. When the
+// checks end early, it kills every process in Group, since a check's process
+// may outlive its context.
+func prepare(ctx context.Context, o Options, check func(context.Context) error) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, prepareTimeout)
 	defer cancel()
 	got := make(chan bool, 1)
@@ -130,7 +168,7 @@ func prepare(ctx context.Context, eng *engine.Engine, o Options) (bool, error) {
 			got <- false
 		}
 	}()
-	err := eng.Prepare(ctx)
+	err := check(ctx)
 	close(checked)
 	signalled := <-got
 	if err == nil || ctx.Err() == nil {
@@ -146,38 +184,72 @@ func prepare(ctx context.Context, eng *engine.Engine, o Options) (bool, error) {
 	return false, err
 }
 
-// build loads the config and builds the engine and its adapters.
-func build(o Options) (*engine.Engine, error) {
+// built is the config and the adapters build made.
+type built struct {
+	cfg     *config.Config
+	tracker port.Tracker
+	harness port.Harness
+}
+
+// build loads the config and builds its adapters.
+func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root)
 	if err != nil {
-		return nil, err
+		return built{}, err
 	}
 	states := crew.WorkflowStates(cfg.Workflow)
 	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, states, cfg.Extras)
 	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
 	if err := errors.Join(trackerErr, harnessErr); err != nil {
-		return nil, err
+		return built{}, err
 	}
+	return built{cfg: cfg, tracker: tracker, harness: harness}, nil
+}
+
+// mates makes the mates the config names act, through Options.Mates, and
+// none when it names none.
+func (b built) mates(ctx context.Context, o Options) (Mates, error) {
+	if len(b.cfg.Mates) == 0 {
+		return Mates{}, nil
+	}
+	if o.Mates == nil {
+		return Mates{}, errors.New("the config names mates, and crew cannot make them act here")
+	}
+	m, err := o.Mates(ctx, b.cfg.Mate, b.cfg.Mates)
+	if err != nil {
+		return Mates{}, fmt.Errorf("make the mates act: %w", err)
+	}
+	return m, nil
+}
+
+// engine builds the engine of the config and its adapters, whose actions
+// act as mates.
+func (b built) engine(o Options, mates Mates) *engine.Engine {
 	return engine.New(engine.Config{
-		Workflow:          cfg.Workflow,
-		MaxParallelIssues: cfg.MaxParallelIssues,
-		PollInterval:      cfg.PollInterval,
-		RunTimeLimit:      cfg.RunTimeLimit,
-		UsageInStatus:     cfg.UsageInStatus,
-		Tracker:           tracker,
-		Harness:           harness,
+		Workflow:          b.cfg.Workflow,
+		MaxParallelIssues: b.cfg.MaxParallelIssues,
+		PollInterval:      b.cfg.PollInterval,
+		RunTimeLimit:      b.cfg.RunTimeLimit,
+		UsageInStatus:     b.cfg.UsageInStatus,
+		Tracker:           b.tracker,
+		Harness:           b.harness,
 		Workspace:         o.Workspace(o.Root),
 		Checker:           o.Checker,
 		Root:              o.Root,
 		Home:              o.Home,
-	}), nil
+		ActAs:             len(b.cfg.Mates) > 0,
+		Writer:            mates.Writer,
+		Identities:        mates.Identities,
+		MateLogins:        mates.Logins,
+	})
 }
 
 // run runs the engine and the renderer until both have returned, and handles
 // the stop signals meanwhile. stopping tells that a first signal came
 // already, so the engine stops at once and the next signal forces the exit.
-func run(ctx context.Context, eng *engine.Engine, o Options, stopping bool) int {
-	r := &runner{eng: eng, o: o, code: ExitClean}
+// The renderer shows warnings before anything else.
+func run(ctx context.Context, eng *engine.Engine, o Options, stopping bool, warnings []string) int {
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -218,19 +290,21 @@ type runner struct {
 	// such end, as it holds no terminal state.
 	quit func()
 	code int
+	// warnings are the startup warnings the renderer shows.
+	warnings []string
 }
 
 // renderer returns the TUI on a terminal without Plain, and the event lines
 // otherwise.
 func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
-		model := tui.New(r.eng.SubscribeLatest(), r.eng.Stop, r.force, time.Now, time.Local)
+		model := tui.New(r.eng.SubscribeLatest(), r.eng.Stop, r.force, time.Now, time.Local, r.warnings...)
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
 		r.quit = program.Quit
 		return program.Run
 	}
 	queue := r.eng.SubscribeQueue(lineQueue)
-	return func() error { return lines.Run(queue, r.o.Stdout, time.Local, time.Now) }
+	return func() error { return lines.Run(queue, r.o.Stdout, time.Local, time.Now, r.warnings...) }
 }
 
 // stop asks the engine to stop.

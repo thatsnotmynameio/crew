@@ -1,12 +1,15 @@
 crew: run time is up, winding down: 1 issue held, up 1h15m (q or ctrl+c stops)
 handled 0
 
+Queues
+  default  2 slots  1 busy  1 free
+
 Issues
   implement
     running   #42 Add login form
 
 Actions
-  #42 implement/code  running 1h15m00s
+  #42 implement/code  default  running 1h15m00s
 
 Handled
   none

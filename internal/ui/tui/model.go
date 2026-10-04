@@ -44,11 +44,16 @@ type Model struct {
 	width, height int
 	// stopping is true once the boss asked to stop.
 	stopping bool
+	// warnings are the startup warnings, shown above everything but the top
+	// line.
+	warnings []string
 }
 
 // New returns a model that renders the updates of a latest-wins
 // subscription (Engine.SubscribeLatest), measuring elapsed times with now
-// and showing event times in loc.
+// and showing event times in loc. Each of warnings, crew's startup
+// warnings, shows on its own line under the top line for as long as crew
+// runs.
 //
 // The first Ctrl-C or q calls stop and shows "stopping…"; the model keeps
 // running until updates is closed, then quits. A second Ctrl-C or q calls
@@ -56,8 +61,13 @@ type Model struct {
 // terminal is still in raw mode, so it should kill what must die and return,
 // leaving the exit to the caller after Program.Run returns. Bubble Tea's own signal handler should be disabled
 // (tea.WithoutSignalHandler), so crew's handler is the only one.
-func New(updates <-chan engine.Update, stop, force func(), now func() time.Time, loc *time.Location) Model {
-	return Model{updates: updates, stop: stop, force: force, now: now, loc: loc, at: now(), width: defaultWidth}
+func New(
+	updates <-chan engine.Update, stop, force func(), now func() time.Time, loc *time.Location, warnings ...string,
+) Model {
+	return Model{
+		updates: updates, stop: stop, force: force, now: now, loc: loc, at: now(), width: defaultWidth,
+		warnings: warnings,
+	}
 }
 
 // Init starts waiting for updates and ticking.

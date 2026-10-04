@@ -13,7 +13,7 @@ import (
 
 // listJSON is the listing's reply with issue and pull request nodes.
 func listJSON(issues, pullRequests []string) string {
-	return `{"data":{"repository":{"issues":{"nodes":[` + strings.Join(issues, ",") +
+	return `{"data":{"repository":{"issues0":{"nodes":[` + strings.Join(issues, ",") +
 		`]},"pullRequests":{"nodes":[` + strings.Join(pullRequests, ",") + `]}}}}`
 }
 
@@ -22,7 +22,7 @@ func listJSON(issues, pullRequests []string) string {
 func pullNode(number int, created, author string, labels ...string) string {
 	by := "null"
 	if author != "" {
-		by = fmt.Sprintf(`{"login":%q}`, author)
+		by = fmt.Sprintf(`{"__typename":"User","login":%q}`, author)
 	}
 	return fmt.Sprintf(`{"number":%d,"title":"Pull request %d","url":"https://github.com/o/r/pull/%d",`+
 		`"createdAt":%q,"author":%s,"labels":{"nodes":[%s]}}`,
@@ -74,7 +74,9 @@ func TestListAlsoReturnsTheLoginsOpenPullRequests(t *testing.T) {
 		t.Fatalf("sent %d GraphQL queries, want 1", len(queries))
 	}
 	query := strings.Join(fieldValues(queries[0], "query"), "")
-	for _, want := range []string{"pullRequests(first: 100, states: OPEN, labels: $labels", "author { login }"} {
+	for _, want := range []string{
+		"pullRequests(first: 100, states: OPEN, labels: $labels", "author { __typename login }",
+	} {
 		if !strings.Contains(query, want) {
 			t.Errorf("query does not contain %q:\n%s", want, query)
 		}

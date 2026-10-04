@@ -73,6 +73,19 @@ type Config struct {
 	// Home is the user's home directory, shortened to ~ in every reason.
 	// Empty shortens nothing.
 	Home string
+	// ActAs, when the config names a mate, has Prepare hand a tracker that
+	// implements port.Acting the Writer and the MateLogins first.
+	ActAs bool
+	// Writer is who the tracker's own writes go as: the default mate, or the
+	// zero Identity, the boss, when it cannot act.
+	Writer port.Identity
+	// Identities are the identities of the mates that act, by name. An
+	// action whose mate is not among them runs as the boss.
+	Identities map[string]port.Identity
+	// MateLogins are the logins of the configured mates crew knows, whether
+	// or not they act: the tracker takes the items they opened, and every
+	// session and check gets them as CREW_MATES.
+	MateLogins []string
 }
 
 // Engine runs the workflow of a Config. Use New; Run it once.
@@ -99,6 +112,9 @@ type Engine struct {
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
+	// boss are the boss's logins, as the tracker's port.BossFinder found
+	// them in Prepare; none without one.
+	boss []string
 
 	// The fields below are owned by Run's loop.
 	model    *core.Model
@@ -247,11 +263,16 @@ func (e *Engine) Prepare(ctx context.Context) error {
 	return e.preparation
 }
 
-// prepare runs each port's Preparer with crew.WorkflowStates, the states
-// the workflow names, then reads the run journal and builds the core from
-// it. It joins their errors, each naming its port or the journal.
+// prepare hands the tracker its writer when the config names a mate, runs
+// each port's Preparer with crew.WorkflowStates, the states the workflow
+// names, asks the tracker who the boss is, then reads the run journal and
+// builds the core from it. It joins their errors, each naming its port or
+// the journal.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.WorkflowStates(e.cfg.Workflow)
+	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
+		a.ActAs(e.cfg.Writer, slices.Clone(e.cfg.MateLogins))
+	}
 	ports := []struct {
 		name    string
 		adapter any
@@ -261,6 +282,9 @@ func (e *Engine) prepare(ctx context.Context) error {
 		if err := port.Prepare(ctx, states, p.adapter); err != nil {
 			errs = append(errs, fmt.Errorf("prepare the %s: %w", p.name, err))
 		}
+	}
+	if b, ok := e.cfg.Tracker.(port.BossFinder); ok && len(errs) == 0 {
+		e.boss = b.Boss()
 	}
 	past, err := e.readJournal()
 	if err != nil {

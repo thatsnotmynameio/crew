@@ -8,6 +8,8 @@
 
 The person who runs crew in their own repositories, writes its workflow and checks, and reviews the issues crew moves.
 
+crew finds the boss in the repository's CODEOWNERS: every user its catch-all `*` rule names, or crew's `gh` login when it names none. crew takes the issues the boss or a configured mate opened.
+
 ### Stage
 
 One step of the workflow: it takes the items of its kind that carry its label, issues by default or pull requests when it declares them, runs its actions on each, and moves each to its success state when every action succeeded, or to its failure state when any failed.
@@ -92,7 +94,7 @@ It is a new comment at every stage end, so the boss is notified and a rerun leav
 
 A GitHub identity of crew's own: a private GitHub App the boss creates with `crew mates create`, owned by the account that owns the repository, whose private key stays on the boss's machine. It acts on GitHub as its bot, such as `crew-tester[bot]`.
 
-A boss can have many mates, and a mate is only an identity: it carries no model, prompt or settings. crew does not act as its mates yet; until it does, crew and its sessions act as the boss's `gh` login.
+A boss can have many mates, and a mate is only an identity: it carries no model, prompt or settings. `config.mate` names the default mate, which crew's own writes on GitHub act as, and an action's `mate` names the one its session and check act as. Commits stay the boss's, with the mate as co-author. Without a mate in the config, crew and its sessions act as the boss's `gh` login.
 
 ## Flagged ambiguities
 

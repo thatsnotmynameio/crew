@@ -197,3 +197,23 @@ func TestNoDropsPrintNoDropLine(t *testing.T) {
 
 	equalLines(t, got, []string{"12:00:00 crew: stopped"})
 }
+
+// Covers AE10 (lines side): each startup warning prints once, before the
+// first event.
+func TestEachStartupWarningPrintsOnceBeforeTheFirstEvent(t *testing.T) {
+	src := newSource(0,
+		engine.Update{Events: []core.Event{core.PollDone{At: at("12:00:02"), Listed: 0}}},
+		engine.Update{Events: []core.Event{core.Stopped{At: at("12:00:03")}}},
+	)
+	var out strings.Builder
+	warning := "mate ops has no key on this machine for thatsnotmynameio; " +
+		"run `crew mates create ops` in this repository"
+	if err := lines.Run(src, &out, zone, func() time.Time { return at("12:00:01") }, warning); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	equalLines(t, strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n"), []string{
+		"12:00:01 crew: warning: " + warning,
+		"12:00:02 crew: poll: listed 0 issues, took 0",
+		"12:00:03 crew: stopped",
+	})
+}

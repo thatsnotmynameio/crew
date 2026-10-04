@@ -13,8 +13,11 @@ import (
 	"time"
 )
 
-// redacted is how a private key prints.
-const redacted = "[private key]"
+// How a private key and a token print.
+const (
+	redacted      = "[private key]"
+	redactedToken = "[token]"
+)
 
 // The app JWT's lifetime around the time it is made: issued a minute back,
 // against clock drift, and expiring before GitHub's 10-minute limit.
@@ -88,4 +91,20 @@ func parseKey(key PrivateKey) (*rsa.PrivateKey, error) {
 		return nil, errors.New("the mate's private key is not an RSA key")
 	}
 	return k, nil
+}
+
+// Token is an installation token, which acts as a mate's bot on one
+// repository for an hour. It never prints: every fmt verb, String and
+// GoString show [token], so no message or error leaks it.
+type Token string
+
+// String returns [token].
+func (Token) String() string { return redactedToken }
+
+// GoString returns [token].
+func (Token) GoString() string { return redactedToken }
+
+// Format writes [token] for every verb.
+func (Token) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(redactedToken))
 }

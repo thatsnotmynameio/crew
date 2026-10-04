@@ -1,6 +1,10 @@
 crew: 2 issues held, up 12m, 48m left (q or ctrl+c stops)
 handled 10 ($70.05, 138.1M tokens): 2 needs attention, 8 crew:waiting review
 
+Queues
+  default  2 slots  1 busy  1 free
+  clerk    1 slot   1 busy  0 free
+
 Issues
   implement
     running   #1 Add login form
@@ -8,17 +12,13 @@ Issues
     taking    #2 Fix the flaky stream test
 
 Actions
-  #1 implement/code   running 5m00s
-  #1 implement/tests  running 7m00s
-  #2 review/check     waiting
+  #1 implement/code   default  running 5m00s
+  #1 implement/tests  default  running 7m00s
+  #2 review/check     clerk    waiting
 
 Handled
   needs attention      #11  implement 40m00s    $4.05, 6.1M tokens  no pull req…
     lfg failed: exited 1: "tests fail on Go 1.27"
   needs attention      #12  implement 1m00s                                    …
     lfg failed: prompt did not render: no field "Body"
-  crew:waiting review  #20  development 40m00s  $10.00, 20M tokens  #50        …
-  crew:waiting review  #19  development 39m00s  $9.50, 19M tokens   #49        …
-  crew:waiting review  #18  development 38m00s  $9.00, 18M tokens   #48        …
-  crew:waiting review  #17  development 37m00s  $8.50, 17M tokens   #47        …
-  … and 4 more in crew:waiting review
+  … and 8 more in crew:waiting review

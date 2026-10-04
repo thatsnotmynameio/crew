@@ -3,7 +3,10 @@
 // repository: crew creates it through GitHub's manifest flow, keeps its
 // private key on the boss's machine, and signs as it to reach GitHub's API.
 //
-// crew does not act as its mates yet: nothing in the engine sees them.
+// Act makes the mates a repository's config names act for crew: it mints
+// each one a token limited to the repository, writes gh config directories
+// holding it, renews it while crew runs, and builds the git environment that
+// adds the mate as co-author of every commit.
 package mates
 
 import (
@@ -49,7 +52,7 @@ func CheckName(name string) error {
 		return envErrorf("the mate name %q is %d characters long; the limit is %d", name, len(name), maxName)
 	}
 	for _, r := range name {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+		if !nameRune(r) {
 			return envErrorf("the mate name %q holds %q; a name holds only lowercase letters, digits and hyphens",
 				name, r)
 		}
@@ -69,4 +72,10 @@ func CheckName(name string) error {
 // GitHub's page lets the boss change it.
 func AppName(name string) string {
 	return appPrefix + name
+}
+
+// nameRune reports whether r may appear in a mate's name or an app's slug:
+// a lowercase letter, a digit or a hyphen.
+func nameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-'
 }

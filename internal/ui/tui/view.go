@@ -25,9 +25,10 @@ const givenUp = "move given up"
 const recentHeader = 2
 
 // View renders the latest snapshot: a summary of the run and of the issues
-// handled so far, then four regions: the held issues by stage and claim, the
-// actions not yet ended with their elapsed time, the issues handled this run,
-// and the recent events. It fits the window's height: Recent events gives up
+// handled so far, then five regions: the queues with their busy and free
+// slots, the held issues by stage and claim, the actions not yet ended with
+// their queue and elapsed time, the issues handled this run, and the recent
+// events. It fits the window's height: Recent events gives up
 // its rows first, then the oldest handled issues that need no attention
 // collapse into one line per state, and only then is the view cut at the
 // bottom. Every line is cut to the window's width.
@@ -42,7 +43,13 @@ func (m Model) View() tea.View {
 // fitted returns the view's lines, at most the window's height of them when
 // the height is known.
 func (m Model) fitted() []string {
-	fixed := append([]string{m.top(), m.counts()}, m.issues()...)
+	fixed := []string{m.top()}
+	for _, w := range m.warnings {
+		fixed = append(fixed, "warning: "+w)
+	}
+	fixed = append(fixed, m.counts())
+	fixed = append(fixed, m.queues()...)
+	fixed = append(fixed, m.issues()...)
 	fixed = append(fixed, m.actions()...)
 	fixed = append(fixed, "", "Handled")
 	entries := byAttention(m.snap.Handled)
@@ -173,6 +180,27 @@ func (m Model) counts() string {
 	return line + ": " + strings.Join(parts, ", ")
 }
 
+// queues is the Queues region: each queue some stage runs in, with its size,
+// its busy slots and its free slots, in aligned columns.
+func (m Model) queues() []string {
+	out := []string{"", "Queues"}
+	if len(m.snap.Queues) == 0 {
+		return append(out, "  none")
+	}
+	var names, sizes, busy []string
+	for _, q := range m.snap.Queues {
+		names = append(names, q.Name)
+		sizes = append(sizes, fmt.Sprintf("%d %s", q.Slots, lines.Plural(q.Slots, "slot", "slots")))
+		busy = append(busy, fmt.Sprintf("%d busy", q.Busy))
+	}
+	nameWidth, sizeWidth, busyWidth := width(names), width(sizes), width(busy)
+	for i, q := range m.snap.Queues {
+		out = append(out, fmt.Sprintf("  %s  %s  %s  %d free",
+			pad(names[i], nameWidth), pad(sizes[i], sizeWidth), pad(busy[i], busyWidth), q.Free()))
+	}
+	return out
+}
+
 // issues is the Issues region: the held issues by stage and claim.
 func (m Model) issues() []string {
 	out := []string{"", "Issues"}
@@ -188,27 +216,29 @@ func (m Model) issues() []string {
 	return out
 }
 
-// actions is the Actions region: the actions not yet ended, with the
-// elapsed time of the running ones, a running check included: its action
-// still runs, from its session's start. A resumed one names its workspace.
+// actions is the Actions region: the actions not yet ended, with the queue
+// their issue holds a slot in and the elapsed time of the running ones, a
+// running check included: its action still runs, from its session's start.
+// A resumed one names its workspace.
 func (m Model) actions() []string {
 	out := []string{"", "Actions"}
-	var names, states []string
+	var names, queues, states []string
 	for _, iv := range m.snap.Issues {
 		for _, a := range iv.Actions {
 			if a.Phase == core.PhaseEnded {
 				continue
 			}
 			names = append(names, fmt.Sprintf("%s %s/%s", iv.Issue.Ref, iv.Stage, a.Name))
+			queues = append(queues, iv.Queue)
 			states = append(states, m.actionState(a))
 		}
 	}
 	if len(names) == 0 {
 		out = append(out, "  none")
 	}
-	pad := width(names)
+	nameWidth, queueWidth := width(names), width(queues)
 	for i, n := range names {
-		out = append(out, fmt.Sprintf("  %-*s  %s", pad, n, states[i]))
+		out = append(out, fmt.Sprintf("  %s  %s  %s", pad(n, nameWidth), pad(queues[i], queueWidth), states[i]))
 	}
 	return out
 }

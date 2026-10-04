@@ -85,8 +85,8 @@ func TestCheckReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 
 func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	// The title is not part of port.Check at all, so it cannot reach the
-	// command: the check sees only the four variables, and the command runs
-	// as written.
+	// command: the check sees only crew's six variables, and the command
+	// runs as written.
 	var out output
 	c := check(t, `env | grep '^CREW_' | sort`, &out)
 	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
@@ -95,13 +95,35 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
-		case "CREW_BRANCH", "CREW_ISSUE_KEY", "CREW_ISSUE_REF", "CREW_ISSUE_URL":
+		case "CREW_BOSS", "CREW_BRANCH", "CREW_ISSUE_KEY", "CREW_ISSUE_REF", "CREW_ISSUE_URL", "CREW_MATES":
 		default:
 			t.Errorf("unexpected variable %q", line)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(c.Dir, "pwned")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("pwned exists: %v", err)
+	}
+}
+
+// AE6 of #80: whatever GH_TOKEN the boss's shell exports, the check's gh
+// reads its mate's directory, and the check learns the boss and the mates.
+func TestCheckActsAsItsIdentityAndNamesTheBossAndTheMates(t *testing.T) {
+	t.Setenv("GH_TOKEN", "boss-token")
+	var out output
+	c := check(t, `echo "$GH_CONFIG_DIR|$CREW_BOSS|$CREW_MATES|${GH_TOKEN-unset}"`, &out)
+	c.Identity = port.Identity{
+		Mate: "developer", Login: "crew-developer[bot]",
+		Env:   []string{"GH_CONFIG_DIR=/run/crew/developer"},
+		Unset: []string{"GH_TOKEN", "GITHUB_TOKEN"},
+	}
+	c.Boss = []string{"octocat"}
+	c.Mates = []string{"crew-developer[bot]", "crew-ops[bot]"}
+
+	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if got, want := out.String(), "/run/crew/developer|octocat|crew-developer[bot] crew-ops[bot]|unset\n"; got != want {
+		t.Errorf("output = %q, want %q", got, want)
 	}
 }
 

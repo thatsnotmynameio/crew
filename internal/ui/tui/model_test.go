@@ -80,18 +80,22 @@ func quits(cmd tea.Cmd) bool {
 	}
 }
 
-// runningSnapshot is #1 running two actions, started 5 and 7 minutes before
-// start, and #2 being taken by a later stage, 12 minutes into a one-hour run.
+// runningSnapshot is #1 running two actions in default, started 5 and 7
+// minutes before start, and #2 being taken by a later stage in clerk, 12
+// minutes into a one-hour run.
 func runningSnapshot() engine.Update {
 	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
 	return engine.Update{Snapshot: engine.Snapshot{
-		View: core.View{Issues: []core.IssueView{
-			{Issue: one, Stage: "implement", Claim: core.ClaimRunning, Actions: []core.ActionView{
+		View: core.View{Queues: []core.QueueView{
+			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
+			{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		}, Issues: []core.IssueView{
+			{Issue: one, Stage: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5 * time.Minute)},
 				{Name: "tests", Phase: core.PhaseRunning, Branch: "crew/1-tests", Started: start.Add(-7 * time.Minute)},
 			}},
-			{Issue: two, Stage: "review", Claim: core.ClaimTaking, Actions: []core.ActionView{
+			{Issue: two, Stage: "review", Queue: crew.ClerkQueue, Claim: core.ClaimTaking, Actions: []core.ActionView{
 				{Name: "check", Phase: core.PhaseWaiting},
 			}},
 		}},
@@ -127,7 +131,8 @@ func golden(t *testing.T, name, got string) {
 	}
 }
 
-// Covers AE6 (TUI side).
+// Covers AE6 (TUI side), and AE1 of #94: each queue's size, busy and free
+// slots, and each action's queue.
 func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 	h := newHarness(t, 80)
 
@@ -142,8 +147,8 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 func resumingSnapshot() engine.Update {
 	issue := crew.Issue{Key: "9", Ref: "#9", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
-		View: core.View{Issues: []core.IssueView{
-			{Issue: issue, Stage: "development", Claim: core.ClaimRunning, Actions: []core.ActionView{
+		View: core.View{Queues: []core.QueueView{{Name: crew.DefaultQueue, Slots: 2, Busy: 1}}, Issues: []core.IssueView{
+			{Issue: issue, Stage: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "docs", Phase: core.PhaseReopening, Workspace: "issue-9-docs", Branch: "crew/issue-9-docs"},
 				{Name: "lfg", Phase: core.PhaseRunning, Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 					Started: start.Add(-3 * time.Minute), Resumed: true},
@@ -175,8 +180,10 @@ func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
 func windingDownSnapshot() engine.Update {
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
-		View: core.View{TimeUp: true, Issues: []core.IssueView{
-			{Issue: issue, Stage: "implement", Claim: core.ClaimRunning, Actions: []core.ActionView{
+		View: core.View{TimeUp: true, Queues: []core.QueueView{
+			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
+		}, Issues: []core.IssueView{
+			{Issue: issue, Stage: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/42-code", Started: start.Add(-75 * time.Minute)},
 			}},
 		}},
@@ -237,7 +244,7 @@ func TestAnActionRunningItsCheckShowsAsCheckingWithItsElapsedTime(t *testing.T) 
 
 	h.send(updateMsg(u))
 
-	if view := h.view(); !strings.Contains(view, "#1 implement/code   checking 5m00s") {
+	if view := h.view(); !strings.Contains(view, "#1 implement/code   default  checking 5m00s") {
 		t.Errorf("view lacks the checking action with its elapsed time:\n%s", view)
 	}
 }
@@ -331,4 +338,16 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Covers AE10 (TUI side): a startup warning shows under the top line.
+func TestAStartupWarningShowsUnderTheTopLine(t *testing.T) {
+	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
+	h.model = New(h.updates, func() {}, func() {}, func() time.Time { return h.clock }, zone,
+		"mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository")
+	h.send(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	h.send(updateMsg(runningSnapshot()))
+
+	golden(t, "warning", h.view())
 }

@@ -136,6 +136,7 @@ func start(plain bool, stdout, stderr *os.File) int {
 		Plain:     plain,
 		Group:     &group,
 		Signals:   signals,
+		Mates:     actingMates(group.Run, root),
 	})
 }
 

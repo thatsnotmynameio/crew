@@ -160,7 +160,7 @@ const workflow = `workflow:
 `
 
 func TestCommandRunsClaudeHeadlessWithTheModelInTheDirectory(t *testing.T) {
-	got := command("Implement #4", "claude-opus-5-5", "/work/.crew/worktrees/issue-4-development")
+	got := command(port.Run{Dir: "/work/.crew/worktrees/issue-4-development", Prompt: "Implement #4"}, "claude-opus-5-5")
 
 	want := proc.Command{
 		Name: "claude",
@@ -183,7 +183,7 @@ func TestCommandRunsClaudeHeadlessWithTheModelInTheDirectory(t *testing.T) {
 // headless session that ends its turn waiting on it ends with a success. A
 // ten-minute default keeps a full test run in the foreground.
 func TestCommandKeepsLongBashCommandsInTheForeground(t *testing.T) {
-	env := command("Implement #4", "claude-opus-5-5", "/work").Env
+	env := command(port.Run{Dir: "/work", Prompt: "Implement #4"}, "claude-opus-5-5").Env
 
 	for _, want := range []string{"BASH_DEFAULT_TIMEOUT_MS=600000", "BASH_MAX_TIMEOUT_MS=1800000"} {
 		if !slices.Contains(env, want) {
@@ -195,7 +195,7 @@ func TestCommandKeepsLongBashCommandsInTheForeground(t *testing.T) {
 func TestCommandPassesAPromptStartingWithADashAsThePrompt(t *testing.T) {
 	prompt := "- Read the issue\n--dry-run does nothing"
 
-	args := command(prompt, "claude-opus-5-5", "/work").Args
+	args := command(port.Run{Dir: "/work", Prompt: prompt}, "claude-opus-5-5").Args
 
 	if n := len(args); n < 2 || args[n-2] != "--" || args[n-1] != prompt {
 		t.Errorf("args = %q, want the prompt last, right after --", args)

@@ -1,6 +1,12 @@
 package claude
 
-import "github.com/thatsnotmynameio/crew/internal/proc"
+import (
+	"slices"
+	"strings"
+
+	"github.com/thatsnotmynameio/crew/internal/port"
+	"github.com/thatsnotmynameio/crew/internal/proc"
+)
 
 // binary is the Claude Code CLI the adapter runs.
 const binary = "claude"
@@ -16,14 +22,21 @@ const (
 	bashMaxTimeout     = "BASH_MAX_TIMEOUT_MS=1800000"
 )
 
-// command builds the headless Claude Code run of prompt with model, in dir.
-// It is pure, and kept apart from the stream parser, so that building the
-// command and judging the session change independently. The stream-json
-// output, which needs --verbose with -p, is what the parser judges the
-// session by; proc closes stdin. The prompt goes last, after --, so one that
-// starts with a dash (a Markdown list, an issue title) is not read as an
-// option.
-func command(prompt, model, dir string) proc.Command {
+// command builds the headless Claude Code run of run with model. It is
+// pure, and kept apart from the stream parser, so that building the command
+// and judging the session change independently. The stream-json output,
+// which needs --verbose with -p, is what the parser judges the session by;
+// proc closes stdin. The prompt goes last, after --, so one that starts with
+// a dash (a Markdown list, an issue title) is not read as an option. The
+// session acts as run's identity, with its environment added and the
+// variables it unsets removed, and gets the boss's and the mates' logins as
+// CREW_BOSS and CREW_MATES.
+func command(run port.Run, model string) proc.Command {
+	env := slices.Concat(
+		[]string{bashDefaultTimeout, bashMaxTimeout},
+		run.Identity.Env,
+		[]string{"CREW_BOSS=" + strings.Join(run.Boss, " "), "CREW_MATES=" + strings.Join(run.Mates, " ")},
+	)
 	return proc.Command{
 		Name: binary,
 		Args: []string{
@@ -32,9 +45,10 @@ func command(prompt, model, dir string) proc.Command {
 			"--permission-mode", "auto",
 			"--output-format", "stream-json",
 			"--verbose",
-			"--", prompt,
+			"--", run.Prompt,
 		},
-		Dir: dir,
-		Env: []string{bashDefaultTimeout, bashMaxTimeout},
+		Dir:   run.Dir,
+		Env:   env,
+		Unset: run.Identity.Unset,
 	}
 }

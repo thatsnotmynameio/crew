@@ -160,8 +160,8 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 	return issue.URL, prs, nil
 }
 
-// mirror puts pr in to with the swap Move makes, through one gh pr edit, and
-// edits nothing when to's is already its only crew label.
+// mirror puts pr in to with the swap Move makes, through one gh pr edit as
+// the writer, and edits nothing when to's is already its only crew label.
 func (t *Tracker) mirror(ctx context.Context, pr pullRequest, to crew.State) error {
 	remove, states := t.swap(pr.labels, to)
 	if len(remove) == 0 && slices.Equal(states, []crew.State{to}) {
@@ -193,7 +193,7 @@ func (t *Tracker) statusLink(ctx context.Context, issueKey, issueRef, issueURL s
 // postStop posts report's stop comment on the pull request number, ending
 // with link, and remembers it under the report's ID.
 func (t *Tracker) postStop(ctx context.Context, report crew.PullRequestReport, number int, link string) error {
-	if _, err := t.postComment(ctx, strconv.Itoa(number), renderStop(report, link)); err != nil {
+	if _, _, err := t.postComment(ctx, strconv.Itoa(number), renderStop(report, link)); err != nil {
 		return fmt.Errorf("comment on pull request #%d: %w", number, err)
 	}
 	t.mu.Lock()

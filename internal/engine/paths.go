@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -65,10 +66,25 @@ func (e *Engine) openAppend(rel string) (*os.File, error) {
 // repository root becomes . and the home directory ~ (KTD12). A tool's
 // stderr or a session's last message often names absolute paths, and
 // failure reports end up on public issues. The root goes first, as it
-// usually sits inside the home directory.
+// usually sits inside the home directory. It also redacts GitHub tokens and
+// PEM private keys, a session acting as a mate holding one, before anything
+// cuts the text, so no cut leaves part of a token without its prefix.
 func (e *Engine) scrub(text string) string {
+	text = privateKey.ReplaceAllString(text, "[redacted private key]")
+	text = githubToken.ReplaceAllString(text, "[redacted token]")
 	return replaceDir(replaceDir(text, e.cfg.Root, "."), e.cfg.Home, "~")
 }
+
+// githubToken matches GitHub's tokens by their prefixes: personal, OAuth,
+// user-to-server, installation and refresh tokens, and fine-grained
+// personal access tokens. A stateless installation token, ghs_APPID_JWT,
+// holds base64url segments joined by dots; a dot is matched only between
+// segments, so one ending a sentence stays.
+var githubToken = regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*|github_pat_[A-Za-z0-9_]+)`)
+
+// privateKey matches a PEM private key block, or its start up to the end
+// of the text when the text ends inside it.
+var privateKey = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----(?s:.*?)(?:-----END [A-Z ]*PRIVATE KEY-----|\z)`)
 
 // maxSaid is how many characters of what a session last said reach the core.
 const maxSaid = 200
