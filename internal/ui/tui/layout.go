@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -148,13 +149,18 @@ func (m Model) handledRows() []string {
 	return rows
 }
 
-// tallestColumn is the most cards a board column holds.
+// tallestColumn is the most cards a drawn board column holds: a column
+// dropped or scrolled off the board adds no rows.
 func (m Model) tallestColumn() int {
+	cards := m.cards()
+	drawn := m.boardLayout(cards).columns
 	n := map[int]int{}
 	tallest := 0
-	for _, c := range m.cards() {
-		n[c.column]++
-		tallest = max(tallest, n[c.column])
+	for _, c := range cards {
+		if slices.Contains(drawn, c.column) {
+			n[c.column]++
+			tallest = max(tallest, n[c.column])
+		}
 	}
 	return tallest
 }

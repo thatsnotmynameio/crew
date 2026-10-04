@@ -260,3 +260,28 @@ func TestAColumnCapsItsCardsWhenTheWindowIsShort(t *testing.T) {
 		t.Errorf("view does not end with the key-help line:\n%s", view)
 	}
 }
+
+// The card cap counts only the columns the board draws: a taller column
+// scrolled off to the side must not keep the view from fitting (KTD8).
+func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
+	var issues []core.IssueView
+	for col, n := range []int{3, 3, 3, 1, 6} {
+		for k := range n {
+			key := fmt.Sprintf("%d-%d", col, k)
+			issues = append(issues, core.IssueView{
+				Issue: crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, Stage: fmt.Sprintf("s%d", col+1),
+				Claim: core.ClaimRunning,
+			})
+		}
+	}
+	u := engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: issues}}}
+	for _, height := range []int{20, 21} {
+		h := newWorkflowHarness(t, 80, eightStages()[:5])
+		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
+		h.send(updateMsg(u))
+
+		if view := checkFits(t, h, 80, height); strings.Contains(view, "lines cut") {
+			t.Errorf("at %d rows the view was cut although a lower card cap fits:\n%s", height, view)
+		}
+	}
+}
