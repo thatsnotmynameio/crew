@@ -292,6 +292,8 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
 
+crew stops at the first check that fails, and prints its error after the [boot log](#run-it), whose last line names the check that failed. A second broken tool shows on the next start.
+
 At the same check, crew creates the labels your workflow names and the extra labels that the repository does not have yet, each `on_failure` label included, and no other.
 
 ## Act as mates
@@ -553,6 +555,25 @@ Run `crew` anywhere inside the repository's main checkout. In one of crew's work
 crew
 ```
 
+While crew loads `.crew/config.yaml` and runs its [checks](#when-crew-refuses-to-start), it prints a boot log: one line as each step starts, before anything else. A step done once per item, a mate or a missing label, gets a line for each, and a step that does not run, such as making mates act when the config names none, gets no line.
+
+```text
+14:22:41 crew: loading .crew/config.yaml
+14:22:41 crew: resolving the repository for the mates
+14:22:42 crew: checking git for the mates
+14:22:42 crew: making mate developer act
+14:22:43 crew: checking the gh login
+14:22:44 crew: finding the boss
+14:22:44 crew: reading the repository's labels
+14:22:45 crew: creating the label "crew:triage:ready"
+14:22:45 crew: looking for claude on PATH
+14:22:45 crew: checking the git checkout and its origin
+14:22:45 crew: resolving origin's default branch
+14:22:46 crew: reading the run journal
+```
+
+crew prints the boot log on every start, with the live view and with `--plain` alike. Its last line names what crew is waiting on, so a slow start never looks like a hung one. When the checks pass, the live view or the event lines take over; the live view does not repeat the boot log.
+
 On a terminal, crew shows a live view: one screen of sections, one under the other. The view only displays. You act on issues through their labels on GitHub.
 
 ```text
@@ -612,7 +633,7 @@ No key acts on an issue, a pull request, a workspace or a log.
 
 crew also tells the terminal what it is doing, where the terminal supports it. The tab title reads like `crew · 2 running · 1 waiting · 1 needs attention`, or `crew · idle`, `crew · stopping` or `crew · winding down`. The tab's progress indicator shows activity while actions run, and an error while an issue in Handled needs you. A failed issue that a stage holds again does not count in either. While the terminal is not focused, each stage that ends sends a desktop notification saying how it ended. Stages with `on_board: false` send none, and nothing is sent once you asked crew to stop. Notifications use OSC 9, which terminals such as iTerm2, WezTerm, Ghostty and Windows Terminal show, and tmux does not pass on. crew knows the terminal is not focused only when the terminal reports focus, so a terminal that never does gets no notification.
 
-With `--plain`, or when the output is not a terminal, crew prints one line per event instead:
+With `--plain`, or when the output is not a terminal, crew prints one line per event instead, after the boot log and any startup warnings:
 
 ```text
 14:22:58 crew: implement took #42 "Add login form" (ready -> in progress)
