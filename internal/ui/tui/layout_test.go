@@ -159,3 +159,31 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 		" GIVEN UP ", " NEEDS ATTENTION ", " READY TO MERGE ", "×",
 	)
 }
+
+// Covers R21: pgdown and pgup move the focused section a page at a time.
+func TestPageKeysScrollTheFocusedSectionByAPage(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
+	h.send(updateMsg(eventful()))
+
+	h.send(tab)
+	top := h.view()
+	h.send(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	if h.view() == top || strings.Contains(h.view(), "#11 Parse") {
+		t.Errorf("pgdown did not move Handled past its first entry:\n%s", h.view())
+	}
+	h.send(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	if h.view() != top {
+		t.Errorf("pgup did not bring Handled back to its top:\n%s", h.view())
+	}
+
+	h.send(tab)
+	h.send(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	view := h.view()
+	contains(t, view, "listed 19 issues", "listed 20 issues")
+	if strings.Contains(view, "listed 30 issues") {
+		t.Errorf("pgup did not move Events back a page of 10 events:\n%s", view)
+	}
+	h.send(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	contains(t, h.view(), "listed 30 issues")
+}

@@ -124,15 +124,17 @@ func (m Model) marked(row []rune, marks []bool) string {
 }
 
 // columnX is the x of workflow column c on the underline row: its own x
-// when drawn; the left edge for a hidden stage; else the edge on its side
-// of the drawn columns (KTD10).
+// when drawn; the left edge for a hidden stage or a column left of every
+// drawn one; else the gap where it falls among the drawn columns, which is
+// the right edge past the last one (KTD10).
 func (m Model) columnX(l boardLayout, prefix, c int) int {
 	step := l.width + columnGap
-	if i := slices.Index(l.columns, c); i >= 0 {
+	i, drawn := slices.BinarySearch(l.columns, c)
+	switch {
+	case drawn:
 		return prefix + i*step
-	}
-	if !m.shown(c) || len(l.columns) == 0 || c < l.columns[0] {
+	case !m.shown(c) || i == 0:
 		return 0
 	}
-	return prefix + len(l.columns)*step
+	return prefix + i*step - columnGap
 }

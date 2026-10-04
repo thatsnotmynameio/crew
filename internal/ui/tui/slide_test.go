@@ -85,3 +85,27 @@ func TestAnIssueThatStaysInItsColumnDoesNotSlide(t *testing.T) {
 		t.Errorf("%d slides for a card that stayed in its column", n)
 	}
 }
+
+// A slide from a dropped column between drawn ones starts in the gap where
+// that column would be, and points the way the card moved.
+func TestASlideFromADroppedMiddleColumnStartsBetweenItsNeighbours(t *testing.T) {
+	one := crew.Issue{Key: "1", Ref: "#1"}
+	seven := crew.Issue{Key: "7", Ref: "#7"}
+	h := newWorkflowHarness(t, 80, eightStages())
+	before := held(one, "s1", "a", core.ClaimRunning)
+	before.Snapshot.Issues = append(before.Snapshot.Issues, held(seven, "s2", "a", core.ClaimRunning).Snapshot.Issues...)
+	h.send(updateMsg(before))
+	after := held(one, "s1", "a", core.ClaimRunning)
+	after.Snapshot.Issues = append(after.Snapshot.Issues, held(seven, "s3", "a", core.ClaimRunning).Snapshot.Issues...)
+	h.send(updateMsg(after))
+
+	row := underlineOf(t, h)
+	i := strings.Index(row, "#7 ▸")
+	if i < 0 || strings.Contains(row, "◂") {
+		t.Fatalf("marker does not point right from the dropped column:\n%s", row)
+	}
+	x := len([]rune(row[:i]))
+	if col := cardColumn(t, boardOf(t, h.view()), "#7"); x >= 1+col*(maxColumn+columnGap) {
+		t.Errorf("marker at column %d starts at or past its destination column:\n%s", x, row)
+	}
+}
