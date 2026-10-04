@@ -56,7 +56,7 @@ During the run, two failures stay silent. When GitHub keeps refusing the default
 **One entry**
 
 - R4. An entry's first line shows the name, a short state (`acting`, or `cannot act` with a short reason such as `no key`), and this run's totals per R7. The `you` entry has no state.
-- R5. An entry's second line lists the stages and actions that act as it, as `stage/action`, marks the default mate's line with crew's own writes, and ends with the actions running as it now, each with its issue reference. A line that does not fit the window ends in `…`.
+- R5. An entry's second line lists the stages and actions that act as it, as `stage/action`, marks the default mate's line with crew's own writes, and ends with the actions running as it now, each with its issue reference. When the line does not fit the window, the list of stages and actions is cut with `…` first, so the actions running now stay visible.
 - R6. An action counts as running on an entry from when its session starts until it ends, its check included.
 - R7. The totals count the actions that ended this run as that identity: how many, their cost and their tokens. Cost and tokens follow the header and Handled: a cost some session did not report is marked `(partial)`, and none at all reads `cost not reported`. The totals start at zero each time crew starts.
 - R8. A mate that cannot act at startup shows `cannot act` and its short reason. Its second line says its stages and actions act as `you`, and those actions run and count on the `you` entry.
@@ -65,13 +65,13 @@ During the run, two failures stay silent. When GitHub keeps refusing the default
 
 - R9. A mate stops acting during the run when crew's writes as the default mate fall back to the boss, or when a token of a session or check acting as the mate fails to renew. Its entry's state changes then, with a short reason, such as `writes as you` or `token not renewed`.
 - R10. A mate whose token renews after a failure acts again: its entry's state returns to `acting`, and its header warning goes. A writes fallback lasts until crew restarts, as today.
-- R11. When a mate stops acting during the run, the header gains a warning with the full reason and the fix, in the words of today's startup warnings, and Events gains a line saying which mate stopped acting and why. `--plain` prints that line like any event.
+- R11. When a mate stops acting during the run, the header gains a warning with the full reason and the fix, in the words of today's startup warnings. Events gains a line each time a mate stops acting, saying which mate and why, and each time it acts again. `--plain` prints those lines like any event.
 - R12. A mate's startup warning stays under the header for the whole run, as today, next to its entry's short state.
 
 **Fit and the rest**
 
 - R13. When rows run out, the existing order holds (Events, then Handled, then Actions' session lines, then board cards), then each Mates entry drops its second line, and only then is the view cut.
-- R14. No key acts on a mate, and the view adds no way to create or fix one: `crew mates create` stays the way.
+- R14. No key of the live view acts on a mate, and the view adds no way to create or fix one: `crew mates create` stays the way.
 - R15. `--plain` keeps its startup warning lines, and Actions, Queues, Handled, the board and Events are otherwise unchanged.
 - R16. `docs/guide/crew.mdx` documents the section in "Run it", and "When a mate cannot act" no longer says crew warns only at startup and describes the mid-run warnings.
 
@@ -81,7 +81,7 @@ During the run, two failures stay silent. When GitHub keeps refusing the default
 - AE2. **Covers R3.** Given a config with no `mate`, the section has only the `you` entry, and every action that ends counts on it.
 - AE3. **Covers R8, R12.** Given `reviewer` has no key on this machine, its first line shows `cannot act: no key`, its second line says `review/review` acts as `you`, the header keeps the full warning with `crew mates create reviewer`, and a review action that ends counts on `you`.
 - AE4. **Covers R9, R11.** Given GitHub keeps refusing the default mate `clerk` mid-run, so crew's writes fall back to the boss, `clerk`'s state changes to `writes as you`, the header gains the full warning, and Events gains a line, which `--plain` prints too.
-- AE5. **Covers R9, R10.** Given a renewal of `developer`'s session token fails, `developer`'s state changes to `token not renewed` and the header gains a warning; when the next renewal succeeds, the state returns to `acting` and that warning goes.
+- AE5. **Covers R9, R10, R11.** Given a renewal of `developer`'s session token fails, `developer`'s state changes to `token not renewed`, the header gains a warning and Events gains a line; when the next renewal succeeds, the state returns to `acting`, that warning goes, and Events gains a line saying `developer` acts again.
 - AE6. **Covers R13.** Given a window too short for every section, after Events, Handled, Actions' session lines and board cards have shrunk, each Mates entry drops its second line before the view is cut.
 
 ### Scope Boundaries
