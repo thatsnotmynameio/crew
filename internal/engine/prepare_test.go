@@ -12,6 +12,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // listCounter is a preparing fake tracker that counts its listings.
@@ -34,11 +35,15 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker(issue(1, ready))}
 		notLoggedIn := errors.New("gh is not logged in")
 		tr.Fail(notLoggedIn)
+		tr.ReportStep("checking the gh login")
 		harness := fake.NewPreparingHarness()
+		harness.ReportStep("checking claude")
 		cfg := config(t, tr, develop)
 		cfg.Harness = harness
+		var steps []string
+		ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
 
-		err := engine.New(cfg).Run(context.Background())
+		err := engine.New(cfg).Run(ctx)
 
 		if !errors.Is(err, notLoggedIn) {
 			t.Fatalf("Run = %v, want the preparer's error", err)
@@ -53,8 +58,41 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 		if got := tr.Calls(); !reflect.DeepEqual(got, want) {
 			t.Errorf("tracker prepared for %v, want the workflow's states %v", got, want)
 		}
-		if got := harness.Calls(); !reflect.DeepEqual(got, want) {
-			t.Errorf("harness prepared for %v, want %v", got, want)
+		if got := harness.Calls(); len(got) != 0 {
+			t.Errorf("harness prepared for %v, want it never prepared after the tracker failed", got)
+		}
+		if want := []string{"checking the gh login"}; !reflect.DeepEqual(steps, want) {
+			t.Errorf("steps = %q, want %q: the failed step last, and no journal step", steps, want)
+		}
+	})
+}
+
+func TestPrepareReportsTheJournalStepAfterEveryPortPrepared(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker()}
+		tr.ReportStep("checking the gh login")
+		harness := fake.NewPreparingHarness()
+		harness.ReportStep("checking claude")
+		cfg := config(t, tr, develop)
+		cfg.Harness = harness
+		e := engine.New(cfg)
+		var steps []string
+		ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
+
+		if err := e.Prepare(ctx); err != nil {
+			t.Fatalf("Prepare: %v", err)
+		}
+		want := []string{"checking the gh login", "checking claude", "reading the run journal"}
+		if !reflect.DeepEqual(steps, want) {
+			t.Errorf("steps = %q, want %q", steps, want)
+		}
+
+		e.Stop()
+		if err := e.Run(context.Background()); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if tr.lists != 1 {
+			t.Errorf("Run listed %d times, want the first poll's listing from the built core", tr.lists)
 		}
 	})
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // journalEngine is an engine rooted in a fresh directory, for the journal.
@@ -111,9 +112,15 @@ func TestAJournalThatCannotBeReadFailsPrepareNamingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := e.Prepare(t.Context())
+	var steps []string
+	ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
+
+	err := e.Prepare(ctx)
 	if err == nil || !strings.Contains(err.Error(), ".crew/logs/runs.jsonl") {
 		t.Fatalf("Prepare = %v, want an error naming .crew/logs/runs.jsonl", err)
+	}
+	if want := []string{"reading the run journal"}; !reflect.DeepEqual(steps, want) {
+		t.Errorf("steps = %q, want the journal's step before its error", steps)
 	}
 }
 
