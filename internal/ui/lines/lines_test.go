@@ -163,8 +163,8 @@ var sentences = []struct {
 		"run time of 1h0m0s is up: taking no new issues, winding down"},
 	// Covers AE4 (lines side): the line names the mate and its full warning.
 	{core.MateStopped{At: at("10:00:00"), Mate: "clerk", Reason: "writes as you",
-		Warning: "crew's writes as mate clerk went back to you: HTTP 401; crew writes as you until it restarts"},
-		"mate clerk stopped acting: crew's writes as mate clerk went back to you: HTTP 401; crew writes as you until it restarts"},
+		Warning: "crew's writes as mate clerk went back to you: HTTP 401"},
+		"mate clerk stopped acting: crew's writes as mate clerk went back to you: HTTP 401"},
 	{core.MateActsAgain{At: at("10:00:00"), Mate: "developer"},
 		"mate developer acts again: its token renewed"},
 	{core.Stopped{At: at("10:00:00")},
