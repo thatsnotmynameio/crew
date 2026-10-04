@@ -534,13 +534,22 @@ func (m *Model) findCall(id CallID) (*heldIssue, *call) {
 }
 
 // release forgets h, keeping its handled entry, which replaces the issue's
-// earlier one, when its stage ended.
+// earlier one, when its stage ended. A stage hidden from the board that
+// ended well keeps the earlier entry instead, marked Gone: its move took the
+// issue out of the entry's To (#109).
 func (m *Model) release(h *heldIssue) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
 	if h.verdict == nil {
 		return
 	}
-	m.handled = slices.DeleteFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
+	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
+	if i >= 0 && m.stages[h.stage].OffBoard && !h.verdict.NeedsAttention() {
+		m.handled[i].view.Gone = true
+		return
+	}
+	if i >= 0 {
+		m.handled = slices.Delete(m.handled, i, i+1)
+	}
 	m.handled = append(m.handled, handledEntry{view: *h.verdict, landed: h.landed})
 }
 
