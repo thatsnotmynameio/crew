@@ -206,8 +206,9 @@ func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
 	}
 }
 
-// Covers KTD9: an unheld card keeps its two rows, the second the bar alone.
-func TestAnUnheldCardDrawsNoClaim(t *testing.T) {
+// Covers #126: an unheld card keeps its two rows, the second a status of
+// its own, ○ idle, and no claim.
+func TestAnUnheldCardShowsIdle(t *testing.T) {
 	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning),
@@ -222,9 +223,12 @@ func TestAnUnheldCardDrawsNoClaim(t *testing.T) {
 	for i, l := range rows {
 		if lead, _, found := strings.Cut(l, "▌ #22"); found {
 			x := len([]rune(lead))
-			if got := strings.TrimRight(string([]rune(rows[i+1])[x:]), " "); got != "▌" {
-				t.Errorf("#22's second row = %q, want the bar alone:\n%s", got, board)
+			if got := strings.TrimRight(string([]rune(rows[i+1])[x:]), " "); got != "▌ ○ idle" {
+				t.Errorf("#22's second row = %q, want ▌ ○ idle:\n%s", got, board)
 			}
 		}
+	}
+	if strings.Count(board, "○ idle") != 1 {
+		t.Errorf("want one idle card, #22's; the running #20 is not idle:\n%s", board)
 	}
 }
