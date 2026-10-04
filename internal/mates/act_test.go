@@ -204,20 +204,44 @@ func TestActFailsWhenGhCannotResolveTheRepository(t *testing.T) {
 	r.opts.Run = func(context.Context, proc.Command) (proc.Output, error) {
 		return proc.Output{}, errors.New("gh: not logged in")
 	}
+	var steps []string
+	r.opts.Step = func(step string) { steps = append(steps, step) }
 	if _, err := r.act(t); !errors.As(err, new(*EnvError)) {
 		t.Errorf("Act = %v, want an EnvError", err)
 	}
 	if entries, _ := os.ReadDir(r.opts.TempDir); len(entries) != 0 {
 		t.Errorf("Act left %v", entries)
 	}
+	if want := []string{"resolving the repository for the mates"}; !slices.Equal(steps, want) {
+		t.Errorf("steps = %q, want %q, the step that failed last", steps, want)
+	}
 }
 
 func TestActWithoutNamesDoesNothing(t *testing.T) {
 	r := newActRun(t)
+	var steps []string
+	r.opts.Step = func(step string) { steps = append(steps, step) }
 	a := r.mustAct(t)
 	a.Close()
-	if len(a.Mates) != 0 || len(a.Warnings) != 0 || len(r.calls) != 0 {
-		t.Errorf("Act = %+v after %v, want nothing", a, r.calls)
+	if len(a.Mates) != 0 || len(a.Warnings) != 0 || len(r.calls) != 0 || len(steps) != 0 {
+		t.Errorf("Act = %+v after %v and the steps %q, want nothing", a, r.calls, steps)
+	}
+}
+
+func TestActReportsEachStepAsItStarts(t *testing.T) {
+	r := newActRun(t, "alice", "bob")
+	var steps []string
+	r.opts.Step = func(step string) { steps = append(steps, step) }
+	a := r.mustAct(t)
+	// Neither mate is stored here, so both end up warnings, yet each had its
+	// line: its step started.
+	if len(a.Warnings) != 2 {
+		t.Errorf("Warnings = %q, want one for each mate", a.Warnings)
+	}
+	want := []string{"resolving the repository for the mates", "checking git for the mates",
+		"making mate alice act", "making mate bob act"}
+	if !slices.Equal(steps, want) {
+		t.Errorf("steps = %q, want %q", steps, want)
 	}
 }
 

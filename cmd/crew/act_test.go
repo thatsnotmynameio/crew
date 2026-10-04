@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/mates"
+	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
@@ -51,6 +52,21 @@ func TestActingMatesRefusesAnInvalidName(t *testing.T) {
 	_, err := actingMates(run, t.TempDir())(context.Background(), "Ops", []string{"Ops"})
 	if _, ok := errors.AsType[*mates.EnvError](err); !ok {
 		t.Errorf("actingMates = %v, want an EnvError", err)
+	}
+}
+
+func TestActingMatesReportsItsStepsOnTheChecksContext(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	run := func(context.Context, proc.Command) (proc.Output, error) {
+		return proc.Output{}, errors.New("gh: not logged in")
+	}
+	var steps []string
+	ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
+	if _, err := actingMates(run, t.TempDir())(ctx, "ops", []string{"ops"}); err == nil {
+		t.Fatal("actingMates = nil, want gh's failure")
+	}
+	if want := []string{"resolving the repository for the mates"}; !slices.Equal(steps, want) {
+		t.Errorf("steps = %q, want %q", steps, want)
 	}
 }
 
