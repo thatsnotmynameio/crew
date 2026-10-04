@@ -28,3 +28,5 @@ node_modules/
 # Coverage profile (go test -coverprofile), uploaded to Codacy by CI
 coverage.out
 .context/compound-engineering/
+
+.crew/config.yaml
