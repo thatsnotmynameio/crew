@@ -4,7 +4,7 @@ Workflow ───────────────────────�
  ideas                      bugs                       done                     
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  ▌ #21 Retry the poll       ▌ #21 Retry the poll       ▌ #22 Typo in help       
- ▌                          ▌                          ▌                        
+ ▌ ○ idle                   ▌ ○ idle                   ▌ ○ idle                 
                             ▌ #20 Crash on start                                
                             ▌ ⠋ running                                         
 
