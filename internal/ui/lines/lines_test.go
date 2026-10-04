@@ -198,6 +198,21 @@ func TestNoDropsPrintNoDropLine(t *testing.T) {
 	equalLines(t, got, []string{"12:00:00 crew: stopped"})
 }
 
+// Covers #92 (lines side): the notice for an item of the other kind is
+// stamped with the time of the poll that found it, not the time it prints.
+func TestANoticeOfAnItemOfTheOtherKindPrintsAtItsPollsTime(t *testing.T) {
+	src := newSource(0, engine.Update{Events: []core.Event{
+		core.IssueOfOtherKind{At: at("12:30:00"), IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+			Label: "ready", Stage: "implement", Takes: crew.KindIssue},
+	}})
+
+	got := render(t, src, at("12:30:05"))
+
+	equalLines(t, got, []string{
+		"12:30:00 crew: left #90 alone: it is a pull request, and ready is the label of implement, which takes issues",
+	})
+}
+
 // Covers AE10 (lines side): each startup warning prints once, before the
 // first event.
 func TestEachStartupWarningPrintsOnceBeforeTheFirstEvent(t *testing.T) {
