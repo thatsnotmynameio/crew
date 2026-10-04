@@ -6,7 +6,7 @@ argument-hint: "[what to record, optionally the type or a plan path]"
 
 # Create an issue for crew
 
-crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. A stage takes every open issue carrying its `label`, so the label this skill puts on the issue decides what crew does with it, unattended, within one poll. The skill creates the issue directly, with no preview and no confirmation: a mistake is fixed by editing the issue on GitHub.
+crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. A stage takes every open issue carrying its `label`, unless it declares `takes: pull_requests`, so the label this skill puts on the issue decides what crew does with it, unattended, within one poll. The skill creates the issue directly, with no preview and no confirmation: a mistake is fixed by editing the issue on GitHub.
 
 Run `gh` with the repository root as the working directory. Read files with your own file tools.
 
@@ -15,7 +15,7 @@ Run `gh` with the repository root as the working directory. Read files with your
 1. Find the repository root with `git rev-parse --show-toplevel`.
 2. Read `<root>/.crew/config.yaml`. When the file is missing, say that crew is not configured in this repository and stop. When it does not parse as YAML, say so with the parser's error and stop. Create nothing in either case.
 3. Build the types:
-   - **Stages:** each entry of `workflow` is a type, with its `label`, `name`, and optional `description` and `issue_template`. Only a stage's `label` is a type; its `moves_to`, `on_success` and `on_failure` labels are not.
+   - **Stages:** each entry of `workflow` that takes issues is a type, with its `label`, `name`, and optional `description` and `issue_template`. A stage takes issues when it has no `takes` or has `takes: issues`. A stage with `takes: pull_requests` is not a type: crew leaves an issue carrying its label alone. Only a stage's `label` is a type; its `moves_to`, `on_success` and `on_failure` labels are not.
    - **Extras:** each entry of the top-level `extra_labels` is a type, with its `label` and optional `description` and `issue_template`. An extra parks an issue: no stage takes it until someone adds a stage's label.
    - A type is shown by its description, or by its name (a stage) or label (an extra) when it has none.
 4. When the config names no types, say so and stop, creating nothing.

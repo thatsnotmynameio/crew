@@ -1,6 +1,9 @@
 package config_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadRejectsInvalidStages(t *testing.T) {
 	testRejects(t, invalidStages)
@@ -12,6 +15,35 @@ func TestLoadRejectsInvalidActions(t *testing.T) {
 
 // invalidStages are errors in the workflow's stages and in how they connect.
 var invalidStages = []rejectCase{
+	{
+		// Covers AE4.
+		name:  "takes names neither kind",
+		body:  takingStage("takes: prs"),
+		wants: []string{"workflow[0].takes", "line 7", `"prs"`, "issues", "pull_requests"},
+	},
+	{
+		name:  "empty takes",
+		body:  takingStage(`takes: ""`),
+		wants: []string{"workflow[0].takes", "line 7", "issues", "pull_requests"},
+	},
+	{
+		// Values are matched exactly, like queue names.
+		name:  "takes in another case",
+		body:  takingStage("takes: Issues"),
+		wants: []string{"workflow[0].takes", "line 7", `"Issues"`},
+	},
+	{
+		// A stage takes one kind, never both.
+		name:  "takes is a list",
+		body:  takingStage("takes: [issues, pull_requests]"),
+		wants: []string{"workflow[0].takes", "line 7"},
+	},
+	{
+		// A bad takes is reported with the stage's other errors.
+		name:  "takes and another key wrong in one stage",
+		body:  strings.Replace(takingStage("takes: prs"), "    on_failure: failed\n", "", 1),
+		wants: []string{"workflow[0].takes", `"prs"`, "workflow[0].on_failure", "required"},
+	},
 	{
 		name:  "no workflow",
 		body:  "config:\n  max_parallel_issues: 2\n",

@@ -20,6 +20,7 @@ type stageDoc struct {
 	OnSuccess     located[string] `yaml:"on_success"`
 	OnFailure     located[string] `yaml:"on_failure"`
 	Queue         located[string] `yaml:"queue"`
+	Takes         located[string] `yaml:"takes"`
 	Actions       yaml.Node       `yaml:"actions"`
 }
 
@@ -40,7 +41,7 @@ type actionDoc struct {
 // What each kind of list item must be, said when an item is not a mapping.
 const (
 	stageShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
-		"and optionally description, issue_template and queue"
+		"and optionally description, issue_template, queue and takes"
 	actionShape = "must be an action with name and prompt, and optionally check and mate"
 	extraShape  = "must be an extra label with label, and optionally description and issue_template"
 )
@@ -114,9 +115,30 @@ func parseStage(n *yaml.Node, path string, table queueTable, mate string) (parse
 	collect(err)
 	p.Queue, err = stageQueue(doc.Queue, path, table)
 	collect(err)
+	p.Takes, err = stageTakes(doc.Takes, path)
+	collect(err)
 	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line, mate)
 	collect(err)
 	return p, errors.Join(errs...)
+}
+
+// The values of a stage's takes, one per kind.
+const (
+	takesIssues       = "issues"
+	takesPullRequests = "pull_requests"
+)
+
+// stageTakes returns the kind of item the stage at path takes: issues when
+// takes is left out, and otherwise the kind its value names.
+func stageTakes(l located[string], path string) (crew.Kind, error) {
+	switch {
+	case l.line == 0, l.value == takesIssues:
+		return crew.KindIssue, nil
+	case l.value == takesPullRequests:
+		return crew.KindPullRequest, nil
+	}
+	return crew.KindIssue, keyError(path+".takes", l.line,
+		fmt.Sprintf("%q must be %s or %s", l.value, takesIssues, takesPullRequests))
 }
 
 func actions(n *yaml.Node, path string, stageLine int, mate string) ([]crew.Action, error) {

@@ -103,6 +103,23 @@ type IssueSkipped struct {
 	States   []crew.State
 }
 
+// IssueOfOtherKind is a listed item in one crew state, the Label of a stage
+// that Takes the other kind of item. It is not taken, moved or commented on
+// (#92). It is emitted once while the item stays in that state, and again
+// once a listing found it in no such state.
+type IssueOfOtherKind struct {
+	At       time.Time
+	IssueKey string
+	IssueRef string
+	// Kind is the item's kind.
+	Kind crew.Kind
+	// Label is the crew state the item is in, Stage's label.
+	Label crew.State
+	Stage string
+	// Takes is the kind Stage takes.
+	Takes crew.Kind
+}
+
 // PollDone is a listing the core has acted on.
 type PollDone struct {
 	At time.Time
@@ -242,6 +259,9 @@ func (e FailureReported) Time() time.Time { return e.At }
 func (e IssueSkipped) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e IssueOfOtherKind) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e PollDone) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -273,6 +293,7 @@ func (RunNotRecorded) event()   {}
 func (IssueMoved) event()       {}
 func (FailureReported) event()  {}
 func (IssueSkipped) event()     {}
+func (IssueOfOtherKind) event() {}
 func (PollDone) event()         {}
 func (PollSkipped) event()      {}
 func (ListingFailed) event()    {}
