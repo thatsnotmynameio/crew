@@ -41,11 +41,15 @@ var (
 
 	_ port.Acting         = (*Acting)(nil)
 	_ port.BossFinder     = (*Acting)(nil)
+	_ port.LoginFinder    = (*Acting)(nil)
+	_ port.WriterReporter = (*Acting)(nil)
 	_ port.Tracker        = ActingTracker{}
 	_ port.Preparer       = ActingTracker{}
 	_ port.StatusReporter = ActingTracker{}
 	_ port.Acting         = ActingTracker{}
 	_ port.BossFinder     = ActingTracker{}
+	_ port.LoginFinder    = ActingTracker{}
+	_ port.WriterReporter = ActingTracker{}
 
 	_ port.Tracker     = BoardTracker{}
 	_ port.BoardLister = BoardTracker{}
@@ -570,12 +574,17 @@ type ActAsCall struct {
 	Mates  []string
 }
 
-// Acting is a scriptable port.Acting and port.BossFinder, to embed in a fake
-// tracker. It records each ActAs call and returns the boss's logins set by
-// SetBoss. Its zero value is ready to use, and finds no boss.
+// Acting is a scriptable port.Acting, port.BossFinder, port.LoginFinder and
+// port.WriterReporter, to embed in a fake tracker. It records each ActAs
+// call and returns the boss's logins set by SetBoss, the login set by
+// SetLogin and the writes warning set by SetWriterLost. Its zero value is
+// ready to use: it finds no boss and no login, and its writes never went
+// back to the boss.
 type Acting struct {
 	mu    sync.Mutex
 	boss  []string
+	login string
+	lost  string
 	calls []ActAsCall
 }
 
@@ -600,6 +609,36 @@ func (a *Acting) SetBoss(logins ...string) {
 	a.boss = slices.Clone(logins)
 }
 
+// Login implements port.LoginFinder: it returns what SetLogin last set.
+func (a *Acting) Login() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.login
+}
+
+// SetLogin sets the login Login returns.
+func (a *Acting) SetLogin(login string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.login = login
+}
+
+// WriterLost implements port.WriterReporter: it returns what SetWriterLost
+// last set.
+func (a *Acting) WriterLost() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lost
+}
+
+// SetWriterLost sets the warning WriterLost returns, as when the tracker's
+// writes went back to the boss; "" makes them go as the writer again.
+func (a *Acting) SetWriterLost(warning string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lost = warning
+}
+
 // ActAsCalls returns the ActAs calls received so far, in order.
 func (a *Acting) ActAsCalls() []ActAsCall {
 	a.mu.Lock()
@@ -612,17 +651,19 @@ func (a *Acting) ActAsCalls() []ActAsCall {
 	return out
 }
 
-// ActingTracker is a ReportingTracker that also implements port.Acting and
-// port.BossFinder, for the tests about crew acting as its mates. A plain
-// *Tracker, PreparingTracker or ReportingTracker does not implement them.
+// ActingTracker is a ReportingTracker that also implements port.Acting,
+// port.BossFinder, port.LoginFinder and port.WriterReporter, for the tests
+// about crew acting as its mates. A plain *Tracker, PreparingTracker or
+// ReportingTracker does not implement them.
 type ActingTracker struct {
 	ReportingTracker
 	*Acting
 }
 
 // NewActingTracker returns an ActingTracker holding issues, whose Prepare
-// and status writes succeed until told otherwise and which finds no boss
-// until SetBoss.
+// and status writes succeed until told otherwise, which finds no boss until
+// SetBoss and no login until SetLogin, and whose writes never went back to
+// the boss until SetWriterLost.
 func NewActingTracker(issues ...crew.Issue) ActingTracker {
 	return ActingTracker{ReportingTracker: NewReportingTracker(issues...), Acting: &Acting{}}
 }

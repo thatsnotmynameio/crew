@@ -101,15 +101,37 @@ type Acting struct {
 	// Warnings say, one line each, which configured mate cannot act or
 	// adds no co-author, why, and the fix.
 	Warnings []string
+	// Unable holds, for each configured mate that cannot act this run, the
+	// short reason why: "no key", "bad key file", "not installed", "key
+	// rejected" or "no token". A mate that acts without a co-author has
+	// none.
+	Unable map[string]string
 
-	dir    string
-	repo   string
-	mint   mintFunc
-	mu     sync.Mutex // held while a token is renewed and its files written
-	acted  []*acted
-	cancel context.CancelFunc
-	done   chan struct{}
-	closed sync.Once
+	dir      string
+	repo     string
+	store    *Store
+	mint     mintFunc
+	mu       sync.Mutex // held while a token is renewed and its files written
+	acted    []*acted
+	renewals renewals
+	cancel   context.CancelFunc
+	done     chan struct{}
+	closed   sync.Once
+}
+
+// The short reasons of Acting.Unable.
+const (
+	reasonNoKey        = "no key"
+	reasonBadKeyFile   = "bad key file"
+	reasonNotInstalled = "not installed"
+	reasonKeyRejected  = "key rejected"
+	reasonNoToken      = "no token"
+)
+
+// cannot is why a configured mate cannot act: its warning, and the short
+// reason of Acting.Unable.
+type cannot struct {
+	warning, reason string
 }
 
 // acted is a mate that acts, and where its token is.
@@ -167,7 +189,7 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Acting{dir: dir, repo: repo.Name, mint: o.mint}
+	a := &Acting{dir: dir, repo: repo.Name, store: o.Store, mint: o.mint}
 	if a.mint == nil {
 		a.mint = o.Client.AccessToken
 	}
@@ -242,9 +264,9 @@ type resolver struct {
 // resolve makes the mate called name act, or warns why it cannot. Its error
 // is a file it could not write.
 func (r *resolver) resolve(ctx context.Context, name string) error {
-	m, inst, warning := r.find(ctx, name)
-	if warning != "" {
-		r.a.Warnings = append(r.a.Warnings, warning)
+	m, inst, why := r.find(ctx, name)
+	if why.warning != "" {
+		r.unable(name, why)
 		return nil
 	}
 	s := &acted{mate: m, inst: inst, sessionsDir: filepath.Join(r.a.dir, name, "sessions")}
@@ -253,7 +275,7 @@ func (r *resolver) resolve(ctx context.Context, name string) error {
 	}
 	g, err := r.a.mintChecked(ctx, s)
 	if err != nil {
-		r.a.Warnings = append(r.a.Warnings, tokenWarning(m, r.o.Store, err))
+		r.unable(name, tokenCannot(m, r.o.Store, err))
 		return nil
 	}
 	for _, dir := range s.dirs() {
@@ -272,31 +294,50 @@ func (r *resolver) resolve(ctx context.Context, name string) error {
 	return nil
 }
 
+// unable records that the mate called name cannot act, and why.
+func (r *resolver) unable(name string, why cannot) {
+	r.a.Warnings = append(r.a.Warnings, why.warning)
+	if r.a.Unable == nil {
+		r.a.Unable = map[string]string{}
+	}
+	r.a.Unable[name] = why.reason
+}
+
 // find loads the mate called name and finds its installation on the
-// repository, or returns the warning saying why it cannot.
-func (r *resolver) find(ctx context.Context, name string) (Mate, int64, string) {
+// repository, or returns why it cannot act; its warning is "" when it can.
+func (r *resolver) find(ctx context.Context, name string) (Mate, int64, cannot) {
 	m, err := r.o.Store.Load(r.repo.Owner, name)
 	switch {
 	case errors.Is(err, ErrNoMate):
-		return Mate{}, 0, fmt.Sprintf("mate %s has no key on this machine for %s; "+
-			"run `crew mates create %s` in this repository", name, r.repo.Owner, name)
+		return Mate{}, 0, cannot{fmt.Sprintf("mate %s has no key on this machine for %s; "+
+			"run `crew mates create %s` in this repository", name, r.repo.Owner, name), reasonNoKey}
 	case err != nil:
-		return Mate{}, 0, fmt.Sprintf("mate %s cannot act: %v; "+
-			"delete its file and run `crew mates create %s` in this repository", name, err, name)
+		return Mate{}, 0, cannot{fmt.Sprintf("mate %s cannot act: %v; "+
+			"delete its file and run `crew mates create %s` in this repository", name, err, name), reasonBadKeyFile}
 	case !validSlug(m.Slug):
-		return Mate{}, 0, fmt.Sprintf("mate %s cannot act: its file %s holds an invalid app slug; "+
-			"delete it and run `crew mates create %s` in this repository", name, r.o.Store.Path(m.Owner, name), name)
+		return Mate{}, 0, cannot{fmt.Sprintf("mate %s cannot act: its file %s holds an invalid app slug; "+
+			"delete it and run `crew mates create %s` in this repository", name, r.o.Store.Path(m.Owner, name), name),
+			reasonBadKeyFile}
 	}
 	r.a.Logins = append(r.a.Logins, botLogin(m.Slug))
 	inst, err := r.o.Client.RepoInstallation(ctx, m, r.repo.Owner, r.repo.Name)
 	if errors.Is(err, ErrNotInstalled) {
-		return Mate{}, 0, fmt.Sprintf("mate %s is not installed on %s/%s; "+
-			"run `crew mates create %s` in this repository", name, r.repo.Owner, r.repo.Name, name)
+		return Mate{}, 0, cannot{fmt.Sprintf("mate %s is not installed on %s/%s; "+
+			"run `crew mates create %s` in this repository", name, r.repo.Owner, r.repo.Name, name), reasonNotInstalled}
 	}
 	if err != nil {
-		return Mate{}, 0, tokenWarning(m, r.o.Store, err)
+		return Mate{}, 0, tokenCannot(m, r.o.Store, err)
 	}
-	return m, inst.ID, ""
+	return m, inst.ID, cannot{}
+}
+
+// tokenCannot is why mate m cannot act, as it could not get a token because
+// of err.
+func tokenCannot(m Mate, store *Store, err error) cannot {
+	if errors.Is(err, ErrKeyRejected) {
+		return cannot{tokenWarning(m, store, err), reasonKeyRejected}
+	}
+	return cannot{tokenWarning(m, store, err), reasonNoToken}
 }
 
 // tokenWarning is the warning of mate m, which could not get a token
@@ -398,13 +439,18 @@ func (a *Acting) loop(ctx context.Context) {
 	}
 }
 
-// renew mints a new token of s and writes it. a.mu must be held.
+// renew mints a new token of s and writes it, and records how it went for
+// Failing. a.mu must be held.
 func (a *Acting) renew(ctx context.Context, s *acted) error {
 	g, err := a.mintChecked(ctx, s)
+	if err == nil {
+		err = s.write(g)
+	}
+	a.renewals.record(s.mate.Name, renewWarning(s.mate, a.store, err))
 	if err != nil {
 		return fmt.Errorf("renew the token of mate %s: %w", s.mate.Name, err)
 	}
-	return s.write(g)
+	return nil
 }
 
 // mintChecked mints a token of s and checks that it grants exactly what

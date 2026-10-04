@@ -88,6 +88,19 @@ type Config struct {
 	// or not they act: the tracker takes the items they opened, and every
 	// session and check gets them as CREW_MATES.
 	MateLogins []string
+	// DefaultMate is the config's default mate, which acts for crew's own
+	// writes; empty when the config names none.
+	DefaultMate string
+	// Mates are the configured mates, the default first, in config order,
+	// whether or not they act.
+	Mates []string
+	// Unable holds, by name, the short reason of each configured mate that
+	// cannot act this run, such as "no key"; nil when every mate acts.
+	Unable map[string]string
+	// MateFailures returns, by name, the warning of each mate whose last
+	// token renewal failed. The loop reads it after Prepare and every
+	// saidInterval (KTD1); nil reads none.
+	MateFailures func() map[string]string
 	// Board is the board the config draws; nil draws the stages. With one,
 	// the engine reads its issues at each poll through the tracker's
 	// port.BoardLister, and reads none when the tracker has none (KTD4).
@@ -121,6 +134,9 @@ type Engine struct {
 	// board is the tracker's port.BoardLister when the config draws a board;
 	// nil otherwise, and the core then reads no board (KTD4).
 	board port.BoardLister
+	// writes is the tracker's port.WriterReporter; nil when the tracker has
+	// none, and crew's writes then never go back to the boss mid-run.
+	writes port.WriterReporter
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
@@ -129,16 +145,17 @@ type Engine struct {
 	boss []string
 
 	// The fields below are owned by Run's loop.
-	model    *core.Model
-	inbox    chan message
-	inflight int // command goroutines whose final message is still due
-	wg       sync.WaitGroup
-	sessions map[sessionKey]port.Session
-	checks   map[sessionKey]context.CancelFunc // ends each running check
-	recent   []core.Event
-	lastSaid []core.Said // what the sessions last said, as of the latest said refresh
-	started  time.Time   // when the first poll ran
-	run      string      // this crew run's id in the run journal: started, in RFC 3339
+	model     *core.Model
+	inbox     chan message
+	inflight  int // command goroutines whose final message is still due
+	wg        sync.WaitGroup
+	sessions  map[sessionKey]port.Session
+	checks    map[sessionKey]context.CancelFunc // ends each running check
+	recent    []core.Event
+	lastSaid  []core.Said       // what the sessions last said, as of the latest said refresh
+	lastMates core.MatesChecked // the mates' live state, as of the last reading that changed it
+	started   time.Time         // when the first poll ran
+	run       string            // this crew run's id in the run journal: started, in RFC 3339
 }
 
 // New returns an engine for cfg. It starts nothing until Run. When the
@@ -150,7 +167,8 @@ type Engine struct {
 // tracker implements port.PullRequestFinder, the engine looks up the pull
 // request each action opened. When cfg has a Board and the tracker
 // implements port.BoardLister, the engine reads the board's issues at each
-// poll through it.
+// poll through it. When the tracker implements port.WriterReporter, the
+// engine reads through it whether crew's writes went back to the boss.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
@@ -179,6 +197,7 @@ func New(cfg Config) *Engine {
 		crewLabels := slices.Concat(crew.WorkflowStates(cfg.Workflow), cfg.Extras)
 		opts = append(opts, core.ListingBoard(crew.BoardLabels(cfg.Board), crewLabels))
 	}
+	writes, _ := cfg.Tracker.(port.WriterReporter)
 	return &Engine{
 		cfg:          cfg,
 		stream:       newStream(),
@@ -187,6 +206,7 @@ func New(cfg Config) *Engine {
 		pullRequests: pullRequests,
 		finder:       finder,
 		board:        board,
+		writes:       writes,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
 		sessions:     map[sessionKey]port.Session{},
@@ -207,6 +227,9 @@ func New(cfg Config) *Engine {
 // end on their own. Run returns nil once the core holds no issue and no
 // command goroutine is left. Every subscription is closed when Run returns,
 // after its last update.
+//
+// Before the first poll and every saidInterval, Run reads the mates' live
+// state, and steps the core with it when it changed (KTD1).
 func (e *Engine) Run(ctx context.Context) error {
 	defer e.stream.close()
 	if err := e.Prepare(ctx); err != nil {
@@ -230,6 +253,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	e.started = time.Now()
 	e.run = e.started.UTC().Format(time.RFC3339Nano)
+	e.checkMates(cmdCtx)
 	e.step(cmdCtx, core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
@@ -237,6 +261,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			e.step(cmdCtx, core.Tick{Said: e.said()})
 		case <-saidTicker.C:
 			e.refreshSaid()
+			e.checkMates(cmdCtx)
 		case <-stop:
 			stop = nil
 			e.step(cmdCtx, core.StopRequested{})
@@ -296,11 +321,12 @@ func (e *Engine) Prepare(ctx context.Context) error {
 
 // prepare hands the tracker its writer when the config names a mate, runs
 // each port's Preparer with crew.WorkflowStates, the states the workflow
-// names, asks the tracker who the boss is, then reads the run journal and
-// builds the core from it. It returns the first error, naming its port or
-// the journal, without running what comes after it (R6). The core is then
-// left unbuilt, which is safe because Run returns the error before its loop,
-// the only place that reads it.
+// names, asks the tracker who the boss is and which login it acts as, then
+// reads the run journal and builds the core from it, with the mates. It
+// returns the first error, naming its port or the journal, without running
+// what comes after it (R6). The core is then left unbuilt, which is safe
+// because Run returns the error before its loop, the only place that reads
+// it.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.WorkflowStates(e.cfg.Workflow)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
@@ -318,13 +344,25 @@ func (e *Engine) prepare(ctx context.Context) error {
 	if b, ok := e.cfg.Tracker.(port.BossFinder); ok {
 		e.boss = b.Boss()
 	}
+	mates := e.withMates()
 	port.Step(ctx, "reading the run journal")
 	past, err := e.readJournal()
 	if err != nil {
 		return err
 	}
-	e.model = core.New(e.cfg.Workflow, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past))...)
+	e.model = core.New(e.cfg.Workflow, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past), mates)...)
 	return nil
+}
+
+// withMates returns the core's option of the configured mates, with the
+// login the tracker acts as when it acts as the boss, as its
+// port.LoginFinder found it in Prepare; none without one (KTD8).
+func (e *Engine) withMates() core.Option {
+	c := core.MatesConfig{Default: e.cfg.DefaultMate, Names: e.cfg.Mates, Unable: e.cfg.Unable}
+	if l, ok := e.cfg.Tracker.(port.LoginFinder); ok {
+		c.Login = l.Login()
+	}
+	return core.WithMates(c)
 }
 
 // said returns what each running session that implements port.Narrator last
@@ -392,6 +430,26 @@ func (e *Engine) refreshSaid() {
 	}
 	e.lastSaid = said
 	e.stream.publishLatest(Update{Snapshot: e.snapshot()})
+}
+
+// checkMates reads the mates' live state: whether crew's writes went back to
+// the boss, from the tracker's port.WriterReporter, and the mates' failed
+// renewals, from MateFailures. When the reading differs from the last one,
+// it steps the core with it, which publishes to every subscriber; an
+// unchanged reading steps nothing (KTD1). ctx is the command context.
+func (e *Engine) checkMates(ctx context.Context) {
+	var in core.MatesChecked
+	if e.writes != nil {
+		in.WritesLost = e.writes.WriterLost()
+	}
+	if e.cfg.MateFailures != nil {
+		in.NotRenewed = e.cfg.MateFailures()
+	}
+	if in.WritesLost == e.lastMates.WritesLost && maps.Equal(in.NotRenewed, e.lastMates.NotRenewed) {
+		return
+	}
+	e.lastMates = in
+	e.step(ctx, in)
 }
 
 // snapshot returns the engine's view now, sharing no memory with the core

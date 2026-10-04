@@ -36,7 +36,8 @@ import (
 
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
-// a port.Acting, a port.BossFinder and a port.BoardLister.
+// a port.Acting, a port.BossFinder, a port.LoginFinder, a
+// port.WriterReporter and a port.BoardLister.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -45,6 +46,8 @@ var (
 	_ port.PullRequestFinder   = (*Tracker)(nil)
 	_ port.Acting              = (*Tracker)(nil)
 	_ port.BossFinder          = (*Tracker)(nil)
+	_ port.LoginFinder         = (*Tracker)(nil)
+	_ port.WriterReporter      = (*Tracker)(nil)
 	_ port.BoardLister         = (*Tracker)(nil)
 )
 
@@ -310,6 +313,19 @@ func (t *Tracker) Boss() []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return slices.Clone(t.boss)
+}
+
+// Login implements port.LoginFinder: gh's own login, which the tracker reads
+// as and writes as when no mate does, as Prepare found it, "" before.
+func (t *Tracker) Login() string {
+	return t.gh.known()
+}
+
+// WriterLost implements port.WriterReporter: the warning crew wrote when the
+// writes went back to the boss for the rest of the run, "" while they go as
+// the mate, or no mate writes.
+func (t *Tracker) WriterLost() string {
+	return t.gh.writerLost()
 }
 
 // fieldArgs is how many arguments one gh api field takes: the flag and

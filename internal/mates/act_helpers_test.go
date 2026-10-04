@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -196,6 +197,51 @@ func (r *actRun) saveOps(t *testing.T) {
 	if err := r.store.Save(m); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// writeOpsFile returns a setup that writes data as the file of the mate ops.
+func writeOpsFile(data string) func(t *testing.T, r *actRun) {
+	return func(t *testing.T, r *actRun) {
+		t.Helper()
+		path := r.store.Path(testOwner, "ops")
+		if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), filePerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// saveOpsWithSlug returns a setup that stores the mate ops with the app
+// slug slug.
+func saveOpsWithSlug(slug string) func(t *testing.T, r *actRun) {
+	return func(t *testing.T, r *actRun) {
+		t.Helper()
+		m := testMate(testOwner)
+		m.Name, m.ClientID, m.Slug, m.AppName, m.BotLogin = "ops", opsClientID, slug, slug, opsLogin
+		if err := r.store.Save(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// renewFailure is the warning of the mate ops, whose renewal failed with
+// the error text cause.
+func renewFailure(cause string) string {
+	return "mate ops could not renew its token: " + cause + "; its sessions and checks fail once the " +
+		"current token expires, and crew tries again every minute"
+}
+
+// checkFailing checks that a's renewal failures are want, none when it is
+// nil, and that none holds a key or a token.
+func checkFailing(t *testing.T, a *Acting, want map[string]string) {
+	t.Helper()
+	got := a.Failing()
+	if !maps.Equal(got, want) {
+		t.Errorf("Failing = %q, want %q", got, want)
+	}
+	checkNoSecret(t, strings.Join(slices.Collect(maps.Values(got)), "\n"))
 }
 
 // act runs Act and checks that neither its warnings nor its error hold a

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"os"
@@ -51,6 +52,9 @@ func TestActGivesAStoredInstalledMateItsGhDirectory(t *testing.T) {
 	}
 	if !slices.Equal(a.Logins, []string{opsLogin}) {
 		t.Errorf("Logins = %q, want ops's alone, as developer has no key here", a.Logins)
+	}
+	if want := map[string]string{"developer": "no key"}; !maps.Equal(a.Unable, want) {
+		t.Errorf("Unable = %q, want %q", a.Unable, want)
 	}
 }
 
@@ -113,52 +117,85 @@ func TestUsableToken(t *testing.T) {
 	}
 }
 
-func TestActWarnsAndActsAsTheBossForAnUnusableMate(t *testing.T) {
-	const asked = "actions:read checks:read contents:read issues:write metadata:read pull_requests:write statuses:read"
-	tests := []struct {
-		name          string
-		saved         bool
-		installStatus int
-		tokenStatus   int
-		granted       map[string]string
-		want          string
-	}{
-		{name: "AE10 no file",
-			want: "mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository"},
-		{name: "AE3 not installed", saved: true, installStatus: http.StatusNotFound,
-			want: "mate ops is not installed on thatsnotmynameio/crew; run `crew mates create ops` in this repository"},
-		{name: "key rejected", saved: true, installStatus: http.StatusUnauthorized,
-			want: "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
-		{name: "token call fails", saved: true, tokenStatus: http.StatusInternalServerError,
-			want: "mate ops could not get a token: mint a token of ops for crew: GitHub answered 500 Internal Server Error: " +
-				"Server Error; crew acts as the boss in its place this run"},
-		{name: "more granted", saved: true, granted: map[string]string{
-			"actions": permRead, "administration": permWrite, "checks": permRead, "contents": permRead,
-			"issues": permWrite, "metadata": permRead, "pull_requests": permWrite, "statuses": permRead,
-		}, want: "mate ops could not get a token: GitHub granted actions:read administration:write checks:read " +
-			"contents:read issues:write metadata:read pull_requests:write statuses:read, not the " + asked +
+// asked is the permissions crew asks for, as its warnings write them.
+const asked = "actions:read checks:read contents:read issues:write metadata:read pull_requests:write statuses:read"
+
+// unusableMates are the ways the mate ops cannot act: how its file and
+// GitHub's replies are scripted, then its warning, <path> standing for its
+// file's, and its short reason.
+var unusableMates = []struct {
+	name          string
+	saved         bool
+	file          func(t *testing.T, r *actRun)
+	installStatus int
+	tokenStatus   int
+	granted       map[string]string
+	want, reason  string
+}{
+	{name: "AE10 no file", reason: "no key",
+		want: "mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository"},
+	{name: "unreadable file", file: writeOpsFile("{"), reason: "bad key file",
+		want: "mate ops cannot act: the mate file <path> is not valid JSON; " +
+			"delete its file and run `crew mates create ops` in this repository"},
+	{name: "invalid slug", file: saveOpsWithSlug("Crew Ops"), reason: "bad key file",
+		want: "mate ops cannot act: its file <path> holds an invalid app slug; " +
+			"delete it and run `crew mates create ops` in this repository"},
+	{name: "AE3 not installed", saved: true, installStatus: http.StatusNotFound, reason: "not installed",
+		want: "mate ops is not installed on thatsnotmynameio/crew; run `crew mates create ops` in this repository"},
+	{name: "key rejected", saved: true, installStatus: http.StatusUnauthorized, reason: "key rejected",
+		want: "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
+	{name: "installation lookup fails", saved: true, installStatus: http.StatusInternalServerError,
+		reason: "no token", want: "mate ops could not get a token: find the installation of ops on " +
+			"thatsnotmynameio/crew: GitHub answered 500 Internal Server Error: Internal Server Error; " +
+			"crew acts as the boss in its place this run"},
+	{name: "key rejected by the token call", saved: true, tokenStatus: http.StatusUnauthorized,
+		reason: "key rejected",
+		want:   "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
+	{name: "token call fails", saved: true, tokenStatus: http.StatusInternalServerError, reason: "no token",
+		want: "mate ops could not get a token: mint a token of ops for crew: GitHub answered 500 Internal Server Error: " +
+			"Server Error; crew acts as the boss in its place this run"},
+	{name: "more granted", saved: true, granted: map[string]string{
+		"actions": permRead, "administration": permWrite, "checks": permRead, "contents": permRead,
+		"issues": permWrite, "metadata": permRead, "pull_requests": permWrite, "statuses": permRead,
+	}, reason: "no token", want: "mate ops could not get a token: GitHub granted actions:read administration:write " +
+		"checks:read contents:read issues:write metadata:read pull_requests:write statuses:read, not the " + asked +
+		" crew asked for; crew acts as the boss in its place this run"},
+	{name: "fewer granted", saved: true, granted: map[string]string{"metadata": permRead}, reason: "no token",
+		want: "mate ops could not get a token: GitHub granted metadata:read, not the " + asked +
 			" crew asked for; crew acts as the boss in its place this run"},
-		{name: "fewer granted", saved: true, granted: map[string]string{"metadata": permRead},
-			want: "mate ops could not get a token: GitHub granted metadata:read, not the " + asked +
-				" crew asked for; crew acts as the boss in its place this run"},
-	}
-	for _, tt := range tests {
+}
+
+func TestActWarnsAndActsAsTheBossForAnUnusableMate(t *testing.T) {
+	for _, tt := range unusableMates {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newActRun(t, "ops")
 			if tt.saved {
 				r.saveOps(t)
 			}
+			if tt.file != nil {
+				tt.file(t, r)
+			}
 			r.api.installStatus, r.api.tokenStatus, r.api.granted = tt.installStatus, tt.tokenStatus, tt.granted
-			a := r.mustAct(t)
-			want := strings.ReplaceAll(tt.want, "<path>", r.store.Path(testOwner, "ops"))
-			if len(a.Mates) != 0 || !slices.Equal(a.Warnings, []string{want}) {
-				t.Errorf("Act = %+v, %q; want no mate and %q", a.Mates, a.Warnings, want)
-			}
-			// A stored mate that cannot act still has its issues taken.
-			if wantLogins := []string{opsLogin}; tt.saved != slices.Equal(a.Logins, wantLogins) {
-				t.Errorf("Logins = %q, want ops's login exactly when its file is stored", a.Logins)
-			}
+			checkUnusable(t, r.mustAct(t), tt.want, tt.reason, r.store.Path(testOwner, "ops"), tt.saved)
 		})
+	}
+}
+
+// checkUnusable checks that a holds no acting mate, only the warning want,
+// with <path> standing for path, and ops's short reason, and ops's login
+// exactly when its file is stored.
+func checkUnusable(t *testing.T, a *Acting, want, reason, path string, saved bool) {
+	t.Helper()
+	want = strings.ReplaceAll(want, "<path>", path)
+	if len(a.Mates) != 0 || !slices.Equal(a.Warnings, []string{want}) {
+		t.Errorf("Act = %+v, %q; want no mate and %q", a.Mates, a.Warnings, want)
+	}
+	if wantUnable := map[string]string{"ops": reason}; !maps.Equal(a.Unable, wantUnable) {
+		t.Errorf("Unable = %q, want %q", a.Unable, wantUnable)
+	}
+	// A stored mate that cannot act still has its issues taken.
+	if wantLogins := []string{opsLogin}; saved != slices.Equal(a.Logins, wantLogins) {
+		t.Errorf("Logins = %q, want ops's login exactly when its file is stored", a.Logins)
 	}
 }
 
@@ -229,8 +266,11 @@ func TestActWithoutNamesDoesNothing(t *testing.T) {
 	r.opts.Step = func(step string) { steps = append(steps, step) }
 	a := r.mustAct(t)
 	a.Close()
-	if len(a.Mates) != 0 || len(a.Warnings) != 0 || len(r.calls) != 0 || len(steps) != 0 {
+	if len(a.Mates) != 0 || len(a.Warnings) != 0 || len(a.Unable) != 0 || len(r.calls) != 0 || len(steps) != 0 {
 		t.Errorf("Act = %+v after %v and the steps %q, want nothing", a, r.calls, steps)
+	}
+	if failing := a.Failing(); failing == nil || len(failing) != 0 {
+		t.Errorf("Failing = %#v, want an empty map", failing)
 	}
 }
 
@@ -279,6 +319,10 @@ func TestActWithoutACoAuthorStillActs(t *testing.T) {
 			}
 			if !slices.Equal(a.Warnings, []string{tt.want}) {
 				t.Errorf("Warnings = %q, want %q", a.Warnings, tt.want)
+			}
+			// A mate without a co-author still acts, so it has no reason.
+			if len(a.Unable) != 0 {
+				t.Errorf("Unable = %q, want none", a.Unable)
 			}
 		})
 	}
@@ -369,24 +413,27 @@ func TestRenewalLoopRenewsBeforeTheTokenExpires(t *testing.T) {
 		}
 		a := r.mustAct(t)
 		hosts := filepath.Join(envValue(a.Mates[0].Env, "GH_CONFIG_DIR"), "hosts.yml")
-		check := func(token string) {
+		// check checks the token in hosts.yml, and the renewal failures.
+		check := func(token string, failing map[string]string) {
 			t.Helper()
 			synctest.Wait()
 			if got := readFile(t, hosts); got != opsHosts(token) {
 				t.Errorf("after %v hosts.yml =\n%s\nwant %s", time.Since(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)), got, token)
 			}
+			checkFailing(t, a, failing)
 		}
 		// AE5: at 50 minutes 10 remain; the first check with fewer, at 51,
-		// renews, and its failure is tried again at 52.
+		// renews, and its failure, which names the mate until a renewal
+		// succeeds, is tried again at 52.
 		time.Sleep(50*time.Minute + 30*time.Second)
-		check("ghs_1")
+		check("ghs_1", nil)
 		time.Sleep(time.Minute)
-		check("ghs_1")
+		check("ghs_1", map[string]string{"ops": renewFailure("GitHub answered 502 Bad Gateway")})
 		time.Sleep(time.Minute)
-		check("ghs_3")
+		check("ghs_3", nil)
 		// Three hours on, every token was renewed in time.
 		time.Sleep(3 * time.Hour)
-		check("ghs_6")
+		check("ghs_6", nil)
 		a.Close()
 		if _, err := os.Stat(filepath.Dir(filepath.Dir(filepath.Dir(hosts)))); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Close left the run directory: %v", err)
@@ -398,4 +445,54 @@ func TestRenewalLoopRenewsBeforeTheTokenExpires(t *testing.T) {
 			t.Errorf("minted %d tokens, want 6", mints)
 		}
 	})
+}
+
+func TestRenewReportsItsFailureUntilARenewalSucceeds(t *testing.T) {
+	tests := []struct {
+		name string
+		fail error
+		want string
+	}{
+		{name: "GitHub fails", fail: errors.New("GitHub answered 502 Bad Gateway"),
+			want: renewFailure("GitHub answered 502 Bad Gateway")},
+		{name: "key rejected", fail: fmt.Errorf("%w: GitHub answered 401", ErrKeyRejected),
+			want: "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
+		{name: "one line, no control character", fail: errors.New("bad\x1b[31m gate\tway\r\nsecond line"),
+			want: renewFailure("bad[31m gateway")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newActRun(t, "ops")
+			r.saveOps(t)
+			var fail error
+			r.opts.mint = func(context.Context, Mate, int64, string) (Grant, error) {
+				if fail != nil {
+					return Grant{}, fail
+				}
+				return Grant{Token: "ghs_1", ExpiresAt: time.Now().Add(time.Hour), Permissions: permissions()}, nil
+			}
+			a := r.mustAct(t)
+			fail = tt.fail
+			if err := a.Renew(context.Background(), "ops"); err == nil {
+				t.Fatal("Renew on a failing mint = nil error, want one")
+			}
+			want := map[string]string{"ops": strings.ReplaceAll(tt.want, "<path>", r.store.Path(testOwner, "ops"))}
+			checkFailing(t, a, want)
+			// The map is a copy: changing it changes no later reading.
+			failing := a.Failing()
+			failing["ops"], failing["developer"] = "changed", "added"
+			checkFailing(t, a, want)
+			fail = nil
+			if err := a.Renew(context.Background(), "ops"); err != nil {
+				t.Fatalf("Renew: %v", err)
+			}
+			checkFailing(t, a, nil)
+		})
+	}
+}
+
+func TestFailingOfNoMatesIsEmpty(t *testing.T) {
+	if failing := new(Acting).Failing(); failing == nil || len(failing) != 0 {
+		t.Errorf("Failing = %#v, want an empty map", failing)
+	}
 }

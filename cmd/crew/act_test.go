@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -42,6 +43,23 @@ func TestAppMatesGivesEachMateItsIdentityAndCrewTheDefaults(t *testing.T) {
 		t.Errorf("Warnings = %q, want a's, and a Close", m.Warnings)
 	}
 	m.Close()
+}
+
+func TestAppMatesCopiesTheShortReasonsAndTheRenewalFailures(t *testing.T) {
+	a := &mates.Acting{Unable: map[string]string{"qa": "no key", "reviewer": "not installed"}}
+
+	m := appMates(a)
+
+	if !maps.Equal(m.Unable, a.Unable) {
+		t.Errorf("Unable = %q, want a's %q", m.Unable, a.Unable)
+	}
+	if m.Failing == nil {
+		t.Fatal("Failing = nil, want a's accessor")
+	}
+	// No renewal ran, so none failed.
+	if failing := m.Failing(); failing == nil || len(failing) != 0 {
+		t.Errorf("Failing() = %q, want a's empty reading", failing)
+	}
 }
 
 func TestActingMatesRefusesAnInvalidName(t *testing.T) {

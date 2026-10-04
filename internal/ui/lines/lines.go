@@ -87,7 +87,22 @@ func Text(e core.Event) string {
 	if text, ok := issueText(e); ok {
 		return text
 	}
+	if text, ok := mateText(e); ok {
+		return text
+	}
 	return loopText(e)
+}
+
+// mateText describes the events about crew's mates, and reports false for
+// any other event.
+func mateText(e core.Event) (string, bool) {
+	switch e := e.(type) {
+	case core.MateStopped:
+		return fmt.Sprintf("mate %s stopped acting: %s", e.Mate, e.Warning), true
+	case core.MateActsAgain:
+		return fmt.Sprintf("mate %s acts again: its token renewed", e.Mate), true
+	}
+	return "", false
 }
 
 // issueText describes the events about one issue and its actions, and

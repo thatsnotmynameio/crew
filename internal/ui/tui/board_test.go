@@ -275,7 +275,9 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		}
 	}
 	u := engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: issues}}}
-	for _, height := range []int{22, 23} {
+	// The two heights just above the lowest that fits: a cap counting the
+	// scrolled-off column of 6 would leave both cut.
+	for _, height := range []int{25, 26} {
 		h := newWorkflowHarness(t, 80, eightStages()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))
