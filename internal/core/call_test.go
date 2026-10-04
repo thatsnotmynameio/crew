@@ -107,6 +107,7 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 		}},
 		Queues: []core.QueueView{{Slots: 1, Busy: 1}},
 		Owed:   []core.Call{owed},
+		Mates:  []core.MateView{{Name: "you", You: true, Writes: true, Pairs: draftPairs}},
 	}
 	if v := d.m.View(); !reflect.DeepEqual(v, want) {
 		t.Fatalf("view:\n got %#v\nwant %#v", v, want)

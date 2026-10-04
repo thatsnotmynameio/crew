@@ -50,6 +50,8 @@ func (s *step) runInput(in Input) bool {
 		s.m.boardListed(in.Issues)
 	case BoardListFailed:
 		s.m.boardListFailed(in.Reason)
+	case MatesChecked:
+		s.matesChecked(in)
 	case CallResult:
 		s.callResult(in)
 	case StatusResult:

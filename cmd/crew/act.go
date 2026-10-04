@@ -35,10 +35,14 @@ func actingMates(run proc.Runner, root string) func(context.Context, string, []s
 
 // appMates returns the mates acting in a as app.Mates: each one's identity
 // for its sessions and checks, and the default mate's for crew's own
-// writes, which renews its token through a. None holds a key or a token,
-// only the gh config directory that holds the token.
+// writes, which renews its token through a, with the short reason of each
+// mate that cannot act and a's renewal failures. None holds a key or a
+// token, only the gh config directory that holds the token.
 func appMates(a *mates.Acting) app.Mates {
-	m := app.Mates{Identities: map[string]port.Identity{}, Logins: a.Logins, Warnings: a.Warnings, Close: a.Close}
+	m := app.Mates{
+		Identities: map[string]port.Identity{}, Logins: a.Logins, Warnings: a.Warnings, Close: a.Close,
+		Unable: a.Unable, Failing: a.Failing,
+	}
 	for _, am := range a.Mates {
 		m.Identities[am.Name] = port.Identity{Mate: am.Name, Login: am.Login, Env: am.Env, Unset: am.Unset}
 		if am.WriterEnv == nil {

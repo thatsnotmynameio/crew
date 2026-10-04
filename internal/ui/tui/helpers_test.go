@@ -45,7 +45,7 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 // handledSnapshot is runningSnapshot 12 minutes into a one-hour run, with
 // four issues handled: a failure whose code action never had a session, a
 // given-up move and two successes, one of two actions. An earlier stage of
-// #8 spent $2.00 this run.
+// #8 spent $2.00 this run. Every action acted as the boss.
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
@@ -66,12 +66,13 @@ func handledSnapshot() engine.Update {
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
 	}
+	u.Snapshot.Mates[0].Spend = u.Snapshot.Spent
 	return u
 }
 
 // manySnapshot is runningSnapshot with ten issues handled: #11 and #12
 // failed, and the successes #13 to #20 in crew:waiting review, the higher
-// the number the more recent.
+// the number the more recent, every action as the boss.
 func manySnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
@@ -90,6 +91,7 @@ func manySnapshot() engine.Update {
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
 	}
+	u.Snapshot.Mates[0].Spend = u.Snapshot.Spent
 	return u
 }
 

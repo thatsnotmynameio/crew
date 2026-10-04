@@ -379,7 +379,10 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 			},
 			{Name: "development", Phase: core.PhaseCreating},
 		},
-	}}, Queues: []core.QueueView{{Slots: 2, Busy: 1}}}
+	}}, Queues: []core.QueueView{{Slots: 2, Busy: 1}}, Mates: []core.MateView{{
+		Name: "you", You: true, Writes: true, Pairs: draftPairs,
+		Running: []core.RunningAction{{IssueRef: "#1", Stage: "implement", Action: "acceptance"}},
+	}}}
 	v := d.m.View()
 	if !reflect.DeepEqual(v, want) {
 		t.Fatalf("view:\n got %#v\nwant %#v", v, want)
@@ -388,6 +391,7 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 	v.Issues[0].Issue.States[0] = "done"
 	v.Issues[0].Actions[0].Name = "changed"
 	v.Queues[0].Busy = 9
+	v.Mates[0].Pairs[0] = "changed"
 	if again := d.m.View(); !reflect.DeepEqual(again, want) {
 		t.Fatalf("changing a view changed the model:\n got %#v\nwant %#v", again, want)
 	}

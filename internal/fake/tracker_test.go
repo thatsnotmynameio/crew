@@ -310,6 +310,31 @@ func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedBoss(t *testing.T) 
 	}
 }
 
+func TestActingTrackerReturnsTheScriptedWritesWarningAndLogin(t *testing.T) {
+	tr := fake.NewActingTracker()
+	var reporter port.WriterReporter = tr
+	var finder port.LoginFinder = tr
+	if got, login := reporter.WriterLost(), finder.Login(); got != "" || login != "" {
+		t.Errorf("WriterLost, Login before their setters = %q, %q; want both empty", got, login)
+	}
+	tr.SetWriterLost("crew's writes as mate ops went back to you")
+	tr.SetLogin("octocat")
+	if got := reporter.WriterLost(); got != "crew's writes as mate ops went back to you" {
+		t.Errorf("WriterLost = %q, want the warning set", got)
+	}
+	if got := finder.Login(); got != "octocat" {
+		t.Errorf("Login = %q, want octocat", got)
+	}
+	for _, other := range []any{fake.NewTracker(), fake.NewReportingTracker()} {
+		if _, ok := other.(port.WriterReporter); ok {
+			t.Errorf("%T reports its writes; only an ActingTracker should", other)
+		}
+		if _, ok := other.(port.LoginFinder); ok {
+			t.Errorf("%T finds its login; only an ActingTracker should", other)
+		}
+	}
+}
+
 // The board lists the open issues, never a pull request, whose states,
 // extras or other labels match an asked label ignoring case, oldest first,
 // each with the asked labels it carries in the asked spelling.

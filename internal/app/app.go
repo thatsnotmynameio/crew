@@ -104,6 +104,12 @@ type Mates struct {
 	// Warnings say, one line each, which mate cannot act or adds no
 	// co-author, why, and the fix.
 	Warnings []string
+	// Unable holds, by name, the short reason of each configured mate that
+	// cannot act this run, such as "no key"; nil when every mate acts.
+	Unable map[string]string
+	// Failing returns, by name, the warning of each mate whose last token
+	// renewal failed; the engine reads it while it runs. nil reads none.
+	Failing func() map[string]string
 	// Close stops renewing the mates' tokens and removes them. nil does
 	// nothing.
 	Close func()
@@ -251,6 +257,10 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 		Writer:            mates.Writer,
 		Identities:        mates.Identities,
 		MateLogins:        mates.Logins,
+		DefaultMate:       b.cfg.Mate,
+		Mates:             b.cfg.Mates,
+		Unable:            mates.Unable,
+		MateFailures:      mates.Failing,
 		Board:             b.cfg.Board,
 		Extras:            b.cfg.Extras,
 	})
