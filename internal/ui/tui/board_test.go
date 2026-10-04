@@ -285,3 +285,27 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		}
 	}
 }
+
+// heldAgain is a snapshot of #12 held by development with the entry its
+// triage left, marked held.
+func heldAgain() engine.Update {
+	u := held(twelve, "development", "lfg", core.ClaimRunning)
+	e := handledBy(twelve, "triage", "crew:triage:done").Snapshot.Handled[0]
+	e.HeldBy = "development"
+	u.Snapshot.Handled = []core.HandledView{e}
+	return u
+}
+
+func TestAnIssueHeldAgainHasOnlyTheCardOfTheStageHoldingIt(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+
+	h.send(updateMsg(heldAgain()))
+
+	board := boardOf(t, h.view())
+	if n := strings.Count(board, "#12"); n != 1 {
+		t.Fatalf("board shows #12 %d times, want once:\n%s", n, board)
+	}
+	if col := cardColumn(t, board, "#12"); col != 1 {
+		t.Errorf("card is in column %d, want development's 1:\n%s", col, board)
+	}
+}

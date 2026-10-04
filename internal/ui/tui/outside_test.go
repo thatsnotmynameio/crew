@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
@@ -224,4 +225,26 @@ func sequenced(msg tea.Msg) []tea.Cmd {
 		out[i], _ = reflect.TypeAssert[tea.Cmd](v.Index(i))
 	}
 	return out
+}
+
+func TestAFailureHeldAgainDoesNotCountAsNeedingAttention(t *testing.T) {
+	h := newWorkflowHarness(t, 80, crewWorkflow)
+	u := held(twelve, "development", "lfg", core.ClaimRunning)
+	e := handledBy(twelve, "fix", "crew:fix:failed").Snapshot.Handled[0]
+	e.Failures = []crew.ActionFailure{{Action: "lfg", Reason: "boom"}}
+	u.Snapshot.Handled = []core.HandledView{e}
+
+	h.send(updateMsg(u))
+	if got := h.model.View().WindowTitle; got != "crew · 1 running · 1 needs attention" {
+		t.Errorf("title before the retry = %q, want the failure counted", got)
+	}
+
+	u.Snapshot.Handled[0].HeldBy = "development"
+	h.send(updateMsg(u))
+	if got := h.model.View().WindowTitle; got != "crew · 1 running" {
+		t.Errorf("title during the retry = %q, want no needs attention", got)
+	}
+	if p := h.model.View().ProgressBar; p == nil || p.State != tea.ProgressBarIndeterminate {
+		t.Errorf("progress during the retry = %+v, want indeterminate", p)
+	}
 }

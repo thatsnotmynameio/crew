@@ -82,23 +82,33 @@ func (m Model) handledSection(width int) (string, []string) {
 }
 
 // pill says how e ended: given up, needing attention, or the last part of
-// the state its stage moved it to (R5, KTD13).
+// the state its stage moved it to (R5, KTD13). A failure whose issue a stage
+// holds again shows that state as an error: it needs the boss no longer
+// (#109).
 func (m Model) pill(e core.HandledView) string {
 	switch {
 	case e.Move == crew.MoveDropped:
 		return m.styles.warningPill.Render("GIVEN UP")
-	case e.NeedsAttention():
+	case needsBoss(e):
 		return m.styles.errorPill.Render("NEEDS ATTENTION")
 	}
 	state := string(e.To)
 	if i := strings.LastIndex(state, ":"); i >= 0 {
 		state = state[i+1:]
 	}
-	return m.styles.successPill.Render(strings.ToUpper(state))
+	pill := m.styles.successPill
+	if e.NeedsAttention() {
+		pill = m.styles.errorPill
+	}
+	return pill.Render(strings.ToUpper(state))
 }
 
+// needsBoss reports whether e needs the boss: it needs attention and no
+// stage holds its issue again (#109).
+func needsBoss(e core.HandledView) bool { return e.NeedsAttention() && e.HeldBy == "" }
+
 // handledDetails is e's stage and time, then its spend and pull request
-// when it has them.
+// when it has them, then the stage holding its issue again (#109).
 func (m Model) handledDetails(e core.HandledView) string {
 	parts := []string{m.styles.muted.Render(e.Stage + " " + elapsed(e.Duration()))}
 	if cost := spendParts(e.Spend()); len(cost) > 0 {
@@ -106,6 +116,9 @@ func (m Model) handledDetails(e core.HandledView) string {
 	}
 	if pr := m.pullRequestOf(e); pr != "" {
 		parts = append(parts, pr)
+	}
+	if e.HeldBy != "" {
+		parts = append(parts, m.styles.muted.Render("now in "+e.HeldBy))
 	}
 	return strings.Join(parts, m.styles.muted.Render(" · "))
 }
@@ -165,14 +178,14 @@ func (m Model) pullRequests(e core.HandledView) []string {
 	return out
 }
 
-// byAttention orders entries for Handled: those that need attention first,
+// byAttention orders entries for Handled: those that need the boss first,
 // then the rest, each the most recently ended first, then the most recently
 // released first.
 func byAttention(handled []core.HandledView) []core.HandledView {
 	out := slices.Clone(handled)
 	slices.Reverse(out)
 	slices.SortStableFunc(out, func(a, b core.HandledView) int {
-		return cmp.Or(trueFirst(a.NeedsAttention(), b.NeedsAttention()), b.Ended.Compare(a.Ended))
+		return cmp.Or(trueFirst(needsBoss(a), needsBoss(b)), b.Ended.Compare(a.Ended))
 	})
 	return out
 }

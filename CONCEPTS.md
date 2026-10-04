@@ -14,6 +14,8 @@ crew finds the boss in the repository's CODEOWNERS: every user its catch-all `*`
 
 One step of the workflow: it takes the items of its kind that carry its label, issues by default or pull requests when it declares them, runs its actions on each, and moves each to its success state when every action succeeded, or to its failure state when any failed.
 
+A stage can be hidden from the live view's board. A hidden stage still takes, runs and moves issues like any other; only what the live view draws for it, and which handled entry it leaves, change.
+
 ### Action
 
 One unattended coding-agent session a stage runs on an issue, in its own workspace, together with the action's optional check.
@@ -49,6 +51,14 @@ The rank the tracker gives an issue, which decides first which waiting issue cre
 A fixed share of `max_parallel_issues` that only the stages in it can use. Every stage runs in one queue: `clerk`, crew's bookkeeping queue, `default`, which gets the slots the other queues leave, or one the boss declares.
 
 A queue never lends an idle slot to another queue, so a slot is guaranteed to a stage only by its queue's size.
+
+## Live view
+
+### Handled entry
+
+The live view's record of how an issue's latest stage run in this crew process ended: the stage, where it moved the issue, what its sessions cost, and why it failed when it did. An issue has at most one.
+
+A later stage run that ends replaces the entry, except that a hidden stage ending well leaves an entry that ended well in place. While a stage holds the issue again, the entry stays and names that stage, and a failure in it no longer counts as needing the boss.
 
 ## Recovery
 

@@ -131,7 +131,7 @@ func TestAGoneEntryFoundAloneInItsLabelAgainIsNoLongerGone(t *testing.T) {
 	}
 }
 
-func TestAnIssueTakenAgainLeavesHandledAndItsNextEntryStartsNotGone(t *testing.T) {
+func TestAnIssueTakenAgainKeepsItsEntryAndItsNextEntryStartsNotGone(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.settle(implemented(d, succeeded))
 	d.poll()
@@ -140,8 +140,8 @@ func TestAnIssueTakenAgainLeavesHandledAndItsNextEntryStartsNotGone(t *testing.T
 	}
 
 	take, _ := d.poll(in(ready))
-	if got := handled(d); got != nil {
-		t.Fatalf("handled while #1 is held again: %#v", got)
+	if got := onlyEntry(t, d); got.HeldBy != "implement" {
+		t.Fatalf("entry while #1 is held again: got held by %q, want implement", got.HeldBy)
 	}
 	d.settle(take)
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
