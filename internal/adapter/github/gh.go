@@ -23,8 +23,9 @@ type gh struct {
 	mu     sync.Mutex
 	login  string        // the authenticated user, once resolved
 	writer port.Identity // who writes; the zero Identity is the boss
-	asBoss bool          // whether writes went back to the boss for the rest of the run
-	lost   string        // the warning crew wrote when they did
+	// lost is the warning crew wrote when writes went back to the boss for
+	// the rest of the run; "" while they go as the writer.
+	lost string
 }
 
 // call runs gh with args as the boss and returns what it printed. On a
@@ -86,7 +87,7 @@ func (g *gh) actAs(writer port.Identity) {
 func (g *gh) mate() (port.Identity, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.writer, g.writer.Login != "" && !g.asBoss
+	return g.writer, g.writer.Login != "" && g.lost == ""
 }
 
 // backToBoss makes every later write of the run go as the boss, because
@@ -95,11 +96,9 @@ func (g *gh) mate() (port.Identity, bool) {
 func (g *gh) backToBoss(kind refusalKind, mate string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.asBoss {
-		return
+	if g.lost == "" {
+		g.lost = lostWarning(kind, mate)
 	}
-	g.asBoss = true
-	g.lost = lostWarning(kind, mate)
 }
 
 // writerLost returns the warning backToBoss recorded, "" before.
