@@ -24,6 +24,7 @@ type Model struct {
 	maxParallel int
 	issues      []*heldIssue // in the order they were taken
 	listing     bool         // a ListIssues is outstanding
+	listings    int          // the ListIssues asked for: the generation of the last one (KTD4)
 	skipped     int          // ticks that skipped their listing since the last one
 	timeUp      bool         // the run time is up: take nothing new
 	requested   bool         // a stop was requested
@@ -47,7 +48,7 @@ type Model struct {
 	pullRequests map[string]*pullRequestSlot
 	// handled holds one entry per issue whose stage ended this run, in the
 	// order the issues were released.
-	handled []HandledView
+	handled []handledEntry
 	// runs counts the stage runs statuses were reported for, for their ids.
 	runs int
 	// lastRuns holds the last run record of each issue, stage and action; nil
@@ -82,6 +83,17 @@ type heldIssue struct {
 	// verdict is the issue's handled entry, set once every action ended and
 	// completed by its verdict move's result; nil before.
 	verdict *HandledView
+	// landed is the listing generation when the verdict move landed or was
+	// given up (KTD4).
+	landed int
+}
+
+// handledEntry is a handled entry with the listing generation when its
+// verdict move landed or was given up: only a later listing marks it Gone
+// (KTD4).
+type handledEntry struct {
+	view   HandledView
+	landed int
 }
 
 // actionRun is one action of a held issue.
@@ -351,6 +363,12 @@ type HandledView struct {
 	Move crew.MoveProgress
 	// DropReason says why the verdict move was given up.
 	DropReason string
+	// Gone is set when a listing requested after the verdict move landed, or
+	// was given up, did not find the issue alone in To, and To is the label
+	// of a stage: only those states are listed (KTD4). A blocked issue stays
+	// in its label and stays listed, so it is not gone; an issue in two crew
+	// states is, since crew skips it. Each such listing decides it anew.
+	Gone bool
 	// Taken is when the stage took the issue; Ended is when its last action
 	// ended.
 	Taken time.Time
@@ -460,8 +478,8 @@ func (m *Model) View() View {
 	}
 	v.Owed = append(v.Owed, m.owedPullRequests()...)
 	for _, e := range m.handled {
-		if m.held(e.Issue.Key) == nil {
-			v.Handled = append(v.Handled, e.clone())
+		if m.held(e.view.Issue.Key) == nil {
+			v.Handled = append(v.Handled, e.view.clone())
 		}
 	}
 	return v
