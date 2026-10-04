@@ -24,6 +24,7 @@ type gh struct {
 	login  string        // the authenticated user, once resolved
 	writer port.Identity // who writes; the zero Identity is the boss
 	asBoss bool          // whether writes went back to the boss for the rest of the run
+	lost   string        // the warning crew wrote when they did
 }
 
 // call runs gh with args as the boss and returns what it printed. On a
@@ -65,6 +66,14 @@ func (g *gh) viewer(ctx context.Context) (string, error) {
 	return login, nil
 }
 
+// known returns the login gh is authenticated as once viewer resolved it,
+// "" before.
+func (g *gh) known() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.login
+}
+
 // actAs makes writer write from now on.
 func (g *gh) actAs(writer port.Identity) {
 	g.mu.Lock()
@@ -80,11 +89,43 @@ func (g *gh) mate() (port.Identity, bool) {
 	return g.writer, g.writer.Login != "" && !g.asBoss
 }
 
-// backToBoss makes every later write of the run go as the boss.
-func (g *gh) backToBoss() {
+// backToBoss makes every later write of the run go as the boss, because
+// GitHub refused mate's write for kind. The first call records the warning
+// lostWarning words; a later one, from a write that raced it, keeps it.
+func (g *gh) backToBoss(kind refusalKind, mate string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.asBoss {
+		return
+	}
 	g.asBoss = true
+	g.lost = lostWarning(kind, mate)
+}
+
+// writerLost returns the warning backToBoss recorded, "" before.
+func (g *gh) writerLost() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.lost
+}
+
+// lostWarning returns the warning crew writes when mate's writes went back
+// to the boss because GitHub refused one for kind: what happened, what fixes
+// it, and that crew writes as the boss until it restarts. It quotes nothing
+// gh printed.
+func lostWarning(kind refusalKind, mate string) string {
+	create := fmt.Sprintf("run `crew mates create %s` in this repository", mate)
+	var why string
+	switch kind {
+	case refusedCredentials:
+		why = "GitHub refused its credentials, as when its token was revoked or expired; restart crew, and " +
+			create + " if it happens again"
+	case refusedPermission:
+		why = "GitHub refused it a permission; " + create
+	default:
+		why = "it lost access to the repository; " + create + " to install it"
+	}
+	return fmt.Sprintf("crew's writes as mate %s went back to you: %s; crew writes as you until it restarts", mate, why)
 }
 
 // write runs gh with args as the writer and returns what it printed and the
@@ -114,15 +155,15 @@ func (g *gh) write(ctx context.Context, args ...string) (proc.Output, string, er
 	if err == nil {
 		return out, w.Login, nil
 	}
-	switch refusal(out) {
+	switch kind := refusal(out); kind {
 	case refusedCredentials, refusedPermission:
-		g.backToBoss()
+		g.backToBoss(kind, w.Mate)
 		out, err = g.call(ctx, args...)
 		return out, "", err
 	case refusedNotFound:
 		out, err = g.call(ctx, args...)
 		if err == nil {
-			g.backToBoss()
+			g.backToBoss(kind, w.Mate)
 		}
 		return out, "", err
 	default:

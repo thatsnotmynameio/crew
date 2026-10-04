@@ -47,6 +47,27 @@ func (f *fakeGh) commandsTo(prefix ...string) []proc.Command {
 // The mate ops, crew's writer in the tests below.
 const opsLogin = "crew-ops[bot]"
 
+// The warnings the tracker reports when ops's writes went back to the boss,
+// one per refusal kind.
+const (
+	lostCredentials = "crew's writes as mate ops went back to you: GitHub refused its credentials, " +
+		"as when its token was revoked or expired; restart crew, and run `crew mates create ops` " +
+		"in this repository if it happens again; crew writes as you until it restarts"
+	lostPermission = "crew's writes as mate ops went back to you: GitHub refused it a permission; " +
+		"run `crew mates create ops` in this repository; crew writes as you until it restarts"
+	lostAccess = "crew's writes as mate ops went back to you: it lost access to the repository; " +
+		"run `crew mates create ops` in this repository to install it; crew writes as you until it restarts"
+)
+
+// wantWriterLost checks that tr reports want as its writes warning.
+func wantWriterLost(t *testing.T, tr *Tracker, want string) {
+	t.Helper()
+	var reporter port.WriterReporter = tr
+	if got := reporter.WriterLost(); got != want {
+		t.Errorf("WriterLost =\n%q\nwant\n%q", got, want)
+	}
+}
+
 // opsWriter returns ops as the writer, whose Renew counts its calls in
 // renewed and fails when renewErr is set.
 func opsWriter(renewed *atomic.Int32, renewErr error) port.Identity {
@@ -104,6 +125,7 @@ func TestTheTrackerReadsAsTheBossAndWritesAsTheMate(t *testing.T) {
 		reply{prefix: commentOn(12), stdout: "900\n"},
 	)
 	ctx := context.Background()
+	wantWriterLost(t, tr, "")
 	if err := tr.Prepare(ctx, []crew.State{ready, inProgress}); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -127,6 +149,7 @@ func TestTheTrackerReadsAsTheBossAndWritesAsTheMate(t *testing.T) {
 	if writes != 6 || renewed.Load() != 0 {
 		t.Errorf("wrote %d times as ops, renewed %d times; want 6 and 0", writes, renewed.Load())
 	}
+	wantWriterLost(t, tr, "")
 }
 
 // checkWritesAsOps checks that every recorded write ran as ops and every
@@ -203,6 +226,7 @@ func TestAMateRefusedAPermissionHandsEveryLaterWriteToTheBoss(t *testing.T) {
 	if renewed.Load() != 0 {
 		t.Errorf("renewed %d times, want none for a permission", renewed.Load())
 	}
+	wantWriterLost(t, tr, lostPermission)
 }
 
 func TestAMateRefusedItsTokenRenewsItAndTriesAgain(t *testing.T) {
@@ -221,6 +245,7 @@ func TestAMateRefusedItsTokenRenewsItAndTriesAgain(t *testing.T) {
 		t.Errorf("renewed %d times and edited %d times as ops, %d as the boss; want 1, 3 and 0",
 			renewed.Load(), countAs(gh, asMate, editComment...), countAs(gh, asBoss, editComment...))
 	}
+	wantWriterLost(t, tr, "")
 }
 
 func TestAMateStillRefusedAfterRenewingHandsEveryLaterWriteToTheBoss(t *testing.T) {
@@ -249,6 +274,7 @@ func TestAMateStillRefusedAfterRenewingHandsEveryLaterWriteToTheBoss(t *testing.
 				t.Errorf("edited %d times as ops and %d as the boss, created %d; want %d, 2 and none",
 					mate, boss, len(gh.callsTo(createComment...)), tc.wantMate)
 			}
+			wantWriterLost(t, tr, lostCredentials)
 		})
 	}
 }
@@ -268,6 +294,7 @@ func TestAnIssueGoneForTheBossTooKeepsTheMateWriting(t *testing.T) {
 	if mate, boss := countAs(gh, asMate, commentOn(12)...), countAs(gh, asBoss, commentOn(12)...); mate != 2 || boss != 2 {
 		t.Errorf("posted %d times as ops and %d as the boss, want 2 and 2", mate, boss)
 	}
+	wantWriterLost(t, tr, "")
 }
 
 func TestAMateThatLostAccessHandsTheStatusCommentToTheBoss(t *testing.T) {
@@ -293,6 +320,7 @@ func TestAMateThatLostAccessHandsTheStatusCommentToTheBoss(t *testing.T) {
 	if n := len(gh.callsTo(createComment...)); n != 0 {
 		t.Errorf("created %d comments, want none", n)
 	}
+	wantWriterLost(t, tr, lostAccess)
 }
 
 func TestARateLimitedMateKeepsWriting(t *testing.T) {
@@ -311,6 +339,7 @@ func TestARateLimitedMateKeepsWriting(t *testing.T) {
 	if mate, boss := countAs(gh, asMate, commentOn(12)...), countAs(gh, asBoss, commentOn(12)...); mate != 2 || boss != 0 {
 		t.Errorf("posted %d times as ops and %d as the boss, want 2 and 0", mate, boss)
 	}
+	wantWriterLost(t, tr, "")
 }
 
 // Covers R21: a status comment the boss wrote is continued, not edited, by
@@ -402,6 +431,7 @@ func TestAMateNotLoggedInHandsTheWriteToTheBoss(t *testing.T) {
 	if mate, boss := countAs(gh, asMate, "label"), countAs(gh, asBoss, "label"); mate != 1 || boss != 1 {
 		t.Errorf("created %d times as ops and %d as the boss, want 1 and 1", mate, boss)
 	}
+	wantWriterLost(t, tr, lostPermission)
 }
 
 func TestAWriteThatCannotStartIsTheMatesError(t *testing.T) {
@@ -415,5 +445,43 @@ func TestAWriteThatCannotStartIsTheMatesError(t *testing.T) {
 	}
 	if n := len(gh.commandsTo()); n != 1 {
 		t.Errorf("ran gh %d times, want once", n)
+	}
+}
+
+// Two writes that fall back at once, as two goroutines whose mate both
+// refused before either went back to the boss, keep the first one's warning.
+func TestTwoWritesFallingBackKeepTheFirstWarning(t *testing.T) {
+	var renewed atomic.Int32
+	tr, _ := actingTracker(t, &renewed)
+	tr.gh.backToBoss(refusedPermission, "ops")
+	tr.gh.backToBoss(refusedNotFound, "ops")
+	wantWriterLost(t, tr, lostPermission)
+}
+
+// Without a mate, the boss's writes never fall back, so no warning comes.
+func TestTheBossWritingAloneReportsNoWritesWarning(t *testing.T) {
+	tr, _ := build(t, reply{prefix: []string{"label", "create"}, stderr: "gh: Resource not accessible (HTTP 403)"})
+	if _, _, err := tr.gh.write(context.Background(), "label", "create", "ready"); err == nil {
+		t.Fatal("write = nil, want the boss's refusal")
+	}
+	wantWriterLost(t, tr, "")
+}
+
+func TestTheTrackerFindsItsLoginInPrepare(t *testing.T) {
+	tr, _ := build(t,
+		reply{prefix: []string{"auth", "status"}}, login,
+		reply{prefix: []string{"api", "-H", rawAccept, "repos/{owner}/{repo}/contents/.github/CODEOWNERS"},
+			stdout: "* @octocat\n"},
+		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`},
+	)
+	var finder port.LoginFinder = tr
+	if got := finder.Login(); got != "" {
+		t.Errorf("Login before Prepare = %q, want none", got)
+	}
+	if err := tr.Prepare(context.Background(), []crew.State{ready}); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got := finder.Login(); got != "me" {
+		t.Errorf("Login = %q, want gh's login me, not CODEOWNERS' octocat", got)
 	}
 }

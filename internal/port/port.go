@@ -3,10 +3,10 @@
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter,
-// PullRequestReporter, Acting, BossFinder, BoardLister, Narrator or
-// Reopener, that the engine detects by type assertion. An adapter therefore
-// never wraps another adapter value, because a wrapper hides the optional
-// interfaces of what it wraps.
+// PullRequestReporter, Acting, BossFinder, LoginFinder, WriterReporter,
+// BoardLister, Narrator or Reopener, that the engine detects by type
+// assertion. An adapter therefore never wraps another adapter value, because
+// a wrapper hides the optional interfaces of what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.
@@ -220,6 +220,27 @@ type BossFinder interface {
 	// Boss returns the boss's logins as Prepare found them. The engine calls
 	// it once Prepare succeeded.
 	Boss() []string
+}
+
+// LoginFinder is an optional interface of a Tracker: it tells the login the
+// tracker acts as when it acts as the boss. A tracker without it names no
+// login.
+type LoginFinder interface {
+	// Login returns the login the tracker acts as when it acts as the boss,
+	// as Prepare found it, or "" before. It is safe to call from any
+	// goroutine.
+	Login() string
+}
+
+// WriterReporter is an optional interface of a Tracker that acts as a mate:
+// it tells when the tracker's own writes went back to the boss. A tracker
+// without it never reports one.
+type WriterReporter interface {
+	// WriterLost returns the warning crew wrote when the tracker's writes
+	// went back to the boss for the rest of the run, or "" while they go as
+	// the writer, or the writer is the boss. It is safe to call from any
+	// goroutine.
+	WriterLost() string
 }
 
 // BoardLister is an optional interface of a Tracker: it lists the issues of
