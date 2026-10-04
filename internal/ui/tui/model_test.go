@@ -113,9 +113,15 @@ func quits(cmd tea.Cmd) bool {
 	}
 }
 
+// boss is the boss's entry with no mate configured: crew's writes and
+// every pair act as the boss, and the actions in running run as it.
+func boss(pairs []string, running ...core.RunningAction) core.MateView {
+	return core.MateView{Name: "you", You: true, Writes: true, Pairs: pairs, Running: running}
+}
+
 // runningSnapshot is #1 running two actions in default, started 5 and 7
 // minutes before start, and #2 being taken by a later stage in clerk, 12
-// minutes into a one-hour run.
+// minutes into a one-hour run, with no mate configured.
 func runningSnapshot() engine.Update {
 	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
@@ -131,7 +137,9 @@ func runningSnapshot() engine.Update {
 			{Issue: two, Stage: "review", Queue: crew.ClerkQueue, Claim: core.ClaimTaking, Actions: []core.ActionView{
 				{Name: "check", Phase: core.PhaseWaiting},
 			}},
-		}},
+		}, Mates: []core.MateView{boss([]string{"implement/code", "implement/tests", "review/check"},
+			core.RunningAction{IssueRef: "#1", Stage: "implement", Action: "code"},
+			core.RunningAction{IssueRef: "#1", Stage: "implement", Action: "tests"})}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
 			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement",
@@ -188,7 +196,9 @@ func resumingSnapshot() engine.Update {
 				{Name: "tests", Phase: core.PhaseRunning, Workspace: "issue-9-tests", Branch: "crew/issue-9-tests",
 					Started: start.Add(-2 * time.Minute)},
 			}},
-		}},
+		}, Mates: []core.MateView{boss([]string{"development/docs", "development/lfg", "development/tests"},
+			core.RunningAction{IssueRef: "#9", Stage: "development", Action: "lfg"},
+			core.RunningAction{IssueRef: "#9", Stage: "development", Action: "tests"})}},
 		Started: start.Add(-4 * time.Minute),
 		Recent: []core.Event{
 			core.ActionStarted{At: start.Add(-3 * time.Minute), IssueRef: "#9", Stage: "development", Action: "lfg",
@@ -209,7 +219,8 @@ func windingDownSnapshot() engine.Update {
 			{Issue: issue, Stage: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/42-code", Started: start.Add(-75 * time.Minute)},
 			}},
-		}},
+		}, Mates: []core.MateView{boss([]string{"implement/code"},
+			core.RunningAction{IssueRef: "#42", Stage: "implement", Action: "code"})}},
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},
