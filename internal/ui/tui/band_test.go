@@ -137,3 +137,37 @@ func TestBeforeTheFirstUpdateTheQueuesSectionShowsNone(t *testing.T) {
 
 	contains(t, h.view(), "Queues ", "\n none ")
 }
+
+// heldBy is e marked held again by stage.
+func heldBy(e core.HandledView, stage string) core.HandledView {
+	e.HeldBy = stage
+	return e
+}
+
+func TestAnEntryHeldAgainSaysWhichStageHoldsIt(t *testing.T) {
+	view := handledView(t,
+		heldBy(entry("31", "Add login form", "triage", "crew:triage:done", 15, 5), "development"),
+		entry("32", "Drop the flag", "triage", "crew:triage:done", 15, 5))
+
+	contains(t, view, "#31 Add login form  triage 10m00s · now in development")
+	if strings.Count(view, "now in") != 1 {
+		t.Errorf("an entry no stage holds says where it is:\n%s", view)
+	}
+}
+
+func TestAFailedEntryHeldAgainShowsItsLabelAndSortsByWhenItEnded(t *testing.T) {
+	failed := entry("31", "Add login form", "fix", "crew:fix:failed", 40, 30)
+	failed.Failures = []crew.ActionFailure{{Action: "lfg", Reason: "tests fail"}}
+	view := handledView(t,
+		heldBy(failed, "development"),
+		heldBy(givenUpEntry(entry("33", "Drop the flag", "triage", "crew:triage:done", 25, 20), "issue closed"), "triage"),
+		entry("32", "Trim the README", "review", "ready to merge", 9, 3))
+
+	if strings.Contains(view, "NEEDS ATTENTION") {
+		t.Errorf("a failed entry held again still asks for attention:\n%s", view)
+	}
+	contains(t, view, " FAILED ", " GIVEN UP ", "× lfg failed: tests fail", "now in development")
+	if rm, f := strings.Index(view, "#32"), strings.Index(view, "#31"); rm < 0 || f < 0 || rm > f {
+		t.Errorf("the failed entry held again sorts before a later success:\n%s", view)
+	}
+}
