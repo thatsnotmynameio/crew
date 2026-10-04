@@ -11,6 +11,8 @@ execution: code
 
 # The mates in the live view - Plan
 
+> Superseded by `docs/plans/2026-10-04-1217-feat-mates-section-plan.md`, which carries this Product Contract with its implementation planning.
+
 ## Goal Capsule
 
 - **Objective:** while crew runs, the boss sees in the live view, for each mate and for themselves, whether it can act right now, what acts as it, what runs as it now, and what it cost this run, without leaving the terminal.
