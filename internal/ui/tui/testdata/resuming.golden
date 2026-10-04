@@ -1,21 +1,19 @@
-crew: 1 issue held, up 4m (q or ctrl+c stops)
-handled 0
+crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 4m  ? help
 
-Queues
-  default  2 slots  1 busy  1 free
+Workflow ───────────────────────────────────────────────────────────────────────────────────────────────────── 0 in play
+ implement                       review                        
+ ──────────────────────────────  ──────────────────────────────
 
-Issues
-  development
-    running   #9 Add login form
+Actions ────────────────────────────────────────────────────────────────────────────────────────────────────── 3 running
+ ⠋ #9  Add login form  development/docs    default   reopening workspace                    crew/issue-9-docs
+ ⠋ #9  Add login form  development/lfg     default   resumed in issue-9-lfg, running 3m00s  crew/issue-9-lfg
+ ⠋ #9  Add login form  development/tests   default   running 2m00s                          crew/issue-9-tests
 
-Actions
-  #9 development/docs   default  reopening workspace
-  #9 development/lfg    default  resumed in issue-9-lfg, running 3m00s
-  #9 development/tests  default  running 2m00s
+Queues ─── 1 of 2 busy   Handled ───────────────────────────────────────────────────────────────────────────────────── 0
+ default  ■□  1/2         none
 
-Handled
-  none
+Events ──────────────────────────────────────────────────────────────────────────────────────────────────────── 2 events
+ 14:27:00 #9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log
+ 14:28:00 #9 development/tests started on branch crew/issue-9-tests, log .crew/logs/issue-9-tests.log
 
-Recent events
-  14:27:00 #9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log
-  14:28:00 #9 development/tests started on branch crew/issue-9-tests, log .crew/logs/issue-9-tests.log
+q stop · tab focus · ↑↓ scroll · ←→ board · ? help

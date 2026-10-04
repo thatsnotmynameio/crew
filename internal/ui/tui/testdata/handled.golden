@@ -1,36 +1,35 @@
-crew: 2 issues held, up 12m, 48m left (q or ctrl+c stops)
-handled 4 ($19.86, 24.1M tokens): 1 move given up, 1 needs attention, 1 ready t…
+crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 12m • 48m left • $19.86 • 24.1M tokens  ? help
 
-Queues
-  default  2 slots  1 busy  1 free
-  clerk    1 slot   1 busy  0 free
+Workflow ───────────────────────────────────────────────── 2 in play · 1 waiting
+ implement                       review                        
+ ──────────────────────────────  ──────────────────────────────
+ ▌ #1 Add login form             ▌ #2 Fix the flaky stream test
+ ▌ ⠋ running                     ▌ ◌ taking                    
+ ▌ #7 Log the poll interval                                    
+ ▌ → ready to review                                           
 
-Issues
-  implement
-    running   #1 Add login form
-  review
-    taking    #2 Fix the flaky stream test
+Actions ────────────────────────────────────────────────── 2 running · 1 waiting
+ ⠋ #1  Add login form    implement/code    default   running 5m00s  crew/1-code
+ ⠋ #1  Add login form    implement/tests   default   running 7m00s  crew/1-tests
+ ○ #2  Fix the flaky s…  review/check      clerk     waiting        
 
-Actions
-  #1 implement/code   default  running 5m00s
-  #1 implement/tests  default  running 7m00s
-  #2 review/check     clerk    waiting
+Queues ─── 2 of 3 busy   Handled ──────────────────────────────────── 4 · $19.86
+ default  ■□  1/2          GIVEN UP          #6 Drop the old flag     implement…
+ clerk    ■   1/1           × move to ready to review given up: issue closed
+                           NEEDS ATTENTION   #5 Parse the config on…  implement…
+                            × tests failed: exited 1: tests fail
+                            × code failed: prompt did not render
+                             tests: no pull request
+                           READY TO MERGE    #8 Trim the README       review 6m…
+                           READY TO REVIEW   #7 Log the poll interv…  implement…
+                             code: #45
+                             tests: no pull request
 
-Handled
-  move given up    #6  implement 5m00s   $3.10, 4.5M tokens    #44  Drop the ol…
-    move to ready to review given up: issue closed
-  needs attention  #5  implement 10m00s  $0.84, 1.2M tokens         Parse the c…
-    tests failed: exited 1: tests fail
-    code failed: prompt did not render
-    tests: no pull request
-  ready to merge   #8  review 6m00s      $0.42, 48.2K tokens   #46  Trim the RE…
-  ready to review  #7  implement 9m00s   $13.50, 18.1M tokens       Log the pol…
-    code: pull request #45
-    tests: no pull request
+Events ──────────────────────────────────────────────────────────────── 5 events
+ 14:22:58 implement took #1 "Add login form" (ready -> in progress)
+ 14:23:00 #1 implement/tests started on branch crew/1-tests, log .crew/logs/1-t…
+ 14:25:00 #1 implement/code started on branch crew/1-code, log .crew/logs/1-cod…
+ 14:29:50 poll: listed 2 issues, took 1
+ 14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in rev…
 
-Recent events
-  14:22:58 implement took #1 "Add login form" (ready -> in progress)
-  14:23:00 #1 implement/tests started on branch crew/1-tests, log .crew/logs/1-…
-  14:25:00 #1 implement/code started on branch crew/1-code, log .crew/logs/1-co…
-  14:29:50 poll: listed 2 issues, took 1
-  14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in re…
+q stop · tab focus · ↑↓ scroll · ←→ board · ? help
