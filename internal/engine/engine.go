@@ -89,6 +89,13 @@ type Config struct {
 	// or not they act: the tracker takes the items they opened, and every
 	// session and check gets them as CREW_MATES.
 	MateLogins []string
+	// Board is the board the config draws; nil draws the stages. With one,
+	// the engine reads its issues at each poll through the tracker's
+	// port.BoardLister, and reads none when the tracker has none (KTD4).
+	Board []crew.BoardColumn
+	// Extras are the config's extra labels: with Board, a move removes them
+	// from an issue on the board, as it removes the workflow's states.
+	Extras []crew.State
 }
 
 // Engine runs the workflow of a Config. Use New; Run it once.
@@ -112,6 +119,9 @@ type Engine struct {
 	// pullRequests is the tracker's port.PullRequestReporter; nil when the
 	// tracker has none, and the core then makes no pull request report.
 	pullRequests port.PullRequestReporter
+	// board is the tracker's port.BoardLister when the config draws a board;
+	// nil otherwise, and the core then reads no board (KTD4).
+	board port.BoardLister
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
@@ -139,7 +149,9 @@ type Engine struct {
 // requests through it. When the workspace implements port.Reopener, a
 // failed run's action resumes in that run's workspace (KTD4). When the
 // tracker implements port.PullRequestFinder, the engine looks up the pull
-// request each action opened.
+// request each action opened. When cfg has a Board and the tracker
+// implements port.BoardLister, the engine reads the board's issues at each
+// poll through it.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
@@ -160,6 +172,14 @@ func New(cfg Config) *Engine {
 	if finder != nil {
 		opts = append(opts, core.FindingPullRequests())
 	}
+	board, _ := cfg.Tracker.(port.BoardLister)
+	if len(cfg.Board) == 0 {
+		board = nil
+	}
+	if board != nil {
+		crewLabels := slices.Concat(crew.WorkflowStates(cfg.Workflow), cfg.Extras)
+		opts = append(opts, core.ListingBoard(crew.BoardLabels(cfg.Board), crewLabels))
+	}
 	return &Engine{
 		cfg:          cfg,
 		stream:       newStream(),
@@ -167,6 +187,7 @@ func New(cfg Config) *Engine {
 		reporter:     reporter,
 		pullRequests: pullRequests,
 		finder:       finder,
+		board:        board,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
 		sessions:     map[sessionKey]port.Session{},

@@ -49,6 +49,8 @@ func (e *Engine) job(ctx context.Context, cmd core.Command) func() {
 	switch c := cmd.(type) {
 	case core.ListIssues:
 		return func() { e.list(ctx, c) }
+	case core.ListBoard:
+		return func() { e.listBoard(ctx, c) }
 	case core.Move:
 		return func() { e.move(ctx, c) }
 	case core.ReportFailure:
@@ -128,6 +130,19 @@ func (e *Engine) list(ctx context.Context, c core.ListIssues) {
 		return
 	}
 	e.post(core.IssuesListed{Issues: issues})
+}
+
+// listBoard reads the board's issues; the core asks only when the engine
+// gave it ListingBoard, so the tracker is a port.BoardLister.
+func (e *Engine) listBoard(ctx context.Context, c core.ListBoard) {
+	ctx, cancel := callContext(ctx)
+	defer cancel()
+	issues, err := e.board.ListBoard(ctx, c.Labels)
+	if err != nil {
+		e.post(core.BoardListFailed{Reason: e.reason(ctx, err)})
+		return
+	}
+	e.post(core.BoardListed{Issues: issues})
 }
 
 func (e *Engine) move(ctx context.Context, c core.Move) {
