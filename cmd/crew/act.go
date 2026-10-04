@@ -13,7 +13,8 @@ import (
 // actingMates returns the app.Options.Mates of the repository at root: it
 // makes the configured mates act through internal/mates, with the mates
 // stored on this machine and GitHub's API, running gh and git as the boss
-// through run.
+// through run. It reports each of Act's steps on the context it receives,
+// the checks' one, so they show in the boot log.
 func actingMates(run proc.Runner, root string) func(context.Context, string, []string) (app.Mates, error) {
 	return func(ctx context.Context, def string, names []string) (app.Mates, error) {
 		store, err := mates.DefaultStore()
@@ -23,6 +24,7 @@ func actingMates(run proc.Runner, root string) func(context.Context, string, []s
 		a, err := mates.Act(ctx, mates.ActOptions{
 			Run: run, Store: store, Client: mates.NewClient(mates.DefaultAPI, &http.Client{}),
 			Root: root, Names: names, Default: def,
+			Step: func(step string) { port.Step(ctx, step) },
 		})
 		if err != nil {
 			return app.Mates{}, err

@@ -45,11 +45,11 @@ func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time, warn
 		n := dropped - reported
 		reported = dropped
 		text := fmt.Sprintf("%d %s dropped because this output fell behind", n, Plural(n, "event was", "events were"))
-		return line(w, now().In(loc), text)
+		return Line(w, now().In(loc), text)
 	}
 	for u := range ch {
 		for _, e := range u.Events {
-			if err := line(w, e.Time().In(loc), Text(e)); err != nil {
+			if err := Line(w, e.Time().In(loc), Text(e)); err != nil {
 				return err
 			}
 		}
@@ -65,14 +65,16 @@ func Run(src Source, w io.Writer, loc *time.Location, now func() time.Time, warn
 // warn prints each of warnings as one line stamped with at.
 func warn(w io.Writer, at time.Time, warnings []string) error {
 	for _, warning := range warnings {
-		if err := line(w, at, "warning: "+warning); err != nil {
+		if err := Line(w, at, "warning: "+warning); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func line(w io.Writer, at time.Time, text string) error {
+// Line prints text as one event line, "HH:MM:SS crew: <text>", stamped with
+// at in its own location. The boot log uses it too, so both share one format.
+func Line(w io.Writer, at time.Time, text string) error {
 	if _, err := fmt.Fprintf(w, "%s crew: %s\n", at.Format(time.TimeOnly), text); err != nil {
 		return fmt.Errorf("print event line: %w", err)
 	}

@@ -9,14 +9,37 @@ import (
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
+
+// recordSteps returns a context whose reporter appends each step Prepare
+// reports to the returned slice.
+func recordSteps() (context.Context, *[]string) {
+	var steps []string
+	return port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) }), &steps
+}
+
+// prepareSteps returns the steps a Prepare that succeeds reports: the gh
+// login, the boss, the labels, then one per label it creates, naming it.
+func prepareSteps(created []string) []string {
+	steps := make([]string, 0, 3+len(created))
+	steps = append(steps, "checking the gh login", "finding the boss", "reading the repository's labels")
+	for _, name := range created {
+		steps = append(steps, fmt.Sprintf("creating the label %q", name))
+	}
+	return steps
+}
 
 func TestPrepareWithoutAuthTellsTheBossToLogIn(t *testing.T) {
 	tr, gh := build(t,
 		reply{prefix: []string{"auth", "status"}, stderr: "You are not logged into any GitHub hosts."})
-	err := tr.Prepare(context.Background(), []crew.State{ready})
+	ctx, steps := recordSteps()
+	err := tr.Prepare(ctx, []crew.State{ready})
 	if err == nil || !strings.Contains(err.Error(), "gh auth login") {
 		t.Errorf("Prepare = %v, want an error telling the boss to run gh auth login", err)
+	}
+	if want := []string{"checking the gh login"}; !slices.Equal(*steps, want) {
+		t.Errorf("steps = %q, want %q", *steps, want)
 	}
 	if calls := gh.callsTo("label"); len(calls) != 0 {
 		t.Errorf("touched labels %q without auth", calls)
@@ -39,8 +62,10 @@ func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 	}{
 		"AE7 only ready": {`[{"name":"ready"}]`,
 			[]string{"in progress", "in review", "needs attention", "waiting brainstorm"}},
-		"another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"},{"name":"Waiting Brainstorm"}]`,
+		"AE1 another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"},{"name":"Waiting Brainstorm"}]`,
 			[]string{"in review", "needs attention"}},
+		"AE2 every label": {`[{"name":"Ready"},{"name":"in progress"},{"name":"IN REVIEW"},` +
+			`{"name":"needs attention"},{"name":"waiting brainstorm"}]`, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,
@@ -50,7 +75,8 @@ func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 				reply{prefix: []string{"label", "create"}},
 			)
 			states := []crew.State{ready, inProgress, inReview, needsAttention}
-			if err := tr.Prepare(context.Background(), states); err != nil {
+			ctx, steps := recordSteps()
+			if err := tr.Prepare(ctx, states); err != nil {
 				t.Fatalf("Prepare: %v", err)
 			}
 			creates := gh.callsTo("label", "create")
@@ -60,6 +86,9 @@ func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 			}
 			if !slices.Equal(created, tc.want) {
 				t.Errorf("created labels %q, want %q", created, tc.want)
+			}
+			if want := prepareSteps(tc.want); !slices.Equal(*steps, want) {
+				t.Errorf("steps = %q, want %q", *steps, want)
 			}
 		})
 	}

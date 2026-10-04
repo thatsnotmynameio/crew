@@ -358,9 +358,14 @@ func TestPreparerFailsNamingClaudeWhenItIsNotOnPath(t *testing.T) {
 		t.Fatalf("factory: %v", err)
 	}
 
-	err = port.Prepare(t.Context(), []crew.State{"ready"}, h)
+	var steps []string
+	ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
+	err = port.Prepare(ctx, []crew.State{"ready"}, h)
 	if err == nil || !strings.Contains(err.Error(), "claude") {
 		t.Errorf("Prepare = %v, want an error naming claude", err)
+	}
+	if want := []string{"looking for claude on PATH"}; !slices.Equal(steps, want) {
+		t.Errorf("steps = %q, want %q", steps, want)
 	}
 }
 

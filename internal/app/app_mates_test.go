@@ -199,9 +199,10 @@ func TestAMateThatCannotActWarnsAndCrewActsAsTheBoss(t *testing.T) {
 		if run := session.Run(); !sameIdentity(run.Identity, port.Identity{}) {
 			t.Errorf("session ran as %+v, want the boss", run.Identity)
 		}
-		first, _, _ := strings.Cut(r.stdout.String(), "\n")
-		if !stamped.MatchString(first) || !strings.HasSuffix(first, "crew: warning: "+warning) {
-			t.Errorf("first line = %q, want the stamped warning", first)
+		lines := unstamped(t, r.stdout.String())
+		if i := slices.Index(lines, "reading the run journal"); i < 0 || i+1 >= len(lines) ||
+			lines[i+1] != "warning: "+warning {
+			t.Errorf("stdout = %q, want the warning right after the boot log", lines)
 		}
 	})
 }
