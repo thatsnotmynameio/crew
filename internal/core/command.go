@@ -27,6 +27,16 @@ type ListIssues struct {
 	States []crew.State
 }
 
+// ListBoard asks the tracker for the open issues that carry any of Labels,
+// never a pull request. Its result is BoardListed or BoardListFailed. The
+// core keeps at most one board read outstanding, and asks at each tick, busy
+// or not, until a stop starts (KTD4). It asks only when it reads a board
+// (ListingBoard).
+type ListBoard struct {
+	// Labels are the board's labels, in board order.
+	Labels []string
+}
+
 // Move asks the tracker to move an issue from one state to another. Its
 // result is a CallResult carrying ID.
 type Move struct {
@@ -147,6 +157,7 @@ type ReportPullRequests struct {
 }
 
 func (ListIssues) command()         {}
+func (ListBoard) command()          {}
 func (Move) command()               {}
 func (ReportFailure) command()      {}
 func (CreateWorkspace) command()    {}

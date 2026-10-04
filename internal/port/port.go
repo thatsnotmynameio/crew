@@ -3,10 +3,10 @@
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter,
-// PullRequestReporter, Acting, BossFinder, Narrator or Reopener, that the
-// engine detects by type assertion. An adapter therefore never wraps another
-// adapter value, because a wrapper hides the optional interfaces of what it
-// wraps.
+// PullRequestReporter, Acting, BossFinder, BoardLister, Narrator or
+// Reopener, that the engine detects by type assertion. An adapter therefore
+// never wraps another adapter value, because a wrapper hides the optional
+// interfaces of what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.
@@ -220,6 +220,18 @@ type BossFinder interface {
 	// Boss returns the boss's logins as Prepare found them. The engine calls
 	// it once Prepare succeeded.
 	Boss() []string
+}
+
+// BoardLister is an optional interface of a Tracker: it lists the issues of
+// the board the config draws, whose labels need not be crew's. crew refuses a
+// config with a board when its tracker lacks it.
+type BoardLister interface {
+	// ListBoard returns the open issues the boss or one of the mates opened
+	// that carry any of labels, never a pull request, oldest first. Each
+	// carries the labels of labels it carries, matched as the tracker
+	// matches labels, spelled as labels spells them and in its order. An
+	// error means the board could not be read; it is transient.
+	ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error)
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace

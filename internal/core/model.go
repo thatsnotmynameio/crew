@@ -69,6 +69,8 @@ type Model struct {
 	// listing found in the label of a stage of the other kind, which was
 	// reported then or before (#92).
 	otherKinds map[string]crew.State
+	// board is the board the model reads; nil when it reads none (KTD4).
+	board *board
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
@@ -345,6 +347,13 @@ type View struct {
 	// Spent sums what every session that ended this run used, including
 	// those of entries Handled no longer shows (R14).
 	Spent crew.Spend
+	// Board is the board's issues, as the last board read found them with
+	// crew's moves since applied, oldest first and then by key (KTD4, KTD6);
+	// nil when the model reads no board (ListingBoard).
+	Board []crew.BoardIssue
+	// BoardFailure says why the last board read failed; empty once a read
+	// succeeds (KTD5).
+	BoardFailure string
 }
 
 // HandledView is an issue whose stage ended this run, as that stage left it.
@@ -487,6 +496,9 @@ func (m *Model) View() View {
 			hv.HeldBy = m.stages[h.stage].Name
 		}
 		v.Handled = append(v.Handled, hv)
+	}
+	if m.board != nil {
+		v.Board, v.BoardFailure = m.board.view(), m.board.failure
 	}
 	return v
 }

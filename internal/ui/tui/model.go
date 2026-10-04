@@ -41,8 +41,11 @@ type Config struct {
 	Now      func() time.Time
 	Location *time.Location
 	// Workflow is the configured stages, in config order: the board's
-	// columns (R8).
+	// columns (R8) when Board is empty.
 	Workflow []crew.Stage
+	// Board is the configured board's columns, in config order; empty for
+	// the board of the workflow's stages (R4, R5, KTD9).
+	Board []crew.BoardColumn
 	// Repository is the repository's name, for the header (R3).
 	Repository string
 	// Warnings are crew's startup warnings, each shown under the header for
@@ -86,7 +89,7 @@ type Model struct {
 	// eventsOffset the Events rows scrolled back from the newest (KTD11).
 	handledOffset, eventsOffset int
 
-	// memory remembers each issue's last column this run and the slides
+	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).
 	memory *boardMemory
 	// outside tracks focus reports and the stage ends already notified

@@ -68,6 +68,21 @@ type ListFailed struct {
 	Reason string
 }
 
+// BoardListed is the result of ListBoard: the open issues that carry any of
+// the board's labels, each with the board labels it carries.
+type BoardListed struct {
+	At     time.Time
+	Issues []crew.BoardIssue
+}
+
+// BoardListFailed is a ListBoard that failed. The core keeps the last board
+// it read, and the next tick reads it again.
+type BoardListFailed struct {
+	At time.Time
+	// Reason says why in one line, with local paths already shortened.
+	Reason string
+}
+
 // Result classifies how a tracker call (a Move, a ReportFailure or a
 // ReportPullRequests) ended.
 // The engine maps the port's errors onto it: nil is ResultDone,
@@ -248,6 +263,12 @@ func (i IssuesListed) Stamped(at time.Time) Input { i.At = at; return i }
 func (i ListFailed) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i BoardListed) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
+func (i BoardListFailed) Stamped(at time.Time) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -288,6 +309,8 @@ func (i StopRequested) arrival() time.Time        { return i.At }
 func (i TimeUp) arrival() time.Time               { return i.At }
 func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
+func (i BoardListed) arrival() time.Time          { return i.At }
+func (i BoardListFailed) arrival() time.Time      { return i.At }
 func (i CallResult) arrival() time.Time           { return i.At }
 func (i StatusResult) arrival() time.Time         { return i.At }
 func (i PullRequestsResult) arrival() time.Time   { return i.At }

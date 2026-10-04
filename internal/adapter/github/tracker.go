@@ -3,7 +3,8 @@
 // compared ignoring case as GitHub does, and crew's labels are the workflow's
 // states plus the config's extra labels, which are never states. It lists the
 // open issues and pull requests the boss or one of crew's mates opened, as
-// items alike, moves them by swapping crew's labels, reports failures as
+// items alike, and lists the board's issues the same authors opened, whatever
+// their labels. It moves items by swapping crew's labels, reports failures as
 // Markdown comments and keeps a status comment on each item, with one entry
 // per stage run. It puts the open pull requests that close an issue in the
 // issue's crew label, and comments on them when a stage ends that nobody
@@ -35,7 +36,7 @@ import (
 
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
-// a port.Acting and a port.BossFinder.
+// a port.Acting, a port.BossFinder and a port.BoardLister.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -44,6 +45,7 @@ var (
 	_ port.PullRequestFinder   = (*Tracker)(nil)
 	_ port.Acting              = (*Tracker)(nil)
 	_ port.BossFinder          = (*Tracker)(nil)
+	_ port.BoardLister         = (*Tracker)(nil)
 )
 
 // issueFields are what issuesQuery reads of an issue. A dependency
@@ -79,10 +81,12 @@ const (
 
 // issuesQuery returns the query listing the open issues each of authors
 // opened carrying any of the labels, one aliased issues field per author,
-// and the open pull requests carrying any of them, each list oldest first.
-// GitHub's labels filter matches an item with any of them. Pull requests
-// cannot be filtered by author, so each carries its author.
-func issuesQuery(authors int) string {
+// and, when pullRequests is set, the open pull requests carrying any of
+// them, each list oldest first. GitHub's labels filter matches an item with
+// any of them, ignoring case, and matches nothing for a label the
+// repository lacks. Pull requests cannot be filtered by author, so each
+// carries its author.
+func issuesQuery(authors int, pullRequests bool) string {
 	var vars, fields strings.Builder
 	for i := range authors {
 		fmt.Fprintf(&vars, ", $author%d: String!", i)
@@ -90,8 +94,8 @@ func issuesQuery(authors int) string {
     %s%d: issues(first: 100, states: OPEN, filterBy: {createdBy: $author%d, labels: $labels},
            orderBy: {field: CREATED_AT, direction: ASC}) { nodes { ...issueFields } }`, issuesAlias, i, i)
 	}
-	return `query($owner: String!, $name: String!, $labels: [String!]` + vars.String() + `) {
-  repository(owner: $owner, name: $name) {` + fields.String() + `
+	if pullRequests {
+		fields.WriteString(`
     ` + pullRequestsAlias + `: pullRequests(first: 100, states: OPEN, labels: $labels,
                  orderBy: {field: CREATED_AT, direction: ASC}) {
       nodes {
@@ -102,7 +106,10 @@ func issuesQuery(authors int) string {
         author { __typename login }
         labels(first: 100) { nodes { name } }
       }
-    }
+    }`)
+	}
+	return `query($owner: String!, $name: String!, $labels: [String!]` + vars.String() + `) {
+  repository(owner: $owner, name: $name) {` + fields.String() + `
   }
 }
 ` + issueFields
@@ -115,6 +122,22 @@ type issuesReply struct {
 			Nodes []listNode `json:"nodes"`
 		} `json:"repository"`
 	} `json:"data"`
+}
+
+// issues returns the issue nodes of r, an issuesQuery reply for authors
+// authors, author by author, each issue once.
+func (r issuesReply) issues(authors int) []listNode {
+	var nodes []listNode
+	seen := map[int]bool{}
+	for i := range authors {
+		for _, n := range r.Data.Repository[issuesAlias+strconv.Itoa(i)].Nodes {
+			if !seen[n.Number] {
+				seen[n.Number] = true
+				nodes = append(nodes, n)
+			}
+		}
+	}
+	return nodes
 }
 
 // listNode is an issue or a pull request as issuesQuery reads it. An
@@ -216,26 +239,19 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
+	labels := make([]string, len(states))
+	for i, s := range states {
+		labels[i] = string(s)
+	}
 	var reply issuesReply
-	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, states)...); err != nil {
+	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, labels, true)...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	repo := reply.Data.Repository
 	var items []crew.Issue
-	seen := map[int]bool{}
-	for i := range authors {
-		for _, n := range repo[issuesAlias+strconv.Itoa(i)].Nodes {
-			if seen[n.Number] {
-				continue
-			}
-			seen[n.Number] = true
-			issue := t.item(n.itemNode)
-			issue.Blocked = n.Dependencies.BlockedBy > 0
-			issue.Priority = priority(n.FieldValues.Nodes)
-			items = append(items, issue)
-		}
+	for _, n := range reply.issues(len(authors)) {
+		items = append(items, t.issue(n))
 	}
-	for _, n := range repo[pullRequestsAlias].Nodes {
+	for _, n := range reply.Data.Repository[pullRequestsAlias].Nodes {
 		if login := n.authorLogin(); login != "" && containsFold(authors, login) {
 			pr := t.item(n.itemNode)
 			pr.Kind = crew.KindPullRequest
@@ -244,6 +260,38 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	}
 	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
 	return items, nil
+}
+
+// ListBoard implements port.BoardLister with List's query without its pull
+// requests: the open issues the boss or one of the mates opened that carry
+// any of labels, at most 100 per author, oldest first, each as List returns
+// it. Each carries the labels of labels its own labels match ignoring case,
+// as GitHub compares them, in labels' spelling and order. An issue none of
+// whose labels matches, which GitHub's filter should not return, is left
+// out.
+func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error) {
+	authors, err := t.authors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list the board's issues: %w", err)
+	}
+	var reply issuesReply
+	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, labels, false)...); err != nil {
+		return nil, fmt.Errorf("list the board's issues: %w", err)
+	}
+	var board []crew.BoardIssue
+	for _, n := range reply.issues(len(authors)) {
+		var carried []string
+		for _, l := range labels {
+			if slices.ContainsFunc(n.Labels.Nodes, func(g ghLabel) bool { return strings.EqualFold(g.Name, l) }) {
+				carried = append(carried, l)
+			}
+		}
+		if len(carried) > 0 {
+			board = append(board, crew.BoardIssue{Issue: t.issue(n), Labels: carried})
+		}
+	}
+	slices.SortStableFunc(board, func(a, b crew.BoardIssue) int { return a.Issue.Created.Compare(b.Issue.Created) })
+	return board, nil
 }
 
 // ActAs implements port.Acting: the tracker's writes go as writer, the boss
@@ -271,18 +319,19 @@ const fieldArgs = 2
 // stateOpen is the state GitHub gives an open issue or pull request.
 const stateOpen = "OPEN"
 
-// issuesArgs returns the gh arguments of List's query, for the issues of
-// authors carrying any of the states' labels.
-func issuesArgs(authors []string, states []crew.State) []string {
-	vars := make([]string, 0, fieldArgs*(len(states)+len(authors)))
-	for _, s := range states {
-		vars = append(vars, "-f", "labels[]="+string(s))
+// issuesArgs returns the gh arguments of issuesQuery, for the issues of
+// authors carrying any of labels and, when pullRequests is set, the pull
+// requests carrying any of them.
+func issuesArgs(authors, labels []string, pullRequests bool) []string {
+	vars := make([]string, 0, fieldArgs*(len(labels)+len(authors)))
+	for _, l := range labels {
+		vars = append(vars, "-f", "labels[]="+l)
 	}
 	for i, a := range authors {
 		vars = append(vars, "-f", "author"+strconv.Itoa(i)+"="+a)
 	}
 	return slices.Concat([]string{"api", "graphql",
-		"-f", "query=" + issuesQuery(len(authors)),
+		"-f", "query=" + issuesQuery(len(authors), pullRequests),
 		// gh fills {owner} and {repo} from the repository, through -F only.
 		"-F", "owner={owner}", "-F", "name={repo}"}, vars)
 }
@@ -440,6 +489,15 @@ func (t *Tracker) item(n itemNode) crew.Issue {
 			issue.States = append(issue.States, s)
 		}
 	}
+	return issue
+}
+
+// issue returns the issue n as a crew.Issue, as item returns it, blocked
+// while an open issue blocks it and ranked by its Priority value.
+func (t *Tracker) issue(n listNode) crew.Issue {
+	issue := t.item(n.itemNode)
+	issue.Blocked = n.Dependencies.BlockedBy > 0
+	issue.Priority = priority(n.FieldValues.Nodes)
 	return issue
 }
 

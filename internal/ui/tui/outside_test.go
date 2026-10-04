@@ -227,6 +227,19 @@ func sequenced(msg tea.Msg) []tea.Cmd {
 	return out
 }
 
+// Covers AE9: a configured board leaves the notifications to on_board.
+func TestAE9WithABoardAHiddenStagesEndStillNotifiesNothing(t *testing.T) {
+	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h.send(tea.BlurMsg{})
+
+	if notes := raws(h.send(updateMsg(ended("promote triage", "crew:development:ready", 3)))); len(notes) != 0 {
+		t.Errorf("the hidden promote triage notified: %q", notes)
+	}
+	if notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 1)))); len(notes) != 1 {
+		t.Errorf("triage's end sent %q, want one notification", notes)
+	}
+}
+
 func TestAFailureHeldAgainDoesNotCountAsNeedingAttention(t *testing.T) {
 	h := newWorkflowHarness(t, 80, crewWorkflow)
 	u := held(twelve, "development", "lfg", core.ClaimRunning)

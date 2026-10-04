@@ -152,7 +152,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	return run(ctx, eng, o, signalled, b.cfg.Workflow, mates.Warnings)
+	return run(ctx, eng, o, signalled, b.cfg, mates.Warnings)
 }
 
 // prepare runs the environment checks, check, within prepareTimeout, and a
@@ -197,7 +197,8 @@ type built struct {
 	harness port.Harness
 }
 
-// build loads the config and builds its adapters.
+// build loads the config and builds its adapters. A board needs a tracker
+// that lists issues by any label, a port.BoardLister (KTD3).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root)
 	if err != nil {
@@ -208,6 +209,9 @@ func build(o Options) (built, error) {
 	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
 	if err := errors.Join(trackerErr, harnessErr); err != nil {
 		return built{}, err
+	}
+	if _, ok := tracker.(port.BoardLister); len(cfg.Board) > 0 && !ok {
+		return built{}, fmt.Errorf("board: tracker %q cannot list issues by any label", cfg.Tracker)
 	}
 	return built{cfg: cfg, tracker: tracker, harness: harness}, nil
 }
@@ -247,6 +251,8 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 		Writer:            mates.Writer,
 		Identities:        mates.Identities,
 		MateLogins:        mates.Logins,
+		Board:             b.cfg.Board,
+		Extras:            b.cfg.Extras,
 	})
 }
 
@@ -255,9 +261,9 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 // already, so the engine stops at once and the next signal forces the exit.
 // The renderer shows warnings before anything else.
 func run(
-	ctx context.Context, eng *engine.Engine, o Options, stopping bool, workflow []crew.Stage, warnings []string,
+	ctx context.Context, eng *engine.Engine, o Options, stopping bool, cfg *config.Config, warnings []string,
 ) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, workflow: workflow}
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, workflow: cfg.Workflow, board: cfg.Board}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -302,6 +308,8 @@ type runner struct {
 	warnings []string
 	// workflow is the configured stages, for the live view's board.
 	workflow []crew.Stage
+	// board is the board the config draws; nil draws the stages.
+	board []crew.BoardColumn
 }
 
 // renderer returns the TUI on a terminal without Plain, and the event lines
@@ -310,7 +318,7 @@ func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
 		model := tui.New(tui.Config{
 			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Now: time.Now, Location: time.Local,
-			Workflow: r.workflow, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
+			Workflow: r.workflow, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
 		})
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
 		r.quit = program.Quit

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
@@ -306,5 +307,69 @@ func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedBoss(t *testing.T) 
 		if _, ok := other.(port.BossFinder); ok {
 			t.Errorf("%T finds the boss; only an ActingTracker should", other)
 		}
+	}
+}
+
+// The board lists the open issues, never a pull request, whose states,
+// extras or other labels match an asked label ignoring case, oldest first,
+// each with the asked labels it carries in the asked spelling.
+func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
+	on := func(i crew.Issue, day int) crew.Issue {
+		i.Created = time.Date(2026, 9, day, 10, 0, 0, 0, time.UTC)
+		return i
+	}
+	pull := on(issue("4"), 1)
+	pull.Kind = crew.KindPullRequest
+	tr := fake.NewBoardTracker(on(issue("1", ready), 2), on(issue("2"), 3), on(issue("3"), 1), pull,
+		on(issue("5"), 1), on(issue("6"), 1))
+	tr.SetLabels("1", "BUG")
+	tr.SetExtras("2", waitingBrainstorm)
+	tr.SetLabels("3", "Bug", "docs")
+	tr.SetLabels("4", "bug")
+	tr.SetLabels("5", "bug")
+	tr.Close("5")
+	tr.SetLabels("6", "docs")
+
+	got, err := tr.ListBoard(context.Background(), []string{"bug", "Ready", "Waiting Brainstorm"})
+	if err != nil {
+		t.Fatalf("ListBoard: %v", err)
+	}
+
+	want := map[string][]string{"3": {"bug"}, "1": {"bug", "Ready"}, "2": {"Waiting Brainstorm"}}
+	order := make([]string, 0, len(got))
+	for _, b := range got {
+		order = append(order, b.Issue.Key)
+		if !reflect.DeepEqual(b.Labels, want[b.Issue.Key]) {
+			t.Errorf("issue %s labels = %q, want %q", b.Issue.Key, b.Labels, want[b.Issue.Key])
+		}
+	}
+	if wantOrder := []string{"3", "1", "2"}; !reflect.DeepEqual(order, wantOrder) {
+		t.Errorf("ListBoard keys = %v, want %v", order, wantOrder)
+	}
+}
+
+// Adding an issue whose key the tracker holds replaces it: open again, with
+// the new states and no extras or other labels.
+func TestAddingAKnownIssueReplacesItOpenWithoutExtrasOrLabels(t *testing.T) {
+	tr := fake.NewBoardTracker(issue("1", ready))
+	tr.SetExtras("1", waitingBrainstorm)
+	tr.SetLabels("1", "bug")
+	tr.Close("1")
+
+	tr.Add(issue("1", readyToReview))
+
+	got, ok := tr.Issue("1")
+	if !ok || !reflect.DeepEqual(got.States, []crew.State{readyToReview}) {
+		t.Fatalf("issue 1 = %+v (found %t), want it in %q", got, ok, readyToReview)
+	}
+	if extras := tr.Extras("1"); len(extras) != 0 {
+		t.Errorf("extras = %q, want none", extras)
+	}
+	board, err := tr.ListBoard(context.Background(), []string{"bug", string(readyToReview)})
+	if err != nil {
+		t.Fatalf("ListBoard: %v", err)
+	}
+	if len(board) != 1 || !reflect.DeepEqual(board[0].Labels, []string{string(readyToReview)}) {
+		t.Errorf("board = %+v, want issue 1 open with only %q", board, readyToReview)
 	}
 }
