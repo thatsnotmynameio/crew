@@ -113,8 +113,9 @@ func (m Model) scrollLimit() int {
 		return max(len(m.handledRows())-b.handled, 0)
 	case focusEvents:
 		return max(len(m.snap.Recent)-b.events, 0)
+	default:
+		return 0
 	}
-	return 0
 }
 
 // helper returns the help bubble styled for the view.
