@@ -180,8 +180,14 @@ func TestActRefusesARunDirectoryInsideTheRepository(t *testing.T) {
 	if err := os.Mkdir(r.opts.TempDir, dirPerm); err != nil {
 		t.Fatal(err)
 	}
+	var steps []string
+	r.opts.Step = func(step string) { steps = append(steps, step) }
 	if _, err := r.act(t); !errors.As(err, new(*EnvError)) || !strings.Contains(err.Error(), "inside the repository") {
 		t.Errorf("Act = %v, want an EnvError saying the directory is inside the repository", err)
+	}
+	// The boot log ends with the step that failed.
+	if len(steps) == 0 || steps[len(steps)-1] != "making a private directory for the mates' tokens" {
+		t.Errorf("steps = %q, want them to end with making the tokens' directory", steps)
 	}
 	if entries, _ := os.ReadDir(r.opts.TempDir); len(entries) != 0 {
 		t.Errorf("Act left %v", entries)
@@ -239,7 +245,7 @@ func TestActReportsEachStepAsItStarts(t *testing.T) {
 		t.Errorf("Warnings = %q, want one for each mate", a.Warnings)
 	}
 	want := []string{"resolving the repository for the mates", "checking git for the mates",
-		"making mate alice act", "making mate bob act"}
+		"making a private directory for the mates' tokens", "making mate alice act", "making mate bob act"}
 	if !slices.Equal(steps, want) {
 		t.Errorf("steps = %q, want %q", steps, want)
 	}

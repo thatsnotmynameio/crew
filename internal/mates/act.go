@@ -162,6 +162,7 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	if err != nil {
 		return nil, err
 	}
+	o.step("making a private directory for the mates' tokens")
 	dir, err := runDir(o)
 	if err != nil {
 		return nil, err
