@@ -65,7 +65,9 @@ type Options struct {
 	// Stdin is where the TUI reads keys; nil means the standard input, or
 	// the terminal when the standard input is not one.
 	Stdin io.Reader
-	// Stdout receives the TUI or the event lines; Stderr receives errors.
+	// Stdout receives the boot log, one line as each step of loading the
+	// config and the environment checks starts, then the TUI or the event
+	// lines; Stderr receives errors.
 	Stdout, Stderr io.Writer
 	// Terminal tells whether Stdout is a terminal. The TUI runs only on a
 	// terminal and without Plain; otherwise crew prints event lines (KTD7).
@@ -107,7 +109,9 @@ type Mates struct {
 	Close func()
 }
 
-// Run runs crew until it stops and returns its exit code. A config or
+// Run runs crew until it stops and returns its exit code. It first prints
+// the boot log to Stdout, whatever renders after it, so its last line names
+// the step crew is waiting on, or the one that failed. A config or
 // environment error is printed to Stderr, and Run returns ExitConfig before
 // anything polls or renders. So does a signal during the environment checks,
 // or the checks taking over prepareTimeout; as a check's process may still
@@ -125,6 +129,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 			code = ExitFailure
 		}
 	}()
+	o.boot("loading .crew/config.yaml")
 	b, err := build(o)
 	if err != nil {
 		o.errorf("%v", err)
@@ -132,7 +137,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 	}
 	var eng *engine.Engine
 	var mates Mates
-	signalled, err := prepare(ctx, o, func(ctx context.Context) error {
+	signalled, err := prepare(port.WithSteps(ctx, o.boot), o, func(ctx context.Context) error {
 		if mates, err = b.mates(ctx, o); err != nil {
 			return err
 		}
@@ -364,6 +369,13 @@ func (r *runner) renderEnded(err error) {
 func (o Options) forcedExit() int {
 	o.errorf("forced exit; every process crew started was killed")
 	return ExitFailure
+}
+
+// boot prints step as one line of the boot log to Stdout, stamped with the
+// local time. A failing Stdout fails the renderer's first write, which stops
+// crew, so its error is dropped here.
+func (o Options) boot(step string) {
+	_ = lines.Line(o.Stdout, time.Now(), step)
 }
 
 // errorf prints an error line to Stderr. A failing Stderr leaves crew no

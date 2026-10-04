@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -32,8 +33,8 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 			t.Errorf("stderr %q does not name %s", stderr, want)
 		}
 	}
-	if out := r.stdout.String(); out != "" {
-		t.Errorf("stdout = %q, want nothing", out)
+	if got, want := unstamped(t, r.stdout.String()), []string{"loading .crew/config.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("stdout = %q, want only the config's boot line", got)
 	}
 }
 
@@ -77,6 +78,7 @@ func TestAFailingEnvironmentCheckExitsTwoBeforeAnyListing(t *testing.T) {
 	tr := fake.NewPreparingTracker(issue("1", ready))
 	counter := &listCounter{Tracker: tr.Tracker}
 	tr.Fail(errors.New("gh is not logged in"))
+	tr.ReportStep("checking the gh login")
 	r := options(t, oneAction, struct {
 		*listCounter
 		*fake.Preparation
@@ -92,8 +94,10 @@ func TestAFailingEnvironmentCheckExitsTwoBeforeAnyListing(t *testing.T) {
 	if !strings.Contains(stderr, "gh is not logged in") || !strings.Contains(stderr, "tracker") {
 		t.Errorf("stderr = %q, want the tracker's failed check", stderr)
 	}
-	if out := r.stdout.String(); out != "" {
-		t.Errorf("stdout = %q, want nothing", out)
+	// Covers AE3 of #113: the boot log ends with the step that failed.
+	want := []string{"loading .crew/config.yaml", "checking the gh login"}
+	if got := unstamped(t, r.stdout.String()); !slices.Equal(got, want) {
+		t.Errorf("stdout = %q, want the boot log %q", got, want)
 	}
 }
 
@@ -144,8 +148,8 @@ func TestASignalDuringTheEnvironmentChecksKillsEveryProcessAndExitsTwo(t *testin
 	if n := tr.listed(); n != 0 {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
-	if out := r.stdout.String(); out != "" {
-		t.Errorf("stdout = %q, want nothing", out)
+	if got, want := unstamped(t, r.stdout.String()), []string{"loading .crew/config.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("stdout = %q, want only the boot log before the stop", got)
 	}
 }
 
@@ -185,5 +189,9 @@ func TestASignalAsTheEnvironmentChecksSucceedStillStopsCrew(t *testing.T) {
 	}
 	if !strings.Contains(r.stdout.String(), "crew: stopped") {
 		t.Errorf("stdout lacks the stop; it is:\n%s", r.stdout)
+	}
+	// The journal is read after the signal, so its step does not print.
+	if strings.Contains(r.stdout.String(), "reading the run journal") {
+		t.Errorf("stdout shows a step that started after the stop:\n%s", r.stdout)
 	}
 }

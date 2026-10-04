@@ -33,8 +33,15 @@ func TestStepReachesTheReporterThroughDerivedContexts(t *testing.T) {
 	}
 }
 
-func TestStepWithoutAReporterDoesNothing(t *testing.T) {
-	port.Step(context.Background(), "checking the gh login") // must not panic
+func TestStepOnAContextWithoutTheReporterReportsNothing(t *testing.T) {
+	var got []string
+	_ = port.WithSteps(context.Background(), func(step string) { got = append(got, step) })
+
+	port.Step(context.Background(), "checking the gh login")
+
+	if len(got) != 0 {
+		t.Errorf("reported %q on a context without the reporter, want nothing", got)
+	}
 }
 
 func TestStepOnAnEndedContextReportsNothing(t *testing.T) {
