@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
@@ -306,5 +307,43 @@ func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedBoss(t *testing.T) 
 		if _, ok := other.(port.BossFinder); ok {
 			t.Errorf("%T finds the boss; only an ActingTracker should", other)
 		}
+	}
+}
+
+// The board lists the open issues, never a pull request, whose states,
+// extras or other labels match an asked label ignoring case, oldest first,
+// each with the asked labels it carries in the asked spelling.
+func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
+	on := func(i crew.Issue, day int) crew.Issue {
+		i.Created = time.Date(2026, 9, day, 10, 0, 0, 0, time.UTC)
+		return i
+	}
+	pull := on(issue("4"), 1)
+	pull.Kind = crew.KindPullRequest
+	tr := fake.NewBoardTracker(on(issue("1", ready), 2), on(issue("2"), 3), on(issue("3"), 1), pull,
+		on(issue("5"), 1), on(issue("6"), 1))
+	tr.SetLabels("1", "BUG")
+	tr.SetExtras("2", waitingBrainstorm)
+	tr.SetLabels("3", "Bug", "docs")
+	tr.SetLabels("4", "bug")
+	tr.SetLabels("5", "bug")
+	tr.Close("5")
+	tr.SetLabels("6", "docs")
+
+	got, err := tr.ListBoard(context.Background(), []string{"bug", "Ready", "Waiting Brainstorm"})
+	if err != nil {
+		t.Fatalf("ListBoard: %v", err)
+	}
+
+	want := map[string][]string{"3": {"bug"}, "1": {"bug", "Ready"}, "2": {"Waiting Brainstorm"}}
+	order := make([]string, 0, len(got))
+	for _, b := range got {
+		order = append(order, b.Issue.Key)
+		if !reflect.DeepEqual(b.Labels, want[b.Issue.Key]) {
+			t.Errorf("issue %s labels = %q, want %q", b.Issue.Key, b.Labels, want[b.Issue.Key])
+		}
+	}
+	if wantOrder := []string{"3", "1", "2"}; !reflect.DeepEqual(order, wantOrder) {
+		t.Errorf("ListBoard keys = %v, want %v", order, wantOrder)
 	}
 }

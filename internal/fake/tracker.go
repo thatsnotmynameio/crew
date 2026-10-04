@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +46,9 @@ var (
 	_ port.StatusReporter = ActingTracker{}
 	_ port.Acting         = ActingTracker{}
 	_ port.BossFinder     = ActingTracker{}
+
+	_ port.Tracker     = BoardTracker{}
+	_ port.BoardLister = BoardTracker{}
 )
 
 // TrackerSettings is the fake tracker's config section. It has no key, as
@@ -75,8 +79,10 @@ type Move struct {
 // Tracker is an in-memory issue tracker. It lists issues in the order they
 // were added, and a Move leaves an issue in exactly the state it moved to.
 // An issue's extra labels, set with SetExtras, are kept apart from its
-// states: List never reports them and a Move clears them. Its zero value is
-// not usable; use NewTracker.
+// states: List never reports them and a Move clears them. Its other labels,
+// set with SetLabels, are neither crew's states nor extras: List never
+// reports them and a Move leaves them. Its zero value is not usable; use
+// NewTracker.
 type Tracker struct {
 	mu         sync.Mutex
 	issues     []*trackedIssue
@@ -89,6 +95,7 @@ type Tracker struct {
 type trackedIssue struct {
 	issue  crew.Issue
 	extras []crew.State
+	labels []string // the labels that are not crew's
 	closed bool
 }
 
@@ -101,14 +108,14 @@ func NewTracker(issues ...crew.Issue) *Tracker {
 	return t
 }
 
-// Add adds issue as an open issue without extras, replacing any issue with
-// the same key.
+// Add adds issue as an open issue without extras or other labels,
+// replacing any issue with the same key.
 func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	issue = issue.Clone()
 	if ti := t.find(issue.Key); ti != nil {
-		ti.issue, ti.extras, ti.closed = issue, nil, false
+		ti.issue, ti.extras, ti.labels, ti.closed = issue, nil, nil, false
 		return
 	}
 	t.issues = append(t.issues, &trackedIssue{issue: issue})
@@ -131,6 +138,16 @@ func (t *Tracker) SetExtras(key string, extras ...crew.State) {
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
 		ti.extras = slices.Clone(extras)
+	}
+}
+
+// SetLabels sets the labels of the issue with key that are not crew's, such
+// as bug, as a person editing it would. It does nothing for an unknown key.
+func (t *Tracker) SetLabels(key string, labels ...string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if ti := t.find(key); ti != nil {
+		ti.labels = slices.Clone(labels)
 	}
 }
 
@@ -595,4 +612,47 @@ type ActingTracker struct {
 // until SetBoss.
 func NewActingTracker(issues ...crew.Issue) ActingTracker {
 	return ActingTracker{ReportingTracker: NewReportingTracker(issues...), Acting: &Acting{}}
+}
+
+// BoardTracker is a Tracker that also implements port.BoardLister, for the
+// tests about a board the config draws. A plain *Tracker does not implement
+// it.
+type BoardTracker struct {
+	*Tracker
+}
+
+// NewBoardTracker returns a BoardTracker holding issues, all open.
+func NewBoardTracker(issues ...crew.Issue) BoardTracker {
+	return BoardTracker{Tracker: NewTracker(issues...)}
+}
+
+// ListBoard implements port.BoardLister: the open issues of kind issue
+// whose states, extras or other labels match any of labels ignoring case,
+// as GitHub compares them, oldest first and otherwise in the order they were
+// added. Each carries the labels of labels it matches, in labels' spelling
+// and order.
+func (b BoardTracker) ListBoard(_ context.Context, labels []string) ([]crew.BoardIssue, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []crew.BoardIssue
+	for _, ti := range b.issues {
+		if ti.closed || ti.issue.Kind != crew.KindIssue {
+			continue
+		}
+		carries := slices.Clone(ti.labels)
+		for _, s := range slices.Concat(ti.issue.States, ti.extras) {
+			carries = append(carries, string(s))
+		}
+		var matched []string
+		for _, l := range labels {
+			if slices.ContainsFunc(carries, func(c string) bool { return strings.EqualFold(c, l) }) {
+				matched = append(matched, l)
+			}
+		}
+		if len(matched) > 0 {
+			out = append(out, crew.BoardIssue{Issue: ti.issue.Clone(), Labels: matched})
+		}
+	}
+	slices.SortStableFunc(out, func(x, y crew.BoardIssue) int { return x.Issue.Created.Compare(y.Issue.Created) })
+	return out, nil
 }
