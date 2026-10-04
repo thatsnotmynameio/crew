@@ -100,11 +100,11 @@ func TestASlideFromADroppedMiddleColumnStartsBetweenItsNeighbours(t *testing.T) 
 	h.send(updateMsg(after))
 
 	row := underlineOf(t, h)
-	i := strings.Index(row, "#7 ▸")
-	if i < 0 || strings.Contains(row, "◂") {
+	before, _, found := strings.Cut(row, "#7 ▸")
+	if !found || strings.Contains(row, "◂") {
 		t.Fatalf("marker does not point right from the dropped column:\n%s", row)
 	}
-	x := len([]rune(row[:i]))
+	x := len([]rune(before))
 	if col := cardColumn(t, boardOf(t, h.view()), "#7"); x >= 1+col*(maxColumn+columnGap) {
 		t.Errorf("marker at column %d starts at or past its destination column:\n%s", x, row)
 	}
