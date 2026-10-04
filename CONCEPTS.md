@@ -96,6 +96,8 @@ A GitHub identity of crew's own: a private GitHub App the boss creates with `cre
 
 A boss can have many mates, and a mate is only an identity: it carries no model, prompt or settings. `config.mate` names the default mate, which crew's own writes on GitHub act as, and an action's `mate` names the one its session and check act as. Commits stay the boss's, with the mate as co-author. Without a mate in the config, crew and its sessions act as the boss's `gh` login.
 
+A configured mate *acts* this run unless it cannot at startup (no key, not installed, key rejected, no token) or stops acting during the run (crew's writes as it fall back to the boss, or a token of its sessions fails to renew). Wherever a mate does not act, the boss's `gh` login acts instead.
+
 ## Flagged ambiguities
 
 - "Run" alone is ambiguous: a *stage run* is one pass through a stage, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
