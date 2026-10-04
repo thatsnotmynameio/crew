@@ -318,6 +318,8 @@ Before its first poll, crew checks the whole file and its tools. It stops, exiti
 - `gh` is missing or not logged in, `claude` is not on your `PATH`, or the repository has no `origin`;
 - the checks take more than 10 minutes, or you stop crew during them.
 
+crew stops at the first check that fails, and prints its error after the [boot log](#run-it), whose last line names the check that failed. A second broken tool shows on the next start.
+
 At the same check, crew creates the labels your workflow names and the extra labels that the repository does not have yet, each `on_failure` label included, and no other.
 
 ## Act as mates
@@ -579,6 +581,26 @@ Run `crew` anywhere inside the repository's main checkout. In one of crew's work
 crew
 ```
 
+While crew loads `.crew/config.yaml` and runs its [checks](#when-crew-refuses-to-start), it prints a boot log: one line as each step starts, before anything else. A step done once per item, a mate or a missing label, gets a line for each, and a step that does not run, such as making mates act when the config names none, gets no line.
+
+```text
+14:22:41 crew: loading .crew/config.yaml
+14:22:41 crew: resolving the repository for the mates
+14:22:42 crew: checking git for the mates
+14:22:42 crew: making a private directory for the mates' tokens
+14:22:42 crew: making mate developer act
+14:22:43 crew: checking the gh login
+14:22:44 crew: finding the boss
+14:22:44 crew: reading the repository's labels
+14:22:45 crew: creating the label "crew:triage:ready"
+14:22:45 crew: looking for claude on PATH
+14:22:45 crew: checking the git checkout and its origin
+14:22:45 crew: resolving origin's default branch
+14:22:46 crew: reading the run journal
+```
+
+crew prints the boot log on every start, with the live view and with `--plain` alike. Its last line names what crew is waiting on, so a slow start never looks like a hung one. When the checks pass, the live view or the event lines take over; the live view does not repeat the boot log.
+
 On a terminal, crew shows a live view: one screen of sections, one under the other. The view only displays. You act on issues through their labels on GitHub.
 
 ```text
@@ -604,10 +626,13 @@ Queues ──── 3 of 5 busy   Handled ────────────�
  default    □□  0/2        WAITING REVIEW    #7 Log the poll      development 9…
                            DONE              #9 Retry the poll    triage 3m00s …
 
+
 Events ──────────────────────────────────────────────────────────────── 3 events
  14:25:00 #1 development/lfg started on branch crew/1-lfg, log .crew/logs/1-lfg.log
  14:29:50 poll: listed 3 issues, took 2
  14:29:50 triage took #12 "Stage labels" (crew:triage:ready -> crew:triage:in progress)
+
+
 
 q stop · tab focus · ↑↓ scroll · ←→ board · ? help
 ```
@@ -620,13 +645,15 @@ With [`board`](#the-board) in the config, Workflow shows your columns instead, i
 
 Actions lists every action that has not ended: its issue, its stage and action, the [queue](#queues) its issue holds a slot in, its state with the elapsed time, and its branch. A running session shows the last thing it said on the line under it, with tokens and keys redacted, as in the [status comment](#the-status-comment). Queues shows each queue's busy slots `■` and free slots `□`. A slot is busy from the moment crew takes an issue for a stage in that queue until it lets go of the issue, whether the issue's actions have started or not, which is the count crew uses to decide whether the queue can take another issue.
 
-Handled lists each issue whose stage ended: a label saying how it ended, its number and title, the stage and how long it took, the cost and tokens of the stage's sessions, and the pull request of a stage with one action. The issues that need you come first: `NEEDS ATTENTION` for a stage that failed, with one line per failed action and its reason after `×`, and `GIVEN UP` for a move crew gave up because the issue was closed or moved meanwhile or GitHub refused it. Any other ending shows the last part of the label the issue moved to, such as `WAITING REVIEW`. A stage with several actions shows each action's pull request on a line of its own. An issue shows once, with its latest stage, and leaves Handled while a stage holds it again; the header still counts what its earlier stages cost. The status comment on each issue keeps the detail. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
+Handled lists each issue whose stage ended: a label saying how it ended, its number and title, the stage and how long it took, the cost and tokens of the stage's sessions, and the pull request of a stage with one action. The issues that need you come first: `NEEDS ATTENTION` for a stage that failed, with one line per failed action and its reason after `×`, and `GIVEN UP` for a move crew gave up because the issue was closed or moved meanwhile or GitHub refused it. Any other ending shows the last part of the label the issue moved to, such as `WAITING REVIEW`. A stage with several actions shows each action's pull request on a line of its own. An issue shows once, with its latest stage, and stays there while a stage holds it again, with `now in` and that stage after its details. While a stage holds it again, a failed entry shows the last part of its label, such as `FAILED`, instead of `NEEDS ATTENTION`, and no longer counts as needing you: you already sent it back. A stage with [`on_board: false`](#keys) that ends well keeps the entry it found when that one ended well too, so a promote stage does not replace the stage before it. The header still counts what every stage cost. The status comment on each issue keeps the detail. Handled covers this run only: it starts empty each time crew starts, and nothing of it is saved.
 
 The cost is the harness's figure, shown as it reports it and always next to the tokens, which add up all four kinds the [run journal](#where-things-go) keeps apart. A stage where some session reported no cost shows the known cost marked `(partial)`, and one where none did says `cost not reported`. A running action shows no cost: its numbers appear once it ends. An action that never had a session adds nothing and shows no pull request.
 
 Events shows the latest 100 events, the newest at the bottom.
 
-The view fits the window. When rows run out, Events and then Handled shrink to two rows each and scroll. Then the session lines under Actions go, then each board column shows fewer cards with `+N more`, and only then is the view cut, with a line saying how many lines were cut. The keys:
+Events and Handled each take five rows, however many they have, so the view holds still while crew works. Their rows fill from the top, with blank rows below until there are five. Past five, the section scrolls, and its title says `↑↓ scroll`. Events follows the newest event until you scroll up.
+
+The view fits the window. When rows run out, Events and then Handled give up rows, as many as the window needs and down to two each. Then the session lines under Actions go, then each board column shows fewer cards with `+N more`, and only then is the view cut, with a line saying how many lines were cut. The keys:
 
 | Key | What it does |
 | --- | --- |
@@ -638,9 +665,9 @@ The view fits the window. When rows run out, Events and then Handled shrink to t
 
 No key acts on an issue, a pull request, a workspace or a log.
 
-crew also tells the terminal what it is doing, where the terminal supports it. The tab title reads like `crew · 2 running · 1 waiting · 1 needs attention`, or `crew · idle`, `crew · stopping` or `crew · winding down`. The tab's progress indicator shows activity while actions run, and an error while an issue in Handled needs you. While the terminal is not focused, each stage that ends sends a desktop notification saying how it ended. Stages with `on_board: false` send none, and nothing is sent once you asked crew to stop. Notifications use OSC 9, which terminals such as iTerm2, WezTerm, Ghostty and Windows Terminal show, and tmux does not pass on. crew knows the terminal is not focused only when the terminal reports focus, so a terminal that never does gets no notification.
+crew also tells the terminal what it is doing, where the terminal supports it. The tab title reads like `crew · 2 running · 1 waiting · 1 needs attention`, or `crew · idle`, `crew · stopping` or `crew · winding down`. The tab's progress indicator shows activity while actions run, and an error while an issue in Handled needs you. A failed issue that a stage holds again does not count in either. While the terminal is not focused, each stage that ends sends a desktop notification saying how it ended. Stages with `on_board: false` send none, and nothing is sent once you asked crew to stop. Notifications use OSC 9, which terminals such as iTerm2, WezTerm, Ghostty and Windows Terminal show, and tmux does not pass on. crew knows the terminal is not focused only when the terminal reports focus, so a terminal that never does gets no notification.
 
-With `--plain`, or when the output is not a terminal, crew prints one line per event instead:
+With `--plain`, or when the output is not a terminal, crew prints one line per event instead, after the boot log and any startup warnings:
 
 ```text
 14:22:58 crew: implement took #42 "Add login form" (ready -> in progress)

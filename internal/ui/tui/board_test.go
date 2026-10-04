@@ -275,7 +275,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		}
 	}
 	u := engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: issues}}}
-	for _, height := range []int{20, 21} {
+	for _, height := range []int{22, 23} {
 		h := newWorkflowHarness(t, 80, eightStages()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))
@@ -283,5 +283,29 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		if view := checkFits(t, h, 80, height); strings.Contains(view, "lines cut") {
 			t.Errorf("at %d rows the view was cut although a lower card cap fits:\n%s", height, view)
 		}
+	}
+}
+
+// heldAgain is a snapshot of #12 held by development with the entry its
+// triage left, marked held.
+func heldAgain() engine.Update {
+	u := held(twelve, "development", "lfg", core.ClaimRunning)
+	e := handledBy(twelve, "triage", "crew:triage:done").Snapshot.Handled[0]
+	e.HeldBy = "development"
+	u.Snapshot.Handled = []core.HandledView{e}
+	return u
+}
+
+func TestAnIssueHeldAgainHasOnlyTheCardOfTheStageHoldingIt(t *testing.T) {
+	h := newWorkflowHarness(t, 120, crewWorkflow)
+
+	h.send(updateMsg(heldAgain()))
+
+	board := boardOf(t, h.view())
+	if n := strings.Count(board, "#12"); n != 1 {
+		t.Fatalf("board shows #12 %d times, want once:\n%s", n, board)
+	}
+	if col := cardColumn(t, board, "#12"); col != 1 {
+		t.Errorf("card is in column %d, want development's 1:\n%s", col, board)
 	}
 }

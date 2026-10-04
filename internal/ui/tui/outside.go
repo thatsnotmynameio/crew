@@ -82,7 +82,7 @@ func noteText(e core.HandledView) string {
 func (m Model) attention() int {
 	n := 0
 	for _, e := range m.snap.Handled {
-		if e.NeedsAttention() {
+		if needsBoss(e) {
 			n++
 		}
 	}

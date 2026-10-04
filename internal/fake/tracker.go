@@ -307,20 +307,33 @@ func (f *failures) pop(key string) error {
 }
 
 // Preparation is a scriptable port.Preparer, to embed in a fake. It records
-// the states of each call and returns the error set by Fail. Its zero value
-// succeeds.
+// the states of each call, reports the step set by ReportStep and returns the
+// error set by Fail. Its zero value reports no step and succeeds.
 type Preparation struct {
 	mu    sync.Mutex
 	err   error
+	step  string
 	calls [][]crew.State
 }
 
-// Prepare implements port.Preparer.
-func (p *Preparation) Prepare(_ context.Context, states []crew.State) error {
+// Prepare implements port.Preparer. It reports its step, if any, through
+// port.Step on ctx before it records the call.
+func (p *Preparation) Prepare(ctx context.Context, states []crew.State) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.step != "" {
+		port.Step(ctx, p.step)
+	}
 	p.calls = append(p.calls, slices.Clone(states))
 	return p.err
+}
+
+// ReportStep makes every later Prepare report step, as a real Preparer
+// reports each of its checks; "" makes it report none again.
+func (p *Preparation) ReportStep(step string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.step = step
 }
 
 // Fail makes every later Prepare return err; nil makes it succeed again.

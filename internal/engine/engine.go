@@ -12,7 +12,6 @@ package engine
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -281,11 +280,12 @@ func (e *Engine) SubscribeQueue(capacity int) *Queue {
 }
 
 // Prepare runs, once, the Preparer of each adapter that implements
-// port.Preparer, with the workflow's states, then reads the run journal, and
-// returns their errors joined, each naming its port or the journal. These
-// are environment checks (R2), so a caller can run them before starting a
-// renderer; Run then does not prepare again. Call it before Run starts,
-// never concurrently with Run; a second call returns the first one's result.
+// port.Preparer, with the workflow's states, then reads the run journal. It
+// stops at the first that fails and returns its error, naming its port or the
+// journal, so the last step reported on ctx is the one that failed. These are
+// environment checks (R2), so a caller can run them before starting a
+// renderer; Run then does not prepare again. Call it before Run starts, never
+// concurrently with Run; a second call returns the first one's result.
 func (e *Engine) Prepare(ctx context.Context) error {
 	if !e.prepared {
 		e.prepared = true
@@ -297,8 +297,10 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // prepare hands the tracker its writer when the config names a mate, runs
 // each port's Preparer with crew.WorkflowStates, the states the workflow
 // names, asks the tracker who the boss is, then reads the run journal and
-// builds the core from it. It joins their errors, each naming its port or
-// the journal.
+// builds the core from it. It returns the first error, naming its port or
+// the journal, without running what comes after it (R6). The core is then
+// left unbuilt, which is safe because Run returns the error before its loop,
+// the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.WorkflowStates(e.cfg.Workflow)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
@@ -308,21 +310,21 @@ func (e *Engine) prepare(ctx context.Context) error {
 		name    string
 		adapter any
 	}{{"tracker", e.cfg.Tracker}, {"harness", e.cfg.Harness}, {"workspace", e.cfg.Workspace}}
-	var errs []error
 	for _, p := range ports {
 		if err := port.Prepare(ctx, states, p.adapter); err != nil {
-			errs = append(errs, fmt.Errorf("prepare the %s: %w", p.name, err))
+			return fmt.Errorf("prepare the %s: %w", p.name, err)
 		}
 	}
-	if b, ok := e.cfg.Tracker.(port.BossFinder); ok && len(errs) == 0 {
+	if b, ok := e.cfg.Tracker.(port.BossFinder); ok {
 		e.boss = b.Boss()
 	}
+	port.Step(ctx, "reading the run journal")
 	past, err := e.readJournal()
 	if err != nil {
-		errs = append(errs, err)
+		return err
 	}
 	e.model = core.New(e.cfg.Workflow, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past))...)
-	return errors.Join(errs...)
+	return nil
 }
 
 // said returns what each running session that implements port.Narrator last

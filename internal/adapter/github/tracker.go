@@ -422,14 +422,17 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 // logged in, then finds the boss in CODEOWNERS, then creates the labels of
 // states and the extras the repository lacks, comparing names
 // case-insensitively, and no other label. It reads as the boss and creates
-// the labels as the writer.
+// the labels as the writer. It reports each step on ctx as it starts, one
+// per label it creates.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
+	port.Step(ctx, "checking the gh login")
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("tracker github needs the gh CLI, which is not on PATH: %w", err)
 		}
 		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
 	}
+	port.Step(ctx, "finding the boss")
 	boss, err := t.findBoss(ctx)
 	if err != nil {
 		return fmt.Errorf("tracker github: find the boss: %w", err)
@@ -437,6 +440,7 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	t.mu.Lock()
 	t.boss = boss
 	t.mu.Unlock()
+	port.Step(ctx, "reading the repository's labels")
 	var present []ghLabel
 	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
 		return fmt.Errorf("tracker github: read the repository's labels: %w", err)
@@ -450,6 +454,7 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		if have[strings.ToLower(name)] {
 			continue
 		}
+		port.Step(ctx, fmt.Sprintf("creating the label %q", name))
 		if _, _, err := t.gh.write(ctx, "label", "create", name); err != nil {
 			return fmt.Errorf("tracker github: create the label %q: %w", name, err)
 		}

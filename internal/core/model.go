@@ -341,7 +341,8 @@ type View struct {
 	Owed []Call
 	// Handled are the issues whose stage ended this run, one entry per
 	// issue holding its latest stage, in the order they were released. An
-	// issue held again is left out until its new stage ends.
+	// issue held again keeps its entry, marked HeldBy, until its new stage
+	// ends (#109).
 	Handled []HandledView
 	// Spent sums what every session that ended this run used, including
 	// those of entries Handled no longer shows (R14).
@@ -378,6 +379,9 @@ type HandledView struct {
 	// in its label and stays listed, so it is not gone; an issue in two crew
 	// states is, since crew skips it. Each such listing decides it anew.
 	Gone bool
+	// HeldBy names the stage that holds the issue again; empty while no
+	// stage does (#109).
+	HeldBy string
 	// Taken is when the stage took the issue; Ended is when its last action
 	// ended.
 	Taken time.Time
@@ -487,9 +491,11 @@ func (m *Model) View() View {
 	}
 	v.Owed = append(v.Owed, m.owedPullRequests()...)
 	for _, e := range m.handled {
-		if m.held(e.view.Issue.Key) == nil {
-			v.Handled = append(v.Handled, e.view.clone())
+		hv := e.view.clone()
+		if h := m.held(hv.Issue.Key); h != nil {
+			hv.HeldBy = m.stages[h.stage].Name
 		}
+		v.Handled = append(v.Handled, hv)
 	}
 	if m.board != nil {
 		v.Board, v.BoardFailure = m.board.view(), m.board.failure

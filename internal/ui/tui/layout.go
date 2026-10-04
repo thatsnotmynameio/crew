@@ -10,6 +10,10 @@ import (
 )
 
 const (
+	// scrollRows is the rows Events and Handled each take under their
+	// title, whatever their count, so the view holds still as they fill
+	// (#108).
+	scrollRows = 5
 	// minScroll is the rows Events and Handled keep when the window is
 	// short (KTD8).
 	minScroll = 2
@@ -22,7 +26,7 @@ const (
 
 // budget is how much of each section the view draws: the rows of Events
 // and of Handled, the cards a column, and whether the said lines show. A
-// negative count means all of them (KTD8).
+// negative card count means all of them (KTD8).
 type budget struct {
 	events, handled, cards int
 	said                   bool
@@ -67,17 +71,16 @@ func (m Model) fitted() []string {
 
 // budget returns the largest budget whose rows fit the window (KTD8).
 func (m Model) budget() budget {
-	b := budget{events: -1, handled: -1, cards: -1, said: true}
+	b := budget{events: scrollRows, handled: scrollRows, cards: -1, said: true}
 	if m.height <= 0 {
 		return b
 	}
 	over := func() int { return len(m.rows(b)) - m.height }
-	events, handled := m.eventCount(), len(m.handledRows())
 	if o := over(); o > 0 {
-		b.events = max(min(minScroll, events), events-o)
+		b.events = max(minScroll, scrollRows-o)
 	}
 	if o := over(); o > 0 {
-		b.handled = max(min(minScroll, handled), handled-o)
+		b.handled = max(minScroll, scrollRows-o)
 	}
 	if over() > 0 {
 		b.said = false
@@ -104,29 +107,26 @@ func (m Model) rows(b budget) []string {
 	out = append(out, acts...)
 	out = append(out, "")
 	out = append(out, m.band(b.handled)...)
-	events := b.events
-	if events < 0 {
-		events = m.eventCount()
-	}
-	summary, rows := m.eventsSection(events)
+	summary, rows := m.eventsSection(b.events)
 	out = append(out, "", m.rule("Events", summary, m.width, m.focus == focusEvents))
 	out = append(out, rows...)
 	return append(out, "", m.keyHelp())
 }
 
 // band draws Queues and Handled side by side: Queues at its natural width,
-// Handled in the rest, with at most n Handled rows, scrolled past
-// handledOffset rows (R1, KTD8).
+// Handled in the rest, with n Handled rows, scrolled past handledOffset
+// rows and filled from the top (R1, KTD8, #108).
 func (m Model) band(n int) []string {
 	qSummary, queues := m.queuesSection()
 	left := max(widest(queues), lipgloss.Width("Queues ─── "+qSummary))
 	right := max(m.width-left-bandGap, 1)
 	hSummary, handled := m.handledSection(right)
-	if n >= 0 && len(handled) > n {
+	if len(handled) > n {
 		off := min(max(m.handledOffset, 0), len(handled)-n)
 		handled = handled[off : off+n]
 		hSummary += " · ↑↓ scroll"
 	}
+	handled = filled(handled, n)
 	lefts := append([]string{m.rule("Queues", qSummary, left, false)}, queues...)
 	rights := append([]string{m.rule("Handled", hSummary, right, m.focus == focusHandled)}, handled...)
 	out := make([]string, max(len(lefts), len(rights)))
@@ -143,7 +143,16 @@ func (m Model) band(n int) []string {
 	return out
 }
 
-// handledRows returns every Handled row, for the budget.
+// filled returns rows with blank rows after them up to n: a section keeps
+// its height while it has fewer rows than that (#108).
+func filled(rows []string, n int) []string {
+	for len(rows) < n {
+		rows = append(rows, "")
+	}
+	return rows
+}
+
+// handledRows returns every Handled row, for the scroll limit.
 func (m Model) handledRows() []string {
 	_, rows := m.handledSection(m.width)
 	return rows
