@@ -83,8 +83,9 @@ func (w *Workspace) inspect(ctx context.Context, tree worktree, space port.Space
 		return found, nil
 	}
 	// --untracked-files=normal: the boss's status.showUntrackedFiles=no must
-	// not hide untracked files.
-	status, err := w.gitAt(ctx, space.Dir, "status", "--porcelain", "--untracked-files=normal")
+	// not hide untracked files. --no-optional-locks: a session working in the
+	// worktree must not find index.lock taken by status's index refresh.
+	status, err := w.gitAt(ctx, space.Dir, "--no-optional-locks", "status", "--porcelain", "--untracked-files=normal")
 	if err != nil {
 		return port.Found{}, fmt.Errorf("check worktree %s for uncommitted files: %w", space.Dir, err)
 	}

@@ -345,14 +345,15 @@ func TestCleanKeepsAWorktreeWhoseRunStartedBeforeTheYes(t *testing.T) {
 	r := newRig(t, worktree("issue-42-development"))
 	r.merge("issue-42-development", "#45")
 	started := time.Date(2026, 10, 3, 14, 2, 0, 0, time.Local)
-	r.runs = []map[string]time.Time{{}, {"issue-42-development": started}}
+	// The run shows only in the read just before the removal.
+	r.runs = []map[string]time.Time{{}, {}, {"issue-42-development": started}}
 
 	res, out := r.clean(t, "yes\n")
 
 	wantResult(t, res, Done)
 	wantRemovals(t, r.ws)
-	if r.reads != 2 {
-		t.Fatalf("journal reads: got %d, want 2: before the list and before the removals", r.reads)
+	if r.reads != 3 {
+		t.Fatalf("journal reads: got %d, want 3: before the list, before the checks and just before the removal", r.reads)
 	}
 	wantLines(t, out, "  kept  issue-42-development  changed since the list: "+
 		"a run started in it at 2026-10-03 14:02 and has not ended: an action may be using it "+

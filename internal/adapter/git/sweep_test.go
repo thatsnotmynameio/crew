@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -359,7 +360,7 @@ func TestWorkspacesFailsWhenItCannotCheckAWorktree(t *testing.T) {
 	stderr := "fatal: index file corrupt"
 	run := w.run
 	w.run = func(ctx context.Context, c proc.Command) (proc.Output, error) {
-		if c.Args[0] == "status" {
+		if slices.Contains(c.Args, "status") {
 			return proc.Output{}, errors.New(stderr)
 		}
 		return run(ctx, c)
@@ -368,6 +369,27 @@ func TestWorkspacesFailsWhenItCannotCheckAWorktree(t *testing.T) {
 	_, err := w.Workspaces(t.Context())
 	if err == nil || !strings.Contains(err.Error(), stderr) || !strings.Contains(err.Error(), space.Dir) {
 		t.Errorf("err = %v, want it to name %s and carry %q", err, space.Dir, stderr)
+	}
+}
+
+func TestWorkspacesReadsStatusWithoutTakingGitsOptionalLocks(t *testing.T) {
+	_, _, w, space := reopenable(t)
+	var status []string
+	run := w.run
+	w.run = func(ctx context.Context, c proc.Command) (proc.Output, error) {
+		if slices.Contains(c.Args, "status") {
+			status = c.Args
+		}
+		return run(ctx, c)
+	}
+
+	if _, err := w.Workspaces(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	// A session working in the worktree must not find index.lock taken by
+	// a refresh git status would otherwise make.
+	if len(status) == 0 || status[0] != "--no-optional-locks" {
+		t.Errorf("git status args in %s = %q, want them to start with --no-optional-locks", space.Name, status)
 	}
 }
 

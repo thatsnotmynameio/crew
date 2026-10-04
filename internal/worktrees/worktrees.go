@@ -62,10 +62,16 @@ type Options struct {
 // o.Terminal is set. When ctx ends, it stops waiting for the answer, and
 // starts no further removal; a removal under way finishes, as it runs on a
 // context ctx's end does not cancel. It returns an error, having written
-// nothing, only when the worktrees cannot be listed.
+// nothing, only when the worktrees cannot be listed while ctx is live; a
+// listing cut short by ctx's end is Stopped.
 func Clean(ctx context.Context, o Options) (Result, error) {
 	found, err := o.Sweeper.Workspaces(ctx)
 	if err != nil {
+		// A stop during the listing is a stop, not an environment error.
+		if ctx.Err() != nil {
+			o.write("Stopped; nothing was removed.\n")
+			return Stopped, nil //nolint:nilerr // a listing cut short by ctx's end is a stop, reported as Stopped
+		}
 		return Done, err
 	}
 	if len(found) == 0 {
@@ -149,7 +155,14 @@ func (o Options) remove(ctx context.Context, first decision, f port.Found, j jou
 	if ctx.Err() != nil {
 		return keeping(d.found, "stopped before it was removed", d.failed)
 	}
-	err := o.Sweeper.Remove(context.WithoutCancel(ctx), d.found.Space, d.action == removeAll)
+	// An action may have started in it while its pull request was looked up
+	// again, so the journal is read once more just before removing.
+	runs, err := o.Runs()
+	if kept, ok := local(f, journal{runs: runs, err: err}); ok {
+		kept.reason = changed(kept.reason)
+		return kept
+	}
+	err = o.Sweeper.Remove(context.WithoutCancel(ctx), d.found.Space, d.action == removeAll)
 	if errors.Is(err, port.ErrBranchKept) {
 		return decision{found: d.found, action: removeWorktree, reason: d.reason + "; " + err.Error(), failed: true}
 	}
