@@ -10,24 +10,20 @@ import (
 	"testing"
 
 	"go.yaml.in/yaml/v3"
-
-	"github.com/thatsnotmynameio/crew/internal/config"
 )
 
 // TestTheRepositorysIssueTemplatesMatchItsConfig keeps this repository's
-// .crew/config.yaml and .github/ISSUE_TEMPLATE/ in step: every stage and
+// example config and .github/ISSUE_TEMPLATE/ in step: every stage and
 // extra label names a template that exists, and that template's frontmatter
 // gives exactly the type's label, so an issue opened on the web lands where
 // the /cw-create-issue skill would put it. Config keeps no template fields,
 // so the test decodes the file itself once Load has validated it.
 func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
 	root := filepath.Join("..", "..")
-	if _, err := config.Load(root); err != nil {
-		t.Fatalf("Load(repository root) = %v", err)
-	}
+	loadExample(t)
 	// Several types may share a template, such as a stage and an extra that
 	// both hold a brainstormed feature. Its labels name one of them.
-	templates, labelsOf := templateLabels(t, repositoryIssueTypes(t, root))
+	templates, labelsOf := templateLabels(t, repositoryIssueTypes(t))
 	for _, name := range templates {
 		checkIssueTemplate(t, root, name, labelsOf[name])
 	}
@@ -50,10 +46,10 @@ type namedIssueType struct {
 }
 
 // repositoryIssueTypes reads the stages and extra labels of the repository's
-// .crew/config.yaml under root.
-func repositoryIssueTypes(t *testing.T, root string) []namedIssueType {
+// example config.
+func repositoryIssueTypes(t *testing.T) []namedIssueType {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, ".crew", "config.yaml"))
+	data, err := os.ReadFile(exampleConfig)
 	if err != nil {
 		t.Fatal(err)
 	}

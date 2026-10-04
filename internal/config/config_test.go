@@ -420,12 +420,35 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	}
 }
 
-// crew runs on its own repository, so its .crew/config.yaml must stay valid.
-func TestTheRepositorysOwnConfigLoads(t *testing.T) {
-	cfg, err := config.Load(filepath.Join("..", ".."))
+// exampleConfig is the repository's committed example of .crew/config.yaml;
+// the boss's own copy is ignored by git.
+var exampleConfig = filepath.Join("..", "..", ".crew", "config.example.yaml")
+
+// loadExample loads exampleConfig as a repository's .crew/config.yaml, linked
+// into a new repository root.
+func loadExample(t *testing.T) *config.Config {
+	t.Helper()
+	example, err := filepath.Abs(exampleConfig)
 	if err != nil {
-		t.Fatalf("Load(repository root) = %v", err)
+		t.Fatal(err)
 	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(example, filepath.Join(root, ".crew", "config.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatalf("Load(%s) = %v", exampleConfig, err)
+	}
+	return cfg
+}
+
+// crew runs on its own repository, so its example config must stay valid.
+func TestTheRepositorysOwnConfigLoads(t *testing.T) {
+	cfg := loadExample(t)
 	// The stages that open a pull request check that it exists; the others
 	// have no check (R15).
 	for _, s := range cfg.Workflow {
