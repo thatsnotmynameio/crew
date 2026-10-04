@@ -3,10 +3,10 @@
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter,
-// PullRequestReporter, Acting, BossFinder, Narrator or Reopener, that the
-// engine detects by type assertion. An adapter therefore never wraps another
-// adapter value, because a wrapper hides the optional interfaces of what it
-// wraps.
+// PullRequestReporter, Acting, BossFinder, Narrator, Reopener or Sweeper,
+// that crew detects by type assertion. An adapter therefore never wraps
+// another adapter value, because a wrapper hides the optional interfaces of
+// what it wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.
@@ -232,6 +232,54 @@ type Reopener interface {
 	// returns an error wrapping ErrWorkspaceGone when the workspace no
 	// longer exists, and any other error when it cannot be reopened.
 	Reopen(ctx context.Context, space Space) (Space, error)
+}
+
+// ErrCommitUnknown is the error class of Sweeper.Beyond for a commit the
+// repository does not have, such as the head of a pull request merged on the
+// tracker and never fetched. An adapter wraps it with %w and its own context.
+var ErrCommitUnknown = errors.New("the commit is not in the repository")
+
+// Sweeper is an optional interface of a Workspace: it lists the workspaces it
+// created, tells what each holds, and removes one. A workspace without it
+// cannot have its workspaces cleaned by crew.
+type Sweeper interface {
+	// Workspaces lists every workspace it created that still exists in any
+	// form: one its tool still records, even with its folder gone, or a
+	// folder where it creates workspaces that its tool does not record. It
+	// lists nothing else, such as the main checkout. An error means the
+	// workspaces could not be listed.
+	Workspaces(ctx context.Context) ([]Found, error)
+	// Beyond returns how many commits branch has that commit does not. It
+	// returns an error wrapping ErrCommitUnknown when commit is not in the
+	// repository, and any other error when it cannot tell.
+	Beyond(ctx context.Context, branch, commit string) (int, error)
+	// Remove removes the workspace space names, without forcing: it fails,
+	// removing nothing, when the workspace holds modified, staged or
+	// untracked files. When deleteBranch, it then deletes space.Branch
+	// locally, whatever commits it holds, and never the tracker's copy.
+	// Errors carry the tool's own message.
+	Remove(ctx context.Context, space Space, deleteBranch bool) error
+}
+
+// Found is a workspace a Sweeper lists, with what it holds.
+type Found struct {
+	// Space is the workspace; its Branch is the one checked out, or "" when
+	// HEAD is detached or the workspace is not Listed.
+	Space Space
+	// Listed means the workspace's tool records it as a workspace, such as
+	// git listing it as a worktree.
+	Listed bool
+	// Gone means its folder is missing, or its tool records it as prunable.
+	Gone bool
+	// Dirty means it holds modified, staged or untracked files that are not
+	// ignored.
+	Dirty bool
+	// Tip is the commit Space.Branch points at, or "" when there is no
+	// branch.
+	Tip string
+	// Created is when the workspace and its branch were made, or the zero
+	// time when that cannot be told.
+	Created time.Time
 }
 
 // Narrator is an optional interface of a harness's Session: it tells what

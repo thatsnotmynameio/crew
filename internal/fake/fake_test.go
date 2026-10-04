@@ -252,6 +252,79 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 	}
 }
 
+func TestWorkspaceListsAsScriptedOneListingPerCallTheLastRepeating(t *testing.T) {
+	ws := fake.NewWorkspace(t.TempDir())
+	var sweeper port.Sweeper = ws
+	ctx := context.Background()
+	if found, err := sweeper.Workspaces(ctx); err != nil || len(found) != 0 {
+		t.Errorf("unscripted Workspaces = %+v, %v; want none", found, err)
+	}
+
+	clean := port.Found{Space: port.Space{Name: "issue-42-development", Branch: "crew/issue-42-development"}, Listed: true}
+	dirty := clean
+	dirty.Dirty = true
+	broken := errors.New("git: not a git repository")
+	ws.ScriptWorkspaces(
+		fake.Listing{Found: []port.Found{clean}},
+		fake.Listing{Found: []port.Found{dirty}},
+		fake.Listing{Err: broken},
+	)
+
+	for i, want := range [][]port.Found{{clean}, {dirty}} {
+		if got, err := sweeper.Workspaces(ctx); err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("Workspaces call %d = %+v, %v; want %+v", i+1, got, err, want)
+		}
+	}
+	for i := range 2 {
+		if _, err := sweeper.Workspaces(ctx); !errors.Is(err, broken) {
+			t.Errorf("Workspaces call %d = %v, want the last listing's error", i+3, err)
+		}
+	}
+}
+
+func TestWorkspaceCountsBeyondAsScriptedForTheBranch(t *testing.T) {
+	ws := fake.NewWorkspace(t.TempDir())
+	ws.ScriptBeyond("crew/issue-1-lfg", 2, nil)
+	ws.ScriptBeyond("crew/issue-2-lfg", 0, port.ErrCommitUnknown)
+	offline := errors.New("git: exit status 128")
+	ws.ScriptBeyond("crew/issue-3-lfg", 0, offline)
+	ctx := context.Background()
+
+	if n, err := ws.Beyond(ctx, "crew/issue-1-lfg", "abc"); n != 2 || err != nil {
+		t.Errorf("Beyond = %d, %v; want 2", n, err)
+	}
+	if _, err := ws.Beyond(ctx, "crew/issue-2-lfg", "abc"); !errors.Is(err, port.ErrCommitUnknown) {
+		t.Errorf("Beyond = %v, want port.ErrCommitUnknown", err)
+	}
+	if _, err := ws.Beyond(ctx, "crew/issue-3-lfg", "abc"); !errors.Is(err, offline) {
+		t.Errorf("Beyond = %v, want the scripted error", err)
+	}
+	if n, err := ws.Beyond(ctx, "crew/issue-9-lfg", "abc"); n != 0 || err != nil {
+		t.Errorf("unscripted Beyond = %d, %v; want 0", n, err)
+	}
+}
+
+func TestWorkspaceRecordsRemovalsAndFailsThoseScriptedToFail(t *testing.T) {
+	ws := fake.NewWorkspace(t.TempDir())
+	refused := errors.New("fatal: '.crew/worktrees/issue-2-lfg' contains modified or untracked files")
+	ws.FailRemove("issue-2-lfg", refused)
+	ctx := context.Background()
+
+	if err := ws.Remove(ctx, port.Space{Name: "issue-1-lfg", Branch: "crew/issue-1-lfg"}, true); err != nil {
+		t.Errorf("Remove: %v", err)
+	}
+	if err := ws.Remove(ctx, port.Space{Name: "issue-2-lfg", Branch: "crew/issue-2-lfg"}, true); !errors.Is(err, refused) {
+		t.Errorf("Remove = %v, want the scripted error", err)
+	}
+	if err := ws.Remove(ctx, port.Space{Name: "issue-3-lfg", Branch: "crew/issue-3-lfg"}, false); err != nil {
+		t.Errorf("Remove: %v", err)
+	}
+	want := []fake.Removal{{Name: "issue-1-lfg", DeleteBranch: true}, {Name: "issue-3-lfg"}}
+	if got := ws.Removals(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Removals = %+v, want %+v", got, want)
+	}
+}
+
 func TestNarratingHarnessSessionsSayWhatTheTestSets(t *testing.T) {
 	h := fake.NewNarratingHarness()
 	s := start(t, h, "implement #1")

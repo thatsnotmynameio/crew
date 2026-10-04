@@ -147,35 +147,52 @@ func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, e
 
 // worktree is one entry of `git worktree list --porcelain`.
 type worktree struct {
+	// path is the folder as git records it.
+	path string
+	// head is the commit checked out.
+	head string
 	// branch is the branch checked out, or "" when HEAD is detached.
 	branch   string
 	prunable bool
 }
 
-// findWorktree returns the entry of the porcelain listing out whose path is
-// dir, which is canonical. The listing is records of "key value" lines
-// separated by blank lines, each starting with "worktree <path>".
-func findWorktree(out, dir string) (worktree, bool) {
-	var tree worktree
-	found := false
+// parseWorktrees returns the entries of the porcelain listing out, in its
+// order. The listing is records of "key value" lines separated by blank
+// lines, each starting with "worktree <path>".
+func parseWorktrees(out string) []worktree {
+	var trees []worktree
 	for line := range strings.Lines(out) {
 		line = strings.TrimRight(line, "\n")
 		key, value, _ := strings.Cut(line, " ")
-		switch {
-		case key == "worktree":
-			if found {
-				return tree, true
-			}
-			found = canonical(value) == dir
-			tree = worktree{}
-		case !found:
-		case key == "branch":
+		if key == "worktree" {
+			trees = append(trees, worktree{path: value})
+			continue
+		}
+		if len(trees) == 0 {
+			continue
+		}
+		tree := &trees[len(trees)-1]
+		switch key {
+		case "HEAD":
+			tree.head = value
+		case "branch":
 			tree.branch = strings.TrimPrefix(value, "refs/heads/")
-		case key == "prunable":
+		case "prunable":
 			tree.prunable = true
 		}
 	}
-	return tree, found
+	return trees
+}
+
+// findWorktree returns the entry of the porcelain listing out whose path is
+// dir, which is canonical.
+func findWorktree(out, dir string) (worktree, bool) {
+	for _, tree := range parseWorktrees(out) {
+		if canonical(tree.path) == dir {
+			return tree, true
+		}
+	}
+	return worktree{}, false
 }
 
 // canonical resolves the symlinks in p's longest existing ancestor, so two
