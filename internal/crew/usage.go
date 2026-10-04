@@ -164,7 +164,28 @@ type PullRequest struct {
 	Ref string
 	// URL is its web address; set when Lookup is PullRequestFound.
 	URL string
+	// State is whether it is open, closed or merged; set when Lookup is
+	// PullRequestFound and the tracker named a state crew knows.
+	State PullRequestState
+	// Head is the id of its head commit; set when Lookup is
+	// PullRequestFound.
+	Head string
 }
+
+// PullRequestState is where a pull request stands on its tracker.
+type PullRequestState int
+
+// The states of a pull request. The zero value means crew does not know it,
+// which counts as not merged.
+const (
+	PullRequestStateUnknown PullRequestState = iota
+	// PullRequestOpen: it is open.
+	PullRequestOpen
+	// PullRequestClosed: it was closed without being merged.
+	PullRequestClosed
+	// PullRequestMerged: it was merged.
+	PullRequestMerged
+)
 
 // String words p: "pull request #45", "no pull request" or "pull request
 // not looked up".

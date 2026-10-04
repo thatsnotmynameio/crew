@@ -14,11 +14,17 @@ import (
 // prList is the prefix of the one gh call a lookup makes.
 var prList = []string{"pr", "list"}
 
-// prJSON is one pull request as gh pr list prints it.
+// prJSON is one pull request as gh pr list prints it, with prHead(number)
+// as its head commit.
 func prJSON(number int, state, created string, crossRepo bool) string {
 	return fmt.Sprintf(`{"number":%d,"url":"https://github.com/o/r/pull/%d","state":%q,`+
-		`"createdAt":%q,"isCrossRepository":%t}`,
-		number, number, state, created, crossRepo)
+		`"createdAt":%q,"isCrossRepository":%t,"headRefOid":%q}`,
+		number, number, state, created, crossRepo, prHead(number))
+}
+
+// prHead is the head commit's id of pull request number, in prJSON.
+func prHead(number int) string {
+	return fmt.Sprintf("%040x", number)
 }
 
 // worktreeMade is when the action's worktree was made, in the tests below.
@@ -42,16 +48,19 @@ func find(t *testing.T, branch string, since time.Time, prs ...string) (crew.Pul
 
 func TestAnOpenPullRequestFromTheBranchIsFound(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "OPEN", "2026-10-02T12:30:00Z", false))
-	want := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://github.com/o/r/pull/45"}
+	want := crew.PullRequest{
+		Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://github.com/o/r/pull/45",
+		State: crew.PullRequestOpen, Head: prHead(45),
+	}
 	if pr != want {
-		t.Errorf("FindPullRequest = %+v, want %+v", pr, want)
+		t.Errorf("FindPullRequest = %#v, want %#v", pr, want)
 	}
 }
 
 func TestNoPullRequestFromTheBranchIsNone(t *testing.T) {
 	pr, _ := find(t, "crew/issue-9-lfg", worktreeMade)
 	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
-		t.Errorf("FindPullRequest = %+v, want none", pr)
+		t.Errorf("FindPullRequest = %#v, want none", pr)
 	}
 }
 
@@ -67,7 +76,7 @@ func TestTheLookupListsEveryPullRequestFromTheBranchAsGiven(t *testing.T) {
 		t.Fatalf("gh call %q asks for no JSON fields", call)
 	}
 	fields := strings.Split(call[i+1], ",")
-	for _, f := range []string{"number", "url", "state", "createdAt", "isCrossRepository"} {
+	for _, f := range []string{"number", "url", "state", "createdAt", "isCrossRepository", "headRefOid"} {
 		if !slices.Contains(fields, f) {
 			t.Errorf("gh call %q does not ask for %s", call, f)
 		}
@@ -78,8 +87,8 @@ func TestAnOpenPullRequestWinsOverANewerMergedOne(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade,
 		prJSON(46, "MERGED", "2026-10-02T14:00:00Z", false),
 		prJSON(45, "OPEN", "2026-10-02T13:00:00Z", false))
-	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#45" {
-		t.Errorf("FindPullRequest = %+v, want the open #45", pr)
+	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#45" || pr.State != crew.PullRequestOpen || pr.Head != prHead(45) {
+		t.Errorf("FindPullRequest = %#v, want the open #45", pr)
 	}
 }
 
@@ -89,14 +98,14 @@ func TestTheNewestOpenPullRequestWins(t *testing.T) {
 		prJSON(47, "OPEN", "2026-10-02T15:00:00Z", false),
 		prJSON(46, "OPEN", "2026-10-02T14:00:00Z", false))
 	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#47" {
-		t.Errorf("FindPullRequest = %+v, want the newest open #47", pr)
+		t.Errorf("FindPullRequest = %#v, want the newest open #47", pr)
 	}
 }
 
 func TestOnlyAPullRequestMergedBeforeTheWorktreeIsNone(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(12, "MERGED", "2026-09-20T10:00:00Z", false))
 	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
-		t.Errorf("FindPullRequest = %+v, want none", pr)
+		t.Errorf("FindPullRequest = %#v, want none", pr)
 	}
 }
 
@@ -105,23 +114,47 @@ func TestTheNewestClosedOrMergedPullRequestSinceTheWorktreeIsFound(t *testing.T)
 		prJSON(12, "MERGED", "2026-09-20T10:00:00Z", false),
 		prJSON(45, "CLOSED", "2026-10-02T12:00:00Z", false),
 		prJSON(46, "MERGED", "2026-10-02T13:00:00Z", false))
-	want := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#46", URL: "https://github.com/o/r/pull/46"}
+	want := crew.PullRequest{
+		Lookup: crew.PullRequestFound, Ref: "#46", URL: "https://github.com/o/r/pull/46",
+		State: crew.PullRequestMerged, Head: prHead(46),
+	}
 	if pr != want {
-		t.Errorf("FindPullRequest = %+v, want %+v", pr, want)
+		t.Errorf("FindPullRequest = %#v, want %#v", pr, want)
 	}
 }
 
 func TestAResumedWorktreeAcceptsAnyMergedPullRequest(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", time.Time{}, prJSON(12, "MERGED", "2026-09-20T10:00:00Z", false))
 	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#12" {
-		t.Errorf("FindPullRequest = %+v, want #12", pr)
+		t.Errorf("FindPullRequest = %#v, want #12", pr)
+	}
+}
+
+func TestAClosedPullRequestComesBackClosed(t *testing.T) {
+	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "CLOSED", "2026-10-02T13:00:00Z", false))
+	if pr.Ref != "#45" || pr.State != crew.PullRequestClosed || pr.Head != prHead(45) {
+		t.Errorf("FindPullRequest = %#v, want #45 closed at its head", pr)
+	}
+}
+
+func TestAnUnknownPullRequestStateComesBackUnknown(t *testing.T) {
+	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "QUEUED", "2026-10-02T13:00:00Z", false))
+	if pr.Ref != "#45" || pr.State != crew.PullRequestStateUnknown {
+		t.Errorf("FindPullRequest = %#v, want #45 in an unknown state, not merged", pr)
+	}
+}
+
+func TestAMergedPullRequestFromAForkIsNotFromTheBranch(t *testing.T) {
+	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "MERGED", "2026-10-02T13:00:00Z", true))
+	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
+		t.Errorf("FindPullRequest = %#v, want none", pr)
 	}
 }
 
 func TestACrossRepositoryPullRequestIsNotFromTheBranch(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "OPEN", "2026-10-02T13:00:00Z", true))
 	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
-		t.Errorf("FindPullRequest = %+v, want none", pr)
+		t.Errorf("FindPullRequest = %#v, want none", pr)
 	}
 }
 
@@ -132,7 +165,7 @@ func TestAFailedLookupIsAnError(t *testing.T) {
 		t.Errorf("FindPullRequest = %v, want an error carrying gh's stderr", err)
 	}
 	if pr != (crew.PullRequest{}) {
-		t.Errorf("FindPullRequest = %+v, want not looked up", pr)
+		t.Errorf("FindPullRequest = %#v, want not looked up", pr)
 	}
 	if len(gh.calls) != 1 {
 		t.Errorf("gh calls = %q, want exactly one", gh.calls)

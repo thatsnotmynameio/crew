@@ -17,6 +17,22 @@ type ghPullRequest struct {
 	State     string    `json:"state"` // OPEN, CLOSED or MERGED
 	CreatedAt time.Time `json:"createdAt"`
 	CrossRepo bool      `json:"isCrossRepository"`
+	Head      string    `json:"headRefOid"` // the head commit's id
+}
+
+// state is p's state in crew's terms; one gh names that crew does not know
+// is unknown.
+func (p ghPullRequest) state() crew.PullRequestState {
+	switch p.State {
+	case stateOpen:
+		return crew.PullRequestOpen
+	case "CLOSED":
+		return crew.PullRequestClosed
+	case "MERGED":
+		return crew.PullRequestMerged
+	default:
+		return crew.PullRequestStateUnknown
+	}
 }
 
 // newer reports whether p was created after q, the higher number breaking
@@ -33,10 +49,11 @@ func (p ghPullRequest) newer(q ghPullRequest) bool {
 // from this repository, as a fork's branch may share the name. The newest
 // open one wins; otherwise the newest closed or merged one created at or
 // after since, as git reuses a branch name whose old pull request must not
-// count; otherwise there is none. A zero since accepts any.
+// count; otherwise there is none. A zero since accepts any. The one found
+// carries its state and head commit.
 func (t *Tracker) FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error) {
 	out, err := t.gh.call(ctx, "pr", "list", "--head="+branch, "--state=all", "--limit", "100",
-		"--json", "number,url,state,createdAt,isCrossRepository")
+		"--json", "number,url,state,createdAt,isCrossRepository,headRefOid")
 	if err != nil {
 		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, classify(err, out, false))
 	}
@@ -66,5 +83,8 @@ func (t *Tracker) FindPullRequest(ctx context.Context, branch string, since time
 	if found == nil {
 		return crew.PullRequest{Lookup: crew.PullRequestNone}, nil
 	}
-	return crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#" + strconv.Itoa(found.Number), URL: found.URL}, nil
+	return crew.PullRequest{
+		Lookup: crew.PullRequestFound, Ref: "#" + strconv.Itoa(found.Number), URL: found.URL,
+		State: found.state(), Head: found.Head,
+	}, nil
 }
