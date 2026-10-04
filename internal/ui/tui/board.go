@@ -66,10 +66,11 @@ func (m Model) cards() []card {
 }
 
 // waits reports whether e's issue waits on the board for the next stage:
-// its move is done, the issue is still where the move put it, its stage is
-// shown, and a stage of its kind takes that state (R10, KTD3, KTD4).
+// no stage holds it again, its move is done, the issue is still where the
+// move put it, its stage is shown, and a stage of its kind takes that state
+// (R10, KTD3, KTD4, #109).
 func (m Model) waits(e core.HandledView) bool {
-	if e.Move != crew.MoveDone || e.Gone || !m.shown(m.columnIndex(e.Stage)) {
+	if e.HeldBy != "" || e.Move != crew.MoveDone || e.Gone || !m.shown(m.columnIndex(e.Stage)) {
 		return false
 	}
 	return slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool {
