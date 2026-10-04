@@ -105,6 +105,7 @@ The board's columns come from the workflow's stages, and it shows only the issue
 - How the board's read joins the poll when the core skips its listing because every slot is busy, as R9 requires.
 - How many issues a column can read: the adapter lists the first 100 issues per author.
 - How a card slides when its issue has cards in several columns.
+- The order of the cards in a column, which also decides which cards `+N more` hides. It must stay stable from one read to the next.
 - The Workflow section's title and summary on a configured board.
 
 ### Sources / Research
