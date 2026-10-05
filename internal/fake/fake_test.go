@@ -401,6 +401,24 @@ func TestCheckerRunsEachCheckAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
 	}
 }
 
+func TestCheckerRunsACheckScriptedByNameOverItsBranchsScript(t *testing.T) {
+	c := fake.NewChecker()
+	c.Script("crew/issue-9-lfg", fake.CheckScript{Exit: 1})
+	c.ScriptCheck("crew/issue-9-lfg", "judge", fake.CheckScript{Print: "done (0.97)\n"})
+
+	var out strings.Builder
+	if err := c.Check(context.Background(), port.Check{Branch: "crew/issue-9-lfg", Name: "judge", Output: &out}); err != nil {
+		t.Errorf("judge = %v, want it to pass as scripted by name", err)
+	}
+	if out.String() != "done (0.97)\n" {
+		t.Errorf("judge's output = %q", out.String())
+	}
+	err := c.Check(context.Background(), port.Check{Branch: "crew/issue-9-lfg", Name: "pr-closes-issue"})
+	if !errors.Is(err, port.ErrCheckFailed) {
+		t.Errorf("pr-closes-issue = %v, want the branch's script to fail it", err)
+	}
+}
+
 func TestHarnessAndCheckerRecordTheIdentityAndTheLogins(t *testing.T) {
 	developer := port.Identity{
 		Bot: "developer", Login: "crew-developer[bot]",

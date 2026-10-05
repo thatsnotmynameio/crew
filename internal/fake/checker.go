@@ -26,12 +26,13 @@ type CheckScript struct {
 	StartErr error
 }
 
-// Checker is a scripted checker: each check runs as scripted for its
-// branch, and an unscripted check passes. It records every check it ran.
+// Checker is a scripted checker: each check runs as scripted for its branch
+// and name, or else for its branch, and an unscripted check passes. It
+// records every check it ran.
 // Its zero value is not usable; use NewChecker.
 type Checker struct {
 	mu      sync.Mutex
-	scripts map[string]CheckScript
+	scripts map[string]CheckScript // by branch, or by branch and name
 	checks  []port.Check
 }
 
@@ -47,6 +48,14 @@ func (c *Checker) Script(branch string, s CheckScript) {
 	c.scripts[branch] = s
 }
 
+// ScriptCheck makes the check called name, of the action whose branch is
+// branch, run as s, whatever Script set for the branch.
+func (c *Checker) ScriptCheck(branch, name string, s CheckScript) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.scripts[branch+"\x00"+name] = s
+}
+
 // Checks returns the checks run so far, in the order they started.
 func (c *Checker) Checks() []port.Check {
 	c.mu.Lock()
@@ -58,7 +67,10 @@ func (c *Checker) Checks() []port.Check {
 func (c *Checker) Check(ctx context.Context, check port.Check) error {
 	c.mu.Lock()
 	c.checks = append(c.checks, check)
-	s := c.scripts[check.Branch]
+	s, ok := c.scripts[check.Branch+"\x00"+check.Name]
+	if !ok {
+		s = c.scripts[check.Branch]
+	}
 	c.mu.Unlock()
 	if s.StartErr != nil {
 		return s.StartErr

@@ -322,14 +322,23 @@ type Checker interface {
 	Check(ctx context.Context, check Check) error
 }
 
-// Check is what a Checker needs to run a check. The issue reaches the
-// command only through these fields, as environment variables, never as
-// part of the command, so no issue text can run as code.
+// Check is what a Checker needs to run a check. The issue and the session
+// reach the command only through these fields, as environment variables
+// and files they name, never as part of the command, so no issue or
+// session text can run as code.
 type Check struct {
 	// Dir is the action's workspace directory, where the command runs.
 	Dir string
-	// Command is the shell command to run.
+	// Name is the check's name, and Command the shell command to run.
+	Name    string
 	Command string
+	// Action is the name of the action the check follows.
+	Action string
+	// Prompt is the rendered prompt the action's session started with, and
+	// LastMessage what the session last said, as in LastMessageReporter;
+	// the command reads them from files, never as part of it.
+	Prompt      string
+	LastMessage string
 	// IssueRef, IssueKey and IssueURL identify the issue, as in crew.Issue.
 	IssueRef string
 	IssueKey string

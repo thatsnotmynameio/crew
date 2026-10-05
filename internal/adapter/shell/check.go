@@ -5,6 +5,8 @@ package shell
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +22,10 @@ var _ port.Checker = (*Checker)(nil)
 // it is killed.
 const stopTimeout = 10 * time.Second
 
+// filePerm is the permission of the files holding the session's prompt and
+// last message, which may hold what the session read or printed.
+const filePerm = 0o600
+
 // Checker runs checks with sh -c. It is safe for concurrent use.
 type Checker struct {
 	group *proc.Group
@@ -33,10 +39,26 @@ func New(group *proc.Group) *Checker {
 
 // Check implements port.Checker. The command runs as sh's -c argument,
 // acting as check.Identity, with CREW_ISSUE_REF, CREW_ISSUE_KEY,
-// CREW_ISSUE_URL, CREW_BRANCH, CREW_CODE_OWNERS and CREW_BOTS set, and
-// stdout and stderr on one pipe, so its output keeps the order it was
-// printed in.
+// CREW_ISSUE_URL, CREW_BRANCH, CREW_CODE_OWNERS, CREW_BOTS and CREW_ACTION
+// set, and stdout and stderr on one pipe, so its output keeps the order it
+// was printed in. The session's prompt and last message are in files that
+// CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name, in a directory only you
+// can read, removed once the check ended: a file has no size limit, where
+// one environment string does.
 func (c *Checker) Check(ctx context.Context, check port.Check) error {
+	dir, err := os.MkdirTemp("", "crew-check-")
+	if err != nil {
+		return fmt.Errorf("create the directory of the check's files: %w", err)
+	}
+	// What a failed removal leaves is in the system's temporary directory,
+	// readable by you alone.
+	defer func() { _ = os.RemoveAll(dir) }()
+	prompt, last := filepath.Join(dir, "prompt"), filepath.Join(dir, "last-message")
+	for path, text := range map[string]string{prompt: check.Prompt, last: check.LastMessage} {
+		if err := os.WriteFile(path, []byte(text), filePerm); err != nil {
+			return fmt.Errorf("write the check's files: %w", err)
+		}
+	}
 	env := slices.Clone(check.Identity.Env)
 	env = append(env,
 		"CREW_ISSUE_REF="+check.IssueRef,
@@ -45,6 +67,9 @@ func (c *Checker) Check(ctx context.Context, check port.Check) error {
 		"CREW_BRANCH="+check.Branch,
 		"CREW_CODE_OWNERS="+strings.Join(check.CodeOwners, " "),
 		"CREW_BOTS="+strings.Join(check.Bots, " "),
+		"CREW_ACTION="+check.Action,
+		"CREW_PROMPT_FILE="+prompt,
+		"CREW_LAST_MESSAGE_FILE="+last,
 	)
 	p, err := c.group.Start(proc.Command{
 		Name: "sh", Args: []string{"-c", check.Command}, Dir: check.Dir,
