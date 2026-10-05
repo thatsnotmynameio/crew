@@ -23,8 +23,9 @@ func checked() []crew.Rule {
 func runCheck(key string) core.RunCheck {
 	ws := space(key, "development")
 	return core.RunCheck{
-		IssueKey: key, Action: "development", Dir: ws.Dir, Command: prCheck, Log: ws.Log,
+		IssueKey: key, Action: "development", Dir: ws.Dir, Name: "pr-closes-issue", Command: prCheck, Log: ws.Log,
 		IssueRef: "#" + key, IssueURL: "https://example.com/issues/" + key, Branch: ws.Branch,
+		Prompt: "Implement development for issue #" + key,
 	}
 }
 

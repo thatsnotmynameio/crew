@@ -109,16 +109,16 @@ func (s *step) sessionStarted(in SessionStarted) {
 }
 
 // sessionEnded ends the action whose session ended, or, when the session
-// succeeded and the action has a check, runs the check first (R2). After a
-// stop, a check is not started and the action counts as stopped (R8). It
-// keeps what the session used, and looks up the pull request the action
-// opened, whatever its outcome (R5, KTD3).
+// succeeded and the action has checks, runs the first (R2, R3). After a
+// stop, no check is started and the action counts as stopped (R8). It
+// keeps what the session used and its last message, and looks up the pull
+// request the action opened, whatever its outcome (R5, KTD3).
 func (s *step) sessionEnded(in SessionEnded) {
 	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting, PhaseRunning)
 	if a == nil {
 		return
 	}
-	a.usage = in.Usage
+	a.usage, a.lastMessage = in.Usage, in.LastMessage
 	if s.m.finding {
 		a.finding = true
 		s.command(FindPullRequest{IssueKey: h.issue.Key, Action: a.name, Branch: a.branch, Since: a.since})
@@ -134,25 +134,40 @@ func (s *step) sessionEnded(in SessionEnded) {
 		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
 	default:
 		a.phase = PhaseChecking
-		s.command(RunCheck{
-			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.checks[0].Script, Log: a.log,
-			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Bot: a.bot,
-		})
+		s.runCheck(h, a)
 	}
 }
 
-// checkEnded ends the action whose check ended with the check's verdict, or
-// as stopped when a stop ended the check, whatever it returned (R8).
+// runCheck runs a's next check, checks[len(results)].
+func (s *step) runCheck(h *heldIssue, a *actionRun) {
+	c := a.checks[len(a.results)]
+	s.command(RunCheck{
+		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Name: c.Name, Command: c.Script, Log: a.log,
+		IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Bot: a.bot,
+		Prompt: a.prompt, LastMessage: a.lastMessage,
+	})
+}
+
+// checkEnded keeps how the action's running check ended. A check that
+// passed starts the next, or ends the action as succeeded when it was the
+// last; one that did not pass ends it with the check's verdict (R4). A stop
+// ends it as stopped, whatever the check returned (R8).
 func (s *step) checkEnded(in CheckEnded) {
 	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking)
 	if a == nil {
 		return
 	}
-	if a.stopped {
+	a.results = append(a.results, crew.CheckResult{
+		Name: a.checks[len(a.results)].Name, Passed: in.Outcome.Succeeded, Reason: in.Outcome.Reason,
+	})
+	switch {
+	case a.stopped:
 		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
-		return
+	case !in.Outcome.Succeeded || len(a.results) == len(a.checks):
+		s.end(h, a, in.Outcome, crew.CauseCheck)
+	default:
+		s.runCheck(h, a)
 	}
-	s.end(h, a, in.Outcome, crew.CauseCheck)
 }
 
 // pullRequestFound keeps the pull request the lookup found, and ends the

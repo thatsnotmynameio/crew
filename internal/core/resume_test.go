@@ -433,7 +433,22 @@ func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 	})
 	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
 	quoted := `That run failed: "the check failed: no pull requests found for branch \"crew/issue-9-lfg\"".`
-	if p := startOf(t, cmds).Prompt; !strings.Contains(p, quoted) {
-		t.Fatalf("prompt does not quote the check's reason:\n%s", p)
+	start := startOf(t, cmds)
+	if !strings.Contains(start.Prompt, quoted) {
+		t.Fatalf("prompt does not quote the check's reason:\n%s", start.Prompt)
 	}
+
+	// R1: the resumed run's check reads the prompt with its resume note.
+	d.send(core.SessionStarted{IssueKey: "9", Action: "lfg"})
+	cmds, _ = d.send(core.SessionEnded{IssueKey: "9", Action: "lfg", Outcome: succeeded, LastMessage: "PR #12 is open."})
+	for _, c := range cmds {
+		if run, ok := c.(core.RunCheck); ok {
+			if run.Prompt != start.Prompt || run.LastMessage != "PR #12 is open." {
+				t.Fatalf("check's prompt %q and last message %q, want the resumed session's %q and its last message",
+					run.Prompt, run.LastMessage, start.Prompt)
+			}
+			return
+		}
+	}
+	t.Fatalf("the resumed run ran no check: %#v", cmds)
 }

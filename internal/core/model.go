@@ -128,6 +128,11 @@ type actionRun struct {
 	since time.Time
 	// usage is what its session reported it used, once the session ended.
 	usage crew.Usage
+	// lastMessage is its session's last message, which its checks read.
+	lastMessage string
+	// results are how its checks that ended so far ended, in order; the
+	// running check is checks[len(results)].
+	results []crew.CheckResult
 	// finding is set while its pull request is being looked up; pr holds
 	// what the lookup found once it is done. An action whose outcome is
 	// known before the lookup is done waits in PhaseFinishing, holding its

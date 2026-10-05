@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
@@ -21,6 +22,9 @@ type CheckScript struct {
 	Exit int
 	// Block makes the check run until its context ends, after printing.
 	Block bool
+	// Delay makes the check take that long, after printing, before it
+	// exits as Exit says; its context ending first ends it.
+	Delay time.Duration
 	// StartErr, when set, makes the check fail to start; nothing else of
 	// the script applies.
 	StartErr error
@@ -81,6 +85,13 @@ func (c *Checker) Check(ctx context.Context, check port.Check) error {
 	if s.Block {
 		<-ctx.Done()
 		return fmt.Errorf("the check was ended: %w", ctx.Err())
+	}
+	if s.Delay > 0 {
+		select {
+		case <-time.After(s.Delay):
+		case <-ctx.Done():
+			return fmt.Errorf("the check was ended: %w", ctx.Err())
+		}
 	}
 	if s.Exit != 0 {
 		return fmt.Errorf("%w: exit status %d", port.ErrCheckFailed, s.Exit)
