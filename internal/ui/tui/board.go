@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/ui/lines"
@@ -20,21 +22,27 @@ const (
 )
 
 // card is an item on the board, in a column whose labels it carries and
-// that shows its kind, held by crew or not (KTD9, KTD10).
+// that shows its kind, held by crew or not (KTD9, KTD10), or an issue in
+// the Not on board or Handled column (KTD3, KTD13 of #151).
 type card struct {
 	issue crew.Issue
-	// column is the card's column: an index into the board's columns.
+	// column is the card's column: an index into the board's columns,
+	// then Not on board's, then Handled's.
 	column int
 	// held is set while crew holds the item, with view its issue's view;
 	// the zero view's claim is ClaimTaking, so view alone cannot tell.
 	held bool
 	view core.IssueView
+	// entry is the Handled entry a card of the Handled column shows; nil
+	// on a live card.
+	entry *core.HandledView
 }
 
 // cards returns a card in each column whose labels an item of the board
 // carries and that shows its kind, item by item in the board's order,
-// oldest first (R7, KTD6, R23). A card of an item crew holds carries its
-// issue's view (R10, KTD9); no card waits for the next rule (R28).
+// oldest first (R7, KTD6, R23), then the Not on board and Handled cards
+// (KTD3, KTD13 of #151). A card of an item crew holds carries its issue's
+// view (R10, KTD9); no card waits for the next rule (R28).
 func (m Model) cards() []card {
 	views := map[string]core.IssueView{}
 	for _, iv := range m.snap.Issues {
@@ -49,6 +57,41 @@ func (m Model) cards() []card {
 				out = append(out, card{issue: bi.Issue, column: i, held: held, view: view})
 			}
 		}
+	}
+	out = append(out, m.unboardedCards(out)...)
+	return append(out, m.handledCards()...)
+}
+
+// notOnBoard and handledColumn are the indexes of the columns the TUI adds
+// after the configured ones (KTD3, KTD13 of #151).
+func (m Model) notOnBoard() int    { return len(m.cfg.Board) }
+func (m Model) handledColumn() int { return len(m.cfg.Board) + 1 }
+
+// unboardedCards are a live card in the Not on board column for each
+// issue crew holds that has none in boarded, the cards of the configured
+// columns. An issue whose rule has no actions is left out: such a rule
+// has no column on the default board, by design (KTD13 of #151, #134).
+func (m Model) unboardedCards(boarded []card) []card {
+	shown := map[string]bool{}
+	for _, c := range boarded {
+		shown[c.issue.Key] = true
+	}
+	var out []card
+	for _, iv := range m.snap.Issues {
+		if !shown[iv.Issue.Key] && len(iv.Actions) > 0 {
+			out = append(out, card{issue: iv.Issue, column: m.notOnBoard(), held: true, view: iv})
+		}
+	}
+	return out
+}
+
+// handledCards are a card in the Handled column for each issue crew
+// stopped handling, those that need you first (R8, KTD3 of #151).
+func (m Model) handledCards() []card {
+	entries := byAttention(m.snap.Handled)
+	out := make([]card, 0, len(entries))
+	for i := range entries {
+		out = append(out, card{issue: entries[i].Issue, column: m.handledColumn(), entry: &entries[i]})
 	}
 	return out
 }
@@ -94,16 +137,22 @@ func layout(shown []int, held map[int]bool, avail, offset int) boardLayout {
 	return l
 }
 
-// boardLayout lays out the board for the current snapshot and window.
+// boardLayout lays out the board for the current snapshot and window: the
+// configured columns, Not on board while it holds cards, then Handled
+// (KTD3, KTD13 of #151).
 func (m Model) boardLayout(cards []card) boardLayout {
-	columns := make([]int, len(m.cfg.Board))
-	for i := range columns {
-		columns[i] = i
-	}
 	held := map[int]bool{}
 	for _, c := range cards {
 		held[c.column] = true
 	}
+	columns := make([]int, 0, m.handledColumn()+1)
+	for i := range m.cfg.Board {
+		columns = append(columns, i)
+	}
+	if held[m.notOnBoard()] {
+		columns = append(columns, m.notOnBoard())
+	}
+	columns = append(columns, m.handledColumn())
 	return layout(columns, held, m.width-1, m.boardOffset)
 }
 
@@ -115,13 +164,15 @@ func (m Model) board(limit int) (string, []string) {
 	return m.boardSummary(cards, l), m.boardRows(l, cards, limit)
 }
 
-// boardSummary is the board's summary (KTD8): the items with a card, the
-// empty columns dropped, and, in the warning style, that the last board
-// read or listing failed (KTD5).
+// boardSummary is the board's summary (KTD8): the items with a card in a
+// configured column, the empty columns dropped, and, in the warning style,
+// that the last board read or listing failed (KTD5).
 func (m Model) boardSummary(cards []card, l boardLayout) string {
 	issues := map[string]bool{}
 	for _, c := range cards {
-		issues[c.issue.Key] = true
+		if c.column < m.notOnBoard() {
+			issues[c.issue.Key] = true
+		}
 	}
 	summary := fmt.Sprintf("%d %s", len(issues), lines.Plural(len(issues), "issue", "issues"))
 	if l.dropped > 0 {
@@ -173,7 +224,7 @@ func (m Model) cardRows(l boardLayout, byColumn [][]card, k int) []string {
 	}
 	for i, cs := range byColumn {
 		if k < len(cs) {
-			for r, line := range m.liveCard(cs[k], l.width) {
+			for r, line := range m.cardFace(cs[k], l.width) {
 				cells[r][i] = line
 			}
 		}
@@ -194,9 +245,22 @@ func (m Model) columnNames(l boardLayout, byColumn [][]card) []string {
 		if len(byColumn[i]) > 0 {
 			st = m.styles.accent
 		}
-		names[i] = st.Render(m.cfg.Board[c].Name)
+		names[i] = m.columnName(c, st)
 	}
 	return names
+}
+
+// columnName is column c's name in st: a configured column's, Not on
+// board, or Handled with its count and the run's cost after it, muted
+// (R8, KTD3, KTD13 of #151).
+func (m Model) columnName(c int, st lipgloss.Style) string {
+	switch c {
+	case m.notOnBoard():
+		return st.Render("Not on board")
+	case m.handledColumn():
+		return st.Render("Handled") + " " + m.styles.muted.Render(m.handledSummary())
+	}
+	return st.Render(m.cfg.Board[c].Name)
 }
 
 // boardRow joins one cell per column, padded to the column width, with the

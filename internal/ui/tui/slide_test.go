@@ -137,8 +137,8 @@ var triageReview = []crew.BoardColumn{
 	{Name: "review", Labels: []string{"crew:development:waiting review"}},
 }
 
-// Covers AE3 and KTD7: an issue that had no card for a while slides from
-// the columns it was last in.
+// Covers AE3 and KTD7: an issue development holds shows in Not on board
+// (KTD13 of #151), and slides from there into review.
 func TestAE3ACardSlidesFromTheColumnsItWasLastIn(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, triageReview)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
@@ -148,13 +148,16 @@ func TestAE3ACardSlidesFromTheColumnsItWasLastIn(t *testing.T) {
 	}
 
 	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
-	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
-		t.Errorf("the board shows #12 while development holds it:\n%s", board)
+	if got := cardColumns(boardOf(t, h.view()), "#12"); len(got) != 1 || got[0] != 2 {
+		t.Errorf("#12's cards are in columns %v while development holds it, want Not on board (2)", got)
+	}
+	for range slideFrames {
+		h.send(slideTickMsg{})
 	}
 
 	cmd := h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "crew:development:waiting review"))))
-	if got := h.current().memory.slides; len(got) != 1 || got[0].from != 0 || got[0].to != 1 {
-		t.Errorf("slides = %+v, want one from triage (0) to review (1)", got)
+	if got := h.current().memory.slides; len(got) != 1 || got[0].from != 2 || got[0].to != 1 {
+		t.Errorf("slides = %+v, want one from Not on board (2) to review (1)", got)
 	}
 	if !schedulesSlideTick(cmd) {
 		t.Error("the move scheduled no slide frame")

@@ -52,10 +52,7 @@ func (m Model) queuesSection() (string, []string) {
 // rule, time, spend and pull request, then its reasons and its actions'
 // pull requests (R5, R16), in width cells.
 func (m Model) handledSection(width int) (string, []string) {
-	summary := strconv.Itoa(len(m.snap.Handled))
-	if cost := spendParts(m.snap.Spent); len(cost) > 0 {
-		summary += " · " + cost[0]
-	}
+	summary := m.handledSummary()
 	entries := byAttention(m.snap.Handled)
 	if len(entries) == 0 {
 		return summary, []string{" " + m.styles.muted.Render("none")}
@@ -81,6 +78,16 @@ func (m Model) handledSection(width int) (string, []string) {
 	return summary, out
 }
 
+// handledSummary is how many issues crew handled, then the run's cost
+// when it has one (R8).
+func (m Model) handledSummary() string {
+	summary := strconv.Itoa(len(m.snap.Handled))
+	if cost := spendParts(m.snap.Spent); len(cost) > 0 {
+		summary += " · " + cost[0]
+	}
+	return summary
+}
+
 // pill says how e ended: given up, needing attention, or the last part of
 // the state its rule moved it to (R5, KTD13). A failure whose issue a rule
 // holds again shows that state as an error: it needs you no longer
@@ -92,15 +99,20 @@ func (m Model) pill(e core.HandledView) string {
 	case needsAttention(e):
 		return m.styles.errorPill.Render("NEEDS ATTENTION")
 	}
-	state := string(e.To)
-	if i := strings.LastIndex(state, ":"); i >= 0 {
-		state = state[i+1:]
-	}
 	pill := m.styles.successPill
 	if e.NeedsAttention() {
 		pill = m.styles.errorPill
 	}
-	return pill.Render(strings.ToUpper(state))
+	return pill.Render(strings.ToUpper(stateName(e.To)))
+}
+
+// stateName is the part of to after its last colon, or all of it.
+func stateName(to crew.State) string {
+	state := string(to)
+	if i := strings.LastIndex(state, ":"); i >= 0 {
+		state = state[i+1:]
+	}
+	return state
 }
 
 // needsAttention reports whether e needs you: it needs attention and no
@@ -132,16 +144,27 @@ func spendParts(s crew.Spend) []string {
 	return nil
 }
 
-// reasons are the rows under an entry that needs attention: one per failed
-// action, then one for a given-up move, each after an × (KTD13).
+// reasons are the rows under an entry that needs attention: one per
+// reason, each after an × (KTD13).
 func (m Model) reasons(e core.HandledView) []string {
-	var out []string
+	texts := reasonTexts(e)
+	out := make([]string, 0, len(texts))
 	cross := "   " + m.styles.error.Render("×") + " "
+	for _, r := range texts {
+		out = append(out, cross+m.styles.text.Render(r))
+	}
+	return out
+}
+
+// reasonTexts are why e needs attention: one per failed action, then one
+// for a given-up move (KTD13).
+func reasonTexts(e core.HandledView) []string {
+	var out []string
 	for _, f := range e.Failures {
-		out = append(out, cross+m.styles.text.Render(fmt.Sprintf("%s failed: %s", f.Action, clean(f.Reason))))
+		out = append(out, fmt.Sprintf("%s failed: %s", f.Action, clean(f.Reason)))
 	}
 	if e.Move == crew.MoveDropped {
-		out = append(out, cross+m.styles.text.Render(fmt.Sprintf("move to %s given up: %s", e.To, clean(e.DropReason))))
+		out = append(out, fmt.Sprintf("move to %s given up: %s", e.To, clean(e.DropReason)))
 	}
 	return out
 }

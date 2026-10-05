@@ -1,0 +1,62 @@
+crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 12m • 48m left • $70.05 • 138.1M tokens  ? help
+
+Bots ────────────────────────────────────────────────────────────────── only you
+ ╭────────────────────────────────╮
+ │ ▄▄▀▄▄ you                      │
+ │ ▀ ▀ ▀                          │
+ │ ▄▀▄▀▄ 9 actions · $70.05       │
+ │ crew's writes +3               │
+ │ ⠋ #1 implement/code +1         │
+ ╰────────────────────────────────╯
+
+Board ───────────────────────────────────────────────────────────────── 2 issues
+ implement                  review                     Handled 10 · $70.05      
+ ─────────────────────────  ─────────────────────────  ─────────────────────────
+ ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
+ │ #1 Add login form     │  │ #2 Fix the flaky str… │  │ #11 Parse the config… │
+ │ run  ⠋ code 5m +1     │  │ run  ○ check waiting  │  │ ▲ needs attention     │
+ │ bots ■ you            │  │ bots none             │  │ × lfg failed: exited… │
+ │ via  default          │  │ via  clerk            │  │ implement 40m00s      │
+ ╰───────────────────────╯  ╰───────────────────────╯  ╰───────────────────────╯
+                                                       ╭───────────────────────╮
+                                                       │ #12 Drop the old --d… │
+                                                       │ ▲ needs attention     │
+                                                       │ × lfg failed: prompt… │
+                                                       │ implement 1m00s       │
+                                                       ╰───────────────────────╯
+                                                       ╭───────────────────────╮
+                                                       │ #20 Success number 20 │
+                                                       │ ✓ waiting review      │
+                                                       │                       │
+                                                       │ development 40m00s    │
+                                                       ╰───────────────────────╯
+                                                       ╭───────────────────────╮
+                                                       │ #19 Success number 19 │
+                                                       │ ✓ waiting review      │
+                                                       │                       │
+                                                       │ development 39m00s    │
+                                                       ╰───────────────────────╯
+                                                       ╭───────────────────────╮
+                                                       │ #18 Success number 18 │
+                                                       │ ✓ waiting review      │
+                                                       │                       │
+                                                       │ development 38m00s    │
+                                                       ╰───────────────────────╯
+                                                       +5 more                  
+
+Actions ────────────────────────────────────────────────── 2 running · 1 waiting
+ ⠋ #1  Add login form    implement/code    default   running 5m00s  crew/1-code
+ ⠋ #1  Add login form    implement/tests   default   running 7m00s  crew/1-tests
+ ○ #2  Fix the flaky s…  review/check      clerk     waiting        
+
+Queues ─── 2 of 3 busy   Handled ─────────────────────── 10 · $70.05 · ↑↓ scroll
+ default  ■□  1/2          NEEDS ATTENTION   #11 Parse the config on…  implemen…
+ clerk    ■   1/1           × lfg failed: exited 1: "tests fail on Go 1.27"
+                           NEEDS ATTENTION   #12 Drop the old --dry …  implemen…
+                            × lfg failed: prompt did not render: no field "Body"
+
+Events ─────────────────────────────────────────────────── 30 events · ↑↓ scroll
+ 14:29:58 poll: listed 29 issues, took 0
+ 14:29:59 poll: listed 30 issues, took 0
+
+q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

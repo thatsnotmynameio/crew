@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // The cards' frame and the board cards' rows, in cells (KTD1, KTD2).
@@ -32,6 +34,15 @@ func framed(rows []string, width int, edge lipgloss.Style) []string {
 		out = append(out, edge.Render(b.Left)+" "+pad(r, inner)+" "+edge.Render(b.Right))
 	}
 	return append(out, edge.Render(b.BottomLeft+strings.Repeat(b.Bottom, line)+b.BottomRight))
+}
+
+// cardFace is c's card, width cells wide: its Handled entry's, or its live
+// issue's (KTD2, KTD3 of #151).
+func (m Model) cardFace(c card, width int) []string {
+	if c.entry != nil {
+		return m.handledCard(*c.entry, width)
+	}
+	return m.liveCard(c, width)
 }
 
 // liveCard is c's card, width cells wide: its reference and title, then
@@ -132,4 +143,61 @@ func (m Model) cardQueue(c card) string {
 		return m.styles.subtle.Render("none")
 	}
 	return m.styles.text.Render(clean(c.view.Queue))
+}
+
+// handledCard is e's card, width cells wide: its reference and title, how
+// it ended, its first reason, and its rule and time, in a border of its
+// group's colour (R8, KTD3 of #151).
+func (m Model) handledCard(e core.HandledView, width int) []string {
+	s := m.styles
+	status, edge := m.handledStatus(e)
+	rows := []string{
+		s.link(e.Issue.Ref, e.Issue.URL) + " " + s.text.Render(clean(e.Issue.Title)),
+		status,
+		m.firstReason(e, width-cardFrame),
+		s.muted.Render(handledRule(e)),
+	}
+	return framed(rows, width, edge)
+}
+
+// handledStatus is how e ended, grouped as its pill groups it, and its
+// border's colour: given up, needing attention, a failure a rule holds
+// again (#109), or a success (R8, KTD3, KTD11 of #151).
+func (m Model) handledStatus(e core.HandledView) (string, lipgloss.Style) {
+	s := m.styles
+	switch {
+	case e.Move == crew.MoveDropped:
+		return s.muted.Render("■ given up"), s.muted
+	case needsAttention(e):
+		return s.error.Render("▲ needs attention"), s.error
+	case e.NeedsAttention():
+		return s.error.Render("× " + stateName(e.To)), s.muted
+	}
+	return s.success.Render("✓ " + stateName(e.To)), s.success
+}
+
+// firstReason is e's first reason after an ×, then a muted +N for the
+// rest, in width cells; nothing when it has none (R8, KTD3 of #151).
+func (m Model) firstReason(e core.HandledView, width int) string {
+	all := reasonTexts(e)
+	if len(all) == 0 {
+		return ""
+	}
+	s := m.styles
+	first := s.error.Render("×") + " " + s.text.Render(all[0])
+	if len(all) == 1 {
+		return first
+	}
+	more := " " + s.muted.Render(fmt.Sprintf("+%d", len(all)-1))
+	return fit(first, width-lipgloss.Width(more)) + more
+}
+
+// handledRule is e's rule and time, then the rule holding its issue again
+// (KTD3 of #151, #109).
+func handledRule(e core.HandledView) string {
+	parts := []string{e.Rule + " " + elapsed(e.Duration())}
+	if e.HeldBy != "" {
+		parts = append(parts, "now in "+e.HeldBy)
+	}
+	return strings.Join(parts, " · ")
 }

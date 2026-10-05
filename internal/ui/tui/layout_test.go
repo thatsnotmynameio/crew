@@ -48,16 +48,17 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 	}
 }
 
-// Covers R21 and KTD8: a 37-row window gives Events, then Handled, their
+// Covers R21 and KTD8: a 62-row window gives Events, then Handled, their
 // minimum, and both scroll. It is the 24 rows these sections took before
-// Bots, plus Bots' rule, its row of cards and the blank row above it, and
-// the four rows each board card gained (KTD1 of #151).
-func TestA37RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
-	view := fitted(t, 80, 37, eventful())
+// Bots, plus Bots' rule, its row of cards and the blank row above it, the
+// four rows each board card gained (KTD1 of #151), and the four more
+// cards and the "+N more" row of the Handled column (KTD3 of #151).
+func TestA62RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
+	view := fitted(t, 80, 62, eventful())
 
-	golden(t, "fit-37-rows", view)
-	if n := strings.Count(view, "\n") + 1; n != 37 {
-		t.Errorf("view has %d lines, want the window's 37", n)
+	golden(t, "fit-62-rows", view)
+	if n := strings.Count(view, "\n") + 1; n != 62 {
+		t.Errorf("view has %d lines, want the window's 62", n)
 	}
 	if rows := botsOf(t, view); len(rows) != botCardRows {
 		t.Errorf("Bots has %d rows, want its cards' %d:\n%s", len(rows), botCardRows, view)
@@ -196,7 +197,7 @@ func TestPageKeysScrollTheFocusedSectionByAPage(t *testing.T) {
 	h.send(tab)
 	top := h.view()
 	h.send(tea.KeyPressMsg{Code: tea.KeyPgDown})
-	if h.view() == top || strings.Contains(h.view(), "#11 Parse") {
+	if h.view() == top || strings.Contains(strings.Join(bandRows(t, h.view()), "\n"), "#11 Parse") {
 		t.Errorf("pgdown did not move Handled past its first entry:\n%s", h.view())
 	}
 	h.send(tea.KeyPressMsg{Code: tea.KeyPgUp})
@@ -321,10 +322,12 @@ func TestThirtyEventsShowTheNewestFiveAndScroll(t *testing.T) {
 
 // Covers AE4 and R4, R5 of #108: one handled issue and its reason fill
 // Handled from the top, and the band stays 6 rows as issues are handled.
+// The window has room for a second card in the Handled column (KTD3 of
+// #151).
 func TestHandledFillsItsFiveRowsAndTheBandHoldsItsHeight(t *testing.T) {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1")}
-	view := fitted(t, 80, 40, u)
+	view := fitted(t, 80, 46, u)
 
 	band := bandRows(t, view)
 	if len(band) != 1+scrollRows {
@@ -334,7 +337,7 @@ func TestHandledFillsItsFiveRowsAndTheBandHoldsItsHeight(t *testing.T) {
 	contains(t, band[2], "× tests failed")
 
 	u.Snapshot.Handled = append(u.Snapshot.Handled, entry("8", "Trim the README", "review", "ready to merge", 9, 3))
-	if band := bandRows(t, fitted(t, 80, 40, u)); len(band) != 1+scrollRows {
+	if band := bandRows(t, fitted(t, 80, 46, u)); len(band) != 1+scrollRows {
 		t.Errorf("a second handled issue made the band %d rows, want %d", len(band), 1+scrollRows)
 	}
 }

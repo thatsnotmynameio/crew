@@ -95,7 +95,7 @@ func TestARunRowReadsAStartingActionAndAnOwedClaim(t *testing.T) {
 		{core.ClaimRunning, core.PhaseStarting, "run  ⠋ triage starting"},
 		{core.ClaimOwed, core.PhaseWaiting, "run  ! owed · ○ triage waiting"},
 	} {
-		h := newBoardHarness(t, 120, crewRules, crewBoard)
+		h := newBoardHarness(t, 150, crewRules, crewBoard)
 		u := held(twelve, "triage", "triage", tt.claim)
 		u.Snapshot.Issues[0].Actions[0].Phase, u.Snapshot.Issues[0].Actions[0].Started = tt.phase, time.Time{}
 		h.send(updateMsg(onBoard(u, labeled(twelve, "crew:triage:in progress"))))
@@ -109,7 +109,7 @@ func TestARunRowReadsAStartingActionAndAnOwedClaim(t *testing.T) {
 // items that fit and counts the rest, and every row keeps the card's
 // width.
 func TestANarrowCardKeepsWholeItemsAndItsWidth(t *testing.T) {
-	h := newBoardHarness(t, 71, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 95, crewRules, ideasBugsDone)
 	u := held(twenty, "fix", "code", core.ClaimRunning)
 	iv := &u.Snapshot.Issues[0]
 	iv.Actions[0].Started = start.Add(-5 * time.Minute)

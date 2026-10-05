@@ -145,13 +145,16 @@ func heldBy(e core.HandledView, rule string) core.HandledView {
 }
 
 func TestAnEntryHeldAgainSaysWhichRuleHoldsIt(t *testing.T) {
-	view := handledView(t,
+	u := runningSnapshot()
+	u.Snapshot.Handled = []core.HandledView{
 		heldBy(entry("31", "Add login form", "triage", "crew:triage:done", 15, 5), "development"),
-		entry("32", "Drop the flag", "triage", "crew:triage:done", 15, 5))
+		entry("32", "Drop the flag", "triage", "crew:triage:done", 15, 5),
+	}
+	text := handledText(t, 160, u)
 
-	contains(t, view, "#31 Add login form  triage 10m00s · now in development")
-	if strings.Count(view, "now in") != 1 {
-		t.Errorf("an entry no rule holds says where it is:\n%s", view)
+	contains(t, text, "#31 Add login form  triage 10m00s · now in development")
+	if strings.Count(text, "now in") != 1 {
+		t.Errorf("an entry no rule holds says where it is:\n%s", text)
 	}
 }
 
