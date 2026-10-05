@@ -1,22 +1,42 @@
 ---
 name: cw-update-issue-plan
-description: Copies the plan file the current session's brainstorm or plan wrote (compound-engineering's `ce-brainstorm` or `ce-plan`) into the body of the GitHub issue this session is working on, laid out by that issue type's template from `.crew/config.yaml`, then moves the issue to the label given or runs the repository's `prompts.update_issue_plan`. Use when the user asks to put, write, save or update the plan or brainstorm in the issue, once its plan file is written.
+description: Copies the plan file the current session's brainstorm or plan wrote (compound-engineering's `ce-brainstorm` or `ce-plan`) into the body of the GitHub issue this session is working on, laid out by the template of that issue's type, then moves the issue to the label given or, without one, from `crew:brainstorm:in progress` to `crew:brainstorm:done`. Use when the user asks to put, write, save or update the plan or brainstorm in the issue, once its plan file is written.
 argument-hint: "[label to move the issue to]"
 ---
 
 # Update an issue with the session's plan
 
-crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. The session crew runs for an issue starts from `main` and reads the issue, not the files of this checkout, so the plan has to live in the issue's body. This skill copies the plan file the session wrote into the issue's body, keeps the old body in a comment, and moves the issue to the stage or extra label given. Without a label, it runs the repository's `prompts.update_issue_plan` from `.crew/config.yaml`, which usually moves the issue to the same next label every time. It does not write the plan itself: the brainstorm or plan that wrote the file already shaped and checked it. It asks nothing unless it is in doubt about the issue.
+This skill is the crew repository's own aid for building crew, not part of crew. Its issue types, labels and closing prompt are this repository's. Another repository copies the skill and edits its tables and prompt to match its own rules and issue templates.
 
-Run `gh` with the repository root as the working directory. Read files with your own file tools.
+crew polls the repository's GitHub issues, and each of its rules takes every open issue carrying the rule's ready label. The session crew runs for an issue starts from `main` and reads the issue, not the files of this checkout, so the plan has to live in the issue's body. This skill copies the plan file the session wrote into the issue's body, keeps the old body in a comment, and moves the issue to the label given. Without a label, it runs the prompt in step 8, which moves the issue from `crew:brainstorm:in progress` to `crew:brainstorm:done`. It does not write the plan itself: the brainstorm or plan that wrote the file already shaped and checked it. It asks nothing unless it is in doubt about the issue.
 
-## 1. Read the config
+Run `gh` with the repository root, from `git rev-parse --show-toplevel`, as the working directory. Read files with your own file tools. Compare labels ignoring case, as GitHub does.
 
-1. Find the repository root with `git rev-parse --show-toplevel`.
-2. Read `<root>/.crew/config.yaml`. When the file is missing, say that crew is not configured in this repository and stop. When it does not parse as YAML, say so with the parser's error and stop. Change nothing in either case.
-3. Build the types: each entry of `workflow` that takes issues is a type through its `label`, and each entry of the top-level `extra_labels` is a type through its `label`. Each type may have an `issue_template`, a file name in `<root>/.github/ISSUE_TEMPLATE/`. A stage takes issues when it has no `takes` or has `takes: issues`; a stage with `takes: pull_requests` is not a type, since crew leaves an issue carrying its label alone.
-4. Build crew's labels: every stage's `label`, `moves_to`, `on_success` and `on_failure`, and every extra's `label`. Compare labels ignoring case, as GitHub does.
-5. Take the top-level `prompts.update_issue_plan`, when present and not empty. It is a Go template over the issue, the same as an action's prompt in crew, and may use only `{{.Issue.Ref}}`, `{{.Issue.Key}}`, `{{.Issue.Title}}` and `{{.Issue.URL}}`; spacing inside the braces does not matter. When it holds any other `{{ }}`, say that crew accepts only these four fields, name what it found, and stop. Change nothing.
+## 1. The labels
+
+**Types.** An issue's type gives its label and the template its body follows, a file in `<root>/.github/ISSUE_TEMPLATE/`:
+
+| Label | Template | Description |
+| --- | --- | --- |
+| `crew:development:ready` | `feature.md` | a feature whose brainstorm is done |
+| `crew:fix:ready` | `bug.md` | a bug to reproduce and fix |
+| `crew:brainstorm:ready` | `idea.md` | an idea to brainstorm later |
+| `crew:brainstorm:done` | `feature.md` | a brainstormed feature to hand to triage |
+| `crew:triage:ready` | `feature.md` | a brainstormed feature whose dependencies to find |
+| `crew:triage:done` | `feature.md` | a triaged feature to hand to development |
+| `crew:ci audit:ready` | `ci-audit.md` | an audit of the GitHub Actions |
+| `crew:knowledge base:ready` | `knowledge-base.md` | a solved problem to record as a learning |
+
+**Running labels.** crew puts a rule's running label on an issue while it works on it: `crew:brainstorm:promoting`, `crew:triage:in progress`, `crew:triage:promoting`, `crew:development:in progress`, `crew:fix:in progress`, `crew:ci audit:in progress` and `crew:knowledge base:in progress`.
+
+**crew's labels.** These are the labels a move removes:
+
+- `crew:brainstorm:ready`, `crew:brainstorm:in progress`, `crew:brainstorm:done`, `crew:brainstorm:promoting`, `crew:brainstorm:failed`
+- `crew:triage:ready`, `crew:triage:in progress`, `crew:triage:done`, `crew:triage:promoting`, `crew:triage:failed`
+- `crew:development:ready`, `crew:development:in progress`, `crew:development:waiting review`, `crew:development:failed`
+- `crew:fix:ready`, `crew:fix:in progress`, `crew:fix:waiting review`, `crew:fix:failed`
+- `crew:ci audit:ready`, `crew:ci audit:in progress`, `crew:ci audit:done`, `crew:ci audit:failed`
+- `crew:knowledge base:ready`, `crew:knowledge base:in progress`, `crew:knowledge base:done`, `crew:knowledge base:failed`
 
 ## 2. Find the issue
 
@@ -26,9 +46,9 @@ Read it with `gh issue view <number> --json number,title,state,body,labels,url`.
 
 ## 3. Check the label
 
-With no argument, the skill changes no label itself: step 8 runs `prompts.update_issue_plan` when the config has one, and otherwise the issue keeps its labels.
+With no argument, the skill changes no label itself: step 8 runs the prompt that moves the issue.
 
-With an argument, it must be the `label` of a stage that takes issues or of an extra. Otherwise say so, list the valid labels, and stop. When the issue carries a stage's `moves_to` label, crew is running a session on it: say so and stop without changing anything. The one exception is a label this session put on the issue, such as the prompt `/cw-brainstorm` ran moving it to a `moves_to` label while the user brainstorms: then this session is the one working on it, so go on.
+With an argument, it must be one of the types' labels. Otherwise say so, list the valid labels, and stop. When the issue carries a running label, crew is working on it: say so and stop without changing anything. The one exception is a label this session put on the issue: then this session is the one working on it, so go on.
 
 ## 4. Find the plan file
 
@@ -40,7 +60,7 @@ When there is no plan file, say so and stop without changing the issue: let the 
 
 ## 5. Write the body
 
-The template is the one of the type the issue is moving to, or else of the type of the crew label it carries. When neither has a template, or its file is missing, there is none.
+The template is the one of the type the issue is moving to, or else of the type whose label the issue carries. When there is no such type, or its file is missing, there is none.
 
 1. Read the template and drop its YAML frontmatter and its guidance comments.
 2. Each template heading takes the plan's section of the same name, copied verbatim with its subsections. Drop a template section the plan does not have.
@@ -56,15 +76,15 @@ When the issue's body is not empty, post it as a comment first: a first line say
 ## 7. Update the issue
 
 1. When a label was given and the repository lacks it, create it: check with `gh label list --limit 1000 --json name`, ignoring case, then `gh label create "<label>"`. Never pass `--force`. An error saying the label already exists counts as the label being present.
-2. Run one `gh issue edit <number> --body-file <file>`. When a label was given, add `--add-label "<label>"` and a `--remove-label` for every other crew label the issue carries. Labels that are not crew's stay.
+2. Run one `gh issue edit <number> --body-file <file>`. When a label was given, add `--add-label "<label>"` and a `--remove-label` for every other one of crew's labels the issue carries. Other labels stay.
 
-A stage's label makes crew take the issue at its next poll and run unattended. That is what the user asked for by passing it, so do not ask again.
+A label a rule takes makes crew take the issue at its next poll and run unattended. That is what the user asked for by passing it, so do not ask again.
 
 When a `gh` command fails, report its error text and stop. Do not retry.
 
-## 8. Run the repository's prompt
+## 8. Move the issue on
 
-Only when no label was given and the config has `prompts.update_issue_plan`. Replace each field with the issue's value:
+Only when no label was given. The prompt below moves a brainstormed idea on. Replace each field with the issue's value:
 
 | Field | Value |
 | --- | --- |
@@ -73,8 +93,12 @@ Only when no label was given and the config has `prompts.update_issue_plan`. Rep
 | `{{.Issue.Title}}` | the issue's title |
 | `{{.Issue.URL}}` | the issue's URL |
 
-Follow the filled prompt as if the user had typed it as their next message in this session. It is the user's own instruction, from their repository's config. Run every command it gives, invoke every skill or slash command it names, and stop where it says to stop. Add no checks, label changes or questions of your own.
+```text
+Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's promote brainstorm rule hands it to triage at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
+```
+
+Follow the filled prompt as if the user had typed it as their next message in this session. Run every command it gives, and stop where it says to stop. Add no checks, label changes or questions of your own.
 
 ## 9. Report
 
-Print the issue's link, the plan file's path, the link to the comment with the old body when one was posted, and the label change when there was one, or what `prompts.update_issue_plan` did.
+Print the issue's link, the plan file's path, the link to the comment with the old body when one was posted, and the label change when there was one, or what the prompt in step 8 did.

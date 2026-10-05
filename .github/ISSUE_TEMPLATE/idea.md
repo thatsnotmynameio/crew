@@ -1,6 +1,6 @@
 ---
 name: Idea
-about: An idea to brainstorm later. crew leaves it alone until it gets a stage's label.
+about: An idea to brainstorm later. crew leaves it alone until it gets a label one of crew's rules takes.
 labels: ["crew:brainstorm:ready"]
 ---
 
