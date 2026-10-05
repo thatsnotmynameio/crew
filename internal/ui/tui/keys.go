@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -10,10 +12,12 @@ import (
 // halves centres the help overlay.
 const halves = 2 // the overlay's offset is half the room left around it
 
-// keyMap holds the view's keys (R19 to R22, KTD11). None of them acts
-// outside crew's own process.
+// keyMap holds the view's keys (R19 to R22, KTD11; KTD12 of #151). None
+// of them acts outside crew's own process, and none is a mouse event
+// (R9 of #151).
 type keyMap struct {
-	stop, focus, back, up, down, pageUp, pageDown, top, bottom, left, right, help key.Binding
+	stop, focus, back, bots, events, esc, enter                key.Binding
+	up, down, pageUp, pageDown, top, bottom, left, right, help key.Binding
 }
 
 // newKeyMap returns the view's key bindings.
@@ -22,20 +26,24 @@ func newKeyMap() keyMap {
 		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "stop")),
 		focus:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus")),
 		back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus back")),
-		up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "scroll up")),
-		down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "scroll down")),
+		bots:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bots")),
+		events:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "events")),
+		esc:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "board")),
+		enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open card")),
+		up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "card or events up")),
+		down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "card or events down")),
 		pageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
 		pageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdown", "page down")),
 		top:      key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "top")),
 		bottom:   key.NewBinding(key.WithKeys("end"), key.WithHelp("end", "bottom")),
-		left:     key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "board or bots left")),
-		right:    key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "board or bots right")),
+		left:     key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "card or bots left")),
+		right:    key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "card or bots right")),
 		help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	}
 }
 
 // key handles a key press: the stop keys as before (KTD7), the help
-// overlay, focus and scrolling.
+// overlay, then focus, the highlight and scrolling (KTD12 of #151).
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.stop):
@@ -47,27 +55,12 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cfg.Stop()
 	case key.Matches(msg, m.keys.help):
 		m.help = !m.help
-	case key.Matches(msg, m.keys.focus):
-		m.focus = (m.focus + 1) % (focusEvents + 1)
-	case key.Matches(msg, m.keys.back):
-		m.focus = (m.focus + focusEvents) % (focusEvents + 1)
-	case key.Matches(msg, m.keys.left):
-		m = m.scrollSideways(-1)
-	case key.Matches(msg, m.keys.right):
-		m = m.scrollSideways(1)
+	case key.Matches(msg, m.keys.esc):
+		m = m.escaped()
 	default:
-		m = m.scrolled(msg)
+		m = m.navigated(msg)
 	}
 	return m, nil
-}
-
-// scrollSideways returns m with the Bots cards moved delta cards while
-// Bots has focus, else the board moved delta columns (R9, KTD11).
-func (m Model) scrollSideways(delta int) Model {
-	if m.focus == focusBots {
-		return m.scrollBots(delta)
-	}
-	return m.scrollBoard(delta)
 }
 
 // scrollBots returns m with the Bots cards moved delta cards sideways, as
@@ -77,15 +70,6 @@ func (m Model) scrollSideways(delta int) Model {
 func (m Model) scrollBots(delta int) Model {
 	m.botsOffset = m.botsLayout().offset + delta
 	m.botsOffset = m.botsLayout().offset
-	return m
-}
-
-// scrollBoard returns m with the board moved delta columns sideways, as
-// far as its columns allow: the layout clamps the offset (KTD9).
-func (m Model) scrollBoard(delta int) Model {
-	cards := m.cards()
-	m.boardOffset = m.boardLayout(cards).offset + delta
-	m.boardOffset = m.boardLayout(cards).offset
 	return m
 }
 
@@ -142,21 +126,37 @@ func (m Model) keyHelp() string {
 	}
 	h := m.helper()
 	h.SetWidth(m.width)
-	scroll := key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "scroll"))
-	board := key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "board/bots"))
-	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, scroll, board, m.keys.help})
+	move := key.NewBinding(key.WithKeys("left", "right", "up", "down"), key.WithHelp("←→↑↓", "move"))
+	open := key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open"))
+	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, move, open, m.keys.help})
 }
 
-// helpOverlay draws every key in a box over the middle of view (R20).
+// helpOverlay draws every key in a box over the middle of view (R20), and
+// what a card's labelled rows mean (R12, KTD12 of #151).
 func (m Model) helpOverlay(view string) string {
 	groups := [][]key.Binding{
-		{m.keys.stop, m.keys.help},
-		{m.keys.focus, m.keys.back},
-		{m.keys.up, m.keys.down, m.keys.pageUp, m.keys.pageDown, m.keys.top, m.keys.bottom},
-		{m.keys.left, m.keys.right},
+		{m.keys.stop, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
+		{m.keys.up, m.keys.down, m.keys.left, m.keys.right, m.keys.enter},
+		{m.keys.pageUp, m.keys.pageDown, m.keys.top, m.keys.bottom},
 	}
-	box := m.styles.helpBox.Render(m.styles.title.Render("Keys") + "\n\n" + m.helper().FullHelpView(groups))
+	title := m.styles.title.Render
+	box := m.styles.helpBox.Render(title("Keys") + "\n\n" + m.helper().FullHelpView(groups) +
+		"\n\n" + title("Cards") + "\n\n" + m.cardsHelp())
 	x := max((lipgloss.Width(view)-lipgloss.Width(box))/halves, 0)
 	y := max((lipgloss.Height(view)-lipgloss.Height(box))/halves, 0)
 	return lipgloss.NewCompositor(lipgloss.NewLayer(view), lipgloss.NewLayer(box).X(x).Y(y).Z(1)).Render()
+}
+
+// cardsHelp says what each labelled row of a board card means (R12, KTD12
+// of #151).
+func (m Model) cardsHelp() string {
+	labels := []string{"run", "bots", "via"}
+	meanings := []string{
+		"the issue's actions and how long each has run",
+		"the bots its running actions act as",
+		"the queue its actions run in",
+	}
+	s := m.styles
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		s.helpKey.Render(strings.Join(labels, "\n")), " ", s.helpAction.Render(strings.Join(meanings, "\n")))
 }

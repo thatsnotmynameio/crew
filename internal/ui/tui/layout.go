@@ -109,7 +109,7 @@ func (m Model) rows(b budget) []string {
 	out = append(out, "", m.rule(botsTitle, summary, m.width, m.focus == focusBots))
 	out = append(out, bots...)
 	summary, board := m.board(b.cards)
-	out = append(out, "", m.rule("Board", summary, m.width, false))
+	out = append(out, "", m.rule("Board", summary, m.width, m.focus == focusBoard))
 	out = append(out, board...)
 	out = append(out, "")
 	out = append(out, m.band(b.events)...)

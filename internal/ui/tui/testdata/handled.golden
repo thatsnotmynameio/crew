@@ -9,11 +9,11 @@ Bots ─────────────────────────
  │ ⠋ #1 implement/code +1         │
  ╰────────────────────────────────╯
 
-Board ───────────────────────────────────────────────────────────────── 3 issues
+▸ Board ─────────────────────────────────────────────────────────────── 3 issues
  implement                  review                     Handled 4 · $19.86       
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
- │ #1 Add login form     │  │ #2 Fix the flaky str… │  │ #6 Drop the old flag  │
+ │ ▸ #1 Add login form   │  │ #2 Fix the flaky str… │  │ #6 Drop the old flag  │
  │ run  ⠋ code 5m +1     │  │ run  ○ check waiting  │  │ ■ given up            │
  │ bots ■ you            │  │ bots none             │  │ × move to ready to r… │
  │ via  default          │  │ via  clerk            │  │ implement 5m00s       │
@@ -44,4 +44,4 @@ Queues ─── 2 of 3 busy   Events ──────────────
                           14:29:50 poll: listed 2 issues, took 1
                           14:29:50 review took #2 "Fix the flaky stream test" (…
 
-q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
+q stop · tab focus · ←→↑↓ move · enter open · ? help

@@ -18,11 +18,11 @@ func cardOf(t *testing.T, board, ref string) []string {
 	t.Helper()
 	rows := strings.Split(board, "\n")
 	for i, l := range rows {
-		lead, _, found := strings.Cut(l, "│ "+ref+" ")
-		if !found || i == 0 || i+cardRows-1 > len(rows) {
+		at, _ := nextCard(l, ref+" ")
+		if at < 0 || i == 0 || i+cardRows-1 > len(rows) {
 			continue
 		}
-		x := len([]rune(lead))
+		x := len([]rune(l[:at]))
 		top := []rune(rows[i-1])
 		end := x + slices.Index(top[x:], '╮')
 		card := make([]string, 0, cardRows)
@@ -36,7 +36,7 @@ func cardOf(t *testing.T, board, ref string) []string {
 }
 
 // faceOf returns the text inside ref's first card on board, a row per
-// line, without its border or trailing spaces.
+// line, without its border, the highlight's marker or trailing spaces.
 func faceOf(t *testing.T, board, ref string) []string {
 	t.Helper()
 	card := cardOf(t, board, ref)
@@ -45,6 +45,7 @@ func faceOf(t *testing.T, board, ref string) []string {
 		inner := strings.TrimSuffix(strings.TrimPrefix(r, "│ "), "│")
 		out = append(out, strings.TrimRight(inner, " "))
 	}
+	out[0] = strings.TrimPrefix(out[0], focusMark)
 	return out
 }
 
@@ -144,12 +145,15 @@ func TestABotsMarkTakesItsAvatarColour(t *testing.T) {
 }
 
 // Covers R6 of #151: a card's border is strong while crew runs its issue,
-// and subtle while it waits or is idle.
+// and subtle while it waits or is idle. The highlight sits on a card
+// below them, so their own borders show.
 func TestACardsBorderIsStrongOnlyWhileItsIssueRuns(t *testing.T) {
 	h := newHarness(t, 120)
 	u := runningSnapshot()
 	u.Snapshot.Bots = nil
+	u.Snapshot.Board = append(u.Snapshot.Board, labeled(twenty, "ready"))
 	h.send(updateMsg(u))
+	h.send(downKey)
 
 	s := h.current().styles
 	top := "╭" + strings.Repeat("─", maxColumn-2) + "╮"
@@ -158,7 +162,8 @@ func TestACardsBorderIsStrongOnlyWhileItsIssueRuns(t *testing.T) {
 	}
 
 	h = newHarness(t, 120)
-	h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "ready"))))
+	h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "ready"), labeled(twenty, "ready"))))
+	h.send(downKey)
 	if raw := h.raw(); !strings.Contains(raw, s.subtle.Render(top)) || strings.Contains(raw, s.strongAccent.Render(top)) {
 		t.Errorf("an idle card's border is not subtle:\n%s", h.view())
 	}
@@ -172,6 +177,7 @@ func TestACardsTitleIsCleanAndCut(t *testing.T) {
 	title := "Fix \x1b[31mred\x1b[0m output in the parser of every config file"
 	u.Snapshot.Issues[0].Issue.Title, u.Snapshot.Board[0].Issue.Title = title, title
 	h.send(updateMsg(u))
+	h.send(rightKey)
 
 	if strings.Contains(h.raw(), "\x1b[31m") {
 		t.Error("the title's escape sequence reaches the terminal")

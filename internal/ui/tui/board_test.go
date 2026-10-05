@@ -143,7 +143,7 @@ func cardColumns(board, ref string) []int {
 	for l := range strings.SplitSeq(board, "\n") {
 		rest, x := l, 0
 		for {
-			i := strings.Index(rest, "│ "+ref+" ")
+			i, _ := nextCard(rest, ref+" ")
 			if i < 0 {
 				break
 			}
@@ -319,7 +319,7 @@ func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 
 	view := checkFits(t, h, 80, 24)
 	board := boardOf(t, view)
-	contains(t, board, "│ #1 Bug", "more")
+	contains(t, board, "│ ▸ #1 Bug", "more")
 	if strings.Contains(board, "#8 ") {
 		t.Errorf("the newest card shows while the column is cut:\n%s", board)
 	}

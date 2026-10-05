@@ -9,11 +9,11 @@ Bots ─────────────────────────
  │ ⠋ #42 implement/code           │
  ╰────────────────────────────────╯
 
-Board ────────────────────────────────────────────────────────────────── 1 issue
+▸ Board ──────────────────────────────────────────────────────────────── 1 issue
  implement                  review                     Handled 0                
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  ╭───────────────────────╮                                                      
- │ #42 Add login form    │                                                      
+ │ ▸ #42 Add login form  │                                                      
  │ run  ⠋ code 1h15m     │                                                      
  │ bots ■ you            │                                                      
  │ via  default          │                                                      
@@ -26,4 +26,4 @@ Queues ─── 1 of 2 busy   Events ──────────────
                          
                          
 
-q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
+q stop · tab focus · ←→↑↓ move · enter open · ? help

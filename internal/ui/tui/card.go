@@ -37,18 +37,27 @@ func framed(rows []string, width int, edge lipgloss.Style) []string {
 }
 
 // cardFace is c's card, width cells wide: its Handled entry's, or its live
-// issue's (KTD2, KTD3 of #151).
-func (m Model) cardFace(c card, width int) []string {
+// issue's, in the highlight's border with ▸ before its reference while lit
+// (KTD2, KTD3, KTD5 of #151).
+func (m Model) cardFace(c card, width int, lit bool) []string {
+	var rows []string
+	var edge lipgloss.Style
 	if c.entry != nil {
-		return m.handledCard(*c.entry, width)
+		rows, edge = m.handledCard(*c.entry, width)
+	} else {
+		rows, edge = m.liveCard(c, width)
 	}
-	return m.liveCard(c, width)
+	if lit {
+		rows[0] = m.styles.highlight.Render(focusMark) + rows[0]
+		edge = m.styles.highlight
+	}
+	return framed(rows, width, edge)
 }
 
-// liveCard is c's card, width cells wide: its reference and title, then
-// its run, bots and via rows, in a border strong while crew runs its
-// issue (R1 to R6, KTD1, KTD2).
-func (m Model) liveCard(c card, width int) []string {
+// liveCard is the rows of c's card, width cells wide: its reference and
+// title, then its run, bots and via rows, and its border, strong while
+// crew runs its issue (R1 to R6, KTD1, KTD2).
+func (m Model) liveCard(c card, width int) ([]string, lipgloss.Style) {
 	s := m.styles
 	value := width - cardFrame - cardLabel - 1
 	rows := []string{
@@ -61,7 +70,7 @@ func (m Model) liveCard(c card, width int) []string {
 	if c.held && c.view.Claim == core.ClaimRunning {
 		edge = s.strongAccent
 	}
-	return framed(rows, width, edge)
+	return rows, edge
 }
 
 // labelled is value after its row's label, muted and padded so the values
@@ -145,10 +154,10 @@ func (m Model) cardQueue(c card) string {
 	return m.styles.text.Render(clean(c.view.Queue))
 }
 
-// handledCard is e's card, width cells wide: its reference and title, how
-// it ended, its first reason, and its rule and time, in a border of its
-// group's colour (R8, KTD3 of #151).
-func (m Model) handledCard(e core.HandledView, width int) []string {
+// handledCard is the rows of e's card, width cells wide: its reference
+// and title, how it ended, its first reason, and its rule and time, and
+// its border, in its group's colour (R8, KTD3 of #151).
+func (m Model) handledCard(e core.HandledView, width int) ([]string, lipgloss.Style) {
 	s := m.styles
 	status, edge := m.handledStatus(e)
 	rows := []string{
@@ -157,7 +166,7 @@ func (m Model) handledCard(e core.HandledView, width int) []string {
 		m.firstReason(e, width-cardFrame),
 		s.muted.Render(handledRule(e)),
 	}
-	return framed(rows, width, edge)
+	return rows, edge
 }
 
 // handledStatus is how e ended, grouped as its pill groups it, and its

@@ -53,12 +53,13 @@ type Config struct {
 	Warnings []string
 }
 
-// focus is the section the scroll keys move (R21).
+// focus is the section the arrow keys move (R21; KTD4 of #151).
 type focus int
 
-// The sections that take focus, in tab order.
+// The sections that take focus, in tab order. The board is the zero
+// value, so the view opens on it (R10 of #151).
 const (
-	focusNone focus = iota
+	focusBoard focus = iota
 	focusBots
 	focusEvents
 )
@@ -89,6 +90,8 @@ type Model struct {
 	// eventsOffset counts the Events rows scrolled back from the newest
 	// (KTD11).
 	eventsOffset int
+	// sel is the highlighted card (KTD5 of #151).
+	sel selection
 
 	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).
@@ -155,14 +158,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updated takes in a new snapshot: it starts the slides of the cards that
-// moved and sends the notifications of the rules that ended, before it
-// waits for the next update, so the read that finds the channel closed, and
-// with it the quit, comes after them (KTD6, KTD10).
+// updated takes in a new snapshot: it repairs the highlight, starts the
+// slides of the cards that moved and sends the notifications of the rules
+// that ended, before it waits for the next update, so the read that finds
+// the channel closed, and with it the quit, comes after them (KTD6, KTD10;
+// KTD5 of #151).
 func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	m.snap = u.Snapshot
 	m.at = m.cfg.Now()
-	slide := m.memory.moved(m.cards())
+	cards := m.cards()
+	m.sel = m.sel.repaired(cards)
+	slide := m.memory.moved(cards)
 	notes := m.notifications()
 	if len(notes) == 0 {
 		return m, tea.Batch(slide, m.wait())

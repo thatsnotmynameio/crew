@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -75,7 +76,8 @@ func TestA51RowWindowShrinksEventsToTheirMinimum(t *testing.T) {
 }
 
 // Covers R21 and KTD11: tab focuses Bots then Events; the arrows scroll
-// the focused Events; end follows the newest event again.
+// the focused Events; end follows the newest event again; a third tab
+// gives the board its focus back (KTD4 of #151).
 func TestFocusAndScrollMoveEvents(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 32})
@@ -97,8 +99,8 @@ func TestFocusAndScrollMoveEvents(t *testing.T) {
 	contains(t, h.view(), "listed 30 issues")
 
 	h.send(tab)
-	if v := h.view(); strings.Contains(v, "▸ Bots") || strings.Contains(v, "▸ Events") {
-		t.Errorf("a third tab left a section focused:\n%s", v)
+	if v := h.view(); strings.Contains(v, "▸ Bots") || strings.Contains(v, "▸ Events") || !strings.Contains(v, "▸ Board") {
+		t.Errorf("a third tab did not give the board its focus back:\n%s", v)
 	}
 	h.send(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	contains(t, h.view(), "▸ Events")
@@ -137,14 +139,24 @@ func TestANarrowShortWindowRendersWithoutPanicking(t *testing.T) {
 	}
 }
 
-// Covers R20: ? shows the keys over the view and hides them again.
+// Covers R20, and R12 and KTD12 of #151: ? shows every key over the view,
+// and what a card's run, bots and via rows mean, within the window; ?
+// hides them again, and so does esc.
 func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(runningSnapshot()))
 
 	h.send(helpKey)
-	view := h.view()
-	contains(t, view, "Keys", "shift+tab", "pgdown", "board or bots left")
+	view := checkFits(t, h, 80, harnessRows)
+	contains(t, view, "Keys", "shift+tab", "pgdown", "card or bots left", "Cards",
+		"run  the issue's actions and how long each has run",
+		"bots the bots its running actions act as",
+		"via  the queue its actions run in")
+	for _, binding := range []string{`enter +open card`, `esc +board`, `b +bots`, `e +events`} {
+		if !regexp.MustCompile(`\b` + binding + `\b`).MatchString(view) {
+			t.Errorf("the keys lack %q:\n%s", binding, view)
+		}
+	}
 	if !strings.HasPrefix(view, "crew ╱") {
 		t.Errorf("the overlay hid the header:\n%s", view)
 	}
@@ -152,6 +164,22 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 	h.send(helpKey)
 	if strings.Contains(h.view(), "pgdown") {
 		t.Errorf("a second ? left the keys showing:\n%s", h.view())
+	}
+	h.send(helpKey)
+	h.send(escKey)
+	if strings.Contains(h.view(), "pgdown") {
+		t.Errorf("esc left the keys showing:\n%s", h.view())
+	}
+}
+
+// Covers KTD12 of #151: the short key help names the keys of the board.
+func TestTheKeyHelpNamesTheBoardsKeys(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(updateMsg(runningSnapshot()))
+
+	rows := rowsOf(h.view())
+	if got, want := rows[len(rows)-1], "q stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
+		t.Errorf("key help = %q, want %q", got, want)
 	}
 }
 

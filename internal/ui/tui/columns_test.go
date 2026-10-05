@@ -19,6 +19,12 @@ func handling(entries ...core.HandledView) engine.Update {
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Handled: entries}}}
 }
 
+// besideIdle is u with an idle issue in the board's first column, which
+// takes the highlight, so the other cards show their own borders.
+func besideIdle(u engine.Update) engine.Update {
+	return onBoard(u, labeled(twenty, "ready"))
+}
+
 // topBorder is the top row of a card width cells wide.
 func topBorder(width int) string { return "╭" + strings.Repeat("─", width-2) + "╮" }
 
@@ -30,13 +36,12 @@ func columnRefs(board string, col int) []string {
 	for l := range strings.SplitSeq(board, "\n") {
 		rest, x := l, 0
 		for {
-			i := strings.Index(rest, "│ #")
+			i, ref := nextCard(rest, "#")
 			if i < 0 {
 				break
 			}
 			x += len([]rune(rest[:i]))
 			if x/step == col {
-				ref, _, _ := strings.Cut(rest[i+len("│ "):], " ")
 				out = append(out, ref)
 			}
 			rest, x = rest[i+1:], x+1
@@ -50,8 +55,8 @@ func columnRefs(board string, col int) []string {
 // more, then its rule and time, in an error border.
 func TestAE7AHandledCardReadsItsGroupAndFirstReason(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(handling(
-		failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1", "code", "prompt did not render"))))
+	h.send(updateMsg(besideIdle(handling(
+		failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1", "code", "prompt did not render")))))
 	board := boardOf(t, h.view())
 
 	want := []string{"#5 Parse the config once", "▲ needs attention", "× tests failed: exited 1 +1", "implement 10m00s"}
@@ -102,7 +107,7 @@ func TestEachHandledGroupReadsItsStatusInItsColour(t *testing.T) {
 		},
 	} {
 		h := newHarness(t, 120)
-		h.send(updateMsg(handling(tt.entry)))
+		h.send(updateMsg(besideIdle(handling(tt.entry))))
 		board := boardOf(t, h.view())
 
 		if got := faceOf(t, board, tt.entry.Issue.Ref); !slices.Equal(got, tt.face) {

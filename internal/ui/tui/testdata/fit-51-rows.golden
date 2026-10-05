@@ -9,11 +9,11 @@ Bots ─────────────────────────
  │ ⠋ #1 implement/code +1         │
  ╰────────────────────────────────╯
 
-Board ───────────────────────────────────────────────────────────────── 2 issues
+▸ Board ─────────────────────────────────────────────────────────────── 2 issues
  implement                  review                     Handled 10 · $70.05      
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
- │ #1 Add login form     │  │ #2 Fix the flaky str… │  │ #11 Parse the config… │
+ │ ▸ #1 Add login form   │  │ #2 Fix the flaky str… │  │ #11 Parse the config… │
  │ run  ⠋ code 5m +1     │  │ run  ○ check waiting  │  │ ▲ needs attention     │
  │ bots ■ you            │  │ bots none             │  │ × lfg failed: exited… │
  │ via  default          │  │ via  clerk            │  │ implement 40m00s      │
@@ -48,4 +48,4 @@ Queues ─── 2 of 3 busy   Events ──────────────
  default  ■□  1/2         14:29:58 poll: listed 29 issues, took 0
  clerk    ■   1/1         14:29:59 poll: listed 30 issues, took 0
 
-q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
+q stop · tab focus · ←→↑↓ move · enter open · ? help

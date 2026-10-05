@@ -162,3 +162,18 @@ func contains(t *testing.T, view string, wants ...string) {
 		}
 	}
 }
+
+// nextCard returns the byte index in l of the left border of the first
+// card whose first row starts with prefix, after the highlight's marker
+// when it has one, and its reference; -1 when l has none.
+func nextCard(l, prefix string) (int, string) {
+	i, rest := strings.Index(l, "│ "+prefix), "│ "
+	if j := strings.Index(l, "│ "+focusMark+prefix); j >= 0 && (i < 0 || j < i) {
+		i, rest = j, "│ "+focusMark
+	}
+	if i < 0 {
+		return -1, ""
+	}
+	ref, _, _ := strings.Cut(l[i+len(rest):], " ")
+	return i, ref
+}

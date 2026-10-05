@@ -90,7 +90,10 @@ func sevenBugs() engine.Update {
 // Covers AE3 of #151: a column of seven issues in a window with room for
 // three cards shows three cards and "+4 more". The whole view is as tall
 // as eventful's, as Queues' "none" row fits beside Events; the window
-// takes Events' 3 rows and two cards off it.
+// takes Events' 3 rows and two cards off it. ↓ on the third card
+// highlights the fourth, and the column scrolls to show cards two to
+// four, "+4 more" still counting the cards not shown; ↑ then keeps them
+// (KTD6 of #151).
 func TestAColumnOfSevenWithRoomForThreeShowsThreeAndFourMore(t *testing.T) {
 	height := eventfulRows - (scrollRows - minScroll) - 2*cardRows
 	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
@@ -99,8 +102,24 @@ func TestAColumnOfSevenWithRoomForThreeShowsThreeAndFourMore(t *testing.T) {
 
 	view := checkFits(t, h, 80, height)
 	board := boardOf(t, view)
-	contains(t, board, "│ #1 Bug", "│ #2 Bug", "│ #3 Bug", "+4 more")
+	contains(t, board, "│ ▸ #1 Bug", "│ #2 Bug", "│ #3 Bug", "+4 more")
 	if strings.Contains(board, "#4 ") || strings.Contains(view, "lines cut") {
 		t.Errorf("at %d rows the column shows a fourth card or the view was cut:\n%s", height, view)
+	}
+
+	h.send(downKey)
+	h.send(downKey)
+	h.send(downKey)
+	board = boardOf(t, checkFits(t, h, 80, height))
+	wantLit(t, h, "#4", 0)
+	contains(t, board, "│ #2 Bug", "│ #3 Bug", "+4 more")
+	if strings.Contains(board, "#1 ") || strings.Contains(board, "#5 ") {
+		t.Errorf("the column does not show cards two to four:\n%s", board)
+	}
+
+	h.send(upKey)
+	wantLit(t, h, "#3", 0)
+	if got := boardOf(t, h.view()); strings.Contains(got, "#1 ") || !strings.Contains(got, "│ #4 Bug") {
+		t.Errorf("↑ to a card already shown scrolled the column:\n%s", got)
 	}
 }

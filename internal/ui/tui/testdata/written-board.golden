@@ -9,11 +9,11 @@ Bots ─────────────────────────
 
 
 
-Board ───────────────────── 3 issues · 1 empty column not shown · board not read
+▸ Board ─────────────────── 3 issues · 1 empty column not shown · board not read
  ideas                      bugs                       done                     
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
- │ #21 Retry the poll    │  │ #21 Retry the poll    │  │ #22 Typo in help      │
+ │ ▸ #21 Retry the poll  │  │ #21 Retry the poll    │  │ #22 Typo in help      │
  │ run  ○ idle           │  │ run  ○ idle           │  │ run  ○ idle           │
  │ bots none             │  │ bots none             │  │ bots none             │
  │ via  none             │  │ via  none             │  │ via  none             │
@@ -32,4 +32,4 @@ Queues ─── 0 of 0 busy   Events ──────────────
                          
                          
 
-q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
+q stop · tab focus · ←→↑↓ move · enter open · ? help

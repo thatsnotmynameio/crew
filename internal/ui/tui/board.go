@@ -157,7 +157,7 @@ func (m Model) boardLayout(cards []card) boardLayout {
 }
 
 // board is the Board section: its summary and its rows, with at most
-// limit cards a column; limit < 0 means no limit (KTD8).
+// limit cards a column, limit at least 1 (KTD8).
 func (m Model) board(limit int) (string, []string) {
 	cards := m.cards()
 	l := m.boardLayout(cards)
@@ -185,32 +185,46 @@ func (m Model) boardSummary(cards []card, l boardLayout) string {
 }
 
 // boardRows draws the column names, their underlines with the slides, then
-// the cards, cardRows rows each, then "+N more" where a column has more
-// than limit.
+// the cards, cardRows rows each, at most limit a column, the highlighted
+// column from its first shown card, then "+N more" where a column has
+// cards not shown (KTD6 of #151).
 func (m Model) boardRows(l boardLayout, cards []card, limit int) []string {
-	byColumn := make([][]card, len(l.columns))
-	for _, c := range cards {
-		if i := slices.Index(l.columns, c.column); i >= 0 {
-			byColumn[i] = append(byColumn[i], c)
-		}
-	}
+	columns := byColumn(cards)
+	all := make([][]card, len(l.columns))
 	tallest := 0
-	for _, cs := range byColumn {
-		tallest = max(tallest, len(cs))
+	for i, c := range l.columns {
+		all[i] = columns[c]
+		tallest = max(tallest, len(all[i]))
 	}
 	shownCards := min(tallest, limit)
-	out := []string{m.boardRow(l, m.columnNames(l, byColumn), true), m.underline(l)}
+	shown := m.shownCards(l, all, shownCards)
+	out := []string{m.boardRow(l, m.columnNames(l, all), true), m.underline(l)}
 	for k := range shownCards {
-		out = append(out, m.cardRows(l, byColumn, k)...)
+		out = append(out, m.cardRows(l, shown, k)...)
 	}
 	if shownCards < tallest {
 		more := make([]string, len(l.columns))
-		for i, cs := range byColumn {
-			if n := len(cs) - shownCards; n > 0 {
+		for i, cs := range all {
+			if n := len(cs) - len(shown[i]); n > 0 {
 				more[i] = m.styles.muted.Render(fmt.Sprintf("+%d more", n))
 			}
 		}
 		out = append(out, m.boardRow(l, more, false))
+	}
+	return out
+}
+
+// shownCards are the n cards each drawn column shows: its first ones, or,
+// in the highlighted card's column, those from its first shown card (KTD6
+// of #151).
+func (m Model) shownCards(l boardLayout, all [][]card, n int) [][]card {
+	out := make([][]card, len(all))
+	for i, cs := range all {
+		from := 0
+		if l.columns[i] == m.sel.column && m.sel.key != "" {
+			from = shownFrom(m.sel.top, m.sel.row, len(cs), n)
+		}
+		out[i] = cs[from:min(from+n, len(cs))]
 	}
 	return out
 }
@@ -224,7 +238,8 @@ func (m Model) cardRows(l boardLayout, byColumn [][]card, k int) []string {
 	}
 	for i, cs := range byColumn {
 		if k < len(cs) {
-			for r, line := range m.cardFace(cs[k], l.width) {
+			lit := cs[k].issue.Key == m.sel.key && cs[k].column == m.sel.column
+			for r, line := range m.cardFace(cs[k], l.width, lit) {
 				cells[r][i] = line
 			}
 		}
