@@ -1,12 +1,12 @@
 # crew
 
-crew moves your GitHub issues through rules you declare in the repository. Each rule reacts to one label: crew polls for the issues and pull requests that carry it and runs the rule's actions in parallel, each one a headless Claude Code session in its own git worktree and branch. When every action ends, crew moves the issue to the rule's success label, or to its failure label with a comment saying what failed. You name every label in the rules: crew has no fixed ones.
+crew moves your GitHub issues through rules you declare in the repository. Each rule reacts to one label: crew polls for the issues and pull requests that carry it and runs the rule's actions in parallel, each one a headless Claude Code or Codex session in its own git worktree and branch. When every action ends, crew moves the issue to the rule's success label, or to its failure label with a comment saying what failed. You name every label in the rules: crew has no fixed ones.
 
 crew only runs sessions and moves labels. Opening pull requests, reviewing and merging are your prompts' job and yours.
 
 ## Quick start
 
-On macOS or Linux, on amd64 or arm64, with `gh` and `claude` on your `PATH` and logged in, install the latest release into `/usr/local/bin`. The command checks the download against the release's `checksums.txt`, and `sudo` asks for your password:
+On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your `PATH` and logged in, install the latest release into `/usr/local/bin`. The command checks the download against the release's `checksums.txt`, and `sudo` asks for your password:
 
 ```sh
 (
@@ -51,7 +51,7 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | Path | What it does |
 | --- | --- |
 | `cmd/crew` | The `crew` binary. |
-| `internal/` | crew's engine, its adapters (`github`, `claude`, `git`), its TUI, and `bots` for `crew bots create`. See `AGENTS.md`. |
+| `internal/` | crew's engine, its adapters (`github`, `claude`, `codex`, `git`), its TUI, and `bots` for `crew bots create`. See `AGENTS.md`. |
 | `.crew/config.example.yaml` | crew's own rules: crew runs on this repository too, with rules for features, bugs, refinement of brainstormed features (splitting a large plan into sub-issues, then finding their dependencies) and the hand-offs between them, and labels that start with `crew:`. A split plan's issue stays open as the parts' parent and leaves crew, so crew reports its move to done as given up; that is how a split ends. Copy it to `.crew/config.yaml`, which git ignores, to run crew here. |
 | `schema/config.schema.json` | The JSON Schema of `.crew/config.yaml`, for editors that complete and explain its keys. |
 | `docs/` | Plans (`docs/plans/`), ideation and documented solutions (`docs/solutions/`). |

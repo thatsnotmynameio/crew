@@ -60,10 +60,10 @@ func assertErr(t *testing.T, err error, wants ...string) {
 // R13: a harness name no adapter has names the agent's key.
 func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
 	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())})
-	a := load(t, agent("codex")+rules).Agents[0]
+	a := load(t, agent("nosuch")+rules).Agents[0]
 
 	h, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
-	assertErr(t, err, "agents.developer.harness.name", `"codex"`, "the registered harness adapters are: claude")
+	assertErr(t, err, "agents.developer.harness.name", `"nosuch"`, "the registered harness adapters are: claude")
 	if h != nil {
 		t.Errorf("Harness = %v, want none", h)
 	}

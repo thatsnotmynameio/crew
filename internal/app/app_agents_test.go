@@ -88,7 +88,7 @@ func unusedAgent(name string) string {
 // action names the agent.
 func TestAnUnusedAgentOnAnUnregisteredHarnessExitsTwo(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
-	r := options(t, unusedAgent("codex"), tr, fake.NewHarness())
+	r := options(t, unusedAgent("nosuch"), tr, fake.NewHarness())
 
 	if code := app.Run(context.Background(), r.opts); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -96,7 +96,7 @@ func TestAnUnusedAgentOnAnUnregisteredHarnessExitsTwo(t *testing.T) {
 	if n := tr.listed(); n != 0 {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
-	want := `agents.idle.harness.name: no harness is named "codex"; the registered harness adapters are: fake`
+	want := `agents.idle.harness.name: no harness is named "nosuch"; the registered harness adapters are: fake`
 	if stderr := r.stderr.String(); !strings.Contains(stderr, want) {
 		t.Errorf("stderr = %q, want it to contain %q", stderr, want)
 	}
