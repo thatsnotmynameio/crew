@@ -37,8 +37,8 @@ type Invocation struct {
 	Args []string
 	// Dir is the working directory claude was started in.
 	Dir string
-	// Env holds the environment variables the invocation carried, such as
-	// GH_CONFIG_DIR.
+	// Env holds GH_CONFIG_DIR and the CREW_* variables the invocation
+	// carried; the double forwards no other variable.
 	Env map[string]string
 }
 
@@ -62,7 +62,8 @@ type ScriptFunc func(ctx context.Context, s *Session) int
 // Session is one scripted claude session.
 type Session struct {
 	// Dir is the session's working directory, where a script may write
-	// files or run git.
+	// files. A script runs in the test process, so a git command it runs
+	// there needs an environment of its own, not the test's.
 	Dir string
 	// Prompt is the prompt claude was given.
 	Prompt string
@@ -71,7 +72,8 @@ type Session struct {
 	// PermissionMode is the mode named with --permission-mode, "" when none
 	// was.
 	PermissionMode string
-	// Env holds the environment variables the invocation carried.
+	// Env holds GH_CONFIG_DIR and the CREW_* variables the invocation
+	// carried; the double forwards no other variable.
 	Env map[string]string
 	// GitHub is the fake GitHub the Claude was built with, which a script
 	// may change as a session that runs gh would; nil when it was built
