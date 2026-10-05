@@ -1,8 +1,10 @@
-// Package harness runs programs for the acceptance suite: a screen harness
-// that runs a program in a pseudo-terminal and reads its screen through a
-// terminal emulator, masks for the parts of a screen that change on every
-// run, snapshots of masked screens, and the doubles that the test binary
-// plays when it runs under another name.
+// Package harness runs programs for the acceptance suite: scenarios, each
+// running crew in a repository of its own against a fake GitHub and a fake
+// Claude Code (New); a screen harness that runs a program in a
+// pseudo-terminal and reads its screen through a terminal emulator; masks
+// for the parts of a screen that change on every run; snapshots of masked
+// screens; and the doubles that the test binary plays when it runs under
+// another name.
 package harness
 
 import (
@@ -18,7 +20,7 @@ import (
 const acceptFlag = "accept-snapshots"
 
 // Main is every test package's TestMain. When the test binary runs under
-// the name of a double (gh, claude or the probe), Main runs that double and
+// the name of a double (gh, claude, the probe or the stand-in for crew), Main runs that double and
 // exits with its code; otherwise it registers -accept-snapshots and runs
 // the tests.
 func Main(m *testing.M) {
@@ -34,8 +36,9 @@ func Main(m *testing.M) {
 // symbolic link on PATH or exec.Cmd's Args.
 func doubles() map[string]func() int {
 	return map[string]func() int{
-		probeName:  probe,
-		ghName:     client(ghName),
-		claudeName: client(claudeName),
+		probeName:   probe,
+		standInName: standIn,
+		ghName:      client(ghName),
+		claudeName:  client(claudeName),
 	}
 }
