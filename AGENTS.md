@@ -2,7 +2,7 @@
 
 Guidance for coding agents working in this repository. Claude Code reads it as `CLAUDE.md`, a symlink to this file.
 
-crew is a Go program that polls a tracker (GitHub) and moves each issue through the workflow a repository declares in `.crew/config.yaml`, running one coding-agent session (Claude Code) per action in its own git worktree. Its user is the boss, running it in their own repositories. The docs site is the reference: `docs/guide/crew.mdx` for users, `docs/develop/` for contributors.
+crew is a Go program that polls a tracker (GitHub) and moves each issue through the rules a repository declares on its labels in `.crew/config.yaml`, running one coding-agent session (Claude Code) per action in its own git worktree. Its users run it in their own repositories, where it takes the issues their code owners and bots opened. The docs site is the reference: `docs/guide/crew.mdx` for users, `docs/develop/` for contributors.
 
 ## Commands
 
@@ -32,16 +32,16 @@ pnpm docs:preview     # live preview of the docs
 
 Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
-- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace, the `shell` checker and `app.Options.Bots` (through `internal/bots`) and calls `app.Run`. `crew mates create <name>` is chosen before the flags and runs the `internal/bots` flow instead.
+- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace, the `shell` checker and `app.Options.Bots` (through `internal/bots`) and calls `app.Run`. `crew bots create <name>` is chosen before the flags and runs the `internal/bots` flow instead.
 - `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
-- `internal/crew`: the domain (states, issues, stages, actions, outcomes, failure reports, statuses).
-- `internal/config`: `.crew/config.yaml`, strict decoding, engine defaults, workflow checks; hands each adapter its section as a `port.Decode`.
-- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `BossFinder`, `LoginFinder`, `WriterReporter`, `BoardLister`, `Narrator`, `Reopener`, `UsageReporter` and `PullRequestFinder`, sentinel errors, factory types.
+- `internal/crew`: the domain (states, issues, rules with their labels and queues, actions, board columns, outcomes, failure reports, statuses).
+- `internal/config`: `.crew/config.yaml`: refuses the old keys with their replacements (`legacy.go`), strict decoding, engine defaults, one file per section (rules, agents, checks, queues, board); resolves each action's agent, check and bot; hands the tracker and each agent's harness its section as a `port.Decode`.
+- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `CodeOwnerFinder`, `LoginFinder`, `WriterReporter`, `BoardLister`, `Narrator`, `Reopener`, `UsageReporter` and `PullRequestFinder`, sentinel errors, factory types.
 - `internal/registry`: name to factory; `default.go` is the production list.
 - `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
 - `internal/proc`: the only way to start a child process (own process group, stop with deadline, kill all; `StartDetached` for the browser opener).
-- `internal/bots`: `crew mates create`, crew's own GitHub identities (private GitHub Apps): names, manifest, loopback page, GitHub API signed as the mate, the mates' files under the user config dir; `Act`, which makes the configured mates act: repository tokens renewed in private gh config directories, and the git environment of the co-author hook.
+- `internal/bots`: `crew bots create`, crew's own GitHub identities (private GitHub Apps): names, manifest, loopback page, GitHub API signed as the bot, the bots' files under the user config dir (`crew/bots`, and the older `crew/mates` read as a fallback); `Act`, which makes the configured bots act: repository tokens renewed in private gh config directories, and the git environment of the co-author hook.
 - `internal/adapter/{github,claude,git,shell}`: the adapters.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
@@ -78,7 +78,7 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
 - `AGENTS.md` and `.agents/` are the source; `CLAUDE.md`, `.claude/agents` and `.claude/skills` are symlinks to `AGENTS.md`, `.agents/agents` and `.agents/skills`. Edit the source.
 - `acceptance-tester` (`.agents/agents/acceptance-tester.md`) writes behavior tests from a plan's acceptance examples in its own worktree, without reading the implementation. It is linked into `~/.claude/agents/` to work in any repository; see `docs/guide/acceptance-tester.mdx`.
-- `cw-create-issue` (`.agents/skills/cw-create-issue/SKILL.md`) is the `/cw-create-issue` skill: it creates a GitHub issue with the label and filled issue template of a stage or extra label from `.crew/config.yaml`. Its directory is linked into `~/.claude/skills/` to work in any repository; see `docs/guide/create-issue.mdx`.
-- `cw-update-issue-plan` (`.agents/skills/cw-update-issue-plan/SKILL.md`) is the `/cw-update-issue-plan` skill: it copies the plan file the session's `ce-brainstorm` or `ce-plan` wrote into the body of the issue the session is working on, keeps the old body in a comment, and moves the issue to the label given or, without one, runs `prompts.update_issue_plan`. Linked and documented like `cw-create-issue`.
-- `cw-brainstorm` (`.agents/skills/cw-brainstorm/SKILL.md`) is the `/cw-brainstorm` skill: it fills the top-level `prompts.brainstorm` of `.crew/config.yaml` with an issue and runs it in the user's session. crew checks `prompts` at load but never runs them. Linked and documented like `cw-create-issue`.
+- `cw-create-issue` (`.agents/skills/cw-create-issue/SKILL.md`) is the `/cw-create-issue` skill: it creates a GitHub issue with the label and filled issue template of one of the issue types its own table lists. The `cw-*` skills are this repository's own aids, not crew defaults: they do not read `.crew/config.yaml`, and their types, labels and prompts, this repository's, live in the skill files. Its directory is linked into `~/.claude/skills/` to work in any repository; see `docs/guide/create-issue.mdx`.
+- `cw-update-issue-plan` (`.agents/skills/cw-update-issue-plan/SKILL.md`) is the `/cw-update-issue-plan` skill: it copies the plan file the session's `ce-brainstorm` or `ce-plan` wrote into the body of the issue the session is working on, keeps the old body in a comment, and moves the issue to the label given or, without one, runs the prompt it holds, which moves it from `crew:brainstorm:in progress` to `crew:brainstorm:done`. Linked and documented like `cw-create-issue`.
+- `cw-brainstorm` (`.agents/skills/cw-brainstorm/SKILL.md`) is the `/cw-brainstorm` skill: it fills the brainstorm prompt it holds with an issue and runs it in the user's session. Linked and documented like `cw-create-issue`.
 - **Reports:** Write every report, summary, or handoff to the user through the `ce-noslop` skill. This applies when you are the top-level agent writing to the user, not when you are a subagent reporting to its caller. Do not apply it to code, config, verbatim quotes, or text the user asked to post as written.

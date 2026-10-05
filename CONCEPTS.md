@@ -2,37 +2,49 @@
 
 > Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
 
-## Workflow
+## Rules
 
-### Boss
+### Code owner
 
-The person who runs crew in their own repositories, writes its workflow and checks, and reviews the issues crew moves.
+A user whose issues crew takes: every user the catch-all `*` rule of the repository's CODEOWNERS names, or crew's `gh` login when it names none.
 
-crew finds the boss in the repository's CODEOWNERS: every user its catch-all `*` rule names, or crew's `gh` login when it names none. crew takes the issues the boss or a configured mate opened.
+crew takes the issues a code owner or a configured bot opened. A code owner is not the repository's owner on GitHub. crew's messages call the `gh` login crew runs as "you", code owner or not.
 
-### Stage
+### Rule
 
-One step of the workflow: it takes the items of its kind that carry its label, issues by default or pull requests when it declares them, runs its actions on each, and moves each to its success state when every action succeeded, or to its failure state when any failed.
+What crew does with the items that carry one label: it takes the items of its kind that carry its ready label, issues by default or pull requests when it declares them, moves each to its running label, runs its actions on each, and moves each to its success label when every action succeeded, or to its failure label when any failed.
 
-A stage can be hidden from the live view's board. A hidden stage still takes, runs and moves issues like any other; only what the live view draws for it, and which handled entry it leaves, change.
+Rules form no sequence: each reacts to its ready label alone, and the order of work comes only from how their labels chain, one rule's success label being another's ready label. Among items of equal priority, the rule later in the file takes first.
+
+### Rule without actions
+
+A rule that only moves the label: crew takes the item, moves it to the rule's running label and at once on to its success label, without a workspace or a session.
+
+It holds a slot of its queue for those two moves, never fails, sends no notification unless told to, has no column on the default board, and leaves an earlier handled entry that ended well in place.
 
 ### Action
 
-One unattended coding-agent session a stage runs on an issue, in its own workspace, together with the action's optional check.
+One unattended coding-agent session a rule runs on an item, in its own workspace, on its agent's harness, together with the action's optional check.
 
-A stage's actions run in parallel, and the stage is judged only once every one of them has ended.
+A rule's actions run in parallel, and the rule is judged only once every one of them has ended.
+
+### Agent
+
+A named harness, with its model and its optional bot, that runs the sessions of the actions that name it.
+
+Actions on different agents can run at once on different harnesses. An agent no action names is checked but never started.
 
 ### Check
 
-A shell command the boss attaches to an action, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded.
+A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded.
 
 A check runs only after a successful session, never after a failed one. A check that fails, cannot start, runs out of time or is ended by a stop fails its action, which then takes the same path as any failed action. While its check runs, the action still counts as running.
 
-### Stage run
+### Rule run
 
-One pass of an issue through one stage, from the first time crew reports the issue queued for that stage or takes it, until the next stage run of that issue starts.
+One pass of an issue through one rule, from the first time crew reports the issue queued for that rule or takes it, until the next rule run of that issue starts.
 
-An issue that is retried in the same stage starts a new stage run. A stage run belongs to one crew process: a stage run cut short by a crash is never continued, and the next one is new, even when its actions resume.
+An issue that is retried in the same rule starts a new rule run. A rule run belongs to one crew process: a rule run cut short by a crash is never continued, and the next one is new, even when its actions resume.
 
 ### Action run
 
@@ -44,70 +56,78 @@ The isolated checkout an action works in: a git worktree on its own branch, kept
 
 ### Priority
 
-The rank the tracker gives an issue, which decides first which waiting issue crew takes when a slot is free, ahead of its stage and its age. On GitHub it is the organization's issue field `Priority`, its first option the highest. An issue without one ranks after every issue that has one.
+The rank the tracker gives an issue, which decides first which waiting issue crew takes when a slot is free, ahead of its rule's place in the file and its age. On GitHub it is the organization's issue field `Priority`, its first option the highest. An issue without one ranks after every issue that has one.
 
 ### Queue
 
-A fixed share of `max_parallel_issues` that only the stages in it can use. Every stage runs in one queue: `clerk`, crew's bookkeeping queue, `default`, which gets the slots the other queues leave, or one the boss declares.
+A fixed share of `max_parallel_issues` that only the rules in it can use. Every rule runs in one queue: `default`, which gets the slots the other queues leave, or one the config declares.
 
-A queue never lends an idle slot to another queue, so a slot is guaranteed to a stage only by its queue's size.
+A queue never lends an idle slot to another queue, so a slot is guaranteed to a rule only by its queue's size.
 
 ## Live view
 
+### Board
+
+The live view's columns of labels, each holding a card for each item that carries one of its labels, held by crew or idle.
+
+The config may write the columns, any labels, crew's or not, which show issues only. Without that, the board has one column per rule that has actions, with the rule's ready and running labels and its kind. An item sits in every column whose labels it carries and nowhere else; no card waits for the next rule.
+
 ### Handled entry
 
-The live view's record of how an issue's latest stage run in this crew process ended: the stage, where it moved the issue, what its sessions cost, and why it failed when it did. An issue has at most one.
+The live view's record of how an issue's latest rule run in this crew process ended: the rule, where it moved the issue, what its sessions cost, and why it failed when it did. An issue has at most one.
 
-A later stage run that ends replaces the entry, except that a hidden stage ending well leaves an entry that ended well in place. While a stage holds the issue again, the entry stays and names that stage, and a failure in it no longer counts as needing the boss.
+A later rule run that ends replaces the entry, except that a rule without actions ending well leaves an entry that ended well in place; without one, it leaves its own. While a rule holds the issue again, the entry stays and names that rule, and a failure in it no longer counts as needing you.
 
 ## Recovery
 
 ### Resume
 
-What crew does when a stage takes an issue whose last action run of one of its actions failed: it runs that action again in the failed action run's workspace, as that run left it, instead of a fresh one, and tells the new session that it continues earlier work. Only the same action in the same stage on the same issue resumes an action run; one that succeeded is never resumed.
+What crew does when a rule takes an issue whose last action run of one of its actions failed: it runs that action again in the failed action run's workspace, as that run left it, instead of a fresh one, and tells the new session that it continues earlier work. Only the same action in the same rule on the same issue resumes an action run; one that succeeded is never resumed.
 
-Resuming is triggered only by the stage's label going back on the issue; crew never resumes on its own. Removing the workspace before that makes the action start over.
+Resuming is triggered only by the rule's ready label going back on the issue; crew never resumes on its own. Removing the workspace before that makes the action start over.
 
 ### Run journal
 
 crew's local, append-only record of every action run's start and end, which lets crew know after a restart which action runs failed and so which actions resume.
 
+Its lines keep the key `stage` for the rule's name, the wire name of earlier versions, so their journals still resume.
+
 ## Reporting
 
 ### Status comment
 
-The one comment per issue that shows the boss where the issue stands, with one entry per stage run, oldest first.
+The one comment per issue that shows where the issue stands, with one entry per rule run, oldest first.
 
-Only the latest entry changes; earlier entries keep the text they had when their stage run ended. Editing it notifies no one, so it is not how crew tells the boss something failed. A full comment is continued in a new one.
+Only the latest entry changes; earlier entries keep the text they had when their rule run ended. Editing it notifies no one, so it is not how crew tells you something failed. A full comment is continued in a new one.
 
 ### Failure report
 
-The comment crew posts when a stage run ends with a failed action, naming each failed action and where its log is.
+The comment crew posts when a rule run ends with a failed action, naming each failed action and where its log is.
 
-It is a new comment, so the tracker notifies the boss, and it never quotes what a session or a tool said.
+It is a new comment, so the tracker notifies the people who watch the issue, and it never quotes what a session or a tool said.
 
 ### Mirrored label
 
-The crew label an issue's pull requests carry, which crew sets to the issue's own crew label each time it moves the issue. An issue's pull requests are the open ones in its own repository that are linked as closing it; merged and closed ones, and those in other repositories, are not.
+The rule label an issue's pull requests carry, which crew sets to the issue's own rule label each time it moves the issue. An issue's pull requests are the open ones in its own repository that are linked as closing it; merged and closed ones, and those in other repositories, are not.
 
-It goes from the issue to its pull requests only: crew replaces a crew label put on a pull request by hand at the issue's next move. A stage takes the items of its kind that carry its label, so a pull request that carries a stage's label, mirrored or not, is taken only by a stage that takes pull requests; crew leaves it alone otherwise, with a notice.
+It goes from the issue to its pull requests only: crew replaces a rule label put on a pull request by hand at the issue's next move. A rule takes the items of its kind that carry its ready label, so a pull request that carries a rule's ready label, mirrored or not, is taken only by a rule that takes pull requests; crew leaves it alone otherwise, with a notice.
 
 ### Stop comment
 
-The comment crew posts on each of an issue's open pull requests when a stage run ends, saying how the stage ended and that nobody watches the pull request any more.
+The comment crew posts on each of an issue's open pull requests when a run of a rule with actions ends, saying how the rule ended and that nobody watches the pull request any more.
 
-It is a new comment at every stage end, so the boss is notified and a rerun leaves a trail. Like the failure report, it never quotes what a session or a tool said.
+It is a new comment at every rule end, so its watchers are notified and a rerun leaves a trail. Like the failure report, it never quotes what a session or a tool said.
 
 ## Identity
 
-### Mate
+### Bot
 
-A GitHub identity of crew's own: a private GitHub App the boss creates with `crew mates create`, owned by the account that owns the repository, whose private key stays on the boss's machine. It acts on GitHub as its bot, such as `crew-tester[bot]`.
+A GitHub identity of crew's own: a private GitHub App created with `crew bots create`, owned by the account that owns the repository, whose private key stays on the machine that created it. It acts on GitHub as `<slug>[bot]`, such as `crew-tester[bot]`.
 
-A boss can have many mates, and a mate is only an identity: it carries no model, prompt or settings. `config.mate` names the default mate, which crew's own writes on GitHub act as, and an action's `mate` names the one its session and check act as. Commits stay the boss's, with the mate as co-author. Without a mate in the config, crew and its sessions act as the boss's `gh` login.
+You can have many bots, and a bot is only an identity: it carries no model, prompt or settings. `tracker.bot` names the bot crew's own writes on GitHub act as, and the default bot of every agent; an agent's `bot` names the one the sessions and checks of its actions act as. Commits stay yours, with the bot as co-author. Without a bot, crew and its sessions act as your `gh` login.
 
-A mate acts when crew could make it act at startup. One that cannot act then stays that way until crew restarts, and its actions act as the boss. A mate that acts can stop acting while crew runs: when crew's own writes as the default mate go back to the boss, which lasts until restart, or when its token fails to renew, which lasts until a renewal succeeds. An action's cost counts on the identity it acted as.
+A bot acts when crew could make it act at startup. One that cannot act then stays that way until crew restarts, and its actions act as you. A bot that acts can stop acting while crew runs: when crew's own writes as `tracker.bot` go back to you, which lasts until restart, or when its token fails to renew, which lasts until a renewal succeeds. An action's cost counts on the identity it acted as.
 
 ## Flagged ambiguities
 
-- "Run" alone is ambiguous: a *stage run* is one pass through a stage, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
+- "Run" alone is ambiguous: a *rule run* is one pass through a rule, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
