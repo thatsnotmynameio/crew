@@ -26,7 +26,7 @@ func record(event core.RunEvent, key string) core.RunRecord {
 	name := "issue-" + key + "-" + action
 	r := core.RunRecord{
 		Event: event, At: time.Date(2026, 10, 2, 21, 5, 0, 0, time.UTC), IssueKey: key, IssueRef: "#" + key,
-		Stage: "development", Action: action, Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
+		Rule: "development", Action: action, Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 	if event == core.RunEnded {
 		r.Reason = "no pull request was found"

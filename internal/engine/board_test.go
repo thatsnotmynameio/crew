@@ -51,7 +51,7 @@ func TestTheEngineReadsTheBoardAtEachPoll(t *testing.T) {
 		tr := fake.NewBoardTracker(issue(30), issue(31))
 		tr.SetLabels("30", "bug")
 		cfg := config(t, tr, develop)
-		cfg.Board = bugs
+		cfg.Board, cfg.BoardWritten = bugs, true
 		r := start(t, cfg)
 
 		time.Sleep(time.Second) // the poll at 0s
@@ -76,7 +76,7 @@ func TestAFailingBoardReadShowsInTheSnapshotAndCrewKeepsRunning(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := &boardCounter{BoardTracker: fake.NewBoardTracker(issue(1, ready)), err: errors.New("gh: rate limited")}
 		cfg := config(t, tr, develop)
-		cfg.Board = bugs
+		cfg.Board, cfg.BoardWritten = bugs, true
 		r := start(t, cfg)
 		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true})
 
@@ -116,6 +116,40 @@ func TestWithoutABoardTheEngineNeverReadsOne(t *testing.T) {
 		}
 		if b := final.Snapshot.Board; b != nil {
 			t.Errorf("board = %v, want none", b)
+		}
+	})
+}
+
+// Covers KTD10 through the engine: the default board needs no board read
+// and no port.BoardLister. Its cards come from the listings, an item left
+// in the running label crew does not hold included, and crew's moves.
+func TestTheDefaultBoardComesFromTheListingsOfATrackerThatCannotListABoard(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready), issue(2, inProgress))
+		cfg := config(t, tr, develop)
+		cfg.Board = []crew.BoardColumn{{Name: "implement", Labels: []string{string(ready), string(inProgress)}}}
+		r := start(t, cfg)
+
+		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true})
+		time.Sleep(poll + time.Second) // the polls at 0s and 300s
+		r.engine.Stop()
+		final, err := r.wait()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		taken := []string{"1:" + string(inProgress), "2:" + string(inProgress)}
+		showed := false
+		for u := range r.queue.Updates() {
+			showed = showed || reflect.DeepEqual(boardKeys(u.Snapshot.Board), taken)
+		}
+		if !showed {
+			t.Errorf("no update showed the board %v", taken)
+		}
+		if got, want := boardKeys(final.Snapshot.Board), []string{"2:" + string(inProgress)}; !reflect.DeepEqual(got, want) {
+			t.Errorf("final board = %v, want %v: #1 moved to a label no column names", got, want)
+		}
+		if got := states(t, tr, "2"); !reflect.DeepEqual(got, []crew.State{inProgress}) {
+			t.Errorf("#2 states = %v, want it never taken", got)
 		}
 	})
 }

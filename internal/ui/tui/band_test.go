@@ -34,8 +34,8 @@ func TestHandledPutsAttentionFirstWithAPillPerEnding(t *testing.T) {
 	)
 }
 
-// Covers R16: each entry shows its stage and time, spend and pull request.
-func TestAnEntryShowsItsStageTimeCostTokensAndPullRequest(t *testing.T) {
+// Covers R16: each entry shows its rule and time, spend and pull request.
+func TestAnEntryShowsItsRuleTimeCostTokensAndPullRequest(t *testing.T) {
 	view := handledView(t, acted(entry("31", "Add login form", "development", "crew:development:waiting review", 15, 5),
 		core.HandledAction{Name: "lfg", Spend: spent(12.4, 17_200_000), PullRequest: found("#45")}))
 
@@ -138,20 +138,20 @@ func TestBeforeTheFirstUpdateTheQueuesSectionShowsNone(t *testing.T) {
 	contains(t, h.view(), "Queues ", "\n none ")
 }
 
-// heldBy is e marked held again by stage.
-func heldBy(e core.HandledView, stage string) core.HandledView {
-	e.HeldBy = stage
+// heldBy is e marked held again by rule.
+func heldBy(e core.HandledView, rule string) core.HandledView {
+	e.HeldBy = rule
 	return e
 }
 
-func TestAnEntryHeldAgainSaysWhichStageHoldsIt(t *testing.T) {
+func TestAnEntryHeldAgainSaysWhichRuleHoldsIt(t *testing.T) {
 	view := handledView(t,
 		heldBy(entry("31", "Add login form", "triage", "crew:triage:done", 15, 5), "development"),
 		entry("32", "Drop the flag", "triage", "crew:triage:done", 15, 5))
 
 	contains(t, view, "#31 Add login form  triage 10m00s · now in development")
 	if strings.Count(view, "now in") != 1 {
-		t.Errorf("an entry no stage holds says where it is:\n%s", view)
+		t.Errorf("an entry no rule holds says where it is:\n%s", view)
 	}
 }
 

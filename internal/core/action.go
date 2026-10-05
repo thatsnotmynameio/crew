@@ -40,7 +40,7 @@ func (s *step) workspaceGone(in WorkspaceGone) {
 		return
 	}
 	s.emit(WorkspaceMissing{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
+		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Workspace: a.prev.Workspace,
 	})
 	if s.m.stopping {
@@ -86,7 +86,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	a.phase = PhaseStarting
 	s.command(StartSession{
 		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
-		Mate: a.mate,
+		Agent: a.agent, Bot: a.bot,
 	})
 }
 
@@ -100,7 +100,7 @@ func (s *step) sessionStarted(in SessionStarted) {
 	a.phase = PhaseRunning
 	a.started = s.at
 	s.emit(ActionStarted{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
+		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log, Resumed: a.resumed,
 	})
 	if s.m.stopping {
@@ -136,7 +136,7 @@ func (s *step) sessionEnded(in SessionEnded) {
 		a.phase = PhaseChecking
 		s.command(RunCheck{
 			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.check, Log: a.log,
-			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Mate: a.mate,
+			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Bot: a.bot,
 		})
 	}
 }
@@ -183,10 +183,10 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.
 	}
 	a.phase = PhaseEnded
 	s.m.spent = s.m.spent.Add(a.spend())
-	s.m.mates.credit(s.m.mates.identity(a.mate), a.spend())
+	s.m.bots.credit(s.m.bots.identity(a.bot), a.spend())
 	s.record(h, a, RunEnded)
 	s.emit(ActionEnded{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
+		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
 	})
 	if h.ended() {

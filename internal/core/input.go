@@ -83,15 +83,15 @@ type BoardListFailed struct {
 	Reason string
 }
 
-// MatesChecked is a reading of the mates' live state, sent when it differs
+// BotsChecked is a reading of the bots' live state, sent when it differs
 // from the last one (KTD1, KTD3).
-type MatesChecked struct {
+type BotsChecked struct {
 	At time.Time
 	// WritesLost is the warning crew wrote when its writes as the default
-	// mate went back to the boss; empty while they go as the default mate.
+	// bot went back to you; empty while they go as the default bot.
 	WritesLost string
-	// NotRenewed holds, by mate, the warning of its last renewal, for each
-	// mate whose last renewal failed.
+	// NotRenewed holds, by bot, the warning of its last renewal, for each
+	// bot whose last renewal failed.
 	NotRenewed map[string]string
 }
 
@@ -281,7 +281,7 @@ func (i BoardListed) Stamped(at time.Time) Input { i.At = at; return i }
 func (i BoardListFailed) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i MatesChecked) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BotsChecked) Stamped(at time.Time) Input { i.At = at; return i }
 
 // Stamped implements Input.
 func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
@@ -326,7 +326,7 @@ func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
 func (i BoardListed) arrival() time.Time          { return i.At }
 func (i BoardListFailed) arrival() time.Time      { return i.At }
-func (i MatesChecked) arrival() time.Time         { return i.At }
+func (i BotsChecked) arrival() time.Time          { return i.At }
 func (i CallResult) arrival() time.Time           { return i.At }
 func (i StatusResult) arrival() time.Time         { return i.At }
 func (i PullRequestsResult) arrival() time.Time   { return i.At }

@@ -13,7 +13,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// prStates returns the state and whether it ended a stage of each pull
+// prStates returns the state and whether it ended a rule of each pull
 // request report recorded for issue 1, in order.
 func prStates(tr fake.PullRequestTracker) []string {
 	reports := tr.PullRequestReports("1")
@@ -21,7 +21,7 @@ func prStates(tr fake.PullRequestTracker) []string {
 	for _, r := range reports {
 		s := string(r.State)
 		if r.End != nil {
-			s += " (end of " + r.End.Stage + ")"
+			s += " (end of " + r.End.Rule + ")"
 		}
 		out = append(out, s)
 	}
@@ -42,7 +42,7 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsVerdictOnThePullRequests(
 		}
 		end := tr.PullRequestReports("1")[1].End
 		if len(end.Actions) != 1 || end.Actions[0].State != crew.ActionSucceeded {
-			t.Errorf("stage end = %+v, want development succeeded", end)
+			t.Errorf("rule end = %+v, want development succeeded", end)
 		}
 
 		r.engine.Stop()

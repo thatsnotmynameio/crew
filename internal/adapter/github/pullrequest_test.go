@@ -18,7 +18,7 @@ const (
 	crewWaitingReview crew.State = "crew:waiting review"
 	crewFailed        crew.State = "crew:failed"
 	crewReadyForFix   crew.State = "crew:ready for fix"
-	crewWaitingBrain  crew.State = "crew:waiting brainstorm"
+	crewWaitingBrain  crew.State = "crew:waiting brainstorm" // a label no rule names
 )
 
 // The scripted prefixes of the pull request report's gh calls on issue #42.
@@ -41,7 +41,7 @@ func prTracker(t *testing.T, script ...reply) (*Tracker, *fakeGh) {
 	t.Helper()
 	gh := newFakeGh(t, script...)
 	states := []crew.State{"crew:ready for development", crewInProgress, crewWaitingReview, crewFailed, crewReadyForFix}
-	tr, err := factory(gh.run)(func(any) error { return nil }, states, []crew.State{crewWaitingBrain})
+	tr, err := factory(gh.run)(func(any) error { return nil }, states)
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -74,7 +74,7 @@ func prNode(number int, state, repo string, labels ...crew.State) string {
 // actions are actions.
 func ended(state crew.State, actions ...crew.ActionStatus) crew.PullRequestReport {
 	return crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: state,
-		End: &crew.StageEnd{Stage: "development", Actions: actions}}
+		End: &crew.RuleEnd{Rule: "development", Actions: actions}}
 }
 
 // comments returns the body of each comment posted on number, failed posts
@@ -124,7 +124,7 @@ func TestAReportMirrorsTheLabelAndPostsTheStopComment(t *testing.T) {
 }
 
 // Covers AE2.
-func TestAStoppedStageSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
+func TestAStoppedRuleSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
 	tr, gh := prTracker(t,
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewInProgress))},
 		reply{prefix: prEdit},
@@ -189,11 +189,11 @@ func TestAnIssueWithoutAPullRequestGetsOnlyTheQuery(t *testing.T) {
 }
 
 // Covers AE3 of #35: a pull request crew moved closes no issue, so its
-// report writes to no other pull request, with or without the stage's end.
+// report writes to no other pull request, with or without the rule's end.
 func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
-	for name, end := range map[string]*crew.StageEnd{
+	for name, end := range map[string]*crew.RuleEnd{
 		"taken": nil,
-		"ended": {Stage: "development", Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded}}},
+		"ended": {Rule: "development", Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			// GitHub resolves #90 to a pull request, which the Issue
@@ -216,8 +216,9 @@ func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
 	}
 }
 
-// Covers AE4: a crew label put on the pull request by hand, and an extra,
-// are replaced by the issue's; a label that is not crew's stays.
+// Covers AE4 of #92 and AE6: a crew label put on the pull request by hand is
+// replaced by the issue's; a label no rule names, such as a parked idea's,
+// stays.
 func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 	tr, gh := prTracker(t,
 		reply{prefix: prQuery, stdout: prsJSON(
@@ -229,7 +230,7 @@ func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
 	want := []string{"pr", "edit", "50", "--remove-label=crew:waiting review", "--remove-label=crew:ready for fix",
-		"--remove-label=crew:waiting brainstorm", "--add-label=crew:in progress"}
+		"--add-label=crew:in progress"}
 	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
 		t.Errorf("edits = %q, want one: %q", edits, want)
 	}

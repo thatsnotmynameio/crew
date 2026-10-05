@@ -1,24 +1,31 @@
 ---
 name: cw-create-issue
-description: Creates a GitHub issue for crew in the current repository, with the label of a stage or extra label from `.crew/config.yaml` and a body that follows that type's issue template. Use when the user asks to create, open, record, file or log an issue for crew, to queue work for crew (a feature, a bug fix, an audit, a learning), to park an idea for a later brainstorm, or to turn the plan or brainstorm just written into an issue.
+description: Creates a GitHub issue for crew in the current repository, with the label of one of the issue types this skill lists and a body that follows that type's issue template. Use when the user asks to create, open, record, file or log an issue for crew, to queue work for crew (a feature, a bug fix, an audit, a learning), to park an idea for a later brainstorm, or to turn the plan or brainstorm just written into an issue.
 argument-hint: "[what to record, optionally the type or a plan path]"
 ---
 
 # Create an issue for crew
 
-crew polls the repository's GitHub issues and moves each one through the workflow in `.crew/config.yaml`. A stage takes every open issue carrying its `label`, unless it declares `takes: pull_requests`, so the label this skill puts on the issue decides what crew does with it, unattended, within one poll. The skill creates the issue directly, with no preview and no confirmation: a mistake is fixed by editing the issue on GitHub.
+This skill is the crew repository's own aid for building crew, not part of crew. Its issue types and labels are this repository's. Another repository copies the skill and edits its table of types to match its own rules and issue templates.
 
-Run `gh` with the repository root as the working directory. Read files with your own file tools.
+crew polls the repository's GitHub issues, and each of its rules takes every open issue carrying the rule's ready label. The label this skill puts on the issue decides what crew does with it, unattended, within one poll. The skill creates the issue directly, with no preview and no confirmation: a mistake is fixed by editing the issue on GitHub.
 
-## 1. Read the config
+Run `gh` with the repository root, from `git rev-parse --show-toplevel`, as the working directory. Read files with your own file tools.
 
-1. Find the repository root with `git rev-parse --show-toplevel`.
-2. Read `<root>/.crew/config.yaml`. When the file is missing, say that crew is not configured in this repository and stop. When it does not parse as YAML, say so with the parser's error and stop. Create nothing in either case.
-3. Build the types:
-   - **Stages:** each entry of `workflow` that takes issues is a type, with its `label`, `name`, and optional `description` and `issue_template`. A stage takes issues when it has no `takes` or has `takes: issues`. A stage with `takes: pull_requests` is not a type: crew leaves an issue carrying its label alone. Only a stage's `label` is a type; its `moves_to`, `on_success` and `on_failure` labels are not.
-   - **Extras:** each entry of the top-level `extra_labels` is a type, with its `label` and optional `description` and `issue_template`. An extra parks an issue: no stage takes it until someone adds a stage's label.
-   - A type is shown by its description, or by its name (a stage) or label (an extra) when it has none.
-4. When the config names no types, say so and stop, creating nothing.
+## 1. The types
+
+An issue's type gives its label, the template its body follows (a file in `<root>/.github/ISSUE_TEMPLATE/`), and the description that shows the type to the user:
+
+| Label | Template | Description | What crew does with it |
+| --- | --- | --- | --- |
+| `crew:development:ready` | `feature.md` | a feature whose brainstorm is done | the development rule builds it and opens a pull request |
+| `crew:fix:ready` | `bug.md` | a bug to reproduce and fix | the fix rule reproduces it, fixes it and opens a pull request |
+| `crew:brainstorm:ready` | `idea.md` | an idea to brainstorm later | nothing: no rule takes it, it waits for `/cw-brainstorm` |
+| `crew:brainstorm:done` | `feature.md` | a brainstormed feature to hand to triage | the promote brainstorm rule moves it to `crew:triage:ready` |
+| `crew:triage:ready` | `feature.md` | a brainstormed feature whose dependencies to find | the triage rule finds what blocks it and what it blocks |
+| `crew:triage:done` | `feature.md` | a triaged feature to hand to development | the promote triage rule moves it to `crew:development:ready` |
+| `crew:ci audit:ready` | `ci-audit.md` | an audit of the GitHub Actions | the audit ci rule, which is turned off in this repository |
+| `crew:knowledge base:ready` | `knowledge-base.md` | a solved problem to record as a learning | the knowledge base rule, which is turned off in this repository |
 
 ## 2. Decide what to record
 
@@ -28,16 +35,16 @@ What to record comes from the arguments and the session. With no arguments, reco
 
 The type is clear when:
 
-- the user named it, by its name, label or description, or
-- exactly one type's name, label or description fits the request. Session context counts: a requirements plan written in this session points to the type whose description names finished brainstorms.
+- the user named it, by its label or description, or by the rule that takes it, or
+- exactly one type's label or description fits the request. Session context counts: a requirements plan written in this session points to the type whose description names finished brainstorms.
 
-In any other case, including when two types fit, list the types (each with its description or name, and its label) and ask the user to pick one. A wrong stage label starts an unattended crew run, so ask whenever you doubt.
+In any other case, including when two types fit, list the types (each with its description and its label) and ask the user to pick one. A label a rule takes starts an unattended crew run, so ask whenever you doubt.
 
 ## 4. Write the body
 
-1. When the type has an `issue_template`, read `<root>/.github/ISSUE_TEMPLATE/<issue_template>`.
+1. Read the type's template, `<root>/.github/ISSUE_TEMPLATE/<template>`.
 2. **Template found:** drop its YAML frontmatter; its `labels`, `title` and `assignees` are not used. When the issue records a plan, step 5 fills the sections. Otherwise fill each section from what the user wrote and from the session's context, keeping the template's headings. Replace the template's guidance comments with the content they ask for. Do not invent facts: leave a section short when there is little to say.
-3. **No template,** because the type declares none or its file is missing: write a free-form body from the same sources. Remember a missing file for the report.
+3. **No template,** because its file is missing: write a free-form body from the same sources. Remember the missing file for the report.
 
 ## 5. Copy the plan the issue records
 
@@ -72,4 +79,5 @@ Print the issue's link and its label. Also say:
 
 - that the template file was missing, naming the path, when it was,
 - which plan the body was copied from, when it was,
-- that the session wrote a plan the body does not use, naming it, when that happened.
+- that the session wrote a plan the body does not use, naming it, when that happened,
+- that the rule that takes the label is turned off in this repository, so crew leaves the issue alone until that rule is turned on, when the type is the CI audit or the knowledge base.

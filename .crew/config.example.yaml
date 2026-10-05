@@ -1,142 +1,120 @@
-# crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
-# Every label crew uses is `crew:<stage>:<state>`, so it says which stage an
-# issue is in and where it stands there. Each stage takes `crew:<stage>:ready`,
-# moves the issue to `crew:<stage>:in progress` and ends in
-# `crew:<stage>:done`, or in `crew:<stage>:waiting review` when the boss
-# reviews a pull request, or in `crew:<stage>:failed`.
-# The extra label `crew:brainstorm:ready` parks an idea no stage takes. Once its
-# brainstorm is done, the prompts below move it to `crew:brainstorm:done`.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
+# crew's own rules: crew runs on this repository too. See docs/guide/crew.mdx.
+# Every label crew uses is `crew:<rule>:<state>`, so it says which rule an
+# issue is in and where it stands there. Each rule takes `crew:<rule>:ready`,
+# moves the issue to `crew:<rule>:in progress` and ends in
+# `crew:<rule>:done`, or in `crew:<rule>:waiting review` when a code owner
+# reviews a pull request, or in `crew:<rule>:failed`.
+# An idea parked in `crew:brainstorm:ready` waits for /cw-brainstorm, which
+# no rule runs; once its brainstorm is done, it is in `crew:brainstorm:done`.
 # From there the clerk hands each issue on: promote brainstorm moves it to
 # `crew:triage:ready`, triage finds what blocks it and what it blocks and ends
 # in `crew:triage:done`, and promote triage moves it to
-# `crew:development:ready`. A promote stage's session does nothing: crew makes
-# the move itself when the session ends. crew skips an issue an open issue
+# `crew:development:ready`. A promote rule has no actions: crew moves the
+# label itself, without a session. crew skips an issue an open issue
 # blocks, so a blocked feature waits in its label until its blockers close.
-# The promote stages have `on_board: false`: the live view's board shows no
-# column for them, and no card for an issue they hold.
-# Each stage and extra names its template in .github/ISSUE_TEMPLATE/, which
-# /cw-create-issue and /cw-update-issue-plan fill. crew does not run the
-# prompts under `prompts`: /cw-brainstorm runs `brainstorm` in the boss's own
-# session, and /cw-update-issue-plan runs `update_issue_plan` there once the
-# plan is in the issue. The lfg actions of development and fix have a check:
-# they succeed only when their pull request is open and closes the issue.
-# crew writes as the mate clerk; triage's session acts as product-manager, and
-# development's and fix's as developer. The clerk's stages run in the 1-slot
-# clerk queue and the developer's in the 2-slot developer queue, so a long
-# development session never holds up the bookkeeping. default keeps the one
-# slot left, which no stage uses yet. audit ci and knowledge base are turned
-# off: they are commented out below.
-config:
-  poll_interval_seconds: 300
-  max_parallel_issues: 4
-  clerk_slots: 1
-  queues:
-    developer: 2
-  harness: claude
-  model: claude-opus-5-5
-  mate: clerk
+# The board has no `board` key, so it shows one column per rule that has
+# actions: triage, development and fix.
+# The lfg actions of development and fix run the check pr-closes-issue: they
+# succeed only when their pull request is open and closes the issue.
+# crew writes as the bot clerk, which also moves the promote rules' labels;
+# triage's session acts as product-manager, and development's and fix's as
+# developer. The clerk's rules run in the 1-slot clerk queue and the
+# developer's in the 2-slot developer queue, so a long development session
+# never holds up the bookkeeping. default keeps the one slot left, which no
+# rule uses yet. audit ci and knowledge base are turned off: they are
+# commented out below.
+poll_interval_seconds: 300
+max_parallel_issues: 4
+queues:
+  clerk: 1
+  developer: 2
 tracker:
   name: github
-extra_labels:
-  - label: "crew:brainstorm:ready"
-    description: an idea to brainstorm later
-    issue_template: idea.md
-prompts:
-  brainstorm: |-
-    Read {{.Issue.Ref}} with `gh issue view {{.Issue.Key}} --json state,labels`. When it is closed, or does not carry the label `crew:brainstorm:ready`, say so, name the crew labels it carries, and stop without changing anything.
-
-    Otherwise move it to `crew:brainstorm:in progress`: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:ready" --add-label "crew:brainstorm:in progress"`. When that fails, report the error and stop.
-
-    Then run /compound-engineering:ce-brainstorm {{.Issue.Ref}} ({{.Issue.URL}}). The issue's title and body are the idea to brainstorm.
-  update_issue_plan: |-
-    Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's promote brainstorm stage hands it to triage at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
-workflow:
-  - name: promote brainstorm
+  bot: clerk
+agents:
+  product-manager:
+    harness:
+      name: claude
+      model: claude-opus-5-5
+    bot: product-manager
+  developer:
+    harness:
+      name: claude
+      model: claude-opus-5-5
+    bot: developer
+checks:
+  # Fails the action unless an open pull request from this repository, on
+  # the worktree's branch, has the line that closes the issue. It echoes its
+  # own reason last: that line reaches the issue's status comment.
+  pr-closes-issue: |-
+    state=$(gh pr list --head "$CREW_BRANCH" --state open --json isCrossRepository,body --jq '[.[] | select(.isCrossRepository | not)] | if length == 0 then "none" elif any(.[]; .body | gsub("\r"; "") | split("\n") | any(. == "Closes " + env.CREW_ISSUE_REF)) then "closes" else "open" end') || { echo "gh could not list the pull requests from $CREW_BRANCH"; exit 1; }
+    case $state in
+    closes) ;;
+    none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
+    *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
+    esac
+rules:
+  promote brainstorm:
     queue: clerk
-    description: a brainstormed feature to hand to triage
-    issue_template: feature.md
-    label: "crew:brainstorm:done"
-    moves_to: "crew:brainstorm:promoting"
-    on_success: "crew:triage:ready"
-    on_failure: "crew:brainstorm:failed"
-    on_board: false
-    actions:
-      - name: promote
-        prompt: |-
-          There is nothing to do for {{.Issue.Ref}}: crew moves it to `crew:triage:ready` when this session ends. Run no command and change nothing. End your turn now.
-  - name: triage
+    labels:
+      ready: "crew:brainstorm:done"
+      running: "crew:brainstorm:promoting"
+      success: "crew:triage:ready"
+  triage:
     queue: clerk
-    description: a brainstormed feature whose dependencies to find
-    issue_template: feature.md
-    label: "crew:triage:ready"
-    moves_to: "crew:triage:in progress"
-    on_success: "crew:triage:done"
-    on_failure: "crew:triage:failed"
+    labels:
+      ready: "crew:triage:ready"
+      running: "crew:triage:in progress"
+      success: "crew:triage:done"
+      failure: "crew:triage:failed"
     actions:
-      - name: triage
-        mate: product-manager
+      triage:
+        agent: product-manager
         prompt: |-
           {{.Issue.Ref}} is a brainstormed feature. Find which open issues block it and which it blocks. You run headless: nobody answers questions, so decide and report.
 
           1. Read {{.Issue.Ref}} (`gh issue view {{.Issue.Key}} --comments`) and the dependencies GitHub already has for it (`gh api repos/{owner}/{repo}/issues/{{.Issue.Key}}/dependencies/blocked_by` and `.../blocking`).
-          2. Read the other open issues crew takes: those opened by each login in `$CREW_BOSS` and `$CREW_MATES`, both lists separated by spaces (`for login in $CREW_BOSS $CREW_MATES; do gh issue list --state open --author "$login" --limit 500 --json number,title,body,labels; done`). Pass a mate's `<slug>[bot]` login as it is. Compare {{.Issue.Ref}} with these only: leave out the issues someone else opened.
+          2. Read the other open issues crew takes: those opened by each login in `$CREW_CODE_OWNERS` and `$CREW_BOTS`, both lists separated by spaces (`for login in $CREW_CODE_OWNERS $CREW_BOTS; do gh issue list --state open --author "$login" --limit 500 --json number,title,body,labels; done`). Pass a bot's `<slug>[bot]` login as it is. Compare {{.Issue.Ref}} with these only: leave out the issues someone else opened.
           3. For each of them, decide whether it must be done before {{.Issue.Ref}} (it blocks {{.Issue.Ref}}) or cannot be done before {{.Issue.Ref}} ({{.Issue.Ref}} blocks it). Record each as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record only dependencies between {{.Issue.Ref}} and another issue, only when you can say why, skip one GitHub already has, and never record one that closes a cycle.
           4. When one of {{.Issue.Ref}}'s dependencies no longer holds, remove it: `gh api -X DELETE repos/{owner}/{repo}/issues/N/dependencies/blocked_by/ID`, with N and ID as in step 3. Remove only a dependency between {{.Issue.Ref}} and another issue, and only when you can say why it no longer holds.
           5. Never add or remove a label that starts with `crew:`, on any issue. Do not open, close or edit issues.
           6. Do not change code, push a branch or open a pull request.
           7. End with one comment on {{.Issue.Ref}}: what blocks it and what it blocks, marking the dependencies you recorded and why; each dependency you removed and why; whether an open issue still blocks it, in which case crew starts its development only once every blocker is closed; the issues it likely duplicates; and every command that failed or was denied, with its error.
-  - name: promote triage
+  promote triage:
     queue: clerk
-    description: a triaged feature to hand to development
-    issue_template: feature.md
-    label: "crew:triage:done"
-    moves_to: "crew:triage:promoting"
-    on_success: "crew:development:ready"
-    on_failure: "crew:triage:failed"
-    on_board: false
-    actions:
-      - name: promote
-        prompt: |-
-          There is nothing to do for {{.Issue.Ref}}: crew moves it to `crew:development:ready` when this session ends. Run no command and change nothing. End your turn now.
-  - name: development
+    labels:
+      ready: "crew:triage:done"
+      running: "crew:triage:promoting"
+      success: "crew:development:ready"
+  development:
     queue: developer
-    description: a feature whose brainstorm is done
-    issue_template: feature.md
-    label: "crew:development:ready"
-    moves_to: "crew:development:in progress"
-    on_success: "crew:development:waiting review"
-    on_failure: "crew:development:failed"
+    labels:
+      ready: "crew:development:ready"
+      running: "crew:development:in progress"
+      success: "crew:development:waiting review"
+      failure: "crew:development:failed"
     actions:
-      - name: lfg
-        mate: developer
+      lfg:
+        agent: developer
+        check: pr-closes-issue
         prompt: |-
           /compound-engineering:lfg {{.Issue.Ref}}
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
-        # The check fails the action unless an open pull request from this
-        # repository, on the worktree's branch, has the line that closes the
-        # issue. It echoes its own reason last: that line reaches the
-        # issue's status comment.
-        check: |-
-          state=$(gh pr list --head "$CREW_BRANCH" --state open --json isCrossRepository,body --jq '[.[] | select(.isCrossRepository | not)] | if length == 0 then "none" elif any(.[]; .body | gsub("\r"; "") | split("\n") | any(. == "Closes " + env.CREW_ISSUE_REF)) then "closes" else "open" end') || { echo "gh could not list the pull requests from $CREW_BRANCH"; exit 1; }
-          case $state in
-          closes) ;;
-          none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
-          *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
-          esac
-  - name: fix
+  fix:
     queue: developer
-    description: a bug to reproduce and fix
-    issue_template: bug.md
-    label: "crew:fix:ready"
-    moves_to: "crew:fix:in progress"
-    on_success: "crew:fix:waiting review"
-    on_failure: "crew:fix:failed"
+    labels:
+      ready: "crew:fix:ready"
+      running: "crew:fix:in progress"
+      success: "crew:fix:waiting review"
+      failure: "crew:fix:failed"
     actions:
-      - name: lfg
-        mate: developer
+      lfg:
+        agent: developer
+        check: pr-closes-issue
         prompt: |-
           /compound-engineering:lfg {{.Issue.Ref}}
 
@@ -145,29 +123,17 @@ workflow:
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
-        # The check fails the action unless an open pull request from this
-        # repository, on the worktree's branch, has the line that closes the
-        # issue. It echoes its own reason last: that line reaches the
-        # issue's status comment.
-        check: |-
-          state=$(gh pr list --head "$CREW_BRANCH" --state open --json isCrossRepository,body --jq '[.[] | select(.isCrossRepository | not)] | if length == 0 then "none" elif any(.[]; .body | gsub("\r"; "") | split("\n") | any(. == "Closes " + env.CREW_ISSUE_REF)) then "closes" else "open" end') || { echo "gh could not list the pull requests from $CREW_BRANCH"; exit 1; }
-          case $state in
-          closes) ;;
-          none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
-          *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
-          esac
-  # Turned off: uncomment a stage to run it again.
-  # - name: audit ci
+  # Turned off: uncomment a rule to run it again.
+  # audit ci:
   #   queue: developer
-  #   description: an audit of the GitHub Actions
-  #   issue_template: ci-audit.md
-  #   label: "crew:ci audit:ready"
-  #   moves_to: "crew:ci audit:in progress"
-  #   on_success: "crew:ci audit:done"
-  #   on_failure: "crew:ci audit:failed"
+  #   labels:
+  #     ready: "crew:ci audit:ready"
+  #     running: "crew:ci audit:in progress"
+  #     success: "crew:ci audit:done"
+  #     failure: "crew:ci audit:failed"
   #   actions:
-  #     - name: audit
-  #       mate: developer
+  #     audit:
+  #       agent: developer
   #       prompt: |-
   #         Review this repository's GitHub Actions and find what to improve. You run headless: nobody answers questions, so decide and report.
   #
@@ -177,17 +143,16 @@ workflow:
   #         4. Never add or remove a label that starts with `crew:`, on any issue.
   #         5. Do not change code, push a branch or open a pull request.
   #         6. End with one comment on {{.Issue.Ref}}: the issues you opened, what you checked and found fine, and anything you could not check, with the error.
-  # - name: knowledge base
+  # knowledge base:
   #   queue: developer
-  #   description: a solved problem to record as a learning
-  #   issue_template: knowledge-base.md
-  #   label: "crew:knowledge base:ready"
-  #   moves_to: "crew:knowledge base:in progress"
-  #   on_success: "crew:knowledge base:done"
-  #   on_failure: "crew:knowledge base:failed"
+  #   labels:
+  #     ready: "crew:knowledge base:ready"
+  #     running: "crew:knowledge base:in progress"
+  #     success: "crew:knowledge base:done"
+  #     failure: "crew:knowledge base:failed"
   #   actions:
-  #     - name: compound
-  #       mate: developer
+  #     compound:
+  #       agent: developer
   #       prompt: |-
   #         /compound-engineering:ce-compound mode:non-interactive {{.Issue.Ref}} ({{.Issue.URL}})
   #

@@ -103,7 +103,7 @@ func TestAE2AFreedSlotAfterASkippedTickListsAtOnce(t *testing.T) {
 	d.send(core.Tick{})
 
 	cmds, _ := d.release("1")
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	// The listing started the count again: another release waits for a tick.
 	d.send(core.IssuesListed{})

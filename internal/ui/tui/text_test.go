@@ -14,13 +14,13 @@ import (
 // Covers KTD14.
 func TestCleanStripsEscapesAndControlCharactersOntoOneLine(t *testing.T) {
 	for in, want := range map[string]string{
-		"Stage\x1b[31m labels\x1b[0m": "Stage labels",
-		"ring\x07 the bell":           "ring the bell",
-		"title\x1b]0;evil\x07 after":  "title after",
-		"two\nlines\r\n  and\ttabs":   "two lines and tabs",
-		"c1 \u009b31m control":        "c1 31m control",
-		"plain":                       "plain",
-		"  spaced   out  ":            "spaced out",
+		"Rule\x1b[31m labels\x1b[0m": "Rule labels",
+		"ring\x07 the bell":          "ring the bell",
+		"title\x1b]0;evil\x07 after": "title after",
+		"two\nlines\r\n  and\ttabs":  "two lines and tabs",
+		"c1 \u009b31m control":       "c1 31m control",
+		"plain":                      "plain",
+		"  spaced   out  ":           "spaced out",
 	} {
 		if got := clean(in); got != want {
 			t.Errorf("clean(%q) = %q, want %q", in, got, want)
@@ -33,18 +33,6 @@ func TestCappedCutsOutsideTextTo200Runes(t *testing.T) {
 
 	if n := len([]rune(got)); n != maxOutside || !strings.HasSuffix(got, ellipsis) {
 		t.Errorf("capped is %d runes ending %q, want %d ending in an ellipsis", n, got[len(got)-3:], maxOutside)
-	}
-}
-
-func TestFitLeftKeepsTheEndOfALabel(t *testing.T) {
-	if got, want := fitLeft("crew:development:waiting review", 15), "…waiting review"; got != want {
-		t.Errorf("fitLeft = %q, want %q", got, want)
-	}
-	if got := fitLeft("short", 15); got != "short" {
-		t.Errorf("fitLeft of a short label = %q", got)
-	}
-	if got := fitLeft("any", 0); got != "" {
-		t.Errorf("fitLeft to no width = %q", got)
 	}
 }
 
@@ -69,11 +57,11 @@ func TestAReferenceLinksToItsPage(t *testing.T) {
 func TestARuleFillsTheWidth(t *testing.T) {
 	m := testModel()
 	for _, width := range []int{80, 120} {
-		r := m.rule("Workflow", "3 in play · 1 waiting", width, false)
+		r := m.rule("Board", "2 issues", width, false)
 		if w := lipgloss.Width(r); w != width {
 			t.Errorf("rule at %d is %d wide: %q", width, w, ansi.Strip(r))
 		}
-		if !strings.HasPrefix(ansi.Strip(r), "Workflow ─") || !strings.HasSuffix(ansi.Strip(r), "─ 3 in play · 1 waiting") {
+		if !strings.HasPrefix(ansi.Strip(r), "Board ─") || !strings.HasSuffix(ansi.Strip(r), "─ 2 issues") {
 			t.Errorf("rule = %q", ansi.Strip(r))
 		}
 	}
@@ -102,7 +90,7 @@ func TestEachPillTakesItsRolesColour(t *testing.T) {
 	}
 }
 
-// testModel is a model of testWorkflow, before any update.
+// testModel is a model of testRules, before any update.
 func testModel() Model {
-	return New(Config{Now: func() time.Time { return start }, Location: zone, Workflow: testWorkflow})
+	return New(Config{Now: func() time.Time { return start }, Location: zone, Rules: testRules})
 }

@@ -56,7 +56,7 @@ func (m Model) actionCounts() (int, int) {
 }
 
 // actionsSection is the Actions section: its summary and its rows, each
-// action with its icon, reference and title, stage and action, queue,
+// action with its icon, reference and title, rule and action, queue,
 // state and branch, and under each running one the last thing its session
 // said when said is set (R17, R18).
 func (m Model) actionsSection(said bool) (string, []string) {
@@ -74,7 +74,7 @@ func (m Model) actionsSection(said bool) (string, []string) {
 	for _, a := range acts {
 		refs = append(refs, a.issue.Issue.Ref)
 		titles = append(titles, clean(a.issue.Issue.Title))
-		names = append(names, a.issue.Stage+"/"+a.Name)
+		names = append(names, a.issue.Rule+"/"+a.Name)
 		queues = append(queues, a.issue.Queue)
 		states = append(states, m.actionState(a.ActionView))
 	}

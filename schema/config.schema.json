@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json",
+  "title": "crew's .crew/config.yaml",
+  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. See docs/guide/crew.mdx in the crew repository.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rules"],
+  "properties": {
+    "poll_interval_seconds": {
+      "description": "Seconds between polls of the tracker. Must be positive. 300 by default.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 300
+    },
+    "max_parallel_issues": {
+      "description": "How many issues crew works on at once, split into the queues. It counts issues, not sessions: an issue whose rule has two actions takes one slot. 2 by default.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 2
+    },
+    "run_time_limit_seconds": {
+      "description": "How long crew runs, counted from its first poll, before it winds down. Must be positive: 28800 is 8 hours. Without it, crew runs until you stop it.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "usage_in_status": {
+      "description": "Whether the status comment shows each ended action's cost, tokens and pull request. false by default.",
+      "type": "boolean",
+      "default": false
+    },
+    "queues": {
+      "description": "Queues by name, each with its slots. A queue's slots are only for the rules that name it, so a long session never holds up a quick rule of another queue. The default queue, which crew always has, gets the slots max_parallel_issues leaves, and runs every rule that names no queue. A queue cannot be called default.",
+      "type": "object",
+      "additionalProperties": {
+        "description": "The queue's slots: how many issues its rules work on at once. Must be positive.",
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "tracker": {
+      "description": "The tracker crew polls for issues and pull requests, and writes to.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The tracker adapter's name. github, the default, is the one crew ships.",
+          "type": "string",
+          "default": "github",
+          "examples": ["github"]
+        },
+        "bot": {
+          "description": "The bot crew's own writes on the tracker act as, and the bot of every agent that names none. Without it, they act as the gh login crew runs as. Create a bot with crew bots create.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "agents": {
+      "description": "Agents by name: each is the harness that runs an action's session, with its model, and the bot the session acts as. Required when a rule has actions. An action names its agent with agent.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["harness"],
+        "properties": {
+          "harness": {
+            "description": "The harness that runs the agent's sessions: its name, and the harness adapter's own keys.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "description": "The harness adapter's name. claude is the one crew ships.",
+                "type": "string",
+                "minLength": 1,
+                "examples": ["claude"]
+              },
+              "model": {
+                "description": "The model claude runs, such as claude-opus-5-5. Without it, the harness uses its adapter's default: claude-opus-5-5 for claude.",
+                "type": "string",
+                "examples": ["claude-opus-5-5"]
+              }
+            }
+          },
+          "bot": {
+            "description": "The bot the agent's sessions and checks act as. Without it, they act as tracker.bot, and as the gh login crew runs as when that is not set either.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "checks": {
+      "description": "Checks by name, each a shell script that decides whether an action succeeded. An action names its check with check.",
+      "type": "object",
+      "additionalProperties": {
+        "description": "The check's shell script, run in the action's worktree after its session ends. The action succeeds only when it exits 0, and its last line of output reaches the status comment. It is not a template: it reads the issue from CREW_ISSUE_REF, CREW_ISSUE_KEY, CREW_ISSUE_URL and CREW_BRANCH, and the logins from CREW_CODE_OWNERS and CREW_BOTS.",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "board": {
+      "description": "The live view's board: columns by name, drawn in file order. A column holds a card for each open issue that carries one of its labels, any label, a rule's or not. Without board, the board has one column per rule that has actions, in file order, with the items of the rule's kind that carry its ready or running label.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "description": "The column's label, or a list of one or more labels.",
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        ]
+      }
+    },
+    "rules": {
+      "description": "Rules by name. Each rule takes the items of its kind that carry its ready label, moves each to running, runs its actions, and moves it to success when every action succeeded or to failure when any failed. Rules form no sequence: the order of work comes only from how their labels chain. Among rules of equal priority, a later rule in the file takes first.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["labels"],
+        "properties": {
+          "takes": {
+            "description": "The kind of item the rule takes: issues, the default, or pull_requests.",
+            "enum": ["issues", "pull_requests"],
+            "default": "issues"
+          },
+          "queue": {
+            "description": "The queue the rule runs in: one of queues, or default, the default.",
+            "type": "string",
+            "minLength": 1,
+            "default": "default"
+          },
+          "notify": {
+            "description": "Whether crew sends a desktop notification when the rule ends. On by default for a rule with actions, off for a rule without.",
+            "type": "boolean"
+          },
+          "labels": {
+            "description": "The rule's labels, by state. Labels compare ignoring case, as GitHub compares them.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ready", "running", "success"],
+            "properties": {
+              "ready": {
+                "description": "The label the rule takes items from. No two rules take the same label.",
+                "type": "string",
+                "minLength": 1
+              },
+              "running": {
+                "description": "The label an item moves to while the rule works on it. It cannot be any rule's ready label.",
+                "type": "string",
+                "minLength": 1
+              },
+              "success": {
+                "description": "The label an item moves to when every action succeeded, or at once for a rule without actions. It cannot be the rule's own ready label.",
+                "type": "string",
+                "minLength": 1
+              },
+              "failure": {
+                "description": "The label an item moves to when any action failed. Required when the rule has actions; a rule without actions never fails. It cannot be the rule's own ready label.",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "actions": {
+            "description": "The rule's actions by name, each a session of its own, all started together. Without actions, crew moves the item to running and on to success itself, without a session, so the rule spends no tokens.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["prompt"],
+              "properties": {
+                "agent": {
+                  "description": "The agent that runs the action's session: one of agents. It can be left out only when agents declares exactly one agent.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "prompt": {
+                  "description": "The session's prompt: a Go template over the item the rule took, such as {{.Issue.Ref}}.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "check": {
+                  "description": "The check that decides whether the action succeeded: one of checks. Without it, the session's own outcome decides.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "if": {
+          "required": ["actions"],
+          "properties": { "actions": { "minProperties": 1 } }
+        },
+        "then": {
+          "properties": { "labels": { "required": ["failure"] } }
+        }
+      }
+    }
+  }
+}

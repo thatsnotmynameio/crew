@@ -1,4 +1,4 @@
-// Package engine runs crew's workflow: it owns the pure core, runs the
+// Package engine runs crew's rules: it owns the pure core, runs the
 // core's commands through the Tracker, Harness and Workspace ports, ticks on
 // the poll interval, owns crew's local files under .crew/, and publishes an
 // Update after every step for the renderers (KTD2, KTD6, KTD7, KTD12).
@@ -46,10 +46,10 @@ const (
 	inboxSize = 64
 )
 
-// Config is what an engine runs: a validated workflow and its adapters.
+// Config is what an engine runs: validated rules and their adapters.
 type Config struct {
-	// Workflow is the stages, in config order, already validated.
-	Workflow []crew.Stage
+	// Rules are the rules, in config order, already validated.
+	Rules []crew.Rule
 	// MaxParallelIssues is how many issues the engine holds at once (R6).
 	MaxParallelIssues int
 	// PollInterval is the time between listings; it must be positive.
@@ -57,10 +57,12 @@ type Config struct {
 	// RunTimeLimit is how long the engine runs from its first poll before
 	// it winds down. Zero runs until stopped.
 	RunTimeLimit time.Duration
-	// Tracker, Harness and Workspace are the adapters. The engine detects
-	// their optional interfaces, such as port.Preparer, on these values.
+	// Tracker and Workspace are adapters, and Harnesses holds the harness
+	// of each agent some rule's action names, in config order. The engine
+	// detects their optional interfaces, such as port.Preparer, on these
+	// values.
 	Tracker   port.Tracker
-	Harness   port.Harness
+	Harnesses []AgentHarness
 	Workspace port.Workspace
 	// Checker runs the actions' checks. Without one, an action with a
 	// check fails, saying crew has no check runner.
@@ -75,47 +77,57 @@ type Config struct {
 	// Home is the user's home directory, shortened to ~ in every reason.
 	// Empty shortens nothing.
 	Home string
-	// ActAs, when the config names a mate, has Prepare hand a tracker that
-	// implements port.Acting the Writer and the MateLogins first.
+	// ActAs, when the config names a bot, has Prepare hand a tracker that
+	// implements port.Acting the Writer and the BotLogins first.
 	ActAs bool
-	// Writer is who the tracker's own writes go as: the default mate, or the
-	// zero Identity, the boss, when it cannot act.
+	// Writer is who the tracker's own writes go as: the default bot, or the
+	// zero Identity, you, when it cannot act.
 	Writer port.Identity
-	// Identities are the identities of the mates that act, by name. An
-	// action whose mate is not among them runs as the boss.
+	// Identities are the identities of the bots that act, by name. An
+	// action whose bot is not among them runs as you.
 	Identities map[string]port.Identity
-	// MateLogins are the logins of the configured mates crew knows, whether
+	// BotLogins are the logins of the configured bots crew knows, whether
 	// or not they act: the tracker takes the items they opened, and every
-	// session and check gets them as CREW_MATES.
-	MateLogins []string
-	// DefaultMate is the config's default mate, which acts for crew's own
+	// session and check gets them as CREW_BOTS.
+	BotLogins []string
+	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
-	DefaultMate string
-	// Mates are the configured mates, the default first, in config order,
+	DefaultBot string
+	// Bots are the configured bots, the default first, in config order,
 	// whether or not they act.
-	Mates []string
-	// Unable holds, by name, the short reason of each configured mate that
-	// cannot act this run, such as "no key"; nil when every mate acts.
+	Bots []string
+	// Unable holds, by name, the short reason of each configured bot that
+	// cannot act this run, such as "no key"; nil when every bot acts.
 	Unable map[string]string
-	// MateFailures returns, by name, the warning of each mate whose last
+	// BotFailures returns, by name, the warning of each bot whose last
 	// token renewal failed. The loop reads it after Prepare and every
 	// saidInterval (KTD1); nil reads none.
-	MateFailures func() map[string]string
-	// Board is the board the config draws; nil draws the stages. With one,
-	// the engine reads its issues at each poll through the tracker's
-	// port.BoardLister, and reads none when the tracker has none (KTD4).
+	BotFailures func() map[string]string
+	// Board is the live view's board: the columns the config writes, or
+	// its default columns; nil fills no board. The engine reads a written
+	// board's issues at each poll through the tracker's port.BoardLister,
+	// and reads none when the tracker has none (KTD4); the core fills the
+	// default board from its own listings (KTD10).
 	Board []crew.BoardColumn
-	// Extras are the config's extra labels: with Board, a move removes them
-	// from an issue on the board, as it removes the workflow's states.
-	Extras []crew.State
+	// BoardWritten tells whether Board is the columns the config writes.
+	BoardWritten bool
 }
 
-// Engine runs the workflow of a Config. Use New; Run it once.
+// AgentHarness is the harness of one agent: every session of an action that
+// names the agent runs on it.
+type AgentHarness struct {
+	// Agent is the agent's name, as crew.Action.Agent names it.
+	Agent   string
+	Harness port.Harness
+}
+
+// Engine runs the rules of a Config. Use New; Run it once.
 type Engine struct {
-	cfg      Config
-	stream   *stream
-	stop     chan struct{} // closed by Stop
-	stopOnce sync.Once
+	cfg       Config
+	harnesses map[string]port.Harness // Config.Harnesses by agent
+	stream    *stream
+	stop      chan struct{} // closed by Stop
+	stopOnce  sync.Once
 
 	// prepared is set by Prepare, and preparation holds its result, so the
 	// preparers run once whether Run or its caller prepares.
@@ -131,31 +143,31 @@ type Engine struct {
 	// pullRequests is the tracker's port.PullRequestReporter; nil when the
 	// tracker has none, and the core then makes no pull request report.
 	pullRequests port.PullRequestReporter
-	// board is the tracker's port.BoardLister when the config draws a board;
-	// nil otherwise, and the core then reads no board (KTD4).
+	// board is the tracker's port.BoardLister when the config writes a
+	// board; nil otherwise, and the core then reads no board (KTD4).
 	board port.BoardLister
 	// writes is the tracker's port.WriterReporter; nil when the tracker has
-	// none, and crew's writes then never go back to the boss mid-run.
+	// none, and crew's writes then never go back to you mid-run.
 	writes port.WriterReporter
 	// opts are the core's options; Prepare builds the core with them once it
 	// has read the run journal (KTD2).
 	opts []core.Option
-	// boss are the boss's logins, as the tracker's port.BossFinder found
-	// them in Prepare; none without one.
-	boss []string
+	// codeOwners are the code owners' logins, as the tracker's
+	// port.CodeOwnerFinder found them in Prepare; none without one.
+	codeOwners []string
 
 	// The fields below are owned by Run's loop.
-	model     *core.Model
-	inbox     chan message
-	inflight  int // command goroutines whose final message is still due
-	wg        sync.WaitGroup
-	sessions  map[sessionKey]port.Session
-	checks    map[sessionKey]context.CancelFunc // ends each running check
-	recent    []core.Event
-	lastSaid  []core.Said       // what the sessions last said, as of the latest said refresh
-	lastMates core.MatesChecked // the mates' live state, as of the last reading that changed it
-	started   time.Time         // when the first poll ran
-	run       string            // this crew run's id in the run journal: started, in RFC 3339
+	model    *core.Model
+	inbox    chan message
+	inflight int // command goroutines whose final message is still due
+	wg       sync.WaitGroup
+	sessions map[sessionKey]port.Session
+	checks   map[sessionKey]context.CancelFunc // ends each running check
+	recent   []core.Event
+	lastSaid []core.Said      // what the sessions last said, as of the latest said refresh
+	lastBots core.BotsChecked // the bots' live state, as of the last reading that changed it
+	started  time.Time        // when the first poll ran
+	run      string           // this crew run's id in the run journal: started, in RFC 3339
 }
 
 // New returns an engine for cfg. It starts nothing until Run. When the
@@ -165,10 +177,11 @@ type Engine struct {
 // requests through it. When the workspace implements port.Reopener, a
 // failed run's action resumes in that run's workspace (KTD4). When the
 // tracker implements port.PullRequestFinder, the engine looks up the pull
-// request each action opened. When cfg has a Board and the tracker
-// implements port.BoardLister, the engine reads the board's issues at each
-// poll through it. When the tracker implements port.WriterReporter, the
-// engine reads through it whether crew's writes went back to the boss.
+// request each action opened. When cfg has a written Board and the
+// tracker implements port.BoardLister, the engine reads the board's issues
+// at each poll through it; a default Board fills from the listings. When
+// the tracker implements port.WriterReporter, the engine reads through it
+// whether crew's writes went back to you.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
@@ -189,17 +202,16 @@ func New(cfg Config) *Engine {
 	if finder != nil {
 		opts = append(opts, core.FindingPullRequests())
 	}
-	var board port.BoardLister
-	if len(cfg.Board) > 0 {
-		board, _ = cfg.Tracker.(port.BoardLister)
-	}
-	if board != nil {
-		crewLabels := slices.Concat(crew.WorkflowStates(cfg.Workflow), cfg.Extras)
-		opts = append(opts, core.ListingBoard(crew.BoardLabels(cfg.Board), crewLabels))
-	}
+	board, boardOpts := boardSource(cfg)
+	opts = append(opts, boardOpts...)
 	writes, _ := cfg.Tracker.(port.WriterReporter)
+	harnesses := make(map[string]port.Harness, len(cfg.Harnesses))
+	for _, h := range cfg.Harnesses {
+		harnesses[h.Agent] = h.Harness
+	}
 	return &Engine{
 		cfg:          cfg,
+		harnesses:    harnesses,
 		stream:       newStream(),
 		stop:         make(chan struct{}),
 		reporter:     reporter,
@@ -212,6 +224,24 @@ func New(cfg Config) *Engine {
 		sessions:     map[sessionKey]port.Session{},
 		checks:       map[sessionKey]context.CancelFunc{},
 	}
+}
+
+// boardSource returns where the core reads cfg's board from: a written
+// Board through the tracker's port.BoardLister, which it returns, and a
+// default Board from the listings. No Board, or a written one the tracker
+// cannot list, reads none.
+func boardSource(cfg Config) (port.BoardLister, []core.Option) {
+	switch {
+	case len(cfg.Board) == 0:
+		return nil, nil
+	case cfg.BoardWritten:
+		board, _ := cfg.Tracker.(port.BoardLister)
+		if board == nil {
+			return nil, nil
+		}
+		return board, []core.Option{core.ListingBoard(cfg.Board)}
+	}
+	return nil, []core.Option{core.BoardFromListings(cfg.Board)}
 }
 
 // Run prepares the adapters, as Prepare does, unless Prepare was already
@@ -228,7 +258,7 @@ func New(cfg Config) *Engine {
 // command goroutine is left. Every subscription is closed when Run returns,
 // after its last update.
 //
-// Before the first poll and every saidInterval, Run reads the mates' live
+// Before the first poll and every saidInterval, Run reads the bots' live
 // state, and steps the core with it when it changed (KTD1).
 func (e *Engine) Run(ctx context.Context) error {
 	defer e.stream.close()
@@ -253,7 +283,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	e.started = time.Now()
 	e.run = e.started.UTC().Format(time.RFC3339Nano)
-	e.checkMates(cmdCtx)
+	e.checkBots(cmdCtx)
 	e.step(cmdCtx, core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
@@ -261,7 +291,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			e.step(cmdCtx, core.Tick{Said: e.said()})
 		case <-saidTicker.C:
 			e.refreshSaid()
-			e.checkMates(cmdCtx)
+			e.checkBots(cmdCtx)
 		case <-stop:
 			stop = nil
 			e.step(cmdCtx, core.StopRequested{})
@@ -305,7 +335,7 @@ func (e *Engine) SubscribeQueue(capacity int) *Queue {
 }
 
 // Prepare runs, once, the Preparer of each adapter that implements
-// port.Preparer, with the workflow's states, then reads the run journal. It
+// port.Preparer, with the rules' states, then reads the run journal. It
 // stops at the first that fails and returns its error, naming its port or the
 // journal, so the last step reported on ctx is the one that failed. These are
 // environment checks (R2), so a caller can run them before starting a
@@ -319,50 +349,56 @@ func (e *Engine) Prepare(ctx context.Context) error {
 	return e.preparation
 }
 
-// prepare hands the tracker its writer when the config names a mate, runs
-// each port's Preparer with crew.WorkflowStates, the states the workflow
-// names, asks the tracker who the boss is and which login it acts as, then
-// reads the run journal and builds the core from it, with the mates. It
-// returns the first error, naming its port or the journal, without running
+// prepare hands the tracker its writer when the config names a bot, runs the
+// Preparer of the tracker, of each agent's harness in config order and of the
+// workspace with crew.RuleStates, the states the rules name, asks the
+// tracker who the code owners are and which login it acts as, then reads the
+// run journal and builds the core from it, with the bots. It returns the first
+// error, naming its port, a harness's agent, or the journal, without running
 // what comes after it (R6). The core is then left unbuilt, which is safe
 // because Run returns the error before its loop, the only place that reads
 // it.
 func (e *Engine) prepare(ctx context.Context) error {
-	states := crew.WorkflowStates(e.cfg.Workflow)
+	states := crew.RuleStates(e.cfg.Rules)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
-		a.ActAs(e.cfg.Writer, slices.Clone(e.cfg.MateLogins))
+		a.ActAs(e.cfg.Writer, slices.Clone(e.cfg.BotLogins))
 	}
-	ports := []struct {
+	type named struct {
 		name    string
 		adapter any
-	}{{"tracker", e.cfg.Tracker}, {"harness", e.cfg.Harness}, {"workspace", e.cfg.Workspace}}
+	}
+	harnesses := make([]named, len(e.cfg.Harnesses))
+	for i, h := range e.cfg.Harnesses {
+		harnesses[i] = named{"harness of agent " + h.Agent, h.Harness}
+	}
+	ports := slices.Concat([]named{{"tracker", e.cfg.Tracker}}, harnesses, []named{{"workspace", e.cfg.Workspace}})
 	for _, p := range ports {
 		if err := port.Prepare(ctx, states, p.adapter); err != nil {
 			return fmt.Errorf("prepare the %s: %w", p.name, err)
 		}
 	}
-	if b, ok := e.cfg.Tracker.(port.BossFinder); ok {
-		e.boss = b.Boss()
+	if b, ok := e.cfg.Tracker.(port.CodeOwnerFinder); ok {
+		e.codeOwners = b.CodeOwners()
 	}
-	mates := e.withMates()
+	bots := e.withBots()
 	port.Step(ctx, "reading the run journal")
 	past, err := e.readJournal()
 	if err != nil {
 		return err
 	}
-	e.model = core.New(e.cfg.Workflow, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past), mates)...)
+	e.model = core.New(e.cfg.Rules, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past), bots)...)
 	return nil
 }
 
-// withMates returns the core's option of the configured mates, with the
-// login the tracker acts as when it acts as the boss, as its
+// withBots returns the core's option of the configured bots, with the
+// login the tracker acts as when it acts as you, as its
 // port.LoginFinder found it in Prepare; none without one (KTD8).
-func (e *Engine) withMates() core.Option {
-	c := core.MatesConfig{Default: e.cfg.DefaultMate, Names: e.cfg.Mates, Unable: e.cfg.Unable}
+func (e *Engine) withBots() core.Option {
+	c := core.BotsConfig{Default: e.cfg.DefaultBot, Names: e.cfg.Bots, Unable: e.cfg.Unable}
 	if l, ok := e.cfg.Tracker.(port.LoginFinder); ok {
 		c.Login = l.Login()
 	}
-	return core.WithMates(c)
+	return core.WithBots(c)
 }
 
 // said returns what each running session that implements port.Narrator last
@@ -432,23 +468,23 @@ func (e *Engine) refreshSaid() {
 	e.stream.publishLatest(Update{Snapshot: e.snapshot()})
 }
 
-// checkMates reads the mates' live state: whether crew's writes went back to
-// the boss, from the tracker's port.WriterReporter, and the mates' failed
-// renewals, from MateFailures. When the reading differs from the last one,
+// checkBots reads the bots' live state: whether crew's writes went back to
+// you, from the tracker's port.WriterReporter, and the bots' failed
+// renewals, from BotFailures. When the reading differs from the last one,
 // it steps the core with it, which publishes to every subscriber; an
 // unchanged reading steps nothing (KTD1). ctx is the command context.
-func (e *Engine) checkMates(ctx context.Context) {
-	var in core.MatesChecked
+func (e *Engine) checkBots(ctx context.Context) {
+	var in core.BotsChecked
 	if e.writes != nil {
 		in.WritesLost = e.writes.WriterLost()
 	}
-	if e.cfg.MateFailures != nil {
-		in.NotRenewed = e.cfg.MateFailures()
+	if e.cfg.BotFailures != nil {
+		in.NotRenewed = e.cfg.BotFailures()
 	}
-	if in.WritesLost == e.lastMates.WritesLost && maps.Equal(in.NotRenewed, e.lastMates.NotRenewed) {
+	if in.WritesLost == e.lastBots.WritesLost && maps.Equal(in.NotRenewed, e.lastBots.NotRenewed) {
 		return
 	}
-	e.lastMates = in
+	e.lastBots = in
 	e.step(ctx, in)
 }
 

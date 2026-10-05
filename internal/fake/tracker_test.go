@@ -61,12 +61,12 @@ func TestTrackerMoveLeavesTheIssueInExactlyTheNewState(t *testing.T) {
 	}
 }
 
-// An extra label is not a state: List does not report it, an issue whose
-// only crew label is an extra is not listed, and a move clears the extras.
-func TestTrackerExtrasAreNotListedAndAMoveClearsThem(t *testing.T) {
+// A label no rule names is not a state: List does not report it, an issue
+// carrying only such labels is not listed, and a move keeps them (AE6).
+func TestTrackerOtherLabelsAreNotListedAndAMoveKeepsThem(t *testing.T) {
 	tr := fake.NewTracker(issue("1", ready), issue("2"))
-	tr.SetExtras("1", waitingBrainstorm)
-	tr.SetExtras("2", waitingBrainstorm)
+	tr.SetLabels("1", string(waitingBrainstorm), "bug")
+	tr.SetLabels("2", string(waitingBrainstorm))
 	ctx := context.Background()
 
 	listed, err := tr.List(ctx, []crew.State{ready, waitingBrainstorm})
@@ -83,11 +83,14 @@ func TestTrackerExtrasAreNotListedAndAMoveClearsThem(t *testing.T) {
 	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
-	if got := tr.Extras("1"); len(got) != 0 {
-		t.Errorf("issue 1 extras after the move = %v, want none", got)
+	if want := []string{string(waitingBrainstorm), "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
+		t.Errorf("issue 1 labels after the move = %q, want %q", tr.Labels("1"), want)
 	}
-	if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(tr.Extras("2"), want) {
-		t.Errorf("issue 2 extras = %v, want %v", tr.Extras("2"), want)
+	if want := []string{string(waitingBrainstorm)}; !reflect.DeepEqual(tr.Labels("2"), want) {
+		t.Errorf("issue 2 labels = %q, want %q", tr.Labels("2"), want)
+	}
+	if got := tr.Labels("9"); got != nil {
+		t.Errorf("an unknown issue's labels = %q, want none", got)
 	}
 }
 
@@ -230,7 +233,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	built, err := factory(func(target any) error {
 		got = target
 		return nil
-	}, []crew.State{ready}, []crew.State{waitingBrainstorm})
+	}, []crew.State{ready})
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -242,7 +245,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	}
 
 	invalid := errors.New("tracker.lables (line 3): unknown key")
-	if _, err := factory(func(any) error { return invalid }, nil, nil); !errors.Is(err, invalid) {
+	if _, err := factory(func(any) error { return invalid }, nil); !errors.Is(err, invalid) {
 		t.Errorf("factory with an invalid section = %v, want the decode error", err)
 	}
 }
@@ -250,7 +253,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 	tr := fake.NewReportingTracker(issue("74", ready))
 	var reporter port.StatusReporter = tr
-	started := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusRunning,
+	started := crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
 		Actions: []crew.ActionStatus{{Name: "development", State: crew.ActionRunning}}}
 	running := started.Clone()
 	running.Actions[0].Said = "Reading the plan."
@@ -276,36 +279,36 @@ func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 	}
 }
 
-func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedBoss(t *testing.T) {
+func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedCodeOwners(t *testing.T) {
 	tr := fake.NewActingTracker(issue("80", ready))
 	var acting port.Acting = tr
-	var finder port.BossFinder = tr
-	ops := port.Identity{Mate: "ops", Login: "crew-ops[bot]", Env: []string{"GH_CONFIG_DIR=/run/crew/ops"}}
-	mates := []string{"crew-ops[bot]", "crew-developer[bot]"}
+	var finder port.CodeOwnerFinder = tr
+	ops := port.Identity{Bot: "ops", Login: "crew-ops[bot]", Env: []string{"GH_CONFIG_DIR=/run/crew/ops"}}
+	bots := []string{"crew-ops[bot]", "crew-developer[bot]"}
 
-	if got := finder.Boss(); len(got) != 0 {
-		t.Errorf("Boss before SetBoss = %q, want none", got)
+	if got := finder.CodeOwners(); len(got) != 0 {
+		t.Errorf("CodeOwners before SetCodeOwners = %q, want none", got)
 	}
-	acting.ActAs(ops, mates)
-	mates[0] = "changed after the call"
-	tr.SetBoss("octocat", "hubot")
+	acting.ActAs(ops, bots)
+	bots[0] = "changed after the call"
+	tr.SetCodeOwners("octocat", "hubot")
 
-	want := []fake.ActAsCall{{Writer: ops, Mates: []string{"crew-ops[bot]", "crew-developer[bot]"}}}
+	want := []fake.ActAsCall{{Writer: ops, Bots: []string{"crew-ops[bot]", "crew-developer[bot]"}}}
 	if got := tr.ActAsCalls(); !reflect.DeepEqual(got, want) {
 		t.Errorf("ActAsCalls = %+v, want %+v", got, want)
 	}
-	if got := finder.Boss(); !reflect.DeepEqual(got, []string{"octocat", "hubot"}) {
-		t.Errorf("Boss = %q, want octocat and hubot", got)
+	if got := finder.CodeOwners(); !reflect.DeepEqual(got, []string{"octocat", "hubot"}) {
+		t.Errorf("CodeOwners = %q, want octocat and hubot", got)
 	}
 	if err := port.Prepare(context.Background(), []crew.State{ready}, tr); err != nil {
 		t.Errorf("Prepare = %v, want an acting tracker to prepare", err)
 	}
 	for _, other := range []any{fake.NewTracker(), fake.NewReportingTracker()} {
 		if _, ok := other.(port.Acting); ok {
-			t.Errorf("%T acts as a mate; only an ActingTracker should", other)
+			t.Errorf("%T acts as a bot; only an ActingTracker should", other)
 		}
-		if _, ok := other.(port.BossFinder); ok {
-			t.Errorf("%T finds the boss; only an ActingTracker should", other)
+		if _, ok := other.(port.CodeOwnerFinder); ok {
+			t.Errorf("%T finds the code owners; only an ActingTracker should", other)
 		}
 	}
 }
@@ -317,9 +320,9 @@ func TestActingTrackerReturnsTheScriptedWritesWarningAndLogin(t *testing.T) {
 	if got, login := reporter.WriterLost(), finder.Login(); got != "" || login != "" {
 		t.Errorf("WriterLost, Login before their setters = %q, %q; want both empty", got, login)
 	}
-	tr.SetWriterLost("crew's writes as mate ops went back to you")
+	tr.SetWriterLost("crew's writes as bot ops went back to you")
 	tr.SetLogin("octocat")
-	if got := reporter.WriterLost(); got != "crew's writes as mate ops went back to you" {
+	if got := reporter.WriterLost(); got != "crew's writes as bot ops went back to you" {
 		t.Errorf("WriterLost = %q, want the warning set", got)
 	}
 	if got := finder.Login(); got != "octocat" {
@@ -335,8 +338,8 @@ func TestActingTrackerReturnsTheScriptedWritesWarningAndLogin(t *testing.T) {
 	}
 }
 
-// The board lists the open issues, never a pull request, whose states,
-// extras or other labels match an asked label ignoring case, oldest first,
+// The board lists the open issues, never a pull request, whose states
+// or other labels match an asked label ignoring case, oldest first,
 // each with the asked labels it carries in the asked spelling.
 func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	on := func(i crew.Issue, day int) crew.Issue {
@@ -348,7 +351,7 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	tr := fake.NewBoardTracker(on(issue("1", ready), 2), on(issue("2"), 3), on(issue("3"), 1), pull,
 		on(issue("5"), 1), on(issue("6"), 1))
 	tr.SetLabels("1", "BUG")
-	tr.SetExtras("2", waitingBrainstorm)
+	tr.SetLabels("2", string(waitingBrainstorm))
 	tr.SetLabels("3", "Bug", "docs")
 	tr.SetLabels("4", "bug")
 	tr.SetLabels("5", "bug")
@@ -374,10 +377,9 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 }
 
 // Adding an issue whose key the tracker holds replaces it: open again, with
-// the new states and no extras or other labels.
-func TestAddingAKnownIssueReplacesItOpenWithoutExtrasOrLabels(t *testing.T) {
+// the new states and no other labels.
+func TestAddingAKnownIssueReplacesItOpenWithoutLabels(t *testing.T) {
 	tr := fake.NewBoardTracker(issue("1", ready))
-	tr.SetExtras("1", waitingBrainstorm)
 	tr.SetLabels("1", "bug")
 	tr.Close("1")
 
@@ -387,8 +389,8 @@ func TestAddingAKnownIssueReplacesItOpenWithoutExtrasOrLabels(t *testing.T) {
 	if !ok || !reflect.DeepEqual(got.States, []crew.State{readyToReview}) {
 		t.Fatalf("issue 1 = %+v (found %t), want it in %q", got, ok, readyToReview)
 	}
-	if extras := tr.Extras("1"); len(extras) != 0 {
-		t.Errorf("extras = %q, want none", extras)
+	if labels := tr.Labels("1"); len(labels) != 0 {
+		t.Errorf("labels = %q, want none", labels)
 	}
 	board, err := tr.ListBoard(context.Background(), []string{"bug", string(readyToReview)})
 	if err != nil {

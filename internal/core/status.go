@@ -20,7 +20,7 @@ type statusSlot struct {
 	// sending is the write in flight, nil when none.
 	sending *crew.Status
 	// waiting are the statuses not sent yet, oldest first, at most one per
-	// stage run: a newer status of a run replaces the run's waiting one.
+	// rule run: a newer status of a run replaces the run's waiting one.
 	// They are sent in order once nothing is in flight or owed, so an earlier
 	// run's ended status lands before the next run's statuses.
 	waiting []crew.Status
@@ -32,10 +32,10 @@ type statusSlot struct {
 	// failing is set while writes fail, so failures in a row are reported
 	// once.
 	failing bool
-	// run is the id of the issue's current stage run, and runStage its
-	// stage; runEnded is set once an ended status of it was reported.
+	// run is the id of the issue's current rule run, and runRule its
+	// rule; runEnded is set once an ended status of it was reported.
 	run      string
-	runStage string
+	runRule  string
 	runEnded bool
 }
 
@@ -82,15 +82,15 @@ func (s *step) report(st crew.Status) {
 	s.pump(sl)
 }
 
-// assignRun gives st the id of its stage run (R10): the issue's current run
+// assignRun gives st the id of its rule run (R10): the issue's current run
 // goes on until it ended and a status of another kind comes, or until a
-// status of another stage comes. An id is the run's start time and a count,
+// status of another rule comes. An id is the run's start time and a count,
 // so ids differ across crew processes and within one.
 func (s *step) assignRun(sl *statusSlot, st *crew.Status) {
-	if sl.run == "" || st.Stage != sl.runStage || (sl.runEnded && st.Kind != crew.StatusEnded) {
+	if sl.run == "" || st.Rule != sl.runRule || (sl.runEnded && st.Kind != crew.StatusEnded) {
 		s.m.runs++
 		sl.run = fmt.Sprintf("%s.%d", s.at.UTC().Format("20060102T150405.000000000Z"), s.m.runs)
-		sl.runStage = st.Stage
+		sl.runRule = st.Rule
 	}
 	sl.runEnded = st.Kind == crew.StatusEnded
 	st.Run = sl.run
@@ -176,7 +176,7 @@ func (m *Model) statusesBusy() bool {
 	return false
 }
 
-// running reports h's stage and its actions as they stand (R6, R7, R8). An
+// running reports h's rule and its actions as they stand (R6, R7, R8). An
 // action whose check runs is still running, since its session started; its
 // session's last words are no longer current.
 func (s *step) running(h *heldIssue) {
@@ -194,7 +194,7 @@ func (s *step) running(h *heldIssue) {
 	s.report(st)
 }
 
-// ended reports h's stage as ended, with each action's final state and its
+// ended reports h's rule as ended, with each action's final state and its
 // move to the state to (R11).
 func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 	st := s.status(h, crew.StatusEnded)
@@ -209,7 +209,7 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 // session started also carries what it spent and its pull request.
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
-		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Stage: s.m.stages[h.stage].Name,
+		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Kind: kind, Updated: s.at,
 	}
 	for _, a := range h.actions {
@@ -237,7 +237,7 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 
 // sameStatus reports whether a and b show the same, whenever computed (R5).
 func sameStatus(a, b crew.Status) bool {
-	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Stage == b.Stage &&
+	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Rule == b.Rule &&
 		a.Kind == b.Kind && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
 		slices.Equal(a.Actions, b.Actions)
 }

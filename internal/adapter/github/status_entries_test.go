@@ -50,7 +50,7 @@ func report(t *testing.T, tr *Tracker, statuses ...crew.Status) {
 	t.Helper()
 	for _, s := range statuses {
 		if err := tr.ReportStatus(context.Background(), s); err != nil {
-			t.Fatalf("ReportStatus(%s %d): %v", s.Stage, s.Kind, err)
+			t.Fatalf("ReportStatus(%s %d): %v", s.Rule, s.Kind, err)
 		}
 	}
 }
@@ -88,27 +88,27 @@ func commentAfter(t *testing.T, statuses ...crew.Status) string {
 	return w[len(w)-1]
 }
 
-// developmentEnded is #74's development stage, run r1, ended with its lfg
+// developmentEnded is #74's development rule, run r1, ended with its lfg
 // action failed on its check.
 func developmentEnded() crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "development", Kind: crew.StatusEnded, Run: "r1",
+	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: "r1",
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
 			Reason: "no open pull request closes #74", Log: ".crew/logs/issue-74-lfg.log"}},
 		To: needsAttention, Move: crew.MoveDone, Updated: updated}
 }
 
-// fix is #74's fix stage in run, running its address action that said said.
+// fix is #74's fix rule in run, running its address action that said said.
 func fix(run, said string) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "fix", Kind: crew.StatusRunning, Run: run,
+	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
 		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: said}},
 		Updated: updated}
 }
 
 // legacyQueued is the queued entry an earlier crew version wrote for #74
-// waiting for stage in run r2, as that version rendered it.
-func legacyQueued(stage string) string {
-	return "<!-- crew:entry run=r2 kind=queued stage=" + stage + " -->\n" +
-		"crew: #74 is queued for `" + stage + "`, waiting for a free slot: crew runs at most 2 issues at once.\n\n" +
+// waiting for rule in run r2, as that version rendered it.
+func legacyQueued(rule string) string {
+	return "<!-- crew:entry run=r2 kind=queued stage=" + rule + " -->\n" +
+		"crew: #74 is queued for `" + rule + "`, waiting for a free slot: crew runs at most 2 issues at once.\n\n" +
 		"Updated 2026-10-02 14:03 UTC."
 }
 
@@ -142,7 +142,7 @@ func TestRunningThenEndedInOneRunEditsOneEntry(t *testing.T) {
 }
 
 // Covers AE7.
-func TestANewStageRunIsAppendedAfterTheEndedOne(t *testing.T) {
+func TestANewRuleRunIsAppendedAfterTheEndedOne(t *testing.T) {
 	tr, gh := fresh(t)
 	report(t, tr, developmentEnded())
 	development := strings.TrimSuffix(writes(t, gh)[0], tail)
@@ -214,8 +214,8 @@ func TestLastWordsShapedLikeAnEntryMarkerAreEntryText(t *testing.T) {
 }
 
 // Covers R13: crew takes an issue an earlier version left queued for the
-// same stage, so the running entry replaces the queued one.
-func TestARunningStatusReplacesALegacyQueuedEntryOfTheSameStage(t *testing.T) {
+// same rule, so the running entry replaces the queued one.
+func TestARunningStatusReplacesALegacyQueuedEntryOfTheSameRule(t *testing.T) {
 	development := strings.TrimSuffix(commentAfter(t, developmentEnded()), tail)
 	tr, gh := restarted(t, development+separator+legacyQueued("fix")+tail)
 	report(t, tr, fix("r3", "Reading the review."))
@@ -229,9 +229,9 @@ func TestARunningStatusReplacesALegacyQueuedEntryOfTheSameStage(t *testing.T) {
 	}
 }
 
-// A legacy queued entry of another stage is not the stage crew took, so it
+// A legacy queued entry of another rule is not the rule crew took, so it
 // stays as it is and the running entry follows it.
-func TestARunningStatusAppendsAfterALegacyQueuedEntryOfAnotherStage(t *testing.T) {
+func TestARunningStatusAppendsAfterALegacyQueuedEntryOfAnotherRule(t *testing.T) {
 	queued := legacyQueued("implement")
 	tr, gh := restarted(t, queued+tail)
 	report(t, tr, fix("r3", "Reading the review."))
@@ -265,10 +265,10 @@ func TestACommentWithoutEntriesIsKeptAsTheFirstEntry(t *testing.T) {
 	}
 }
 
-func TestAStageNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
+func TestARuleNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
 	running := func(run string) crew.Status {
 		s := fix(run, "")
-		s.Stage = "fix --> now"
+		s.Rule = "fix --> now"
 		return s
 	}
 	before := commentAfter(t, running("r2"))
@@ -277,8 +277,8 @@ func TestAStageNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
 		t.Errorf("marker line %q holds %d comment ends, want 1", marker, n)
 	}
 
-	// Only the same stage's legacy queued entry is replaced, so this reads
-	// the stage back from the marker.
+	// Only the same rule's legacy queued entry is replaced, so this reads
+	// the rule back from the marker.
 	tr, gh := restarted(t, strings.Replace(before, "kind=running", "kind=queued", 1))
 	report(t, tr, running("r3"))
 	if body, want := writes(t, gh)[0], tr.renderStatus(running("r3"))+tail; body != want {

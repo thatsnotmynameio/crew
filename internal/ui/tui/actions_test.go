@@ -21,7 +21,7 @@ func actionsOf(t *testing.T, view string) string {
 	return view[i:j]
 }
 
-// Covers R5 and R17: each action with its icon, reference and title, stage
+// Covers R5 and R17: each action with its icon, reference and title, rule
 // and action, queue, state with elapsed time, and branch.
 func TestEachActionShowsItsIconQueueStateAndBranch(t *testing.T) {
 	view := fitted(t, 120, 0, runningSnapshot())

@@ -19,7 +19,7 @@ import (
 // Covers AE4.
 func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
-	r := options(t, strings.Replace(oneAction, "harness: fake", "harness: codex", 1), tr, fake.NewHarness())
+	r := options(t, strings.Replace(oneAction, "      name: fake\n", "      name: codex\n", 1), tr, fake.NewHarness())
 
 	if code := app.Run(context.Background(), r.opts); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -28,7 +28,7 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
 	stderr := r.stderr.String()
-	for _, want := range []string{"harness", `"codex"`, "fake"} {
+	for _, want := range []string{"agents.developer.harness.name", `"codex"`, "fake"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr %q does not name %s", stderr, want)
 		}
@@ -50,16 +50,15 @@ func TestAConfigWithTrackerLabelsExitsTwoNamingTheKey(t *testing.T) {
 	if n := tr.listed(); n != 0 {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
-	if stderr := r.stderr.String(); !strings.Contains(stderr, "tracker.labels (line 6): unknown key") {
+	if stderr := r.stderr.String(); !strings.Contains(stderr, "tracker.labels (line 4): unknown key") {
 		t.Errorf("stderr = %q, want it to name tracker.labels and its line", stderr)
 	}
 }
 
 // Covers AE4 of #92.
-func TestAStageTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.T) {
+func TestARuleTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
-	body := strings.Replace(oneAction, "    on_failure: needs attention\n",
-		"    on_failure: needs attention\n    takes: prs\n", 1)
+	body := strings.Replace(oneAction, "  implement:\n", "  implement:\n    takes: prs\n", 1)
 	r := options(t, body, tr, fake.NewHarness())
 
 	if code := app.Run(context.Background(), r.opts); code != 2 {
@@ -68,9 +67,9 @@ func TestAStageTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.
 	if n := tr.listed(); n != 0 {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
-	want := `workflow[0].takes (line 12): "prs" must be issues or pull_requests`
+	want := `rules.implement.takes (line 10): "prs" must be issues or pull_requests`
 	if stderr := r.stderr.String(); !strings.Contains(stderr, want) {
-		t.Errorf("stderr = %q, want it to name workflow[0].takes and its line", stderr)
+		t.Errorf("stderr = %q, want it to name rules.implement.takes and its line", stderr)
 	}
 }
 

@@ -23,7 +23,8 @@ type CallID uint64
 // outstanding. It asks at a tick with a free slot, and at once when an issue
 // it releases frees a slot after a tick skipped its listing.
 type ListIssues struct {
-	// States are the stages' trigger states, in config order.
+	// States are the rules' ready and running states, rule by rule in
+	// config order, each once (KTD10).
 	States []crew.State
 }
 
@@ -85,8 +86,9 @@ type RecordRun struct {
 // WorkspaceReady). Its result is SessionStarted or SessionFailedToStart,
 // then SessionEnded once a started session ends. Resumed is set when the
 // session continues a failed run in its reopened workspace, so the engine
-// marks in the log where the new session starts. Mate is the action's mate,
-// whom the session acts as on the tracker; empty means the boss.
+// marks in the log where the new session starts. Agent is the action's
+// agent, whose harness runs the session. Bot is the action's bot, whom the
+// session acts as on the tracker; empty means you.
 type StartSession struct {
 	IssueKey string
 	Action   string
@@ -94,7 +96,8 @@ type StartSession struct {
 	Prompt   string
 	Log      string
 	Resumed  bool
-	Mate     string
+	Agent    string
+	Bot      string
 }
 
 // StopSession asks the engine to stop the running session of Action on the
@@ -107,8 +110,8 @@ type StopSession struct {
 // RunCheck asks the engine to run Command, the action's check, in Dir once
 // its session succeeded, its output going to the log at Log after the
 // session's. The issue's ref, key and URL and the action's Branch reach the
-// command as environment variables, never as part of it. Mate is the
-// action's mate, whom the check acts as on the tracker; empty means the boss.
+// command as environment variables, never as part of it. Bot is the
+// action's bot, whom the check acts as on the tracker; empty means you.
 // Its result is CheckEnded.
 type RunCheck struct {
 	IssueKey string
@@ -119,7 +122,7 @@ type RunCheck struct {
 	IssueRef string
 	IssueURL string
 	Branch   string
-	Mate     string
+	Bot      string
 }
 
 // FindPullRequest asks the tracker for the pull request opened from Branch

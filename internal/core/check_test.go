@@ -12,8 +12,8 @@ import (
 // prCheck is the check of the development action in checked.
 const prCheck = `gh pr list --head "$CREW_BRANCH" --state open`
 
-// checked is the draft workflow with a check on development only.
-func checked() []crew.Stage {
+// checked is the draft rules with a check on development only.
+func checked() []crew.Rule {
 	w := draft()
 	w[0].Actions[1].Check = prCheck
 	return w
@@ -81,28 +81,28 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
 }
 
-// Each action's session and check act as the action's own mate (KTD9).
-func TestSessionAndCheckCarryTheActionsMate(t *testing.T) {
+// Each action's session and check act as the action's own bot (KTD9).
+func TestSessionAndCheckCarryTheActionsBot(t *testing.T) {
 	w := checked()
-	w[0].Actions[0].Mate = "ops"
-	w[0].Actions[1].Mate = "developer"
+	w[0].Actions[0].Bot = "ops"
+	w[0].Actions[1].Bot = "developer"
 	d := newDriver(t, w, 2)
 	cmds, _ := d.poll(issue("74", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 
 	acceptance := session("74", "acceptance", "Implement test acceptance for issue #74")
-	acceptance.Mate = "ops"
+	acceptance.Bot = "ops"
 	cmds, _ = d.send(space("74", "acceptance"))
 	wantCommands(t, cmds, acceptance)
 	development := session("74", "development", "Implement development for issue #74")
-	development.Mate = "developer"
+	development.Bot = "developer"
 	cmds, _ = d.send(space("74", "development"))
 	wantCommands(t, cmds, development)
 
 	d.send(core.SessionStarted{IssueKey: "74", Action: "development"})
 	cmds, _ = d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 	check := runCheck("74")
-	check.Mate = "developer"
+	check.Bot = "developer"
 	wantCommands(t, cmds, check)
 }
 
@@ -195,8 +195,8 @@ func TestCheckingActionIsRunningInItsStatus(t *testing.T) {
 // devSpace is the workspace of issue 74's development.
 var devSpace = space("74", "development")
 
-// draftWith is the draft workflow with actions as its first stage's.
-func draftWith(actions ...crew.Action) []crew.Stage {
+// draftWith is the draft rules with actions as its first rule's.
+func draftWith(actions ...crew.Action) []crew.Rule {
 	w := draft()
 	w[0].Actions = actions
 	return w

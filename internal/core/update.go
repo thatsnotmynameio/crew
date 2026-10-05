@@ -45,13 +45,14 @@ func (s *step) runInput(in Input) bool {
 		s.listed(in.Issues)
 	case ListFailed:
 		s.m.listing = false
+		s.m.listingFailed(in.Reason)
 		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
 	case BoardListed:
 		s.m.boardListed(in.Issues)
 	case BoardListFailed:
 		s.m.boardListFailed(in.Reason)
-	case MatesChecked:
-		s.matesChecked(in)
+	case BotsChecked:
+		s.botsChecked(in)
 	case CallResult:
 		s.callResult(in)
 	case StatusResult:
@@ -61,7 +62,7 @@ func (s *step) runInput(in Input) bool {
 	case RecordFailed:
 		r := in.Record
 		s.emit(RunNotRecorded{
-			At: s.at, IssueKey: r.IssueKey, IssueRef: r.IssueRef, Stage: r.Stage, Action: r.Action, Reason: in.Reason,
+			At: s.at, IssueKey: r.IssueKey, IssueRef: r.IssueRef, Rule: r.Rule, Action: r.Action, Reason: in.Reason,
 		})
 	default:
 		return false
@@ -115,16 +116,23 @@ func (s *step) tick(said []Said) {
 	s.retryPullRequests()
 }
 
-// listIssues asks for the issues in every stage's state, and starts the count
-// of skipped listings again (R6).
+// listIssues asks for the items in every rule's ready and running labels,
+// of both kinds, each once, and starts the count of skipped listings again
+// (R6). Only the ready labels are taken from; the running ones fill the
+// default board (KTD10).
 func (s *step) listIssues() {
 	m := s.m
 	m.listing = true
 	m.listings++
 	m.skipped = 0
-	states := make([]crew.State, len(m.stages))
-	for i, st := range m.stages {
-		states[i] = st.Label
+	m.listingAsked()
+	var states []crew.State
+	for _, r := range m.rules {
+		for _, st := range []crew.State{r.Labels.Ready, r.Labels.Running} {
+			if !slices.Contains(states, st) {
+				states = append(states, st)
+			}
+		}
 	}
 	s.command(ListIssues{States: states})
 }
@@ -220,18 +228,20 @@ func (s *step) windDown() {
 	s.stop()
 }
 
-// listed marks the handled entries whose issue left its state (KTD4), skips
-// issues in two states (R15), reports the items in the label of a stage of
-// the other kind (#92), and takes free slots' worth of issues, each while
-// its stage's queue has a free slot (R6): the highest priority first, an
-// issue without one last; then, at the same priority, later stages first;
-// then the oldest issue first (KTD8). It reports nothing for the issues it
-// leaves, a blocked one included: a later listing with a free slot takes
-// them. It takes nothing once the run time is up.
+// listed marks the handled entries whose issue left its state (KTD4), fills
+// a board filled from the listings (KTD10), skips issues in two states
+// (R15), reports the items in the label of a rule of the other kind (#92),
+// and takes free slots' worth of issues, each while its rule's queue has a
+// free slot (R6): the highest priority first, an issue without one last;
+// then, at the same priority, later rules first; then the oldest issue
+// first (KTD8). It reports nothing for the issues it leaves, a blocked one
+// included: a later listing with a free slot takes them. It takes nothing
+// once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
 	m.gone(issues)
+	m.boardFromListing(issues)
 	if m.stopping || m.timeUp {
 		return
 	}
@@ -251,20 +261,20 @@ func (s *step) skipped(issues []crew.Issue) {
 	}
 }
 
-// candidate is an issue waiting in the state of stage, which crew may take.
+// candidate is an issue waiting in the state of rule, which crew may take.
 type candidate struct {
-	stage int
+	rule  int
 	issue crew.Issue
 }
 
-// waiting returns the unblocked items of a stage's kind waiting in its state,
+// waiting returns the unblocked items of a rule's kind waiting in its state,
 // in the order listed takes them.
 func (s *step) waiting(issues []crew.Issue) []candidate {
 	var candidates []candidate
-	for si, stage := range s.m.stages {
+	for si, rule := range s.m.rules {
 		for _, issue := range issues {
-			inLabel := len(issue.States) == 1 && issue.States[0] == stage.Label
-			if inLabel && issue.Kind == stage.Takes && !issue.Blocked {
+			inLabel := len(issue.States) == 1 && issue.States[0] == rule.Labels.Ready
+			if inLabel && issue.Kind == rule.Takes && !issue.Blocked {
 				candidates = append(candidates, candidate{si, issue})
 			}
 		}
@@ -273,7 +283,7 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 		if c := comparePriority(a.issue.Priority, b.issue.Priority); c != 0 {
 			return c
 		}
-		if c := cmp.Compare(b.stage, a.stage); c != 0 {
+		if c := cmp.Compare(b.rule, a.rule); c != 0 {
 			return c
 		}
 		return a.issue.Created.Compare(b.issue.Created)
@@ -282,7 +292,7 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 }
 
 // takeWaiting takes candidates in order while slots are free, passing over
-// each one whose stage's queue is full, and returns how many it took
+// each one whose rule's queue is full, and returns how many it took
 // (KTD3). It reports nothing for the rest.
 func (s *step) takeWaiting(candidates []candidate) int {
 	m := s.m
@@ -291,10 +301,10 @@ func (s *step) takeWaiting(candidates []candidate) int {
 		if m.full() {
 			break
 		}
-		if m.held(c.issue.Key) != nil || m.queueFull(m.queueOf[c.stage]) {
+		if m.held(c.issue.Key) != nil || m.queueFull(m.queueOf[c.rule]) {
 			continue
 		}
-		s.take(c.stage, c.issue)
+		s.take(c.rule, c.issue)
 		taken++
 	}
 	return taken
@@ -314,17 +324,17 @@ func comparePriority(a, b int) int {
 	return cmp.Compare(a, b)
 }
 
-// take holds issue for stage si and moves it to the stage's moves_to.
+// take holds issue for rule si and moves it to the rule's running label.
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
-	stage := m.stages[si]
-	h := &heldIssue{issue: issue.Clone(), stage: si, claim: ClaimTaking, taken: s.at}
-	for _, a := range stage.Actions {
-		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, mate: a.Mate})
+	rule := m.rules[si]
+	h := &heldIssue{issue: issue.Clone(), rule: si, claim: ClaimTaking, taken: s.at}
+	for _, a := range rule.Actions {
+		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, agent: a.Agent, bot: a.Bot})
 	}
 	m.issues = append(m.issues, h)
-	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Stage: stage.Name, From: stage.Label, To: stage.MovesTo})
-	s.call(h, &call{kind: CallMove, take: true, from: stage.Label, to: stage.MovesTo})
+	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
+	s.call(h, &call{kind: CallMove, take: true, from: rule.Labels.Ready, to: rule.Labels.Running})
 }
 
 // call registers c on h under a new ID and makes its first attempt.
@@ -347,8 +357,8 @@ func (s *step) attempt(h *heldIssue, c *call) {
 
 // callResult settles, owes or retries the call r answers. A take and a
 // verdict call are owed alike when they fail transiently: a take may have
-// landed although it failed, so releasing its issue could strand it in
-// moves_to with no session, and the tracker makes the retry idempotent.
+// landed although it failed, so releasing its issue could strand it in the
+// running label with no session, and the tracker makes the retry idempotent.
 func (s *step) callResult(r CallResult) {
 	m := s.m
 	h, c := m.findCall(r.ID)
@@ -408,20 +418,31 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 
 // taken applies the take to the board (KTD4), reports it on h's pull
 // requests and starts h's actions once its take move is done, or, after a
-// stop, ends them unstarted so the issue moves to its stage's on_failure
-// (R9).
+// stop, ends them unstarted so the issue moves to its rule's failure label
+// (R9). A rule without actions is judged at once, after a stop too, so the
+// issue moves on to its rule's success (R8, KTD5).
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 	m.boardMoved(h.issue, c.to)
 	s.reportPullRequests(h, c.to, false)
 	h.settle(c)
-	if m.stopping {
+	switch {
+	case len(h.actions) == 0:
+		s.judge(h)
+	case m.stopping:
 		for _, a := range h.actions {
 			s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
 		}
-		return
+	default:
+		s.start(h)
 	}
+}
+
+// start starts h's actions, each in a new workspace or in its failed run's
+// (R5), and reports h running unless every action already ended.
+func (s *step) start(h *heldIssue) {
+	m := s.m
 	h.claim = ClaimRunning
 	for _, a := range h.actions {
 		prompt, err := crew.Action{Name: a.name, Prompt: a.prompt}.Render(h.issue)
@@ -444,10 +465,10 @@ func (s *step) taken(h *heldIssue, c *call) {
 	}
 }
 
-// judge moves h to its stage's on_success when every action succeeded, and
-// otherwise to its stage's on_failure with a failure report (R7).
+// judge moves h to its rule's success label when every action succeeded,
+// and otherwise to its failure label with a failure report (R7).
 func (s *step) judge(h *heldIssue) {
-	stage := s.m.stages[h.stage]
+	rule := s.m.rules[h.rule]
 	h.claim = ClaimJudging
 	report := crew.FailureReport{IssueKey: h.issue.Key, IssueRef: h.issue.Ref}
 	for _, a := range h.actions {
@@ -458,25 +479,25 @@ func (s *step) judge(h *heldIssue) {
 		}
 	}
 	h.verdict = &HandledView{
-		Issue: h.issue.Clone(), Stage: stage.Name, To: stage.OnSuccess, Taken: h.taken, Ended: s.at,
+		Issue: h.issue.Clone(), Rule: rule.Name, To: rule.Labels.Success, Taken: h.taken, Ended: s.at,
 	}
 	for _, a := range h.actions {
 		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
 	}
 	if len(report.Failures) == 0 {
-		s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnSuccess})
-		s.ended(h, stage.OnSuccess, crew.MovePending)
+		s.call(h, &call{kind: CallMove, from: rule.Labels.Running, to: rule.Labels.Success})
+		s.ended(h, rule.Labels.Success, crew.MovePending)
 		return
 	}
-	h.verdict.To, h.verdict.Failures = stage.OnFailure, slices.Clone(report.Failures)
-	s.call(h, &call{kind: CallMove, from: stage.MovesTo, to: stage.OnFailure})
+	h.verdict.To, h.verdict.Failures = rule.Labels.Failure, slices.Clone(report.Failures)
+	s.call(h, &call{kind: CallMove, from: rule.Labels.Running, to: rule.Labels.Failure})
 	s.call(h, &call{kind: CallReport, report: report})
-	s.ended(h, stage.OnFailure, crew.MovePending)
+	s.ended(h, rule.Labels.Failure, crew.MovePending)
 }
 
 // full reports whether every slot is busy, so a listing could take nothing:
 // the issues held, in any claim, reach max_parallel_issues, or every queue
-// some stage runs in is full (R1, R7, KTD4).
+// some rule runs in is full (R1, R7, KTD4).
 func (m *Model) full() bool {
 	if len(m.issues) >= m.maxParallel {
 		return true
@@ -496,11 +517,11 @@ func (m *Model) queueFull(q int) bool {
 }
 
 // busy returns how many slots of queue q are busy: the held issues, in any
-// claim, whose stage runs in q (KTD3).
+// claim, whose rule runs in q (KTD3).
 func (m *Model) busy(q int) int {
 	held := 0
 	for _, h := range m.issues {
-		if m.queueOf[h.stage] == q {
+		if m.queueOf[h.rule] == q {
 			held++
 		}
 	}
@@ -545,9 +566,9 @@ func (m *Model) findCall(id CallID) (*heldIssue, *call) {
 }
 
 // release forgets h, keeping its handled entry, which replaces the issue's
-// earlier one, when its stage ended. A stage hidden from the board that
-// ended well keeps an earlier entry that ended well too, marked Gone: its
-// move took the issue out of the entry's To (#109).
+// earlier one, when its rule ended. A rule without actions that ended well
+// keeps an earlier entry that ended well too, marked Gone: its move took the
+// issue out of the entry's To (#109, R10, KTD6).
 func (m *Model) release(h *heldIssue) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
 	if h.verdict == nil {
@@ -555,7 +576,7 @@ func (m *Model) release(h *heldIssue) {
 	}
 	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
 	if i >= 0 {
-		if m.stages[h.stage].OffBoard && !h.verdict.NeedsAttention() && !m.handled[i].view.NeedsAttention() {
+		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !m.handled[i].view.NeedsAttention() {
 			m.handled[i].view.Gone = true
 			return
 		}

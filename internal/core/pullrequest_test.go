@@ -9,9 +9,9 @@ import (
 )
 
 // newPullRequestDriver is newDriver with pull request reports on.
-func newPullRequestDriver(t *testing.T, workflow []crew.Stage) *driver {
+func newPullRequestDriver(t *testing.T, rules []crew.Rule) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(workflow, 2, core.ReportingPullRequests()), now: t0}
+	return &driver{t: t, m: core.New(rules, 2, core.ReportingPullRequests()), now: t0}
 }
 
 // pullRequestReports returns the reports cmds ask to make, in order.
@@ -85,10 +85,10 @@ func (d *driver) verdictLanded(landed []core.Command, acceptance, development cr
 	return cmds
 }
 
-// succeededStage runs #74 through implement with every action succeeding and
+// succeededRule runs #74 through implement with every action succeeding and
 // its take report done. It returns the commands the landed verdict move
 // issued.
-func (d *driver) succeededStage() []core.Command {
+func (d *driver) succeededRule() []core.Command {
 	d.t.Helper()
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
@@ -96,12 +96,12 @@ func (d *driver) succeededStage() []core.Command {
 }
 
 // allSucceeded is the end of implement when both its actions succeeded.
-var allSucceeded = &crew.StageEnd{Stage: "implement", Actions: []crew.ActionStatus{
+var allSucceeded = &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 	{Name: "acceptance", State: crew.ActionSucceeded},
 	{Name: "development", State: crew.ActionSucceeded},
 }}
 
-func TestWithoutPullRequestReportsAStageReportsNone(t *testing.T) {
+func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	cmds, _ := d.poll(issue("74", 1, ready))
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
@@ -134,14 +134,14 @@ func TestATakeThatFailsReportsNothing(t *testing.T) {
 	}
 }
 
-func TestAE1ASucceededStageReportsOnSuccessAndItsEndOnceItsMoveLands(t *testing.T) {
+func TestAE1ASucceededRuleReportsOnSuccessAndItsEndOnceItsMoveLands(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
-	wantReport(t, pullRequestReportOf(t, d.succeededStage()), crew.PullRequestReport{
+	wantReport(t, pullRequestReportOf(t, d.succeededRule()), crew.PullRequestReport{
 		IssueKey: "74", IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
 }
 
-func TestAFailedStageReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
+func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 	d := newPullRequestDriver(t, checked())
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
@@ -154,7 +154,7 @@ func TestAFailedStageReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReport{
 		IssueKey: "74", IssueRef: "#74", State: needsAttention,
-		End: &crew.StageEnd{Stage: "implement", Actions: []crew.ActionStatus{
+		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionFailed, Cause: crew.CauseSession, Log: space("74", "acceptance").Log},
 			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: space("74", "development").Log,
 				Reason: "no pull request"},
@@ -175,7 +175,7 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReport{
 		IssueKey: "74", IssueRef: "#74", State: needsAttention,
-		End: &crew.StageEnd{Stage: "implement", Actions: []crew.ActionStatus{
+		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionSucceeded},
 			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: space("74", "development").Log},
 		}},
@@ -218,7 +218,7 @@ func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
 
 func TestAE5AReportThatFailsTransientlyIsOwedAndResentAtTheNextTick(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
-	want := pullRequestReportOf(t, d.succeededStage())
+	want := pullRequestReportOf(t, d.succeededRule())
 
 	cmds, events := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "timeout"})
 	noPullRequestReport(t, cmds)
@@ -281,7 +281,7 @@ func TestARefusedOrMovedMeanwhileReportIsDroppedAndTheNextOneSent(t *testing.T) 
 
 func TestStopGivesAnOwedReportOneFinalTryThenDropsIt(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
-	want := pullRequestReportOf(t, d.succeededStage())
+	want := pullRequestReportOf(t, d.succeededRule())
 	d.answerPullRequests("74", core.ResultFailed)
 
 	cmds, _ := d.send(core.StopRequested{})
@@ -304,7 +304,7 @@ func TestStopGivesAnOwedReportOneFinalTryThenDropsIt(t *testing.T) {
 
 func TestStopWaitsForAReportInFlightWithNoIssueHeld(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
-	pullRequestReportOf(t, d.succeededStage())
+	pullRequestReportOf(t, d.succeededRule())
 	wantHeld(t, d.m)
 
 	_, events := d.send(core.StopRequested{})
@@ -320,7 +320,7 @@ func TestStopWaitsForAReportInFlightWithNoIssueHeld(t *testing.T) {
 
 func TestAReportThatFailsInFlightAfterAStopGetsOneFinalTry(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
-	want := pullRequestReportOf(t, d.succeededStage())
+	want := pullRequestReportOf(t, d.succeededRule())
 	d.send(core.StopRequested{})
 
 	cmds, _ := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "down"})

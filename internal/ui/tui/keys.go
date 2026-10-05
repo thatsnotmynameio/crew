@@ -130,7 +130,7 @@ func (m Model) helper() help.Model {
 	return h
 }
 
-// keyHelp is the key-help line (R21), or, once the boss asked to stop, how
+// keyHelp is the key-help line (R21), or, once you asked to stop, how
 // to force the exit (KTD16).
 func (m Model) keyHelp() string {
 	if m.stopping {
