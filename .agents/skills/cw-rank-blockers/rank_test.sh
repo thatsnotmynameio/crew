@@ -289,9 +289,11 @@ Likely blocked by #100 (2 candidates, jev-1.13.0):
 
 new_case request-shape
 long=$(printf 'x%.0s' $(seq 1 3100))
-list owner 61 "long one" "$long" 62 "empty one" ""
+odd='odd "q" back\slash %s	tab'
+list owner 61 "long one" "$long" 62 "empty one" "" 63 "$odd" "Body with \\n and %d."
 jev "long one" "200 0.3 0.3"
 jev "empty one" "200 0.2 0.2"
+jev "$odd" "200 0.1 0.1"
 run 100
 expect_status 0
 request=$FIXTURE/requests/long\ one.1.json
@@ -307,6 +309,7 @@ if jq -e --arg model jev-1.13.0 '
 	and ([.questions[].type] == ["noul", "noul"])
 ' "$request" >/dev/null; then ok; else bad "unexpected request: $(cat "$request")"; fi
 if jq -e '.state.candidate.body | length > 0' "$FIXTURE/requests/empty one.1.json" >/dev/null; then ok; else bad "an empty body was sent empty"; fi
+if jq -e --arg t "$odd" '.state.candidate == {title: $t, body: "Body with \\n and %d."}' "$FIXTURE/requests/$odd.1.json" >/dev/null; then ok; else bad "quotes, backslashes, tabs or % changed on the way to Jev"; fi
 
 new_case no-candidate
 list owner 100 "the refined issue" "Refined body."

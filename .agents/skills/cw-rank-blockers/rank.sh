@@ -68,9 +68,7 @@ for login in $logins; do
 done
 
 parent=$(jq -r '(.body // "") | capture("<!-- cw-split-plan: part of #(?<p>[0-9]+) -->").p' "$tmp/issue.json" | head -n 1)
-# Bodies are cut to $body_limit once the markers are read, so building each
-# request parses a small file.
-jq -s --argjson issue "$issue" --arg parent "$parent" --argjson limit "$body_limit" '
+jq -s --argjson issue "$issue" --arg parent "$parent" '
 	add // [] | unique_by(.number) | map(select(
 		.number != $issue
 		and ((.body // "") | contains("<!-- cw-split-plan: split record -->") | not)
@@ -78,24 +76,25 @@ jq -s --argjson issue "$issue" --arg parent "$parent" --argjson limit "$body_lim
 			.number != ($parent | tonumber)
 			and ((.body // "") | contains("<!-- cw-split-plan: part of #" + $parent + " -->") | not)
 		))
-	) | .body = ((.body // "")[:$limit]))' "$tmp/lists.json" >"$tmp/candidates.json"
+	))' "$tmp/lists.json" >"$tmp/candidates.json"
 numbers=$(jq -r '.[].number' "$tmp/candidates.json")
 
 # The key reaches curl only through this file, written by the shell's own
 # printf, so it never appears in a process's arguments.
 printf 'Authorization: Bearer %s\n' "$TYPESAFE_API_KEY" >"$tmp/auth"
 
-# request N writes the request about candidate N.
-request() {
-	jq -n --slurpfile issue "$tmp/issue.json" --slurpfile candidates "$tmp/candidates.json" \
-		--argjson n "$1" --arg model "$model" --argjson limit "$body_limit" --arg empty "$empty_body" '
-		def text: (. // "") | if . == "" then $empty else .[:$limit] end;
-		($candidates[0][] | select(.number == $n)) as $candidate |
-		{
+# One jq pass builds every request: one line per candidate, its number, a
+# tab, then the request as compact JSON, which holds no literal tab. The
+# loop below writes each to request.N.json.
+jq -r --slurpfile issue "$tmp/issue.json" --arg model "$model" \
+	--argjson limit "$body_limit" --arg empty "$empty_body" '
+	def text: (. // "") | if . == "" then $empty else .[:$limit] end;
+	$issue[0] as $refined |
+	.[] | "\(.number)\t" + ({
 			model: $model,
 			state: {
-				issue: {title: $issue[0].title, body: ($issue[0].body | text)},
-				candidate: {title: $candidate.title, body: ($candidate.body | text)}
+				issue: {title: $refined.title, body: ($refined.body | text)},
+				candidate: {title: .title, body: (.body | text)}
 			},
 			questions: {
 				issue_needs_candidate: {
@@ -115,8 +114,11 @@ request() {
 					}
 				}
 			}
-		}' >"$tmp/request.$1.json"
-}
+		} | tojson)' "$tmp/candidates.json" >"$tmp/requests.tsv"
+tab=$(printf '\t')
+while IFS=$tab read -r n request; do
+	printf '%s\n' "$request" >"$tmp/request.$n.json"
+done <"$tmp/requests.tsv"
 
 # judge N asks Jev about candidate N and writes result.N, or fail.N with
 # the cause. 429, 529, other 5xx, timeouts and connection failures are
@@ -175,7 +177,6 @@ first_failure() {
 # starts, so an outage reports its cause without waiting on every candidate.
 running=0
 for n in $numbers; do
-	request "$n"
 	judge "$n" &
 	running=$((running + 1))
 	if [ "$running" -ge "$concurrency" ]; then
