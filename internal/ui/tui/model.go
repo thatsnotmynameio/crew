@@ -96,6 +96,9 @@ type Model struct {
 	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).
 	memory *boardMemory
+	// messages remembers each action's last message and branch while its
+	// issue has a card (KTD9 of #151).
+	messages *messageMemory
 	// outside tracks focus reports and the rule ends already notified
 	// (KTD6).
 	outside *outsideState
@@ -113,11 +116,12 @@ type Model struct {
 func New(cfg Config) Model {
 	return Model{
 		cfg: cfg, at: cfg.Now(), width: defaultWidth,
-		styles:  newStyles(true),
-		keys:    newKeyMap(),
-		spinner: spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		memory:  newBoardMemory(),
-		outside: newOutsideState(),
+		styles:   newStyles(true),
+		keys:     newKeyMap(),
+		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		memory:   newBoardMemory(),
+		messages: newMessageMemory(),
+		outside:  newOutsideState(),
 	}
 }
 
@@ -158,15 +162,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updated takes in a new snapshot: it repairs the highlight, starts the
-// slides of the cards that moved and sends the notifications of the rules
-// that ended, before it waits for the next update, so the read that finds
-// the channel closed, and with it the quit, comes after them (KTD6, KTD10;
-// KTD5 of #151).
+// updated takes in a new snapshot: it remembers what the actions said,
+// repairs the highlight, starts the slides of the cards that moved and
+// sends the notifications of the rules that ended, before it waits for the
+// next update, so the read that finds the channel closed, and with it the
+// quit, comes after them (KTD6, KTD10; KTD5, KTD9 of #151).
 func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	m.snap = u.Snapshot
 	m.at = m.cfg.Now()
 	cards := m.cards()
+	m.messages.record(m.snap, cards)
 	m.sel = m.sel.repaired(cards)
 	slide := m.memory.moved(cards)
 	notes := m.notifications()
