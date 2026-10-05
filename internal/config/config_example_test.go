@@ -131,6 +131,32 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 	}
 }
 
+// The refine prompt reads in full only the candidates /cw-rank-blockers
+// shortlists for each issue it refines, after the split and before it
+// records a dependency, and falls back to reading every candidate when the
+// script fails (#166).
+func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
+	skill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "cw-rank-blockers", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
+		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
+	}
+	prompt := loadExample(t).Rules[1].Actions[0].Prompt
+	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
+	rank := strings.Index(prompt, "/cw-rank-blockers")
+	record := strings.Index(prompt, "dependencies/blocked_by -F")
+	if split < 0 || rank < split || record < rank {
+		t.Errorf("the prompt does not run /cw-rank-blockers between /cw-split-plan and recording:\n%s", prompt)
+	}
+	for _, want := range []string{"--json number,title,body,labels", "unavailable"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt lacks the full read when the shortlist is unavailable: %q", want)
+		}
+	}
+}
+
 // wantExampleRules are the example config's rules, as in the old keys: the
 // promote rules, now without actions, notify nothing and need no failure.
 func wantExampleRules() []exampleRule {
