@@ -48,15 +48,16 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 	}
 }
 
-// Covers R21 and KTD8: a 33-row window gives Events, then Handled, their
+// Covers R21 and KTD8: a 37-row window gives Events, then Handled, their
 // minimum, and both scroll. It is the 24 rows these sections took before
-// Bots, plus Bots' rule, its row of cards and the blank row above it.
-func TestA33RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
-	view := fitted(t, 80, 33, eventful())
+// Bots, plus Bots' rule, its row of cards and the blank row above it, and
+// the four rows each board card gained (KTD1 of #151).
+func TestA37RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
+	view := fitted(t, 80, 37, eventful())
 
-	golden(t, "fit-33-rows", view)
-	if n := strings.Count(view, "\n") + 1; n != 33 {
-		t.Errorf("view has %d lines, want the window's 33", n)
+	golden(t, "fit-37-rows", view)
+	if n := strings.Count(view, "\n") + 1; n != 37 {
+		t.Errorf("view has %d lines, want the window's 37", n)
 	}
 	if rows := botsOf(t, view); len(rows) != botCardRows {
 		t.Errorf("Bots has %d rows, want its cards' %d:\n%s", len(rows), botCardRows, view)
@@ -79,7 +80,7 @@ func TestA33RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
 // scroll the focused section; end follows the newest event again.
 func TestFocusAndScrollMoveHandledAndEvents(t *testing.T) {
 	h := newHarness(t, 80)
-	h.send(tea.WindowSizeMsg{Width: 80, Height: 28})
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 32})
 	h.send(updateMsg(eventful()))
 
 	h.send(tab)
@@ -179,7 +180,7 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 
 	contains(t, view,
 		"Board ─", "Actions ─", "Queues ─", "Handled ─", "Events ─",
-		"⠋ running", "◌ taking", "○ #2",
+		"⠋ code 5m", "○ check waiting", "○ #2",
 		" GIVEN UP ", " NEEDS ATTENTION ", "×",
 	)
 	contains(t, handledText(t, 120, handledSnapshot()), " READY TO MERGE ")
@@ -188,7 +189,7 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 // Covers R21: pgdown and pgup move the focused section a page at a time.
 func TestPageKeysScrollTheFocusedSectionByAPage(t *testing.T) {
 	h := newHarness(t, 80)
-	h.send(tea.WindowSizeMsg{Width: 80, Height: 28})
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 32})
 	h.send(updateMsg(eventful()))
 
 	h.send(tab)
@@ -264,7 +265,7 @@ func bandRows(t *testing.T, view string) []string {
 // Covers AE1 and R1, R2 of #108: Events fills its 5 rows from the top, and
 // a new event takes the next row without moving the key-help line.
 func TestEventsFillTheirFiveRowsFromTheTop(t *testing.T) {
-	two := fitted(t, 80, 40, withEvents(2))
+	two := fitted(t, 80, 44, withEvents(2))
 
 	rows := eventsRows(t, two)
 	if len(rows) != scrollRows {
@@ -278,7 +279,7 @@ func TestEventsFillTheirFiveRowsFromTheTop(t *testing.T) {
 		}
 	}
 
-	three := fitted(t, 80, 40, withEvents(3))
+	three := fitted(t, 80, 44, withEvents(3))
 	contains(t, eventsRows(t, three)[2], "listed 3 issues")
 	if len(rowsOf(three)) != len(rowsOf(two)) {
 		t.Errorf("a third event moved the key-help line from row %d to %d:\n%s",
@@ -288,7 +289,7 @@ func TestEventsFillTheirFiveRowsFromTheTop(t *testing.T) {
 
 // Covers AE2 of #108: with no events, "none" and 4 blank rows.
 func TestEventsWithNoEventsSayNoneOverBlankRows(t *testing.T) {
-	view := fitted(t, 80, 40, withEvents(0))
+	view := fitted(t, 80, 44, withEvents(0))
 
 	rows := eventsRows(t, view)
 	if len(rows) != scrollRows || !strings.Contains(rows[0], "none") {
@@ -304,7 +305,7 @@ func TestEventsWithNoEventsSayNoneOverBlankRows(t *testing.T) {
 // Covers AE3 and R3 of #108: 30 events show the newest 5, scroll, and keep
 // the height of 2.
 func TestThirtyEventsShowTheNewestFiveAndScroll(t *testing.T) {
-	view := fitted(t, 80, 40, withEvents(30))
+	view := fitted(t, 80, 44, withEvents(30))
 
 	rows := eventsRows(t, view)
 	if len(rows) != scrollRows {
@@ -313,7 +314,7 @@ func TestThirtyEventsShowTheNewestFiveAndScroll(t *testing.T) {
 	contains(t, rows[0], "listed 26 issues")
 	contains(t, rows[4], "listed 30 issues")
 	contains(t, view, "30 events · ↑↓ scroll")
-	if n, want := len(rowsOf(view)), len(rowsOf(fitted(t, 80, 40, withEvents(2)))); n != want {
+	if n, want := len(rowsOf(view)), len(rowsOf(fitted(t, 80, 44, withEvents(2)))); n != want {
 		t.Errorf("view has %d lines with 30 events, want %d as with 2:\n%s", n, want, view)
 	}
 }

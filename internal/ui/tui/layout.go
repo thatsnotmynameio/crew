@@ -20,8 +20,9 @@ const (
 	// cutRows are the rows a cut view ends with: the line saying how many
 	// were cut, and the key-help line.
 	cutRows = 2
-	// cardRows are the rows a card takes on the board.
-	cardRows = 2
+	// cardRows are the rows a card takes on the board: its border and four
+	// rows (KTD1 of #151).
+	cardRows = 6
 	// maxCards is the most cards a board column shows, however tall the
 	// window; the rest go into its "+N more" row.
 	maxCards = 5

@@ -12,10 +12,18 @@ Bots ─────────────────────────
 Board ──────────────────────────────────────────────── 3 issues · board not read
  ideas                      bugs                       done                     
  ─────────────────────────  ─────────────────────────  ─────────────────────────
- ▌ #21 Retry the poll       ▌ #21 Retry the poll       ▌ #22 Typo in help       
- ▌ ○ idle                   ▌ ○ idle                   ▌ ○ idle                 
-                            ▌ #20 Crash on start                                
-                            ▌ ⠋ running                                         
+ ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
+ │ #21 Retry the poll    │  │ #21 Retry the poll    │  │ #22 Typo in help      │
+ │ run  ○ idle           │  │ run  ○ idle           │  │ run  ○ idle           │
+ │ bots none             │  │ bots none             │  │ bots none             │
+ │ via  none             │  │ via  none             │  │ via  none             │
+ ╰───────────────────────╯  ╰───────────────────────╯  ╰───────────────────────╯
+                            ╭───────────────────────╮                           
+                            │ #20 Crash on start    │                           
+                            │ run  ⠋ lfg 1m         │                           
+                            │ bots none             │                           
+                            │ via  clerk            │                           
+                            ╰───────────────────────╯                           
 
 Actions ────────────────────────────────────────────────────────────── 1 running
  ⠋ #20  Crash on start  fix/lfg   clerk   running 1m00s  

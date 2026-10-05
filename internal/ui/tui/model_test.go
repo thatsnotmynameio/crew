@@ -27,6 +27,9 @@ var update = flag.Bool("update", false, "rewrite the golden files in testdata")
 // not depend on the machine's zone.
 var zone = time.FixedZone("test", -3*60*60)
 
+// harnessRows is the height of a harness's window.
+const harnessRows = 48
+
 // start is the clock's time when a test begins.
 var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 
@@ -66,7 +69,8 @@ func newHarness(t *testing.T, width int, warnings ...string) *harness {
 }
 
 // newBoardHarness returns a harness of rules and board's columns, in a
-// window width wide and 40 rows high.
+// window width wide and 48 rows high: room for every section of the
+// test snapshots, whose columns hold up to two cards.
 func newBoardHarness(
 	t *testing.T, width int, rules []crew.Rule, board []crew.BoardColumn, warnings ...string,
 ) *harness {
@@ -77,7 +81,7 @@ func newBoardHarness(
 		Now: func() time.Time { return h.clock }, Location: zone,
 		Rules: rules, Board: board, Repository: "crew", Warnings: warnings,
 	})
-	h.send(tea.WindowSizeMsg{Width: width, Height: 40})
+	h.send(tea.WindowSizeMsg{Width: width, Height: harnessRows})
 	return h
 }
 
@@ -408,7 +412,7 @@ func TestASpinnerTickTurnsTheRunningSpinners(t *testing.T) {
 	}
 
 	view := h.view()
-	if strings.Contains(view, "⠋ running") || !strings.Contains(view, "⠙ running") {
+	if strings.Contains(view, "⠋ code 5m") || !strings.Contains(view, "⠙ code 5m") {
 		t.Errorf("the spinner did not turn to its next frame:\n%s", view)
 	}
 }

@@ -99,7 +99,7 @@ func TestASlideFromADroppedColumnStartsAtTheEdge(t *testing.T) {
 func TestAnIssueTakenStaysInItsColumnWithoutSliding(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "crew:triage:ready"))))
-	contains(t, boardOf(t, h.view()), "▌ ○ idle")
+	contains(t, boardOf(t, h.view()), "run  ○ idle")
 
 	h.send(updateMsg(inTriage()))
 	board := boardOf(t, h.view())
@@ -107,7 +107,7 @@ func TestAnIssueTakenStaysInItsColumnWithoutSliding(t *testing.T) {
 	if col := cardColumn(t, board, "#12"); col != 0 {
 		t.Errorf("#12's card is in column %d, want triage's 0:\n%s", col, board)
 	}
-	contains(t, board, "▌ ⠋ running")
+	contains(t, board, "run  ⠋ triage 1m")
 	if n := len(h.current().memory.slides); n != 0 {
 		t.Errorf("%d slides for a card that stayed in its column", n)
 	}

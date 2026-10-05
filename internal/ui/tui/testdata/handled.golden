@@ -10,12 +10,20 @@ Bots ─────────────────────────
  ╰────────────────────────────────╯
 
 Board ───────────────────────────────────────────────────────────────── 3 issues
- implement                       review                        
- ──────────────────────────────  ──────────────────────────────
- ▌ #1 Add login form             ▌ #2 Fix the flaky stream test
- ▌ ⠋ running                     ▌ ◌ taking                    
-                                 ▌ #7 Log the poll interval    
-                                 ▌ ○ idle                      
+ implement                           review                            
+ ──────────────────────────────────  ──────────────────────────────────
+ ╭────────────────────────────────╮  ╭────────────────────────────────╮
+ │ #1 Add login form              │  │ #2 Fix the flaky stream test   │
+ │ run  ⠋ code 5m · ⠋ tests 7m    │  │ run  ○ check waiting           │
+ │ bots ■ you                     │  │ bots none                      │
+ │ via  default                   │  │ via  clerk                     │
+ ╰────────────────────────────────╯  ╰────────────────────────────────╯
+                                     ╭────────────────────────────────╮
+                                     │ #7 Log the poll interval       │
+                                     │ run  ○ idle                    │
+                                     │ bots none                      │
+                                     │ via  none                      │
+                                     ╰────────────────────────────────╯
 
 Actions ────────────────────────────────────────────────── 2 running · 1 waiting
  ⠋ #1  Add login form    implement/code    default   running 5m00s  crew/1-code

@@ -10,10 +10,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/ui/lines"
 )
 
-// The board's column sizes, in cells (KTD9).
+// The board's column sizes, in cells (KTD9; KTD1 of #151).
 const (
-	minColumn = 18
-	maxColumn = 30
+	minColumn = 22
+	maxColumn = 34
 	columnGap = 2
 	// edgeMarker is the width kept at an edge for "◂ N" or "N ▸".
 	edgeMarker = 4
@@ -25,28 +25,28 @@ type card struct {
 	issue crew.Issue
 	// column is the card's column: an index into the board's columns.
 	column int
-	// held is set while crew holds the item, with claim its claim; the
-	// zero claim is ClaimTaking, so claim alone cannot tell.
-	held  bool
-	claim core.Claim
+	// held is set while crew holds the item, with view its issue's view;
+	// the zero view's claim is ClaimTaking, so view alone cannot tell.
+	held bool
+	view core.IssueView
 }
 
 // cards returns a card in each column whose labels an item of the board
 // carries and that shows its kind, item by item in the board's order,
 // oldest first (R7, KTD6, R23). A card of an item crew holds carries its
-// claim (R10, KTD9); no card waits for the next rule (R28).
+// issue's view (R10, KTD9); no card waits for the next rule (R28).
 func (m Model) cards() []card {
-	claims := map[string]core.Claim{}
+	views := map[string]core.IssueView{}
 	for _, iv := range m.snap.Issues {
-		claims[iv.Issue.Key] = iv.Claim
+		views[iv.Issue.Key] = iv
 	}
 	var out []card
 	for _, bi := range m.snap.Board {
-		claim, held := claims[bi.Issue.Key]
+		view, held := views[bi.Issue.Key]
 		for i, c := range m.cfg.Board {
 			carries := slices.ContainsFunc(c.Labels, func(l string) bool { return slices.Contains(bi.Labels, l) })
 			if carries && c.Takes == bi.Issue.Kind {
-				out = append(out, card{issue: bi.Issue, column: i, held: held, claim: claim})
+				out = append(out, card{issue: bi.Issue, column: i, held: held, view: view})
 			}
 		}
 	}
@@ -134,8 +134,8 @@ func (m Model) boardSummary(cards []card, l boardLayout) string {
 }
 
 // boardRows draws the column names, their underlines with the slides, then
-// the cards, two rows each, then "+N more" where a column has more than
-// limit.
+// the cards, cardRows rows each, then "+N more" where a column has more
+// than limit.
 func (m Model) boardRows(l boardLayout, cards []card, limit int) []string {
 	byColumn := make([][]card, len(l.columns))
 	for _, c := range cards {
@@ -164,16 +164,25 @@ func (m Model) boardRows(l boardLayout, cards []card, limit int) []string {
 	return out
 }
 
-// cardRows are the two rows of each column's card k, blank where a column
-// has fewer cards.
+// cardRows are the rows of each column's card k, blank where a column has
+// fewer cards (KTD1 of #151).
 func (m Model) cardRows(l boardLayout, byColumn [][]card, k int) []string {
-	top, bottom := make([]string, len(l.columns)), make([]string, len(l.columns))
+	cells := make([][]string, cardRows)
+	for r := range cells {
+		cells[r] = make([]string, len(l.columns))
+	}
 	for i, cs := range byColumn {
 		if k < len(cs) {
-			top[i], bottom[i] = m.cardLines(cs[k], l.width)
+			for r, line := range m.liveCard(cs[k], l.width) {
+				cells[r][i] = line
+			}
 		}
 	}
-	return []string{m.boardRow(l, top, false), m.boardRow(l, bottom, false)}
+	out := make([]string, 0, cardRows)
+	for _, row := range cells {
+		out = append(out, m.boardRow(l, row, false))
+	}
+	return out
 }
 
 // columnNames are the drawn columns' names, in the accent colour for those
@@ -212,31 +221,6 @@ func (m Model) boardRow(l boardLayout, cells []string, names bool) string {
 		b.WriteString(m.styles.muted.Render(fmt.Sprintf(" %d ▸", l.after)))
 	}
 	return b.String()
-}
-
-// cardLines are a card's two rows: its reference and title, then its claim
-// (R11, KTD13), or ○ idle when crew does not hold its issue (#126).
-func (m Model) cardLines(c card, width int) (string, string) {
-	s := m.styles
-	bar := s.subtle.Render("▌")
-	if c.held && c.claim == core.ClaimRunning {
-		bar = s.strongAccent.Render("▌")
-	}
-	top := fit(bar+" "+s.link(c.issue.Ref, c.issue.URL)+" "+s.text.Render(clean(c.issue.Title)), width)
-	var state string
-	switch {
-	case !c.held:
-		state = s.muted.Render("○ idle")
-	case c.claim == core.ClaimRunning || c.claim == core.ClaimJudging:
-		state = m.spin() + " " + s.muted.Render(c.claim.String())
-	case c.claim == core.ClaimStopping:
-		state = s.muted.Render("■ stopping")
-	case c.claim == core.ClaimOwed:
-		state = s.warning.Render("! owed")
-	default:
-		state = s.warning.Render("◌ " + c.claim.String())
-	}
-	return top, fit(bar+" "+state, width)
 }
 
 // spin is the current frame of the shared spinner, in the success colour.
