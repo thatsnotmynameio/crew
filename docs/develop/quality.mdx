@@ -88,7 +88,7 @@ The boss does this once, in this order:
 8. If the import reports a tool that a coding standard enables, unlink crew from that standard (organization **Policies**, tab **Coding standards**, edit the standard, **Select and apply to repositories**) and run the import again. Codacy links new repositories to its Default coding standard.
 9. Check that the first analysis of `main` shows no issues and no duplication. Fix anything left in a pull request.
 10. Watch a code pull request reach a verdict on `codacy gate`.
-11. Require the two Codacy jobs, from a clone of `thatsnotmynameio/.github` (`--checks` replaces the list, so it names every check): `scripts/bootstrap.sh thatsnotmynameio/crew --checks "version,actionlint / actionlint,docs / docs.page check,go,codacy,codacy gate"`.
+11. Require the two Codacy jobs, from a clone of `thatsnotmynameio/.github` (`--checks` replaces the list, so it names every check): `scripts/bootstrap.sh thatsnotmynameio/crew --checks "version,actionlint / actionlint,go,codacy,codacy gate"`.
 
 Token expiry: 2027-10-02. Rotate it before then.
 
