@@ -16,6 +16,9 @@ type selection struct {
 	column, row, top int
 }
 
+// is reports whether c is the highlighted card.
+func (s selection) is(c card) bool { return c.issue.Key == s.key && c.column == s.column }
+
 // byColumn groups cards by their column, each in board order.
 func byColumn(cards []card) map[int][]card {
 	out := map[int][]card{}

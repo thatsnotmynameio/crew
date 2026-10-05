@@ -82,22 +82,26 @@ func (m Model) budget() budget {
 	if m.height <= 0 {
 		return b
 	}
+	// over is measured again only after a step changes b.
 	over := func() int { return len(m.rows(b)) - m.height }
-	if o := over(); o > 0 {
+	o := over()
+	if o > 0 {
 		b.events = max(minScroll, scrollRows-o)
+		o = over()
 	}
 	// Capping a column at c of the s cards it shows saves cardRows*(s-c)
 	// rows and adds the "+N more" row, unless maxCards already did.
-	if o, t := over(), m.tallestColumn(); o > 0 && t > 1 {
+	if t := m.tallestColumn(); o > 0 && t > 1 {
 		shown, more := min(t, maxCards), 1
 		if t > maxCards {
 			more = 0
 		}
 		b.cards = max(shown-(o+more+cardRows-1)/cardRows, 1)
+		o = over()
 	}
 	// Bots gives way last, its cards collapsing to a strip, just before the
 	// cut (R10, KTD10).
-	if over() > 0 {
+	if o > 0 {
 		b.botCards = false
 	}
 	return b

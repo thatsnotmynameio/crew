@@ -21,14 +21,12 @@ const (
 	// rows of its border and title, which do not scroll.
 	popupRoom   = 2
 	popupChrome = 3
-	// popupPage is how far pgup and pgdown scroll it.
-	popupPage = 10
 )
 
 // selected is the highlighted card, if the board still has it.
 func (m Model) selected() (card, bool) {
 	for _, c := range m.cards() {
-		if c.column == m.sel.column && c.issue.Key == m.sel.key {
+		if m.sel.is(c) {
 			return c, true
 		}
 	}
@@ -99,7 +97,6 @@ func (m Model) scrollPopup(msg tea.KeyPressMsg) Model {
 	if !ok {
 		return m
 	}
-	const end = 1 << 20
 	offset := m.popupOffset
 	switch {
 	case key.Matches(msg, m.keys.up):
@@ -107,13 +104,13 @@ func (m Model) scrollPopup(msg tea.KeyPressMsg) Model {
 	case key.Matches(msg, m.keys.down):
 		offset++
 	case key.Matches(msg, m.keys.pageUp):
-		offset -= popupPage
+		offset -= scrollPage
 	case key.Matches(msg, m.keys.pageDown):
-		offset += popupPage
+		offset += scrollPage
 	case key.Matches(msg, m.keys.top):
 		offset = 0
 	case key.Matches(msg, m.keys.bottom):
-		offset = end
+		offset = scrollEnd
 	}
 	m.popupOffset = m.popupScroll(len(m.popupBody(c, m.popupWidth()-cardFrame)), offset)
 	return m

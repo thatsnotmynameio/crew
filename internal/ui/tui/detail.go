@@ -17,8 +17,11 @@ import (
 // tableGap is the space between the columns of the popup's actions table.
 const tableGap = 2
 
-// failedState is the state of an action that failed.
-const failedState = "failed"
+// The states of an action that ended: done, or failed.
+const (
+	doneState   = "done"
+	failedState = "failed"
+)
 
 // popupHeader is the popup's header rows, each value after its muted
 // label: the rule, the labels as chips, the kind, the priority, whether
@@ -151,7 +154,7 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 	row := actionRow{note: message}
 	state := m.actionState(a)
 	if a.Phase == core.PhaseEnded {
-		state = "done"
+		state = doneState
 		if !a.Outcome.Succeeded {
 			state, row.note, row.failed = failedState, clean(a.Outcome.Reason), true
 		}
@@ -169,7 +172,7 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 func (m Model) handledActionRow(e core.HandledView, a core.HandledAction) actionRow {
 	message, branch := m.messages.last(e.Issue.Key, a.Name)
 	row := actionRow{note: message}
-	state, pr := "done", ""
+	state, pr := doneState, ""
 	if a.Spend.Sessions == 0 {
 		state = "no session"
 	} else {
@@ -218,7 +221,7 @@ func (m Model) actionBot(ref, rule, action string) string {
 		return ""
 	}
 	e := m.snap.Bots[i]
-	return m.styles.mark(e) + " " + m.styles.text.Render(clean(e.Name))
+	return m.styles.botName(e)
 }
 
 // ruleQueue is the name of the queue rule runs in, the default queue for

@@ -136,7 +136,7 @@ func (m Model) cardBots(c card, width int) string {
 	var items []string
 	for _, e := range m.snap.Bots {
 		if slices.ContainsFunc(e.Running, func(r core.RunningAction) bool { return r.IssueRef == c.issue.Ref }) {
-			items = append(items, s.mark(e)+" "+s.text.Render(clean(e.Name)))
+			items = append(items, s.botName(e))
 		}
 	}
 	if len(items) == 0 {

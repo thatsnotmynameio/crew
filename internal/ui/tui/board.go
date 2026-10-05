@@ -238,8 +238,7 @@ func (m Model) cardRows(l boardLayout, byColumn [][]card, k int) []string {
 	}
 	for i, cs := range byColumn {
 		if k < len(cs) {
-			lit := cs[k].issue.Key == m.sel.key && cs[k].column == m.sel.column
-			for r, line := range m.cardFace(cs[k], l.width, lit) {
+			for r, line := range m.cardFace(cs[k], l.width, m.sel.is(cs[k])) {
 				cells[r][i] = line
 			}
 		}

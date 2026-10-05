@@ -252,7 +252,7 @@ func (m Model) botsStrip(entries []core.BotView) string {
 	s := m.styles
 	items := make([]string, 0, len(entries))
 	for _, e := range entries {
-		items = append(items, s.mark(e)+" "+s.text.Render(clean(e.Name))+m.stripGlyph(e))
+		items = append(items, s.botName(e)+m.stripGlyph(e))
 	}
 	return s.items(items, cellGap, m.width-1)
 }
@@ -261,6 +261,12 @@ func (m Model) botsStrip(entries []core.BotView) string {
 // cards draw it (R3 of #151, KTD9).
 func (s styles) mark(e core.BotView) string {
 	return lipgloss.NewStyle().Foreground(s.avatarColour(e)).Render("■")
+}
+
+// botName is e's mark, then its name, as the strip, the board cards and
+// the popup show a bot (R3, KTD8 of #151).
+func (s styles) botName(e core.BotView) string {
+	return s.mark(e) + " " + s.text.Render(clean(e.Name))
 }
 
 // stripGlyph is e's glyph in the strip, after a space: ▲ while a bot cannot

@@ -9,6 +9,10 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// scrollPage is how far pgup and pgdown scroll Events and the popup, and
+// scrollEnd an offset past the end of either, which home or end clamp.
+const scrollPage, scrollEnd = 10, 1 << 20
+
 // halves centres the help overlay.
 const halves = 2 // the overlay's offset is half the room left around it
 
@@ -85,7 +89,6 @@ func (m Model) scrolled(msg tea.KeyPressMsg) Model {
 	if m.focus != focusEvents {
 		return m
 	}
-	const page, end = 10, 1 << 20
 	offset := m.eventsOffset
 	switch {
 	case key.Matches(msg, m.keys.up):
@@ -93,11 +96,11 @@ func (m Model) scrolled(msg tea.KeyPressMsg) Model {
 	case key.Matches(msg, m.keys.down):
 		offset--
 	case key.Matches(msg, m.keys.pageUp):
-		offset += page
+		offset += scrollPage
 	case key.Matches(msg, m.keys.pageDown):
-		offset -= page
+		offset -= scrollPage
 	case key.Matches(msg, m.keys.top):
-		offset = end
+		offset = scrollEnd
 	case key.Matches(msg, m.keys.bottom):
 		offset = 0
 	}
@@ -124,8 +127,8 @@ func (m Model) helper() help.Model {
 }
 
 // keyHelp is the key-help line (R21), the popup's while it is open
-// (KTD12 of #151), or, once you asked to stop, how
-// to force the exit (KTD16).
+// (KTD12 of #151), or, once you asked to stop, how to force the exit
+// (KTD16).
 func (m Model) keyHelp() string {
 	if m.stopping {
 		return m.styles.warning.Render("q or ctrl+c again forces the exit")
