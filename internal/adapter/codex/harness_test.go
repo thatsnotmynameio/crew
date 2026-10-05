@@ -374,7 +374,10 @@ func TestSaidIsTheLastMessageWhileCodexRunsAndAfterItWasStopped(t *testing.T) {
 	s := start(t, p)
 
 	const want = "I fixed the parser. The tests pass."
-	for saidBy(t, s) != want {
+	for deadline := time.Now().Add(10 * time.Second); saidBy(t, s) != want; {
+		if time.Now().After(deadline) {
+			t.Fatalf("said %q while codex ran, want %q", saidBy(t, s), want)
+		}
 		time.Sleep(time.Millisecond) // codex is still printing
 	}
 	if err := s.Stop(t.Context()); err != nil {
