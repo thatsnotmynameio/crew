@@ -314,6 +314,26 @@ func TestUsageHarnessSessionsReportWhatTheTestSets(t *testing.T) {
 	}
 }
 
+func TestMessagingHarnessSessionsReportTheLastMessageTheTestSets(t *testing.T) {
+	h := fake.NewMessagingHarness()
+	s := start(t, h, "implement #1")
+	m, ok := s.(port.LastMessageReporter)
+	if !ok {
+		t.Fatal("a messaging harness's session is not a port.LastMessageReporter")
+	}
+	if got := m.LastMessage(); got != "" {
+		t.Errorf("LastMessage before SetLastMessage = %q, want empty", got)
+	}
+	h.Sessions()[0].SetLastMessage("PR #9 is open.\nMerging is yours.")
+	if got := m.LastMessage(); got != "PR #9 is open.\nMerging is yours." {
+		t.Errorf("LastMessage = %q, want what SetLastMessage set", got)
+	}
+
+	if _, ok := start(t, fake.NewHarness(), "implement #2").(port.LastMessageReporter); ok {
+		t.Error("a plain harness's session is a port.LastMessageReporter")
+	}
+}
+
 func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T) {
 	tr := fake.NewFindingTracker()
 	var finder port.PullRequestFinder = tr

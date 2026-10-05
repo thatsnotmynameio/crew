@@ -285,6 +285,16 @@ type UsageReporter interface {
 	Usage() crew.Usage
 }
 
+// LastMessageReporter is an optional interface of a harness's Session: it
+// tells the session's last message, which crew hands to the action's checks.
+// A session without it gives its checks an empty message.
+type LastMessageReporter interface {
+	// LastMessage returns the session's last message as it wrote it, every
+	// line kept, or "" when it ended without one. It is called once Wait
+	// has returned.
+	LastMessage() string
+}
+
 // PullRequestFinder is an optional interface of a Tracker: it finds the
 // pull request an action opened from its branch. A tracker without it
 // leaves every action's pull request not looked up.
