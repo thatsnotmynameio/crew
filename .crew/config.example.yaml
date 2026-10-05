@@ -19,8 +19,13 @@
 # blocked feature waits in its label until its blockers close.
 # The board has no `board` key, so it shows one column per rule that has
 # actions: refinement, development and fix.
-# The lfg actions of development and fix run the check pr-closes-issue: they
-# succeed only when their pull request is open and closes the issue. The
+# The lfg actions of development and fix run two checks, in order:
+# session-finished asks TypeSafe's Jev whether the session's last message
+# says it is still waiting on work it started or stopped without doing it,
+# and fails the action if so; then pr-closes-issue makes them succeed only
+# when their pull request is open and closes the issue. session-finished
+# sends the session's prompt and last message to TypeSafe, needs
+# TYPESAFE_API_KEY in crew's environment, and jq and curl on the PATH. The
 # refine action runs split-finished: it fails when a split stopped before the
 # session took the parent out of crew.
 # crew writes as the bot clerk, which also moves the promote rules' labels;
@@ -71,6 +76,63 @@ checks:
     [ "$running" = true ] || exit 0
     parts=$(gh api --paginate "repos/{owner}/{repo}/issues/$CREW_ISSUE_KEY/sub_issues" --jq ".[] | select((.body // \"\") | contains(\"<!-- cw-split-plan: part of $CREW_ISSUE_REF -->\")) | \"#\" + (.number | tostring)") || { echo "gh could not list the sub-issues of $CREW_ISSUE_REF"; exit 1; }
     [ -z "$parts" ] || { echo "the split of $CREW_ISSUE_REF did not finish: its parts $(printf '%s\n' "$parts" | paste -sd ' ' -) exist, but it is still in crew:refinement:in progress"; exit 1; }
+  # Fails an lfg action whose session says it is still waiting on work it
+  # started (tests, CI, reviewers, a watcher) or stopped without doing the
+  # work, as TypeSafe's Jev judges from the session's prompt and last
+  # message. It sends both to TypeSafe, in one request that asks one Choice
+  # twice, its options in opposite orders, and averages the two answers.
+  # Unfinished and stopped together at fail_at or more fail the action;
+  # otherwise it passes, saying needs a person when that clears person_at,
+  # or done. It passes without a judgment when the last message is empty
+  # or TypeSafe cannot answer, and fails when TYPESAFE_API_KEY is not set.
+  # It echoes only an outcome and its probability, never what the session
+  # or TypeSafe said, so the status comment shows nothing of the session.
+  # The model is pinned to the version the thresholds were measured on.
+  session-finished: |-
+    model=jev-1.13.0 fail_at=0.55 person_at=0.7
+    [ -n "$TYPESAFE_API_KEY" ] || { echo "TYPESAFE_API_KEY is not set: the judge cannot ask Jev"; exit 1; }
+    command -v jq >/dev/null && command -v curl >/dev/null || { echo "the judge needs jq and curl on the PATH"; exit 1; }
+    grep -q '[^[:space:]]' "$CREW_LAST_MESSAGE_FILE" || { echo "not judged: the session's last message is empty"; exit 0; }
+    dir=$(mktemp -d) || { echo "not judged: no temporary directory"; exit 0; }
+    trap 'rm -rf "$dir"' EXIT
+    jq -n --arg model "$model" --arg action "$CREW_ACTION" --rawfile prompt "$CREW_PROMPT_FILE" --rawfile last "$CREW_LAST_MESSAGE_FILE" '
+      {
+        done: "The work is finished; what is left is a routine decision such as merging.",
+        unfinished: "The session says it is still waiting on work it started, such as reviewers, tests, CI or a watcher, and will continue.",
+        needs_person: "The session did its part, but a person must act before the result can be used.",
+        stopped: "The session stopped without doing the work, and says why."
+      } as $options
+      | {type: "choice", instructions: "`prompt` is the task a coding agent was given for the action `action`, and `last_message` is the last thing the agent said when its session ended. How did the session end?"} as $question
+      | {model: $model, state: {action: $action, prompt: $prompt, last_message: $last},
+         questions: {a: ($question + {criteria: $options}), b: ($question + {criteria: ($options | to_entries | reverse | from_entries)})}}
+    ' > "$dir/request" || { echo "not judged: jq could not write the request"; exit 0; }
+    tries=0
+    while :; do
+      tries=$((tries + 1))
+      code=$(printf 'Authorization: Bearer %s\n' "$TYPESAFE_API_KEY" | curl -sS --max-time 60 -o "$dir/answer" -w '%{http_code}' -H @- -H 'Content-Type: application/json' --data-binary @"$dir/request" https://api.typesafe.ai/v1/systemone 2>/dev/null) || code=000
+      case $code in
+      429 | 5?? | 000) [ "$tries" -lt 3 ] || break; sleep $((tries * 2)) ;;
+      *) break ;;
+      esac
+    done
+    case $code in
+    200) ;;
+    000) echo "not judged: TypeSafe could not be reached"; exit 0 ;;
+    *) echo "not judged: TypeSafe answered HTTP $code"; exit 0 ;;
+    esac
+    verdict=$(jq -r --argjson fail_at "$fail_at" --argjson person_at "$person_at" '
+      def p($k): [.answers.a.probabilities[$k], .answers.b.probabilities[$k]] | if all(type == "number") then add / 2 else error("no \($k)") end;
+      def said($outcome): (. * 100 | round) as $c | "\($outcome) (\($c / 100 | floor).\($c % 100 | tostring | if length < 2 then "0" + . else . end))";
+      p("unfinished") as $u | p("stopped") as $s | p("needs_person") as $n | p("done") as $d
+      | if $u + $s >= $fail_at then "fail " + (if $s > $u then $s | said("stopped") else $u | said("unfinished") end)
+        elif $n >= $person_at then "pass " + ($n | said("needs a person"))
+        else "pass " + ($d | said("done")) end
+    ' "$dir/answer" 2>/dev/null)
+    case $verdict in
+    "fail "*) echo "${verdict#fail }"; exit 1 ;;
+    "pass "*) echo "${verdict#pass }"; exit 0 ;;
+    *) echo "not judged: TypeSafe's answer could not be read"; exit 0 ;;
+    esac
 rules:
   promote brainstorm:
     queue: clerk
@@ -118,7 +180,7 @@ rules:
     actions:
       lfg:
         agent: developer
-        check: pr-closes-issue
+        check: [session-finished, pr-closes-issue]
         prompt: |-
           /compound-engineering:lfg {{.Issue.Ref}}
 
@@ -135,7 +197,7 @@ rules:
     actions:
       lfg:
         agent: developer
-        check: pr-closes-issue
+        check: [session-finished, pr-closes-issue]
         prompt: |-
           /compound-engineering:lfg {{.Issue.Ref}}
 

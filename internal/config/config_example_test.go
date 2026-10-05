@@ -69,7 +69,8 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if want := []string{"refinement", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
-	if script := checkScript(cfg.Rules[3].Actions[0], "pr-closes-issue"); !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
+	script := checkScript(cfg.Rules[3].Actions[0], "pr-closes-issue")
+	if !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
 		t.Errorf("development's check = %q, want the script of pr-closes-issue", script)
 	}
 }
@@ -162,11 +163,11 @@ func wantExampleRules() []exampleRule {
 		{
 			name: "development", queue: developer, notify: true,
 			labels:  labels("development", "crew:development:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, checks [pr-closes-issue]"},
+			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
 		},
 		{
 			name: "fix", queue: developer, notify: true, labels: labels("fix", "crew:fix:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, checks [pr-closes-issue]"},
+			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
 		},
 	}
 	return want

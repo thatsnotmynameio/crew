@@ -46,6 +46,16 @@ crew
 
 crew shows a live view of the issues it holds and the sessions it runs; `--plain` prints one line per event instead. You act on issues through their labels on GitHub. Under the header, Bots shows a card for each bot crew acts as, then one for you: whether it can act, what it cost this run, what acts as it and what runs as it now. Tab focuses Bots first, then Handled and Events; while Bots has focus, ←→ scroll its cards when they do not all fit, and otherwise scroll the board.
 
+## Checks
+
+A check is a shell script you declare under `checks:` and name in an action's `check:`. It runs in the action's worktree after the session succeeded, and decides whether the action succeeded. `check:` takes one name or a list, such as `check: [session-finished, pr-closes-issue]`. The checks run in that order, each with its own ten minutes. The first that fails, cannot start, runs out of time or is stopped fails the action, and the rest do not run.
+
+A check reads the issue from `CREW_ISSUE_REF`, `CREW_ISSUE_KEY`, `CREW_ISSUE_URL` and `CREW_BRANCH`, the logins from `CREW_CODE_OWNERS` and `CREW_BOTS`, and the action's name from `CREW_ACTION`. `CREW_PROMPT_FILE` names a file with the prompt the session started with, resume note included. `CREW_LAST_MESSAGE_FILE` names a file with the session's last message as it wrote it, which is empty when it ended without one. crew removes both files once the check ended.
+
+The issue's status comment shows each check that ran, with crew's words and the last line the check printed, such as `the check session-finished passed: done (0.97)`. Make that last line your reason: crew never shows what the session itself said.
+
+In this repository's example config, the lfg actions first run `session-finished`, which asks TypeSafe's Jev whether the session's last message says it is still waiting on work it started or stopped without doing it. It sends the session's prompt and last message to TypeSafe, whose zero data retention is offered only on its enterprise plan. It needs `TYPESAFE_API_KEY` in crew's environment, and `jq` and `curl` on the `PATH`; without the key it fails the action. When the last message is empty or TypeSafe cannot answer, it passes and says it did not judge.
+
 ## What's inside
 
 | Path | What it does |
