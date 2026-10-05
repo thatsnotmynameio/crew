@@ -17,15 +17,15 @@ import (
 // lowercased field name, as the YAML library does), recursing into nested
 // structs, pointers to structs and slices of structs. A key no field takes, a
 // key given twice, or a value of the wrong type is an error naming the key
-// path, such as harness.model, and its line. Keys inside a map field are
+// path, such as agents.developer.harness.model, and its line. Keys inside a map field are
 // not checked, and `,inline` fields are not supported. A key left out of the
 // section leaves its field as the target had it, which is how a factory keeps
 // its own defaults. A section absent from the file decodes nothing.
 type Decode = func(target any) error
 
-// entry is one key of a mapping, with its full key path. A section's entries
-// may come from different mappings: the harness section joins config.model
-// with the keys of harness:.
+// entry is one key of a mapping, with its full key path. A section is the
+// entries of one mapping that crew does not read itself, such as an agent's
+// harness without its name.
 type entry struct {
 	key, value *yaml.Node
 	path       string
@@ -185,4 +185,41 @@ func decodeLeaf(n *yaml.Node, path string, v reflect.Value) error {
 // and what is wrong.
 func keyError(path string, line int, msg string) error {
 	return fmt.Errorf("%s (line %d): %s", path, line, msg)
+}
+
+// named returns the entries of the optional mapping n at path, whose keys
+// name its items, such as rules or agents, in file order. A name given
+// twice, which a yaml.Node does not refuse, is reported on its line with the
+// line of its first, and so is an empty name; both are left out.
+func named(n *yaml.Node, path string) ([]entry, error) {
+	section, err := mapping(n, path)
+	if err != nil {
+		return nil, err
+	}
+	var errs []error
+	out := make([]entry, 0, len(section))
+	seen := make(map[string]int, len(section))
+	for _, e := range section {
+		name := e.key.Value
+		if first, ok := seen[name]; ok {
+			errs = append(errs, keyError(e.path, e.key.Line, fmt.Sprintf("duplicate key, first set on line %d", first)))
+			continue
+		}
+		seen[name] = e.key.Line
+		if name == "" {
+			errs = append(errs, keyError(path, e.key.Line, "a name must not be empty"))
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, errors.Join(errs...)
+}
+
+// decodeItem decodes the named item n at path into the struct target points
+// to. An item that is not a mapping is reported with shape, what it must be.
+func decodeItem(n *yaml.Node, path, shape string, target any) error {
+	if n.Kind != yaml.MappingNode {
+		return keyError(path, n.Line, shape)
+	}
+	return decodeFields(entries(n, path), reflect.ValueOf(target).Elem())
 }

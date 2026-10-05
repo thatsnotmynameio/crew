@@ -22,7 +22,7 @@ const (
 	inProgress     crew.State = "in progress"
 	readyToReview  crew.State = "ready to review"
 	needsAttention crew.State = "needs attention"
-	// waitingBrainstorm is an extra label: parked work no rule takes.
+	// waitingBrainstorm is a label no rule names: parked work no rule takes.
 	waitingBrainstorm crew.State = "waiting brainstorm"
 )
 

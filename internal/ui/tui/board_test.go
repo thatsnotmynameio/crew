@@ -18,11 +18,22 @@ import (
 // crewRules is this repository's rules, with both promote rules
 // hidden (AE1).
 var crewRules = []crew.Rule{
-	{Name: "promote brainstorm", Label: "crew:brainstorm:done", OnSuccess: "crew:triage:ready", OffBoard: true},
-	{Name: "triage", Label: "crew:triage:ready", OnSuccess: "crew:triage:done", OnFailure: "crew:triage:failed"},
-	{Name: "promote triage", Label: "crew:triage:done", OnSuccess: "crew:development:ready", OffBoard: true},
-	{Name: "development", Label: "crew:development:ready", OnFailure: "crew:development:failed"},
-	{Name: "fix", Label: "crew:fix:ready", OnFailure: "crew:fix:failed"},
+	{
+		Name:     "promote brainstorm",
+		Labels:   crew.Labels{Ready: "crew:brainstorm:done", Success: "crew:triage:ready"},
+		OffBoard: true,
+	},
+	{
+		Name:   "triage",
+		Labels: crew.Labels{Ready: "crew:triage:ready", Success: "crew:triage:done", Failure: "crew:triage:failed"},
+	},
+	{
+		Name:     "promote triage",
+		Labels:   crew.Labels{Ready: "crew:triage:done", Success: "crew:development:ready"},
+		OffBoard: true,
+	},
+	{Name: "development", Labels: crew.Labels{Ready: "crew:development:ready", Failure: "crew:development:failed"}},
+	{Name: "fix", Labels: crew.Labels{Ready: "crew:fix:ready", Failure: "crew:fix:failed"}},
 }
 
 var twelve = crew.Issue{Key: "12", Ref: "#12", Title: "Stage labels", URL: "https://github.com/o/r/issues/12"}
@@ -152,7 +163,8 @@ func TestAE3AFailedRuleTakesItsCardOffTheBoard(t *testing.T) {
 func eightRules() []crew.Rule {
 	var out []crew.Rule
 	for i := 1; i <= 8; i++ {
-		out = append(out, crew.Rule{Name: fmt.Sprintf("s%d", i), Label: crew.State(fmt.Sprintf("s%d", i))})
+		name := fmt.Sprintf("s%d", i)
+		out = append(out, crew.Rule{Name: name, Labels: crew.Labels{Ready: crew.State(name)}})
 	}
 	return out
 }
@@ -225,7 +237,7 @@ func TestAnItemTheNextRuleWouldNotTakeHasNoWaitingCard(t *testing.T) {
 }
 
 func TestWithEveryRuleHiddenTheBoardSaysSo(t *testing.T) {
-	h := newRulesHarness(t, 80, []crew.Rule{{Name: "only", Label: "ready", OffBoard: true}})
+	h := newRulesHarness(t, 80, []crew.Rule{{Name: "only", Labels: crew.Labels{Ready: "ready"}, OffBoard: true}})
 
 	contains(t, boardOf(t, h.view()), "every stage is hidden")
 }

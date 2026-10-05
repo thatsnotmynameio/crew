@@ -69,7 +69,7 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 			Found: crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.test/pull/45"},
 		})
 		cfg := config(t, tr, develop)
-		cfg.Harness = fake.NewUsageHarness()
+		cfg.Harnesses = harnesses(fake.NewUsageHarness())
 		r := start(t, cfg)
 
 		s := r.session()
@@ -221,7 +221,7 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 			tr := fake.NewFindingTracker(issue(1, ready))
 			tr.ScriptLookup("crew/issue-1-development", fake.LookupScript{Found: pr})
 			cfg := config(t, tr, develop)
-			cfg.Harness = fake.NewUsageHarness()
+			cfg.Harnesses = harnesses(fake.NewUsageHarness())
 			cfg.UsageInStatus = on
 			r := start(t, cfg)
 

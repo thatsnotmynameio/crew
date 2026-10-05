@@ -145,9 +145,10 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 		t.Fatalf("ReportFailure: %v", err)
 	}
 	writes := checkWritesAsOps(t, gh)
-	// Two labels, the move, the status comment and its edit, and the report.
-	if writes != 6 || renewed.Load() != 0 {
-		t.Errorf("wrote %d times as ops, renewed %d times; want 6 and 0", writes, renewed.Load())
+	// The missing label, the move, the status comment and its edit, and the
+	// report.
+	if writes != 5 || renewed.Load() != 0 {
+		t.Errorf("wrote %d times as ops, renewed %d times; want 5 and 0", writes, renewed.Load())
 	}
 	wantWriterLost(t, tr, "")
 }

@@ -8,8 +8,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// The labels of these tests that are no rule's: an extra label and one
-// crew never moves to.
+// The labels of these tests that are no rule's, which crew never moves to:
+// a parked idea's and a bug's.
 const (
 	brainstormReady crew.State = "brainstorm ready"
 	bug             string     = "bug"
@@ -19,12 +19,10 @@ const (
 // (bug), implement (ready, in progress) and review (ready to review).
 var boardLabels = []string{string(brainstormReady), bug, string(ready), string(inProgress), string(readyToReview)}
 
-// newBoardDriver returns a driver whose model reads a board of labels, with
-// rules' states and brainstorm ready as crew's labels.
+// newBoardDriver returns a driver whose model reads a board of labels.
 func newBoardDriver(t *testing.T, rules []crew.Rule, maxParallel int, labels ...string) *driver {
 	t.Helper()
-	crewLabels := append(crew.RuleStates(rules), brainstormReady)
-	return &driver{t: t, m: core.New(rules, maxParallel, core.ListingBoard(labels, crewLabels)), now: t0}
+	return &driver{t: t, m: core.New(rules, maxParallel, core.ListingBoard(labels)), now: t0}
 }
 
 // onBoard returns key on the board with labels.
@@ -168,8 +166,9 @@ func TestATakeMoveChangesTheIssuesLabelsOnTheBoard(t *testing.T) {
 			want: []crew.BoardIssue{onBoard("1", 1, bug)},
 		},
 		{
-			name: "an extra label removed", state: ready, before: []string{string(brainstormReady), string(ready)},
-			want: []crew.BoardIssue{onBoard("1", 1, string(inProgress))},
+			// Covers AE6: only the rules' labels are crew's.
+			name: "a label no rule names kept", state: ready, before: []string{string(brainstormReady), string(ready)},
+			want: []crew.BoardIssue{onBoard("1", 1, string(brainstormReady), string(inProgress))},
 		},
 		{
 			name: "an issue left with no board label off the board", state: readyToReview,

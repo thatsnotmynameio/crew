@@ -86,7 +86,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	a.phase = PhaseStarting
 	s.command(StartSession{
 		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
-		Bot: a.bot,
+		Agent: a.agent, Bot: a.bot,
 	})
 }
 

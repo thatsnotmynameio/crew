@@ -57,10 +57,12 @@ type Config struct {
 	// RunTimeLimit is how long the engine runs from its first poll before
 	// it winds down. Zero runs until stopped.
 	RunTimeLimit time.Duration
-	// Tracker, Harness and Workspace are the adapters. The engine detects
-	// their optional interfaces, such as port.Preparer, on these values.
+	// Tracker and Workspace are adapters, and Harnesses holds the harness
+	// of each agent some rule's action names, in config order. The engine
+	// detects their optional interfaces, such as port.Preparer, on these
+	// values.
 	Tracker   port.Tracker
-	Harness   port.Harness
+	Harnesses []AgentHarness
 	Workspace port.Workspace
 	// Checker runs the actions' checks. Without one, an action with a
 	// check fails, saying crew has no check runner.
@@ -105,17 +107,23 @@ type Config struct {
 	// the engine reads its issues at each poll through the tracker's
 	// port.BoardLister, and reads none when the tracker has none (KTD4).
 	Board []crew.BoardColumn
-	// Extras are the config's extra labels: with Board, a move removes them
-	// from an issue on the board, as it removes the rules' states.
-	Extras []crew.State
+}
+
+// AgentHarness is the harness of one agent: every session of an action that
+// names the agent runs on it.
+type AgentHarness struct {
+	// Agent is the agent's name, as crew.Action.Agent names it.
+	Agent   string
+	Harness port.Harness
 }
 
 // Engine runs the rules of a Config. Use New; Run it once.
 type Engine struct {
-	cfg      Config
-	stream   *stream
-	stop     chan struct{} // closed by Stop
-	stopOnce sync.Once
+	cfg       Config
+	harnesses map[string]port.Harness // Config.Harnesses by agent
+	stream    *stream
+	stop      chan struct{} // closed by Stop
+	stopOnce  sync.Once
 
 	// prepared is set by Prepare, and preparation holds its result, so the
 	// preparers run once whether Run or its caller prepares.
@@ -194,12 +202,16 @@ func New(cfg Config) *Engine {
 		board, _ = cfg.Tracker.(port.BoardLister)
 	}
 	if board != nil {
-		crewLabels := slices.Concat(crew.RuleStates(cfg.Rules), cfg.Extras)
-		opts = append(opts, core.ListingBoard(crew.BoardLabels(cfg.Board), crewLabels))
+		opts = append(opts, core.ListingBoard(crew.BoardLabels(cfg.Board)))
 	}
 	writes, _ := cfg.Tracker.(port.WriterReporter)
+	harnesses := make(map[string]port.Harness, len(cfg.Harnesses))
+	for _, h := range cfg.Harnesses {
+		harnesses[h.Agent] = h.Harness
+	}
 	return &Engine{
 		cfg:          cfg,
+		harnesses:    harnesses,
 		stream:       newStream(),
 		stop:         make(chan struct{}),
 		reporter:     reporter,
@@ -319,22 +331,28 @@ func (e *Engine) Prepare(ctx context.Context) error {
 	return e.preparation
 }
 
-// prepare hands the tracker its writer when the config names a bot, runs each
-// port's Preparer with crew.RuleStates, the states the rules name, asks the
+// prepare hands the tracker its writer when the config names a bot, runs the
+// Preparer of the tracker, of each agent's harness in config order and of the
+// workspace with crew.RuleStates, the states the rules name, asks the
 // tracker who the code owners are and which login it acts as, then reads the
 // run journal and builds the core from it, with the bots. It returns the first
-// error, naming its port or the journal, without running what comes after it
-// (R6). The core is then left unbuilt, which is safe because Run returns the
+// error, naming its port, a harness's agent, or the journal, without running
+// what comes after it (R6). The core is then left unbuilt, which is safe because Run returns the
 // error before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.RuleStates(e.cfg.Rules)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
 		a.ActAs(e.cfg.Writer, slices.Clone(e.cfg.BotLogins))
 	}
-	ports := []struct {
+	type named struct {
 		name    string
 		adapter any
-	}{{"tracker", e.cfg.Tracker}, {"harness", e.cfg.Harness}, {"workspace", e.cfg.Workspace}}
+	}
+	harnesses := make([]named, len(e.cfg.Harnesses))
+	for i, h := range e.cfg.Harnesses {
+		harnesses[i] = named{"harness of agent " + h.Agent, h.Harness}
+	}
+	ports := slices.Concat([]named{{"tracker", e.cfg.Tracker}}, harnesses, []named{{"workspace", e.cfg.Workspace}})
 	for _, p := range ports {
 		if err := port.Prepare(ctx, states, p.adapter); err != nil {
 			return fmt.Errorf("prepare the %s: %w", p.name, err)

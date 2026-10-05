@@ -31,7 +31,7 @@ func TestAE2AE6RunningStatusCarriesTheSessionsWordsWithLocalPathsShortened(t *te
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewReportingTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
-		cfg.Harness = fake.NewNarratingHarness()
+		cfg.Harnesses = harnesses(fake.NewNarratingHarness())
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 		begun := time.Now()
@@ -171,7 +171,7 @@ func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewReportingTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
-		cfg.Harness = fake.NewNarratingHarness()
+		cfg.Harnesses = harnesses(fake.NewNarratingHarness())
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 

@@ -55,17 +55,18 @@ func TestPrepareWithoutGhSaysItIsMissing(t *testing.T) {
 	}
 }
 
+// Prepare creates each rule label the repository lacks, and no other (R24).
 func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 	for name, tc := range map[string]struct {
 		present string
 		want    []string
 	}{
 		"AE7 only ready": {`[{"name":"ready"}]`,
-			[]string{"in progress", "in review", "needs attention", "waiting brainstorm"}},
-		"AE1 another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"},{"name":"Waiting Brainstorm"}]`,
+			[]string{"in progress", "in review", "needs attention"}},
+		"AE1 another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"}]`,
 			[]string{"in review", "needs attention"}},
 		"AE2 every label": {`[{"name":"Ready"},{"name":"in progress"},{"name":"IN REVIEW"},` +
-			`{"name":"needs attention"},{"name":"waiting brainstorm"}]`, nil},
+			`{"name":"needs attention"}]`, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,

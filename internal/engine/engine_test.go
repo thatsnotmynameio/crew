@@ -34,8 +34,8 @@ const poll = 300 * time.Second
 
 // implement is the draft config's implement rule (KTD5).
 var implement = crew.Rule{
-	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
-	OnFailure: needsAttention,
+	Name:   "implement",
+	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 	Actions: []crew.Action{
 		{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 		{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
@@ -44,9 +44,9 @@ var implement = crew.Rule{
 
 // develop is a rule with one action, for tests about one session per issue.
 var develop = crew.Rule{
-	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
-	OnFailure: needsAttention,
-	Actions:   []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
+	Name:    "implement",
+	Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+	Actions: []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
 }
 
 // epoch dates the issues: issue n was created n minutes after it, so #1 is
@@ -88,11 +88,16 @@ func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Confi
 		MaxParallelIssues: 2,
 		PollInterval:      poll,
 		Tracker:           tracker,
-		Harness:           fake.NewHarness(),
+		Harnesses:         harnesses(fake.NewHarness()),
 		Workspace:         fake.NewWorkspace(worktrees),
 		Root:              root,
 		Home:              filepath.Dir(root),
 	}
+}
+
+// harnesses gives h to the actions that name no agent, as the only harness.
+func harnesses(h port.Harness) []engine.AgentHarness {
+	return []engine.AgentHarness{{Harness: h}}
 }
 
 // start runs an engine for cfg. The test must stop it and call wait.
@@ -112,7 +117,7 @@ func run(t *testing.T, cfg engine.Config, e *engine.Engine) *rig {
 		t: t, root: cfg.Root, engine: e, cancel: cancel, done: make(chan error, 1), final: make(chan engine.Update, 1),
 		queue: queue,
 	}
-	if h, ok := cfg.Harness.(*fake.Harness); ok {
+	if h, ok := cfg.Harnesses[0].Harness.(*fake.Harness); ok {
 		r.harness = h
 	}
 	go func() {

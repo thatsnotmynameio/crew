@@ -276,7 +276,8 @@ func hiddenReview() []crew.Rule {
 	rules := draft()
 	rules[1].OffBoard = true
 	return append(rules, crew.Rule{
-		Name: "merge", Label: readyToMerge, MovesTo: "merging", OnSuccess: "merged", OnFailure: needsAttention,
+		Name:    "merge",
+		Labels:  crew.Labels{Ready: readyToMerge, Running: "merging", Success: "merged", Failure: needsAttention},
 		Actions: []crew.Action{{Name: "merge", Prompt: "Merge {{.Issue.Ref}}"}},
 	})
 }

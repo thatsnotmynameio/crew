@@ -18,7 +18,7 @@ const (
 	crewWaitingReview crew.State = "crew:waiting review"
 	crewFailed        crew.State = "crew:failed"
 	crewReadyForFix   crew.State = "crew:ready for fix"
-	crewWaitingBrain  crew.State = "crew:waiting brainstorm"
+	crewWaitingBrain  crew.State = "crew:waiting brainstorm" // a label no rule names
 )
 
 // The scripted prefixes of the pull request report's gh calls on issue #42.
@@ -41,7 +41,7 @@ func prTracker(t *testing.T, script ...reply) (*Tracker, *fakeGh) {
 	t.Helper()
 	gh := newFakeGh(t, script...)
 	states := []crew.State{"crew:ready for development", crewInProgress, crewWaitingReview, crewFailed, crewReadyForFix}
-	tr, err := factory(gh.run)(func(any) error { return nil }, states, []crew.State{crewWaitingBrain})
+	tr, err := factory(gh.run)(func(any) error { return nil }, states)
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -216,8 +216,9 @@ func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
 	}
 }
 
-// Covers AE4: a crew label put on the pull request by hand, and an extra,
-// are replaced by the issue's; a label that is not crew's stays.
+// Covers AE4 of #92 and AE6: a crew label put on the pull request by hand is
+// replaced by the issue's; a label no rule names, such as a parked idea's,
+// stays.
 func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 	tr, gh := prTracker(t,
 		reply{prefix: prQuery, stdout: prsJSON(
@@ -229,7 +230,7 @@ func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
 	want := []string{"pr", "edit", "50", "--remove-label=crew:waiting review", "--remove-label=crew:ready for fix",
-		"--remove-label=crew:waiting brainstorm", "--add-label=crew:in progress"}
+		"--add-label=crew:in progress"}
 	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
 		t.Errorf("edits = %q, want one: %q", edits, want)
 	}

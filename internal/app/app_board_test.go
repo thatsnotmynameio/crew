@@ -15,8 +15,7 @@ import (
 
 // withBoard is oneAction with a board of one column.
 const withBoard = oneAction + `board:
-  - name: bugs
-    labels: [bug]
+  bugs: bug
 `
 
 // boardReads is a board tracker that counts its board reads.

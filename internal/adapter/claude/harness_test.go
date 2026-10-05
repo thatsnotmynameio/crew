@@ -109,7 +109,7 @@ func build(t *testing.T, decode port.Decode, spawn *fakeSpawn) *harness {
 	return h
 }
 
-// noSection is a config with neither config.model nor harness:.
+// noSection is an agent's harness with no key but its name.
 func noSection(any) error { return nil }
 
 func fixture(t *testing.T, name string) []byte {
@@ -148,16 +148,19 @@ func load(t *testing.T, body string) (*config.Config, error) {
 	return config.Load(root)
 }
 
-const rules = `workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+// agent is a config of one agent on claude, whose harness has the keys
+// harness, a YAML flow mapping's entries after its name, and one rule.
+func agent(harness string) string {
+	return `agents:
+  developer:
+    harness: {name: claude` + harness + `}
+rules:
+  implement:
+    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
     actions:
-      - name: development
-        prompt: "Implement {{.Issue.Ref}}"
+      development: {prompt: "Implement {{.Issue.Ref}}"}
 `
+}
 
 func TestCommandRunsClaudeHeadlessWithTheModelInTheDirectory(t *testing.T) {
 	got := command(port.Run{Dir: "/work/.crew/worktrees/issue-4-development", Prompt: "Implement #4"}, "claude-opus-5-5")
@@ -206,9 +209,9 @@ func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
 	for _, tc := range []struct {
 		name, config, want string
 	}{
-		{"no model", rules, "claude-opus-5-5"},
-		{"empty model", "config:\n  model: \"\"\n" + rules, "claude-opus-5-5"},
-		{"configured model", "config:\n  model: claude-sonnet-5\n" + rules, "claude-sonnet-5"},
+		{"no model", agent(""), "claude-opus-5-5"},
+		{"empty model", agent(`, model: ""`), "claude-opus-5-5"},
+		{"configured model", agent(", model: claude-sonnet-5"), "claude-sonnet-5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := load(t, tc.config)
@@ -216,7 +219,7 @@ func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			spawn := &fakeSpawn{process: newProcess(fixture(t, "success.jsonl"), nil)}
-			h := build(t, cfg.HarnessSection, spawn)
+			h := build(t, cfg.Agents[0].HarnessSection, spawn)
 
 			s, err := h.Start(t.Context(), port.Run{Dir: "/work", Prompt: "Implement #4", Output: io.Discard})
 			if err != nil {
@@ -236,14 +239,14 @@ func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
 }
 
 func TestFactoryRejectsAnUnknownHarnessKeyNamingIt(t *testing.T) {
-	cfg, err := load(t, "harness:\n  effort: high\n"+rules)
+	cfg, err := load(t, agent(", effort: high"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 
-	h, err := Factory(&proc.Group{})(cfg.HarnessSection)
-	if err == nil || !strings.Contains(err.Error(), "harness.effort") {
-		t.Errorf("factory error = %v, want one naming harness.effort", err)
+	h, err := Factory(&proc.Group{})(cfg.Agents[0].HarnessSection)
+	if err == nil || !strings.Contains(err.Error(), "agents.developer.harness.effort") {
+		t.Errorf("factory error = %v, want one naming agents.developer.harness.effort", err)
 	}
 	if h != nil {
 		t.Errorf("factory built %v, want nothing", h)

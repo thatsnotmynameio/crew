@@ -61,12 +61,12 @@ func TestTrackerMoveLeavesTheIssueInExactlyTheNewState(t *testing.T) {
 	}
 }
 
-// An extra label is not a state: List does not report it, an issue whose
-// only crew label is an extra is not listed, and a move clears the extras.
-func TestTrackerExtrasAreNotListedAndAMoveClearsThem(t *testing.T) {
+// A label no rule names is not a state: List does not report it, an issue
+// carrying only such labels is not listed, and a move keeps them (AE6).
+func TestTrackerOtherLabelsAreNotListedAndAMoveKeepsThem(t *testing.T) {
 	tr := fake.NewTracker(issue("1", ready), issue("2"))
-	tr.SetExtras("1", waitingBrainstorm)
-	tr.SetExtras("2", waitingBrainstorm)
+	tr.SetLabels("1", string(waitingBrainstorm), "bug")
+	tr.SetLabels("2", string(waitingBrainstorm))
 	ctx := context.Background()
 
 	listed, err := tr.List(ctx, []crew.State{ready, waitingBrainstorm})
@@ -83,11 +83,14 @@ func TestTrackerExtrasAreNotListedAndAMoveClearsThem(t *testing.T) {
 	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
-	if got := tr.Extras("1"); len(got) != 0 {
-		t.Errorf("issue 1 extras after the move = %v, want none", got)
+	if want := []string{string(waitingBrainstorm), "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
+		t.Errorf("issue 1 labels after the move = %q, want %q", tr.Labels("1"), want)
 	}
-	if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(tr.Extras("2"), want) {
-		t.Errorf("issue 2 extras = %v, want %v", tr.Extras("2"), want)
+	if want := []string{string(waitingBrainstorm)}; !reflect.DeepEqual(tr.Labels("2"), want) {
+		t.Errorf("issue 2 labels = %q, want %q", tr.Labels("2"), want)
+	}
+	if got := tr.Labels("9"); got != nil {
+		t.Errorf("an unknown issue's labels = %q, want none", got)
 	}
 }
 
@@ -230,7 +233,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	built, err := factory(func(target any) error {
 		got = target
 		return nil
-	}, []crew.State{ready}, []crew.State{waitingBrainstorm})
+	}, []crew.State{ready})
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -242,7 +245,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 	}
 
 	invalid := errors.New("tracker.lables (line 3): unknown key")
-	if _, err := factory(func(any) error { return invalid }, nil, nil); !errors.Is(err, invalid) {
+	if _, err := factory(func(any) error { return invalid }, nil); !errors.Is(err, invalid) {
 		t.Errorf("factory with an invalid section = %v, want the decode error", err)
 	}
 }
@@ -335,8 +338,8 @@ func TestActingTrackerReturnsTheScriptedWritesWarningAndLogin(t *testing.T) {
 	}
 }
 
-// The board lists the open issues, never a pull request, whose states,
-// extras or other labels match an asked label ignoring case, oldest first,
+// The board lists the open issues, never a pull request, whose states
+// or other labels match an asked label ignoring case, oldest first,
 // each with the asked labels it carries in the asked spelling.
 func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	on := func(i crew.Issue, day int) crew.Issue {
@@ -348,7 +351,7 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	tr := fake.NewBoardTracker(on(issue("1", ready), 2), on(issue("2"), 3), on(issue("3"), 1), pull,
 		on(issue("5"), 1), on(issue("6"), 1))
 	tr.SetLabels("1", "BUG")
-	tr.SetExtras("2", waitingBrainstorm)
+	tr.SetLabels("2", string(waitingBrainstorm))
 	tr.SetLabels("3", "Bug", "docs")
 	tr.SetLabels("4", "bug")
 	tr.SetLabels("5", "bug")
@@ -374,10 +377,9 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 }
 
 // Adding an issue whose key the tracker holds replaces it: open again, with
-// the new states and no extras or other labels.
-func TestAddingAKnownIssueReplacesItOpenWithoutExtrasOrLabels(t *testing.T) {
+// the new states and no other labels.
+func TestAddingAKnownIssueReplacesItOpenWithoutLabels(t *testing.T) {
 	tr := fake.NewBoardTracker(issue("1", ready))
-	tr.SetExtras("1", waitingBrainstorm)
 	tr.SetLabels("1", "bug")
 	tr.Close("1")
 
@@ -387,8 +389,8 @@ func TestAddingAKnownIssueReplacesItOpenWithoutExtrasOrLabels(t *testing.T) {
 	if !ok || !reflect.DeepEqual(got.States, []crew.State{readyToReview}) {
 		t.Fatalf("issue 1 = %+v (found %t), want it in %q", got, ok, readyToReview)
 	}
-	if extras := tr.Extras("1"); len(extras) != 0 {
-		t.Errorf("extras = %q, want none", extras)
+	if labels := tr.Labels("1"); len(labels) != 0 {
+		t.Errorf("labels = %q, want none", labels)
 	}
 	board, err := tr.ListBoard(context.Background(), []string{"bug", string(readyToReview)})
 	if err != nil {

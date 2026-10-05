@@ -33,8 +33,8 @@ var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 // testRules are the rules of the test snapshots: implement takes
 // "ready", review takes "ready to review".
 var testRules = []crew.Rule{
-	{Name: "implement", Label: "ready", OnSuccess: "ready to review", OnFailure: "needs attention"},
-	{Name: "review", Label: "ready to review", OnSuccess: "ready to merge", OnFailure: "needs attention"},
+	{Name: "implement", Labels: crew.Labels{Ready: "ready", Success: "ready to review", Failure: "needs attention"}},
+	{Name: "review", Labels: crew.Labels{Ready: "ready to review", Success: "ready to merge", Failure: "needs attention"}},
 }
 
 // harness drives a Model directly through Update and View, with a clock the
@@ -128,13 +128,13 @@ func runningSnapshot() engine.Update {
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
-			{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+			{Name: "clerk", Slots: 1, Busy: 1},
 		}, Issues: []core.IssueView{
 			{Issue: one, Rule: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5 * time.Minute)},
 				{Name: "tests", Phase: core.PhaseRunning, Branch: "crew/1-tests", Started: start.Add(-7 * time.Minute)},
 			}},
-			{Issue: two, Rule: "review", Queue: crew.ClerkQueue, Claim: core.ClaimTaking, Actions: []core.ActionView{
+			{Issue: two, Rule: "review", Queue: "clerk", Claim: core.ClaimTaking, Actions: []core.ActionView{
 				{Name: "check", Phase: core.PhaseWaiting},
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code", "implement/tests", "review/check"},

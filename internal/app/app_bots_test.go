@@ -16,25 +16,25 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// botAction is oneAction with the default bot ops, and the development
-// action acting as developer and running a check.
+// botAction is oneAction with tracker.bot ops, and the development action
+// acting as its agent's bot developer and running a check.
 const botAction = `
-config:
-  harness: fake
-  mate: ops
 tracker:
   name: fake
-workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+  bot: ops
+agents:
+  developer:
+    harness: {name: fake}
+    bot: developer
+checks:
+  pull request: gh pr list
+rules:
+  implement:
+    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
     actions:
-      - name: development
+      development:
         prompt: "Implement development for issue {{.Issue.Ref}}"
-        mate: developer
-        check: gh pr list
+        check: pull request
 `
 
 // The identities the fake resolver hands out: ops for crew's own writes
@@ -181,7 +181,7 @@ func TestABotThatCannotActWarnsAndCrewActsAsYou(t *testing.T) {
 		warning := "mate ops has no key on this machine for thatsnotmynameio; " +
 			"run `crew mates create ops` in this repository"
 		res := &resolver{bots: app.Bots{Warnings: []string{warning}}}
-		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  mate: ops\n", 1), tr, h)
+		r := options(t, withOps(), tr, h)
 		r.opts.Bots = res.resolve
 		r.start()
 
@@ -215,7 +215,7 @@ func TestABotThatCannotActStillHasItsIssuesTaken(t *testing.T) {
 		h := fake.NewHarness()
 		res := &resolver{bots: app.Bots{Logins: []string{"crew-ops[bot]"},
 			Warnings: []string{"mate ops is not installed on thatsnotmynameio/crew"}}}
-		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  mate: ops\n", 1), tr, h)
+		r := options(t, withOps(), tr, h)
 		r.opts.Bots = res.resolve
 		r.start()
 
@@ -290,7 +290,7 @@ func TestAForcedExitStillClosesTheBots(t *testing.T) {
 	h := fake.NewHarness()
 	h.IgnoreStop(true) // the stop sequence would wait 10 seconds for it
 	res := &resolver{bots: app.Bots{Writer: opsWriter, Identities: map[string]port.Identity{"ops": opsID}}}
-	r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  mate: ops\n", 1), tr, h)
+	r := options(t, withOps(), tr, h)
 	r.opts.Bots = res.resolve
 	r.start()
 	session := next(t, h)

@@ -52,7 +52,7 @@ func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T)
 		tr.ReportStep("checking the gh login")
 		h := fake.NewPreparingHarness()
 		h.ReportStep("looking for claude on PATH")
-		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  mate: ops\n", 1), tr, h)
+		r := options(t, withOps(), tr, h)
 		r.opts.Terminal, r.opts.Plain = true, true
 		r.opts.Bots = func(ctx context.Context, _ string, names []string) (app.Bots, error) {
 			for _, name := range names {

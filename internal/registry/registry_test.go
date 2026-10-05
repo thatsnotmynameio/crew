@@ -31,16 +31,18 @@ func load(t *testing.T, body string) *config.Config {
 	return cfg
 }
 
-const rules = `workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+// rules is one rule of one action, which runs on the agent agents declares.
+const rules = `rules:
+  implement:
+    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
     actions:
-      - name: development
-        prompt: "Implement {{.Issue.Ref}}"
+      development: {prompt: "Implement {{.Issue.Ref}}"}
 `
+
+// agent declares the agent developer, on the harness name.
+func agent(name string) string {
+	return "agents:\n  developer:\n    harness: {name: " + name + ", model: some-model}\n"
+}
 
 func assertErr(t *testing.T, err error, wants ...string) {
 	t.Helper()
@@ -54,13 +56,13 @@ func assertErr(t *testing.T, err error, wants ...string) {
 	}
 }
 
-// Covers AE4.
+// R13: a harness name no adapter has names the agent's key.
 func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
 	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())})
-	cfg := load(t, "config:\n  harness: codex\n"+rules)
+	a := load(t, agent("codex")+rules).Agents[0]
 
-	h, err := r.Harness(cfg.Harness, cfg.HarnessSection)
-	assertErr(t, err, "harness", `"codex"`, "the registered harness adapters are: claude")
+	h, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+	assertErr(t, err, "agents.developer.harness.name", `"codex"`, "the registered harness adapters are: claude")
 	if h != nil {
 		t.Errorf("Harness = %v, want none", h)
 	}
@@ -72,13 +74,13 @@ func TestUnregisteredTrackerNamesTheKeyAndTheRegisteredTrackersSorted(t *testing
 		"github": fake.TrackerFactory(fake.NewTracker()),
 	}, nil)
 
-	_, err := r.Tracker("linear", func(any) error { return nil }, nil, nil)
+	_, err := r.Tracker("linear", func(any) error { return nil }, nil)
 	assertErr(t, err, "tracker.name", `"linear"`, "github, jira")
 }
 
 func TestRegistryWithoutAdaptersSaysNoneIsRegistered(t *testing.T) {
-	_, err := registry.Registry{}.Harness("claude", func(any) error { return nil })
-	assertErr(t, err, "config.harness", `"claude"`, "none")
+	_, err := registry.Registry{}.Harness("agents.developer.harness.name", "claude", func(any) error { return nil })
+	assertErr(t, err, "agents.developer.harness.name", `"claude"`, "none")
 }
 
 func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
@@ -87,9 +89,9 @@ func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
   name: fake
   lables:
     ready: todo
-`+rules)
+`+agent("claude")+rules)
 
-	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras)
+	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules))
 	assertErr(t, err, "tracker.lables", "line 3", "unknown key")
 	if tr != nil {
 		t.Errorf("Tracker = %v, want none", tr)
@@ -103,31 +105,27 @@ func TestTrackerLabelsIsAnUnknownKey(t *testing.T) {
   name: fake
   labels:
     ready: ready
-`+rules)
+`+agent("claude")+rules)
 
-	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras)
+	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules))
 	assertErr(t, err, "tracker.labels", "line 3", "unknown key")
 }
 
-func TestTheTrackerFactoryGetsTheStatesAndTheExtras(t *testing.T) {
-	var gotStates, gotExtras []crew.State
+func TestTheTrackerFactoryGetsTheStates(t *testing.T) {
+	var gotStates []crew.State
 	r := registry.New(map[string]port.TrackerFactory{
-		"fake": func(_ port.Decode, states, extras []crew.State) (port.Tracker, error) {
-			gotStates, gotExtras = states, extras
+		"fake": func(_ port.Decode, states []crew.State) (port.Tracker, error) {
+			gotStates = states
 			return fake.NewTracker(), nil
 		},
 	}, nil)
 	states := []crew.State{"ready", "in progress"}
-	extras := []crew.State{"waiting brainstorm"}
 
-	if _, err := r.Tracker("fake", func(any) error { return nil }, states, extras); err != nil {
+	if _, err := r.Tracker("fake", func(any) error { return nil }, states); err != nil {
 		t.Fatalf("Tracker: %v", err)
 	}
 	if !slices.Equal(gotStates, states) {
 		t.Errorf("the factory got the states %v, want %v", gotStates, states)
-	}
-	if !slices.Equal(gotExtras, extras) {
-		t.Errorf("the factory got the extras %v, want %v", gotExtras, extras)
 	}
 }
 
@@ -137,21 +135,19 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
 		map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)},
 		map[string]port.HarnessFactory{"fake": fake.HarnessFactory(harness)},
 	)
-	cfg := load(t, `config:
-  harness: fake
-  model: some-model
-tracker:
+	cfg := load(t, `tracker:
   name: fake
-`+rules)
+`+agent("fake")+rules)
 
-	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras)
+	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules))
 	if err != nil {
 		t.Fatalf("Tracker: %v", err)
 	}
 	if gotTracker != port.Tracker(tracker) {
 		t.Errorf("Tracker = %v, want the registered fake", gotTracker)
 	}
-	gotHarness, err := r.Harness(cfg.Harness, cfg.HarnessSection)
+	a := cfg.Agents[0]
+	gotHarness, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
 	if err != nil {
 		t.Fatalf("Harness: %v", err)
 	}

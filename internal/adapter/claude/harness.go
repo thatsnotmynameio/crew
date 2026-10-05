@@ -17,7 +17,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// defaultModel is the model a session runs when config.model is not set.
+// defaultModel is the model a session runs when its agent's harness sets no
+// model.
 const defaultModel = "claude-opus-5-5"
 
 // stoppedReason is the Outcome.Reason of a session ended by Stop.
@@ -33,8 +34,8 @@ var (
 	_ port.UsageReporter = (*session)(nil)
 )
 
-// settings is the claude adapter's config section: config.model, and no key
-// under harness: yet.
+// settings is the claude adapter's config section: the keys of an agent's
+// harness but its name, which are model alone.
 type settings struct {
 	Model string `yaml:"model"`
 }
@@ -49,8 +50,8 @@ type process interface {
 // as (*proc.Group).Start does. Tests replace it to script claude.
 type spawner func(c proc.Command, stdout, stderr io.Writer) (process, error)
 
-// Factory returns the claude harness factory. Its section is config.model,
-// which defaults to claude-opus-5-5, and harness:, which takes no key yet.
+// Factory returns the claude harness factory. Its section is an agent's
+// harness without its name: model, which defaults to claude-opus-5-5.
 // The harness it builds is a port.Preparer that checks claude is on PATH.
 // Every session runs through group, in its own process group, so a forced
 // exit kills it.

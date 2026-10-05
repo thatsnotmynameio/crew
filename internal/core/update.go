@@ -124,7 +124,7 @@ func (s *step) listIssues() {
 	m.skipped = 0
 	states := make([]crew.State, len(m.rules))
 	for i, st := range m.rules {
-		states[i] = st.Label
+		states[i] = st.Labels.Ready
 	}
 	s.command(ListIssues{States: states})
 }
@@ -263,7 +263,7 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 	var candidates []candidate
 	for si, rule := range s.m.rules {
 		for _, issue := range issues {
-			inLabel := len(issue.States) == 1 && issue.States[0] == rule.Label
+			inLabel := len(issue.States) == 1 && issue.States[0] == rule.Labels.Ready
 			if inLabel && issue.Kind == rule.Takes && !issue.Blocked {
 				candidates = append(candidates, candidate{si, issue})
 			}
@@ -320,11 +320,11 @@ func (s *step) take(si int, issue crew.Issue) {
 	rule := m.rules[si]
 	h := &heldIssue{issue: issue.Clone(), rule: si, claim: ClaimTaking, taken: s.at}
 	for _, a := range rule.Actions {
-		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, bot: a.Bot})
+		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, agent: a.Agent, bot: a.Bot})
 	}
 	m.issues = append(m.issues, h)
-	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Label, To: rule.MovesTo})
-	s.call(h, &call{kind: CallMove, take: true, from: rule.Label, to: rule.MovesTo})
+	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
+	s.call(h, &call{kind: CallMove, take: true, from: rule.Labels.Ready, to: rule.Labels.Running})
 }
 
 // call registers c on h under a new ID and makes its first attempt.
@@ -458,20 +458,20 @@ func (s *step) judge(h *heldIssue) {
 		}
 	}
 	h.verdict = &HandledView{
-		Issue: h.issue.Clone(), Rule: rule.Name, To: rule.OnSuccess, Taken: h.taken, Ended: s.at,
+		Issue: h.issue.Clone(), Rule: rule.Name, To: rule.Labels.Success, Taken: h.taken, Ended: s.at,
 	}
 	for _, a := range h.actions {
 		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
 	}
 	if len(report.Failures) == 0 {
-		s.call(h, &call{kind: CallMove, from: rule.MovesTo, to: rule.OnSuccess})
-		s.ended(h, rule.OnSuccess, crew.MovePending)
+		s.call(h, &call{kind: CallMove, from: rule.Labels.Running, to: rule.Labels.Success})
+		s.ended(h, rule.Labels.Success, crew.MovePending)
 		return
 	}
-	h.verdict.To, h.verdict.Failures = rule.OnFailure, slices.Clone(report.Failures)
-	s.call(h, &call{kind: CallMove, from: rule.MovesTo, to: rule.OnFailure})
+	h.verdict.To, h.verdict.Failures = rule.Labels.Failure, slices.Clone(report.Failures)
+	s.call(h, &call{kind: CallMove, from: rule.Labels.Running, to: rule.Labels.Failure})
 	s.call(h, &call{kind: CallReport, report: report})
-	s.ended(h, rule.OnFailure, crew.MovePending)
+	s.ended(h, rule.Labels.Failure, crew.MovePending)
 }
 
 // full reports whether every slot is busy, so a listing could take nothing:

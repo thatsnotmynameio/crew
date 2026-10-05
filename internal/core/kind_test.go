@@ -17,8 +17,9 @@ const (
 // pull requests.
 func withFixReview() []crew.Rule {
 	return append(draft(), crew.Rule{
-		Name: "fix review", Label: fixReviewReady, MovesTo: fixing, OnSuccess: readyToReview,
-		OnFailure: needsAttention, Takes: crew.KindPullRequest,
+		Name:    "fix review",
+		Labels:  crew.Labels{Ready: fixReviewReady, Running: fixing, Success: readyToReview, Failure: needsAttention},
+		Takes:   crew.KindPullRequest,
 		Actions: []crew.Action{{Name: "fix", Prompt: "Fix the review comments on {{.Issue.Ref}}"}},
 	})
 }

@@ -103,7 +103,7 @@ func (panickingSession) Said() string {
 func TestAFailingEngineKillsEveryProcessAndExitsOne(t *testing.T) {
 	tr := fake.NewTracker(issue("1", ready))
 	h := panickingHarness{fake.NewHarness()}
-	body := strings.Replace(oneAction, "config:\n", "config:\n  poll_interval_seconds: 1\n", 1)
+	body := "poll_interval_seconds: 1\n" + oneAction
 	r := options(t, body, tr, h)
 	sleeper := child(t, r.opts.Group) // a session's process, still running
 	r.start()

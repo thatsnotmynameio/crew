@@ -24,15 +24,17 @@ const (
 func crewRules() []crew.Rule {
 	return []crew.Rule{
 		{
-			Name: "development", Label: readyForDev, MovesTo: crewRunning, OnSuccess: crewReview, OnFailure: crewFailed,
+			Name:    "development",
+			Labels:  crew.Labels{Ready: readyForDev, Running: crewRunning, Success: crewReview, Failure: crewFailed},
 			Actions: []crew.Action{{Name: "lfg", Prompt: "/lfg {{.Issue.Ref}}"}},
 		},
 		{
-			Name: "fix", Label: readyForFix, MovesTo: crewRunning, OnSuccess: crewReview, OnFailure: crewFailed,
+			Name: "fix", Labels: crew.Labels{Ready: readyForFix, Running: crewRunning, Success: crewReview, Failure: crewFailed},
 			Actions: []crew.Action{{Name: "lfg", Prompt: "/lfg {{.Issue.Ref}} as a bug"}},
 		},
 		{
-			Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview, OnFailure: needsAttention,
+			Name:   "implement",
+			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{
 				{Name: "acceptance", Prompt: "acceptance for {{.Issue.Ref}}"},
 				{Name: "development", Prompt: "development for {{.Issue.Ref}}"},

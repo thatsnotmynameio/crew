@@ -26,17 +26,17 @@ var t0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 func draft() []crew.Rule {
 	return []crew.Rule{
 		{
-			Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
-			OnFailure: needsAttention,
+			Name:   "implement",
+			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{
 				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
 			},
 		},
 		{
-			Name: "review", Label: readyToReview, MovesTo: inReview, OnSuccess: readyToMerge,
-			OnFailure: needsAttention,
-			Actions:   []crew.Action{{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"}},
+			Name:    "review",
+			Labels:  crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
+			Actions: []crew.Action{{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"}},
 		},
 	}
 }

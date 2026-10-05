@@ -85,8 +85,9 @@ type RecordRun struct {
 // WorkspaceReady). Its result is SessionStarted or SessionFailedToStart,
 // then SessionEnded once a started session ends. Resumed is set when the
 // session continues a failed run in its reopened workspace, so the engine
-// marks in the log where the new session starts. Bot is the action's bot,
-// whom the session acts as on the tracker; empty means you.
+// marks in the log where the new session starts. Agent is the action's
+// agent, whose harness runs the session. Bot is the action's bot, whom the
+// session acts as on the tracker; empty means you.
 type StartSession struct {
 	IssueKey string
 	Action   string
@@ -94,6 +95,7 @@ type StartSession struct {
 	Prompt   string
 	Log      string
 	Resumed  bool
+	Agent    string
 	Bot      string
 }
 

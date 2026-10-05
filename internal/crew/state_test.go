@@ -12,23 +12,23 @@ func TestRuleStates(t *testing.T) {
 		want  []State
 	}{
 		{
-			name: "every key of every stage, in file order, each once",
+			name: "every label of every rule, in file order, each once",
 			rules: []Rule{
-				{Label: "ready", MovesTo: "in progress", OnSuccess: "in review", OnFailure: "needs attention"},
-				{Label: "in review", MovesTo: "reviewing", OnSuccess: "done", OnFailure: "needs attention"},
+				{Labels: Labels{Ready: "ready", Running: "in progress", Success: "in review", Failure: "needs attention"}},
+				{Labels: Labels{Ready: "in review", Running: "reviewing", Success: "done", Failure: "needs attention"}},
 			},
 			want: []State{"ready", "in progress", "in review", "needs attention", "reviewing", "done"},
 		},
 		{
-			name: "a failure label that is another stage's label is listed once",
+			name: "a failure label that is another rule's label is listed once",
 			rules: []Rule{
-				{Label: "ready", MovesTo: "in progress", OnSuccess: "ready to review", OnFailure: "needs attention"},
-				{Label: "ready to review", MovesTo: "in review", OnSuccess: "done", OnFailure: "ready"},
+				{Labels: Labels{Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention"}},
+				{Labels: Labels{Ready: "ready to review", Running: "in review", Success: "done", Failure: "ready"}},
 			},
 			want: []State{"ready", "in progress", "ready to review", "needs attention", "in review", "done"},
 		},
 		{
-			name: "an empty workflow",
+			name: "no rules",
 			want: []State{},
 		},
 	}

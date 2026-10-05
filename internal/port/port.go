@@ -41,26 +41,25 @@ var ErrWorkspaceGone = errors.New("the workspace is gone")
 // Tracker is an issue tracker, spoken to in the rules' states. A state
 // is text the tracker shows, such as a label's name on GitHub or a status on
 // another tracker; the adapter knows how its tracker shows it, and is built
-// knowing the rules' states and the config's extra labels
-// (TrackerFactory). Those states are crew's states. The extras are crew's
-// too, for parked work no rule takes, but they are never states.
+// knowing the rules' states (TrackerFactory). Those states are crew's
+// states, and crew touches no other label.
 type Tracker interface {
 	// List returns the open issues that are in any of states. Each issue
 	// carries every crew state it is in, not only the ones asked for, so the
 	// engine can skip an issue found in two states; it carries nothing that
-	// is not a crew state, and never an extra. An issue is Blocked while an
+	// is not a crew state. An issue is Blocked while an
 	// open issue blocks it, when the tracker records dependencies. An error
 	// means the list could not be read; it is transient.
 	List(ctx context.Context, states []crew.State) ([]crew.Issue, error)
 	// Move moves the issue identified by issueKey from one state to
-	// another, and leaves it in exactly one crew state, to, removing every
-	// extra it carries, without touching what is not crew's. It returns an
+	// another, and leaves it in exactly one crew state, to, without
+	// touching what is not crew's. It returns an
 	// error wrapping ErrMovedMeanwhile when the issue is closed or not in
 	// from, one wrapping ErrRefused when the tracker refuses for good, and
 	// any other error when the move failed transiently. It returns nil,
 	// changing nothing, when the issue is already exactly in to and not in
-	// from, whatever extras it carries, so retrying a move that landed is
-	// safe.
+	// from, whatever other labels it carries, so retrying a move that
+	// landed is safe.
 	Move(ctx context.Context, issueKey string, from, to crew.State) error
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
@@ -154,7 +153,7 @@ type Space struct {
 type Preparer interface {
 	// Prepare checks and prepares the adapter for a set of rules that can
 	// request states, so an adapter creates or checks only what the rules
-	// use; a Tracker also creates or checks the extras it was built with.
+	// use.
 	// An error names the tool or setting at fault, and crew stops before
 	// polling.
 	Prepare(ctx context.Context, states []crew.State) error
@@ -194,7 +193,7 @@ type StatusReporter interface {
 type PullRequestReporter interface {
 	// ReportPullRequests puts each open pull request that closes report's
 	// issue in report.State, as Move puts the issue, removing every other
-	// crew state and extra it carries without touching what is not crew's.
+	// crew state it carries without touching what is not crew's.
 	// When report.End is set, it also posts a new comment on each saying
 	// that the rule ended and nobody watches the pull request any more. An
 	// issue without such a pull request gets nothing. A retry of the same

@@ -19,12 +19,13 @@ const (
 func queued(triage, development crew.Queue) []crew.Rule {
 	return []crew.Rule{
 		{
-			Name: "triage", Label: needsTriage, MovesTo: triaging, OnSuccess: ready, OnFailure: needsAttention,
+			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
 			Actions: []crew.Action{{Name: "triage", Prompt: "Triage issue {{.Issue.Ref}}"}},
 			Queue:   triage,
 		},
 		{
-			Name: "development", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview, OnFailure: needsAttention,
+			Name:    "development",
+			Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{{Name: "development", Prompt: "Develop issue {{.Issue.Ref}}"}},
 			Queue:   development,
 		},
@@ -40,7 +41,7 @@ func inQueues(rules []crew.Rule, queues ...crew.Queue) []crew.Rule {
 }
 
 // clerk is the clerk queue of 1 slot.
-var clerk = crew.Queue{Name: crew.ClerkQueue, Slots: 1}
+var clerk = crew.Queue{Name: "clerk", Slots: 1}
 
 func defaultQueue(slots int) crew.Queue { return crew.Queue{Name: crew.DefaultQueue, Slots: slots} }
 
@@ -330,9 +331,9 @@ func TestTheViewShowsEachQueuesSlotsAndBusyCountAndEachIssuesQueue(t *testing.T)
 	d.hold([]crew.Issue{issue("1", 1, ready), issue("7", 7, needsTriage)})
 
 	wantQueues(t, queuesOf(t, d.m, 0, 1),
-		core.QueueView{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		core.QueueView{Name: "clerk", Slots: 1, Busy: 1},
 		core.QueueView{Name: crew.DefaultQueue, Slots: 2, Busy: 1})
-	if got := queueOf(t, d.m, "7"); got != crew.ClerkQueue {
+	if got := queueOf(t, d.m, "7"); got != "clerk" {
 		t.Errorf("queue of #7: got %q, want clerk", got)
 	}
 	if got := queueOf(t, d.m, "1"); got != crew.DefaultQueue {
@@ -348,7 +349,7 @@ func TestAnIssueWhoseTakeIsInFlightOrOwedHoldsABusySlot(t *testing.T) {
 		t.Fatalf("claim of #7: got %v, want taking", c)
 	}
 	wantQueues(t, queuesOf(t, d.m, 0, 2),
-		core.QueueView{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		core.QueueView{Name: "clerk", Slots: 1, Busy: 1},
 		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
 
 	d.send(core.CallResult{ID: moveID(t, cmds, "7"), Result: core.ResultFailed, Reason: "timeout"})
@@ -356,7 +357,7 @@ func TestAnIssueWhoseTakeIsInFlightOrOwedHoldsABusySlot(t *testing.T) {
 		t.Fatalf("claim of #7: got %v, want owed", c)
 	}
 	wantQueues(t, queuesOf(t, d.m, 0, 2),
-		core.QueueView{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
+		core.QueueView{Name: "clerk", Slots: 1, Busy: 1},
 		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
 }
 
@@ -368,7 +369,7 @@ func TestAReleasedIssueFreesItsQueuesSlot(t *testing.T) {
 
 	wantHeld(t, d.m)
 	wantQueues(t, queuesOf(t, d.m, 1, 2),
-		core.QueueView{Name: crew.ClerkQueue, Slots: 1},
+		core.QueueView{Name: "clerk", Slots: 1},
 		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
 }
 

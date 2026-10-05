@@ -19,13 +19,13 @@ func (s *step) otherKind(issues []crew.Issue) {
 		if !ok || rule.Takes == issue.Kind {
 			continue
 		}
-		found[issue.Key] = rule.Label
-		if m.otherKinds[issue.Key] == rule.Label {
+		found[issue.Key] = rule.Labels.Ready
+		if m.otherKinds[issue.Key] == rule.Labels.Ready {
 			continue
 		}
 		s.emit(IssueOfOtherKind{
 			At: s.at, IssueKey: issue.Key, IssueRef: issue.Ref, Kind: issue.Kind,
-			Label: rule.Label, Rule: rule.Name, Takes: rule.Takes,
+			Label: rule.Labels.Ready, Rule: rule.Name, Takes: rule.Takes,
 		})
 	}
 	m.otherKinds = found
@@ -34,7 +34,7 @@ func (s *step) otherKind(issues []crew.Issue) {
 // ruleLabeled returns the rule whose label is state, if any.
 func (m *Model) ruleLabeled(state crew.State) (crew.Rule, bool) {
 	for _, st := range m.rules {
-		if st.Label == state {
+		if st.Labels.Ready == state {
 			return st, true
 		}
 	}

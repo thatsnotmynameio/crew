@@ -39,7 +39,7 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 		harness := fake.NewPreparingHarness()
 		harness.ReportStep("checking claude")
 		cfg := config(t, tr, develop)
-		cfg.Harness = harness
+		cfg.Harnesses = harnesses(harness)
 		var steps []string
 		ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
 
@@ -74,7 +74,7 @@ func TestPrepareReportsTheJournalStepAfterEveryPortPrepared(t *testing.T) {
 		harness := fake.NewPreparingHarness()
 		harness.ReportStep("checking claude")
 		cfg := config(t, tr, develop)
-		cfg.Harness = harness
+		cfg.Harnesses = harnesses(harness)
 		e := engine.New(cfg)
 		var steps []string
 		ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
@@ -99,7 +99,7 @@ func TestPrepareReportsTheJournalStepAfterEveryPortPrepared(t *testing.T) {
 
 func TestPrepareGetsOnlyTheStatesTheRulesName(t *testing.T) {
 	blocked := develop
-	blocked.OnFailure = "blocked"
+	blocked.Labels.Failure = "blocked"
 	tr := fake.NewPreparingTracker()
 
 	if err := engine.New(config(t, tr, blocked)).Prepare(context.Background()); err != nil {
@@ -137,4 +137,27 @@ func TestRunAfterPrepareDoesNotPrepareAgain(t *testing.T) {
 			t.Errorf("Run listed %d times, want the first poll's listing", tr.lists)
 		}
 	})
+}
+
+// Each agent's harness is prepared once, in config order, and a failing one
+// is named after its agent.
+func TestPrepareRunsEveryAgentsHarnessAndNamesTheOneThatFails(t *testing.T) {
+	developer, reviewer := fake.NewPreparingHarness(), fake.NewPreparingHarness()
+	notInstalled := errors.New("codex is not on PATH")
+	reviewer.Fail(notInstalled)
+	cfg := config(t, fake.NewTracker(), develop)
+	cfg.Harnesses = []engine.AgentHarness{{Agent: "developer", Harness: developer}, {Agent: "reviewer", Harness: reviewer}}
+
+	err := engine.New(cfg).Prepare(context.Background())
+
+	if !errors.Is(err, notInstalled) || !strings.Contains(err.Error(), "prepare the harness of agent reviewer") {
+		t.Errorf("Prepare = %v, want the reviewer's harness error, naming the agent", err)
+	}
+	want := [][]crew.State{{ready, inProgress, readyToReview, needsAttention}}
+	if got := developer.Calls(); !reflect.DeepEqual(got, want) {
+		t.Errorf("developer's harness prepared for %v, want once for %v", got, want)
+	}
+	if got := reviewer.Calls(); len(got) != 1 {
+		t.Errorf("reviewer's harness prepared %d times, want once", len(got))
+	}
 }

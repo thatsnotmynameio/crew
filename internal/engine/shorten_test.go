@@ -105,7 +105,7 @@ func TestAHarnessStartFailureReachesTheReportWithLocalPathsShortened(t *testing.
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
-		cfg.Harness = failingHarness{home: cfg.Home}
+		cfg.Harnesses = harnesses(failingHarness{home: cfg.Home})
 
 		got := reportedReason(t, tr, cfg, nil)
 

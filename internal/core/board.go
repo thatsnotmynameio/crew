@@ -12,8 +12,7 @@ type board struct {
 	// labels are the board's labels, each spelled once, so they compare
 	// exactly.
 	labels []string
-	// crewLabels are the labels a move removes: the rules' states and
-	// the extras.
+	// crewLabels are the labels a move removes: the rules' states.
 	crewLabels []crew.State
 	// issues are what the last read found, with crew's moves since applied.
 	issues  []crew.BoardIssue
@@ -35,11 +34,10 @@ type boardMove struct {
 
 // ListingBoard has the model read the open issues that carry any of labels,
 // the board's labels, at each tick, and apply crew's moves to them as they
-// land (KTD4). crewLabels are the labels a move removes: the rules'
-// states and the extras.
-func ListingBoard(labels []string, crewLabels []crew.State) Option {
+// land (KTD4), removing the rules' states but to's.
+func ListingBoard(labels []string) Option {
 	return func(m *Model) {
-		m.board = &board{labels: slices.Clone(labels), crewLabels: slices.Clone(crewLabels)}
+		m.board = &board{labels: slices.Clone(labels), crewLabels: crew.RuleStates(m.rules)}
 	}
 }
 

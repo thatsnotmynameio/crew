@@ -17,15 +17,17 @@ var draftPairs = []string{"implement/acceptance", "implement/development", "revi
 func botRules() []crew.Rule {
 	return []crew.Rule{
 		{
-			Name: "triage", Label: needsTriage, MovesTo: triaging, OnSuccess: ready, OnFailure: needsAttention,
+			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
 			Actions: []crew.Action{{Name: "triage", Prompt: "Triage {{.Issue.Ref}}", Bot: "clerk"}},
 		},
 		{
-			Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview, OnFailure: needsAttention,
+			Name:    "implement",
+			Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{{Name: "development", Prompt: "Develop {{.Issue.Ref}}", Bot: "developer"}},
 		},
 		{
-			Name: "review", Label: readyToReview, MovesTo: inReview, OnSuccess: readyToMerge, OnFailure: needsAttention,
+			Name:    "review",
+			Labels:  crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
 			Actions: []crew.Action{{Name: "review", Prompt: "Review {{.Issue.Ref}}", Bot: "reviewer"}},
 		},
 	}

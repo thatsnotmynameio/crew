@@ -7,50 +7,57 @@ import (
 )
 
 // Rule is one of the config's rules. It takes an item of its Takes kind in
-// its Label state, moves it to MovesTo while its actions run, and moves it to
-// OnSuccess once every action has succeeded, or to OnFailure when any failed.
+// its Labels.Ready state, moves it to Labels.Running while its actions run,
+// and moves it to Labels.Success once every action has succeeded, or to
+// Labels.Failure when any failed.
 type Rule struct {
 	// Name identifies the rule in events and the TUI.
 	Name string
-	// Label is the state an issue must be in for the rule to take it.
-	Label State
-	// MovesTo is the state the issue is in while the rule's actions run.
-	MovesTo State
-	// OnSuccess is the state the issue moves to after every action succeeded.
-	OnSuccess State
-	// OnFailure is the state the issue moves to when any action failed, with
-	// a failure report.
-	OnFailure State
-	// Actions run in parallel, each in its own workspace and session.
+	// Labels are the states the rule takes an item from and moves it to.
+	Labels Labels
+	// Actions run in parallel, each in its own workspace and session. A
+	// rule may have none.
 	Actions []Action
 	// Queue is the queue the rule runs in: the share of the global limit
 	// its issues may hold. The zero Queue is no queue: the rule is limited
 	// only by the global limit, which it shares with every other such rule.
 	Queue Queue
 	// Takes is the kind of item the rule takes: it takes only the items of
-	// that kind in its Label state. The zero Kind takes issues.
+	// that kind in its Labels.Ready state. The zero Kind takes issues.
 	Takes Kind
+	// Notify tells whether the live view sends a desktop notification when
+	// the rule ends for an item.
+	Notify bool
 	// OffBoard hides the rule from the live view's board: no column, and
 	// no card for an issue it holds. Only the live view reads it; the zero
-	// value shows the rule.
+	// value shows the rule. The config never sets it.
 	OffBoard bool
 }
 
-// The queues every set of rules has.
-const (
-	// ClerkQueue is crew's queue for bookkeeping work.
-	ClerkQueue = "clerk"
-	// DefaultQueue gets the slots the other queues leave, and runs every
-	// rule that names no queue.
-	DefaultQueue = "default"
-)
+// Labels are a rule's states, one for each point of its run.
+type Labels struct {
+	// Ready is the state an item must be in for the rule to take it.
+	Ready State
+	// Running is the state the item is in while the rule's actions run.
+	Running State
+	// Success is the state the item moves to after every action succeeded.
+	Success State
+	// Failure is the state the item moves to when any action failed, with
+	// a failure report. It is empty only on a rule without actions, which
+	// never fails.
+	Failure State
+}
+
+// DefaultQueue gets the slots the other queues leave, and runs every rule
+// that names no queue.
+const DefaultQueue = "default"
 
 // Queue is a fixed share of the global limit on the issues crew holds at
 // once. Only the rules in a queue use its slots, and it never lends an idle
 // one to another queue.
 type Queue struct {
-	// Name identifies the queue: ClerkQueue, DefaultQueue or a queue the
-	// config declares.
+	// Name identifies the queue: DefaultQueue or a queue the config
+	// declares.
 	Name string
 	// Slots is how many issues the queue's rules may hold at once, possibly
 	// zero.
@@ -64,14 +71,17 @@ type Action struct {
 	Name string
 	// Prompt is a text/template over the issue; see Render.
 	Prompt string
+	// Agent is the name of the agent whose harness runs the action's
+	// session.
+	Agent string
 	// Check is a shell command run in the action's workspace once its
 	// session succeeded; empty when the action has none. It is never a
 	// template: it reads the issue from environment variables, so no issue
 	// text becomes part of the command. A failing check fails the action.
 	Check string
 	// Bot is the name of the bot that acts for the action's session and
-	// check on the tracker: the action's own or the config's default. Empty
-	// means you.
+	// check on the tracker: its agent's, or the tracker's when the agent
+	// names none. Empty means you.
 	Bot string
 }
 

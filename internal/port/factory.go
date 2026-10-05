@@ -16,12 +16,11 @@ type Decode = func(target any) error
 // adds its own checks of the values, before returning; it does not reach the
 // network or run tools, which is Preparer's job. states are the rules'
 // states, crew.RuleStates: the tracker's states crew owns, and the only
-// ones List reports. extras are the config's extra labels, for parked work no
-// rule takes: they are crew's too, but never states. List never reports
-// them, Move removes them, and Prepare creates them as it does the states.
-type TrackerFactory func(decode Decode, states, extras []crew.State) (Tracker, error)
+// ones List reports, Move removes and Prepare creates; every other label is
+// not crew's.
+type TrackerFactory func(decode Decode, states []crew.State) (Tracker, error)
 
-// HarnessFactory builds a harness adapter from its config section:
-// config.model plus the keys of the top-level harness: section. It validates
-// the section as TrackerFactory does.
+// HarnessFactory builds a harness adapter from its config section: every
+// key of an agent's harness except name, model included. It validates the
+// section as TrackerFactory does.
 type HarnessFactory func(decode Decode) (Harness, error)

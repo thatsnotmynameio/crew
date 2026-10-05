@@ -79,6 +79,21 @@ func session(key, action, prompt string) core.StartSession {
 	}
 }
 
+// Each action's session starts on its agent's harness (R13).
+func TestEverySessionStartsOnItsActionsAgent(t *testing.T) {
+	rules := draft()
+	rules[0].Actions[0].Agent, rules[0].Actions[1].Agent = "tester", "developer"
+	d := newDriver(t, rules, 2)
+	d.send(core.Tick{})
+	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
+	d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
+
+	acceptance, development := session("1", "acceptance", "Implement test acceptance for issue #1"),
+		session("1", "development", "Implement development for issue #1")
+	acceptance.Agent, development.Agent = "tester", "developer"
+	wantCommands(t, d.workspacesReady("1"), acceptance, development)
+}
+
 func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
@@ -142,7 +157,7 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 
 func TestAE1AE5FailedRuleMovesToItsOwnOnFailure(t *testing.T) {
 	rules := draft()
-	rules[1].OnFailure = rules[0].Label // a failed review goes back to implement
+	rules[1].Labels.Failure = rules[0].Labels.Ready // a failed review goes back to implement
 	d := newDriver(t, rules, 2)
 
 	// AE1: implement fails, so #1 moves to implement's on_failure.

@@ -3,11 +3,15 @@ package crew
 import "slices"
 
 // BoardColumn is a column of the live view's board as the config draws it:
-// a name, and the labels whose open issues it shows. Every label is
-// non-empty and written once, in one spelling across the board.
+// a name, the labels whose open items it shows, and the kind of those items.
+// Every label is non-empty and written once, in one spelling across the
+// board.
 type BoardColumn struct {
 	Name   string
 	Labels []string
+	// Takes is the kind of item the column shows. The zero Kind shows
+	// issues.
+	Takes Kind
 }
 
 // BoardIssue is an open issue as the board reads it: the issue, and the

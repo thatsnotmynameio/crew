@@ -268,7 +268,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
 		return
 	}
-	s, err := e.cfg.Harness.Start(ctx, port.Run{
+	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
 		Dir: c.Dir, Prompt: c.Prompt, Output: log,
 		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
 	})

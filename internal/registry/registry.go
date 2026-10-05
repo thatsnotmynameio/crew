@@ -1,5 +1,5 @@
 // Package registry resolves the adapter names of the config, tracker.name and
-// config.harness, to adapters. A Registry is a value built from an explicit
+// each agent's harness.name, to adapters. A Registry is a value built from an explicit
 // list of factories: cmd/crew passes the production list, and tests pass the
 // fakes, so both go through the same lookup and validation path.
 package registry
@@ -28,26 +28,28 @@ func New(trackers map[string]port.TrackerFactory, harnesses map[string]port.Harn
 }
 
 // Tracker builds the tracker adapter registered as name, the config's
-// tracker.name, from its config section, the rules' states and the
-// config's extra labels. An unregistered name is an error naming
+// tracker.name, from its config section and the rules' states. An
+// unregistered name is an error naming
 // tracker.name and every registered tracker; a factory's error, such as an
 // unknown key in the section, is returned with the adapter's name.
-func (r Registry) Tracker(name string, section port.Decode, states, extras []crew.State) (port.Tracker, error) {
+func (r Registry) Tracker(name string, section port.Decode, states []crew.State) (port.Tracker, error) {
 	factory, err := lookup(r.trackers, "tracker", "tracker.name", name)
 	if err != nil {
 		return nil, err
 	}
-	tracker, err := factory(section, states, extras)
+	tracker, err := factory(section, states)
 	if err != nil {
 		return nil, fmt.Errorf("tracker %s: %w", name, err)
 	}
 	return tracker, nil
 }
 
-// Harness builds the harness adapter registered as name, the config's
-// config.harness, from its config section, as Tracker does.
-func (r Registry) Harness(name string, section port.Decode) (port.Harness, error) {
-	factory, err := lookup(r.harnesses, "harness", "config.harness", name)
+// Harness builds the harness adapter registered as name, an agent's
+// harness.name at key, such as agents.developer.harness.name, from its
+// config section, as Tracker does. An unregistered name is an error naming
+// key and every registered harness.
+func (r Registry) Harness(key, name string, section port.Decode) (port.Harness, error) {
+	factory, err := lookup(r.harnesses, "harness", key, name)
 	if err != nil {
 		return nil, err
 	}

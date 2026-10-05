@@ -14,15 +14,16 @@ import "slices"
 type State string
 
 // RuleStates returns every state the rules name, rule by
-// rule in rule order (label, moves_to, on_success, on_failure), each
-// once. These are crew's states: the ones it takes issues from, moves them
+// rule in rule order (ready, running, success, failure), each
+// once, leaving out a rule's empty failure. These are crew's states: the ones it takes issues from, moves them
 // to, and counts when an issue carries two of them. The slice is new on
 // every call.
 func RuleStates(rules []Rule) []State {
 	states := []State{}
 	for _, s := range rules {
-		for _, state := range []State{s.Label, s.MovesTo, s.OnSuccess, s.OnFailure} {
-			if !slices.Contains(states, state) {
+		l := s.Labels
+		for _, state := range []State{l.Ready, l.Running, l.Success, l.Failure} {
+			if state != "" && !slices.Contains(states, state) {
 				states = append(states, state)
 			}
 		}

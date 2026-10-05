@@ -31,7 +31,7 @@ type narrating struct {
 func startNarrating(t *testing.T) *narrating {
 	t.Helper()
 	cfg := config(t, fake.NewTracker(issue(1, ready)), develop)
-	cfg.Harness = fake.NewNarratingHarness()
+	cfg.Harnesses = harnesses(fake.NewNarratingHarness())
 	e := engine.New(cfg)
 	latest := e.SubscribeLatest()
 	r := run(t, cfg, e)

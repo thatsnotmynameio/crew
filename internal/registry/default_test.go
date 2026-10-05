@@ -8,14 +8,15 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/registry"
 )
 
-func TestDefaultBuildsGithubAndClaudeTheConfigDefaults(t *testing.T) {
+func TestDefaultBuildsGithubAndClaude(t *testing.T) {
 	r := registry.Default(&proc.Group{})
-	cfg := load(t, rules) // tracker.name and config.harness left to their defaults
+	cfg := load(t, agent("claude")+rules) // tracker.name left to its default
 
-	if _, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras); err != nil {
+	if _, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules)); err != nil {
 		t.Errorf("Tracker(%q): %v", cfg.Tracker, err)
 	}
-	if _, err := r.Harness(cfg.Harness, cfg.HarnessSection); err != nil {
-		t.Errorf("Harness(%q): %v", cfg.Harness, err)
+	a := cfg.Agents[0]
+	if _, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection); err != nil {
+		t.Errorf("Harness(%q): %v", a.Harness, err)
 	}
 }

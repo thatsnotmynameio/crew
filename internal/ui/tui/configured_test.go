@@ -107,7 +107,7 @@ func TestAHeldIssueOnNoColumnsLabelHasNoCardButShowsInActions(t *testing.T) {
 // The configured columns ignore the rules: every rule hidden from the
 // board leaves them as they are, empty ones included.
 func TestTheConfiguredColumnsShowInConfigOrderWhateverTheRules(t *testing.T) {
-	hidden := []crew.Rule{{Name: "only", Label: "ready", OffBoard: true}}
+	hidden := []crew.Rule{{Name: "only", Labels: crew.Labels{Ready: "ready"}, OffBoard: true}}
 	board := []crew.BoardColumn{
 		{Name: "done", Labels: []string{"crew:triage:done"}},
 		{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},

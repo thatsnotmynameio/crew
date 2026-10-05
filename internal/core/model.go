@@ -113,6 +113,7 @@ type actionRun struct {
 	said      string // what its running session last said
 	outcome   crew.Outcome
 	check     string            // its check command; empty when it has none
+	agent     string            // the agent whose harness runs its session
 	bot       string            // the bot its session and check act as; empty for you
 	stopped   bool              // a StopCheck was sent for its check
 	cause     crew.FailureCause // what made it fail, once it ended failed

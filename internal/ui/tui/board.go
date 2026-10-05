@@ -90,7 +90,7 @@ func (m Model) waits(e core.HandledView) bool {
 		return false
 	}
 	return slices.ContainsFunc(m.cfg.Rules, func(s crew.Rule) bool {
-		return s.Label == e.To && s.Takes == e.Issue.Kind
+		return s.Labels.Ready == e.To && s.Takes == e.Issue.Kind
 	})
 }
 

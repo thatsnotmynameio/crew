@@ -7,182 +7,138 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// boardRules is a set of rules with a triage rule, and an extra, for the
-// board's tests.
-const boardRules = `extra_labels:
-  - label: crew:brainstorm:ready
-workflow:
-  - name: triage
-    label: crew:triage:ready
-    moves_to: crew:triage:in progress
-    on_success: crew:triage:done
-    on_failure: crew:triage:failed
+// boardRules is one agent and the rules promote triage, without actions,
+// triage and development, which takes pull requests, for the board's tests.
+// It ends on line 20.
+const boardRules = oneAgent + `rules:
+  promote triage:
+    labels: {ready: "crew:triage:done", running: "crew:triage:promoting", success: "crew:development:ready"}
+  triage:
+    labels: {ready: "crew:triage:ready", running: "crew:triage:in progress", success: "crew:triage:done",
+      failure: "crew:triage:failed"}
     actions:
-      - name: triage
-        prompt: "Triage {{.Issue.Ref}}"
+      triage: {prompt: "Triage {{.Issue.Ref}}"}
+  development:
+    takes: pull_requests
+    labels:
+      ready: "crew:development:ready"
+      running: "crew:development:in progress"
+      success: "crew:development:done"
+      failure: "crew:development:failed"
+    actions:
+      lfg: {prompt: "/lfg {{.Issue.Ref}}"}
 `
 
-// boardCase is a config with a board, and the columns Load must read from
-// it.
-type boardCase struct {
-	name string
-	body string
-	want []crew.BoardColumn
-}
-
-// validBoards are boards Load reads.
-var validBoards = []boardCase{
-	{
-		name: "no board keeps the stages' board",
-		body: boardRules,
-	},
-	{
-		name: "columns in file order with their labels",
-		body: boardRules + `board:
-  - name: ideas
-    labels: [crew:brainstorm:ready]
-  - name: bugs
-    labels: [bug]
-  - name: done
-    labels: [crew:brainstorm:done, crew:triage:done]
-`,
-		want: []crew.BoardColumn{
-			{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
-			{Name: "bugs", Labels: []string{"bug"}},
-			{Name: "done", Labels: []string{"crew:brainstorm:done", "crew:triage:done"}},
+// Covers AE5: without board, the board has one column per rule that has
+// actions, in file order, with the rule's ready and running labels and its
+// kind.
+func TestAE5WithoutBoardEveryRuleWithActionsHasAColumn(t *testing.T) {
+	cfg := load(t, boardRules)
+	want := []crew.BoardColumn{
+		{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:in progress"}},
+		{
+			Name: "development", Labels: []string{"crew:development:ready", "crew:development:in progress"},
+			Takes: crew.KindPullRequest,
 		},
-	},
-	{
-		// Covers AE6.
-		name: "a label no issue carries",
-		body: boardRules + `board:
-  - name: bugs
-    labels: [bgu]
-`,
-		want: []crew.BoardColumn{{Name: "bugs", Labels: []string{"bgu"}}},
-	},
-	{
-		name: "labels take the workflow's, the extras' or their first spelling",
-		body: boardRules + `board:
-  - name: triage
-    labels: [Crew:Triage:Ready, CREW:BRAINSTORM:READY]
-  - name: bugs
-    labels: [bug]
-  - name: more bugs
-    labels: [BUG]
-`,
-		want: []crew.BoardColumn{
-			{Name: "triage", Labels: []string{"crew:triage:ready", "crew:brainstorm:ready"}},
-			{Name: "bugs", Labels: []string{"bug"}},
-			{Name: "more bugs", Labels: []string{"bug"}},
-		},
-	},
-	{
-		name: "a label written twice in one column counts once",
-		body: boardRules + `board:
-  - name: bugs
-    labels: [bug, Bug, bug]
-`,
-		want: []crew.BoardColumn{{Name: "bugs", Labels: []string{"bug"}}},
-	},
+	}
+	if !reflect.DeepEqual(cfg.Board, want) || cfg.BoardWritten {
+		t.Errorf("Board = %+v (written %v)\nwant %+v, not written", cfg.Board, cfg.BoardWritten, want)
+	}
 }
 
 func TestLoadBoard(t *testing.T) {
-	for _, tt := range validBoards {
+	tests := []struct {
+		name  string
+		board string
+		want  []crew.BoardColumn
+	}{
+		{
+			name:  "columns in file order, of one label or a list",
+			board: "board:\n  ideas: crew:brainstorm:ready\n  bugs: [bug]\n  done: [crew:brainstorm:done, crew:triage:done]\n",
+			want: []crew.BoardColumn{
+				{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
+				{Name: "bugs", Labels: []string{"bug"}},
+				{Name: "done", Labels: []string{"crew:brainstorm:done", "crew:triage:done"}},
+			},
+		},
+		{
+			name:  "a label no rule names and no issue carries",
+			board: "board:\n  bugs: bgu\n",
+			want:  []crew.BoardColumn{{Name: "bugs", Labels: []string{"bgu"}}},
+		},
+		{
+			name:  "labels take the rules' or their first spelling",
+			board: "board:\n  triage: [Crew:Triage:Ready, CREW:TRIAGE:DONE]\n  bugs: bug\n  more bugs: [BUG]\n",
+			want: []crew.BoardColumn{
+				{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:done"}},
+				{Name: "bugs", Labels: []string{"bug"}},
+				{Name: "more bugs", Labels: []string{"bug"}},
+			},
+		},
+		{
+			name:  "a label written twice in one column counts once",
+			board: "board:\n  bugs: [bug, Bug, bug]\n",
+			want:  []crew.BoardColumn{{Name: "bugs", Labels: []string{"bug"}}},
+		},
+	}
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).Board; !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Board = %+v, want %+v", got, tt.want)
+			cfg := load(t, boardRules+tt.board)
+			if !reflect.DeepEqual(cfg.Board, tt.want) || !cfg.BoardWritten {
+				t.Errorf("Board = %+v (written %v)\nwant %+v, written", cfg.Board, cfg.BoardWritten, tt.want)
 			}
 		})
 	}
 }
 
 func TestLoadRejectsInvalidBoard(t *testing.T) {
-	testRejects(t, invalidBoards)
+	testRejects(t, []rejectCase{
+		{
+			name:  "a column with no label",
+			body:  boardRules + "board:\n  ideas: idea\n  bugs: []\n",
+			wants: []string{"board.bugs", "line 23", `column "bugs"`, "one or more labels"},
+		},
+		{
+			name:  "a column without a value",
+			body:  boardRules + "board:\n  bugs:\n",
+			wants: []string{"board.bugs", "line 22", `column "bugs"`, "one or more labels"},
+		},
+		{
+			name:  "a column with an empty label",
+			body:  boardRules + "board:\n  bugs: [bug, \"\"]\n",
+			wants: []string{"board.bugs", "line 22", `column "bugs"`, "empty label"},
+		},
+		{
+			name:  "a column of one empty label",
+			body:  boardRules + "board:\n  bugs: \"\"\n",
+			wants: []string{"board.bugs", "line 22", "empty label"},
+		},
+		{
+			name:  "no column",
+			body:  boardRules + "board: {}\n",
+			wants: []string{"board", "line 21", "one or more columns"},
+		},
+		{
+			name:  "two columns share a name",
+			body:  boardRules + "board:\n  bugs: bug\n  bugs: defect\n",
+			wants: []string{"board.bugs", "line 23", "duplicate key, first set on line 22"},
+		},
+		{
+			name:  "a board written as a list",
+			body:  boardRules + "board:\n  - bugs\n",
+			wants: []string{"board", "line 22", "must be a mapping"},
+		},
+		{
+			name:  "a column that is a mapping",
+			body:  boardRules + "board:\n  bugs: {labels: [bug]}\n",
+			wants: []string{"board.bugs", "line 22"},
+		},
+	})
 }
 
-// invalidBoards are errors in board.
-var invalidBoards = []rejectCase{
-	{
-		// Covers AE5.
-		name: "a column with no label",
-		body: oneRule + `board:
-  - name: ideas
-    labels: [idea]
-  - name: bugs
-    labels: []
-`,
-		wants: []string{"board[1].labels", "line 14", `column "bugs"`, "one or more labels"},
-	},
-	{
-		name: "a column without labels",
-		body: oneRule + `board:
-  - name: bugs
-`,
-		wants: []string{"board[0].labels", "line 11", `column "bugs"`, "one or more labels"},
-	},
-	{
-		name: "a column without a name",
-		body: oneRule + `board:
-  - labels: [bug]
-`,
-		wants: []string{"board[0].name", "line 11", "required"},
-	},
-	{
-		name: "a column with an empty label",
-		body: oneRule + `board:
-  - name: bugs
-    labels: [bug, ""]
-`,
-		wants: []string{"board[0].labels", "line 12", `column "bugs"`, "empty label"},
-	},
-	{
-		name:  "no column",
-		body:  oneRule + "board: []\n",
-		wants: []string{"board", "line 10", "one or more columns"},
-	},
-	{
-		name: "two columns share a name",
-		body: oneRule + `board:
-  - name: bugs
-    labels: [bug]
-  - name: bugs
-    labels: [defect]
-`,
-		wants: []string{"board[1].name", "line 13", `"bugs" is already board[0].name`},
-	},
-	{
-		name:  "a board that is a mapping",
-		body:  oneRule + "board:\n  bugs: [bug]\n",
-		wants: []string{"board", "line 11", "must be a list of columns"},
-	},
-	{
-		name:  "a column that is a string",
-		body:  oneRule + "board:\n  - bugs\n",
-		wants: []string{"board[0]", "line 11", "must be a column with name and labels"},
-	},
-	{
-		name: "an unknown key in a column",
-		body: oneRule + `board:
-  - name: bugs
-    label: bug
-`,
-		wants: []string{"board[0].label", "line 12", "unknown key"},
-	},
-}
-
-// Errors in the board and in the rules come together, so you fix
-// them in one go.
+// Errors in the board and in the rules come together, so you fix them in
+// one go.
 func TestLoadReportsBoardAndRulesErrorsTogether(t *testing.T) {
-	loadErr(t, `workflow:
-  - name: implement
-    label: ready
-board:
-  - name: bugs
-    labels: []
-`, "workflow[0]", "board[0].labels")
-}
-
-func TestLoadRejectsANonMappingConfigNamingTheBoard(t *testing.T) {
-	loadErr(t, "- board\n", "extra_labels, prompts and board")
+	loadErr(t, "rules:\n  implement:\n    labels: {ready: ready}\nboard:\n  bugs: []\n",
+		"rules.implement.labels.running", "board.bugs")
 }

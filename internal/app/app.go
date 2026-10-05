@@ -50,7 +50,8 @@ const (
 
 // Options are what Run needs from the process it runs in.
 type Options struct {
-	// Registry resolves the config's tracker and harness names.
+	// Registry resolves the config's tracker name and its agents' harness
+	// names.
 	Registry registry.Registry
 	// Workspace returns the workspace adapter for the repository at root.
 	Workspace func(root string) port.Workspace
@@ -82,9 +83,9 @@ type Options struct {
 	// second forces the exit.
 	Signals <-chan os.Signal
 	// Bots makes the bots the config names act: names lists each once,
-	// the default bot def first. It runs among the environment checks, on
-	// their context, and only when the config names a bot. nil makes such
-	// a config an environment error.
+	// tracker.bot, def, first when set. It runs among the environment
+	// checks, on their context, and only when the config names a bot. nil
+	// makes such a config an environment error.
 	Bots func(ctx context.Context, def string, names []string) (Bots, error)
 }
 
@@ -95,7 +96,7 @@ type Bots struct {
 	// none, and its actions act as you.
 	Identities map[string]port.Identity
 	// Writer is what crew's own writes on the tracker act as: the default
-	// bot, or the zero Identity, you, when it cannot act.
+	// bot, or the zero Identity, you, when there is none or it cannot act.
 	Writer port.Identity
 	// Logins are the logins of the configured bots crew knows, whether or
 	// not they act this run: crew takes the issues they opened, and every
@@ -158,7 +159,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	return run(ctx, eng, o, signalled, b.cfg, bots.Warnings)
+	return run(ctx, eng, o, signalled, b, bots.Warnings)
 }
 
 // prepare runs the environment checks, check, within prepareTimeout, and a
@@ -198,28 +199,46 @@ func prepare(ctx context.Context, o Options, check func(context.Context) error) 
 
 // built is the config and the adapters build made.
 type built struct {
-	cfg     *config.Config
-	tracker port.Tracker
-	harness port.Harness
+	cfg       *config.Config
+	tracker   port.Tracker
+	harnesses []engine.AgentHarness
+	// board is the board the config writes, nil without one: until the
+	// live view draws the default board, it draws the rules then.
+	board []crew.BoardColumn
 }
 
-// build loads the config and builds its adapters. A board needs a tracker
-// that lists issues by any label, a port.BoardLister (KTD3).
+// build loads the config and builds its adapters: the tracker, and the
+// harness of every agent, each from its section, so a harness name no
+// adapter has stops crew whether or not an action names the agent. Only the
+// agents some action names keep theirs, so an agent in no use is never
+// prepared. A written board needs a tracker that lists issues by any label,
+// a port.BoardLister (KTD3).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root)
 	if err != nil {
 		return built{}, err
 	}
-	states := crew.RuleStates(cfg.Rules)
-	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, states, cfg.Extras)
-	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
-	if err := errors.Join(trackerErr, harnessErr); err != nil {
+	tracker, err := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules))
+	errs := []error{err}
+	var harnesses []engine.AgentHarness
+	for _, a := range cfg.Agents {
+		harness, err := o.Registry.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+		errs = append(errs, err)
+		if err == nil && a.Used {
+			harnesses = append(harnesses, engine.AgentHarness{Agent: a.Name, Harness: harness})
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
 		return built{}, err
 	}
-	if _, ok := tracker.(port.BoardLister); len(cfg.Board) > 0 && !ok {
+	b := built{cfg: cfg, tracker: tracker, harnesses: harnesses}
+	if cfg.BoardWritten {
+		b.board = cfg.Board
+	}
+	if _, ok := tracker.(port.BoardLister); len(b.board) > 0 && !ok {
 		return built{}, fmt.Errorf("board: tracker %q cannot list issues by any label", cfg.Tracker)
 	}
-	return built{cfg: cfg, tracker: tracker, harness: harness}, nil
+	return b, nil
 }
 
 // bots makes the bots the config names act, through Options.Bots, and
@@ -248,7 +267,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		RunTimeLimit:      b.cfg.RunTimeLimit,
 		UsageInStatus:     b.cfg.UsageInStatus,
 		Tracker:           b.tracker,
-		Harness:           b.harness,
+		Harnesses:         b.harnesses,
 		Workspace:         o.Workspace(o.Root),
 		Checker:           o.Checker,
 		Root:              o.Root,
@@ -261,8 +280,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Bots:              b.cfg.Bots,
 		Unable:            bots.Unable,
 		BotFailures:       bots.Failing,
-		Board:             b.cfg.Board,
-		Extras:            b.cfg.Extras,
+		Board:             b.board,
 	})
 }
 
@@ -271,9 +289,9 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 // already, so the engine stops at once and the next signal forces the exit.
 // The renderer shows warnings before anything else.
 func run(
-	ctx context.Context, eng *engine.Engine, o Options, stopping bool, cfg *config.Config, warnings []string,
+	ctx context.Context, eng *engine.Engine, o Options, stopping bool, b built, warnings []string,
 ) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: cfg.Rules, board: cfg.Board}
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: b.cfg.Rules, board: b.board}
 	render := r.renderer()
 	if stopping {
 		r.stop()

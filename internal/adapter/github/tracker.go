@@ -1,7 +1,7 @@
 // Package github is the tracker adapter for GitHub issues and pull requests,
 // through the gh CLI. A rule state is the label of the same name, compared
-// ignoring case as GitHub does, and crew's labels are the rules' states plus
-// the config's extra labels, which are never states. It lists the open issues
+// ignoring case as GitHub does, and crew's labels are the rules' states; it
+// never touches another label. It lists the open issues
 // and pull requests the code owners or one of crew's bots opened, as items
 // alike, and lists the board's issues the same authors opened, whatever their
 // labels. It moves items by swapping crew's labels, reports failures as
@@ -196,7 +196,6 @@ type ghLabel struct {
 type Tracker struct {
 	gh     *gh
 	labels labels
-	extras extras
 
 	mu         sync.Mutex
 	comments   map[string]cachedStatus // status comments by issue key, as last written or read
@@ -207,18 +206,18 @@ type Tracker struct {
 
 // Factory returns the github tracker's factory, which runs gh through group.
 // The tracker section has no key, so the factory refuses any. The tracker
-// knows the rules' states and the extras as its labels. It runs no gh
+// knows the rules' states as its labels. It runs no gh
 // call; Prepare does.
 func Factory(group *proc.Group) port.TrackerFactory {
 	return factory(group.Run)
 }
 
 func factory(run proc.Runner) port.TrackerFactory {
-	return func(decode port.Decode, states, extraLabels []crew.State) (port.Tracker, error) {
+	return func(decode port.Decode, states []crew.State) (port.Tracker, error) {
 		if err := decode(&settings{}); err != nil {
 			return nil, err
 		}
-		return &Tracker{gh: &gh{run: run}, labels: newLabels(states), extras: slices.Clone(extraLabels),
+		return &Tracker{gh: &gh{run: run}, labels: newLabels(states),
 			comments: map[string]cachedStatus{}, stopped: map[string][]int{}}, nil
 	}
 }
@@ -231,10 +230,10 @@ func factory(run proc.Runner) port.TrackerFactory {
 // code owners, the code owner is gh's login. An issue two authors' lists hold
 // counts once. Each item's key is its number, its reference #<number>, its
 // kind issue or pull request, and its states every rule state its labels name,
-// in the rules' spelling. Its other labels, extras included, are no states and
-// are ignored. An issue is blocked while an open issue blocks it, as GitHub's
-// issue dependencies record. Its priority is the position of its value of the
-// issue field Priority among that field's options, the first being 1; an issue
+// in the rules' spelling. Its other labels are no states and are ignored. An
+// issue is blocked while an open issue blocks it, as GitHub's issue
+// dependencies record. Its priority is the position of its value of the issue
+// field Priority among that field's options, the first being 1; an issue
 // without one has priority 0. A pull request has priority 0 and is never
 // blocked.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
@@ -390,12 +389,12 @@ func priority(values []fieldValue) int {
 // since gh issue view and gh issue edit accept a pull request's number. It
 // reads the issue's state and labels; a closed issue, or a closed or merged
 // pull request, moved meanwhile. An open issue whose only state label is
-// to's, whatever extras it carries, is already moved, as when an earlier
+// to's, whatever other labels it carries, is already moved, as when an earlier
 // attempt landed although gh reported an error, so Move returns nil without
 // an edit and a retry is safe (KTD8). Any other issue without from's label
 // moved meanwhile. Otherwise one gh issue edit removes every other crew label
-// the issue carries, extras included, and adds to's, leaving the labels that
-// are not crew's alone. gh saying a label does not exist is a refusal: the
+// the issue carries and adds to's, leaving the labels that are not crew's,
+// those no rule names, alone. gh saying a label does not exist is a refusal: the
 // label must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
 	var issue struct {
@@ -436,7 +435,7 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 
 // Prepare implements port.Preparer. It checks that gh is installed and logged
 // in, then finds the code owners in CODEOWNERS, then creates the labels of
-// states and the extras the repository lacks, comparing names
+// states the repository lacks, comparing names
 // case-insensitively, and no other label. It reads as you and creates the
 // labels as the writer. It reports each step on ctx as it starts, one per
 // label it creates.
@@ -465,7 +464,7 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	for _, l := range present {
 		have[strings.ToLower(l.Name)] = true
 	}
-	for _, s := range slices.Concat(states, []crew.State(t.extras)) {
+	for _, s := range states {
 		name := string(s)
 		if have[strings.ToLower(name)] {
 			continue
@@ -534,17 +533,13 @@ func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []
 }
 
 // swap returns the --remove-label arguments that take every crew label but
-// to's off a labelable carrying labels, extras included, leaving the labels
-// that are not crew's, and the states labels name, each once, in label order.
+// to's off a labelable carrying labels, leaving the labels that are not
+// crew's, and the states labels name, each once, in label order.
 // Move and the pull request mirror both swap labels through it.
 func (t *Tracker) swap(labels []ghLabel, to crew.State) ([]string, []crew.State) {
 	var remove []string
 	var states []crew.State
 	for _, l := range labels {
-		if t.extras.has(l.Name) {
-			remove = append(remove, "--remove-label="+labelArg(l.Name))
-			continue
-		}
 		s, ok := t.labels.stateOf(l.Name)
 		if !ok {
 			continue

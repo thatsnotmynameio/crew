@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -11,91 +12,78 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// columnDoc is one item of board: a column of the live view's board.
-type columnDoc struct {
-	Name   located[string]   `yaml:"name"`
-	Labels located[[]string] `yaml:"labels"`
-}
-
-// columnShape is what an item of board must be.
-const columnShape = "must be a column with name and labels"
-
-// board decodes and validates board: the live view's columns, each with a
-// name no other column has and one or more non-empty labels. It reports every
-// error it finds, naming each column by its path and name. Every label then
-// takes one spelling: a rule state's or an extra's when it is one of
-// them ignoring case, as GitHub compares labels, otherwise the one it first
-// has on the board. A label written twice in one column counts once.
-func board(n *yaml.Node, rules []crew.Rule, extras []crew.State) ([]crew.BoardColumn, error) {
-	switch {
-	case n.Kind == 0:
-		return nil, nil
-	case n.Kind != yaml.SequenceNode:
-		return nil, keyError("board", n.Line, "must be a list of columns")
-	case len(n.Content) == 0:
-		return nil, keyError("board", n.Line, "must list one or more columns")
+// board decodes and validates board: the live view's columns, a mapping
+// from a column's name to its label, or a list of one or more labels. Its
+// columns show issues. It reports every error it finds, naming each column
+// by its path. Every label then takes one spelling: a rule state's when it
+// is one of them ignoring case, as GitHub compares labels, otherwise the
+// one it first has on the board. A label written twice in one column counts
+// once. Without board, it returns the rules' default board and false.
+func board(n *yaml.Node, rules []crew.Rule) ([]crew.BoardColumn, bool, error) {
+	if n.Kind == 0 {
+		return defaultBoard(rules), false, nil
+	}
+	section, err := named(n, "board")
+	if err != nil {
+		return nil, true, err
+	}
+	if len(section) == 0 {
+		return nil, true, keyError("board", n.Line, "must name one or more columns")
 	}
 	var errs []error
-	firstPath := map[string]string{}
-	out := make([]crew.BoardColumn, 0, len(n.Content))
-	for i, item := range n.Content {
-		path := fmt.Sprintf("board[%d]", i)
-		var doc columnDoc
-		if err := decodeItem(item, path, columnShape, &doc); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		column, err := boardColumn(doc, path, item.Line, firstPath)
+	out := make([]crew.BoardColumn, 0, len(section))
+	for _, e := range section {
+		labels, err := columnLabels(e)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		out = append(out, column)
+		out = append(out, crew.BoardColumn{Name: e.key.Value, Labels: labels, Takes: crew.KindIssue})
 	}
 	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+		return nil, true, errors.Join(errs...)
 	}
-	respell(out, slices.Concat(crew.RuleStates(rules), extras))
-	return out, nil
+	respell(out, crew.RuleStates(rules))
+	return out, true, nil
 }
 
-// boardColumn checks the column at path, whose mapping is on itemLine.
-// firstPath holds the path of each earlier column by name; a column with a
-// name is added to it.
-func boardColumn(doc columnDoc, path string, itemLine int, firstPath map[string]string) (crew.BoardColumn, error) {
-	var errs []error
-	name, err := required(doc.Name, path+".name", itemLine)
-	errs = append(errs, err)
-	if first, ok := firstPath[name]; ok {
-		errs = append(errs, keyError(path+".name", doc.Name.line, fmt.Sprintf("%q is already %s.name", name, first)))
-	} else if name != "" {
-		firstPath[name] = path
+// columnLabels returns the labels of the column e: one label, or a list of
+// one or more, none empty.
+func columnLabels(e entry) ([]string, error) {
+	var labels located[[]string]
+	if e.value.Kind == yaml.ScalarNode && e.value.ShortTag() != "!!null" {
+		var label located[string]
+		if err := decodeValue(e.value, e.path, reflect.ValueOf(&label).Elem()); err != nil {
+			return nil, err
+		}
+		labels = located[[]string]{value: []string{label.value}, line: label.line}
+	} else if err := decodeValue(e.value, e.path, reflect.ValueOf(&labels).Elem()); err != nil {
+		return nil, err
 	}
-	errs = append(errs, columnLabels(doc.Labels, path, itemLine, name))
-	if err := errors.Join(errs...); err != nil {
-		return crew.BoardColumn{}, err
-	}
-	return crew.BoardColumn{Name: name, Labels: doc.Labels.value}, nil
-}
-
-// columnLabels checks the labels of the column at path named name: one or
-// more, none empty.
-func columnLabels(l located[[]string], path string, itemLine int, name string) error {
-	column := "the column"
-	if name != "" {
-		column = fmt.Sprintf("column %q", name)
-	}
-	line := l.line
-	if line == 0 {
-		line = itemLine
-	}
+	column := fmt.Sprintf("column %q", e.key.Value)
 	switch {
-	case len(l.value) == 0:
-		return keyError(path+".labels", line, column+" must list one or more labels")
-	case slices.Contains(l.value, ""):
-		return keyError(path+".labels", line, column+" must not list an empty label")
+	case len(labels.value) == 0:
+		return nil, keyError(e.path, e.key.Line, column+" must name one or more labels")
+	case slices.Contains(labels.value, ""):
+		return nil, keyError(e.path, e.key.Line, column+" must not name an empty label")
 	}
-	return nil
+	return labels.value, nil
+}
+
+// defaultBoard is the board without board: one column per rule that has
+// actions, in rule order, named after the rule, with its ready and running
+// labels, showing the items of the rule's kind.
+func defaultBoard(rules []crew.Rule) []crew.BoardColumn {
+	var out []crew.BoardColumn
+	for _, r := range rules {
+		if len(r.Actions) == 0 {
+			continue
+		}
+		out = append(out, crew.BoardColumn{
+			Name: r.Name, Labels: []string{string(r.Labels.Ready), string(r.Labels.Running)}, Takes: r.Takes,
+		})
+	}
+	return out
 }
 
 // respell gives every label of board one spelling: the one it has among
