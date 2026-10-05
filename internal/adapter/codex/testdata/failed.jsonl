@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"0199a1c2-8a01-7c22-b3d4-5e6f7a8b9c02"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Looking at the parser."}}
+{"type":"turn.failed","error":{"message":"stream disconnected before completion: error sending request for url (https://api.openai.com/v1/responses)"}}
