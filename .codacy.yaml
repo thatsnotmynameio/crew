@@ -17,9 +17,10 @@ engines:
     # handling reads as clones.
     minTokenMatch: 100
     exclude_paths:
-      # Recorded Claude sessions and TUI golden files repeat by nature. They
-      # stay in secret scanning.
+      # Recorded Claude sessions, TUI golden files and the acceptance suite's
+      # screen snapshots repeat by nature. They stay in secret scanning.
       - "internal/adapter/claude/testdata/**"
       - "internal/ui/tui/testdata/**"
+      - "acceptance/**/testdata/**"
       # Table-driven tests repeat their case shape on purpose.
       - "**/*_test.go"
