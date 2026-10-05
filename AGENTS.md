@@ -11,7 +11,7 @@ Run every command from the repository root. Go 1.27 (`go.mod`).
 ```sh
 go build ./cmd/crew   # the binary, at the root (ignored by git)
 go test -race ./...   # every test; one package: go test -race ./internal/core; one test: add -run TestName
-gofmt -l cmd internal tools # prints the unformatted files; must print nothing
+gofmt -l cmd internal tools acceptance # prints the unformatted files; must print nothing
 go vet ./...
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run   # lint + layering (depguard)
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...

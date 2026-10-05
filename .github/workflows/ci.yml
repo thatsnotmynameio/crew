@@ -60,7 +60,7 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l cmd internal tools)"
+          unformatted="$(gofmt -l cmd internal tools acceptance)"
           if [ -n "$unformatted" ]; then
             echo "Not gofmt-formatted:" >&2
             echo "$unformatted" >&2
