@@ -85,7 +85,7 @@ history_fields='fragment history on Issue {
 }'
 gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query="$list_query" >"$tmp/list.json" 2>"$tmp/gh.err" ||
 	fail "gh api graphql failed: $(one_line "$tmp/gh.err")"
-jq -rs '.[0].data.repository.nameWithOwner' "$tmp/list.json" >"$tmp/repo"
+repo=$(jq -rs '.[0].data.repository.nameWithOwner' "$tmp/list.json")
 jq -rs '[.[].data.repository.issues.nodes[].number] | . as $n | range(0; length; 20) | $n[.:. + 20] | map("i\(.): issue(number: \(.)) { ...history }") | join(" ")' \
 	"$tmp/list.json" >"$tmp/batches"
 : >"$tmp/pages.json"
@@ -98,8 +98,8 @@ done <"$tmp/batches"
 
 # One history file: the repository's name, and each issue with its edits,
 # open and closed states, refinement label changes and link events.
-jq -s --arg running "$running_label" --rawfile repo "$tmp/repo" '{
-	repo: ($repo | rtrimstr("\n")),
+jq -s --arg running "$running_label" --arg repo "$repo" '{
+	repo: $repo,
 	issues: [.[].data.repository[] | {
 		number, title,
 		body: (.body // ""),
@@ -162,7 +162,7 @@ jq --arg logins "$logins" --arg record "$split_record" "$defs"'
 			$l + {shown: "#\($l.blocker)", excluded: $why, refined: $x.number, counterpart: $y, section: $xs,
 				other: ($o.number // null), other_counterpart: $oy, other_section: $os,
 				other_ok: ($o != null and why_not($o; $oy; $l.at) == null)}
-		end]}' "$tmp/history.json" >"$tmp/links.json"
+		end]} | .excluded = ([.links[] | select(.excluded != null)] | length)' "$tmp/history.json" >"$tmp/links.json"
 
 measured=$(jq '[.links[] | select(.excluded == null)] | length' "$tmp/links.json")
 [ "$measured" -gt 0 ] || fail "no link to measure: GitHub records no blocked_by link the shortlist could show"
@@ -201,21 +201,23 @@ rank() {
 	fi
 }
 
-# position SECTION N prints N's place in list SECTION (1 likely to block,
-# 2 likely blocked by) of $tmp/out, or "not in top 5".
+# sections sets s to the list an awk program is in: 1 for rank.sh's
+# "Likely to block" list, 2 for its "Likely blocked by" list.
+sections='
+	/^Likely to block / { s = 1; next }
+	/^Likely blocked by / { s = 2; next }'
+
+# position SECTION N prints N's place in list SECTION of $tmp/out, or
+# "not in top 5".
 position() {
-	place=$(awk -v sect="$1" -v want="#$2" '
-		/^Likely to block / { s = 1; next }
-		/^Likely blocked by / { s = 2; next }
+	place=$(awk -v sect="$1" -v want="#$2" "$sections"'
 		s == sect && $2 == want { sub(/\.$/, "", $1); print $1; exit }' "$tmp/out")
 	echo "${place:-not in top $list_length}"
 }
 
 # shown SECTION prints list SECTION of $tmp/out as "#N P, #M Q".
 shown() {
-	awk -v sect="$1" '
-		/^Likely to block / { s = 1; next }
-		/^Likely blocked by / { s = 2; next }
+	awk -v sect="$1" "$sections"'
 		s == sect && /^[0-9]+\. #/ { printf "%s%s %s", sep, $2, $3; sep = ", " }
 		END { print "" }' "$tmp/out"
 }
@@ -248,7 +250,7 @@ done <"$tmp/measured.tsv"
 
 recorded_count=$(jq .recorded "$tmp/links.json")
 removed_count=$(jq .removed "$tmp/links.json")
-repo=$(jq -r .repo "$tmp/history.json")
+excluded_count=$(jq .excluded "$tmp/links.json")
 percent=$(awk -v f="$found" -v m="$measured" 'BEGIN { printf "%.1f", f * 100 / m }')
 if [ $((found * 100)) -ge $((gate_percent * measured)) ]; then verdict=passed; else verdict=failed; fi
 
@@ -256,7 +258,7 @@ echo "## Backtest of \`/cw-rank-blockers\`"
 echo
 echo "\`rank.sh\` ($model) replayed against the \`blocked_by\` links GitHub records in $repo. Each link is replayed at the moment it was recorded, with the issues open then and their bodies as they read then, from the side whose refinement recorded it (the blocked issue for a link recorded by hand). A link is found when the other issue is in the top $list_length of that side's list."
 echo
-echo "$recorded_count links recorded: $measured measured, $(jq '[.links[] | select(.excluded != null)] | length' "$tmp/links.json") excluded, $removed_count removed since."
+echo "$recorded_count links recorded: $measured measured, $excluded_count excluded, $removed_count removed since."
 echo
 echo "| Blocked | Blocking | Recorded (UTC) | By | Refined side | Rank on refined side | Rank on other side |"
 echo "| --- | --- | --- | --- | --- | --- | --- |"
