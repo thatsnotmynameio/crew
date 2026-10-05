@@ -62,24 +62,29 @@ func TestAnAvatarTakesAnAccentHueOrGoesGreyOffline(t *testing.T) {
 		if dark {
 			p = darkPalette()
 		}
-		for _, hue := range s.avatars {
-			if hue == p.warning || hue == p.error {
-				t.Errorf("dark=%v: an avatar hue is the warning or error colour", dark)
-			}
+		if slices.Contains(s.avatars[:], p.warning) || slices.Contains(s.avatars[:], p.error) {
+			t.Errorf("dark=%v: an avatar hue is the warning or error colour", dark)
 		}
-		for _, e := range []core.BotView{
-			{Name: "clerk", Acting: true, State: "acting"},
-			{Name: "you", You: true, Login: "octocat"},
-			{Name: "you", You: true},
-		} {
-			if c := s.avatarColour(e); !slices.Contains(s.avatars[:], c) {
-				t.Errorf("dark=%v: %s's avatar colour is not one of the hues", dark, e.Name)
-			}
+		huesAndGrey(t, s)
+	}
+}
+
+// huesAndGrey checks s gives acting bots and you a hue, and bots that are
+// not acting the offline grey.
+func huesAndGrey(t *testing.T, s styles) {
+	t.Helper()
+	for _, e := range []core.BotView{
+		{Name: "clerk", Acting: true, State: "acting"},
+		{Name: "you", You: true, Login: "octocat"},
+		{Name: "you", You: true},
+	} {
+		if c := s.avatarColour(e); !slices.Contains(s.avatars[:], c) {
+			t.Errorf("%s's avatar colour is not one of the hues", e.Name)
 		}
-		for _, state := range []string{"cannot act: no key", "writes as you", "token not renewed"} {
-			if c := s.avatarColour(core.BotView{Name: "clerk", State: state}); c != s.offline {
-				t.Errorf("dark=%v: a bot whose state is %q is not grey", dark, state)
-			}
+	}
+	for _, state := range []string{"cannot act: no key", "writes as you", "token not renewed"} {
+		if c := s.avatarColour(core.BotView{Name: "clerk", State: state}); c != s.offline {
+			t.Errorf("a bot whose state is %q is not grey", state)
 		}
 	}
 }
@@ -102,7 +107,7 @@ func TestYourAvatarIsSeededWithYourLogin(t *testing.T) {
 func TestAnAvatarIsDrawnInItsColour(t *testing.T) {
 	s := newStyles(true)
 	want := lipgloss.NewStyle().Foreground(s.avatars[2]).Render("x")
-	prefix := want[:strings.Index(want, "x")]
+	prefix, _, _ := strings.Cut(want, "x")
 	for _, r := range s.avatar("developer", s.avatars[2]) {
 		if !strings.HasPrefix(r, prefix) {
 			t.Errorf("avatar row %q is not drawn in its colour %q", r, prefix)

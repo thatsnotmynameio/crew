@@ -1,8 +1,13 @@
 crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 12m • 48m left • $19.86 • 24.1M tokens  ? help
 
-Bots ─────────────────────────────────────────────────────────────────── no bots
- you  6 actions · $19.86 · 24.1M tokens
-   crew's writes · implement/code · i…  ▸ #1 implement/code · #1 implement/tests
+Bots ────────────────────────────────────────────────────────────────── only you
+ ╭────────────────────────────────╮
+ │ ▄▄▀▄▄ you                      │
+ │ ▀ ▀ ▀                          │
+ │ ▄▀▄▀▄ 6 actions · $19.86       │
+ │ crew's writes +3               │
+ │ ⠋ #1 implement/code +1         │
+ ╰────────────────────────────────╯
 
 Board ───────────────────────────────────────────────────────────────── 3 issues
  implement                       review                        
@@ -31,4 +36,4 @@ Events ────────────────────────�
  14:29:50 poll: listed 2 issues, took 1
  14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in rev…
 
-q stop · tab focus · ↑↓ scroll · ←→ board · ? help
+q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

@@ -356,7 +356,7 @@ func TestAColumnShowsAtMostFiveCards(t *testing.T) {
 func TestAShortWindowTakesOneCardOffACappedColumn(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
-	least := budget{events: minScroll, handled: minScroll, cards: maxCards, said: false, botDetails: true}
+	least := budget{events: minScroll, handled: minScroll, cards: maxCards, said: false, botCards: true}
 	height := len(h.current().rows(least)) - cardRows
 	h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 

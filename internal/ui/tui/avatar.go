@@ -19,10 +19,11 @@ const (
 	avatarHalf  = 3
 	// avatarHues is how many hues an avatar takes its colour from (KTD5).
 	avatarHues = 6
+	// pixelRows are the pixel rows a cell draws, top and bottom.
+	pixelRows = 2
+	// halfBlocks draws a cell's two pixels, indexed by top + 2*bottom.
+	halfBlocks = " ▀▄█"
 )
-
-// halfBlocks draws a cell's two pixels, indexed by top + 2*bottom.
-var halfBlocks = [...]string{" ", "▀", "▄", "█"}
 
 // avatarSeed is what e's avatar is generated from: its name, or, on the
 // "you" entry, your login once known, so each boss gets their own (KTD4).
@@ -56,12 +57,14 @@ func (s styles) avatar(seed string, c color.Color) []string {
 		}
 		return uint(bits >> (row*avatarHalf + col) & 1)
 	}
+	blocks := []rune(halfBlocks)
 	st := lipgloss.NewStyle().Foreground(c)
 	rows := make([]string, avatarRows)
 	for r := range uint(avatarRows) {
 		var b strings.Builder
 		for col := range uint(avatarWidth) {
-			b.WriteString(halfBlocks[pixel(2*r, col)+2*pixel(2*r+1, col)])
+			top, bottom := pixel(pixelRows*r, col), pixel(pixelRows*r+1, col)
+			b.WriteRune(blocks[top+pixelRows*bottom])
 		}
 		rows[r] = st.Render(b.String())
 	}

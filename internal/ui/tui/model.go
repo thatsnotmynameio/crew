@@ -59,6 +59,7 @@ type focus int
 // The sections that take focus, in tab order.
 const (
 	focusNone focus = iota
+	focusBots
 	focusHandled
 	focusEvents
 )
@@ -83,8 +84,9 @@ type Model struct {
 	help  bool
 	focus focus
 	// boardOffset is the first board column shown when the columns that
-	// hold cards do not fit (KTD9).
-	boardOffset int
+	// hold cards do not fit (KTD9); botsOffset the first Bots card shown
+	// when the cards do not fit (KTD3).
+	boardOffset, botsOffset int
 	// handledOffset counts the Handled rows scrolled past at the top;
 	// eventsOffset the Events rows scrolled back from the newest (KTD11).
 	handledOffset, eventsOffset int
