@@ -22,8 +22,8 @@ const (
 	cardCorners = 2
 	// botCardRows are the rows a card takes: its border and five rows.
 	botCardRows = 7
-	// stripGap is the space between the strip's entries.
-	stripGap = "  "
+	// botsTitle is the section's title.
+	botsTitle = "Bots"
 )
 
 // cannotAct opens the state of a bot that cannot act at startup; the card
@@ -32,10 +32,14 @@ const cannotAct = "cannot act: "
 
 // botsLayout is which Bots cards show and how wide (KTD2, KTD3).
 type botsLayout struct {
-	// offset is the first card shown, shown how many show, and before and
-	// after how many are hidden on each side.
-	offset, shown, before, after int
-	width                        int
+	// offset is the first card shown.
+	offset int
+	// shown is how many cards show.
+	shown int
+	// before and after count the cards hidden on each side.
+	before, after int
+	// width is each shown card's width.
+	width int
 }
 
 // layBots lays out n cards in avail cells: every one when they fit at the
@@ -75,12 +79,7 @@ func (m Model) botsSection(cards bool) (string, []string) {
 		return summary, []string{" " + m.botsStrip(entries)}
 	}
 	l := m.botsLayout()
-	if l.before > 0 {
-		summary += fmt.Sprintf(" · ◂ %d", l.before)
-	}
-	if l.after > 0 {
-		summary += fmt.Sprintf(" · %d ▸", l.after)
-	}
+	summary = m.withMarkers(summary, l)
 	rows := make([]string, botCardRows)
 	for k, e := range entries[l.offset : l.offset+l.shown] {
 		for i, line := range m.botCard(e, l.width) {
@@ -94,6 +93,33 @@ func (m Model) botsSection(cards bool) (string, []string) {
 		rows[i] = " " + rows[i]
 	}
 	return summary, rows
+}
+
+// withMarkers is summary followed by how many cards l hides on each side,
+// or the markers alone when both do not fit the rule beside its title, so
+// the hidden cards stay announced (R8, KTD3).
+func (m Model) withMarkers(summary string, l botsLayout) string {
+	var markers []string
+	if l.before > 0 {
+		markers = append(markers, fmt.Sprintf("◂ %d", l.before))
+	}
+	if l.after > 0 {
+		markers = append(markers, fmt.Sprintf("%d ▸", l.after))
+	}
+	if len(markers) == 0 {
+		return summary
+	}
+	head := lipgloss.Width(botsTitle)
+	if m.focus == focusBots {
+		head += lipgloss.Width(focusMark)
+	}
+	full := strings.Join(append([]string{summary}, markers...), " · ")
+	// The rule keeps its summary while a space, a dash and a space fit
+	// between the title and it.
+	if lipgloss.Width(full) <= m.width-head-ruleGaps {
+		return full
+	}
+	return strings.Join(markers, " · ")
 }
 
 // botsSummary counts the configured bots that act and those that do not,
@@ -236,7 +262,7 @@ func (m Model) botsStrip(entries []core.BotView) string {
 		mark := lipgloss.NewStyle().Foreground(s.avatarColour(e)).Render("■")
 		items = append(items, mark+" "+s.text.Render(clean(e.Name))+m.stripGlyph(e))
 	}
-	return s.items(items, stripGap, m.width-1)
+	return s.items(items, cellGap, m.width-1)
 }
 
 // stripGlyph is e's glyph in the strip, after a space: ▲ while a bot cannot

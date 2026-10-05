@@ -105,6 +105,24 @@ func cardHas(t *testing.T, card []string, wants ...string) {
 	}
 }
 
+// cardsAreWhole fails t unless view's Bots rows hold cards of width cells,
+// one cell apart, each row ending in its card's border.
+func cardsAreWhole(t *testing.T, view string, cards [][]string, width int) {
+	t.Helper()
+	for _, row := range botsOf(t, view) {
+		if w := lipgloss.Width(row); w != 1+len(cards)*width+(len(cards)-1)*cardGap {
+			t.Errorf("Bots row %q is %d cells, want %d cards of %d cells one cell apart", row, w, len(cards), width)
+		}
+	}
+	for _, card := range cards {
+		for _, row := range card {
+			if !strings.HasSuffix(row, "╮") && !strings.HasSuffix(row, "│") && !strings.HasSuffix(row, "╯") {
+				t.Errorf("card row %q does not end in its border", row)
+			}
+		}
+	}
+}
+
 // edgeOf is the style of a card's top border, as the terminal gets it.
 func edgeOf(card string) string {
 	edge, _, _ := strings.Cut(card, "╭")
@@ -121,14 +139,10 @@ func TestAE1EachBotShowsACardWithItsStateTotalsPairsAndRunningActions(t *testing
 	if len(cards) != 4 {
 		t.Fatalf("Bots has %d cards, want 4:\n%s", len(cards), view)
 	}
+	cardsAreWhole(t, view, cards, 29)
 	for i, name := range []string{"clerk", "developer", "reviewer", "you"} {
 		if !strings.Contains(cards[i][1], name) {
 			t.Errorf("card %d is not %s:\n%s", i, name, strings.Join(cards[i], "\n"))
-		}
-		for _, row := range cards[i] {
-			if w := lipgloss.Width(row); w != 29 {
-				t.Errorf("%s's row %q is %d cells, want 29", name, row, w)
-			}
 		}
 	}
 	cardHas(t, cards[0], "● acting", "3 actions · $0.42", "│ crew's writes +1", "│ idle")
@@ -377,6 +391,23 @@ func TestAE3TheCardsScrollSidewaysWhileBotsHasFocus(t *testing.T) {
 	h.send(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if got := h.current().botsOffset; got != 1 {
 		t.Errorf("← with Events focused moved the cards to %d", got)
+	}
+}
+
+// Covers R8: a window too narrow for the counts beside the scroll markers
+// keeps the markers, so the hidden cards stay announced.
+func TestANarrowRuleKeepsTheScrollMarkers(t *testing.T) {
+	h := newHarness(t, 40)
+	h.send(tea.WindowSizeMsg{Width: 40, Height: 0})
+	h.send(updateMsg(withBots(aeOneBots()...)))
+	if rule := botsRule(t, h.view()); !strings.HasSuffix(rule, "─ 2 acting · 1 cannot act · 3 ▸") {
+		t.Errorf("Bots rule is %q, want the counts and 3 ▸ while they fit", rule)
+	}
+
+	h.send(tab)
+	h.send(tea.KeyPressMsg{Code: tea.KeyRight})
+	if rule := botsRule(t, h.view()); !strings.HasSuffix(rule, "─ ◂ 1 · 2 ▸") {
+		t.Errorf("Bots rule is %q, want only the markers once the counts do not fit", rule)
 	}
 }
 

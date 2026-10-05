@@ -112,7 +112,7 @@ func (m Model) rows(b budget) []string {
 		out = append(out, m.styles.warning.Render("warning: ")+m.styles.text.Render(clean(w)))
 	}
 	summary, bots := m.botsSection(b.botCards)
-	out = append(out, "", m.rule("Bots", summary, m.width, m.focus == focusBots))
+	out = append(out, "", m.rule(botsTitle, summary, m.width, m.focus == focusBots))
 	out = append(out, bots...)
 	summary, board := m.board(b.cards)
 	out = append(out, "", m.rule("Board", summary, m.width, false))
