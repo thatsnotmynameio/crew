@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -198,5 +199,108 @@ func TestReasonIsOneCleanLineOfAtMost200Characters(t *testing.T) {
 		if r < 0x20 || r == 0x7f {
 			t.Fatalf("reason %q holds control character %U", got, r)
 		}
+	}
+}
+
+// usageCase is codex's output, how it ended, and the usage it reports.
+type usageCase struct {
+	name    string
+	file    string
+	stdout  string
+	exit    error
+	stopped bool
+	want    crew.Usage
+}
+
+// once is the usage of a session whose one turn used tokens.
+func once(tokens crew.Tokens) crew.Usage {
+	return crew.Usage{Tokens: tokens, HasTokens: true, Turns: 1, HasTurns: true}
+}
+
+var usageCases = []usageCase{
+	{
+		name: "a completed turn reports its tokens, cached input apart from the rest",
+		file: "success.jsonl",
+		want: once(crew.Tokens{Input: 315, Output: 122, CacheRead: 24448}),
+	},
+	{
+		name: "cache reads and writes are parts of the input, and reasoning of the output",
+		file: "cached.jsonl",
+		want: once(crew.Tokens{Input: 0, Output: 10, CacheRead: 40, CacheWrite: 60}),
+	},
+	{
+		name: "retries before a completed turn do not stop it from reporting",
+		file: "retried.jsonl",
+		want: once(crew.Tokens{Input: 1200, Output: 40}),
+	},
+	{
+		name: "a completed turn reports its tokens though codex then exits non-zero",
+		file: "success.jsonl",
+		exit: exitError{code: 1, msg: "exit status 1"},
+		want: once(crew.Tokens{Input: 315, Output: 122, CacheRead: 24448}),
+	},
+	{
+		name: "counts that do not add up never make a kind negative",
+		stdout: `{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":25,` +
+			`"cache_write_input_tokens":-3,"output_tokens":-1}}` + "\n",
+		want: once(crew.Tokens{CacheRead: 25}),
+	},
+	{
+		name:   "a completed turn without usage reports its turn but no tokens",
+		stdout: `{"type":"turn.completed"}` + "\n",
+		want:   crew.Usage{Turns: 1, HasTurns: true},
+	},
+	{
+		name: "a failed turn reports nothing",
+		file: "failed.jsonl",
+		exit: exitError{code: 1, msg: "exit status 1"},
+	},
+	{
+		name: "a turn that printed no end reports nothing",
+		file: "interrupted.jsonl",
+		exit: exitError{code: 1, msg: "exit status 1"},
+	},
+	{
+		name: "codex printing no event reports nothing",
+		exit: exitError{code: 2, msg: "exit status 2"},
+	},
+	{
+		name:    "a session crew stopped reports nothing, whatever it printed",
+		file:    "success.jsonl",
+		exit:    exitError{code: -1, msg: "signal: terminated"},
+		stopped: true,
+	},
+	{
+		name: "an event quoted inside a message never counts as a turn",
+		file: "quoted.jsonl",
+		want: once(crew.Tokens{Input: 900, Output: 30}),
+	},
+}
+
+func TestUsage(t *testing.T) {
+	for _, tt := range usageCases {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout := []byte(tt.stdout)
+			if tt.file != "" {
+				stdout = fixture(t, tt.file)
+			}
+			got := record(stdout, nil).usage(tt.stopped)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("usage = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// A Codex session's usage, summed with a Claude session's that has a cost,
+// shows the cost as partial and the tokens of both (AE5).
+func TestCodexUsageMarksASumWithAClaudeCostPartial(t *testing.T) {
+	claude := crew.Usage{Cost: 3.10, HasCost: true, Tokens: crew.Tokens{Input: 200_000}, HasTokens: true}
+	codex := record(fixture(t, "success.jsonl"), nil).usage(false)
+
+	got := claude.Spend().Add(codex.Spend()).String()
+
+	if want := "$3.10 (partial), 224.9K tokens"; got != want {
+		t.Errorf("spend = %q, want %q", got, want)
 	}
 }

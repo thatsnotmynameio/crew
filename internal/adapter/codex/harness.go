@@ -16,11 +16,11 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards. The adapter reports no usage and no last words yet,
-// and checks nothing at startup: it has none of the optional capabilities.
+// Compile-time guards: the engine finds UsageReporter by type assertion.
 var (
-	_ port.Harness = (*harness)(nil)
-	_ port.Session = (*session)(nil)
+	_ port.Harness       = (*harness)(nil)
+	_ port.Session       = (*session)(nil)
+	_ port.UsageReporter = (*session)(nil)
 )
 
 // settings is the codex adapter's config section: the keys of an agent's
@@ -95,7 +95,9 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 		defer close(s.done)
 		exit := p.Wait() // codex's output is fully copied once it returns
 		rec.end()
-		return rec.judge(exit, s.stopped.Load())
+		stopped := s.stopped.Load()
+		s.usage = rec.usage(stopped)
+		return rec.judge(exit, stopped)
 	})
 	go s.verdict() // judged as soon as codex ends, so a later Stop cannot change it
 	return s, nil
@@ -106,11 +108,20 @@ type session struct {
 	process process
 	stopped atomic.Bool
 	verdict func() crew.Outcome // waits for the process once, then judges it
+	usage   crew.Usage          // set by verdict before it returns
 	done    chan struct{}       // closed once the verdict is settled
 }
 
 // Wait implements port.Session.
 func (s *session) Wait() crew.Outcome { return s.verdict() }
+
+// Usage implements port.UsageReporter: the tokens and turns of the
+// session's completed turn, and never a cost, or nothing when crew stopped
+// it or its turn did not complete.
+func (s *session) Usage() crew.Usage {
+	s.verdict()
+	return s.usage
+}
 
 // Stop implements port.Session. proc sends the terminate signal to the
 // session's process group, and the kill signal once ctx is done. The

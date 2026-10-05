@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"0199a1c2-ce45-7a66-b718-9cadbecfd006"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"The changelog is updated."}}
+{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"cache_write_input_tokens":60,"output_tokens":10,"reasoning_output_tokens":5}}

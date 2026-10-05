@@ -23,11 +23,13 @@ const stoppedReason = "stopped by crew before the session ended"
 type recorder struct {
 	out, errs lines
 
-	evented   bool    // stdout held at least one event
-	turn      *ending // the turn's terminal event, or nil
-	lastError string  // the message of the last top-level error event
-	said      string  // the text of the last agent message
-	errLine   string  // the last non-empty stderr line
+	evented   bool        // stdout held at least one event
+	turn      *ending     // the turn's terminal event, or nil
+	turns     int         // how many turns completed
+	used      *tokenUsage // the usage of the last completed turn, or nil
+	lastError string      // the message of the last top-level error event
+	said      string      // the text of the last agent message
+	errLine   string      // the last non-empty stderr line
 }
 
 // ending is a turn's terminal event: turn.completed, or turn.failed with
@@ -49,6 +51,17 @@ type event struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"item"`
+	Usage *tokenUsage `json:"usage"` // a turn.completed event's
+}
+
+// tokenUsage is the usage a turn.completed event carries: the thread's
+// tokens so far. Cache reads and writes are parts of the input tokens, and
+// reasoning tokens a part of the output tokens.
+type tokenUsage struct {
+	Input      int64 `json:"input_tokens"`
+	CacheRead  int64 `json:"cached_input_tokens"`
+	CacheWrite int64 `json:"cache_write_input_tokens"`
+	Output     int64 `json:"output_tokens"`
 }
 
 func newRecorder() *recorder {
@@ -86,6 +99,8 @@ func (r *recorder) event(line []byte) {
 	switch ev.Type {
 	case "turn.completed":
 		r.turn = &ending{}
+		r.turns++
+		r.used = ev.Usage
 	case "turn.failed":
 		r.turn = &ending{failed: true, message: ev.Error.Message}
 	case "error":
@@ -121,6 +136,29 @@ func (r *recorder) judge(exit error, stopped bool) crew.Outcome {
 		return crew.Outcome{Reason: oneLine(r.failedAfterTurn(exit))}
 	}
 	return crew.Outcome{Succeeded: true, Reason: oneLine(r.said)}
+}
+
+// usage is what a session that printed what r recorded used, stopped
+// telling whether crew stopped it. Its last completed turn's usage covers
+// the whole thread, and its turns are the turns that completed. Codex
+// reports no cost. A session crew stopped, or one whose turn did not
+// complete, reports nothing.
+func (r *recorder) usage(stopped bool) crew.Usage {
+	if stopped || r.turns == 0 {
+		return crew.Usage{}
+	}
+	u := crew.Usage{Turns: r.turns, HasTurns: true}
+	if r.used != nil {
+		read, write := max(r.used.CacheRead, 0), max(r.used.CacheWrite, 0)
+		u.Tokens = crew.Tokens{
+			Input:      max(r.used.Input-read-write, 0),
+			Output:     max(r.used.Output, 0),
+			CacheRead:  read,
+			CacheWrite: write,
+		}
+		u.HasTokens = true
+	}
+	return u
 }
 
 // failedAfterTurn is the reason of a session whose turn completed but whose

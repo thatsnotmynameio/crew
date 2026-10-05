@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -301,6 +302,54 @@ func TestWaitGivesEveryCallerTheSameOutcome(t *testing.T) {
 
 	if outcomes[0] != outcomes[1] || !outcomes[0].Succeeded {
 		t.Errorf("outcomes = %+v, want the same success twice", outcomes)
+	}
+}
+
+// start starts a session of p and returns it.
+func start(t *testing.T, p *fakeProcess) port.Session {
+	t.Helper()
+	h := build(t, noSection, &fakeSpawn{process: p}, &fakeGit{})
+	s, err := h.Start(t.Context(), port.Run{Dir: worktree, Prompt: "Review #4", Output: io.Discard})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	return s
+}
+
+// usageOf returns what s reports it used, failing when it reports nothing.
+func usageOf(t *testing.T, s port.Session) crew.Usage {
+	t.Helper()
+	r, ok := s.(port.UsageReporter)
+	if !ok {
+		t.Fatalf("session %T is not a port.UsageReporter", s)
+	}
+	return r.Usage()
+}
+
+func TestFinishedSessionReportsItsTokensAndTurnsButNoCost(t *testing.T) {
+	s := start(t, newProcess(fixture(t, "success.jsonl")))
+	s.Wait()
+
+	got := usageOf(t, s)
+
+	want := crew.Usage{Tokens: crew.Tokens{Input: 315, Output: 122, CacheRead: 24448}, HasTokens: true, Turns: 1, HasTurns: true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("usage = %+v, want %+v", got, want)
+	}
+}
+
+// A session crew stopped reports nothing, though its turn had completed
+// before codex was stopped.
+func TestStoppedSessionReportsNoUsage(t *testing.T) {
+	p := newProcess(fixture(t, "success.jsonl"))
+	p.hang = true
+	s := start(t, p)
+	if err := s.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if got := usageOf(t, s); !reflect.DeepEqual(got, crew.Usage{}) {
+		t.Errorf("usage = %+v, want nothing", got)
 	}
 }
 
