@@ -148,7 +148,7 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	rank := strings.Index(prompt, "/cw-rank-blockers")
 	record := strings.Index(prompt, "dependencies/blocked_by -F")
 	if split < 0 || rank < split || record < rank {
-		t.Errorf("the prompt does not run /cw-rank-blockers after /cw-split-plan and before it records a dependency:\n%s", prompt)
+		t.Errorf("the prompt does not run /cw-rank-blockers between /cw-split-plan and recording:\n%s", prompt)
 	}
 	for _, want := range []string{"--json number,title,body,labels", "unavailable"} {
 		if !strings.Contains(prompt, want) {
