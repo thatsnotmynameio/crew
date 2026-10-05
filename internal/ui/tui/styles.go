@@ -15,6 +15,10 @@ type palette struct {
 	gradientFrom, gradientTo    color.Color
 	success, warning, error     color.Color
 	chipText, chipBack, pillInk color.Color
+	// avatars are the hues an avatar takes, from the accent family; offline
+	// is the grey of a bot that is not acting (KTD5).
+	avatars [avatarHues]color.Color
+	offline color.Color
 }
 
 // darkPalette is the sketch's palette, for a dark background (R27, R28).
@@ -26,6 +30,11 @@ func darkPalette() palette {
 		gradientFrom: lipgloss.Color("#6b50ff"), gradientTo: lipgloss.Color("#ff60ff"),
 		success: lipgloss.Color("#68ffd6"), warning: lipgloss.Color("#ffd36b"), error: lipgloss.Color("#ff6b8b"),
 		chipText: lipgloss.Color("#d8d6e3"), chipBack: lipgloss.Color("#3a3850"), pillInk: lipgloss.Color("#201f2a"),
+		avatars: [avatarHues]color.Color{
+			lipgloss.Color("#b48cff"), lipgloss.Color("#8f7bff"), lipgloss.Color("#ff60ff"),
+			lipgloss.Color("#68ffd6"), lipgloss.Color("#5fd7ff"), lipgloss.Color("#ff9fd2"),
+		},
+		offline: lipgloss.Color("#4a4760"),
 	}
 }
 
@@ -39,6 +48,11 @@ func lightPalette() palette {
 		gradientFrom: lipgloss.Color("#6b50ff"), gradientTo: lipgloss.Color("#ff60ff"),
 		success: lipgloss.Color("#0a8f6a"), warning: lipgloss.Color("#9a6a00"), error: lipgloss.Color("#c8264d"),
 		chipText: lipgloss.Color("#2b2938"), chipBack: lipgloss.Color("#e4e1ef"), pillInk: lipgloss.Color("#ffffff"),
+		avatars: [avatarHues]color.Color{
+			lipgloss.Color("#7a4fd6"), lipgloss.Color("#5a3fd0"), lipgloss.Color("#b02fb0"),
+			lipgloss.Color("#0a8f6a"), lipgloss.Color("#1a7fb0"), lipgloss.Color("#c0407f"),
+		},
+		offline: lipgloss.Color("#6b6785"),
 	}
 }
 
@@ -46,6 +60,9 @@ func lightPalette() palette {
 type styles struct {
 	// gradientFrom and gradientTo are the header run's stops (R3).
 	gradientFrom, gradientTo color.Color
+	// avatars and offline are the avatars' colours (KTD5).
+	avatars [avatarHues]color.Color
+	offline color.Color
 
 	text, title, muted, subtle   lipgloss.Style
 	accent, strongAccent         lipgloss.Style
@@ -68,6 +85,7 @@ func newStyles(dark bool) styles {
 	}
 	return styles{
 		gradientFrom: p.gradientFrom, gradientTo: p.gradientTo,
+		avatars: p.avatars, offline: p.offline,
 		text: fg(p.text), title: fg(p.title).Bold(true), muted: fg(p.muted), subtle: fg(p.subtle),
 		accent: fg(p.accent), strongAccent: fg(p.strongAccent),
 		success: fg(p.success), warning: fg(p.warning), error: fg(p.error),
