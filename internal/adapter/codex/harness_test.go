@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -110,7 +111,7 @@ func build(t *testing.T, decode port.Decode, spawn *fakeSpawn, git *fakeGit) *ha
 		t.Fatalf("factory built %T, want *harness", built)
 	}
 	h.spawn = spawn.spawn
-	h.git = git.run
+	h.run = git.run
 	return h
 }
 
@@ -301,6 +302,90 @@ func TestWaitGivesEveryCallerTheSameOutcome(t *testing.T) {
 
 	if outcomes[0] != outcomes[1] || !outcomes[0].Succeeded {
 		t.Errorf("outcomes = %+v, want the same success twice", outcomes)
+	}
+}
+
+// start starts a session of p and returns it.
+func start(t *testing.T, p *fakeProcess) port.Session {
+	t.Helper()
+	h := build(t, noSection, &fakeSpawn{process: p}, &fakeGit{})
+	s, err := h.Start(t.Context(), port.Run{Dir: worktree, Prompt: "Review #4", Output: io.Discard})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	return s
+}
+
+// usageOf returns what s reports it used, failing when it reports nothing.
+func usageOf(t *testing.T, s port.Session) crew.Usage {
+	t.Helper()
+	r, ok := s.(port.UsageReporter)
+	if !ok {
+		t.Fatalf("session %T is not a port.UsageReporter", s)
+	}
+	return r.Usage()
+}
+
+func TestFinishedSessionReportsItsTokensAndTurnsButNoCost(t *testing.T) {
+	s := start(t, newProcess(fixture(t, "success.jsonl")))
+	s.Wait()
+
+	got := usageOf(t, s)
+
+	want := crew.Usage{
+		Tokens: crew.Tokens{Input: 315, Output: 122, CacheRead: 24448}, HasTokens: true,
+		Turns: 1, HasTurns: true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("usage = %+v, want %+v", got, want)
+	}
+}
+
+// A session crew stopped reports nothing, though its turn had completed
+// before codex was stopped.
+func TestStoppedSessionReportsNoUsage(t *testing.T) {
+	p := newProcess(fixture(t, "success.jsonl"))
+	p.hang = true
+	s := start(t, p)
+	if err := s.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if got := usageOf(t, s); !reflect.DeepEqual(got, crew.Usage{}) {
+		t.Errorf("usage = %+v, want nothing", got)
+	}
+}
+
+// saidBy returns what s last said, failing when it cannot tell.
+func saidBy(t *testing.T, s port.Session) string {
+	t.Helper()
+	n, ok := s.(port.Narrator)
+	if !ok {
+		t.Fatalf("session %T is not a port.Narrator", s)
+	}
+	return n.Said()
+}
+
+// The engine reads what a session said from its own goroutine while codex
+// still prints, and again once the session was stopped.
+func TestSaidIsTheLastMessageWhileCodexRunsAndAfterItWasStopped(t *testing.T) {
+	p := newProcess(fixture(t, "success.jsonl"))
+	p.hang = true
+	s := start(t, p)
+
+	const want = "I fixed the parser. The tests pass."
+	for deadline := time.Now().Add(10 * time.Second); saidBy(t, s) != want; {
+		if time.Now().After(deadline) {
+			t.Fatalf("said %q while codex ran, want %q", saidBy(t, s), want)
+		}
+		time.Sleep(time.Millisecond) // codex is still printing
+	}
+	if err := s.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if got := saidBy(t, s); got != want {
+		t.Errorf("said after the stop = %q, want %q", got, want)
 	}
 }
 

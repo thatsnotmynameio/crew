@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -19,15 +20,19 @@ const stoppedReason = "stopped by crew before the session ended"
 // recorder keeps what judging a codex session needs from what it prints:
 // the JSONL events of `codex exec --json` on stdout, and the last line of
 // stderr. Its stdout and stderr writers are each written from one goroutine
-// and touch separate fields; the recorder is read once both are done.
+// and touch separate fields, which are read once both writers are done.
 type recorder struct {
 	out, errs lines
 
-	evented   bool    // stdout held at least one event
-	turn      *ending // the turn's terminal event, or nil
-	lastError string  // the message of the last top-level error event
-	said      string  // the text of the last agent message
-	errLine   string  // the last non-empty stderr line
+	mu sync.Mutex // guards said, which lastSaid reads while stdout is written
+
+	evented   bool        // stdout held at least one event
+	turn      *ending     // the turn's terminal event, or nil
+	turns     int         // how many turns completed
+	used      *tokenUsage // the usage of the last completed turn, or nil
+	lastError string      // the message of the last top-level error event
+	said      string      // the text of the last agent message, on one line
+	errLine   string      // the last non-empty stderr line
 }
 
 // ending is a turn's terminal event: turn.completed, or turn.failed with
@@ -49,6 +54,17 @@ type event struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"item"`
+	Usage *tokenUsage `json:"usage"` // a turn.completed event's
+}
+
+// tokenUsage is the usage a turn.completed event carries: the thread's
+// tokens so far. Cache reads and writes are parts of the input tokens, and
+// reasoning tokens a part of the output tokens.
+type tokenUsage struct {
+	Input      int64 `json:"input_tokens"`
+	CacheRead  int64 `json:"cached_input_tokens"`
+	CacheWrite int64 `json:"cache_write_input_tokens"`
+	Output     int64 `json:"output_tokens"`
 }
 
 func newRecorder() *recorder {
@@ -86,15 +102,27 @@ func (r *recorder) event(line []byte) {
 	switch ev.Type {
 	case "turn.completed":
 		r.turn = &ending{}
+		r.turns++
+		r.used = ev.Usage
 	case "turn.failed":
 		r.turn = &ending{failed: true, message: ev.Error.Message}
 	case "error":
 		r.lastError = ev.Message
 	case "item.completed":
 		if ev.Item.Type == "agent_message" {
-			r.said = ev.Item.Text
+			r.mu.Lock()
+			r.said = strings.Join(strings.Fields(ev.Item.Text), " ")
+			r.mu.Unlock()
 		}
 	}
+}
+
+// lastSaid returns the text of the last agent message so far, on one line,
+// or "" before the first. It may be called from any goroutine.
+func (r *recorder) lastSaid() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.said
 }
 
 // stderrLine keeps line when it is not blank.
@@ -121,6 +149,36 @@ func (r *recorder) judge(exit error, stopped bool) crew.Outcome {
 		return crew.Outcome{Reason: oneLine(r.failedAfterTurn(exit))}
 	}
 	return crew.Outcome{Succeeded: true, Reason: oneLine(r.said)}
+}
+
+// usage is what a session that printed what r recorded used, stopped
+// telling whether crew stopped it. Its last completed turn's usage covers
+// the whole thread, and its turns are the turns that completed. Codex
+// reports no cost. A session crew stopped, or one whose turn did not
+// complete, reports nothing.
+func (r *recorder) usage(stopped bool) crew.Usage {
+	if stopped || r.turns == 0 {
+		return crew.Usage{}
+	}
+	u := crew.Usage{Turns: r.turns, HasTurns: true}
+	if r.used != nil {
+		u.Tokens, u.HasTokens = r.used.tokens(), true
+	}
+	return u
+}
+
+// tokens maps u onto crew's four kinds, so that their total is Codex's input
+// plus output: the input left once both cache counts are taken out of it,
+// and the output with its reasoning. A count that does not add up, such as
+// a negative one, reads as zero.
+func (u tokenUsage) tokens() crew.Tokens {
+	read, write := max(u.CacheRead, 0), max(u.CacheWrite, 0)
+	return crew.Tokens{
+		Input:      max(u.Input-read-write, 0),
+		Output:     max(u.Output, 0),
+		CacheRead:  read,
+		CacheWrite: write,
+	}
 }
 
 // failedAfterTurn is the reason of a session whose turn completed but whose
@@ -155,14 +213,23 @@ func (r *recorder) unended(exit error) string {
 // exitText says how a process that did not exit 0 ended: "exit code N", or
 // the error itself, such as "signal: killed", when no code applies.
 func exitText(err error) string {
+	if code := exitCode(err); code > 0 {
+		return fmt.Sprintf("exit code %d", code)
+	}
+	return err.Error()
+}
+
+// exitCode is the exit status err carries, such as -1 for a signal, or 0
+// when it carries none.
+func exitCode(err error) int {
 	coded, ok := errors.AsType[interface {
 		error
 		ExitCode() int
 	}](err)
-	if ok && coded.ExitCode() > 0 {
-		return fmt.Sprintf("exit code %d", coded.ExitCode())
+	if !ok {
+		return 0
 	}
-	return err.Error()
+	return coded.ExitCode()
 }
 
 // oneLine joins s's words with single spaces, drops the control characters

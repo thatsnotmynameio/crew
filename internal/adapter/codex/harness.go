@@ -16,11 +16,14 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards. The adapter reports no usage and no last words yet,
-// and checks nothing at startup: it has none of the optional capabilities.
+// Compile-time guards: the engine finds Preparer, Narrator and
+// UsageReporter by type assertion.
 var (
-	_ port.Harness = (*harness)(nil)
-	_ port.Session = (*session)(nil)
+	_ port.Harness       = (*harness)(nil)
+	_ port.Preparer      = (*harness)(nil)
+	_ port.Session       = (*session)(nil)
+	_ port.Narrator      = (*session)(nil)
+	_ port.UsageReporter = (*session)(nil)
 )
 
 // settings is the codex adapter's config section: the keys of an agent's
@@ -41,16 +44,17 @@ type process interface {
 type spawner func(c proc.Command, stdout, stderr io.Writer) (process, error)
 
 // Factory returns the codex harness factory. Its section is an agent's
-// harness without its name: model, which is optional. Each session runs
-// through group, in its own process group, so a forced exit kills it, and
-// so does the git call that finds its git dirs.
+// harness without its name: model, which is optional. The harness it builds
+// is a port.Preparer that checks codex is on PATH and logged in. Each session
+// runs through group, in its own process group, so a forced exit kills it,
+// and so do the git call that finds its git dirs and the login check.
 func Factory(group *proc.Group) port.HarnessFactory {
 	return func(decode port.Decode) (port.Harness, error) {
 		var s settings
 		if err := decode(&s); err != nil {
 			return nil, err
 		}
-		return &harness{model: s.Model, spawn: groupSpawner(group), git: group.Run}, nil
+		return &harness{model: s.Model, spawn: groupSpawner(group), run: group.Run}, nil
 	}
 }
 
@@ -69,7 +73,7 @@ func groupSpawner(group *proc.Group) spawner {
 type harness struct {
 	model string
 	spawn spawner
-	git   proc.Runner
+	run   proc.Runner // runs git and codex login status
 }
 
 // Start implements port.Harness. It finds the git dirs of run.Dir, then runs
@@ -80,7 +84,7 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", binary, err)
 	}
-	dirs, err := gitDirs(ctx, h.git, run.Dir)
+	dirs, err := gitDirs(ctx, h.run, run.Dir)
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +94,14 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	if err != nil {
 		return nil, err
 	}
-	s := &session{process: p, done: make(chan struct{})}
+	s := &session{process: p, rec: rec, done: make(chan struct{})}
 	s.verdict = sync.OnceValue(func() crew.Outcome {
 		defer close(s.done)
 		exit := p.Wait() // codex's output is fully copied once it returns
 		rec.end()
-		return rec.judge(exit, s.stopped.Load())
+		stopped := s.stopped.Load()
+		s.usage = rec.usage(stopped)
+		return rec.judge(exit, stopped)
 	})
 	go s.verdict() // judged as soon as codex ends, so a later Stop cannot change it
 	return s, nil
@@ -104,13 +110,27 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 // session is a running codex process.
 type session struct {
 	process process
+	rec     *recorder // codex's output, recorded as it is printed
 	stopped atomic.Bool
 	verdict func() crew.Outcome // waits for the process once, then judges it
+	usage   crew.Usage          // set by verdict before it returns
 	done    chan struct{}       // closed once the verdict is settled
 }
 
 // Wait implements port.Session.
 func (s *session) Wait() crew.Outcome { return s.verdict() }
+
+// Said implements port.Narrator: the text of the session's last agent
+// message so far, on one line. Reasoning, commands and errors never count.
+func (s *session) Said() string { return s.rec.lastSaid() }
+
+// Usage implements port.UsageReporter: the tokens and turns of the
+// session's completed turn, and never a cost, or nothing when crew stopped
+// it or its turn did not complete.
+func (s *session) Usage() crew.Usage {
+	s.verdict()
+	return s.usage
+}
 
 // Stop implements port.Session. proc sends the terminate signal to the
 // session's process group, and the kill signal once ctx is done. The
