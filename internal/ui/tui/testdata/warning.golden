@@ -20,23 +20,11 @@ Board ────────────────────────�
  │ via  default                   │  │ via  clerk                     │                                    
  ╰────────────────────────────────╯  ╰────────────────────────────────╯                                    
 
-Actions ────────────────────────────────────────────────────────────────────────────────────────── 2 running · 1 waiting
- ⠋ #1  Add login form             implement/code    default   running 5m00s  crew/1-code
- ⠋ #1  Add login form             implement/tests   default   running 7m00s  crew/1-tests
- ○ #2  Fix the flaky stream test  review/check      clerk     waiting        
-
-Queues ─── 2 of 3 busy   Handled ───────────────────────────────────────────────────────────────────────────────────── 0
- default  ■□  1/2         none
- clerk    ■   1/1        
-                         
-                         
-                         
-
-Events ──────────────────────────────────────────────────────────────────────────────────────────────────────── 5 events
- 14:22:58 implement took #1 "Add login form" (ready -> in progress)
- 14:23:00 #1 implement/tests started on branch crew/1-tests, log .crew/logs/1-tests.log
- 14:25:00 #1 implement/code started on branch crew/1-code, log .crew/logs/1-code.log
- 14:29:50 poll: listed 2 issues, took 1
- 14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in review)
+Queues ─── 2 of 3 busy   Events ─────────────────────────────────────────────────────────────────────────────── 5 events
+ default  ■□  1/2         14:22:58 implement took #1 "Add login form" (ready -> in progress)
+ clerk    ■   1/1         14:23:00 #1 implement/tests started on branch crew/1-tests, log .crew/logs/1-tests.log
+                          14:25:00 #1 implement/code started on branch crew/1-code, log .crew/logs/1-code.log
+                          14:29:50 poll: listed 2 issues, took 1
+                          14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in review)
 
 q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

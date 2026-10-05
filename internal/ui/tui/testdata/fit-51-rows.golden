@@ -44,19 +44,8 @@ Board ────────────────────────�
                                                        ╰───────────────────────╯
                                                        +5 more                  
 
-Actions ────────────────────────────────────────────────── 2 running · 1 waiting
- ⠋ #1  Add login form    implement/code    default   running 5m00s  crew/1-code
- ⠋ #1  Add login form    implement/tests   default   running 7m00s  crew/1-tests
- ○ #2  Fix the flaky s…  review/check      clerk     waiting        
-
-Queues ─── 2 of 3 busy   Handled ─────────────────────── 10 · $70.05 · ↑↓ scroll
- default  ■□  1/2          NEEDS ATTENTION   #11 Parse the config on…  implemen…
- clerk    ■   1/1           × lfg failed: exited 1: "tests fail on Go 1.27"
-                           NEEDS ATTENTION   #12 Drop the old --dry …  implemen…
-                            × lfg failed: prompt did not render: no field "Body"
-
-Events ─────────────────────────────────────────────────── 30 events · ↑↓ scroll
- 14:29:58 poll: listed 29 issues, took 0
- 14:29:59 poll: listed 30 issues, took 0
+Queues ─── 2 of 3 busy   Events ────────────────────────── 30 events · ↑↓ scroll
+ default  ■□  1/2         14:29:58 poll: listed 29 issues, took 0
+ clerk    ■   1/1         14:29:59 poll: listed 30 issues, took 0
 
 q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

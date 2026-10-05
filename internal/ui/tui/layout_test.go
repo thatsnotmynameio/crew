@@ -15,7 +15,6 @@ import (
 var (
 	tab     = tea.KeyPressMsg{Code: tea.KeyTab}
 	upKey   = tea.KeyPressMsg{Code: tea.KeyUp}
-	downKey = tea.KeyPressMsg{Code: tea.KeyDown}
 	endKey  = tea.KeyPressMsg{Code: tea.KeyEnd}
 	homeKey = tea.KeyPressMsg{Code: tea.KeyHome}
 	helpKey = tea.KeyPressMsg{Code: '?', Text: "?"}
@@ -32,72 +31,58 @@ func eventful() engine.Update {
 	return u
 }
 
-// Covers R1: every section on one screen, in order.
+// Covers R1, and R22 of #151: every section on one screen, in order, with
+// no Actions or Handled section, and Queues beside Events in one band.
 func TestEverySectionShowsInOrder(t *testing.T) {
 	view := fitted(t, 80, 0, handledSnapshot())
 
 	last := -1
-	for _, title := range []string{
-		"crew ╱", "Bots ─", "Board ─", "Actions ─", "Queues ─", "Handled ─", "Events ─", "q stop",
-	} {
+	for _, title := range []string{"crew ╱", "Bots ─", "Board ─", "Queues ─", "Events ─", "q stop"} {
 		i := strings.Index(view, title)
 		if i <= last {
 			t.Fatalf("%q is out of order or missing:\n%s", title, view)
 		}
 		last = i
 	}
+	for _, title := range []string{"Actions", "Handled"} {
+		if titleRow(view, title) >= 0 {
+			t.Errorf("view still has the %s section:\n%s", title, view)
+		}
+	}
+	if band := bandRows(t, view); !strings.HasPrefix(band[0], "Queues ") || !strings.Contains(band[0], "   Events ─") {
+		t.Errorf("the band's first row is %q, want Queues then Events:\n%s", band[0], view)
+	}
 }
 
-// Covers R21 and KTD8: a 62-row window gives Events, then Handled, their
-// minimum, and both scroll. It is the 24 rows these sections took before
-// Bots, plus Bots' rule, its row of cards and the blank row above it, the
-// four rows each board card gained (KTD1 of #151), and the four more
-// cards and the "+N more" row of the Handled column (KTD3 of #151).
-func TestA62RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
-	view := fitted(t, 80, 62, eventful())
+// Covers R21 and KTD10 of #151: a 51-row window is 3 rows short of the
+// whole view (eventful's 54), so Events gives up those 3 rows, down to
+// its minimum, and scrolls, while the board keeps 5 cards a column and
+// Bots its cards.
+func TestA51RowWindowShrinksEventsToTheirMinimum(t *testing.T) {
+	view := fitted(t, 80, 51, eventful())
 
-	golden(t, "fit-62-rows", view)
-	if n := strings.Count(view, "\n") + 1; n != 62 {
-		t.Errorf("view has %d lines, want the window's 62", n)
+	golden(t, "fit-51-rows", view)
+	if n := strings.Count(view, "\n") + 1; n != 51 {
+		t.Errorf("view has %d lines, want the window's 51", n)
 	}
 	if rows := botsOf(t, view); len(rows) != botCardRows {
 		t.Errorf("Bots has %d rows, want its cards' %d:\n%s", len(rows), botCardRows, view)
 	}
-	contains(t, view, "listed 30 issues", "listed 29 issues", "Handled ─", "↑↓ scroll", "NEEDS ATTENTION")
-	if strings.Contains(view, "listed 28 issues") {
-		t.Errorf("Events kept more than two rows:\n%s", view)
-	}
-	// Covers AE6 of #108: starting from 5 rows each, Events gives up 3 and
-	// Handled the 1 more the window needs.
+	contains(t, view, "listed 30 issues", "listed 29 issues", "↑↓ scroll", "+5 more")
 	if rows := eventsRows(t, view); len(rows) != minScroll {
 		t.Errorf("Events has %d rows, want %d:\n%s", len(rows), minScroll, view)
 	}
-	if band := bandRows(t, view); len(band) != 1+scrollRows-1 {
-		t.Errorf("band has %d rows, want Handled's 4 under its title:\n%s", len(band), view)
-	}
 }
 
-// Covers R21 and KTD11: tab focuses Bots, Handled then Events; the arrows
-// scroll the focused section; end follows the newest event again.
-func TestFocusAndScrollMoveHandledAndEvents(t *testing.T) {
+// Covers R21 and KTD11: tab focuses Bots then Events; the arrows scroll
+// the focused Events; end follows the newest event again.
+func TestFocusAndScrollMoveEvents(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 32})
 	h.send(updateMsg(eventful()))
 
 	h.send(tab)
 	contains(t, h.view(), "▸ Bots")
-	h.send(tab)
-	contains(t, h.view(), "▸ Handled")
-	before := h.view()
-	h.send(downKey)
-	if h.view() == before {
-		t.Error("down did not scroll the focused Handled")
-	}
-	h.send(homeKey)
-	if h.view() != before {
-		t.Errorf("home did not scroll Handled back to its top:\n%s", h.view())
-	}
-
 	h.send(tab)
 	contains(t, h.view(), "▸ Events", "listed 30 issues")
 	h.send(upKey)
@@ -112,22 +97,18 @@ func TestFocusAndScrollMoveHandledAndEvents(t *testing.T) {
 	contains(t, h.view(), "listed 30 issues")
 
 	h.send(tab)
-	if v := h.view(); strings.Contains(v, "\n▸ ") {
-		t.Errorf("a fourth tab left a section focused:\n%s", v)
+	if v := h.view(); strings.Contains(v, "▸ Bots") || strings.Contains(v, "▸ Events") {
+		t.Errorf("a third tab left a section focused:\n%s", v)
 	}
 	h.send(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	contains(t, h.view(), "▸ Events")
 }
 
-func TestAShortWindowDropsTheSaidLinesThenCutsAboveTheKeyHelp(t *testing.T) {
-	u := withSaid("Running the tests")
-	u.Snapshot.Handled = manySnapshot().Snapshot.Handled
+// Covers KTD10 of #151: a window shorter than the view with the Bots strip
+// is cut, with the "… N lines cut" row and the key help.
+func TestAShortWindowCutsAboveTheKeyHelp(t *testing.T) {
+	view := fitted(t, 80, 12, eventful())
 
-	view := fitted(t, 80, 12, u)
-
-	if strings.Contains(view, "└") {
-		t.Errorf("a 12-row window kept the said lines:\n%s", view)
-	}
 	contains(t, view, "lines cut")
 	if !strings.HasSuffix(view, "? help") {
 		t.Errorf("view does not end with the key-help line:\n%s", view)
@@ -175,16 +156,15 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 }
 
 // Covers AE6: without colour, sections read by their titles and rules, and
-// states by their icons and pills.
+// states by their icons.
 func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 	view := fitted(t, 120, 0, handledSnapshot())
 
 	contains(t, view,
-		"Board ─", "Actions ─", "Queues ─", "Handled ─", "Events ─",
-		"⠋ code 5m", "○ check waiting", "○ #2",
-		" GIVEN UP ", " NEEDS ATTENTION ", "×",
+		"Board ─", "Queues ─", "Events ─",
+		"⠋ code 5m", "○ check waiting",
+		"■ given up", "▲ needs attention", "✓ ready to merge", "×",
 	)
-	contains(t, handledText(t, 120, handledSnapshot()), " READY TO MERGE ")
 }
 
 // Covers R21: pgdown and pgup move the focused section a page at a time.
@@ -194,17 +174,6 @@ func TestPageKeysScrollTheFocusedSectionByAPage(t *testing.T) {
 	h.send(updateMsg(eventful()))
 
 	h.send(tab)
-	h.send(tab)
-	top := h.view()
-	h.send(tea.KeyPressMsg{Code: tea.KeyPgDown})
-	if h.view() == top || strings.Contains(strings.Join(bandRows(t, h.view()), "\n"), "#11 Parse") {
-		t.Errorf("pgdown did not move Handled past its first entry:\n%s", h.view())
-	}
-	h.send(tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if h.view() != top {
-		t.Errorf("pgup did not bring Handled back to its top:\n%s", h.view())
-	}
-
 	h.send(tab)
 	h.send(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	view := h.view()
@@ -242,25 +211,36 @@ func titleRow(view, title string) int {
 	return -1
 }
 
-// eventsRows are the rows under Events' title, down to the blank row above
-// the key-help line.
+// eventsRows are the rows under Events' title, beside Queues, down to the
+// blank row above the key-help line, without the Queues side.
 func eventsRows(t *testing.T, view string) []string {
 	t.Helper()
-	all, i := rowsOf(view), titleRow(view, "Events")
+	band := bandRows(t, view)
+	i := strings.Index(band[0], "▸ Events ")
 	if i < 0 {
-		t.Fatalf("view has no Events section:\n%s", view)
+		i = strings.Index(band[0], "Events ")
 	}
-	return all[i+1 : len(all)-2]
+	if i < 0 {
+		t.Fatalf("the band has no Events section:\n%s", view)
+	}
+	x := len([]rune(band[0][:i]))
+	out := make([]string, 0, len(band)-1)
+	for _, r := range band[1:] {
+		cells := []rune(r)
+		out = append(out, strings.TrimRight(string(cells[min(x, len(cells)):]), " "))
+	}
+	return out
 }
 
-// bandRows are the rows of the Queues and Handled band, its titles first.
+// bandRows are the rows of the Queues and Events band, its titles first,
+// down to the blank row above the key-help line.
 func bandRows(t *testing.T, view string) []string {
 	t.Helper()
-	all, q, e := rowsOf(view), titleRow(view, "Queues"), titleRow(view, "Events")
-	if q < 0 || e < 0 {
-		t.Fatalf("view lacks the band or Events:\n%s", view)
+	all, q := rowsOf(view), titleRow(view, "Queues")
+	if q < 0 {
+		t.Fatalf("view lacks the band:\n%s", view)
 	}
-	return all[q : e-1]
+	return all[q : len(all)-2]
 }
 
 // Covers AE1 and R1, R2 of #108: Events fills its 5 rows from the top, and
@@ -320,48 +300,27 @@ func TestThirtyEventsShowTheNewestFiveAndScroll(t *testing.T) {
 	}
 }
 
-// Covers AE4 and R4, R5 of #108: one handled issue and its reason fill
-// Handled from the top, and the band stays 6 rows as issues are handled.
-// The window has room for a second card in the Handled column (KTD3 of
-// #151).
-func TestHandledFillsItsFiveRowsAndTheBandHoldsItsHeight(t *testing.T) {
-	u := runningSnapshot()
-	u.Snapshot.Handled = []core.HandledView{failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1")}
-	view := fitted(t, 80, 46, u)
-
-	band := bandRows(t, view)
-	if len(band) != 1+scrollRows {
-		t.Fatalf("band has %d rows, want %d:\n%s", len(band), 1+scrollRows, view)
-	}
-	contains(t, band[1], "NEEDS ATTENTION")
-	contains(t, band[2], "× tests failed")
-
-	u.Snapshot.Handled = append(u.Snapshot.Handled, entry("8", "Trim the README", "review", "ready to merge", 9, 3))
-	if band := bandRows(t, fitted(t, 80, 46, u)); len(band) != 1+scrollRows {
-		t.Errorf("a second handled issue made the band %d rows, want %d", len(band), 1+scrollRows)
-	}
-}
-
 // Covers AE5 and R4 of #108: seven queues set the band's height, and
-// handling issues does not grow it.
+// events do not grow it.
 func TestSevenQueuesSetTheBandsHeight(t *testing.T) {
 	u := runningSnapshot()
 	u.Snapshot.Queues = nil
 	for n := 1; n <= 7; n++ {
 		u.Snapshot.Queues = append(u.Snapshot.Queues, core.QueueView{Name: fmt.Sprintf("q%d", n), Slots: 1})
 	}
-	empty := bandRows(t, fitted(t, 80, 40, u))
+	u.Snapshot.Recent = nil
+	few := bandRows(t, fitted(t, 80, 40, u))
 
-	u.Snapshot.Handled = manySnapshot().Snapshot.Handled
-	full := bandRows(t, fitted(t, 80, 40, u))
-	if len(empty) != 8 || len(full) != 8 {
-		t.Errorf("band has %d rows with nothing handled and %d with ten, want 8 both:\n%s",
-			len(empty), len(full), strings.Join(full, "\n"))
+	u.Snapshot.Recent = withEvents(30).Snapshot.Recent
+	full := fitted(t, 80, 40, u)
+	if many := bandRows(t, full); len(few) != 8 || len(many) != 8 {
+		t.Errorf("band has %d rows with no event and %d with thirty, want 8 both:\n%s", len(few), len(many), full)
 	}
+	contains(t, eventsRows(t, full)[scrollRows-1], "listed 30 issues")
 }
 
 // Covers AE7 and R7 of #108: one row short, Events gives up one row and
-// Handled keeps its 5.
+// the board keeps its 5 cards a column.
 func TestOneRowShortEventsGiveUpOneRow(t *testing.T) {
 	u := eventful()
 	whole := len(rowsOf(fitted(t, 80, 0, u)))
@@ -371,16 +330,13 @@ func TestOneRowShortEventsGiveUpOneRow(t *testing.T) {
 	if rows := eventsRows(t, view); len(rows) != scrollRows-1 {
 		t.Errorf("Events has %d rows, want %d:\n%s", len(rows), scrollRows-1, view)
 	}
-	if band := bandRows(t, view); len(band) != 1+scrollRows {
-		t.Errorf("band has %d rows, want Handled's %d under its title:\n%s", len(band), 1+scrollRows, view)
-	}
+	contains(t, boardOf(t, view), "+5 more")
 }
 
 // Covers R2 of #108: Events with fewer events than rows does not scroll.
 func TestEventsWithRoomForEveryEventDoNotScroll(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(withEvents(2)))
-	h.send(tab)
 	h.send(tab)
 	h.send(tab)
 	contains(t, h.view(), "▸ Events")

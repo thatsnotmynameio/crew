@@ -89,52 +89,37 @@ func (m Model) scrollBoard(delta int) Model {
 	return m
 }
 
-// scrolled returns m with the focused section moved by a row, a page or to
-// an end, as far as its rows allow.
+// scrolled returns m with Events moved by a row, a page or to an end
+// while it has focus, as far as its rows allow. Events counts back from
+// the newest row, so up moves it back.
 func (m Model) scrolled(msg tea.KeyPressMsg) Model {
-	var offset *int
-	sign := 1
-	switch m.focus {
-	case focusHandled:
-		offset = &m.handledOffset
-	case focusEvents:
-		// Events counts back from the newest row, so up moves it forward.
-		offset, sign = &m.eventsOffset, -1
-	default:
+	if m.focus != focusEvents {
 		return m
 	}
 	const page, end = 10, 1 << 20
+	offset := m.eventsOffset
 	switch {
 	case key.Matches(msg, m.keys.up):
-		*offset -= sign
+		offset++
 	case key.Matches(msg, m.keys.down):
-		*offset += sign
+		offset--
 	case key.Matches(msg, m.keys.pageUp):
-		*offset -= sign * page
+		offset += page
 	case key.Matches(msg, m.keys.pageDown):
-		*offset += sign * page
+		offset -= page
 	case key.Matches(msg, m.keys.top):
-		*offset = -sign * end
+		offset = end
 	case key.Matches(msg, m.keys.bottom):
-		*offset = sign * end
+		offset = 0
 	}
-	*offset = max(*offset, 0)
-	*offset = min(*offset, m.scrollLimit())
+	m.eventsOffset = min(max(offset, 0), m.scrollLimit())
 	return m
 }
 
-// scrollLimit is the furthest the focused section scrolls: its rows past
-// those the window has room for (KTD8).
+// scrollLimit is the furthest Events scrolls: its rows past those the
+// window has room for (KTD8).
 func (m Model) scrollLimit() int {
-	b := m.budget()
-	switch m.focus {
-	case focusHandled:
-		return max(len(m.handledRows())-b.handled, 0)
-	case focusEvents:
-		return max(len(m.snap.Recent)-b.events, 0)
-	default:
-		return 0
-	}
+	return max(len(m.snap.Recent)-m.budget().events, 0)
 }
 
 // helper returns the help bubble styled for the view.

@@ -25,21 +25,11 @@ Board ───────────────────── 3 issues �
                             │ via  clerk            │                           
                             ╰───────────────────────╯                           
 
-Actions ────────────────────────────────────────────────────────────── 1 running
- ⠋ #20  Crash on start  fix/lfg   clerk   running 1m00s  
-
-Queues ─── 0 of 0 busy   Handled ───────────────────────────────────────────── 0
+Queues ─── 0 of 0 busy   Events ─────────────────────────────────────── 0 events
  none                     none
                          
                          
                          
                          
-
-Events ──────────────────────────────────────────────────────────────── 0 events
- none
-
-
-
-
 
 q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

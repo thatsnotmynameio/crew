@@ -60,7 +60,6 @@ type focus int
 const (
 	focusNone focus = iota
 	focusBots
-	focusHandled
 	focusEvents
 )
 
@@ -87,9 +86,9 @@ type Model struct {
 	// hold cards do not fit (KTD9); botsOffset the first Bots card shown
 	// when the cards do not fit (KTD3).
 	boardOffset, botsOffset int
-	// handledOffset counts the Handled rows scrolled past at the top;
-	// eventsOffset the Events rows scrolled back from the newest (KTD11).
-	handledOffset, eventsOffset int
+	// eventsOffset counts the Events rows scrolled back from the newest
+	// (KTD11).
+	eventsOffset int
 
 	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).

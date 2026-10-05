@@ -26,6 +26,9 @@ const (
 // shows only the reason after it (KTD6).
 const cannotAct = "cannot act: "
 
+// cellGap is the space between the strip's entries.
+const cellGap = "  "
+
 // botsLayout is which Bots cards show and how wide (KTD2, KTD3).
 type botsLayout struct {
 	// offset is the first card shown.

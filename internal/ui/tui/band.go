@@ -11,13 +11,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-const (
-	// bandGap is the space between Queues and Handled.
-	bandGap = 3
-	// minHandledTitle is the narrowest a Handled title gets: the title
-	// says which issue it is, so the details give way first.
-	minHandledTitle = 20
-)
+// bandGap is the space between Queues and Events.
+const bandGap = 3
 
 // queuesSection is the Queues section: its summary and one row per queue
 // with its busy and free slots (R16).
@@ -47,37 +42,6 @@ func (m Model) queuesSection() (string, []string) {
 	return summary, out
 }
 
-// handledSection is the Handled section: its summary and its rows, the
-// entries that need attention first, each with its pill, reference, title,
-// rule, time, spend and pull request, then its reasons and its actions'
-// pull requests (R5, R16), in width cells.
-func (m Model) handledSection(width int) (string, []string) {
-	summary := m.handledSummary()
-	entries := byAttention(m.snap.Handled)
-	if len(entries) == 0 {
-		return summary, []string{" " + m.styles.muted.Render("none")}
-	}
-	var pills, refs, titles, details []string
-	for _, e := range entries {
-		pills = append(pills, m.pill(e))
-		refs = append(refs, e.Issue.Ref)
-		titles = append(titles, clean(e.Issue.Title))
-		details = append(details, m.handledDetails(e))
-	}
-	pillW, refW := widest(pills), widest(refs)
-	// A row is " " pill cellGap ref " " title cellGap details.
-	others := len(" ") + pillW + len(cellGap) + refW + len(" ") + len(cellGap) + widest(details)
-	titleW := min(max(width-others, minHandledTitle), widest(titles))
-	var out []string
-	for i, e := range entries {
-		out = append(out, " "+pad(pills[i], pillW)+cellGap+pad(m.styles.link(refs[i], e.Issue.URL), refW)+" "+
-			pad(m.styles.text.Render(titles[i]), titleW)+cellGap+details[i])
-		out = append(out, m.reasons(e)...)
-		out = append(out, m.pullRequests(e)...)
-	}
-	return summary, out
-}
-
 // handledSummary is how many issues crew handled, then the run's cost
 // when it has one (R8).
 func (m Model) handledSummary() string {
@@ -86,24 +50,6 @@ func (m Model) handledSummary() string {
 		summary += " · " + cost[0]
 	}
 	return summary
-}
-
-// pill says how e ended: given up, needing attention, or the last part of
-// the state its rule moved it to (R5, KTD13). A failure whose issue a rule
-// holds again shows that state as an error: it needs you no longer
-// (#109).
-func (m Model) pill(e core.HandledView) string {
-	switch {
-	case e.Move == crew.MoveDropped:
-		return m.styles.warningPill.Render("GIVEN UP")
-	case needsAttention(e):
-		return m.styles.errorPill.Render("NEEDS ATTENTION")
-	}
-	pill := m.styles.successPill
-	if e.NeedsAttention() {
-		pill = m.styles.errorPill
-	}
-	return pill.Render(strings.ToUpper(stateName(e.To)))
 }
 
 // stateName is the part of to after its last colon, or all of it.
@@ -119,22 +65,6 @@ func stateName(to crew.State) string {
 // rule holds its issue again (#109).
 func needsAttention(e core.HandledView) bool { return e.NeedsAttention() && e.HeldBy == "" }
 
-// handledDetails is e's rule and time, then its spend and pull request
-// when it has them, then the rule holding its issue again (#109).
-func (m Model) handledDetails(e core.HandledView) string {
-	parts := []string{m.styles.muted.Render(e.Rule + " " + elapsed(e.Duration()))}
-	if cost := spendParts(e.Spend()); len(cost) > 0 {
-		parts = append(parts, m.styles.text.Render(strings.Join(cost, " · ")))
-	}
-	if pr := m.pullRequestOf(e); pr != "" {
-		parts = append(parts, pr)
-	}
-	if e.HeldBy != "" {
-		parts = append(parts, m.styles.muted.Render("now in "+e.HeldBy))
-	}
-	return strings.Join(parts, m.styles.muted.Render(" · "))
-}
-
 // spendParts splits a spend into its cost and its tokens; nothing when no
 // session ended.
 func spendParts(s crew.Spend) []string {
@@ -142,18 +72,6 @@ func spendParts(s crew.Spend) []string {
 		return strings.Split(text, ", ")
 	}
 	return nil
-}
-
-// reasons are the rows under an entry that needs attention: one per
-// reason, each after an × (KTD13).
-func (m Model) reasons(e core.HandledView) []string {
-	texts := reasonTexts(e)
-	out := make([]string, 0, len(texts))
-	cross := "   " + m.styles.error.Render("×") + " "
-	for _, r := range texts {
-		out = append(out, cross+m.styles.text.Render(r))
-	}
-	return out
 }
 
 // reasonTexts are why e needs attention: one per failed action, then one
@@ -165,38 +83,6 @@ func reasonTexts(e core.HandledView) []string {
 	}
 	if e.Move == crew.MoveDropped {
 		out = append(out, fmt.Sprintf("move to %s given up: %s", e.To, clean(e.DropReason)))
-	}
-	return out
-}
-
-// pullRequestOf is the pull request on e's row: that of its one action,
-// when it had a session; a rule of several actions gives each its own row.
-func (m Model) pullRequestOf(e core.HandledView) string {
-	if len(e.Actions) != 1 || e.Actions[0].Spend.Sessions == 0 {
-		return ""
-	}
-	return m.pullRequest(e.Actions[0].PullRequest)
-}
-
-// pullRequest is pr as a link when it was found, or what its lookup said.
-func (m Model) pullRequest(pr crew.PullRequest) string {
-	if pr.Lookup == crew.PullRequestFound {
-		return m.styles.link(pr.Ref, pr.URL)
-	}
-	return m.styles.muted.Render(pr.String())
-}
-
-// pullRequests are the rows under an entry of several actions: one per
-// action that had a session, with its pull request.
-func (m Model) pullRequests(e core.HandledView) []string {
-	if len(e.Actions) <= 1 {
-		return nil
-	}
-	var out []string
-	for _, a := range e.Actions {
-		if a.Spend.Sessions > 0 {
-			out = append(out, "    "+m.styles.muted.Render(a.Name+": ")+m.pullRequest(a.PullRequest))
-		}
 	}
 	return out
 }

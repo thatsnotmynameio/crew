@@ -30,19 +30,18 @@ Board ────────────────────────�
                                                        │                       │
                                                        │ review 6m00s          │
                                                        ╰───────────────────────╯
-                                                       +1 more                  
+                                                       ╭───────────────────────╮
+                                                       │ #7 Log the poll inte… │
+                                                       │ ✓ ready to review     │
+                                                       │                       │
+                                                       │ implement 9m00s       │
+                                                       ╰───────────────────────╯
 
-Actions ────────────────────────────────────────────────── 2 running · 1 waiting
- ⠋ #1  Add login form    implement/code    default   running 5m00s  crew/1-code
- ⠋ #1  Add login form    implement/tests   default   running 7m00s  crew/1-tests
- ○ #2  Fix the flaky s…  review/check      clerk     waiting        
-
-Queues ─── 2 of 3 busy   Handled ──────────────────────── 4 · $19.86 · ↑↓ scroll
- default  ■□  1/2          GIVEN UP          #6 Drop the old flag     implement…
- clerk    ■   1/1           × move to ready to review given up: issue closed
-
-Events ──────────────────────────────────────────────────── 5 events · ↑↓ scroll
- 14:29:50 poll: listed 2 issues, took 1
- 14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in rev…
+Queues ─── 2 of 3 busy   Events ─────────────────────────────────────── 5 events
+ default  ■□  1/2         14:22:58 implement took #1 "Add login form" (ready ->…
+ clerk    ■   1/1         14:23:00 #1 implement/tests started on branch crew/1-…
+                          14:25:00 #1 implement/code started on branch crew/1-c…
+                          14:29:50 poll: listed 2 issues, took 1
+                          14:29:50 review took #2 "Fix the flaky stream test" (…
 
 q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

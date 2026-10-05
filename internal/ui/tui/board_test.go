@@ -105,11 +105,11 @@ func labeled(issue crew.Issue, labels ...string) crew.BoardIssue {
 }
 
 // boardOf returns the Board section of view: its rule up to the blank
-// line before Actions.
+// line before the band of Queues and Events.
 func boardOf(t *testing.T, view string) string {
 	t.Helper()
 	i := strings.Index(view, "Board ")
-	j := strings.Index(view, "\n\nActions ")
+	j := strings.Index(view, "\n\nQueues ")
 	if i < 0 || j < i {
 		t.Fatalf("view lacks the Board section:\n%s", view)
 	}
@@ -359,7 +359,7 @@ func TestAColumnShowsAtMostFiveCards(t *testing.T) {
 func TestAShortWindowTakesOneCardOffACappedColumn(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
-	least := budget{events: minScroll, handled: minScroll, cards: maxCards, said: false, botCards: true}
+	least := budget{events: minScroll, cards: maxCards, botCards: true}
 	height := len(h.current().rows(least)) - cardRows
 	h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 
@@ -422,7 +422,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 	u := onBoard(engine.Update{}, issues...)
 	// The two lowest heights that fit: a cap counting the scrolled-off
 	// column of 6 would leave both cut.
-	for _, height := range []int{28, 29} {
+	for _, height := range []int{21, 22} {
 		h := newBoardHarness(t, 80, crewRules, eightColumns()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))

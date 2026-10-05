@@ -490,10 +490,10 @@ func TestTheStripShowsEachEntrysGlyphAndCountsTheRest(t *testing.T) {
 	}
 }
 
-// shortWindow is AE1's bots with a said line, ten handled issues, 30
-// events and three cards in implement.
+// shortWindow is AE1's bots with ten handled issues, 30 events and three
+// cards in implement.
 func shortWindow() engine.Update {
-	u := withSaid("Running the tests")
+	u := runningSnapshot()
 	u.Snapshot.Bots = aeOneBots()
 	u.Snapshot.Handled = manySnapshot().Snapshot.Handled
 	u.Snapshot.Recent = eventful().Snapshot.Recent
@@ -505,22 +505,22 @@ func shortWindow() engine.Update {
 	return u
 }
 
-// Covers AE4 and R10: once Events, Handled, the said lines and the board
-// cards have shrunk, the cards collapse to a one-row strip, and only then
-// is the view cut.
+// Covers AE4 and R10: once Events and the board cards have shrunk, the
+// cards collapse to a one-row strip, and only then is the view cut (KTD10
+// of #151).
 func TestAE4TheCardsCollapseToAStripLastBeforeTheCut(t *testing.T) {
 	u := shortWindow()
 	h := newHarness(t, 120)
 	h.send(updateMsg(u))
-	least := budget{events: minScroll, handled: minScroll, cards: 1, said: false, botCards: true}
+	least := budget{events: minScroll, cards: 1, botCards: true}
 	height := len(h.current().rows(least))
 
 	view := fitted(t, 120, height, u)
 	if len(botsOf(t, view)) != botCardRows || strings.Contains(view, "lines cut") {
 		t.Fatalf("at %d rows the cards collapsed or the view was cut:\n%s", height, view)
 	}
-	if strings.Contains(view, "└") || !strings.Contains(view, "+2 more") || len(eventsRows(t, view)) != minScroll {
-		t.Errorf("at %d rows Events, the said lines or the board cards did not shrink first:\n%s", height, view)
+	if !strings.Contains(view, "+2 more") || len(eventsRows(t, view)) != minScroll {
+		t.Errorf("at %d rows Events or the board cards did not shrink first:\n%s", height, view)
 	}
 
 	view = fitted(t, 120, height-1, u)

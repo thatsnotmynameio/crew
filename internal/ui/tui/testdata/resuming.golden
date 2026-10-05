@@ -19,23 +19,11 @@ Board ────────────────────────�
                                                              │ via  default             │                              
                                                              ╰──────────────────────────╯                              
 
-Actions ────────────────────────────────────────────────────────────────────────────────────────────────────── 3 running
- ⠋ #9  Add login form  development/docs    default   reopening workspace                    crew/issue-9-docs
- ⠋ #9  Add login form  development/lfg     default   resumed in issue-9-lfg, running 3m00s  crew/issue-9-lfg
- ⠋ #9  Add login form  development/tests   default   running 2m00s                          crew/issue-9-tests
-
-Queues ─── 1 of 2 busy   Handled ───────────────────────────────────────────────────────────────────────────────────── 0
- default  ■□  1/2         none
+Queues ─── 1 of 2 busy   Events ─────────────────────────────────────────────────────────────────────────────── 2 events
+ default  ■□  1/2         14:27:00 #9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .…
+                          14:28:00 #9 development/tests started on branch crew/issue-9-tests, log .crew/logs/issue-9-te…
                          
                          
                          
-                         
-
-Events ──────────────────────────────────────────────────────────────────────────────────────────────────────── 2 events
- 14:27:00 #9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log
- 14:28:00 #9 development/tests started on branch crew/issue-9-tests, log .crew/logs/issue-9-tests.log
-
-
-
 
 q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help

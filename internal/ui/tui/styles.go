@@ -71,8 +71,7 @@ type styles struct {
 	highlight                    lipgloss.Style
 	success, warning, error      lipgloss.Style
 	chip, ref                    lipgloss.Style
-	successPill, warningPill     lipgloss.Style
-	errorPill                    lipgloss.Style
+	warningPill                  lipgloss.Style
 	helpBox, helpKey, helpAction lipgloss.Style
 }
 
@@ -95,9 +94,9 @@ func newStyles(dark bool) styles {
 		chip: lipgloss.NewStyle().Foreground(p.chipText).Background(p.chipBack).Padding(0, 1),
 		ref:  fg(p.text).Underline(true).UnderlineColor(p.muted),
 
-		successPill: pill(p.success), warningPill: pill(p.warning), errorPill: pill(p.error),
-		helpBox: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.subtle).Padding(0, 1),
-		helpKey: fg(p.accent).Bold(true), helpAction: fg(p.text),
+		warningPill: pill(p.warning),
+		helpBox:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.subtle).Padding(0, 1),
+		helpKey:     fg(p.accent).Bold(true), helpAction: fg(p.text),
 	}
 }
 
