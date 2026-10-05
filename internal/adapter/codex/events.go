@@ -118,13 +118,23 @@ func (r *recorder) judge(exit error, stopped bool) crew.Outcome {
 	case r.turn.failed:
 		return crew.Outcome{Reason: oneLine(r.turn.message)}
 	case exit != nil:
-		detail := r.lastError
-		if detail == "" {
-			detail = r.said
-		}
-		return crew.Outcome{Reason: oneLine(exitText(exit) + " after: " + detail)}
+		return crew.Outcome{Reason: oneLine(r.failedAfterTurn(exit))}
 	}
 	return crew.Outcome{Succeeded: true, Reason: oneLine(r.said)}
+}
+
+// failedAfterTurn is the reason of a session whose turn completed but whose
+// codex exited non-zero: how it exited, then the last error or, without one,
+// the last message.
+func (r *recorder) failedAfterTurn(exit error) string {
+	detail := r.lastError
+	if detail == "" {
+		detail = r.said
+	}
+	if detail == "" {
+		return exitText(exit)
+	}
+	return exitText(exit) + " after: " + detail
 }
 
 // unended is the reason of a session whose turn printed no end: the last

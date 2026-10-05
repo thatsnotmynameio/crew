@@ -348,6 +348,36 @@ func TestStopEndsTheSessionWithinTheCallersDeadlineAsAFailure(t *testing.T) {
 	}
 }
 
+// Stopping a session that already ended does nothing: its outcome stays
+// the one codex earned, and its process is not signalled, whether or not the
+// engine has waited on it yet.
+func TestStopAfterTheSessionEndedChangesNothing(t *testing.T) {
+	for _, waited := range []bool{true, false} {
+		p := newProcess(fixture(t, "success.jsonl"))
+		h := build(t, noSection, &fakeSpawn{process: p}, &fakeGit{})
+		s, err := h.Start(t.Context(), port.Run{Dir: worktree, Prompt: "Review #4", Output: io.Discard})
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		if waited {
+			s.Wait()
+		} else if ended, ok := s.(*session); ok {
+			<-ended.done // reaped and judged, though nobody waited
+		}
+
+		if err := s.Stop(t.Context()); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+
+		if got := s.Wait(); !got.Succeeded {
+			t.Errorf("waited first %v: outcome = %+v, want the success codex earned", waited, got)
+		}
+		if p.stops != 0 {
+			t.Errorf("waited first %v: the ended process got %d stops, want none", waited, p.stops)
+		}
+	}
+}
+
 // TestFactorySessionRunsCodexThroughTheGroup runs a stand-in codex script
 // through a real process group in a real worktree: the production path from
 // the factory through git and proc, with stdout teed and stderr in the log.

@@ -90,12 +90,14 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	if err != nil {
 		return nil, err
 	}
-	s := &session{process: p}
+	s := &session{process: p, done: make(chan struct{})}
 	s.verdict = sync.OnceValue(func() crew.Outcome {
+		defer close(s.done)
 		exit := p.Wait() // codex's output is fully copied once it returns
 		rec.end()
 		return rec.judge(exit, s.stopped.Load())
 	})
+	go s.verdict() // judged as soon as codex ends, so a later Stop cannot change it
 	return s, nil
 }
 
@@ -104,16 +106,22 @@ type session struct {
 	process process
 	stopped atomic.Bool
 	verdict func() crew.Outcome // waits for the process once, then judges it
+	done    chan struct{}       // closed once the verdict is settled
 }
 
 // Wait implements port.Session.
 func (s *session) Wait() crew.Outcome { return s.verdict() }
 
 // Stop implements port.Session. proc sends the terminate signal to the
-// session's process group, and the kill signal once ctx is done; stopping an
-// ended process does nothing. The session's outcome is then a failure saying
-// crew stopped it.
+// session's process group, and the kill signal once ctx is done. The
+// session's outcome is then a failure saying crew stopped it. Stopping a
+// session that already ended does nothing.
 func (s *session) Stop(ctx context.Context) error {
+	select {
+	case <-s.done:
+		return nil
+	default:
+	}
 	s.stopped.Store(true)
 	if err := s.process.Stop(ctx); err != nil {
 		return fmt.Errorf("stop %s: %w", binary, err)

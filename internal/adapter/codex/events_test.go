@@ -98,6 +98,12 @@ var judgeCases = []judgeCase{
 		want: crew.Outcome{Reason: "exit code 1 after: I fixed the parser. The tests pass."},
 	},
 	{
+		name:   "a completed turn fails when codex exits non-zero, with nothing else to say",
+		stdout: `{"type":"turn.completed","usage":{}}` + "\n",
+		exit:   exitError{code: 1, msg: "exit status 1"},
+		want:   crew.Outcome{Reason: "exit code 1"},
+	},
+	{
 		name: "no turn event fails with the last error",
 		file: "interrupted.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
