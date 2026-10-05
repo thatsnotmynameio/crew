@@ -57,7 +57,13 @@ func (c *Checker) Script(branch string, s CheckScript) {
 func (c *Checker) ScriptCheck(branch, name string, s CheckScript) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.scripts[branch+"\x00"+name] = s
+	c.scripts[scriptKey(branch, name)] = s
+}
+
+// scriptKey is the key of the script ScriptCheck sets for the check called
+// name, of the action whose branch is branch.
+func scriptKey(branch, name string) string {
+	return branch + "\x00" + name
 }
 
 // Checks returns the checks run so far, in the order they started.
@@ -71,7 +77,7 @@ func (c *Checker) Checks() []port.Check {
 func (c *Checker) Check(ctx context.Context, check port.Check) error {
 	c.mu.Lock()
 	c.checks = append(c.checks, check)
-	s, ok := c.scripts[check.Branch+"\x00"+check.Name]
+	s, ok := c.scripts[scriptKey(check.Branch, check.Name)]
 	if !ok {
 		s = c.scripts[check.Branch]
 	}
