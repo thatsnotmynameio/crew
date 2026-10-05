@@ -207,14 +207,23 @@ func (r *recorder) unended(exit error) string {
 // exitText says how a process that did not exit 0 ended: "exit code N", or
 // the error itself, such as "signal: killed", when no code applies.
 func exitText(err error) string {
+	if code := exitCode(err); code > 0 {
+		return fmt.Sprintf("exit code %d", code)
+	}
+	return err.Error()
+}
+
+// exitCode is the exit status err carries, such as -1 for a signal, or 0
+// when it carries none.
+func exitCode(err error) int {
 	coded, ok := errors.AsType[interface {
 		error
 		ExitCode() int
 	}](err)
-	if ok && coded.ExitCode() > 0 {
-		return fmt.Sprintf("exit code %d", coded.ExitCode())
+	if !ok {
+		return 0
 	}
-	return err.Error()
+	return coded.ExitCode()
 }
 
 // oneLine joins s's words with single spaces, drops the control characters

@@ -16,10 +16,11 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the engine finds Narrator and UsageReporter by type
-// assertion.
+// Compile-time guards: the engine finds Preparer, Narrator and
+// UsageReporter by type assertion.
 var (
 	_ port.Harness       = (*harness)(nil)
+	_ port.Preparer      = (*harness)(nil)
 	_ port.Session       = (*session)(nil)
 	_ port.Narrator      = (*session)(nil)
 	_ port.UsageReporter = (*session)(nil)
@@ -43,16 +44,17 @@ type process interface {
 type spawner func(c proc.Command, stdout, stderr io.Writer) (process, error)
 
 // Factory returns the codex harness factory. Its section is an agent's
-// harness without its name: model, which is optional. Each session runs
-// through group, in its own process group, so a forced exit kills it, and
-// so does the git call that finds its git dirs.
+// harness without its name: model, which is optional. The harness it builds
+// is a port.Preparer that checks codex is on PATH and logged in. Each session
+// runs through group, in its own process group, so a forced exit kills it,
+// and so do the git call that finds its git dirs and the login check.
 func Factory(group *proc.Group) port.HarnessFactory {
 	return func(decode port.Decode) (port.Harness, error) {
 		var s settings
 		if err := decode(&s); err != nil {
 			return nil, err
 		}
-		return &harness{model: s.Model, spawn: groupSpawner(group), git: group.Run}, nil
+		return &harness{model: s.Model, spawn: groupSpawner(group), run: group.Run}, nil
 	}
 }
 
@@ -71,7 +73,7 @@ func groupSpawner(group *proc.Group) spawner {
 type harness struct {
 	model string
 	spawn spawner
-	git   proc.Runner
+	run   proc.Runner // runs git and codex login status
 }
 
 // Start implements port.Harness. It finds the git dirs of run.Dir, then runs
@@ -82,7 +84,7 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", binary, err)
 	}
-	dirs, err := gitDirs(ctx, h.git, run.Dir)
+	dirs, err := gitDirs(ctx, h.run, run.Dir)
 	if err != nil {
 		return nil, err
 	}

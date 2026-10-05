@@ -111,7 +111,7 @@ func build(t *testing.T, decode port.Decode, spawn *fakeSpawn, git *fakeGit) *ha
 		t.Fatalf("factory built %T, want *harness", built)
 	}
 	h.spawn = spawn.spawn
-	h.git = git.run
+	h.run = git.run
 	return h
 }
 
