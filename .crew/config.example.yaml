@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
-# crew's own rules: crew runs on this repository too. See docs/guide/crew.mdx.
+# crew's own rules: crew runs on this repository too.
 # Every label crew uses is `crew:<rule>:<state>`, so it says which rule an
 # issue is in and where it stands there. Each rule takes `crew:<rule>:ready`,
 # moves the issue to `crew:<rule>:in progress` and ends in

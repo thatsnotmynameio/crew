@@ -4,8 +4,6 @@ crew moves your GitHub issues through rules you declare in the repository. Each 
 
 crew only runs sessions and moves labels. Opening pull requests, reviewing and merging are your prompts' job and yours.
 
-The [docs](https://docs.page/thatsnotmynameio/crew) are the reference: the [Guide](https://docs.page/thatsnotmynameio/crew/guide/crew) to install, configure and run crew, and the [Develop](https://docs.page/thatsnotmynameio/crew/develop) tab to work on it.
-
 ## Quick start
 
 On macOS or Linux, on amd64 or arm64, with `gh` and `claude` on your `PATH` and logged in, install the latest release into `/usr/local/bin`. The command checks the download against the release's `checksums.txt`, and `sudo` asks for your password:
@@ -40,7 +38,7 @@ On macOS or Linux, on amd64 or arm64, with `gh` and `claude` on your `PATH` and 
 
 With Go 1.27 or later, `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z` builds a release instead, where `vX.Y.Z` is its tag from the [releases page](https://github.com/thatsnotmynameio/crew/releases).
 
-Commit a `.crew/config.yaml` that declares your agents and rules (the Guide has a complete example, and [`schema/config.schema.json`](schema/config.schema.json) gives your editor completion for every key), then run `crew` in the repository's main checkout:
+Commit a `.crew/config.yaml` that declares your agents and rules ([`.crew/config.example.yaml`](.crew/config.example.yaml) is a complete example, and [`schema/config.schema.json`](schema/config.schema.json) gives your editor completion for every key), then run `crew` in the repository's main checkout:
 
 ```sh
 crew
@@ -53,25 +51,24 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 | Path | What it does |
 | --- | --- |
 | `cmd/crew` | The `crew` binary. |
-| `internal/` | crew's engine, its adapters (`github`, `claude`, `git`), its TUI, and `bots` for `crew bots create`. See `AGENTS.md` and the Develop tab. |
+| `internal/` | crew's engine, its adapters (`github`, `claude`, `git`), its TUI, and `bots` for `crew bots create`. See `AGENTS.md`. |
 | `.crew/config.example.yaml` | crew's own rules: crew runs on this repository too, with rules for features, bugs, dependency triage of brainstormed features and the hand-offs between them, and labels that start with `crew:`. Copy it to `.crew/config.yaml`, which git ignores, to run crew here. |
 | `schema/config.schema.json` | The JSON Schema of `.crew/config.yaml`, for editors that complete and explain its keys. |
-| `docs.json`, `docs/` | The docs.page site (Guide and Develop tabs). Plans live in `docs/plans/` and are not published. |
+| `docs/` | Plans (`docs/plans/`), ideation and documented solutions (`docs/solutions/`). |
 | `STRATEGY.md` | What crew is for, who it serves, and its boundaries. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
-| `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. See the Guide. |
-| `.agents/skills/cw-create-issue/` | The `/cw-create-issue` skill: creates an issue with the label and filled template of one of the issue types it lists. This repository's own aid, with its own labels. See the Guide. |
-| `.agents/skills/cw-update-issue-plan/` | The `/cw-update-issue-plan` skill: copies the session's plan file into the issue it is working on, and can move it to one of its types' labels. See the Guide. |
-| `.agents/skills/cw-brainstorm/` | The `/cw-brainstorm` skill: runs the brainstorm prompt it holds for an issue, in your own session. See the Guide. |
+| `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. |
+| `.agents/skills/cw-create-issue/` | The `/cw-create-issue` skill: creates an issue with the label and filled template of one of the issue types it lists. This repository's own aid, with its own labels. |
+| `.agents/skills/cw-update-issue-plan/` | The `/cw-update-issue-plan` skill: copies the session's plan file into the issue it is working on, and can move it to one of its types' labels. |
+| `.agents/skills/cw-brainstorm/` | The `/cw-brainstorm` skill: runs the brainstorm prompt it holds for an issue, in your own session. |
 | `.github/ISSUE_TEMPLATE/` | The issue templates of crew's own work, one per kind of work; several labels may share one. |
 | `.compound-engineering/` | The Compound Engineering plugin's settings for this repository. |
 | `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`) and `actionlint`. Pull requests and pushes to `main`: `go` (gofmt, vet, lint, tests, coverage floors, govulncheck) `codacy` (uploads the coverage to Codacy) and `codacy gate` (repeats Codacy's verdict on a pull request), both when the variable `CODACY_ENABLED` is `true` and skipped for Dependabot. |
 | `.github/workflows/codacy-import.yml` | Pushes to `main` that change `.codacy/codacy.config.json`: applies it to Codacy. |
 | `.github/workflows/release.yml` | Pushes to `main`: when `VERSION` is new, GoReleaser builds crew and publishes it as `vX.Y.Z`, a GitHub release with the binaries and `checksums.txt`. |
 | `.goreleaser.yaml` | What a release builds: crew for macOS and Linux on amd64 and arm64, one archive per platform, and `checksums.txt`. |
-| `.github/workflows/docs.yml` | Pull requests: docs.page's check of `docs.json` and `docs/`. |
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
-| `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the docs CLI and the Go modules. |
+| `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the Codacy CLIs and the Go modules. |
 | `VERSION` | The version; a pull request that bumps it is a release. |
 
 The workflows call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA: shared behaviour changes there, once.

@@ -1,14 +1,14 @@
 ---
 # Codacy's analysis scope and engine options. Codacy reads this file from the
 # default branch only. Tools, patterns and their thresholds live in
-# .codacy/codacy.config.json; the quality gates are set in the Codacy UI
-# (docs/develop/quality.mdx). After editing this file, run
+# .codacy/codacy.config.json; the quality gates are set in the Codacy UI.
+# After editing this file, run
 # `pnpm exec codacy-analysis update-config` and commit both files together.
 #
 # Exclude only material that is not crew's source. Never exclude first-party
 # code to hide a finding: fix it, or suppress that one finding with a reason.
 exclude_paths:
-  # Installed packages for the docs and the Codacy CLIs.
+  # Installed packages: the Codacy CLIs.
   - "node_modules/**"
 engines:
   duplication:

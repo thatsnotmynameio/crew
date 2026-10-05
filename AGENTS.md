@@ -2,7 +2,7 @@
 
 Guidance for coding agents working in this repository. Claude Code reads it as `CLAUDE.md`, a symlink to this file.
 
-crew is a Go program that polls a tracker (GitHub) and moves each issue through the rules a repository declares on its labels in `.crew/config.yaml`, running one coding-agent session (Claude Code) per action in its own git worktree. Its users run it in their own repositories, where it takes the issues their code owners and bots opened. The docs site is the reference: `docs/guide/crew.mdx` for users, `docs/develop/` for contributors.
+crew is a Go program that polls a tracker (GitHub) and moves each issue through the rules a repository declares on its labels in `.crew/config.yaml`, running one coding-agent session (Claude Code) per action in its own git worktree. Its users run it in their own repositories, where it takes the issues their code owners and bots opened.
 
 ## Commands
 
@@ -18,19 +18,17 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...   # coverage profile
 go run github.com/vladopajic/go-test-coverage/v2@v2.19.0 --config=.testcoverage.yml   # total >= 90%
 git diff -U0 origin/main...HEAD | go run ./tools/diffcover -profile coverage.out   # changed lines >= 90%
-pnpm install          # once: the docs.page CLI and the Codacy CLIs
+pnpm install          # once: the Codacy CLIs
 pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Opengrep, Trivy, Checkov
-pnpm docs:check       # the docs site's links and MDX
-pnpm docs:preview     # live preview of the docs
 ```
 
 - **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
 - **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `codacy` job uploads the coverage to Codacy, which analyses the code on its own servers.
-- **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`; `docs/develop/quality.mdx` says which tool owns which finding.
+- **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`.
 
 ## Architecture
 
-Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
+Ports and adapters with a pure core.
 
 - `cmd/crew`: flags, signals, the repository root; builds the `git` workspace, the `shell` checker and `app.Options.Bots` (through `internal/bots`) and calls `app.Run`. `crew bots create <name>` is chosen before the flags and runs the `internal/bots` flow instead.
 - `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
@@ -59,26 +57,22 @@ Ports and adapters with a pure core; details in `docs/develop/architecture.mdx`.
 
 ## Docs
 
-- **Where:** [docs.page](https://docs.page) serves `docs.json` (tabs and sidebar) and `docs/**/*.mdx` from `main`. Only `.mdx` is published, so `docs/plans/` and `docs/ideation/` are not.
-- **Two tabs:** `Guide` (`/`) for users and `Develop` (`/develop`) for contributors.
-- **Keep it true:** a change in behaviour, configuration or messages updates the matching pages in the same pull request.
-- **MDX:** `{` and `<` outside code are JSX, so keep them in backticks or code blocks.
-- **Learnings:** `docs/solutions/` holds documented solutions to past problems (bugs, best practices, workflow patterns), by category, with YAML frontmatter (`module`, `tags`, `problem_type`). It is Markdown, so it is not published.
+- **Keep it true:** a change in behaviour, configuration or messages updates the README where it describes them, in the same pull request.
+- **Learnings:** `docs/solutions/` holds documented solutions to past problems (bugs, best practices, workflow patterns), by category, with YAML frontmatter (`module`, `tags`, `problem_type`).
 - **Capture:** After a solved, verified problem, automatically invoke the `ce-compound` skill with `mode:non-interactive` at the completion checkpoint only when the work produced durable project reasoning that is not readily recoverable from the final code, tests, types, comments, or existing documentation, and losing it would plausibly cause recurrence, material risk, or substantial rediscovery. Apply this counterfactual: if the learning document disappeared, would a future engineer reading the final implementation still be likely to repeat the mistake or redo substantial investigation? If not, do not invoke it. Completion, effort, and diff size alone are not enough. Capture at the checkpoint so a qualifying learning can ship in the PR that produced it, and only where the repository treats captured learnings as tracked, committed knowledge.
-- **Check:** `pnpm install` once, then `pnpm docs:check` (the Docs workflow runs it on every pull request) and `pnpm docs:preview`. Use pnpm, never npm: `package.json` pins the docs.page CLI and pnpm itself (`packageManager`), and `pnpm-lock.yaml` pins them by hash.
 
 ## Releases and CI
 
 - **Releases:** the version is `VERSION`, starting at `0.1.0`. A pull request that changes it is a release. After it merges to `main`, the Release workflow runs GoReleaser (`.goreleaser.yaml`), which publishes `vX.Y.Z` as a GitHub release with crew's binaries for macOS and Linux and `checksums.txt`, and publishes nothing unless every one built. Unlike the other workflows, it publishes without the shared release action and uses only its `check` mode. The version must be `MAJOR.MINOR.PATCH` and not below the latest release (CI's `version` check).
-- **Shared workflows:** CI, Docs, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
-- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). The `checks` ruleset requires `version`, `actionlint / actionlint`, `docs / docs.page check` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
-- **Codacy:** its jobs are off until the repository variable `CODACY_ENABLED` is `true`. Fix a finding; suppress only a genuine false positive, at the finding, naming the rule and the reason (`//nolint:<linter> // <reason>`). Never exclude crew's own source from analysis. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files. The gates live in Codacy's UI and are recorded in `docs/develop/quality.mdx`.
+- **Shared workflows:** CI, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
+- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). Use pnpm, never npm: `package.json` pins pnpm itself (`packageManager`). The `checks` ruleset requires `version`, `actionlint / actionlint` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
+- **Codacy:** its jobs are off until the repository variable `CODACY_ENABLED` is `true`. Fix a finding; suppress only a genuine false positive, at the finding, naming the rule and the reason (`//nolint:<linter> // <reason>`). Never exclude crew's own source from analysis. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files. The gates live in Codacy's UI.
 
 ## Agents
 
 - `AGENTS.md` and `.agents/` are the source; `CLAUDE.md`, `.claude/agents` and `.claude/skills` are symlinks to `AGENTS.md`, `.agents/agents` and `.agents/skills`. Edit the source.
-- `acceptance-tester` (`.agents/agents/acceptance-tester.md`) writes behavior tests from a plan's acceptance examples in its own worktree, without reading the implementation. It is linked into `~/.claude/agents/` to work in any repository; see `docs/guide/acceptance-tester.mdx`.
-- `cw-create-issue` (`.agents/skills/cw-create-issue/SKILL.md`) is the `/cw-create-issue` skill: it creates a GitHub issue with the label and filled issue template of one of the issue types its own table lists. The `cw-*` skills are this repository's own aids, not crew defaults: they do not read `.crew/config.yaml`, and their types, labels and prompts, this repository's, live in the skill files. Its directory is linked into `~/.claude/skills/` to work in any repository; see `docs/guide/create-issue.mdx`.
-- `cw-update-issue-plan` (`.agents/skills/cw-update-issue-plan/SKILL.md`) is the `/cw-update-issue-plan` skill: it copies the plan file the session's `ce-brainstorm` or `ce-plan` wrote into the body of the issue the session is working on, keeps the old body in a comment, and moves the issue to the label given or, without one, runs the prompt it holds, which moves it from `crew:brainstorm:in progress` to `crew:brainstorm:done`. Linked and documented like `cw-create-issue`.
-- `cw-brainstorm` (`.agents/skills/cw-brainstorm/SKILL.md`) is the `/cw-brainstorm` skill: it fills the brainstorm prompt it holds with an issue and runs it in the user's session. Linked and documented like `cw-create-issue`.
+- `acceptance-tester` (`.agents/agents/acceptance-tester.md`) writes behavior tests from a plan's acceptance examples in its own worktree, without reading the implementation. It is linked into `~/.claude/agents/` to work in any repository.
+- `cw-create-issue` (`.agents/skills/cw-create-issue/SKILL.md`) is the `/cw-create-issue` skill: it creates a GitHub issue with the label and filled issue template of one of the issue types its own table lists. The `cw-*` skills are this repository's own aids, not crew defaults: they do not read `.crew/config.yaml`, and their types, labels and prompts, this repository's, live in the skill files. Its directory is linked into `~/.claude/skills/` to work in any repository.
+- `cw-update-issue-plan` (`.agents/skills/cw-update-issue-plan/SKILL.md`) is the `/cw-update-issue-plan` skill: it copies the plan file the session's `ce-brainstorm` or `ce-plan` wrote into the body of the issue the session is working on, keeps the old body in a comment, and moves the issue to the label given or, without one, runs the prompt it holds, which moves it from `crew:brainstorm:in progress` to `crew:brainstorm:done`. Linked like `cw-create-issue`.
+- `cw-brainstorm` (`.agents/skills/cw-brainstorm/SKILL.md`) is the `/cw-brainstorm` skill: it fills the brainstorm prompt it holds with an issue and runs it in the user's session. Linked like `cw-create-issue`.
 - **Reports:** Write every report, summary, or handoff to the user through the `ce-noslop` skill. This applies when you are the top-level agent writing to the user, not when you are a subagent reporting to its caller. Do not apply it to code, config, verbatim quotes, or text the user asked to post as written.

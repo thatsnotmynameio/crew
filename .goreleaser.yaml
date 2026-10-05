@@ -1,7 +1,8 @@
 # What a release builds and publishes: crew for macOS and Linux on amd64 and
 # arm64, one tar.gz per platform, and checksums.txt. The Release workflow
 # (.github/workflows/release.yml) runs it and says when a release happens.
-# Try it locally with a snapshot build (docs/develop/index.mdx).
+# Try it locally with a snapshot build:
+# go run github.com/goreleaser/goreleaser/v2@v2.18.2 release --snapshot --clean
 version: 2
 
 project_name: crew
@@ -19,7 +20,7 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 # No version in the names: releases/latest/download/<name> is then a stable
-# URL for the install command in docs/guide/crew.mdx.
+# URL for the install command in the README.
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"

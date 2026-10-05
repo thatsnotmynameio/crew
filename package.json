@@ -1,15 +1,10 @@
 {
-  "name": "template-docs",
+  "name": "crew-tools",
   "private": true,
-  "description": "The docs.page CLI, pinned for the docs check (CI) and preview",
+  "description": "The Codacy CLIs, pinned for local analysis and the Codacy import (CI)",
   "packageManager": "pnpm@12.8.1",
-  "scripts": {
-    "docs:check": "docs.page check",
-    "docs:preview": "docs.page preview"
-  },
   "devDependencies": {
     "@codacy/analysis-cli": "0.24.0",
-    "@codacy/codacy-cloud-cli": "1.14.0",
-    "@docs.page/cli": "2.1.0"
+    "@codacy/codacy-cloud-cli": "1.14.0"
   }
 }
