@@ -147,10 +147,7 @@ func (m Model) boardRows(l boardLayout, cards []card, limit int) []string {
 	for _, cs := range byColumn {
 		tallest = max(tallest, len(cs))
 	}
-	shownCards := tallest
-	if limit >= 0 {
-		shownCards = min(tallest, limit)
-	}
+	shownCards := min(tallest, limit)
 	out := []string{m.boardRow(l, m.columnNames(l, byColumn), true), m.underline(l)}
 	for k := range shownCards {
 		out = append(out, m.cardRows(l, byColumn, k)...)
