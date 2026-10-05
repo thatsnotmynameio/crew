@@ -130,8 +130,12 @@ func Load(root string) (*Config, error) {
 }
 
 // parse turns the file's YAML document into a Config, reporting every error
-// it finds after the top level decodes.
+// it finds after the top level decodes. A file with old keys is refused with
+// all of them before anything is decoded.
 func parse(root *yaml.Node) (*Config, error) {
+	if err := oldKeys(root); err != nil {
+		return nil, err
+	}
 	var doc document
 	if err := decodeDocument(root, &doc); err != nil {
 		return nil, err
