@@ -88,8 +88,8 @@ type Run struct {
 	// is you.
 	Identity Identity
 	// CodeOwners and Bots are the code owners' logins and the logins of the
-	// bots the config names. The session gets them as CREW_BOSS and
-	// CREW_MATES, each joined by single spaces, so a prompt can name the
+	// bots the config names. The session gets them as CREW_CODE_OWNERS and
+	// CREW_BOTS, each joined by single spaces, so a prompt can name the
 	// issues crew takes.
 	CodeOwners []string
 	Bots       []string

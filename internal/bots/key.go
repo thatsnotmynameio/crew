@@ -77,18 +77,18 @@ func AppJWT(key PrivateKey, clientID string, now time.Time) (string, error) {
 func parseKey(key PrivateKey) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(key))
 	if block == nil {
-		return nil, errors.New("the mate's private key is not a PEM")
+		return nil, errors.New("the bot's private key is not a PEM")
 	}
 	if k, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
 		return k, nil
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, errors.New("the mate's private key is neither a PKCS#1 nor a PKCS#8 key")
+		return nil, errors.New("the bot's private key is neither a PKCS#1 nor a PKCS#8 key")
 	}
 	k, ok := parsed.(*rsa.PrivateKey)
 	if !ok {
-		return nil, errors.New("the mate's private key is not an RSA key")
+		return nil, errors.New("the bot's private key is not an RSA key")
 	}
 	return k, nil
 }

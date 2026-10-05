@@ -42,16 +42,16 @@ func (a *Acting) Failing() map[string]string {
 	return failing
 }
 
-// renewWarning is the warning of bot m, whose token renewal failed because
-// of err, or "" when err is nil.
-func renewWarning(m Bot, store *Store, err error) string {
+// renewWarning is the warning of bot m, whose file is at path and whose
+// token renewal failed because of err, or "" when err is nil.
+func renewWarning(m Bot, path string, err error) string {
 	switch {
 	case err == nil:
 		return ""
 	case errors.Is(err, ErrKeyRejected):
-		return tokenWarning(m, store, err)
+		return tokenWarning(m, path, err)
 	}
-	return fmt.Sprintf("mate %s could not renew its token: %s; its sessions and checks fail once the "+
+	return fmt.Sprintf("bot %s could not renew its token: %s; its sessions and checks fail once the "+
 		"current token expires, and crew tries again every minute", m.Name, oneLine(err.Error()))
 }
 

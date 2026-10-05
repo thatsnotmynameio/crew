@@ -113,9 +113,9 @@ func checkSavedLate(t *testing.T, r *flowRun, err error) {
 		t.Fatalf("Create = %v, want a runtime failure", err)
 	}
 	if strings.Contains(err.Error(), "saved nothing") {
-		t.Errorf("Create = %v, but the mate is saved", err)
+		t.Errorf("Create = %v, but the bot is saved", err)
 	}
-	for _, want := range []string{r.store.Path(testOwner, "tester"), "crew mates create tester again installs it"} {
+	for _, want := range []string{r.store.Path(testOwner, "tester"), "crew bots create tester again installs it"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Create = %v, want it to say %q", err, want)
 		}
@@ -132,8 +132,8 @@ func TestAStopDuringTheExchangeReportsTheSavedBot(t *testing.T) {
 				t.Errorf("Create = %v, want it to wrap the stop", err)
 			}
 			checkSavedLate(t, r, err)
-			if _, err := r.store.Load(testOwner, "tester"); err != nil {
-				t.Errorf("the mate is not saved: %v", err)
+			if _, _, err := r.store.Load(testOwner, "tester"); err != nil {
+				t.Errorf("the bot is not saved: %v", err)
 			}
 			if got := <-answered; got.status != http.StatusFound {
 				t.Errorf("/created answered %+v, want the redirect to the install page", got)
@@ -154,7 +154,7 @@ func TestAStopThatCancelsTheConversionSaysToDeleteTheApp(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "GitHub may have created the app crew-tester") {
 				t.Fatalf("Create = %v, want the conversion's failure", err)
 			}
-			if _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
+			if _, _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
 				t.Errorf("Load = %v, want nothing saved", err)
 			}
 			if got := <-answered; got.status != http.StatusInternalServerError {

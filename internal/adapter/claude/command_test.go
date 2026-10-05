@@ -3,6 +3,7 @@ package claude
 import (
 	"io"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/port"
@@ -28,11 +29,16 @@ func TestAE6CommandActsAsTheRunsIdentityAndNamesTheCodeOwnersAndTheBots(t *testi
 
 	for _, want := range []string{
 		"GH_CONFIG_DIR=/run/crew/developer",
-		"CREW_BOSS=octocat",
-		"CREW_MATES=crew-developer[bot] crew-ops[bot]",
+		"CREW_CODE_OWNERS=octocat",
+		"CREW_BOTS=crew-developer[bot] crew-ops[bot]",
 	} {
 		if !slices.Contains(got.Env, want) {
 			t.Errorf("env = %q, want it to hold %s", got.Env, want)
+		}
+	}
+	for _, e := range got.Env {
+		if strings.HasPrefix(e, "CREW_BOSS=") || strings.HasPrefix(e, "CREW_MATES=") {
+			t.Errorf("env holds %q, which crew no longer sets", e)
 		}
 	}
 	if want := []string{"GH_TOKEN", "GITHUB_TOKEN"}; !slices.Equal(got.Unset, want) {
@@ -47,7 +53,7 @@ func TestCommandAsYouIsTodaysPlusTheCodeOwnersAndTheBots(t *testing.T) {
 
 	want := []string{
 		"BASH_DEFAULT_TIMEOUT_MS=600000", "BASH_MAX_TIMEOUT_MS=1800000",
-		"CREW_BOSS=octocat hubot", "CREW_MATES=",
+		"CREW_CODE_OWNERS=octocat hubot", "CREW_BOTS=",
 	}
 	if !slices.Equal(got.Env, want) {
 		t.Errorf("env = %q, want %q", got.Env, want)

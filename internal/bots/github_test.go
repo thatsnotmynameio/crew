@@ -122,7 +122,7 @@ func TestRepoInstallationSignsAsTheBot(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		checkRequest(t, r, http.MethodGet, "/repos/thatsnotmynameio/crew/installation")
 		if iss := bearerClaims(t, r)["iss"]; iss != "Iv23client" {
-			t.Errorf("iss = %v, want the mate's client id", iss)
+			t.Errorf("iss = %v, want the bot's client id", iss)
 		}
 		reply(w, http.StatusOK, `{"id":99,"repository_selection":"selected","account":{"login":"thatsnotmynameio"}}`)
 	})

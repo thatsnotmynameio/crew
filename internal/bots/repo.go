@@ -40,7 +40,7 @@ func ResolveRepo(ctx context.Context, run proc.Runner, root string) (Repo, error
 	out, err := run(ctx, proc.Command{Name: "gh", Args: []string{"api", "repos/{owner}/{repo}"}, Dir: root})
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
-			return Repo{}, envErrorf("crew mates needs the gh CLI, which is not on PATH: %w", err)
+			return Repo{}, envErrorf("crew's bots need the gh CLI, which is not on PATH: %w", err)
 		}
 		return Repo{}, envErrorf("gh could not resolve the repository's GitHub repository; "+
 			"check that gh is logged in (run `gh auth login`) and that the repository has a GitHub remote: %w", err)

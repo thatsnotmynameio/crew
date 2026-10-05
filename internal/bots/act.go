@@ -61,7 +61,7 @@ type ActOptions struct {
 	// Getenv reads crew's environment, such as os.Getenv.
 	Getenv func(string) string
 	// Step, when not nil, is called with each step of Act just before it
-	// starts, in plain words such as "making mate ops act", so a slow start
+	// starts, in plain words such as "making bot ops act", so a slow start
 	// shows what it waits on. nil reports nothing.
 	Step func(step string)
 
@@ -78,7 +78,7 @@ type ActingBot struct {
 	Login string
 	// Env holds the KEY=value entries that make a session or a check act as
 	// the bot: GH_CONFIG_DIR of its sessions' directory, and the git config
-	// of the co-author hook and of yours pinned credential helper when
+	// of the co-author hook and of your pinned credential helper when
 	// they apply.
 	Env []string
 	// Unset are the inherited variables a child acting as the bot must not
@@ -109,7 +109,6 @@ type Acting struct {
 
 	dir      string
 	repo     string
-	store    *Store
 	mint     mintFunc
 	mu       sync.Mutex // held while a token is renewed and its files written
 	acted    []*acted
@@ -137,6 +136,8 @@ type cannot struct {
 // acted is a bot that acts, and where its token is.
 type acted struct {
 	bot Bot
+	// path is the bot's file, the one Store.Load read.
+	path string
 	// inst is its installation on the repository.
 	inst int64
 	// sessionsDir is the gh config directory of its sessions and checks.
@@ -170,12 +171,12 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	if o.Getenv == nil {
 		o.Getenv = os.Getenv
 	}
-	o.step("resolving the repository for the mates")
+	o.step("resolving the repository for the bots")
 	repo, err := ResolveRepo(ctx, o.Run, o.Root)
 	if err != nil {
 		return nil, err
 	}
-	o.step("checking git for the mates")
+	o.step("checking git for the bots")
 	git, err := probeGit(ctx, o.Run, o.Root)
 	if err != nil {
 		return nil, err
@@ -184,18 +185,18 @@ func Act(ctx context.Context, o ActOptions) (*Acting, error) {
 	if err != nil {
 		return nil, err
 	}
-	o.step("making a private directory for the mates' tokens")
+	o.step("making a private directory for the bots' tokens")
 	dir, err := runDir(o)
 	if err != nil {
 		return nil, err
 	}
-	a := &Acting{dir: dir, repo: repo.Name, store: o.Store, mint: o.mint}
+	a := &Acting{dir: dir, repo: repo.Name, mint: o.mint}
 	if a.mint == nil {
 		a.mint = o.Client.AccessToken
 	}
 	r := resolver{o: o, repo: repo, git: git, loginDir: loginDir, a: a}
 	for _, name := range o.Names {
-		o.step(fmt.Sprintf("making mate %s act", name))
+		o.step(fmt.Sprintf("making bot %s act", name))
 		if err := r.resolve(ctx, name); err != nil {
 			_ = os.RemoveAll(dir)
 			return nil, err
@@ -223,12 +224,12 @@ func runDir(o ActOptions) (string, error) {
 		parent = os.TempDir()
 	}
 	if within(o.Root, parent) {
-		return "", envErrorf("crew would keep the mates' tokens in %s, inside the repository %s; "+
+		return "", envErrorf("crew would keep the bots' tokens in %s, inside the repository %s; "+
 			"set XDG_RUNTIME_DIR or TMPDIR to a directory outside it", parent, o.Root)
 	}
-	dir, err := os.MkdirTemp(parent, "crew-mates-")
+	dir, err := os.MkdirTemp(parent, "crew-bots-")
 	if err != nil {
-		return "", envErrorf("make a directory for the mates' tokens: %w", err)
+		return "", envErrorf("make a directory for the bots' tokens: %w", err)
 	}
 	return dir, nil
 }
@@ -264,26 +265,26 @@ type resolver struct {
 // resolve makes the bot called name act, or warns why it cannot. Its error
 // is a file it could not write.
 func (r *resolver) resolve(ctx context.Context, name string) error {
-	m, inst, why := r.find(ctx, name)
+	s, why := r.find(ctx, name)
 	if why.warning != "" {
 		r.unable(name, why)
 		return nil
 	}
-	s := &acted{bot: m, inst: inst, sessionsDir: filepath.Join(r.a.dir, name, "sessions")}
+	s.sessionsDir = filepath.Join(r.a.dir, name, "sessions")
 	if name == r.o.Default {
 		s.writerDir = filepath.Join(r.a.dir, name, "crew")
 	}
 	g, err := r.a.mintChecked(ctx, s)
 	if err != nil {
-		r.unable(name, tokenCannot(m, r.o.Store, err))
+		r.unable(name, tokenCannot(s.bot, s.path, err))
 		return nil
 	}
 	for _, dir := range s.dirs() {
 		if err := os.MkdirAll(dir, dirPerm); err != nil {
-			return fmt.Errorf("make the gh directory of mate %s: %w", name, err)
+			return fmt.Errorf("make the gh directory of bot %s: %w", name, err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, ghConfigFile), []byte(ghConfig), filePerm); err != nil {
-			return fmt.Errorf("write the gh config of mate %s: %w", name, err)
+			return fmt.Errorf("write the gh config of bot %s: %w", name, err)
 		}
 	}
 	if err := s.write(g); err != nil {
@@ -305,49 +306,50 @@ func (r *resolver) unable(name string, why cannot) {
 
 // find loads the bot called name and finds its installation on the
 // repository, or returns why it cannot act; its warning is "" when it can.
-func (r *resolver) find(ctx context.Context, name string) (Bot, int64, cannot) {
-	m, err := r.o.Store.Load(r.repo.Owner, name)
+// The bot it returns has no directory yet.
+func (r *resolver) find(ctx context.Context, name string) (*acted, cannot) {
+	m, path, err := r.o.Store.Load(r.repo.Owner, name)
 	switch {
 	case errors.Is(err, ErrNoBot):
-		return Bot{}, 0, cannot{fmt.Sprintf("mate %s has no key on this machine for %s; "+
-			"run `crew mates create %s` in this repository", name, r.repo.Owner, name), reasonNoKey}
+		return nil, cannot{fmt.Sprintf("bot %s has no key on this machine for %s; "+
+			"run `crew bots create %s` in this repository", name, r.repo.Owner, name), reasonNoKey}
 	case err != nil:
-		return Bot{}, 0, cannot{fmt.Sprintf("mate %s cannot act: %v; "+
-			"delete its file and run `crew mates create %s` in this repository", name, err, name), reasonBadKeyFile}
+		return nil, cannot{fmt.Sprintf("bot %s cannot act: %v; "+
+			"delete its file and run `crew bots create %s` in this repository", name, err, name), reasonBadKeyFile}
 	case !validSlug(m.Slug):
-		return Bot{}, 0, cannot{fmt.Sprintf("mate %s cannot act: its file %s holds an invalid app slug; "+
-			"delete it and run `crew mates create %s` in this repository", name, r.o.Store.Path(m.Owner, name), name),
+		return nil, cannot{fmt.Sprintf("bot %s cannot act: its file %s holds an invalid app slug; "+
+			"delete it and run `crew bots create %s` in this repository", name, path, name),
 			reasonBadKeyFile}
 	}
 	r.a.Logins = append(r.a.Logins, botLogin(m.Slug))
 	inst, err := r.o.Client.RepoInstallation(ctx, m, r.repo.Owner, r.repo.Name)
 	if errors.Is(err, ErrNotInstalled) {
-		return Bot{}, 0, cannot{fmt.Sprintf("mate %s is not installed on %s/%s; "+
-			"run `crew mates create %s` in this repository", name, r.repo.Owner, r.repo.Name, name), reasonNotInstalled}
+		return nil, cannot{fmt.Sprintf("bot %s is not installed on %s/%s; "+
+			"run `crew bots create %s` in this repository", name, r.repo.Owner, r.repo.Name, name), reasonNotInstalled}
 	}
 	if err != nil {
-		return Bot{}, 0, tokenCannot(m, r.o.Store, err)
+		return nil, tokenCannot(m, path, err)
 	}
-	return m, inst.ID, cannot{}
+	return &acted{bot: m, path: path, inst: inst.ID}, cannot{}
 }
 
-// tokenCannot is why bot m cannot act, as it could not get a token because
-// of err.
-func tokenCannot(m Bot, store *Store, err error) cannot {
+// tokenCannot is why bot m, whose file is at path, cannot act, as it could
+// not get a token because of err.
+func tokenCannot(m Bot, path string, err error) cannot {
 	if errors.Is(err, ErrKeyRejected) {
-		return cannot{tokenWarning(m, store, err), reasonKeyRejected}
+		return cannot{tokenWarning(m, path, err), reasonKeyRejected}
 	}
-	return cannot{tokenWarning(m, store, err), reasonNoToken}
+	return cannot{tokenWarning(m, path, err), reasonNoToken}
 }
 
-// tokenWarning is the warning of bot m, which could not get a token
-// because of err.
-func tokenWarning(m Bot, store *Store, err error) string {
+// tokenWarning is the warning of bot m, whose file is at path, which could
+// not get a token because of err.
+func tokenWarning(m Bot, path string, err error) string {
 	if errors.Is(err, ErrKeyRejected) {
-		return fmt.Sprintf("GitHub rejected the key of mate %s; delete %s and "+
-			"run `crew mates create %s` in this repository", m.Name, store.Path(m.Owner, m.Name), m.Name)
+		return fmt.Sprintf("GitHub rejected the key of bot %s; delete %s and "+
+			"run `crew bots create %s` in this repository", m.Name, path, m.Name)
 	}
-	return fmt.Sprintf("mate %s could not get a token: %v; crew acts as the boss in its place this run", m.Name, err)
+	return fmt.Sprintf("bot %s could not get a token: %v; crew acts as you in its place this run", m.Name, err)
 }
 
 // bot returns s's acting bot, whose token is token. It warns when the
@@ -360,11 +362,11 @@ func (r *resolver) bot(ctx context.Context, s *acted, token Token) ActingBot {
 		if err == nil {
 			entries = hookEntries(coAuthorTrailer(s.bot.Slug, id))
 		} else {
-			r.a.Warnings = append(r.a.Warnings, fmt.Sprintf("mate %s's commits carry no co-author: "+
+			r.a.Warnings = append(r.a.Warnings, fmt.Sprintf("bot %s's commits carry no co-author: "+
 				"crew could not find the user id of %s (%v); restart crew to try again", s.bot.Name, login, err))
 		}
 	} else {
-		r.a.Warnings = append(r.a.Warnings, fmt.Sprintf("mate %s's commits carry no co-author: "+
+		r.a.Warnings = append(r.a.Warnings, fmt.Sprintf("bot %s's commits carry no co-author: "+
 			"%s is older than git 2.54, which runs the co-author hook; update git", s.bot.Name, r.git.version))
 	}
 	if r.git.helper != "" {
@@ -388,7 +390,7 @@ func (r *resolver) bot(ctx context.Context, s *acted, token Token) ActingBot {
 func (a *Acting) Renew(ctx context.Context, name string) error {
 	i := slices.IndexFunc(a.acted, func(s *acted) bool { return s.bot.Name == name })
 	if i < 0 {
-		return fmt.Errorf("mate %s does not act this run", name)
+		return fmt.Errorf("bot %s does not act this run", name)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -446,9 +448,9 @@ func (a *Acting) renew(ctx context.Context, s *acted) error {
 	if err == nil {
 		err = s.write(g)
 	}
-	a.renewals.record(s.bot.Name, renewWarning(s.bot, a.store, err))
+	a.renewals.record(s.bot.Name, renewWarning(s.bot, s.path, err))
 	if err != nil {
-		return fmt.Errorf("renew the token of mate %s: %w", s.bot.Name, err)
+		return fmt.Errorf("renew the token of bot %s: %w", s.bot.Name, err)
 	}
 	return nil
 }
@@ -510,11 +512,11 @@ func (s *acted) write(g Grant) error {
 	for _, dir := range s.dirs() {
 		tmp, err := writeTemp(dir, "hosts", data)
 		if err != nil {
-			return fmt.Errorf("write the token of mate %s: %w", s.bot.Name, err)
+			return fmt.Errorf("write the token of bot %s: %w", s.bot.Name, err)
 		}
 		if err := os.Rename(tmp, filepath.Join(dir, ghHostsFile)); err != nil {
 			_ = os.Remove(tmp)
-			return fmt.Errorf("write the token of mate %s: %w", s.bot.Name, err)
+			return fmt.Errorf("write the token of bot %s: %w", s.bot.Name, err)
 		}
 	}
 	s.expires = g.ExpiresAt

@@ -4,7 +4,7 @@
 // Usage:
 //
 //	crew [--plain] [--version]
-//	crew mates create <name>
+//	crew bots create <name>
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a TUI;
 // otherwise, or with --plain, it prints timestamped event lines. The first
@@ -13,7 +13,7 @@
 // exits 0 on a clean stop, 1 on a runtime failure or a forced exit, and 2 on
 // a config or environment error.
 //
-// crew mates create <name> creates a bot, a GitHub identity of crew's own,
+// crew bots create <name> creates a bot, a GitHub identity of crew's own,
 // for the GitHub repository of the git repository it runs in, and installs
 // it there. It exits 0 once the bot is ready, 2 when nothing was asked of
 // GitHub yet, and 1 on any later failure.
@@ -59,13 +59,13 @@ func run(args []string) int {
 	stdout, stderr := os.Stdout, os.Stderr
 	// The subcommand comes before crew's own flags, so every other argument
 	// list is parsed as it always was.
-	if len(args) > 0 && args[0] == "mates" {
+	if len(args) > 0 && args[0] == "bots" {
 		return runBots(args[1:], stdout, stderr)
 	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew mates create <name>\n\nFlags:\n")
+		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew bots create <name>\n\nFlags:\n")
 		flags.PrintDefaults()
 	}
 	plain := flags.Bool("plain", false, "print timestamped event lines instead of the TUI")

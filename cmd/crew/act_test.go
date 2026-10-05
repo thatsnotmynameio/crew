@@ -22,7 +22,7 @@ func TestAppBotsGivesEachBotItsIdentityAndCrewTheDefaults(t *testing.T) {
 				Unset: []string{"GH_TOKEN"}},
 		},
 		Logins:   []string{"crew-ops[bot]", "crew-developer[bot]", "crew-qa[bot]"},
-		Warnings: []string{"mate qa has no key on this machine"},
+		Warnings: []string{"bot qa has no key on this machine"},
 	}
 	m := appBots(a)
 	ops, dev := m.Identities["ops"], m.Identities["developer"]
@@ -36,7 +36,7 @@ func TestAppBotsGivesEachBotItsIdentityAndCrewTheDefaults(t *testing.T) {
 		t.Errorf("Writer = %+v, want ops through crew's own directory", m.Writer)
 	}
 	// This Acting minted no token, so the renewal says ops does not act.
-	if err := m.Writer.Renew(context.Background()); err == nil || !strings.Contains(err.Error(), "mate ops") {
+	if err := m.Writer.Renew(context.Background()); err == nil || !strings.Contains(err.Error(), "bot ops") {
 		t.Errorf("Writer.Renew = %v, want it to renew ops", err)
 	}
 	if !slices.Equal(m.Warnings, a.Warnings) || !slices.Equal(m.Logins, a.Logins) || m.Close == nil {
@@ -83,7 +83,7 @@ func TestActingBotsReportsItsStepsOnTheChecksContext(t *testing.T) {
 	if _, err := actingBots(run, t.TempDir())(ctx, "ops", []string{"ops"}); err == nil {
 		t.Fatal("actingBots = nil, want gh's failure")
 	}
-	if want := []string{"resolving the repository for the mates"}; !slices.Equal(steps, want) {
+	if want := []string{"resolving the repository for the bots"}; !slices.Equal(steps, want) {
 		t.Errorf("steps = %q, want %q", steps, want)
 	}
 }
@@ -92,7 +92,7 @@ func TestActingBotsWithoutNamesActsAsNone(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	m, err := actingBots(nil, t.TempDir())(context.Background(), "", nil)
 	if err != nil || len(m.Identities) != 0 || m.Writer.Login != "" {
-		t.Fatalf("actingBots = %+v, %v; want no mate", m, err)
+		t.Fatalf("actingBots = %+v, %v; want no bot", m, err)
 	}
 	m.Close()
 }

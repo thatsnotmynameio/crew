@@ -14,10 +14,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// botsUsage is the one form crew mates takes.
-const botsUsage = "usage: crew mates create <name>"
+// botsUsage is the one form crew bots takes.
+const botsUsage = "usage: crew bots create <name>"
 
-// runBots runs crew mates with args, the arguments after "mates", and
+// runBots runs crew bots with args, the arguments after "bots", and
 // returns crew's exit code. It takes exactly create <name>, checks the name
 // before anything else, then creates the bot on the GitHub repository of
 // the git repository it runs in. The first Ctrl-C, SIGTERM or SIGHUP stops
@@ -37,7 +37,7 @@ func runBots(args []string, stdout, stderr io.Writer) int {
 	var group proc.Group
 	root, err := repoRoot(ctx, group.Run)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "crew mates create must run inside a git repository: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "crew bots create must run inside a git repository: %v\n", err)
 		return app.ExitConfig
 	}
 	store, err := bots.DefaultStore()

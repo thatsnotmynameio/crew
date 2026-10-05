@@ -18,13 +18,13 @@ const dirPerm = 0o700
 
 // ErrNoBot is the error Store.Load wraps when the owner has no bot of
 // that name on this machine.
-var ErrNoBot = errors.New("no such mate")
+var ErrNoBot = errors.New("no such bot")
 
 // Bot is a crew bot: a private GitHub App and the key to sign as it. Its
 // JSON is the bot's file. It holds no client or webhook secret, which
 // nothing uses.
 type Bot struct {
-	// Name is the bot's name, as given to crew mates create.
+	// Name is the bot's name, as given to crew bots create.
 	Name string `json:"name"`
 	// Owner is the login of the account that owns the app.
 	Owner string `json:"owner"`
@@ -50,82 +50,107 @@ type Bot struct {
 
 // Store keeps bots as files under its root, one per bot at
 // <root>/<owner>/<name>.json, the owner's login in lower case because
-// GitHub logins ignore case.
+// GitHub logins ignore case. It also reads, never writes, the bots an
+// older crew saved under its old root.
 type Store struct {
-	root string
+	root, old string
 }
 
-// NewStore returns the store rooted at root.
-func NewStore(root string) *Store {
-	return &Store{root: root}
+// NewStore returns the store rooted at root that also reads the bots
+// under old, or none when old is "".
+func NewStore(root, old string) *Store {
+	return &Store{root: root, old: old}
 }
 
 // DefaultStore returns the store in your user config directory,
-// <user config dir>/crew/mates, outside any repository. Without a user
-// config directory it returns an EnvError.
+// <user config dir>/crew/bots, outside any repository, which also reads
+// the bots older crews saved in <user config dir>/crew/mates (KTD9).
+// Without a user config directory it returns an EnvError.
 func DefaultStore() (*Store, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		return nil, envErrorf("find where to keep mates: %w", err)
+		return nil, envErrorf("find where to keep bots: %w", err)
 	}
-	return NewStore(filepath.Join(dir, "crew", "mates")), nil
+	return NewStore(filepath.Join(dir, "crew", "bots"), filepath.Join(dir, "crew", "mates")), nil
 }
 
-// Path returns the path of the file of owner's bot called name.
+// Path returns the path Save writes the file of owner's bot called name
+// to, under the store's root.
 func (s *Store) Path(owner, name string) string {
-	return filepath.Join(s.root, strings.ToLower(owner), name+".json")
+	return botPath(s.root, owner, name)
 }
 
-// Load returns owner's bot called name. When there is none it returns an
-// error wrapping ErrNoBot; a file it cannot read, or one that is not a
-// bot, is an EnvError naming the file but never quoting it.
-func (s *Store) Load(owner, name string) (Bot, error) {
-	path := s.Path(owner, name)
-	data, err := os.ReadFile(path) //nolint:gosec // the path is the store's, built from an owner login and a bot name
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return Bot{}, fmt.Errorf("mate %s of %s: %w", name, owner, ErrNoBot)
-	case err != nil:
-		return Bot{}, envErrorf("read the mate: %w", err)
+// botPath returns the path of the file of owner's bot called name under
+// root.
+func botPath(root, owner, name string) string {
+	return filepath.Join(root, strings.ToLower(owner), name+".json")
+}
+
+// Load returns owner's bot called name and the path of the file it read:
+// the one under the store's root, else the one under its old root. When
+// there is neither it returns an error wrapping ErrNoBot. A file it cannot
+// read, or one that is not a bot, is an EnvError naming the file but never
+// quoting it, returned with the file's path, so the message that tells you
+// which file to delete names the one crew read.
+func (s *Store) Load(owner, name string) (Bot, string, error) {
+	for _, root := range []string{s.root, s.old} {
+		if root == "" {
+			continue
+		}
+		path := botPath(root, owner, name)
+		data, err := os.ReadFile(path) //nolint:gosec // the path is the store's, built from an owner login and a bot name
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return Bot{}, path, envErrorf("read the bot: %w", err)
+		}
+		m, err := decodeBot(path, data)
+		return m, path, err
 	}
+	return Bot{}, "", fmt.Errorf("bot %s of %s: %w", name, owner, ErrNoBot)
+}
+
+// decodeBot returns the bot whose file, at path, holds data.
+func decodeBot(path string, data []byte) (Bot, error) {
 	var m Bot
 	if json.Unmarshal(data, &m) != nil {
 		// The decoder's message can quote the file, and the file holds a key.
-		return Bot{}, envErrorf("the mate file %s is not valid JSON", path)
+		return Bot{}, envErrorf("the bot file %s is not valid JSON", path)
 	}
 	switch {
 	case m.PrivateKey == "":
-		return Bot{}, envErrorf("the mate file %s has no private key", path)
+		return Bot{}, envErrorf("the bot file %s has no private key", path)
 	case m.AppID == 0:
-		return Bot{}, envErrorf("the mate file %s has no app id", path)
+		return Bot{}, envErrorf("the bot file %s has no app id", path)
 	}
 	return m, nil
 }
 
-// Save writes m's file, creating its directories with mode 0700 and the
-// file with mode 0600. It writes a temporary file and links it into place
-// only when the bot has no file yet: a crash leaves no half-written bot,
-// and a bot is never overwritten.
+// Save writes m's file under the store's root, creating its directories
+// with mode 0700 and the file with mode 0600. It writes a temporary file
+// and links it into place only when the bot has no file there yet: a crash
+// leaves no half-written bot, and a bot is never overwritten.
 func (s *Store) Save(m Bot) error {
 	path := s.Path(m.Owner, m.Name)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
-		return fmt.Errorf("save the mate: %w", err)
+		return fmt.Errorf("save the bot: %w", err)
 	}
 	data, err := json.MarshalIndent(m, "", "  ") //nolint:gosec // G117: the bot's file is where its key is kept (R9)
 	if err != nil {
-		return fmt.Errorf("save the mate: %w", err)
+		return fmt.Errorf("save the bot: %w", err)
 	}
 	tmp, err := writeTemp(dir, m.Name, data)
 	if err != nil {
-		return fmt.Errorf("save the mate: %w", err)
+		return fmt.Errorf("save the bot: %w", err)
 	}
 	defer func() { _ = os.Remove(tmp) }()
 	if err := os.Link(tmp, path); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf("save the mate: the mate %s of %s already exists at %s", m.Name, m.Owner, path)
+			return fmt.Errorf("save the bot: the bot %s of %s already exists at %s", m.Name, m.Owner, path)
 		}
-		return fmt.Errorf("save the mate: %w", err)
+		return fmt.Errorf("save the bot: %w", err)
 	}
 	return nil
 }

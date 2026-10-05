@@ -18,7 +18,7 @@ const (
 	hookMinor = 54
 )
 
-// The keys of yours git config whose helper crew pins (KTD8).
+// The keys of your git config whose helper crew pins (KTD8).
 const (
 	helperKey       = "credential.helper"
 	githubHelperKey = "credential.https://github.com.helper"
@@ -27,7 +27,7 @@ const (
 // ghHelperSuffix ends a credential helper that runs gh.
 const ghHelperSuffix = " auth git-credential"
 
-// gitSetup is what crew learned of yours git in the repository.
+// gitSetup is what crew learned of your git in the repository.
 type gitSetup struct {
 	// version is git's own line, such as "git version 2.55.0".
 	version string
@@ -169,7 +169,7 @@ func loginGhDir(getenv func(string) string) (string, error) {
 	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return "", envErrorf("find the boss's gh config directory: %w", err)
+		return "", envErrorf("find your gh config directory: %w", err)
 	}
 	return abs, nil
 }

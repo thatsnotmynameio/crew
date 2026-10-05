@@ -22,7 +22,7 @@ const (
 // form POST from the browser. html/template escapes every value.
 const formPage = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>crew: create the mate {{.Name}}</title></head>
+<head><meta charset="utf-8"><title>crew: create the bot {{.Name}}</title></head>
 <body onload="document.forms[0].submit()">
 <form method="post" action="{{.Action}}">
 <input type="hidden" name="manifest" value="{{.Manifest}}">
@@ -134,7 +134,7 @@ func (s *server) created(ctx context.Context, w http.ResponseWriter, r *http.Req
 	defer s.mu.Unlock()
 	switch {
 	case s.saved:
-		http.Error(w, "the mate "+s.form.Name+" exists; crew created it already.", http.StatusOK)
+		http.Error(w, "the bot "+s.form.Name+" exists; crew created it already.", http.StatusOK)
 		return
 	case s.handled:
 		http.Error(w, "crew already handled GitHub's redirect; see crew's output.", http.StatusConflict)
@@ -144,7 +144,7 @@ func (s *server) created(ctx context.Context, w http.ResponseWriter, r *http.Req
 	m, err := s.exchange(ctx, q.Get("code"))
 	s.done <- outcome{bot: m, err: err}
 	if err != nil {
-		http.Error(w, "crew could not finish creating the mate; see crew's output.", http.StatusInternalServerError)
+		http.Error(w, "crew could not finish creating the bot; see crew's output.", http.StatusInternalServerError)
 		return
 	}
 	s.saved = true

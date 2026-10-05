@@ -33,8 +33,9 @@ func New(group *proc.Group) *Checker {
 
 // Check implements port.Checker. The command runs as sh's -c argument,
 // acting as check.Identity, with CREW_ISSUE_REF, CREW_ISSUE_KEY,
-// CREW_ISSUE_URL, CREW_BRANCH, CREW_BOSS and CREW_MATES set, and stdout and
-// stderr on one pipe, so its output keeps the order it was printed in.
+// CREW_ISSUE_URL, CREW_BRANCH, CREW_CODE_OWNERS and CREW_BOTS set, and
+// stdout and stderr on one pipe, so its output keeps the order it was
+// printed in.
 func (c *Checker) Check(ctx context.Context, check port.Check) error {
 	env := slices.Clone(check.Identity.Env)
 	env = append(env,
@@ -42,8 +43,8 @@ func (c *Checker) Check(ctx context.Context, check port.Check) error {
 		"CREW_ISSUE_KEY="+check.IssueKey,
 		"CREW_ISSUE_URL="+check.IssueURL,
 		"CREW_BRANCH="+check.Branch,
-		"CREW_BOSS="+strings.Join(check.CodeOwners, " "),
-		"CREW_MATES="+strings.Join(check.Bots, " "),
+		"CREW_CODE_OWNERS="+strings.Join(check.CodeOwners, " "),
+		"CREW_BOTS="+strings.Join(check.Bots, " "),
 	)
 	p, err := c.group.Start(proc.Command{
 		Name: "sh", Args: []string{"-c", check.Command}, Dir: check.Dir,

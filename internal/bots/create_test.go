@@ -58,15 +58,15 @@ func TestCreateMakesAndInstallsANewBotForAnOrganization(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	p := r.loopback(t, "/organizations/thatsnotmynameio/settings/apps/new")
-	m, err := r.store.Load(testOwner, "tester")
-	if err != nil || m.BotLogin != "crew-tester[bot]" || m.AppID != 7 {
-		t.Errorf("saved mate = %+v, %v; want crew-tester[bot]", m, err)
+	m, from, err := r.store.Load(testOwner, "tester")
+	if err != nil || m.BotLogin != "crew-tester[bot]" || m.AppID != 7 || from != r.store.Path(testOwner, "tester") {
+		t.Errorf("saved bot = %+v at %s, %v; want crew-tester[bot] under the new root", m, from, err)
 	}
 	if conversions, lookups, tokens := r.api.counts(); conversions != 1 || lookups != 3 || tokens != 1 {
 		t.Errorf("GitHub got %d conversions, %d lookups, %d token calls; want 1, 3, 1", conversions, lookups, tokens)
 	}
 	r.says(t, p.base+"/", testInstallURL, `"Only select repositories"`)
-	if got, want := r.lastLine(), "crew: mate tester is ready on thatsnotmynameio/crew as crew-tester[bot]"; got != want {
+	if got, want := r.lastLine(), "crew: bot tester is ready on thatsnotmynameio/crew as crew-tester[bot]"; got != want {
 		t.Errorf("last line = %q, want %q", got, want)
 	}
 	closed(t, p.base)
@@ -78,8 +78,8 @@ func TestCreateForAUserRepositoryPostsToTheUsersPage(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	r.loopback(t, "/settings/apps/new")
-	if _, err := r.store.Load("matheus", "tester"); err != nil {
-		t.Errorf("the mate is not saved for its user: %v", err)
+	if _, _, err := r.store.Load("matheus", "tester"); err != nil {
+		t.Errorf("the bot is not saved for its user: %v", err)
 	}
 }
 
@@ -92,9 +92,9 @@ func TestCreateRecordsTheAppNameGitHubCreated(t *testing.T) {
 	if got := r.browser.pages[0].manifest.Name; got != "crew-dev" {
 		t.Errorf("suggested %q, want crew-dev", got)
 	}
-	m, err := r.store.Load(testOwner, "dev")
+	m, _, err := r.store.Load(testOwner, "dev")
 	if err != nil || m.Slug != "thatsnotmyname-crew-dev" || m.BotLogin != "thatsnotmyname-crew-dev[bot]" {
-		t.Errorf("saved mate = %+v, %v; want the renamed app", m, err)
+		t.Errorf("saved bot = %+v, %v; want the renamed app", m, err)
 	}
 	if got := r.browser.redirects[0].location; got != testWeb+"/apps/thatsnotmyname-crew-dev/installations/new" {
 		t.Errorf("redirected to %q, want the renamed app's install page", got)
@@ -113,8 +113,8 @@ func TestCreateKeepsTheBotWhenTheInstallationNeverComes(t *testing.T) {
 		t.Fatalf("Create = %v, want a failure carrying the install URL", err)
 	}
 	r.says(t, testInstallURL)
-	if _, err := r.store.Load(testOwner, "tester"); err != nil {
-		t.Errorf("the mate was not kept: %v", err)
+	if _, _, err := r.store.Load(testOwner, "tester"); err != nil {
+		t.Errorf("the bot was not kept: %v", err)
 	}
 }
 
@@ -128,8 +128,8 @@ func TestCreateStoppedWhileWaitingForTheInstallationKeepsTheBot(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), testInstallURL) {
 		t.Fatalf("Create = %v, want the stop and the install URL", err)
 	}
-	if _, err := r.store.Load(testOwner, "tester"); err != nil {
-		t.Errorf("the mate was not kept: %v", err)
+	if _, _, err := r.store.Load(testOwner, "tester"); err != nil {
+		t.Errorf("the bot was not kept: %v", err)
 	}
 }
 
@@ -148,8 +148,28 @@ func TestCreateInstallsASavedBotWithoutCreatingAnApp(t *testing.T) {
 	if conversions, _, tokens := r.api.counts(); conversions != 0 || tokens != 1 {
 		t.Errorf("GitHub got %d conversions and %d token calls, want 0 and 1", conversions, tokens)
 	}
-	if got := r.lastLine(); got != "crew: mate tester is ready on thatsnotmynameio/crew as crew-tester[bot]" {
+	if got := r.lastLine(); got != "crew: bot tester is ready on thatsnotmynameio/crew as crew-tester[bot]" {
 		t.Errorf("last line = %q", got)
+	}
+}
+
+func TestCreateInstallsABotSavedByAnOlderCrewWithoutCreatingAnApp(t *testing.T) {
+	r := newRun(t, testOwner, true)
+	r.api.installedAt = 2
+	if err := r.old.Save(testBot(testOwner)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.create(t, "tester"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(r.browser.pages) != 0 || len(r.browser.opened) != 1 || r.browser.opened[0] != testInstallURL {
+		t.Errorf("loaded %d pages and opened %v, want only the install page", len(r.browser.pages), r.browser.opened)
+	}
+	if conversions, _, tokens := r.api.counts(); conversions != 0 || tokens != 1 {
+		t.Errorf("GitHub got %d conversions and %d token calls, want 0 and 1", conversions, tokens)
+	}
+	if _, err := os.Stat(r.store.Path(testOwner, "tester")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Create wrote the bot under the new root: %v", err)
 	}
 }
 
@@ -164,8 +184,8 @@ func TestCreateMakesANewAppWhenOnlyAnotherOwnerHasTheBot(t *testing.T) {
 	if conversions, _, _ := r.api.counts(); len(r.browser.pages) != 1 || conversions != 1 {
 		t.Errorf("loaded %d pages and converted %d apps, want one new app", len(r.browser.pages), conversions)
 	}
-	if _, err := r.store.Load("matheus", "tester"); err != nil {
-		t.Errorf("no mate for matheus: %v", err)
+	if _, _, err := r.store.Load("matheus", "tester"); err != nil {
+		t.Errorf("no bot for matheus: %v", err)
 	}
 }
 
@@ -186,7 +206,7 @@ func TestCreateSavesNothingWhenGitHubNeverRedirects(t *testing.T) {
 			if err == nil || isEnvError(err) {
 				t.Fatalf("Create = %v, want a runtime failure", err)
 			}
-			if _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
+			if _, _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
 				t.Errorf("Load = %v, want nothing saved", err)
 			}
 			closed(t, r.browser.pages[0].base)
@@ -203,14 +223,14 @@ func TestCreateFailsWhenTheConversionFails(t *testing.T) {
 	}
 	// GitHub created the app before its redirect, so its key is lost.
 	advice := "GitHub may have created the app crew-tester for " + testOwner + " already: delete it at " +
-		testWeb + "/organizations/" + testOwner + "/settings/apps before running crew mates create tester again"
+		testWeb + "/organizations/" + testOwner + "/settings/apps before running crew bots create tester again"
 	if !strings.Contains(err.Error(), advice) {
 		t.Errorf("Create = %v, want the advice %q", err, advice)
 	}
 	if got := r.browser.redirects[0]; got.status == http.StatusFound {
 		t.Errorf("/created answered %+v, want no redirect to the install page", got)
 	}
-	if _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
+	if _, _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
 		t.Errorf("Load = %v, want nothing saved", err)
 	}
 }
@@ -261,10 +281,10 @@ func TestCreateForAnotherAccountKeepsTheBotThereAndFails(t *testing.T) {
 			t.Errorf("Create = %v, want it to name %q", err, want)
 		}
 	}
-	if _, err := r.store.Load("matheus", "tester"); err != nil {
-		t.Errorf("the mate was not kept for matheus: %v", err)
+	if _, _, err := r.store.Load("matheus", "tester"); err != nil {
+		t.Errorf("the bot was not kept for matheus: %v", err)
 	}
-	if _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
+	if _, _, err := r.store.Load(testOwner, "tester"); !errors.Is(err, ErrNoBot) {
 		t.Errorf("Load for the repository's owner = %v, want none", err)
 	}
 }
@@ -279,7 +299,7 @@ func TestCreateStopsAtOnceWhenGitHubRejectsTheKey(t *testing.T) {
 	if err == nil || isEnvError(err) {
 		t.Fatalf("Create = %v, want a runtime failure", err)
 	}
-	for _, want := range []string{r.store.Path(testOwner, "tester"), "deleted on GitHub", "crew mates create tester"} {
+	for _, want := range []string{r.store.Path(testOwner, "tester"), "deleted on GitHub", "crew bots create tester"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Create = %v, want it to say %q", err, want)
 		}
@@ -289,6 +309,18 @@ func TestCreateStopsAtOnceWhenGitHubRejectsTheKey(t *testing.T) {
 	}
 	if _, lookups, _ := r.api.counts(); lookups != 1 {
 		t.Errorf("GitHub got %d lookups, want 1", lookups)
+	}
+}
+
+func TestARejectedKeySavedByAnOlderCrewNamesItsOldFile(t *testing.T) {
+	r := newRun(t, testOwner, true)
+	r.api.lookupStatus = http.StatusUnauthorized
+	if err := r.old.Save(testBot(testOwner)); err != nil {
+		t.Fatal(err)
+	}
+	err := r.create(t, "tester")
+	if path := r.old.Path(testOwner, "tester"); err == nil || !strings.Contains(err.Error(), "delete "+path) {
+		t.Errorf("Create = %v, want it to name %s", err, path)
 	}
 }
 
@@ -320,7 +352,7 @@ func TestCreateWarnsWhenTheBotCanActOnEveryRepository(t *testing.T) {
 	}
 	r.says(t, `crew: choose "Only select repositories" and select crew`,
 		"crew: warning: crew-tester is installed on every repository of thatsnotmynameio")
-	if !strings.HasPrefix(r.lastLine(), "crew: mate tester is ready") {
+	if !strings.HasPrefix(r.lastLine(), "crew: bot tester is ready") {
 		t.Errorf("last line = %q, want the success", r.lastLine())
 	}
 }
@@ -341,8 +373,8 @@ func TestCreateFailsWhenTheBotsFileAppearedMeanwhile(t *testing.T) {
 		!strings.Contains(err.Error(), "delete") {
 		t.Fatalf("Create = %v, want a failure naming the created app to delete", err)
 	}
-	if m, err := r.store.Load(testOwner, "tester"); err != nil || m.AppID != 1234 {
-		t.Errorf("the existing mate's file changed: %+v, %v", m, err)
+	if m, _, err := r.store.Load(testOwner, "tester"); err != nil || m.AppID != 1234 {
+		t.Errorf("the existing bot's file changed: %+v, %v", m, err)
 	}
 	if got := r.browser.redirects[0]; got.status == http.StatusFound {
 		t.Errorf("/created answered %+v, want no redirect to the install page", got)
@@ -359,8 +391,8 @@ func TestCreateFailsWhenNoTokenIsMinted(t *testing.T) {
 	if err == nil || isEnvError(err) || !strings.Contains(err.Error(), testInstallURL) {
 		t.Fatalf("Create = %v, want a failure carrying the install URL", err)
 	}
-	if _, err := r.store.Load(testOwner, "tester"); err != nil {
-		t.Errorf("the mate was not kept: %v", err)
+	if _, _, err := r.store.Load(testOwner, "tester"); err != nil {
+		t.Errorf("the bot was not kept: %v", err)
 	}
 }
 
@@ -389,9 +421,9 @@ func TestCreateChecksTheEnvironmentBeforeOpeningTheBrowser(t *testing.T) {
 		ranGh  bool
 		saying string
 	}{
-		"invalid name":          {bot: "Tester", saying: "lowercase", setup: func(*testing.T, *flowRun) {}},
-		"gh fails":              {bot: "tester", saying: "gh auth login", setup: failingGh, ranGh: true},
-		"unreadable saved mate": {bot: "tester", saying: "not valid JSON", setup: brokenBot, ranGh: true},
+		"invalid name":         {bot: "Tester", saying: "lowercase", setup: func(*testing.T, *flowRun) {}},
+		"gh fails":             {bot: "tester", saying: "gh auth login", setup: failingGh, ranGh: true},
+		"unreadable saved bot": {bot: "tester", saying: "not valid JSON", setup: brokenBot, ranGh: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRun(t, testOwner, true)
@@ -415,6 +447,6 @@ func TestCreateNeverPrintsTheKey(t *testing.T) {
 	}
 	data, err := os.ReadFile(r.store.Path(testOwner, "tester"))
 	if err != nil || !strings.Contains(string(data), "PRIVATE KEY") {
-		t.Errorf("the mate's file does not hold the key: %v", err)
+		t.Errorf("the bot's file does not hold the key: %v", err)
 	}
 }

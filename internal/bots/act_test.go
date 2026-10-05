@@ -45,8 +45,8 @@ func TestActGivesAStoredInstalledBotItsGhDirectory(t *testing.T) {
 	if !slices.Equal(gitConfig(ops.Env), hook) {
 		t.Errorf("git config = %q, want the co-author hook alone", gitConfig(ops.Env))
 	}
-	want := []string{"mate developer has no key on this machine for thatsnotmynameio; " +
-		"run `crew mates create developer` in this repository"}
+	want := []string{"bot developer has no key on this machine for thatsnotmynameio; " +
+		"run `crew bots create developer` in this repository"}
 	if !slices.Equal(a.Warnings, want) {
 		t.Errorf("Warnings = %q, want %q", a.Warnings, want)
 	}
@@ -133,36 +133,36 @@ var unusableBots = []struct {
 	want, reason  string
 }{
 	{name: "AE10 no file", reason: "no key",
-		want: "mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository"},
+		want: "bot ops has no key on this machine for thatsnotmynameio; run `crew bots create ops` in this repository"},
 	{name: "unreadable file", file: writeOpsFile("{"), reason: "bad key file",
-		want: "mate ops cannot act: the mate file <path> is not valid JSON; " +
-			"delete its file and run `crew mates create ops` in this repository"},
+		want: "bot ops cannot act: the bot file <path> is not valid JSON; " +
+			"delete its file and run `crew bots create ops` in this repository"},
 	{name: "invalid slug", file: saveOpsWithSlug("Crew Ops"), reason: "bad key file",
-		want: "mate ops cannot act: its file <path> holds an invalid app slug; " +
-			"delete it and run `crew mates create ops` in this repository"},
+		want: "bot ops cannot act: its file <path> holds an invalid app slug; " +
+			"delete it and run `crew bots create ops` in this repository"},
 	{name: "AE3 not installed", saved: true, installStatus: http.StatusNotFound, reason: "not installed",
-		want: "mate ops is not installed on thatsnotmynameio/crew; run `crew mates create ops` in this repository"},
+		want: "bot ops is not installed on thatsnotmynameio/crew; run `crew bots create ops` in this repository"},
 	{name: "key rejected", saved: true, installStatus: http.StatusUnauthorized, reason: "key rejected",
-		want: "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
+		want: "GitHub rejected the key of bot ops; delete <path> and run `crew bots create ops` in this repository"},
 	{name: "installation lookup fails", saved: true, installStatus: http.StatusInternalServerError,
-		reason: "no token", want: "mate ops could not get a token: find the installation of ops on " +
+		reason: "no token", want: "bot ops could not get a token: find the installation of ops on " +
 			"thatsnotmynameio/crew: GitHub answered 500 Internal Server Error: Internal Server Error; " +
-			"crew acts as the boss in its place this run"},
+			"crew acts as you in its place this run"},
 	{name: "key rejected by the token call", saved: true, tokenStatus: http.StatusUnauthorized,
 		reason: "key rejected",
-		want:   "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
+		want:   "GitHub rejected the key of bot ops; delete <path> and run `crew bots create ops` in this repository"},
 	{name: "token call fails", saved: true, tokenStatus: http.StatusInternalServerError, reason: "no token",
-		want: "mate ops could not get a token: mint a token of ops for crew: GitHub answered 500 Internal Server Error: " +
-			"Server Error; crew acts as the boss in its place this run"},
+		want: "bot ops could not get a token: mint a token of ops for crew: GitHub answered 500 Internal Server Error: " +
+			"Server Error; crew acts as you in its place this run"},
 	{name: "more granted", saved: true, granted: map[string]string{
 		"actions": permRead, "administration": permWrite, "checks": permRead, "contents": permRead,
 		"issues": permWrite, "metadata": permRead, "pull_requests": permWrite, "statuses": permRead,
-	}, reason: "no token", want: "mate ops could not get a token: GitHub granted actions:read administration:write " +
+	}, reason: "no token", want: "bot ops could not get a token: GitHub granted actions:read administration:write " +
 		"checks:read contents:read issues:write metadata:read pull_requests:write statuses:read, not the " + asked +
-		" crew asked for; crew acts as the boss in its place this run"},
+		" crew asked for; crew acts as you in its place this run"},
 	{name: "fewer granted", saved: true, granted: map[string]string{"metadata": permRead}, reason: "no token",
-		want: "mate ops could not get a token: GitHub granted metadata:read, not the " + asked +
-			" crew asked for; crew acts as the boss in its place this run"},
+		want: "bot ops could not get a token: GitHub granted metadata:read, not the " + asked +
+			" crew asked for; crew acts as you in its place this run"},
 }
 
 func TestActWarnsAndActsAsYouForAnUnusableBot(t *testing.T) {
@@ -188,7 +188,7 @@ func checkUnusable(t *testing.T, a *Acting, want, reason, path string, saved boo
 	t.Helper()
 	want = strings.ReplaceAll(want, "<path>", path)
 	if len(a.Bots) != 0 || !slices.Equal(a.Warnings, []string{want}) {
-		t.Errorf("Act = %+v, %q; want no mate and %q", a.Bots, a.Warnings, want)
+		t.Errorf("Act = %+v, %q; want no bot and %q", a.Bots, a.Warnings, want)
 	}
 	if wantUnable := map[string]string{"ops": reason}; !maps.Equal(a.Unable, wantUnable) {
 		t.Errorf("Unable = %q, want %q", a.Unable, wantUnable)
@@ -223,7 +223,7 @@ func TestActRefusesARunDirectoryInsideTheRepository(t *testing.T) {
 		t.Errorf("Act = %v, want an EnvError saying the directory is inside the repository", err)
 	}
 	// The boot log ends with the step that failed.
-	if len(steps) == 0 || steps[len(steps)-1] != "making a private directory for the mates' tokens" {
+	if len(steps) == 0 || steps[len(steps)-1] != "making a private directory for the bots' tokens" {
 		t.Errorf("steps = %q, want them to end with making the tokens' directory", steps)
 	}
 	if entries, _ := os.ReadDir(r.opts.TempDir); len(entries) != 0 {
@@ -255,7 +255,7 @@ func TestActFailsWhenGhCannotResolveTheRepository(t *testing.T) {
 	if entries, _ := os.ReadDir(r.opts.TempDir); len(entries) != 0 {
 		t.Errorf("Act left %v", entries)
 	}
-	if want := []string{"resolving the repository for the mates"}; !slices.Equal(steps, want) {
+	if want := []string{"resolving the repository for the bots"}; !slices.Equal(steps, want) {
 		t.Errorf("steps = %q, want %q, the step that failed last", steps, want)
 	}
 }
@@ -282,10 +282,10 @@ func TestActReportsEachStepAsItStarts(t *testing.T) {
 	// Neither bot is stored here, so both end up warnings, yet each had its
 	// line: its step started.
 	if len(a.Warnings) != 2 {
-		t.Errorf("Warnings = %q, want one for each mate", a.Warnings)
+		t.Errorf("Warnings = %q, want one for each bot", a.Warnings)
 	}
-	want := []string{"resolving the repository for the mates", "checking git for the mates",
-		"making a private directory for the mates' tokens", "making mate alice act", "making mate bob act"}
+	want := []string{"resolving the repository for the bots", "checking git for the bots",
+		"making a private directory for the bots' tokens", "making bot alice act", "making bot bob act"}
 	if !slices.Equal(steps, want) {
 		t.Errorf("steps = %q, want %q", steps, want)
 	}
@@ -298,14 +298,14 @@ func TestActWithoutACoAuthorStillActs(t *testing.T) {
 		want   string
 	}{
 		{name: "lookup fails", script: func(r *actRun) { r.api.userBody = `{"message":"oops"}` },
-			want: "mate ops's commits carry no co-author: crew could not find the user id of crew-ops[bot] " +
+			want: "bot ops's commits carry no co-author: crew could not find the user id of crew-ops[bot] " +
 				"(GitHub gave crew-ops[bot] the user id 0); restart crew to try again"},
 		{name: "non-numeric id", script: func(r *actRun) { r.api.userBody = `{"id":"456"}` },
-			want: "mate ops's commits carry no co-author: crew could not find the user id of crew-ops[bot] " +
+			want: "bot ops's commits carry no co-author: crew could not find the user id of crew-ops[bot] " +
 				"(find the user of crew-ops[bot]: GitHub API: unreadable reply: json: cannot unmarshal string " +
 				"into Go struct field .id of type int64); restart crew to try again"},
 		{name: "old git", script: func(r *actRun) { r.git = "git version 2.53.0\n" },
-			want: "mate ops's commits carry no co-author: git version 2.53.0 is older than git 2.54, " +
+			want: "bot ops's commits carry no co-author: git version 2.53.0 is older than git 2.54, " +
 				"which runs the co-author hook; update git"},
 	}
 	for _, tt := range tests {
@@ -391,7 +391,7 @@ func TestRenewRewritesBothDirectoriesOfTheDefaultBot(t *testing.T) {
 		}
 	}
 	if err := a.Renew(context.Background(), "developer"); err == nil {
-		t.Error("Renew of a mate that does not act = nil error, want one")
+		t.Error("Renew of a bot that does not act = nil error, want one")
 	}
 }
 
@@ -456,7 +456,7 @@ func TestRenewReportsItsFailureUntilARenewalSucceeds(t *testing.T) {
 		{name: "GitHub fails", fail: errors.New("GitHub answered 502 Bad Gateway"),
 			want: renewFailure("GitHub answered 502 Bad Gateway")},
 		{name: "key rejected", fail: fmt.Errorf("%w: GitHub answered 401", ErrKeyRejected),
-			want: "GitHub rejected the key of mate ops; delete <path> and run `crew mates create ops` in this repository"},
+			want: "GitHub rejected the key of bot ops; delete <path> and run `crew bots create ops` in this repository"},
 		{name: "one line, no control character", fail: errors.New("bad\x1b[31m gate\tway\r\nsecond line"),
 			want: renewFailure("bad[31m gateway")},
 	}

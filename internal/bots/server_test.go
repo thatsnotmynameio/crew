@@ -39,8 +39,8 @@ func TestASecondRedirectIsToldTheBotExists(t *testing.T) {
 	if err := r.create(t, "tester"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if second.status != http.StatusOK || !strings.Contains(second.body, "the mate tester exists") {
-		t.Errorf("the second /created answered %+v, want the mate exists", second)
+	if second.status != http.StatusOK || !strings.Contains(second.body, "the bot tester exists") {
+		t.Errorf("the second /created answered %+v, want the bot exists", second)
 	}
 	if conversions, _, _ := r.api.counts(); conversions != 1 {
 		t.Errorf("GitHub got %d conversions, want 1", conversions)

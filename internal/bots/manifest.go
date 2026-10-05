@@ -36,7 +36,7 @@ func NewManifest(name, owner, redirectURL string) Manifest {
 		Name:        AppName(name),
 		URL:         homepage,
 		RedirectURL: redirectURL,
-		Description: "crew mate " + name + " for " + owner + ": an identity of crew, the coding-agent runner.",
+		Description: "crew bot " + name + " for " + owner + ": an identity of crew, the coding-agent runner.",
 		Permissions: permissions(),
 	}
 }

@@ -149,6 +149,7 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 type actRun struct {
 	api     *actAPI
 	store   *Store
+	old     *Store
 	opts    ActOptions
 	env     map[string]string
 	git     string
@@ -159,9 +160,10 @@ type actRun struct {
 // newActRun returns a run that makes names act, the first one the default.
 func newActRun(t *testing.T, names ...string) *actRun {
 	t.Helper()
+	store, old := oldAndNew(t)
 	r := &actRun{
-		api: &actAPI{}, store: NewStore(t.TempDir()),
-		env: map[string]string{"HOME": "/home/boss"}, git: "git version 2.55.0\n",
+		api: &actAPI{}, store: store, old: old,
+		env: map[string]string{"HOME": "/home/you"}, git: "git version 2.55.0\n",
 	}
 	r.opts = ActOptions{
 		Run: r.run, Store: r.store, Root: t.TempDir(), Names: names, TempDir: t.TempDir(),
@@ -192,9 +194,15 @@ func (r *actRun) run(_ context.Context, c proc.Command) (proc.Output, error) {
 // saveOps stores the bot ops for thatsnotmynameio.
 func (r *actRun) saveOps(t *testing.T) {
 	t.Helper()
+	saveOpsIn(t, r.store)
+}
+
+// saveOpsIn saves the bot ops for thatsnotmynameio in s.
+func saveOpsIn(t *testing.T, s *Store) {
+	t.Helper()
 	m := testBot(testOwner)
 	m.Name, m.ClientID, m.Slug, m.AppName, m.BotLogin = "ops", opsClientID, opsSlug, opsSlug, opsLogin
-	if err := r.store.Save(m); err != nil {
+	if err := s.Save(m); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -203,13 +211,7 @@ func (r *actRun) saveOps(t *testing.T) {
 func writeOpsFile(data string) func(t *testing.T, r *actRun) {
 	return func(t *testing.T, r *actRun) {
 		t.Helper()
-		path := r.store.Path(testOwner, "ops")
-		if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(data), filePerm); err != nil {
-			t.Fatal(err)
-		}
+		writeBotFile(t, r.store.Path(testOwner, "ops"), data)
 	}
 }
 
@@ -229,7 +231,7 @@ func saveOpsWithSlug(slug string) func(t *testing.T, r *actRun) {
 // renewFailure is the warning of the bot ops, whose renewal failed with
 // the error text cause.
 func renewFailure(cause string) string {
-	return "mate ops could not renew its token: " + cause + "; its sessions and checks fail once the " +
+	return "bot ops could not renew its token: " + cause + "; its sessions and checks fail once the " +
 		"current token expires, and crew tries again every minute"
 }
 

@@ -47,23 +47,23 @@ func envErrorf(format string, args ...any) error {
 func CheckName(name string) error {
 	switch {
 	case name == "":
-		return envErrorf("a mate's name cannot be empty")
+		return envErrorf("a bot's name cannot be empty")
 	case len(name) > maxName:
-		return envErrorf("the mate name %q is %d characters long; the limit is %d", name, len(name), maxName)
+		return envErrorf("the bot name %q is %d characters long; the limit is %d", name, len(name), maxName)
 	}
 	for _, r := range name {
 		if !nameRune(r) {
-			return envErrorf("the mate name %q holds %q; a name holds only lowercase letters, digits and hyphens",
+			return envErrorf("the bot name %q holds %q; a name holds only lowercase letters, digits and hyphens",
 				name, r)
 		}
 	}
 	switch {
 	case strings.HasPrefix(name, "-"):
-		return envErrorf("the mate name %q starts with a hyphen; it must start with a letter or digit", name)
+		return envErrorf("the bot name %q starts with a hyphen; it must start with a letter or digit", name)
 	case strings.HasSuffix(name, "-"):
-		return envErrorf("the mate name %q ends with a hyphen; it must end with a letter or digit", name)
+		return envErrorf("the bot name %q ends with a hyphen; it must end with a letter or digit", name)
 	case strings.Contains(name, "--"):
-		return envErrorf("the mate name %q holds two hyphens in a row", name)
+		return envErrorf("the bot name %q holds two hyphens in a row", name)
 	}
 	return nil
 }

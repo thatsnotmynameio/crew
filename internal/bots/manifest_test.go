@@ -34,7 +34,7 @@ func TestManifestAsksForCrewsPermissionsAndNoWebhook(t *testing.T) {
 	}
 	desc, _ := got["description"].(string)
 	if !strings.Contains(desc, "tester") || !strings.Contains(desc, "thatsnotmynameio") {
-		t.Errorf("description %q names neither the mate nor the owner", desc)
+		t.Errorf("description %q names neither the bot nor the owner", desc)
 	}
 	wantPerms := map[string]any{
 		"issues": "write", "pull_requests": "write", "contents": "read", "checks": "read",

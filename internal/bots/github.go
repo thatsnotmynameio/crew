@@ -26,11 +26,11 @@ const maxErrorBody = 1 << 20
 
 // ErrNotInstalled is the error Client.RepoInstallation wraps when the bot
 // is not installed on the repository: GitHub answered 404.
-var ErrNotInstalled = errors.New("the mate is not installed on the repository")
+var ErrNotInstalled = errors.New("the bot is not installed on the repository")
 
 // ErrKeyRejected is the error a call signed as a bot wraps when GitHub
 // answered 401: it rejected the bot's key, as when the app was deleted.
-var ErrKeyRejected = errors.New("GitHub rejected the mate's key")
+var ErrKeyRejected = errors.New("GitHub rejected the bot's key")
 
 // Client calls GitHub's REST API for the bots. A call signed as a bot
 // mints a fresh app JWT for its request, since one lives under 10 minutes

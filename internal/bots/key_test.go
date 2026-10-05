@@ -128,12 +128,12 @@ func TestPrivateKeyNeverPrints(t *testing.T) {
 	m := Bot{Name: "tester", Owner: "thatsnotmynameio", AppID: 1, PrivateKey: key}
 	body := strings.Split(string(key), "\n")[1]
 	outs := map[string]string{
-		"%v of the mate": fmt.Sprintf("%v", m), "%v of its pointer": fmt.Sprintf("%v", &m),
+		"%v of the bot": fmt.Sprintf("%v", m), "%v of its pointer": fmt.Sprintf("%v", &m),
 		"String": key.String(), "GoString": key.GoString(),
 		"a wrapping error": fmt.Errorf("save %v: %w", m, errors.New("boom")).Error(),
 	}
 	for _, verb := range []string{"%+v", "%#v", "%s", "%q", "%x", "%d"} {
-		outs[verb+" of the mate"] = fmt.Sprintf(verb, m)
+		outs[verb+" of the bot"] = fmt.Sprintf(verb, m)
 		outs[verb+" of the key"] = fmt.Sprintf(verb, key)
 	}
 	for how, out := range outs {
@@ -142,7 +142,7 @@ func TestPrivateKeyNeverPrints(t *testing.T) {
 			t.Errorf("%s printed the key", how)
 		}
 	}
-	if got := outs["%v of the mate"]; !strings.Contains(got, "[private key]") {
-		t.Errorf("%%v of the mate shows no [private key]")
+	if got := outs["%v of the bot"]; !strings.Contains(got, "[private key]") {
+		t.Errorf("%%v of the bot shows no [private key]")
 	}
 }

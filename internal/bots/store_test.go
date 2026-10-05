@@ -32,7 +32,7 @@ func mode(t *testing.T, path string) fs.FileMode {
 
 func TestSavedBotLoadsBackFromItsOwnersDirectory(t *testing.T) {
 	root := t.TempDir()
-	s := NewStore(root)
+	s := NewStore(root, "")
 	m := testBot("ThatsNotMyNameIO")
 	if err := s.Save(m); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -48,18 +48,18 @@ func TestSavedBotLoadsBackFromItsOwnersDirectory(t *testing.T) {
 		t.Errorf("directory mode = %v, want 0700", got)
 	}
 	for _, owner := range []string{"ThatsNotMyNameIO", "thatsnotmynameio"} {
-		got, err := s.Load(owner, "tester")
+		got, from, err := s.Load(owner, "tester")
 		if err != nil {
 			t.Fatalf("Load(%s): %v", owner, err)
 		}
-		if got != m {
-			t.Errorf("Load(%s) = %+v, want %+v", owner, got, m)
+		if got != m || from != path {
+			t.Errorf("Load(%s) = %+v from %s, want %+v from %s", owner, got, from, m, path)
 		}
 	}
 }
 
 func TestLoadingAMissingBotSaysThereIsNone(t *testing.T) {
-	_, err := NewStore(t.TempDir()).Load("thatsnotmynameio", "tester")
+	_, _, err := NewStore(t.TempDir(), t.TempDir()).Load("thatsnotmynameio", "tester")
 	if !errors.Is(err, ErrNoBot) {
 		t.Errorf("Load = %v, want ErrNoBot", err)
 	}
@@ -72,15 +72,10 @@ func TestLoadingAnInvalidBotNamesItsFileNotItsContents(t *testing.T) {
 		"no app id":    {`{"name": "tester", "private_key": "the key secret"}`, "no app id"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := NewStore(t.TempDir())
+			s := NewStore(t.TempDir(), "")
 			path := s.Path("thatsnotmynameio", "tester")
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			_, err := s.Load("thatsnotmynameio", "tester")
+			writeBotFile(t, path, tc.content)
+			_, _, err := s.Load("thatsnotmynameio", "tester")
 			if _, ok := errors.AsType[*EnvError](err); !ok {
 				t.Fatalf("Load = %v, want an *EnvError", err)
 			}
@@ -93,18 +88,18 @@ func TestLoadingAnInvalidBotNamesItsFileNotItsContents(t *testing.T) {
 }
 
 func TestLoadingAnUnreadableBotIsAnEnvironmentError(t *testing.T) {
-	s := NewStore(t.TempDir())
+	s := NewStore(t.TempDir(), "")
 	if err := os.MkdirAll(s.Path("thatsnotmynameio", "tester"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Load("thatsnotmynameio", "tester")
+	_, _, err := s.Load("thatsnotmynameio", "tester")
 	if _, ok := errors.AsType[*EnvError](err); !ok || errors.Is(err, ErrNoBot) {
 		t.Errorf("Load of a directory = %v, want an *EnvError that is not ErrNoBot", err)
 	}
 }
 
 func TestSavingOverAnExistingBotFailsAndKeepsTheFirst(t *testing.T) {
-	s := NewStore(t.TempDir())
+	s := NewStore(t.TempDir(), "")
 	first := testBot("thatsnotmynameio")
 	if err := s.Save(first); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -117,14 +112,14 @@ func TestSavingOverAnExistingBotFailsAndKeepsTheFirst(t *testing.T) {
 	second := first
 	second.AppID = 8
 	if err := s.Save(second); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("second Save = %v, want an error saying the mate already exists", err)
+		t.Errorf("second Save = %v, want an error saying the bot already exists", err)
 	}
 	after, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(after) != string(before) {
-		t.Errorf("the second Save changed the first mate's file")
+		t.Errorf("the second Save changed the first bot's file")
 	}
 	entries, err := os.ReadDir(filepath.Dir(path))
 	if err != nil {
@@ -140,7 +135,7 @@ func TestSavingWhereNoDirectoryCanBeMadeFails(t *testing.T) {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewStore(file).Save(testBot("thatsnotmynameio")); err == nil {
+	if err := NewStore(file, "").Save(testBot("thatsnotmynameio")); err == nil {
 		t.Error("Save under a file = nil, want an error")
 	}
 }
@@ -156,8 +151,80 @@ func TestDefaultStoreLivesInTheUserConfigDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultStore: %v", err)
 	}
-	if want := filepath.Join(dir, "crew", "mates", "o", "n.json"); s.Path("o", "n") != want {
+	if want := filepath.Join(dir, "crew", "bots", "o", "n.json"); s.Path("o", "n") != want {
 		t.Errorf("Path = %s, want %s", s.Path("o", "n"), want)
+	}
+	// A bot saved by an older crew, under crew/mates, still loads.
+	old := NewStore(filepath.Join(dir, "crew", "mates"), "")
+	if err := old.Save(testBot("o")); err != nil {
+		t.Fatal(err)
+	}
+	if _, from, err := s.Load("o", "tester"); err != nil || from != old.Path("o", "tester") {
+		t.Errorf("Load = %s, %v; want the bot under crew/mates, from %s", from, err, old.Path("o", "tester"))
+	}
+}
+
+// writeBotFile writes content as the bot file at path, making its
+// directories.
+func writeBotFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), filePerm); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// oldAndNew returns a store rooted in a new temporary directory, its old
+// root another, and a store of that old root alone, as an older crew
+// wrote it.
+func oldAndNew(t *testing.T) (*Store, *Store) {
+	t.Helper()
+	oldRoot := t.TempDir()
+	return NewStore(t.TempDir(), oldRoot), NewStore(oldRoot, "")
+}
+
+func TestABotUnderTheOldRootLoadsFromThere(t *testing.T) {
+	s, old := oldAndNew(t)
+	m := testBot("thatsnotmynameio")
+	if err := old.Save(m); err != nil {
+		t.Fatal(err)
+	}
+	got, from, err := s.Load("thatsnotmynameio", "tester")
+	if err != nil || got != m || from != old.Path("thatsnotmynameio", "tester") {
+		t.Errorf("Load = %+v from %s, %v; want the old root's bot from %s", got, from, err,
+			old.Path("thatsnotmynameio", "tester"))
+	}
+	if _, err := os.Stat(s.Path("thatsnotmynameio", "tester")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Load moved or copied the bot to the new root: %v", err)
+	}
+}
+
+func TestABotUnderBothRootsLoadsFromTheNewOne(t *testing.T) {
+	s, old := oldAndNew(t)
+	stale, current := testBot("thatsnotmynameio"), testBot("thatsnotmynameio")
+	stale.AppID = 6
+	if err := old.Save(stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(current); err != nil {
+		t.Fatal(err)
+	}
+	got, from, err := s.Load("thatsnotmynameio", "tester")
+	if err != nil || got != current || from != s.Path("thatsnotmynameio", "tester") {
+		t.Errorf("Load = app %d from %s, %v; want app %d from %s", got.AppID, from, err, current.AppID,
+			s.Path("thatsnotmynameio", "tester"))
+	}
+}
+
+func TestABadBotFileUnderTheOldRootIsNamedByItsPath(t *testing.T) {
+	s, old := oldAndNew(t)
+	path := old.Path("thatsnotmynameio", "tester")
+	writeBotFile(t, path, "{")
+	_, from, err := s.Load("thatsnotmynameio", "tester")
+	if _, ok := errors.AsType[*EnvError](err); !ok || !strings.Contains(err.Error(), path) || from != path {
+		t.Errorf("Load = %s, %v; want an *EnvError naming %s", from, err, path)
 	}
 }
 

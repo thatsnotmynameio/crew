@@ -67,11 +67,11 @@ func TestBotsNeedsExactlyCreateAndAName(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "no command", args: []string{"mates"}},
-		{name: "unknown command", args: []string{"mates", "list"}},
-		{name: "no name", args: []string{"mates", "create"}},
-		{name: "two names", args: []string{"mates", "create", "a", "b"}},
-		{name: "flag instead of a command", args: []string{"mates", "--plain"}},
+		{name: "no command", args: []string{"bots"}},
+		{name: "unknown command", args: []string{"bots", "list"}},
+		{name: "no name", args: []string{"bots", "create"}},
+		{name: "two names", args: []string{"bots", "create", "a", "b"}},
+		{name: "flag instead of a command", args: []string{"bots", "--plain"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestBotsNeedsExactlyCreateAndAName(t *testing.T) {
 			if code != app.ExitConfig {
 				t.Errorf("run(%q) = %d, want %d", tt.args, code, app.ExitConfig)
 			}
-			if !strings.Contains(stderr, "usage: crew mates create <name>") {
+			if !strings.Contains(stderr, "usage: crew bots create <name>") {
 				t.Errorf("run(%q) stderr = %q, want the usage", tt.args, stderr)
 			}
 			if stdout != "" {
@@ -92,12 +92,12 @@ func TestBotsNeedsExactlyCreateAndAName(t *testing.T) {
 
 func TestBotsCreateChecksTheNameBeforeLookingForGit(t *testing.T) {
 	outsideGit(t)
-	got := runCaptured(t, "mates", "create", "Bad_Name")
+	got := runCaptured(t, "bots", "create", "Bad_Name")
 	code, stderr := got.code, got.stderr
 	if code != app.ExitConfig {
-		t.Errorf("mates create Bad_Name = %d, want %d", code, app.ExitConfig)
+		t.Errorf("bots create Bad_Name = %d, want %d", code, app.ExitConfig)
 	}
-	if !strings.Contains(stderr, `crew: the mate name "Bad_Name" holds 'B'`) {
+	if !strings.Contains(stderr, `crew: the bot name "Bad_Name" holds 'B'`) {
 		t.Errorf("stderr = %q, want the name rule", stderr)
 	}
 	if strings.Contains(stderr, "git repository") {
@@ -107,12 +107,12 @@ func TestBotsCreateChecksTheNameBeforeLookingForGit(t *testing.T) {
 
 func TestBotsCreateOutsideAGitRepositoryIsAnEnvironmentError(t *testing.T) {
 	outsideGit(t)
-	got := runCaptured(t, "mates", "create", "tester")
+	got := runCaptured(t, "bots", "create", "tester")
 	code, stderr := got.code, got.stderr
 	if code != app.ExitConfig {
-		t.Errorf("mates create tester outside a git repository = %d, want %d", code, app.ExitConfig)
+		t.Errorf("bots create tester outside a git repository = %d, want %d", code, app.ExitConfig)
 	}
-	if !strings.Contains(stderr, "crew mates create must run inside a git repository") {
+	if !strings.Contains(stderr, "crew bots create must run inside a git repository") {
 		t.Errorf("stderr = %q, want the git repository message", stderr)
 	}
 }
@@ -150,9 +150,9 @@ func TestBotsCreateAsksGhForTheRepositoryAtItsRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	got := runCaptured(t, "mates", "create", "tester")
+	got := runCaptured(t, "bots", "create", "tester")
 	if got.code != app.ExitConfig {
-		t.Errorf("mates create tester with gh failing = %d, want %d", got.code, app.ExitConfig)
+		t.Errorf("bots create tester with gh failing = %d, want %d", got.code, app.ExitConfig)
 	}
 	for _, want := range []string{"crew: gh could not resolve", "gh auth login", "no git remotes found in " + root} {
 		if !strings.Contains(got.stderr, want) {
@@ -172,7 +172,11 @@ func TestArgumentsOtherThanBotsFirstAreUnexpected(t *testing.T) {
 	}{
 		{name: "argument", args: []string{"now"}, want: `crew: unexpected argument "now"`},
 		{
-			name: "mates after a flag", args: []string{"--plain", "mates", "create", "x"},
+			name: "bots after a flag", args: []string{"--plain", "bots", "create", "x"},
+			want: `crew: unexpected argument "bots"`,
+		},
+		{
+			name: "the old mates command", args: []string{"mates", "create", "x"},
 			want: `crew: unexpected argument "mates"`,
 		},
 	}
@@ -196,7 +200,7 @@ func TestUsageShowsTheBotsCommand(t *testing.T) {
 	if code != app.ExitClean {
 		t.Errorf("run(-h) = %d, want %d", code, app.ExitClean)
 	}
-	for _, want := range []string{"crew [--plain] [--version]", "crew mates create <name>", "-plain", "-version"} {
+	for _, want := range []string{"crew [--plain] [--version]", "crew bots create <name>", "-plain", "-version"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("run(-h) stderr = %q, want %q", stderr, want)
 		}
@@ -228,10 +232,10 @@ func TestBotsExitCodeFollowsTheError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stderr bytes.Buffer
 			if got := botsExit(&stderr, tt.err); got != tt.want {
-				t.Errorf("matesExit(%v) = %d, want %d", tt.err, got, tt.want)
+				t.Errorf("botsExit(%v) = %d, want %d", tt.err, got, tt.want)
 			}
 			if stderr.String() != tt.wantStderr {
-				t.Errorf("matesExit(%v) printed %q, want %q", tt.err, stderr.String(), tt.wantStderr)
+				t.Errorf("botsExit(%v) printed %q, want %q", tt.err, stderr.String(), tt.wantStderr)
 			}
 		})
 	}

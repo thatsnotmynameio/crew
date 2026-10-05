@@ -272,6 +272,7 @@ type flowRun struct {
 	client  *Client
 	browser *fakeBrowser
 	store   *Store
+	old     *Store
 	flow    *Flow
 	ghCalls *[]proc.Command
 	out     *bytes.Buffer
@@ -293,8 +294,9 @@ func newRun(t *testing.T, owner string, org bool) *flowRun {
 	}
 	gh, calls := scriptedGh(fmt.Sprintf(`{"name":"crew","owner":{"login":%q,"id":42,"type":%q}}`, owner, ownerType), nil)
 	browser := newBrowser(t)
+	store, old := oldAndNew(t)
 	r := &flowRun{
-		api: api, client: client, browser: browser, store: NewStore(t.TempDir()),
+		api: api, client: client, browser: browser, store: store, old: old,
 		ghCalls: calls, out: &bytes.Buffer{}, ctx: context.Background(),
 	}
 	r.flow = NewFlow(gh, r.store, client, r.out, r.out)
@@ -303,7 +305,7 @@ func newRun(t *testing.T, owner string, org bool) *flowRun {
 	return r
 }
 
-// create runs crew mates create name in the repository and returns its
+// create runs crew bots create name in the repository and returns its
 // error. Whatever the outcome, neither its output nor its error holds the
 // bot's private key (R10).
 func (r *flowRun) create(t *testing.T, name string) error {
@@ -322,7 +324,7 @@ func checkNoKey(t *testing.T, text string) {
 	t.Helper()
 	for line := range strings.Lines(string(pkcs1Key())) {
 		if line = strings.TrimSpace(line); line != "" && strings.Contains(text, line) {
-			t.Fatal("the output holds the mate's private key") // never echo it
+			t.Fatal("the output holds the bot's private key") // never echo it
 		}
 	}
 }

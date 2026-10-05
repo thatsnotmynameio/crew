@@ -101,7 +101,7 @@ func TestPinnedHelperRunsWithYourGhDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(gh), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	loginDir := filepath.Join(t.TempDir(), "the boss's gh")
+	loginDir := filepath.Join(t.TempDir(), "your gh")
 	repo := t.TempDir()
 	gitRun(t, repo, nil, "init", "--quiet")
 	gitRun(t, repo, nil, "config", "credential.helper", "!"+filepath.Join(bin, "gh")+" auth git-credential")
@@ -110,7 +110,7 @@ func TestPinnedHelperRunsWithYourGhDirectory(t *testing.T) {
 		t.Fatalf("probeGit: %v", err)
 	}
 	env := configEnv("", credentialEntries(setup.helper, loginDir))
-	env = append(env, "GH_CONFIG_DIR=/the/mate's/dir")
+	env = append(env, "GH_CONFIG_DIR=/the/bot's/dir")
 	cmd := exec.CommandContext(t.Context(), "git", "credential", "fill")
 	cmd.Dir = repo
 	cmd.Env = append(os.Environ(), env...)
@@ -243,11 +243,11 @@ func TestLoginGhDir(t *testing.T) {
 		{map[string]string{"HOME": "/home/b"}, "/home/b/.config/gh"},
 	} {
 		if got, err := loginGhDir(env(tt.vars)); err != nil || got != tt.want {
-			t.Errorf("bossGhDir(%v) = %q, %v; want %q", tt.vars, got, err, tt.want)
+			t.Errorf("loginGhDir(%v) = %q, %v; want %q", tt.vars, got, err, tt.want)
 		}
 	}
 	got, err := loginGhDir(env(map[string]string{"GH_CONFIG_DIR": "rel"}))
 	if err != nil || !filepath.IsAbs(got) {
-		t.Errorf("bossGhDir of a relative directory = %q, %v; want it absolute", got, err)
+		t.Errorf("loginGhDir of a relative directory = %q, %v; want it absolute", got, err)
 	}
 }

@@ -30,7 +30,7 @@ const (
 // every repository of its owner.
 const selectionAll = "all"
 
-// Flow is crew mates create: it creates a bot through GitHub's manifest
+// Flow is crew bots create: it creates a bot through GitHub's manifest
 // flow, unless the repository's owner already has one of that name, then
 // installs it on the repository and mints a token to prove it can act
 // there. Its fields are its dependencies, so tests replace each one.
@@ -78,19 +78,22 @@ func (f *Flow) Create(ctx context.Context, root, name string) error {
 	if err != nil {
 		return err
 	}
-	m, err := f.Store.Load(repo.Owner, name)
+	// A bot an older crew saved under the old root is found too, so it is
+	// only installed, never created again.
+	m, path, err := f.Store.Load(repo.Owner, name)
 	created := errors.Is(err, ErrNoBot)
 	switch {
 	case created:
 		if m, err = f.create(ctx, repo, name); err != nil {
 			return err
 		}
+		path = f.Store.Path(m.Owner, name)
 	case err != nil:
 		return err
 	}
 	// GitHub's redirect already took the browser to a new bot's install
 	// page.
-	return f.install(ctx, repo, m, !created)
+	return f.install(ctx, repo, m, path, !created)
 }
 
 // create creates the bot called name for repo's owner through the
@@ -140,7 +143,7 @@ func (f *Flow) await(ctx context.Context, s *server, stop func(), name string) (
 		if out.err != nil {
 			return Bot{}, out.err
 		}
-		f.sayf("GitHub created the app %s; the mate %s is saved at %s",
+		f.sayf("GitHub created the app %s; the bot %s is saved at %s",
 			out.bot.AppName, name, f.Store.Path(out.bot.Owner, name))
 		return out.bot, nil
 	case <-timer.C:
@@ -179,8 +182,8 @@ func (f *Flow) savedLate(name string, out outcome, stopped error) error {
 	if out.err != nil {
 		return out.err
 	}
-	return fmt.Errorf("%w; GitHub created the app %s and the mate %s is saved at %s: "+
-		"crew mates create %s again installs it", stopped, out.bot.AppName, name, f.Store.Path(out.bot.Owner, name), name)
+	return fmt.Errorf("%w; GitHub created the app %s and the bot %s is saved at %s: "+
+		"crew bots create %s again installs it", stopped, out.bot.AppName, name, f.Store.Path(out.bot.Owner, name), name)
 }
 
 // keep exchanges code for the app GitHub created and saves it as the bot
@@ -193,27 +196,28 @@ func (f *Flow) keep(ctx context.Context, repo Repo, name, code string) (Bot, err
 		// GitHub creates the app before its redirect, so its key may be
 		// lost with the conversion.
 		return Bot{}, fmt.Errorf("%w; crew saved nothing, but GitHub may have created the app %s for %s already: "+
-			"delete it at %s before running crew mates create %s again", err, AppName(name), repo.Owner,
+			"delete it at %s before running crew bots create %s again", err, AppName(name), repo.Owner,
 			f.appsURL(repo), name)
 	}
 	m := conv.Bot(name)
 	if err := f.Store.Save(m); err != nil {
 		return Bot{}, fmt.Errorf("%w; GitHub created the app %s, but crew could not keep its key: "+
-			"delete the app at %s before running crew mates create %s again", err, m.AppName, m.HTMLURL, name)
+			"delete the app at %s before running crew bots create %s again", err, m.AppName, m.HTMLURL, name)
 	}
 	if !strings.EqualFold(m.Owner, repo.Owner) {
 		return m, fmt.Errorf("GitHub created the app %s for %s, not for %s, which owns %s/%s; "+
-			"crew kept the mate for %s at %s, and crew mates create %s in a repository of %s installs it there",
+			"crew kept the bot for %s at %s, and crew bots create %s in a repository of %s installs it there",
 			m.AppName, m.Owner, repo.Owner, repo.Owner, repo.Name, m.Owner, f.Store.Path(m.Owner, name), name, m.Owner)
 	}
 	return m, nil
 }
 
-// install installs m on repo and confirms it: it mints a token for repo
-// with m's key (R7). When m is not installed there yet, it prints the
-// install page, opens it when open is set, and looks the installation up
-// every PollInterval until it appears (KTD4). Every failure keeps the bot.
-func (f *Flow) install(ctx context.Context, repo Repo, m Bot, open bool) error {
+// install installs m, whose file is at path, on repo and confirms it: it
+// mints a token for repo with m's key (R7). When m is not installed there
+// yet, it prints the install page, opens it when open is set, and looks the
+// installation up every PollInterval until it appears (KTD4). Every failure
+// keeps the bot.
+func (f *Flow) install(ctx context.Context, repo Repo, m Bot, path string, open bool) error {
 	where := repo.Owner + "/" + repo.Name
 	installURL := f.installURL(m)
 	inst, err := f.API.RepoInstallation(ctx, m, repo.Owner, repo.Name)
@@ -232,17 +236,17 @@ func (f *Flow) install(ctx context.Context, repo Repo, m Bot, open bool) error {
 	switch {
 	case errors.Is(err, ErrKeyRejected):
 		return fmt.Errorf("%w; the app %s may have been deleted on GitHub: "+
-			"delete %s and run crew mates create %s again to create a new mate",
-			err, m.AppName, f.Store.Path(m.Owner, m.Name), m.Name)
+			"delete %s and run crew bots create %s again to create a new bot",
+			err, m.AppName, path, m.Name)
 	case err != nil:
-		return fmt.Errorf("%w; crew kept the mate %s: install it at %s and run crew mates create %s again",
+		return fmt.Errorf("%w; crew kept the bot %s: install it at %s and run crew bots create %s again",
 			err, m.Name, installURL, m.Name)
 	}
 	if inst.RepositorySelection == selectionAll {
-		f.warnf("warning: %s is installed on every repository of %s, so the mate %s can act on all of them; "+
+		f.warnf("warning: %s is installed on every repository of %s, so the bot %s can act on all of them; "+
 			"its installation settings on GitHub can limit it to selected repositories", m.AppName, repo.Owner, m.Name)
 	}
-	f.sayf("mate %s is ready on %s as %s", m.Name, where, m.BotLogin)
+	f.sayf("bot %s is ready on %s as %s", m.Name, where, m.BotLogin)
 	return nil
 }
 

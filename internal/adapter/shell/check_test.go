@@ -47,6 +47,21 @@ func check(t *testing.T, command string, out *output) port.Check {
 	}
 }
 
+// withoutCrewEnv clears every CREW_ variable crew's own environment holds,
+// such as those of a crew session running these tests, until the test
+// ends, so a check sees only the ones the checker sets.
+func withoutCrewEnv(t *testing.T) {
+	t.Helper()
+	for _, e := range os.Environ() {
+		if name, _, _ := strings.Cut(e, "="); strings.HasPrefix(name, "CREW_") {
+			t.Setenv(name, "") // restores the variable when the test ends
+			if err := os.Unsetenv(name); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
 func TestCheckThatExitsZeroPasses(t *testing.T) {
 	var out output
 	if err := shell.New(&proc.Group{}).Check(context.Background(), check(t, "true", &out)); err != nil {
@@ -87,6 +102,7 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	// The title is not part of port.Check at all, so it cannot reach the
 	// command: the check sees only crew's six variables, and the command
 	// runs as written.
+	withoutCrewEnv(t)
 	var out output
 	c := check(t, `env | grep '^CREW_' | sort`, &out)
 	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
@@ -95,7 +111,7 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
-		case "CREW_BOSS", "CREW_BRANCH", "CREW_ISSUE_KEY", "CREW_ISSUE_REF", "CREW_ISSUE_URL", "CREW_MATES":
+		case "CREW_BOTS", "CREW_BRANCH", "CREW_CODE_OWNERS", "CREW_ISSUE_KEY", "CREW_ISSUE_REF", "CREW_ISSUE_URL":
 		default:
 			t.Errorf("unexpected variable %q", line)
 		}
@@ -108,9 +124,11 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 // AE6 of #80: whatever GH_TOKEN your shell exports, the check's gh
 // reads its bot's directory, and the check learns the code owners and the bots.
 func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
-	t.Setenv("GH_TOKEN", "boss-token")
+	withoutCrewEnv(t)
+	t.Setenv("GH_TOKEN", "your-token")
 	var out output
-	c := check(t, `echo "$GH_CONFIG_DIR|$CREW_BOSS|$CREW_MATES|${GH_TOKEN-unset}"`, &out)
+	c := check(t, `echo "$GH_CONFIG_DIR|$CREW_CODE_OWNERS|$CREW_BOTS|${GH_TOKEN-unset}"`+
+		`"|${CREW_BOSS-unset}|${CREW_MATES-unset}"`, &out)
 	c.Identity = port.Identity{
 		Bot: "developer", Login: "crew-developer[bot]",
 		Env:   []string{"GH_CONFIG_DIR=/run/crew/developer"},
@@ -122,7 +140,8 @@ func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if got, want := out.String(), "/run/crew/developer|octocat|crew-developer[bot] crew-ops[bot]|unset\n"; got != want {
+	want := "/run/crew/developer|octocat|crew-developer[bot] crew-ops[bot]|unset|unset|unset\n"
+	if got := out.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
 	}
 }
