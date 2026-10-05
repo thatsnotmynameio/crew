@@ -394,6 +394,9 @@ type HandledView struct {
 	// ended.
 	Taken time.Time
 	Ended time.Time
+	// Earlier sums what the rules that ended on the issue before this one
+	// spent this run, whose entries this one replaced (KTD14).
+	Earlier crew.Spend
 }
 
 // HandledAction is one action of a HandledView.

@@ -574,15 +574,18 @@ func (m *Model) release(h *heldIssue) {
 	if h.verdict == nil {
 		return
 	}
+	view := *h.verdict
 	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
 	if i >= 0 {
-		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !m.handled[i].view.NeedsAttention() {
+		old := m.handled[i].view
+		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !old.NeedsAttention() {
 			m.handled[i].view.Gone = true
 			return
 		}
+		view.Earlier = old.Spend().Add(old.Earlier)
 		m.handled = slices.Delete(m.handled, i, i+1)
 	}
-	m.handled = append(m.handled, handledEntry{view: *h.verdict, landed: h.landed})
+	m.handled = append(m.handled, handledEntry{view: view, landed: h.landed})
 }
 
 // ended reports whether every action of h has ended.
