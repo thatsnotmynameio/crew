@@ -42,17 +42,17 @@ func (a *Acting) Failing() map[string]string {
 	return failing
 }
 
-// renewWarning is the warning of bot m, whose file is at path and whose
+// renewWarning is the warning of bot b, whose file is at path and whose
 // token renewal failed because of err, or "" when err is nil.
-func renewWarning(m Bot, path string, err error) string {
+func renewWarning(b Bot, path string, err error) string {
 	switch {
 	case err == nil:
 		return ""
 	case errors.Is(err, ErrKeyRejected):
-		return tokenWarning(m, path, err)
+		return tokenWarning(b, path, err)
 	}
 	return fmt.Sprintf("bot %s could not renew its token: %s; its sessions and checks fail once the "+
-		"current token expires, and crew tries again every minute", m.Name, oneLine(err.Error()))
+		"current token expires, and crew tries again every minute", b.Name, oneLine(err.Error()))
 }
 
 // oneLine returns text cut at its first line break, without control

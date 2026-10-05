@@ -35,7 +35,8 @@ const (
 // journalLine is one line of the run journal. Its field names are the
 // documented format (docs/guide/crew.mdx), so other tools can read it. A
 // value the harness did not report is left out, never written as zero, so
-// its field is a pointer.
+// its field is a pointer. Rule keeps the name stage, from before rules
+// were called stages, so older journals still resume.
 type journalLine struct {
 	Version   int       `json:"v"`
 	Event     string    `json:"event"`

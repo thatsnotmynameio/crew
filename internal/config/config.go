@@ -51,8 +51,8 @@ type Config struct {
 	// bots of the agents some action names, in rule order. It is empty when
 	// no bot is named.
 	Bots []string
-	// Agents are agents' agents in file order, including those no action
-	// names (see Agent.Used).
+	// Agents are the agents in file order, including those no action names
+	// (see Agent.Used).
 	Agents []Agent
 	// Rules are the rules in file order. Every state is non-empty text,
 	// spelled everywhere as it is first written, since labels that differ

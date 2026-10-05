@@ -161,9 +161,9 @@ type call struct {
 // and for each rule at most its queue's slots (R6, KTD2).
 func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
 	own := make([]crew.Rule, len(rules))
-	for i, s := range rules {
-		s.Actions = slices.Clone(s.Actions)
-		own[i] = s
+	for i, r := range rules {
+		r.Actions = slices.Clone(r.Actions)
+		own[i] = r
 	}
 	m := &Model{rules: own, maxParallel: maxParallelIssues}
 	m.queueOf, m.queues, m.slots = queues(own, maxParallelIssues)
@@ -184,8 +184,8 @@ func queues(rules []crew.Rule, maxParallelIssues int) ([]int, []crew.Queue, int)
 	var out []crew.Queue
 	usable := 0
 	index := map[string]int{}
-	for i, s := range rules {
-		queue := s.Queue
+	for i, r := range rules {
+		queue := r.Queue
 		if queue == (crew.Queue{}) {
 			queue.Slots = maxParallelIssues
 		}

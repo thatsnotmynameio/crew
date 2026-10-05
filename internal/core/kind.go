@@ -33,9 +33,9 @@ func (s *step) otherKind(issues []crew.Issue) {
 
 // ruleLabeled returns the rule whose label is state, if any.
 func (m *Model) ruleLabeled(state crew.State) (crew.Rule, bool) {
-	for _, st := range m.rules {
-		if st.Labels.Ready == state {
-			return st, true
+	for _, rule := range m.rules {
+		if rule.Labels.Ready == state {
+			return rule, true
 		}
 	}
 	return crew.Rule{}, false

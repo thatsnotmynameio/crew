@@ -365,7 +365,9 @@ func parseMarker(s string) (entry, bool) {
 }
 
 // markerLine returns the entry marker of status. Its values are
-// query-escaped, so none can hold a space or close the HTML comment.
+// query-escaped, so none can hold a space or close the HTML comment. The
+// rule goes under the key stage, the name older crew wrote, so the entries
+// of every comment already posted still parse.
 func markerLine(s crew.Status) string {
 	return fmt.Sprintf("%srun=%s kind=%s stage=%s -->",
 		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(s.Rule))

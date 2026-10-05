@@ -1,16 +1,16 @@
 // Package github is the tracker adapter for GitHub issues and pull requests,
 // through the gh CLI. A rule state is the label of the same name, compared
 // ignoring case as GitHub does, and crew's labels are the rules' states; it
-// never touches another label. It lists the open issues
-// and pull requests the code owners or one of crew's bots opened, as items
-// alike, and lists the board's issues the same authors opened, whatever their
-// labels. It moves items by swapping crew's labels, reports failures as
-// Markdown comments and keeps a status comment on each item, with one entry
-// per rule run. It puts the open pull requests that close an issue in the
-// issue's crew label, and comments on them when a rule ends that nobody
-// watches them any more. It finds the pull request an action opened from its
-// branch. It works on the repository gh resolves from crew's working
-// directory, and runs every gh call through the shared process helper.
+// never touches another label. It lists the open issues and pull requests the
+// code owners or one of crew's bots opened, as items alike, and lists the
+// board's issues the same authors opened, whatever their labels. It moves
+// items by swapping crew's labels, reports failures as Markdown comments and
+// keeps a status comment on each item, with one entry per rule run. It puts
+// the open pull requests that close an issue in the issue's crew label, and
+// comments on them when a rule ends that nobody watches them any more. It
+// finds the pull request an action opened from its branch. It works on the
+// repository gh resolves from crew's working directory, and runs every gh
+// call through the shared process helper.
 //
 // The code owners are every user the catch-all rule of the repository's
 // CODEOWNERS names, or gh's login without one. The tracker reads as gh's login
@@ -206,8 +206,7 @@ type Tracker struct {
 
 // Factory returns the github tracker's factory, which runs gh through group.
 // The tracker section has no key, so the factory refuses any. The tracker
-// knows the rules' states as its labels. It runs no gh
-// call; Prepare does.
+// knows the rules' states as its labels. It runs no gh call; Prepare does.
 func Factory(group *proc.Group) port.TrackerFactory {
 	return factory(group.Run)
 }
@@ -321,8 +320,8 @@ func (t *Tracker) Login() string {
 }
 
 // WriterLost implements port.WriterReporter: the warning crew wrote when the
-// writes went back to you for the rest of the run, "" while they go as
-// the bot, or no bot writes.
+// writes went back to you for the rest of the run, "" while they go as the
+// bot, or no bot writes.
 func (t *Tracker) WriterLost() string {
 	return t.gh.writerLost()
 }
@@ -435,10 +434,9 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 
 // Prepare implements port.Preparer. It checks that gh is installed and logged
 // in, then finds the code owners in CODEOWNERS, then creates the labels of
-// states the repository lacks, comparing names
-// case-insensitively, and no other label. It reads as you and creates the
-// labels as the writer. It reports each step on ctx as it starts, one per
-// label it creates.
+// states the repository lacks, comparing names case-insensitively, and no
+// other label. It reads as gh's login and creates the labels as the writer.
+// It reports each step on ctx as it starts, one per label it creates.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	port.Step(ctx, "checking the gh login")
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
@@ -534,8 +532,8 @@ func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []
 
 // swap returns the --remove-label arguments that take every crew label but
 // to's off a labelable carrying labels, leaving the labels that are not
-// crew's, and the states labels name, each once, in label order.
-// Move and the pull request mirror both swap labels through it.
+// crew's, and the states labels name, each once, in label order. Move and
+// the pull request mirror both swap labels through it.
 func (t *Tracker) swap(labels []ghLabel, to crew.State) ([]string, []crew.State) {
 	var remove []string
 	var states []crew.State

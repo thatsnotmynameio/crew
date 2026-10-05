@@ -324,7 +324,7 @@ func comparePriority(a, b int) int {
 	return cmp.Compare(a, b)
 }
 
-// take holds issue for rule si and moves it to the rule's moves_to.
+// take holds issue for rule si and moves it to the rule's running label.
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
@@ -357,8 +357,8 @@ func (s *step) attempt(h *heldIssue, c *call) {
 
 // callResult settles, owes or retries the call r answers. A take and a
 // verdict call are owed alike when they fail transiently: a take may have
-// landed although it failed, so releasing its issue could strand it in
-// moves_to with no session, and the tracker makes the retry idempotent.
+// landed although it failed, so releasing its issue could strand it in the
+// running label with no session, and the tracker makes the retry idempotent.
 func (s *step) callResult(r CallResult) {
 	m := s.m
 	h, c := m.findCall(r.ID)
@@ -418,7 +418,7 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 
 // taken applies the take to the board (KTD4), reports it on h's pull
 // requests and starts h's actions once its take move is done, or, after a
-// stop, ends them unstarted so the issue moves to its rule's on_failure
+// stop, ends them unstarted so the issue moves to its rule's failure label
 // (R9). A rule without actions is judged at once, after a stop too, so the
 // issue moves on to its rule's success (R8, KTD5).
 func (s *step) taken(h *heldIssue, c *call) {
@@ -465,8 +465,8 @@ func (s *step) start(h *heldIssue) {
 	}
 }
 
-// judge moves h to its rule's on_success when every action succeeded, and
-// otherwise to its rule's on_failure with a failure report (R7).
+// judge moves h to its rule's success label when every action succeeded,
+// and otherwise to its failure label with a failure report (R7).
 func (s *step) judge(h *heldIssue) {
 	rule := s.m.rules[h.rule]
 	h.claim = ClaimJudging

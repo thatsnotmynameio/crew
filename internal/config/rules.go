@@ -210,10 +210,6 @@ func parseAction(e entry, env ruleEnv) (crew.Action, error) {
 // Without agents it returns no agent and no error: the missing agents are
 // reported once, by agentsInUse.
 func (env ruleEnv) agent(l located[string], path string, line int) (Agent, error) {
-	names := make([]string, len(env.agents))
-	for i, a := range env.agents {
-		names[i] = a.Name
-	}
 	switch {
 	case len(env.agents) == 0:
 		return Agent{}, nil
@@ -221,7 +217,7 @@ func (env ruleEnv) agent(l located[string], path string, line int) (Agent, error
 		return env.agents[0], nil
 	case l.line == 0:
 		return Agent{}, keyError(path, line,
-			"required, since agents declares more than one agent: "+strings.Join(names, ", "))
+			"required, since agents declares more than one agent: "+env.agentNames())
 	}
 	for _, a := range env.agents {
 		if a.Name == l.value {
@@ -229,7 +225,17 @@ func (env ruleEnv) agent(l located[string], path string, line int) (Agent, error
 		}
 	}
 	return Agent{}, keyError(path, l.line, fmt.Sprintf(
-		"agent %q does not exist; the agents are %s", l.value, strings.Join(names, ", ")))
+		"agent %q does not exist; the agents are %s", l.value, env.agentNames()))
+}
+
+// agentNames returns the names of the agents, in file order, joined by
+// commas, for an error that lists them.
+func (env ruleEnv) agentNames() string {
+	names := make([]string, len(env.agents))
+	for i, a := range env.agents {
+		names[i] = a.Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // check returns the script of the check an action names in l, at path, or

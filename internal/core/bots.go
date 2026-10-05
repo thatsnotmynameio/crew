@@ -39,8 +39,8 @@ type BotsConfig struct {
 type bots struct {
 	config BotsConfig
 	// writesLost is the warning of crew's writes as the default bot going
-	// back to you; empty while they go as the default bot. Once set
-	// it stays.
+	// back to you; empty while they go as the default bot. Once set it
+	// stays.
 	writesLost string
 	// notRenewed holds, by bot, the warning of its last failed renewal.
 	notRenewed map[string]string
@@ -231,10 +231,10 @@ func (m *Model) botsView() []BotView {
 // whose bot is.
 func (m *Model) pairs(is func(bot string) bool) []string {
 	var out []string
-	for _, st := range m.rules {
-		for _, a := range st.Actions {
+	for _, rule := range m.rules {
+		for _, a := range rule.Actions {
 			if is(a.Bot) {
-				out = append(out, st.Name+"/"+a.Name)
+				out = append(out, rule.Name+"/"+a.Name)
 			}
 		}
 	}

@@ -37,9 +37,9 @@ func botUnset() []string {
 	return []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST"}
 }
 
-// mintFunc mints a token of m's installation id for the repository called
+// mintFunc mints a token of b's installation id for the repository called
 // repo, as Client.AccessToken does.
-type mintFunc func(ctx context.Context, m Bot, id int64, repo string) (Grant, error)
+type mintFunc func(ctx context.Context, b Bot, id int64, repo string) (Grant, error)
 
 // ActOptions are what Act needs to make the configured bots act.
 type ActOptions struct {
@@ -78,8 +78,8 @@ type ActingBot struct {
 	Login string
 	// Env holds the KEY=value entries that make a session or a check act as
 	// the bot: GH_CONFIG_DIR of its sessions' directory, and the git config
-	// of the co-author hook and of your pinned credential helper when
-	// they apply.
+	// of the co-author hook and of your pinned credential helper when they
+	// apply.
 	Env []string
 	// Unset are the inherited variables a child acting as the bot must not
 	// get.
@@ -308,7 +308,7 @@ func (r *resolver) unable(name string, why cannot) {
 // repository, or returns why it cannot act; its warning is "" when it can.
 // The bot it returns has no directory yet.
 func (r *resolver) find(ctx context.Context, name string) (*acted, cannot) {
-	m, path, err := r.o.Store.Load(r.repo.Owner, name)
+	b, path, err := r.o.Store.Load(r.repo.Owner, name)
 	switch {
 	case errors.Is(err, ErrNoBot):
 		return nil, cannot{fmt.Sprintf("bot %s has no key on this machine for %s; "+
@@ -316,40 +316,40 @@ func (r *resolver) find(ctx context.Context, name string) (*acted, cannot) {
 	case err != nil:
 		return nil, cannot{fmt.Sprintf("bot %s cannot act: %v; "+
 			"delete its file and run `crew bots create %s` in this repository", name, err, name), reasonBadKeyFile}
-	case !validSlug(m.Slug):
+	case !validSlug(b.Slug):
 		return nil, cannot{fmt.Sprintf("bot %s cannot act: its file %s holds an invalid app slug; "+
 			"delete it and run `crew bots create %s` in this repository", name, path, name),
 			reasonBadKeyFile}
 	}
-	r.a.Logins = append(r.a.Logins, botLogin(m.Slug))
-	inst, err := r.o.Client.RepoInstallation(ctx, m, r.repo.Owner, r.repo.Name)
+	r.a.Logins = append(r.a.Logins, botLogin(b.Slug))
+	inst, err := r.o.Client.RepoInstallation(ctx, b, r.repo.Owner, r.repo.Name)
 	if errors.Is(err, ErrNotInstalled) {
 		return nil, cannot{fmt.Sprintf("bot %s is not installed on %s/%s; "+
 			"run `crew bots create %s` in this repository", name, r.repo.Owner, r.repo.Name, name), reasonNotInstalled}
 	}
 	if err != nil {
-		return nil, tokenCannot(m, path, err)
+		return nil, tokenCannot(b, path, err)
 	}
-	return &acted{bot: m, path: path, inst: inst.ID}, cannot{}
+	return &acted{bot: b, path: path, inst: inst.ID}, cannot{}
 }
 
-// tokenCannot is why bot m, whose file is at path, cannot act, as it could
+// tokenCannot is why bot b, whose file is at path, cannot act, as it could
 // not get a token because of err.
-func tokenCannot(m Bot, path string, err error) cannot {
+func tokenCannot(b Bot, path string, err error) cannot {
 	if errors.Is(err, ErrKeyRejected) {
-		return cannot{tokenWarning(m, path, err), reasonKeyRejected}
+		return cannot{tokenWarning(b, path, err), reasonKeyRejected}
 	}
-	return cannot{tokenWarning(m, path, err), reasonNoToken}
+	return cannot{tokenWarning(b, path, err), reasonNoToken}
 }
 
-// tokenWarning is the warning of bot m, whose file is at path, which could
+// tokenWarning is the warning of bot b, whose file is at path, which could
 // not get a token because of err.
-func tokenWarning(m Bot, path string, err error) string {
+func tokenWarning(b Bot, path string, err error) string {
 	if errors.Is(err, ErrKeyRejected) {
 		return fmt.Sprintf("GitHub rejected the key of bot %s; delete %s and "+
-			"run `crew bots create %s` in this repository", m.Name, path, m.Name)
+			"run `crew bots create %s` in this repository", b.Name, path, b.Name)
 	}
-	return fmt.Sprintf("bot %s could not get a token: %v; crew acts as you in its place this run", m.Name, err)
+	return fmt.Sprintf("bot %s could not get a token: %v; crew acts as you in its place this run", b.Name, err)
 }
 
 // bot returns s's acting bot, whose token is token. It warns when the

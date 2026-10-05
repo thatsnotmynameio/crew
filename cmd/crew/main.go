@@ -6,12 +6,12 @@
 //	crew [--plain] [--version]
 //	crew bots create <name>
 //
-// It runs from anywhere inside a git repository. On a terminal it shows a TUI;
-// otherwise, or with --plain, it prints timestamped event lines. The first
-// Ctrl-C, SIGTERM or SIGHUP stops it cleanly, and a second one forces the
-// exit. A closed output stops it cleanly as well. It
-// exits 0 on a clean stop, 1 on a runtime failure or a forced exit, and 2 on
-// a config or environment error.
+// It runs from anywhere inside a git repository. On a terminal it shows a
+// TUI; otherwise, or with --plain, it prints timestamped event lines. The
+// first Ctrl-C, SIGTERM or SIGHUP stops it cleanly, and a second one forces
+// the exit. A closed output stops it cleanly as well. It exits 0 on a clean
+// stop, 1 on a runtime failure or a forced exit, and 2 on a config or
+// environment error.
 //
 // crew bots create <name> creates a bot, a GitHub identity of crew's own,
 // for the GitHub repository of the git repository it runs in, and installs

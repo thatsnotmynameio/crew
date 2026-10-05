@@ -47,19 +47,19 @@ type Tracker interface {
 	// List returns the open issues that are in any of states. Each issue
 	// carries every crew state it is in, not only the ones asked for, so the
 	// engine can skip an issue found in two states; it carries nothing that
-	// is not a crew state. An issue is Blocked while an
-	// open issue blocks it, when the tracker records dependencies. An error
-	// means the list could not be read; it is transient.
+	// is not a crew state. An issue is Blocked while an open issue blocks
+	// it, when the tracker records dependencies. An error means the list
+	// could not be read; it is transient.
 	List(ctx context.Context, states []crew.State) ([]crew.Issue, error)
 	// Move moves the issue identified by issueKey from one state to
 	// another, and leaves it in exactly one crew state, to, without
-	// touching what is not crew's. It returns an
-	// error wrapping ErrMovedMeanwhile when the issue is closed or not in
-	// from, one wrapping ErrRefused when the tracker refuses for good, and
-	// any other error when the move failed transiently. It returns nil,
-	// changing nothing, when the issue is already exactly in to and not in
-	// from, whatever other labels it carries, so retrying a move that
-	// landed is safe.
+	// touching what is not crew's. It returns an error wrapping
+	// ErrMovedMeanwhile when the issue is closed or not in from, one
+	// wrapping ErrRefused when the tracker refuses for good, and any other
+	// error when the move failed transiently. It returns nil, changing
+	// nothing, when the issue is already exactly in to and not in from,
+	// whatever other labels it carries, so retrying a move that landed is
+	// safe.
 	Move(ctx context.Context, issueKey string, from, to crew.State) error
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
@@ -153,9 +153,8 @@ type Space struct {
 type Preparer interface {
 	// Prepare checks and prepares the adapter for a set of rules that can
 	// request states, so an adapter creates or checks only what the rules
-	// use.
-	// An error names the tool or setting at fault, and crew stops before
-	// polling.
+	// use. An error names the tool or setting at fault, and crew stops
+	// before polling.
 	Prepare(ctx context.Context, states []crew.State) error
 }
 
@@ -208,9 +207,9 @@ type PullRequestReporter interface {
 // owners' items, and crew works as it does without bots.
 type Acting interface {
 	// ActAs makes the tracker's own writes, such as its moves, comments and
-	// failure reports, as writer, the zero Identity being you, and
-	// makes it take the items the logins in bots opened as well as the
-	// code owners'. The engine calls it once, before Prepare.
+	// failure reports, as writer, the zero Identity being you, and makes it
+	// take the items the logins in bots opened as well as the code owners'.
+	// The engine calls it once, before Prepare.
 	ActAs(writer Identity, bots []string)
 }
 

@@ -105,50 +105,50 @@ func (s *Store) Load(owner, name string) (Bot, string, error) {
 		case err != nil:
 			return Bot{}, path, envErrorf("read the bot: %w", err)
 		}
-		m, err := decodeBot(path, data)
-		return m, path, err
+		b, err := decodeBot(path, data)
+		return b, path, err
 	}
 	return Bot{}, "", fmt.Errorf("bot %s of %s: %w", name, owner, ErrNoBot)
 }
 
 // decodeBot returns the bot whose file, at path, holds data.
 func decodeBot(path string, data []byte) (Bot, error) {
-	var m Bot
-	if json.Unmarshal(data, &m) != nil {
+	var b Bot
+	if json.Unmarshal(data, &b) != nil {
 		// The decoder's message can quote the file, and the file holds a key.
 		return Bot{}, envErrorf("the bot file %s is not valid JSON", path)
 	}
 	switch {
-	case m.PrivateKey == "":
+	case b.PrivateKey == "":
 		return Bot{}, envErrorf("the bot file %s has no private key", path)
-	case m.AppID == 0:
+	case b.AppID == 0:
 		return Bot{}, envErrorf("the bot file %s has no app id", path)
 	}
-	return m, nil
+	return b, nil
 }
 
-// Save writes m's file under the store's root, creating its directories
+// Save writes b's file under the store's root, creating its directories
 // with mode 0700 and the file with mode 0600. It writes a temporary file
 // and links it into place only when the bot has no file there yet: a crash
 // leaves no half-written bot, and a bot is never overwritten.
-func (s *Store) Save(m Bot) error {
-	path := s.Path(m.Owner, m.Name)
+func (s *Store) Save(b Bot) error {
+	path := s.Path(b.Owner, b.Name)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return fmt.Errorf("save the bot: %w", err)
 	}
-	data, err := json.MarshalIndent(m, "", "  ") //nolint:gosec // G117: the bot's file is where its key is kept (R9)
+	data, err := json.MarshalIndent(b, "", "  ") //nolint:gosec // G117: the bot's file is where its key is kept (R9)
 	if err != nil {
 		return fmt.Errorf("save the bot: %w", err)
 	}
-	tmp, err := writeTemp(dir, m.Name, data)
+	tmp, err := writeTemp(dir, b.Name, data)
 	if err != nil {
 		return fmt.Errorf("save the bot: %w", err)
 	}
 	defer func() { _ = os.Remove(tmp) }()
 	if err := os.Link(tmp, path); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf("save the bot: the bot %s of %s already exists at %s", m.Name, m.Owner, path)
+			return fmt.Errorf("save the bot: the bot %s of %s already exists at %s", b.Name, b.Owner, path)
 		}
 		return fmt.Errorf("save the bot: %w", err)
 	}

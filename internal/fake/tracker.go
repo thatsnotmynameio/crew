@@ -668,8 +668,8 @@ func NewBoardTracker(issues ...crew.Issue) BoardTracker {
 }
 
 // ListBoard implements port.BoardLister: the open issues of kind issue
-// whose states or other labels match any of labels ignoring case,
-// as GitHub compares them, oldest first and otherwise in the order they were
+// whose states or other labels match any of labels ignoring case, as
+// GitHub compares them, oldest first and otherwise in the order they were
 // added. Each carries the labels of labels it matches, in labels' spelling
 // and order.
 func (b BoardTracker) ListBoard(_ context.Context, labels []string) ([]crew.BoardIssue, error) {

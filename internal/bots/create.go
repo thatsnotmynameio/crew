@@ -80,20 +80,20 @@ func (f *Flow) Create(ctx context.Context, root, name string) error {
 	}
 	// A bot an older crew saved under the old root is found too, so it is
 	// only installed, never created again.
-	m, path, err := f.Store.Load(repo.Owner, name)
+	b, path, err := f.Store.Load(repo.Owner, name)
 	created := errors.Is(err, ErrNoBot)
 	switch {
 	case created:
-		if m, err = f.create(ctx, repo, name); err != nil {
+		if b, err = f.create(ctx, repo, name); err != nil {
 			return err
 		}
-		path = f.Store.Path(m.Owner, name)
+		path = f.Store.Path(b.Owner, name)
 	case err != nil:
 		return err
 	}
 	// GitHub's redirect already took the browser to a new bot's install
 	// page.
-	return f.install(ctx, repo, m, path, !created)
+	return f.install(ctx, repo, b, path, !created)
 }
 
 // create creates the bot called name for repo's owner through the
@@ -199,63 +199,63 @@ func (f *Flow) keep(ctx context.Context, repo Repo, name, code string) (Bot, err
 			"delete it at %s before running crew bots create %s again", err, AppName(name), repo.Owner,
 			f.appsURL(repo), name)
 	}
-	m := conv.Bot(name)
-	if err := f.Store.Save(m); err != nil {
+	b := conv.Bot(name)
+	if err := f.Store.Save(b); err != nil {
 		return Bot{}, fmt.Errorf("%w; GitHub created the app %s, but crew could not keep its key: "+
-			"delete the app at %s before running crew bots create %s again", err, m.AppName, m.HTMLURL, name)
+			"delete the app at %s before running crew bots create %s again", err, b.AppName, b.HTMLURL, name)
 	}
-	if !strings.EqualFold(m.Owner, repo.Owner) {
-		return m, fmt.Errorf("GitHub created the app %s for %s, not for %s, which owns %s/%s; "+
+	if !strings.EqualFold(b.Owner, repo.Owner) {
+		return b, fmt.Errorf("GitHub created the app %s for %s, not for %s, which owns %s/%s; "+
 			"crew kept the bot for %s at %s, and crew bots create %s in a repository of %s installs it there",
-			m.AppName, m.Owner, repo.Owner, repo.Owner, repo.Name, m.Owner, f.Store.Path(m.Owner, name), name, m.Owner)
+			b.AppName, b.Owner, repo.Owner, repo.Owner, repo.Name, b.Owner, f.Store.Path(b.Owner, name), name, b.Owner)
 	}
-	return m, nil
+	return b, nil
 }
 
-// install installs m, whose file is at path, on repo and confirms it: it
-// mints a token for repo with m's key (R7). When m is not installed there
+// install installs b, whose file is at path, on repo and confirms it: it
+// mints a token for repo with b's key (R7). When b is not installed there
 // yet, it prints the install page, opens it when open is set, and looks the
 // installation up every PollInterval until it appears (KTD4). Every failure
 // keeps the bot.
-func (f *Flow) install(ctx context.Context, repo Repo, m Bot, path string, open bool) error {
+func (f *Flow) install(ctx context.Context, repo Repo, b Bot, path string, open bool) error {
 	where := repo.Owner + "/" + repo.Name
-	installURL := f.installURL(m)
-	inst, err := f.API.RepoInstallation(ctx, m, repo.Owner, repo.Name)
+	installURL := f.installURL(b)
+	inst, err := f.API.RepoInstallation(ctx, b, repo.Owner, repo.Name)
 	if errors.Is(err, ErrNotInstalled) {
-		f.sayf("install %s on %s at %s", m.AppName, where, installURL)
+		f.sayf("install %s on %s at %s", b.AppName, where, installURL)
 		if open {
 			f.open(installURL)
 		}
 		f.sayf(`choose "Only select repositories" and select %s`, repo.Name)
-		f.sayf("waiting for %s to be installed on %s", m.AppName, where)
-		inst, err = f.poll(ctx, repo, m)
+		f.sayf("waiting for %s to be installed on %s", b.AppName, where)
+		inst, err = f.poll(ctx, repo, b)
 	}
 	if err == nil {
-		_, err = f.API.AccessToken(ctx, m, inst.ID, repo.Name)
+		_, err = f.API.AccessToken(ctx, b, inst.ID, repo.Name)
 	}
 	switch {
 	case errors.Is(err, ErrKeyRejected):
 		return fmt.Errorf("%w; the app %s may have been deleted on GitHub: "+
 			"delete %s and run crew bots create %s again to create a new bot",
-			err, m.AppName, path, m.Name)
+			err, b.AppName, path, b.Name)
 	case err != nil:
 		return fmt.Errorf("%w; crew kept the bot %s: install it at %s and run crew bots create %s again",
-			err, m.Name, installURL, m.Name)
+			err, b.Name, installURL, b.Name)
 	}
 	if inst.RepositorySelection == selectionAll {
 		f.warnf("warning: %s is installed on every repository of %s, so the bot %s can act on all of them; "+
-			"its installation settings on GitHub can limit it to selected repositories", m.AppName, repo.Owner, m.Name)
+			"its installation settings on GitHub can limit it to selected repositories", b.AppName, repo.Owner, b.Name)
 	}
-	f.sayf("bot %s is ready on %s as %s", m.Name, where, m.BotLogin)
+	f.sayf("bot %s is ready on %s as %s", b.Name, where, b.BotLogin)
 	return nil
 }
 
-// poll looks m's installation on repo up every PollInterval until it
+// poll looks b's installation on repo up every PollInterval until it
 // appears, InstallTimeout passes or ctx ends. Every lookup signs a fresh
 // app JWT, as the wait outlasts one. A transient failure of a lookup, such
 // as a 5xx or a rate limit, does not end the wait, but the timeout's error
 // names the last one; any other failure ends it at once.
-func (f *Flow) poll(ctx context.Context, repo Repo, m Bot) (Installation, error) {
+func (f *Flow) poll(ctx context.Context, repo Repo, b Bot) (Installation, error) {
 	timeout := time.NewTimer(f.InstallTimeout)
 	defer timeout.Stop()
 	tick := time.NewTicker(f.PollInterval)
@@ -265,16 +265,16 @@ func (f *Flow) poll(ctx context.Context, repo Repo, m Bot) (Installation, error)
 		select {
 		case <-tick.C:
 		case <-timeout.C:
-			err := fmt.Errorf("%s is not installed on %s/%s after %v", m.AppName, repo.Owner, repo.Name, f.InstallTimeout)
+			err := fmt.Errorf("%s is not installed on %s/%s after %v", b.AppName, repo.Owner, repo.Name, f.InstallTimeout)
 			if failed != nil {
 				err = fmt.Errorf("%w; the last lookup that failed: %w", err, failed)
 			}
 			return Installation{}, err
 		case <-ctx.Done():
 			return Installation{}, fmt.Errorf("stopped before %s was installed on %s/%s: %w",
-				m.AppName, repo.Owner, repo.Name, context.Cause(ctx))
+				b.AppName, repo.Owner, repo.Name, context.Cause(ctx))
 		}
-		inst, err := f.API.RepoInstallation(ctx, m, repo.Owner, repo.Name)
+		inst, err := f.API.RepoInstallation(ctx, b, repo.Owner, repo.Name)
 		switch {
 		case errors.Is(err, ErrNotInstalled):
 		case err != nil && transient(err):
@@ -303,9 +303,9 @@ func (f *Flow) appsURL(repo Repo) string {
 	return f.Web + "/settings/apps"
 }
 
-// installURL returns GitHub's page that installs m.
-func (f *Flow) installURL(m Bot) string {
-	return f.Web + "/apps/" + url.PathEscape(m.Slug) + "/installations/new"
+// installURL returns GitHub's page that installs b.
+func (f *Flow) installURL(b Bot) string {
+	return f.Web + "/apps/" + url.PathEscape(b.Slug) + "/installations/new"
 }
 
 // open opens u in the browser, or says it could not.

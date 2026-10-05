@@ -61,7 +61,7 @@ type server struct {
 	// was saved all the same.
 	exchange func(ctx context.Context, code string) (Bot, error)
 	// installURL returns the page that installs a bot.
-	installURL func(m Bot) string
+	installURL func(b Bot) string
 	// done receives the outcome of the one exchange.
 	done chan outcome
 
@@ -141,8 +141,8 @@ func (s *server) created(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.handled = true
-	m, err := s.exchange(ctx, q.Get("code"))
-	s.done <- outcome{bot: m, err: err}
+	b, err := s.exchange(ctx, q.Get("code"))
+	s.done <- outcome{bot: b, err: err}
 	if err != nil {
 		http.Error(w, "crew could not finish creating the bot; see crew's output.", http.StatusInternalServerError)
 		return
@@ -151,5 +151,5 @@ func (s *server) created(ctx context.Context, w http.ResponseWriter, r *http.Req
 	// The target is GitHub's install page for the app GitHub just created:
 	// its host is fixed, and only the escaped slug comes from GitHub's reply.
 	// nosemgrep: go.lang.security.injection.open-redirect.open-redirect
-	http.Redirect(w, r, s.installURL(m), http.StatusFound)
+	http.Redirect(w, r, s.installURL(b), http.StatusFound)
 }

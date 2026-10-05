@@ -202,16 +202,8 @@ func New(cfg Config) *Engine {
 	if finder != nil {
 		opts = append(opts, core.FindingPullRequests())
 	}
-	var board port.BoardLister
-	switch {
-	case len(cfg.Board) == 0:
-	case cfg.BoardWritten:
-		if board, _ = cfg.Tracker.(port.BoardLister); board != nil {
-			opts = append(opts, core.ListingBoard(cfg.Board))
-		}
-	default:
-		opts = append(opts, core.BoardFromListings(cfg.Board))
-	}
+	board, boardOpts := boardSource(cfg)
+	opts = append(opts, boardOpts...)
 	writes, _ := cfg.Tracker.(port.WriterReporter)
 	harnesses := make(map[string]port.Harness, len(cfg.Harnesses))
 	for _, h := range cfg.Harnesses {
@@ -232,6 +224,24 @@ func New(cfg Config) *Engine {
 		sessions:     map[sessionKey]port.Session{},
 		checks:       map[sessionKey]context.CancelFunc{},
 	}
+}
+
+// boardSource returns where the core reads cfg's board from: a written
+// Board through the tracker's port.BoardLister, which it returns, and a
+// default Board from the listings. No Board, or a written one the tracker
+// cannot list, reads none.
+func boardSource(cfg Config) (port.BoardLister, []core.Option) {
+	switch {
+	case len(cfg.Board) == 0:
+		return nil, nil
+	case cfg.BoardWritten:
+		board, _ := cfg.Tracker.(port.BoardLister)
+		if board == nil {
+			return nil, nil
+		}
+		return board, []core.Option{core.ListingBoard(cfg.Board)}
+	}
+	return nil, []core.Option{core.BoardFromListings(cfg.Board)}
 }
 
 // Run prepares the adapters, as Prepare does, unless Prepare was already
@@ -345,8 +355,9 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // tracker who the code owners are and which login it acts as, then reads the
 // run journal and builds the core from it, with the bots. It returns the first
 // error, naming its port, a harness's agent, or the journal, without running
-// what comes after it (R6). The core is then left unbuilt, which is safe because Run returns the
-// error before its loop, the only place that reads it.
+// what comes after it (R6). The core is then left unbuilt, which is safe
+// because Run returns the error before its loop, the only place that reads
+// it.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.RuleStates(e.cfg.Rules)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {

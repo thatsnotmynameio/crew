@@ -6,9 +6,9 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// OpenBrowser opens url in your browser with open on macOS, or
-// xdg-open on Linux, started detached: the browser outlives crew, and crew
-// does not wait for it. Only a failure to start the opener is an error.
+// OpenBrowser opens url in your browser with open on macOS, or xdg-open on
+// Linux, started detached: the browser outlives crew, and crew does not wait
+// for it. Only a failure to start the opener is an error.
 func OpenBrowser(url string) error {
 	return proc.StartDetached(proc.Command{Name: browserCommand(runtime.GOOS), Args: []string{url}})
 }

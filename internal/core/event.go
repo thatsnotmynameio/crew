@@ -17,7 +17,7 @@ type Event interface {
 }
 
 // IssueTaken is an issue a rule picked. Its take move, From the rule's
-// label To its moves_to, is now in flight.
+// ready label To its running label, is now in flight.
 type IssueTaken struct {
 	At    time.Time
 	Issue crew.Issue
@@ -197,8 +197,8 @@ type Stopped struct {
 }
 
 // BotStopped is a bot that stopped acting during the run: crew's writes as
-// the default bot went back to you, or the bot's token was not
-// renewed (R9, R11). It is emitted once per problem, when the bot gains it.
+// the default bot went back to you, or the bot's token was not renewed (R9,
+// R11). It is emitted once per problem, when the bot gains it.
 type BotStopped struct {
 	At  time.Time
 	Bot string

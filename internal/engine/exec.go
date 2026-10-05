@@ -255,8 +255,8 @@ func (e *Engine) ready(key, action string, space port.Space, resumed bool) core.
 // startSession starts the session with its output going to its log, after
 // a marker line when the session resumes a failed run (KTD8), then waits for
 // it to end in the same goroutine (R19). The session acts as its action's
-// bot, or as you when that bot does not act, and learns the code
-// owners' and the bots' logins.
+// bot, or as you when that bot does not act, and learns the code owners' and
+// the bots' logins.
 func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	log, err := e.openLog(c.Log)
 	if err == nil && c.Resumed {

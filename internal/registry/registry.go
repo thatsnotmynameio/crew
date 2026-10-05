@@ -1,7 +1,7 @@
 // Package registry resolves the adapter names of the config, tracker.name and
-// each agent's harness.name, to adapters. A Registry is a value built from an explicit
-// list of factories: cmd/crew passes the production list, and tests pass the
-// fakes, so both go through the same lookup and validation path.
+// each agent's harness.name, to adapters. A Registry is a value built from an
+// explicit list of factories: cmd/crew passes the production list, and tests
+// pass the fakes, so both go through the same lookup and validation path.
 package registry
 
 import (
@@ -29,9 +29,9 @@ func New(trackers map[string]port.TrackerFactory, harnesses map[string]port.Harn
 
 // Tracker builds the tracker adapter registered as name, the config's
 // tracker.name, from its config section and the rules' states. An
-// unregistered name is an error naming
-// tracker.name and every registered tracker; a factory's error, such as an
-// unknown key in the section, is returned with the adapter's name.
+// unregistered name is an error naming tracker.name and every registered
+// tracker; a factory's error, such as an unknown key in the section, is
+// returned with the adapter's name.
 func (r Registry) Tracker(name string, section port.Decode, states []crew.State) (port.Tracker, error) {
 	factory, err := lookup(r.trackers, "tracker", "tracker.name", name)
 	if err != nil {

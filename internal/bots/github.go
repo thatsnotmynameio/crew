@@ -95,18 +95,18 @@ func (c *Client) Convert(ctx context.Context, code string) (Conversion, error) {
 	return conv, nil
 }
 
-// RepoInstallation returns m's installation covering the repository
-// owner/name, signed as m. It wraps ErrNotInstalled when m is not installed
-// there, and ErrKeyRejected when GitHub rejected m's key.
-func (c *Client) RepoInstallation(ctx context.Context, m Bot, owner, name string) (Installation, error) {
+// RepoInstallation returns b's installation covering the repository
+// owner/name, signed as b. It wraps ErrNotInstalled when b is not installed
+// there, and ErrKeyRejected when GitHub rejected b's key.
+func (c *Client) RepoInstallation(ctx context.Context, b Bot, owner, name string) (Installation, error) {
 	var inst Installation
 	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/installation"
-	err := c.do(ctx, http.MethodGet, path, auth{bot: &m}, nil, http.StatusOK, &inst)
+	err := c.do(ctx, http.MethodGet, path, auth{bot: &b}, nil, http.StatusOK, &inst)
 	if se, ok := errors.AsType[*statusError](err); ok && se.code == http.StatusNotFound {
-		return Installation{}, fmt.Errorf("%s on %s/%s: %w", m.Name, owner, name, ErrNotInstalled)
+		return Installation{}, fmt.Errorf("%s on %s/%s: %w", b.Name, owner, name, ErrNotInstalled)
 	}
 	if err != nil {
-		return Installation{}, fmt.Errorf("find the installation of %s on %s/%s: %w", m.Name, owner, name, err)
+		return Installation{}, fmt.Errorf("find the installation of %s on %s/%s: %w", b.Name, owner, name, err)
 	}
 	return inst, nil
 }
@@ -122,15 +122,15 @@ type Grant struct {
 	Permissions map[string]string `json:"permissions"`
 }
 
-// AccessToken mints an installation token of m's installation id, limited
+// AccessToken mints an installation token of b's installation id, limited
 // to the repository called name and to the permissions every bot asks
-// for. It wraps ErrKeyRejected when GitHub rejected m's key.
-func (c *Client) AccessToken(ctx context.Context, m Bot, id int64, name string) (Grant, error) {
+// for. It wraps ErrKeyRejected when GitHub rejected b's key.
+func (c *Client) AccessToken(ctx context.Context, b Bot, id int64, name string) (Grant, error) {
 	path := "/app/installations/" + strconv.FormatInt(id, 10) + "/access_tokens"
 	body := map[string]any{"repositories": []string{name}, "permissions": permissions()}
 	var g Grant
-	if err := c.do(ctx, http.MethodPost, path, auth{bot: &m}, body, http.StatusCreated, &g); err != nil {
-		return Grant{}, fmt.Errorf("mint a token of %s for %s: %w", m.Name, name, err)
+	if err := c.do(ctx, http.MethodPost, path, auth{bot: &b}, body, http.StatusCreated, &g); err != nil {
+		return Grant{}, fmt.Errorf("mint a token of %s for %s: %w", b.Name, name, err)
 	}
 	return g, nil
 }

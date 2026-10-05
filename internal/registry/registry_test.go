@@ -31,7 +31,8 @@ func load(t *testing.T, body string) *config.Config {
 	return cfg
 }
 
-// rules is one rule of one action, which runs on the agent agents declares.
+// rules is one rule of one action, which runs on the one agent that agent
+// declares.
 const rules = `rules:
   implement:
     labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}

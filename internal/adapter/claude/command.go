@@ -29,8 +29,8 @@ const (
 // closes stdin. The prompt goes last, after --, so one that starts with a dash
 // (a Markdown list, an issue title) is not read as an option. The session acts
 // as run's identity, with its environment added and the variables it unsets
-// removed, and gets the code owners' and the bots' logins as
-// CREW_CODE_OWNERS and CREW_BOTS.
+// removed, and gets the code owners' and the bots' logins as CREW_CODE_OWNERS
+// and CREW_BOTS.
 func command(run port.Run, model string) proc.Command {
 	env := slices.Concat(
 		[]string{bashDefaultTimeout, bashMaxTimeout},
