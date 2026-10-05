@@ -36,7 +36,8 @@ type budget struct {
 
 // View renders the dashboard (R1): the header, the warnings, Bots, Board,
 // Queues beside Events and the key-help line, fitted to the window, with
-// the keys over it while help shows. It also sets the window title, the
+// the highlighted card's popup over it while it is open, and the keys
+// over both while help shows (KTD7 of #151). It also sets the window title, the
 // tab progress and focus reports (R23, R24, KTD6).
 func (m Model) View() tea.View {
 	out := m.fitted()
@@ -44,6 +45,9 @@ func (m Model) View() tea.View {
 		out[i] = fit(l, m.width)
 	}
 	content := strings.Join(out, "\n")
+	if m.popup {
+		content = m.popupOverlay(content)
+	}
 	if m.help {
 		content = m.helpOverlay(content)
 	}

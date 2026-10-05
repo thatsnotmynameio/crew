@@ -92,6 +92,10 @@ type Model struct {
 	eventsOffset int
 	// sel is the highlighted card (KTD5 of #151).
 	sel selection
+	// popup is set while the highlighted card's popup shows, popupOffset
+	// the rows its content is scrolled (KTD7 of #151).
+	popup       bool
+	popupOffset int
 
 	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).
@@ -172,7 +176,13 @@ func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	m.at = m.cfg.Now()
 	cards := m.cards()
 	m.messages.record(m.snap, cards)
+	was := m.sel.key
 	m.sel = m.sel.repaired(cards)
+	// The popup follows its issue while it has a card, and closes when
+	// it has none (R21 of #151).
+	if m.sel.key != was {
+		m.popup = false
+	}
 	slide := m.memory.moved(cards)
 	notes := m.notifications()
 	if len(notes) == 0 {

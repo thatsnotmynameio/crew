@@ -110,11 +110,15 @@ func (m Model) navigated(msg tea.KeyPressMsg) Model {
 }
 
 // escaped returns m with the help closed when it shows, else with the
-// board focused (KTD12 of #151).
+// popup closed when it is open, else with the board focused (KTD12 of
+// #151).
 func (m Model) escaped() Model {
-	if m.help {
+	switch {
+	case m.help:
 		m.help = false
-	} else {
+	case m.popup:
+		m.popup = false
+	default:
 		m.focus = focusBoard
 	}
 	return m

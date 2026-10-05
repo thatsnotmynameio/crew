@@ -152,7 +152,7 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 		"run  the issue's actions and how long each has run",
 		"bots the bots its running actions act as",
 		"via  the queue its actions run in")
-	for _, binding := range []string{`enter +open card`, `esc +board`, `b +bots`, `e +events`} {
+	for _, binding := range []string{`enter +open card`, `esc +close or board`, `b +bots`, `e +events`} {
 		if !regexp.MustCompile(`\b` + binding + `\b`).MatchString(view) {
 			t.Errorf("the keys lack %q:\n%s", binding, view)
 		}

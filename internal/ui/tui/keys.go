@@ -28,7 +28,7 @@ func newKeyMap() keyMap {
 		back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus back")),
 		bots:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bots")),
 		events:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "events")),
-		esc:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "board")),
+		esc:      key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close or board")),
 		enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open card")),
 		up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "card or events up")),
 		down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "card or events down")),
@@ -43,7 +43,8 @@ func newKeyMap() keyMap {
 }
 
 // key handles a key press: the stop keys as before (KTD7), the help
-// overlay, then focus, the highlight and scrolling (KTD12 of #151).
+// overlay, then the popup's keys while it is open, else Enter, focus, the
+// highlight and scrolling (KTD12 of #151).
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.stop):
@@ -57,6 +58,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.help = !m.help
 	case key.Matches(msg, m.keys.esc):
 		m = m.escaped()
+	case m.popup:
+		m = m.popupKey(msg)
+	case key.Matches(msg, m.keys.enter):
+		m = m.opened()
 	default:
 		m = m.navigated(msg)
 	}
@@ -118,7 +123,8 @@ func (m Model) helper() help.Model {
 	return h
 }
 
-// keyHelp is the key-help line (R21), or, once you asked to stop, how
+// keyHelp is the key-help line (R21), the popup's while it is open
+// (KTD12 of #151), or, once you asked to stop, how
 // to force the exit (KTD16).
 func (m Model) keyHelp() string {
 	if m.stopping {
@@ -126,6 +132,14 @@ func (m Model) keyHelp() string {
 	}
 	h := m.helper()
 	h.SetWidth(m.width)
+	if m.popup {
+		return h.ShortHelpView([]key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+			key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "card")),
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "scroll")),
+			m.keys.stop,
+		})
+	}
 	move := key.NewBinding(key.WithKeys("left", "right", "up", "down"), key.WithHelp("←→↑↓", "move"))
 	open := key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open"))
 	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, move, open, m.keys.help})
