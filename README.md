@@ -44,7 +44,7 @@ Commit a `.crew/config.yaml` that declares your agents and rules ([`.crew/config
 crew
 ```
 
-crew shows a live view of the issues it holds and the sessions it runs; `--plain` prints one line per event instead. You act on issues through their labels on GitHub.
+crew shows a live view of the issues it holds and the sessions it runs; `--plain` prints one line per event instead. You act on issues through their labels on GitHub. Under the header, Bots shows a card for each bot crew acts as, then one for you: whether it can act, what it cost this run, what acts as it and what runs as it now. Tab focuses Bots first, then Handled and Events; while Bots has focus, ←→ scroll its cards when they do not all fit, and otherwise scroll the board.
 
 ## What's inside
 
