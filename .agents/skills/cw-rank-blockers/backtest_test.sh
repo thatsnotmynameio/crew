@@ -34,11 +34,17 @@ if [ -e "$FIXTURE/gh.fail" ]; then
 fi
 case "$1 $2" in
 "api graphql")
-	if [ -e "$FIXTURE/graphql.json" ]; then
-		cat "$FIXTURE/graphql.json"
-	else
-		jq -n --slurpfile nodes "$FIXTURE/nodes.json" '{data: {repository: {nameWithOwner: "owner/repo", issues: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: $nodes[0]}}}}'
-	fi
+	# The paginated call lists the issue numbers; every other call looks
+	# issues up by number, under the aliases the query gives them.
+	case " $* " in
+	*" --paginate "*)
+		jq '{data: {repository: {nameWithOwner: "owner/repo", issues: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: map({number})}}}}' "$FIXTURE/nodes.json"
+		;;
+	*)
+		numbers=$(printf '%s' "$*" | grep -o 'issue(number: [0-9]*)' | tr -cd '0-9\n' | paste -sd, -)
+		jq --argjson want "[$numbers]" '{data: {repository: (map(select(.number as $n | $want | index($n))) | map({key: "i\(.number)", value: .}) | from_entries)}}' "$FIXTURE/nodes.json"
+		;;
+	esac
 	;;
 *)
 	echo "gh stub: unexpected command: $*" >&2

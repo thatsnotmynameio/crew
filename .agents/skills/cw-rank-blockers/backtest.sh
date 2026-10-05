@@ -55,40 +55,52 @@ one_line() {
 	tr '\n' ' ' <"$1" | sed 's/ *$//'
 }
 
+# The issue list comes from the paginated issues connection, but each
+# issue's history from issue(number:) lookups: on 2026-10-05 the
+# connection's nested timelineItems were stale (none for #133, #135 and
+# #139, which issue(number:) returned 16, 18 and 2 of).
 # shellcheck disable=SC2016 # $owner, $name and $endCursor are GraphQL variables
-query='query($owner: String!, $name: String!, $endCursor: String) {
+list_query='query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     nameWithOwner
-    issues(first: 25, after: $endCursor, states: [OPEN, CLOSED], orderBy: {field: CREATED_AT, direction: ASC}) {
-      pageInfo { hasNextPage endCursor }
-      nodes {
-        number title body createdAt closedAt
-        author { login __typename }
-        userContentEdits(first: 100) { totalCount nodes { editedAt diff } }
-        timelineItems(first: 100, itemTypes: [BLOCKED_BY_ADDED_EVENT, BLOCKED_BY_REMOVED_EVENT, CLOSED_EVENT, REOPENED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) {
-          totalCount
-          nodes {
-            __typename
-            ... on BlockedByAddedEvent { createdAt actor { login __typename } blockingIssue { number repository { nameWithOwner } } }
-            ... on BlockedByRemovedEvent { createdAt actor { login __typename } blockingIssue { number repository { nameWithOwner } } }
-            ... on ClosedEvent { createdAt }
-            ... on ReopenedEvent { createdAt }
-            ... on LabeledEvent { createdAt label { name } }
-            ... on UnlabeledEvent { createdAt label { name } }
-          }
-        }
-      }
+    issues(first: 100, after: $endCursor, states: [OPEN, CLOSED]) { pageInfo { hasNextPage endCursor } nodes { number } }
+  }
+}'
+history_fields='fragment history on Issue {
+  number title body createdAt closedAt
+  author { login __typename }
+  userContentEdits(first: 100) { totalCount nodes { editedAt diff } }
+  timelineItems(first: 100, itemTypes: [BLOCKED_BY_ADDED_EVENT, BLOCKED_BY_REMOVED_EVENT, CLOSED_EVENT, REOPENED_EVENT, LABELED_EVENT, UNLABELED_EVENT]) {
+    totalCount
+    nodes {
+      __typename
+      ... on BlockedByAddedEvent { createdAt actor { login __typename } blockingIssue { number repository { nameWithOwner } } }
+      ... on BlockedByRemovedEvent { createdAt actor { login __typename } blockingIssue { number repository { nameWithOwner } } }
+      ... on ClosedEvent { createdAt }
+      ... on ReopenedEvent { createdAt }
+      ... on LabeledEvent { createdAt label { name } }
+      ... on UnlabeledEvent { createdAt label { name } }
     }
   }
 }'
-gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query="$query" >"$tmp/pages.json" 2>"$tmp/gh.err" ||
+gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -f query="$list_query" >"$tmp/list.json" 2>"$tmp/gh.err" ||
 	fail "gh api graphql failed: $(one_line "$tmp/gh.err")"
+jq -rs '.[0].data.repository.nameWithOwner' "$tmp/list.json" >"$tmp/repo"
+jq -rs '[.[].data.repository.issues.nodes[].number] | . as $n | range(0; length; 20) | $n[.:. + 20] | map("i\(.): issue(number: \(.)) { ...history }") | join(" ")' \
+	"$tmp/list.json" >"$tmp/batches"
+: >"$tmp/pages.json"
+while read -r lookups; do
+	gh api graphql -F owner='{owner}' -F name='{repo}' \
+		-f query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { $lookups } } $history_fields" \
+		>>"$tmp/pages.json" 2>"$tmp/gh.err" ||
+		fail "gh api graphql failed: $(one_line "$tmp/gh.err")"
+done <"$tmp/batches"
 
 # One history file: the repository's name, and each issue with its edits,
 # open and closed states, refinement label changes and link events.
-jq -s --arg running "$running_label" '{
-	repo: .[0].data.repository.nameWithOwner,
-	issues: [.[].data.repository.issues.nodes[] | {
+jq -s --arg running "$running_label" --rawfile repo "$tmp/repo" '{
+	repo: ($repo | rtrimstr("\n")),
+	issues: [.[].data.repository[] | {
 		number, title,
 		body: (.body // ""),
 		created: .createdAt,
