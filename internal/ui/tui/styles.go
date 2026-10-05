@@ -64,12 +64,14 @@ type styles struct {
 	avatars [avatarHues]color.Color
 	offline color.Color
 
-	text, title, muted, subtle   lipgloss.Style
-	accent, strongAccent         lipgloss.Style
+	text, title, muted, subtle lipgloss.Style
+	accent, strongAccent       lipgloss.Style
+	// highlight is the highlighted card's border: the title colour, the
+	// brightest on its background (KTD11 of #151).
+	highlight                    lipgloss.Style
 	success, warning, error      lipgloss.Style
 	chip, ref                    lipgloss.Style
-	successPill, warningPill     lipgloss.Style
-	errorPill                    lipgloss.Style
+	warningPill                  lipgloss.Style
 	helpBox, helpKey, helpAction lipgloss.Style
 }
 
@@ -87,14 +89,14 @@ func newStyles(dark bool) styles {
 		gradientFrom: p.gradientFrom, gradientTo: p.gradientTo,
 		avatars: p.avatars, offline: p.offline,
 		text: fg(p.text), title: fg(p.title).Bold(true), muted: fg(p.muted), subtle: fg(p.subtle),
-		accent: fg(p.accent), strongAccent: fg(p.strongAccent),
+		accent: fg(p.accent), strongAccent: fg(p.strongAccent), highlight: fg(p.title),
 		success: fg(p.success), warning: fg(p.warning), error: fg(p.error),
 		chip: lipgloss.NewStyle().Foreground(p.chipText).Background(p.chipBack).Padding(0, 1),
 		ref:  fg(p.text).Underline(true).UnderlineColor(p.muted),
 
-		successPill: pill(p.success), warningPill: pill(p.warning), errorPill: pill(p.error),
-		helpBox: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.subtle).Padding(0, 1),
-		helpKey: fg(p.accent).Bold(true), helpAction: fg(p.text),
+		warningPill: pill(p.warning),
+		helpBox:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.subtle).Padding(0, 1),
+		helpKey:     fg(p.accent).Bold(true), helpAction: fg(p.text),
 	}
 }
 

@@ -105,11 +105,11 @@ func labeled(issue crew.Issue, labels ...string) crew.BoardIssue {
 }
 
 // boardOf returns the Board section of view: its rule up to the blank
-// line before Actions.
+// line before the band of Queues and Events.
 func boardOf(t *testing.T, view string) string {
 	t.Helper()
 	i := strings.Index(view, "Board ")
-	j := strings.Index(view, "\n\nActions ")
+	j := strings.Index(view, "\n\nQueues ")
 	if i < 0 || j < i {
 		t.Fatalf("view lacks the Board section:\n%s", view)
 	}
@@ -123,19 +123,32 @@ func columnNamesOf(t *testing.T, board string) string {
 	return strings.Join(strings.Fields(strings.Split(board, "\n")[1]), " ")
 }
 
+// columnWidth returns the width of the board's columns: that of its first
+// card, from border to border.
+func columnWidth(board string) int {
+	for l := range strings.SplitSeq(board, "\n") {
+		if _, rest, found := strings.Cut(l, "╭"); found {
+			top, _, _ := strings.Cut(rest, "╮")
+			return len([]rune(top)) + 2
+		}
+	}
+	return maxColumn
+}
+
 // cardColumns returns every drawn column holding a card for ref, by its x
 // on the board's rows.
 func cardColumns(board, ref string) []int {
 	var out []int
+	step := columnWidth(board) + columnGap
 	for l := range strings.SplitSeq(board, "\n") {
 		rest, x := l, 0
 		for {
-			i := strings.Index(rest, "▌ "+ref+" ")
+			i, _ := nextCard(rest, ref+" ")
 			if i < 0 {
 				break
 			}
 			x += len([]rune(rest[:i]))
-			out = append(out, x/(maxColumn+columnGap))
+			out = append(out, x/step)
 			rest, x = rest[i+1:], x+1
 		}
 	}
@@ -175,17 +188,19 @@ func schedulesSlideTick(cmd tea.Cmd) bool {
 }
 
 // Covers AE5 of #134: the default board of promote triage, triage and
-// development has two columns, triage then development, and an issue the
-// rule without actions holds has no card.
+// development has two columns, triage then development, then Handled
+// (#151), and an issue the rule without actions holds has no card, not
+// even in Not on board.
 func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard[:2])
+	u := held(twelve, "promote triage", "promote", core.ClaimRunning)
+	u.Snapshot.Issues[0].Actions = nil
 
-	h.send(updateMsg(onBoard(held(twelve, "promote triage", "promote", core.ClaimRunning),
-		labeled(twenty, "crew:development:ready"))))
+	h.send(updateMsg(onBoard(u, labeled(twenty, "crew:development:ready"))))
 	board := boardOf(t, h.view())
 
-	if got := columnNamesOf(t, board); got != "triage development" {
-		t.Errorf("columns = %q, want triage development:\n%s", got, board)
+	if got := columnNamesOf(t, board); got != "triage development Handled 0" {
+		t.Errorf("columns = %q, want triage development Handled 0:\n%s", got, board)
 	}
 	if got := cardColumns(board, "#20"); len(got) != 1 || got[0] != 1 {
 		t.Errorf("#20's cards are in columns %v, want one in development (1):\n%s", got, board)
@@ -206,12 +221,12 @@ func TestAnItemInARunningLabelCrewDoesNotHoldHasAnIdleCard(t *testing.T) {
 	if col := cardColumn(t, board, "#12"); col != 1 {
 		t.Errorf("#12's card is in column %d, want development's 1:\n%s", col, board)
 	}
-	contains(t, board, "▌ ○ idle")
+	contains(t, board, "run  ○ idle")
 }
 
 // Covers R23 and R28: an issue whose rule ended in a label no column names
-// has no card, and no card waits for the next rule.
-func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
+// has only its Handled card (#151), and no card waits for the next rule.
+func TestAnIssueMovedToALabelNoColumnNamesHasOnlyItsHandledCard(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
 		labeled(twelve, "crew:triage:in progress"))))
@@ -219,8 +234,8 @@ func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
 	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:done")))
 	board := boardOf(t, h.view())
 
-	if strings.Contains(board, "#12") || strings.Contains(board, "→") {
-		t.Errorf("the board shows #12 or a waiting card:\n%s", board)
+	if got := cardColumns(board, "#12"); !slices.Equal(got, []int{len(crewBoard)}) || strings.Contains(board, "→") {
+		t.Errorf("#12's cards are in columns %v, want Handled's alone, or a card waits:\n%s", got, board)
 	}
 	contains(t, board, " 0 issues")
 }
@@ -253,13 +268,13 @@ func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning), labeled(twenty, "bug"))))
 	board := boardOf(t, h.view())
 
-	if got := columnNamesOf(t, board); got != "ideas bugs done" {
-		t.Errorf("columns = %q, want ideas bugs done:\n%s", got, board)
+	if got := columnNamesOf(t, board); got != "ideas bugs done Handled 0" {
+		t.Errorf("columns = %q, want ideas bugs done Handled 0:\n%s", got, board)
 	}
 	if got := cardColumns(board, "#20"); len(got) != 1 || got[0] != 1 {
 		t.Errorf("#20's cards are in columns %v, want one in bugs (1):\n%s", got, board)
 	}
-	contains(t, board, "▌ ⠋ running")
+	contains(t, board, "run  ⠋ lfg 1m")
 }
 
 // Covers AE2 and R23: an issue with two columns' labels has a card in each.
@@ -274,18 +289,6 @@ func TestAE2AnIssueWithTwoColumnsLabelsHasACardInEach(t *testing.T) {
 	}
 }
 
-func TestAHeldIssueOnNoColumnsLabelHasNoCardButShowsInActions(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
-
-	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
-	view := h.view()
-
-	if board := boardOf(t, view); strings.Contains(board, "#12") {
-		t.Errorf("the board shows #12, which carries no column's label:\n%s", board)
-	}
-	contains(t, view, "development/lfg")
-}
-
 // The columns show in board order, empty ones included, whatever the
 // rules.
 func TestTheColumnsShowInBoardOrder(t *testing.T) {
@@ -298,8 +301,8 @@ func TestTheColumnsShowInBoardOrder(t *testing.T) {
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "bug"))))
 
 	got := boardOf(t, h.view())
-	if names := columnNamesOf(t, got); names != "done ideas bugs" {
-		t.Errorf("columns = %q, want done ideas bugs:\n%s", names, got)
+	if names := columnNamesOf(t, got); names != "done ideas bugs Handled 0" {
+		t.Errorf("columns = %q, want done ideas bugs Handled 0:\n%s", names, got)
 	}
 }
 
@@ -316,7 +319,7 @@ func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 
 	view := checkFits(t, h, 80, 24)
 	board := boardOf(t, view)
-	contains(t, board, "▌ #1 Bug", "more")
+	contains(t, board, "│ ▸ #1 Bug", "more")
 	if strings.Contains(board, "#8 ") {
 		t.Errorf("the newest card shows while the column is cut:\n%s", board)
 	}
@@ -356,7 +359,7 @@ func TestAColumnShowsAtMostFiveCards(t *testing.T) {
 func TestAShortWindowTakesOneCardOffACappedColumn(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
-	least := budget{events: minScroll, handled: minScroll, cards: maxCards, said: false, botCards: true}
+	least := budget{events: minScroll, cards: maxCards, botCards: true}
 	height := len(h.current().rows(least)) - cardRows
 	h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 
@@ -386,7 +389,7 @@ func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, eightColumns())
 	h.send(updateMsg(u))
 	board := boardOf(t, h.view())
-	contains(t, board, "6 empty columns not shown")
+	contains(t, board, "7 empty columns not shown")
 	if got := columnNamesOf(t, board); got != "c2 c6" {
 		t.Errorf("columns = %q, want c2 c6:\n%s", got, board)
 	}
@@ -417,9 +420,9 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		}
 	}
 	u := onBoard(engine.Update{}, issues...)
-	// The two heights just above the lowest that fits: a cap counting the
-	// scrolled-off column of 6 would leave both cut.
-	for _, height := range []int{25, 26} {
+	// The two lowest heights that fit: a cap counting the scrolled-off
+	// column of 6 would leave both cut.
+	for _, height := range []int{21, 22} {
 		h := newBoardHarness(t, 80, crewRules, eightColumns()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))
@@ -459,20 +462,24 @@ func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
 	}
 }
 
-// Covers R11 and KTD13: each claim reads through its icon.
+// Covers R2 of #151: a held issue whose actions all ended reads its claim
+// through its icon.
 func TestEachClaimReadsThroughItsIcon(t *testing.T) {
 	for claim, want := range map[core.Claim]string{
-		core.ClaimRunning: "⠋ running", core.ClaimJudging: "⠋ judging", core.ClaimTaking: "◌ taking",
-		core.ClaimOwed: "! owed", core.ClaimStopping: "■ stopping",
+		core.ClaimRunning: "run  ⠋ running", core.ClaimJudging: "run  ⠋ judging", core.ClaimTaking: "run  ◌ taking",
+		core.ClaimOwed: "run  ! owed", core.ClaimStopping: "run  ■ stopping",
 	} {
 		h := newBoardHarness(t, 120, crewRules, crewBoard)
-		h.send(updateMsg(onBoard(held(twelve, "triage", "triage", claim), labeled(twelve, "crew:triage:in progress"))))
-		contains(t, boardOf(t, h.view()), "▌ "+want)
+		u := held(twelve, "triage", "triage", claim)
+		u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseEnded
+		h.send(updateMsg(onBoard(u, labeled(twelve, "crew:triage:in progress"))))
+		if got := faceOf(t, boardOf(t, h.view()), "#12")[1]; got != want {
+			t.Errorf("%s: run row = %q, want %q", claim, got, want)
+		}
 	}
 }
 
-// Covers #126: an unheld card keeps its two rows, the second a status of
-// its own, ○ idle, and no claim.
+// Covers #126: an unheld card reads ○ idle, no bots and no queue.
 func TestAnUnheldCardShowsIdle(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
 
@@ -480,18 +487,9 @@ func TestAnUnheldCardShowsIdle(t *testing.T) {
 		labeled(twenty, "bug"), labeled(twentyTwo, "bug"))))
 	board := boardOf(t, h.view())
 
-	contains(t, board, "▌ #22 Typo in help", "▌ ⠋ running")
-	if strings.Contains(board, "◌") {
-		t.Errorf("an unheld card draws a claim:\n%s", board)
-	}
-	rows := strings.Split(board, "\n")
-	for i, l := range rows {
-		if lead, _, found := strings.Cut(l, "▌ #22"); found {
-			x := len([]rune(lead))
-			if got := strings.TrimRight(string([]rune(rows[i+1])[x:]), " "); got != "▌ ○ idle" {
-				t.Errorf("#22's second row = %q, want ▌ ○ idle:\n%s", got, board)
-			}
-		}
+	want := []string{"#22 Typo in help", "run  ○ idle", "bots none", "via  none"}
+	if got := faceOf(t, board, "#22"); !slices.Equal(got, want) {
+		t.Errorf("#22's card = %q, want %q:\n%s", got, want, board)
 	}
 	if strings.Count(board, "○ idle") != 1 {
 		t.Errorf("want one idle card, #22's; the running #20 is not idle:\n%s", board)

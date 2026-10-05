@@ -27,6 +27,9 @@ var update = flag.Bool("update", false, "rewrite the golden files in testdata")
 // not depend on the machine's zone.
 var zone = time.FixedZone("test", -3*60*60)
 
+// harnessRows is the height of a harness's window.
+const harnessRows = 48
+
 // start is the clock's time when a test begins.
 var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 
@@ -66,7 +69,8 @@ func newHarness(t *testing.T, width int, warnings ...string) *harness {
 }
 
 // newBoardHarness returns a harness of rules and board's columns, in a
-// window width wide and 40 rows high.
+// window width wide and 48 rows high: room for every section of the
+// test snapshots, whose columns hold up to two cards.
 func newBoardHarness(
 	t *testing.T, width int, rules []crew.Rule, board []crew.BoardColumn, warnings ...string,
 ) *harness {
@@ -77,7 +81,7 @@ func newBoardHarness(
 		Now: func() time.Time { return h.clock }, Location: zone,
 		Rules: rules, Board: board, Repository: "crew", Warnings: warnings,
 	})
-	h.send(tea.WindowSizeMsg{Width: width, Height: 40})
+	h.send(tea.WindowSizeMsg{Width: width, Height: harnessRows})
 	return h
 }
 
@@ -220,6 +224,17 @@ func resumingSnapshot() engine.Update {
 	}}
 }
 
+// Covers R16: a reopening action reads its phase on its card, and a
+// resumed one's workspace shows in its event.
+func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
+	h := newHarness(t, 120)
+
+	h.send(updateMsg(resumingSnapshot()))
+
+	golden(t, "resuming", h.view())
+	contains(t, h.view(), "⠋ docs reopenin", "lfg resumed in worktree issue-9-lfg")
+}
+
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
@@ -252,20 +267,16 @@ func TestARequestedStopWhileWindingDownShowsTheStoppingHeader(t *testing.T) {
 	}
 }
 
-func TestATickOneSecondLaterAdvancesBothElapsedTimes(t *testing.T) {
-	h := newHarness(t, 80)
+func TestATickAMinuteLaterAdvancesBothElapsedTimes(t *testing.T) {
+	h := newHarness(t, 120)
 	h.send(updateMsg(runningSnapshot()))
 
-	h.clock = h.clock.Add(time.Second)
+	h.clock = h.clock.Add(time.Minute)
 	cmd := h.send(tickMsg{})
 
 	view := h.view()
-	for _, want := range []string{"5m01s", "7m01s"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("view lacks elapsed %s:\n%s", want, view)
-		}
-	}
-	if strings.Contains(view, "5m00s") || strings.Contains(view, "7m00s") {
+	contains(t, view, "⠋ code 6m · ⠋ tests 8m")
+	if strings.Contains(view, "code 5m") || strings.Contains(view, "tests 7m") {
 		t.Errorf("view still shows the old elapsed times:\n%s", view)
 	}
 	if cmd == nil {
@@ -273,16 +284,16 @@ func TestATickOneSecondLaterAdvancesBothElapsedTimes(t *testing.T) {
 	}
 }
 
-// Covers R9 (TUI side): an action whose check runs is still running.
-func TestAnActionRunningItsCheckShowsAsCheckingWithItsElapsedTime(t *testing.T) {
+// Covers R9 (TUI side): an action whose check runs still runs on its card.
+func TestAnActionRunningItsCheckStillRunsOnItsCard(t *testing.T) {
 	h := newHarness(t, 80)
 	u := runningSnapshot()
 	u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseChecking
 
 	h.send(updateMsg(u))
 
-	if view := h.view(); !strings.Contains(view, "implement/code    default   checking 5m00s") {
-		t.Errorf("view lacks the checking action with its elapsed time:\n%s", view)
+	if got := faceOf(t, boardOf(t, h.view()), "#1")[1]; got != "run  ⠋ code 5m +1" {
+		t.Errorf("#1's run row = %q, want the checking action running with its elapsed time", got)
 	}
 }
 
@@ -408,7 +419,7 @@ func TestASpinnerTickTurnsTheRunningSpinners(t *testing.T) {
 	}
 
 	view := h.view()
-	if strings.Contains(view, "⠋ running") || !strings.Contains(view, "⠙ running") {
+	if strings.Contains(view, "⠋ code 5m") || !strings.Contains(view, "⠙ code 5m") {
 		t.Errorf("the spinner did not turn to its next frame:\n%s", view)
 	}
 }

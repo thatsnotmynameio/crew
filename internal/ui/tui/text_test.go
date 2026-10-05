@@ -7,8 +7,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/thatsnotmynameio/crew/internal/core"
 )
 
 // Covers KTD14.
@@ -67,26 +65,6 @@ func TestARuleFillsTheWidth(t *testing.T) {
 	}
 	if r := ansi.Strip(m.rule("Events", "a summary far too long for it", 20, true)); r != "▸ Events ───────────" {
 		t.Errorf("narrow focused rule = %q, want the summary dropped", r)
-	}
-}
-
-// Covers R5 and R28: each pill takes its role's colour as background, with
-// bold dark text.
-func TestEachPillTakesItsRolesColour(t *testing.T) {
-	m := testModel()
-	ink := "38;2;32;31;42" // #201f2a
-	for e, back := range map[*core.HandledView]string{
-		new(failedEntry("5", "x", 2, 1, "a", "r")):                         "48;2;255;107;139", // error #ff6b8b
-		new(givenUpEntry(entry("6", "x", "s", "ready", 2, 1), "closed")):   "48;2;255;211;107", // warning #ffd36b
-		new(entry("7", "x", "s", "crew:development:waiting review", 2, 1)): "48;2;104;255;214", // success #68ffd6
-	} {
-		got := m.pill(*e)
-		if !strings.Contains(got, back) || !strings.Contains(got, ink) || !strings.Contains(got, "1;") {
-			t.Errorf("pill %q lacks its background %s, bold or ink %s", got, back, ink)
-		}
-	}
-	if got := ansi.Strip(m.pill(entry("7", "x", "s", "done", 2, 1))); got != " DONE " {
-		t.Errorf("pill of a state without colons = %q", got)
 	}
 }
 

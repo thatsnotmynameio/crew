@@ -348,7 +348,9 @@ func threeBotsOnABoard() engine.Update {
 }
 
 // Covers AE3: three cards fit 80 columns; once tab gives Bots focus, →
-// shows your card; with Events focused, → scrolls the board instead.
+// shows your card; with Events focused, → moves the board's highlight
+// instead, and the board scrolls once it reaches a column off its edge
+// (KTD6 of #151).
 func TestAE3TheCardsScrollSidewaysWhileBotsHasFocus(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, eightColumns())
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 0})
@@ -379,8 +381,9 @@ func TestAE3TheCardsScrollSidewaysWhileBotsHasFocus(t *testing.T) {
 	board := boardOf(t, view)
 
 	h.send(tab)
-	h.send(tab)
-	h.send(tea.KeyPressMsg{Code: tea.KeyRight})
+	for range 3 {
+		h.send(tea.KeyPressMsg{Code: tea.KeyRight})
+	}
 	view = h.view()
 	if got := boardOf(t, view); got == board || !strings.Contains(got, "◂ 1") {
 		t.Errorf("→ with Events focused did not scroll the board:\n%s", got)
@@ -412,7 +415,7 @@ func TestANarrowRuleKeepsTheScrollMarkers(t *testing.T) {
 }
 
 // Covers R9: ↑↓ do nothing while Bots has focus, and shift+tab from Bots
-// leaves no section focused.
+// gives the board its focus back (KTD4 of #151).
 func TestBotsTakesFocusFirstAndIgnoresUpAndDown(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(withBots(aeOneBots()...)))
@@ -429,7 +432,7 @@ func TestBotsTakesFocusFirstAndIgnoresUpAndDown(t *testing.T) {
 	}
 	h.send(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	if h.view() != before {
-		t.Errorf("shift+tab from Bots did not leave no section focused:\n%s", h.view())
+		t.Errorf("shift+tab from Bots did not give the board its focus back:\n%s", h.view())
 	}
 }
 
@@ -490,10 +493,10 @@ func TestTheStripShowsEachEntrysGlyphAndCountsTheRest(t *testing.T) {
 	}
 }
 
-// shortWindow is AE1's bots with a said line, ten handled issues, 30
-// events and three cards in implement.
+// shortWindow is AE1's bots with ten handled issues, 30 events and three
+// cards in implement.
 func shortWindow() engine.Update {
-	u := withSaid("Running the tests")
+	u := runningSnapshot()
 	u.Snapshot.Bots = aeOneBots()
 	u.Snapshot.Handled = manySnapshot().Snapshot.Handled
 	u.Snapshot.Recent = eventful().Snapshot.Recent
@@ -505,22 +508,22 @@ func shortWindow() engine.Update {
 	return u
 }
 
-// Covers AE4 and R10: once Events, Handled, the said lines and the board
-// cards have shrunk, the cards collapse to a one-row strip, and only then
-// is the view cut.
+// Covers AE4 and R10: once Events and the board cards have shrunk, the
+// cards collapse to a one-row strip, and only then is the view cut (KTD10
+// of #151).
 func TestAE4TheCardsCollapseToAStripLastBeforeTheCut(t *testing.T) {
 	u := shortWindow()
 	h := newHarness(t, 120)
 	h.send(updateMsg(u))
-	least := budget{events: minScroll, handled: minScroll, cards: 1, said: false, botCards: true}
+	least := budget{events: minScroll, cards: 1, botCards: true}
 	height := len(h.current().rows(least))
 
 	view := fitted(t, 120, height, u)
 	if len(botsOf(t, view)) != botCardRows || strings.Contains(view, "lines cut") {
 		t.Fatalf("at %d rows the cards collapsed or the view was cut:\n%s", height, view)
 	}
-	if strings.Contains(view, "└") || !strings.Contains(view, "+2 more") || len(eventsRows(t, view)) != minScroll {
-		t.Errorf("at %d rows Events, the said lines or the board cards did not shrink first:\n%s", height, view)
+	if !strings.Contains(view, "+2 more") || len(eventsRows(t, view)) != minScroll {
+		t.Errorf("at %d rows Events or the board cards did not shrink first:\n%s", height, view)
 	}
 
 	view = fitted(t, 120, height-1, u)

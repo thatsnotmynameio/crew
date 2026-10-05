@@ -9,31 +9,39 @@ Bots ─────────────────────────
  │ ⠋ #1 implement/code +1         │
  ╰────────────────────────────────╯
 
-Board ───────────────────────────────────────────────────────────────── 3 issues
- implement                       review                        
- ──────────────────────────────  ──────────────────────────────
- ▌ #1 Add login form             ▌ #2 Fix the flaky stream test
- ▌ ⠋ running                     ▌ ◌ taking                    
-                                 ▌ #7 Log the poll interval    
-                                 ▌ ○ idle                      
+▸ Board ─────────────────────────────────────────────────────────────── 3 issues
+ implement                  review                     Handled 4 · $19.86       
+ ─────────────────────────  ─────────────────────────  ─────────────────────────
+ ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
+ │ ▸ #1 Add login form   │  │ #2 Fix the flaky str… │  │ #6 Drop the old flag  │
+ │ run  ⠋ code 5m +1     │  │ run  ○ check waiting  │  │ ■ given up            │
+ │ bots ■ you            │  │ bots none             │  │ × move to ready to r… │
+ │ via  default          │  │ via  clerk            │  │ implement 5m00s       │
+ ╰───────────────────────╯  ╰───────────────────────╯  ╰───────────────────────╯
+                            ╭───────────────────────╮  ╭───────────────────────╮
+                            │ #7 Log the poll inte… │  │ #5 Parse the config … │
+                            │ run  ○ idle           │  │ ▲ needs attention     │
+                            │ bots none             │  │ × tests failed: e… +1 │
+                            │ via  none             │  │ implement 10m00s      │
+                            ╰───────────────────────╯  ╰───────────────────────╯
+                                                       ╭───────────────────────╮
+                                                       │ #8 Trim the README    │
+                                                       │ ✓ ready to merge      │
+                                                       │                       │
+                                                       │ review 6m00s          │
+                                                       ╰───────────────────────╯
+                                                       ╭───────────────────────╮
+                                                       │ #7 Log the poll inte… │
+                                                       │ ✓ ready to review     │
+                                                       │                       │
+                                                       │ implement 9m00s       │
+                                                       ╰───────────────────────╯
 
-Actions ────────────────────────────────────────────────── 2 running · 1 waiting
- ⠋ #1  Add login form    implement/code    default   running 5m00s  crew/1-code
- ⠋ #1  Add login form    implement/tests   default   running 7m00s  crew/1-tests
- ○ #2  Fix the flaky s…  review/check      clerk     waiting        
+Queues ─── 2 of 3 busy   Events ─────────────────────────────────────── 5 events
+ default  ■□  1/2         14:22:58 implement took #1 "Add login form" (ready ->…
+ clerk    ■   1/1         14:23:00 #1 implement/tests started on branch crew/1-…
+                          14:25:00 #1 implement/code started on branch crew/1-c…
+                          14:29:50 poll: listed 2 issues, took 1
+                          14:29:50 review took #2 "Fix the flaky stream test" (…
 
-Queues ─── 2 of 3 busy   Handled ──────────────────────── 4 · $19.86 · ↑↓ scroll
- default  ■□  1/2          GIVEN UP          #6 Drop the old flag     implement…
- clerk    ■   1/1           × move to ready to review given up: issue closed
-                           NEEDS ATTENTION   #5 Parse the config on…  implement…
-                            × tests failed: exited 1: tests fail
-                            × code failed: prompt did not render
-
-Events ──────────────────────────────────────────────────────────────── 5 events
- 14:22:58 implement took #1 "Add login form" (ready -> in progress)
- 14:23:00 #1 implement/tests started on branch crew/1-tests, log .crew/logs/1-t…
- 14:25:00 #1 implement/code started on branch crew/1-code, log .crew/logs/1-cod…
- 14:29:50 poll: listed 2 issues, took 1
- 14:29:50 review took #2 "Fix the flaky stream test" (ready to review -> in rev…
-
-q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
+q stop · tab focus · ←→↑↓ move · enter open · ? help

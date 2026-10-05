@@ -5,6 +5,8 @@
 package tui
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -53,14 +55,14 @@ type Config struct {
 	Warnings []string
 }
 
-// focus is the section the scroll keys move (R21).
+// focus is the section the arrow keys move (R21; KTD4 of #151).
 type focus int
 
-// The sections that take focus, in tab order.
+// The sections that take focus, in tab order. The board is the zero
+// value, so the view opens on it (R10 of #151).
 const (
-	focusNone focus = iota
+	focusBoard focus = iota
 	focusBots
-	focusHandled
 	focusEvents
 )
 
@@ -87,13 +89,22 @@ type Model struct {
 	// hold cards do not fit (KTD9); botsOffset the first Bots card shown
 	// when the cards do not fit (KTD3).
 	boardOffset, botsOffset int
-	// handledOffset counts the Handled rows scrolled past at the top;
-	// eventsOffset the Events rows scrolled back from the newest (KTD11).
-	handledOffset, eventsOffset int
+	// eventsOffset counts the Events rows scrolled back from the newest
+	// (KTD11).
+	eventsOffset int
+	// sel is the highlighted card (KTD5 of #151).
+	sel selection
+	// popup is set while the highlighted card's popup shows, popupOffset
+	// the rows its content is scrolled (KTD7 of #151).
+	popup       bool
+	popupOffset int
 
 	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).
 	memory *boardMemory
+	// messages remembers each action's last message and branch while its
+	// issue has a card (KTD9 of #151).
+	messages *messageMemory
 	// outside tracks focus reports and the rule ends already notified
 	// (KTD6).
 	outside *outsideState
@@ -111,11 +122,12 @@ type Model struct {
 func New(cfg Config) Model {
 	return Model{
 		cfg: cfg, at: cfg.Now(), width: defaultWidth,
-		styles:  newStyles(true),
-		keys:    newKeyMap(),
-		spinner: spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		memory:  newBoardMemory(),
-		outside: newOutsideState(),
+		styles:   newStyles(true),
+		keys:     newKeyMap(),
+		spinner:  spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		memory:   newBoardMemory(),
+		messages: newMessageMemory(),
+		outside:  newOutsideState(),
 	}
 }
 
@@ -156,14 +168,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updated takes in a new snapshot: it starts the slides of the cards that
-// moved and sends the notifications of the rules that ended, before it
-// waits for the next update, so the read that finds the channel closed, and
-// with it the quit, comes after them (KTD6, KTD10).
+// updated takes in a new snapshot: it remembers what the actions said,
+// repairs the highlight, starts the slides of the cards that moved and
+// sends the notifications of the rules that ended, before it waits for the
+// next update, so the read that finds the channel closed, and with it the
+// quit, comes after them (KTD6, KTD10; KTD5, KTD9 of #151).
 func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	m.snap = u.Snapshot
 	m.at = m.cfg.Now()
-	slide := m.memory.moved(m.cards())
+	cards := m.cards()
+	m.messages.record(m.snap, cards)
+	was := m.sel.key
+	m.sel = m.sel.repaired(cards)
+	// The popup follows its issue while it has a card, and closes when
+	// it has none (R21 of #151).
+	if m.sel.key != was {
+		m.popup = false
+	}
+	// The board scrolls to keep the highlight drawn, as ←→ do (R10 of
+	// #151).
+	order := slices.Sorted(maps.Keys(byColumn(cards)))
+	if i := slices.Index(order, m.sel.column); m.sel.key != "" && i >= 0 {
+		m = m.reveal(cards, order, i)
+	}
+	slide := m.memory.moved(cards)
 	notes := m.notifications()
 	if len(notes) == 0 {
 		return m, tea.Batch(slide, m.wait())

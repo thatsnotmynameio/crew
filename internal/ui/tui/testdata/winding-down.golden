@@ -9,27 +9,21 @@ Bots ─────────────────────────
  │ ⠋ #42 implement/code           │
  ╰────────────────────────────────╯
 
-Board ────────────────────────────────────────────────────────────────── 1 issue
- implement                       review                        
- ──────────────────────────────  ──────────────────────────────
- ▌ #42 Add login form                                          
- ▌ ⠋ running                                                   
+▸ Board ──────────────────────────────────────────────────────────────── 1 issue
+ implement                  review                     Handled 0                
+ ─────────────────────────  ─────────────────────────  ─────────────────────────
+ ╭───────────────────────╮                                                      
+ │ ▸ #42 Add login form  │                                                      
+ │ run  ⠋ code 1h15m     │                                                      
+ │ bots ■ you            │                                                      
+ │ via  default          │                                                      
+ ╰───────────────────────╯                                                      
 
-Actions ────────────────────────────────────────────────────────────── 1 running
- ⠋ #42  Add login fo…  implement/code   default   running 1h15m00s  crew/42-code
-
-Queues ─── 1 of 2 busy   Handled ───────────────────────────────────────────── 0
- default  ■□  1/2         none
+Queues ─── 1 of 2 busy   Events ──────────────────────────────────────── 1 event
+ default  ■□  1/2         14:15:00 run time of 1h0m0s is up: taking no new issu…
                          
                          
                          
                          
 
-Events ───────────────────────────────────────────────────────────────── 1 event
- 14:15:00 run time of 1h0m0s is up: taking no new issues, winding down
-
-
-
-
-
-q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
+q stop · tab focus · ←→↑↓ move · enter open · ? help

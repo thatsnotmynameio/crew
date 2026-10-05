@@ -252,6 +252,49 @@ func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	}
 }
 
+// TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore checks
+// KTD14: a rule that replaces an issue's Handled entry carries the old
+// entry's spend, and its own earlier spend, in Earlier.
+func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T) {
+	rules := append(draft(), crew.Rule{
+		Name:    "merge",
+		Labels:  crew.Labels{Ready: readyToMerge, Running: "merging", Success: "merged", Failure: needsAttention},
+		Actions: []crew.Action{{Name: "merge_it", Prompt: "Merge issue {{.Issue.Ref}}"}},
+	})
+	d := usageDriver(t, rules)
+	cost := func(dollars float64, output int64) crew.Usage {
+		return crew.Usage{Cost: dollars, HasCost: true, Tokens: crew.Tokens{Output: output}, HasTokens: true}
+	}
+	end := func(action string, u crew.Usage) {
+		d.send(core.SessionEnded{IssueKey: "8", Action: action, Outcome: succeeded, Usage: u})
+		verdict, _ := d.send(core.PullRequestFound{IssueKey: "8", Action: action, PullRequest: noPR})
+		d.settle(verdict)
+	}
+
+	d.running(issue("8", 1, ready))
+	end("acceptance", cost(1, 10))
+	end("development", cost(2, 20))
+	if got := onlyEntry(t, d); got.Rule != "implement" || got.Earlier != (crew.Spend{}) {
+		t.Fatalf("entry after implement: rule %q, earlier %#v; want implement with no earlier spend", got.Rule, got.Earlier)
+	}
+
+	d.running(issue("8", 1, readyToReview))
+	end("custom_review", cost(4, 40))
+	implement := crew.Spend{Sessions: 2, Cost: 3, WithCost: 2, Tokens: crew.Tokens{Output: 30}, WithTokens: 2}
+	if got := onlyEntry(t, d); got.Rule != "review" || got.Earlier != implement {
+		t.Fatalf("entry after review: rule %q, earlier %#v; want review with implement's spend %#v",
+			got.Rule, got.Earlier, implement)
+	}
+
+	d.running(issue("8", 1, readyToMerge))
+	end("merge_it", cost(8, 80))
+	both := crew.Spend{Sessions: 3, Cost: 7, WithCost: 3, Tokens: crew.Tokens{Output: 70}, WithTokens: 3}
+	if got := onlyEntry(t, d); got.Rule != "merge" || got.Earlier != both {
+		t.Fatalf("entry after merge: rule %q, earlier %#v; want merge with implement's and review's spend %#v",
+			got.Rule, got.Earlier, both)
+	}
+}
+
 func TestStatusShowsAnEndedActionsSpendOnlyWhenSetTo(t *testing.T) {
 	run := func(opts ...core.Option) crew.Status {
 		t.Helper()
