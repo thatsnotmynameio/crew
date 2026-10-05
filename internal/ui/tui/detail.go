@@ -170,7 +170,12 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 // whether it failed, had no session or was done, the branch the memory
 // holds and its pull request, then why it failed or what it last said.
 func (m Model) handledActionRow(e core.HandledView, a core.HandledAction) actionRow {
-	message, branch := m.messages.last(e.Issue.Key, a.Name)
+	// While a rule holds the issue again, the memory holds that run's
+	// words and branch, not this one's (R20 of #151).
+	var message, branch string
+	if e.HeldBy == "" {
+		message, branch = m.messages.last(e.Issue.Key, a.Name)
+	}
 	row := actionRow{note: message}
 	state, pr := doneState, ""
 	if a.Spend.Sessions == 0 {

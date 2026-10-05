@@ -5,6 +5,8 @@
 package tui
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -182,6 +184,12 @@ func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	// it has none (R21 of #151).
 	if m.sel.key != was {
 		m.popup = false
+	}
+	// The board scrolls to keep the highlight drawn, as ←→ do (R10 of
+	// #151).
+	order := slices.Sorted(maps.Keys(byColumn(cards)))
+	if i := slices.Index(order, m.sel.column); m.sel.key != "" && i >= 0 {
+		m = m.reveal(cards, order, i)
 	}
 	slide := m.memory.moved(cards)
 	notes := m.notifications()

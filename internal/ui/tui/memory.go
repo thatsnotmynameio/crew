@@ -51,11 +51,11 @@ func (mm *messageMemory) record(snap engine.Snapshot, cards []card) {
 }
 
 // held remembers the branch of issue's held action a; a new run of it
-// drops what its last run left.
+// drops what its last run left, before its session starts too.
 func (mm *messageMemory) held(issue string, a core.ActionView) {
 	k := actionKey{issue, a.Name}
 	r := mm.actions[k]
-	if !a.Started.IsZero() && !a.Started.Equal(r.started) {
+	if !a.Started.Equal(r.started) {
 		r = remembered{started: a.Started}
 	}
 	if branch := clean(a.Branch); branch != "" {
