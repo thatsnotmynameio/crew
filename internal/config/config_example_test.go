@@ -51,7 +51,9 @@ type exampleRule struct {
 
 // crew runs on its own repository, so its example config must stay valid,
 // and keep the rules, actions, queues, bots and labels it had in the old
-// keys (KTD8): the same names, so failed runs still resume.
+// keys (KTD8): the same names, so failed runs still resume. triage became
+// refinement (#160) while no issue was in a triage state, so no failed run
+// was lost.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadExample(t)
 	if got, want := exampleRules(cfg.Rules), wantExampleRules(); !reflect.DeepEqual(got, want) {
@@ -65,7 +67,7 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	for _, c := range cfg.Board {
 		columns = append(columns, c.Name)
 	}
-	if want := []string{"triage", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
+	if want := []string{"refinement", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
 	if script := cfg.Rules[3].Actions[0].Check; !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
@@ -73,10 +75,66 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	}
 }
 
+// splitOutcomes are the outcomes /cw-split-plan reports and the refine
+// prompt acts on, and splitMarkers the markers the skill writes and the
+// prompt and the check look for (#160).
+var (
+	splitOutcomes = []string{"`not split`", "`kept whole`", "`split`", "`earlier split did not finish`"}
+	splitMarkers  = []string{"<!-- cw-split-plan: part of #", "<!-- cw-split-plan: split record -->"}
+)
+
+// The refine action splits a large plan before it finds blockers, finishes
+// the split by labelling the parts and taking the parent out of crew, and
+// its check fails a split that stopped before that (#160).
+func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
+	refine := loadExample(t).Rules[1].Actions[0]
+	prompt := refine.Prompt
+	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
+	if split < 0 || split > strings.Index(prompt, "dependencies/blocked_by") {
+		t.Errorf("the prompt does not run /cw-split-plan before it reads dependencies:\n%s", prompt)
+	}
+	for _, want := range []string{
+		`--add-label "crew:refinement:done"`,
+		`--remove-label "crew:refinement:in progress"`,
+		splitMarkers[1],
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	partOfThisIssue := strings.TrimSuffix(splitMarkers[0], "#") + "$CREW_ISSUE_REF -->"
+	for _, want := range []string{`"crew:refinement:in progress"`, partOfThisIssue, "/sub_issues"} {
+		if !strings.Contains(refine.Check, want) {
+			t.Errorf("refine's check = %q, want the script of split-finished, with %q", refine.Check, want)
+		}
+	}
+}
+
+// The refine prompt branches on the outcomes /cw-split-plan reports, so both
+// name the same outcomes and markers.
+func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
+	skill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "cw-split-plan", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := loadExample(t).Rules[1].Actions[0].Prompt
+	for _, want := range splitOutcomes {
+		if !strings.Contains(string(skill), want) || !strings.Contains(prompt, want) {
+			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
+		}
+	}
+	for _, want := range splitMarkers {
+		if !strings.Contains(string(skill), want) {
+			t.Errorf("the skill does not write the marker %s", want)
+		}
+	}
+}
+
 // wantExampleRules are the example config's rules, as in the old keys: the
 // promote rules, now without actions, notify nothing and need no failure.
 func wantExampleRules() []exampleRule {
 	clerk, developer := crew.Queue{Name: "clerk", Slots: 1}, crew.Queue{Name: "developer", Slots: 2}
+	productManager := crew.Queue{Name: "product-manager", Slots: 1}
 	labels := func(rule, success string) crew.Labels {
 		return crew.Labels{
 			Ready: crew.State("crew:" + rule + ":ready"), Running: crew.State("crew:" + rule + ":in progress"),
@@ -87,17 +145,17 @@ func wantExampleRules() []exampleRule {
 		{
 			name: "promote brainstorm", queue: clerk,
 			labels: crew.Labels{
-				Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting", Success: "crew:triage:ready",
+				Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting", Success: "crew:refinement:ready",
 			},
 		},
 		{
-			name: "triage", queue: clerk, notify: true, labels: labels("triage", "crew:triage:done"),
-			actions: []string{"triage: agent product-manager, bot product-manager, check false"},
+			name: "refinement", queue: productManager, notify: true, labels: labels("refinement", "crew:refinement:done"),
+			actions: []string{"refine: agent product-manager, bot product-manager, check true"},
 		},
 		{
-			name: "promote triage", queue: clerk,
+			name: "promote refinement", queue: clerk,
 			labels: crew.Labels{
-				Ready: "crew:triage:done", Running: "crew:triage:promoting", Success: "crew:development:ready",
+				Ready: "crew:refinement:done", Running: "crew:refinement:promoting", Success: "crew:development:ready",
 			},
 		},
 		{

@@ -8,26 +8,33 @@
 # An idea parked in `crew:brainstorm:ready` waits for /cw-brainstorm, which
 # no rule runs; once its brainstorm is done, it is in `crew:brainstorm:done`.
 # From there the clerk hands each issue on: promote brainstorm moves it to
-# `crew:triage:ready`, triage finds what blocks it and what it blocks and ends
-# in `crew:triage:done`, and promote triage moves it to
-# `crew:development:ready`. A promote rule has no actions: crew moves the
-# label itself, without a session. crew skips an issue an open issue
-# blocks, so a blocked feature waits in its label until its blockers close.
+# `crew:refinement:ready`; refinement runs /cw-split-plan, which splits a
+# plan above 10,000 characters or 12 requirements into sub-issues that each
+# merge alone, then finds what blocks each issue that came out and what it
+# blocks, and ends in `crew:refinement:done`; and promote refinement moves
+# them to `crew:development:ready`. A split parent stays open with its whole
+# plan and leaves crew, so crew reports its own move of it as given up; that
+# is how a split ends. A promote rule has no actions: crew moves the label
+# itself, without a session. crew skips an issue an open issue blocks, so a
+# blocked feature waits in its label until its blockers close.
 # The board has no `board` key, so it shows one column per rule that has
-# actions: triage, development and fix.
+# actions: refinement, development and fix.
 # The lfg actions of development and fix run the check pr-closes-issue: they
-# succeed only when their pull request is open and closes the issue.
+# succeed only when their pull request is open and closes the issue. The
+# refine action runs split-finished: it fails when a split stopped before the
+# session took the parent out of crew.
 # crew writes as the bot clerk, which also moves the promote rules' labels;
-# triage's session acts as product-manager, and development's and fix's as
-# developer. The clerk's rules run in the 1-slot clerk queue and the
-# developer's in the 2-slot developer queue, so a long development session
-# never holds up the bookkeeping. default keeps the one slot left, which no
-# rule uses yet. audit ci and knowledge base are turned off: they are
-# commented out below.
+# refinement's session acts as product-manager, and development's and fix's
+# as developer. The clerk's rules run in the 1-slot clerk queue, refinement in
+# the 1-slot product-manager queue and the developer's rules in the 2-slot
+# developer queue, so neither a long split nor a long development session
+# holds up the bookkeeping. default keeps no slot. audit ci and knowledge base
+# are turned off: they are commented out below.
 poll_interval_seconds: 300
 max_parallel_issues: 4
 queues:
   clerk: 1
+  product-manager: 1
   developer: 2
 tracker:
   name: github
@@ -54,38 +61,52 @@ checks:
     none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
     *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
     esac
+  # Fails the refine action when the issue is still in refinement but has a
+  # sub-issue /cw-split-plan created: the split stopped before the session
+  # labelled the parts and took the issue out of crew. crew then moves it to
+  # crew:refinement:failed, not on to development. It echoes its own reason
+  # last.
+  split-finished: |-
+    running=$(gh issue view "$CREW_ISSUE_KEY" --json labels --jq 'any(.labels[]; .name | ascii_downcase == "crew:refinement:in progress")') || { echo "gh could not read the labels of $CREW_ISSUE_REF"; exit 1; }
+    [ "$running" = true ] || exit 0
+    parts=$(gh api --paginate "repos/{owner}/{repo}/issues/$CREW_ISSUE_KEY/sub_issues" --jq ".[] | select((.body // \"\") | contains(\"<!-- cw-split-plan: part of $CREW_ISSUE_REF -->\")) | \"#\" + (.number | tostring)") || { echo "gh could not list the sub-issues of $CREW_ISSUE_REF"; exit 1; }
+    [ -z "$parts" ] || { echo "the split of $CREW_ISSUE_REF did not finish: its parts $(printf '%s\n' "$parts" | paste -sd ' ' -) exist, but it is still in crew:refinement:in progress"; exit 1; }
 rules:
   promote brainstorm:
     queue: clerk
     labels:
       ready: "crew:brainstorm:done"
       running: "crew:brainstorm:promoting"
-      success: "crew:triage:ready"
-  triage:
-    queue: clerk
+      success: "crew:refinement:ready"
+  refinement:
+    queue: product-manager
     labels:
-      ready: "crew:triage:ready"
-      running: "crew:triage:in progress"
-      success: "crew:triage:done"
-      failure: "crew:triage:failed"
+      ready: "crew:refinement:ready"
+      running: "crew:refinement:in progress"
+      success: "crew:refinement:done"
+      failure: "crew:refinement:failed"
     actions:
-      triage:
+      refine:
         agent: product-manager
+        check: split-finished
         prompt: |-
-          {{.Issue.Ref}} is a brainstormed feature. Find which open issues block it and which it blocks. You run headless: nobody answers questions, so decide and report.
+          {{.Issue.Ref}} is a brainstormed feature. Refine it: split its plan when it is large, then find which open issues block each issue that came out and which it blocks. You run headless: nobody answers questions, so decide and report.
 
-          1. Read {{.Issue.Ref}} (`gh issue view {{.Issue.Key}} --comments`) and the dependencies GitHub already has for it (`gh api repos/{owner}/{repo}/issues/{{.Issue.Key}}/dependencies/blocked_by` and `.../blocking`).
-          2. Read the other open issues crew takes: those opened by each login in `$CREW_CODE_OWNERS` and `$CREW_BOTS`, both lists separated by spaces (`for login in $CREW_CODE_OWNERS $CREW_BOTS; do gh issue list --state open --author "$login" --limit 500 --json number,title,body,labels; done`). Pass a bot's `<slug>[bot]` login as it is. Compare {{.Issue.Ref}} with these only: leave out the issues someone else opened.
-          3. For each of them, decide whether it must be done before {{.Issue.Ref}} (it blocks {{.Issue.Ref}}) or cannot be done before {{.Issue.Ref}} ({{.Issue.Ref}} blocks it). Record each as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record only dependencies between {{.Issue.Ref}} and another issue, only when you can say why, skip one GitHub already has, and never record one that closes a cycle.
-          4. When one of {{.Issue.Ref}}'s dependencies no longer holds, remove it: `gh api -X DELETE repos/{owner}/{repo}/issues/N/dependencies/blocked_by/ID`, with N and ID as in step 3. Remove only a dependency between {{.Issue.Ref}} and another issue, and only when you can say why it no longer holds.
-          5. Never add or remove a label that starts with `crew:`, on any issue. Do not open, close or edit issues.
-          6. Do not change code, push a branch or open a pull request.
-          7. End with one comment on {{.Issue.Ref}}: what blocks it and what it blocks, marking the dependencies you recorded and why; each dependency you removed and why; whether an open issue still blocks it, in which case crew starts its development only once every blocker is closed; the issues it likely duplicates; and every command that failed or was denied, with its error.
-  promote triage:
+          1. Run `/cw-split-plan {{.Issue.Ref}}`. The first line of its report is its outcome: `not split`, `kept whole`, `split` or `earlier split did not finish`.
+          2. On `earlier split did not finish`, move {{.Issue.Ref}} to `crew:refinement:failed` (`gh issue edit {{.Issue.Key}} --remove-label "crew:refinement:in progress" --add-label "crew:refinement:failed"`), end with one comment on {{.Issue.Ref}} listing the parts the skill found and saying that the split must be finished or cleaned up by hand, and stop.
+          3. The issues to refine are {{.Issue.Ref}} on `not split` or `kept whole`, or else each part the skill created. Read each of them (`gh issue view N --comments`) and the dependencies GitHub already has for it (`gh api repos/{owner}/{repo}/issues/N/dependencies/blocked_by` and `.../blocking`).
+          4. Read the other open issues crew takes: those opened by each login in `$CREW_CODE_OWNERS` and `$CREW_BOTS`, both lists separated by spaces (`for login in $CREW_CODE_OWNERS $CREW_BOTS; do gh issue list --state open --author "$login" --limit 500 --json number,title,body,labels; done`). Pass a bot's `<slug>[bot]` login as it is. Compare the issues to refine with these only. Leave out the issues someone else opened, {{.Issue.Ref}} and its parts, and every issue whose body holds `<!-- cw-split-plan: split record -->`: a split parent is never built, so a dependency on work it describes goes on the part that carries that work.
+          5. For each of them, decide whether it must be done before an issue you refine (it blocks that issue) or cannot be done before it (that issue blocks it). Record each as a GitHub dependency: `gh api -X POST repos/{owner}/{repo}/issues/N/dependencies/blocked_by -F issue_id=ID`, where N is the blocked issue's number and ID is the blocking issue's `id` (from `gh api repos/{owner}/{repo}/issues/M`), not its number. Record only dependencies between an issue you refine and another issue, only when you can say why, skip one GitHub already has, and never record one that closes a cycle. The links between parts are the skill's: leave them as they are.
+          6. When one of the dependencies of an issue you refine no longer holds, remove it: `gh api -X DELETE repos/{owner}/{repo}/issues/N/dependencies/blocked_by/ID`, with N and ID as in step 5. Remove only a dependency between an issue you refine and another issue, and only when you can say why it no longer holds. On `split`, also move each of {{.Issue.Ref}}'s own dependencies to the parts it concerns, then remove it from {{.Issue.Ref}}: {{.Issue.Ref}} stays open but is never built, so an issue it blocks would wait until someone closes it.
+          7. On `split`, finish the split last: add `crew:refinement:done` to each part (`gh issue edit P --add-label "crew:refinement:done"`), then remove every `crew:` label from {{.Issue.Ref}} (`gh issue edit {{.Issue.Key}} --remove-label "crew:refinement:in progress"`). crew then reports its own move of {{.Issue.Ref}} to `crew:refinement:done` as given up: that is how a split ends.
+          8. Add or remove no other label that starts with `crew:`, on any issue. Open, close or edit no issue beyond what `/cw-split-plan` and step 7 do.
+          9. Do not change code, push a branch or open a pull request.
+          10. End with one comment on {{.Issue.Ref}}: the outcome of `/cw-split-plan`, with why on `kept whole`, and on `split` the parts, the links between them, Jev's answers, and that crew's given-up move of {{.Issue.Ref}} is expected; for each issue you refined, what blocks it and what it blocks, marking the dependencies you recorded and why; each dependency you removed or moved and why; whether an open issue still blocks it, in which case crew starts its development only once every blocker is closed; the issues it likely duplicates; and every command that failed or was denied, with its error.
+  promote refinement:
     queue: clerk
     labels:
-      ready: "crew:triage:done"
-      running: "crew:triage:promoting"
+      ready: "crew:refinement:done"
+      running: "crew:refinement:promoting"
       success: "crew:development:ready"
   development:
     queue: developer
