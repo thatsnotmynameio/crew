@@ -28,8 +28,8 @@ func newKeyMap() keyMap {
 		pageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdown", "page down")),
 		top:      key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "top")),
 		bottom:   key.NewBinding(key.WithKeys("end"), key.WithHelp("end", "bottom")),
-		left:     key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "board left")),
-		right:    key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "board right")),
+		left:     key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "board or bots left")),
+		right:    key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "board or bots right")),
 		help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	}
 }
@@ -52,13 +52,32 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.back):
 		m.focus = (m.focus + focusEvents) % (focusEvents + 1)
 	case key.Matches(msg, m.keys.left):
-		m = m.scrollBoard(-1)
+		m = m.scrollSideways(-1)
 	case key.Matches(msg, m.keys.right):
-		m = m.scrollBoard(1)
+		m = m.scrollSideways(1)
 	default:
 		m = m.scrolled(msg)
 	}
 	return m, nil
+}
+
+// scrollSideways returns m with the Bots cards moved delta cards while
+// Bots has focus, else the board moved delta columns (R9, KTD11).
+func (m Model) scrollSideways(delta int) Model {
+	if m.focus == focusBots {
+		return m.scrollBots(delta)
+	}
+	return m.scrollBoard(delta)
+}
+
+// scrollBots returns m with the Bots cards moved delta cards sideways, as
+// far as the cards allow: the layout clamps the offset (KTD3). The first
+// layout clamps an offset a resize left past the cards drawn, so delta
+// moves from what shows rather than from the stale offset.
+func (m Model) scrollBots(delta int) Model {
+	m.botsOffset = m.botsLayout().offset + delta
+	m.botsOffset = m.botsLayout().offset
+	return m
 }
 
 // scrollBoard returns m with the board moved delta columns sideways, as
@@ -139,7 +158,7 @@ func (m Model) keyHelp() string {
 	h := m.helper()
 	h.SetWidth(m.width)
 	scroll := key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "scroll"))
-	board := key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "board"))
+	board := key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "board/bots"))
 	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, scroll, board, m.keys.help})
 }
 

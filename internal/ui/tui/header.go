@@ -7,6 +7,11 @@ import (
 )
 
 const (
+	// focusMark opens a focused section's title.
+	focusMark = "▸ "
+	// ruleGaps are the cells a rule keeps between its title and its
+	// summary: a space, at least one dash and a space.
+	ruleGaps = 3
 	// minRun is the shortest run of ╱ the header keeps before it drops
 	// details.
 	minRun = 3
@@ -58,7 +63,7 @@ func (m Model) rule(title, summary string, width int, focused bool) string {
 	s := m.styles
 	head := s.title.Render(title)
 	if focused {
-		head = s.accent.Render("▸ ") + head
+		head = s.accent.Render(focusMark) + head
 	}
 	tail := ""
 	if summary != "" {

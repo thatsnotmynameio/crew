@@ -29,10 +29,10 @@ const (
 
 // budget is how much of each section the view draws: the rows of Events
 // and of Handled, the cards a column, whether the said lines show, and
-// whether each bot's second line shows (KTD8).
+// whether Bots draws its cards or its one-row strip (KTD8, KTD10).
 type budget struct {
 	events, handled, cards int
-	said, botDetails       bool
+	said, botCards         bool
 }
 
 // View renders the dashboard (R1): the header, the warnings, Bots, Board,
@@ -57,8 +57,8 @@ func (m Model) View() tea.View {
 
 // fitted returns the view's rows, at most the window's height of them when
 // the height is known, giving rows up in KTD8's order: Events, Handled, the
-// said lines, the cards past a column's limit, the bots' second lines
-// (R13), then the rows above the key-help line.
+// said lines, the cards past a column's limit, the Bots cards (R10),
+// then the rows above the key-help line.
 func (m Model) fitted() []string {
 	b := m.budget()
 	all := m.rows(b)
@@ -74,7 +74,7 @@ func (m Model) fitted() []string {
 
 // budget returns the largest budget whose rows fit the window (KTD8).
 func (m Model) budget() budget {
-	b := budget{events: scrollRows, handled: scrollRows, cards: maxCards, said: true, botDetails: true}
+	b := budget{events: scrollRows, handled: scrollRows, cards: maxCards, said: true, botCards: true}
 	if m.height <= 0 {
 		return b
 	}
@@ -97,9 +97,10 @@ func (m Model) budget() budget {
 		}
 		b.cards = max(shown-(o+more+cardRows-1)/cardRows, 1)
 	}
-	// Bots gives way last, just before the cut (KTD11).
+	// Bots gives way last, its cards collapsing to a strip, just before the
+	// cut (R10, KTD10).
 	if over() > 0 {
-		b.botDetails = false
+		b.botCards = false
 	}
 	return b
 }
@@ -110,8 +111,8 @@ func (m Model) rows(b budget) []string {
 	for _, w := range m.warnings() {
 		out = append(out, m.styles.warning.Render("warning: ")+m.styles.text.Render(clean(w)))
 	}
-	summary, bots := m.botsSection(b.botDetails)
-	out = append(out, "", m.rule("Bots", summary, m.width, false))
+	summary, bots := m.botsSection(b.botCards)
+	out = append(out, "", m.rule(botsTitle, summary, m.width, m.focus == focusBots))
 	out = append(out, bots...)
 	summary, board := m.board(b.cards)
 	out = append(out, "", m.rule("Board", summary, m.width, false))

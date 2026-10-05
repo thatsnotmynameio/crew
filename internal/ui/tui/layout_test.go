@@ -48,15 +48,18 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 	}
 }
 
-// Covers R21 and KTD8: a 28-row window gives Events, then Handled, their
+// Covers R21 and KTD8: a 33-row window gives Events, then Handled, their
 // minimum, and both scroll. It is the 24 rows these sections took before
-// Bots, plus Bots' rule, your two rows and the blank row above it.
-func TestA28RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
-	view := fitted(t, 80, 28, eventful())
+// Bots, plus Bots' rule, its row of cards and the blank row above it.
+func TestA33RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
+	view := fitted(t, 80, 33, eventful())
 
-	golden(t, "fit-28-rows", view)
-	if n := strings.Count(view, "\n") + 1; n != 28 {
-		t.Errorf("view has %d lines, want the window's 28", n)
+	golden(t, "fit-33-rows", view)
+	if n := strings.Count(view, "\n") + 1; n != 33 {
+		t.Errorf("view has %d lines, want the window's 33", n)
+	}
+	if rows := botsOf(t, view); len(rows) != botCardRows {
+		t.Errorf("Bots has %d rows, want its cards' %d:\n%s", len(rows), botCardRows, view)
 	}
 	contains(t, view, "listed 30 issues", "listed 29 issues", "Handled ─", "↑↓ scroll", "NEEDS ATTENTION")
 	if strings.Contains(view, "listed 28 issues") {
@@ -72,13 +75,15 @@ func TestA28RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
 	}
 }
 
-// Covers R21 and KTD11: tab focuses Handled then Events; the arrows scroll
-// the focused section; end follows the newest event again.
+// Covers R21 and KTD11: tab focuses Bots, Handled then Events; the arrows
+// scroll the focused section; end follows the newest event again.
 func TestFocusAndScrollMoveHandledAndEvents(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 28})
 	h.send(updateMsg(eventful()))
 
+	h.send(tab)
+	contains(t, h.view(), "▸ Bots")
 	h.send(tab)
 	contains(t, h.view(), "▸ Handled")
 	before := h.view()
@@ -105,10 +110,8 @@ func TestFocusAndScrollMoveHandledAndEvents(t *testing.T) {
 	contains(t, h.view(), "listed 30 issues")
 
 	h.send(tab)
-	// The Bots section marks what runs as an entry with ▸ too, inside a
-	// row, so only a ▸ opening a section's title is focus.
 	if v := h.view(); strings.Contains(v, "\n▸ ") {
-		t.Errorf("a third tab left a section focused:\n%s", v)
+		t.Errorf("a fourth tab left a section focused:\n%s", v)
 	}
 	h.send(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	contains(t, h.view(), "▸ Events")
@@ -158,7 +161,7 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 
 	h.send(helpKey)
 	view := h.view()
-	contains(t, view, "Keys", "shift+tab", "pgdown", "board left")
+	contains(t, view, "Keys", "shift+tab", "pgdown", "board or bots left")
 	if !strings.HasPrefix(view, "crew ╱") {
 		t.Errorf("the overlay hid the header:\n%s", view)
 	}
@@ -188,6 +191,7 @@ func TestPageKeysScrollTheFocusedSectionByAPage(t *testing.T) {
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 28})
 	h.send(updateMsg(eventful()))
 
+	h.send(tab)
 	h.send(tab)
 	top := h.view()
 	h.send(tea.KeyPressMsg{Code: tea.KeyPgDown})
@@ -374,6 +378,8 @@ func TestEventsWithRoomForEveryEventDoNotScroll(t *testing.T) {
 	h.send(updateMsg(withEvents(2)))
 	h.send(tab)
 	h.send(tab)
+	h.send(tab)
+	contains(t, h.view(), "▸ Events")
 	before := h.view()
 
 	h.send(upKey)

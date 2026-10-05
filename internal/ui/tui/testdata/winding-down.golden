@@ -1,8 +1,13 @@
 crew ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ crew • up 1h15m   WINDING DOWN 
 
-Bots ─────────────────────────────────────────────────────────────────── no bots
- you
-   crew's writes · implement/code  ▸ #42 implement/code
+Bots ────────────────────────────────────────────────────────────────── only you
+ ╭────────────────────────────────╮
+ │ ▄▄▀▄▄ you                      │
+ │ ▀ ▀ ▀                          │
+ │ ▄▀▄▀▄ no actions yet           │
+ │ crew's writes · implement/code │
+ │ ⠋ #42 implement/code           │
+ ╰────────────────────────────────╯
 
 Board ────────────────────────────────────────────────────────────────── 1 issue
  implement                       review                        
@@ -27,4 +32,4 @@ Events ────────────────────────�
 
 
 
-q stop · tab focus · ↑↓ scroll · ←→ board · ? help
+q stop · tab focus · ↑↓ scroll · ←→ board/bots · ? help
