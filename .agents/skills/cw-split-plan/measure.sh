@@ -22,8 +22,9 @@ min_part_characters=4000
 
 # wc -m counts characters only under a UTF-8 locale; their names differ
 # between Linux and macOS.
+available=$(locale -a 2>/dev/null || true)
 for candidate in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8; do
-	if locale -a 2>/dev/null | grep -qx "$candidate"; then
+	if printf '%s\n' "$available" | grep -qx "$candidate"; then
 		LC_ALL=$candidate
 		export LC_ALL
 		break
@@ -37,9 +38,11 @@ fi
 
 # ids prints how many distinct IDs with prefix $1 file $2 defines.
 ids() {
-	tr -d '\r' <"$2" |
-		grep -oE "^[[:space:]]*([-*+][[:space:]]+)?$1[0-9]+\\." |
-		grep -oE "$1[0-9]+" | sort -u | wc -l | tr -d ' '
+	prefix=$1
+	path=$2
+	tr -d '\r' <"$path" |
+		grep -oE "^[[:space:]]*([-*+][[:space:]]+)?${prefix}[0-9]+\\." |
+		grep -oE "${prefix}[0-9]+" | sort -u | wc -l | tr -d ' '
 }
 
 for file in "$@"; do

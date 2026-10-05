@@ -51,9 +51,8 @@ type exampleRule struct {
 
 // crew runs on its own repository, so its example config must stay valid,
 // and keep the rules, actions, queues, bots and labels it had in the old
-// keys (KTD8): the same names, so failed runs still resume. triage became
-// refinement (#160) while no issue was in a triage state, so no failed run
-// was lost.
+// keys (KTD8): the same names, so failed runs still resume. refinement
+// replaced triage in #160, while no issue was in a triage state.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadExample(t)
 	if got, want := exampleRules(cfg.Rules), wantExampleRules(); !reflect.DeepEqual(got, want) {
@@ -76,11 +75,14 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 }
 
 // splitOutcomes are the outcomes /cw-split-plan reports and the refine
-// prompt acts on, and splitMarkers the markers the skill writes and the
-// prompt and the check look for (#160).
-var (
-	splitOutcomes = []string{"`not split`", "`kept whole`", "`split`", "`earlier split did not finish`"}
-	splitMarkers  = []string{"<!-- cw-split-plan: part of #", "<!-- cw-split-plan: split record -->"}
+// prompt acts on (#160).
+var splitOutcomes = []string{"`not split`", "`kept whole`", "`split`", "`earlier split did not finish`"}
+
+// The markers /cw-split-plan writes: partMarker, followed by the parent's
+// reference and " -->", on each part, and recordMarker on the split record.
+const (
+	partMarker   = "<!-- cw-split-plan: part of "
+	recordMarker = "<!-- cw-split-plan: split record -->"
 )
 
 // The refine action splits a large plan before it finds blockers, finishes
@@ -96,14 +98,13 @@ func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
 	for _, want := range []string{
 		`--add-label "crew:refinement:done"`,
 		`--remove-label "crew:refinement:in progress"`,
-		splitMarkers[1],
+		recordMarker,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt lacks %q", want)
 		}
 	}
-	partOfThisIssue := strings.TrimSuffix(splitMarkers[0], "#") + "$CREW_ISSUE_REF -->"
-	for _, want := range []string{`"crew:refinement:in progress"`, partOfThisIssue, "/sub_issues"} {
+	for _, want := range []string{`"crew:refinement:in progress"`, partMarker + "$CREW_ISSUE_REF -->", "/sub_issues"} {
 		if !strings.Contains(refine.Check, want) {
 			t.Errorf("refine's check = %q, want the script of split-finished, with %q", refine.Check, want)
 		}
@@ -123,7 +124,7 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
 		}
 	}
-	for _, want := range splitMarkers {
+	for _, want := range []string{partMarker + "#", recordMarker} {
 		if !strings.Contains(string(skill), want) {
 			t.Errorf("the skill does not write the marker %s", want)
 		}
