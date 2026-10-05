@@ -17,7 +17,7 @@ const envPolicy = "shell_environment_policy"
 
 // command builds the headless Codex run of run with model, or with the model
 // Codex picks when model is empty, in a sandbox that can also write gitDirs.
-// It is pure, apart from the session's judging.
+// It is pure.
 //
 // --approve-for-me is Codex's automatic approval review in its
 // workspace-write sandbox; network access is opened on top, and each

@@ -33,10 +33,10 @@ func botRun(prompt string) port.Run {
 	}
 }
 
-var gitDirs = []string{"/repo/.git/worktrees/issue-4-review", "/repo/.git"}
+var worktreeGitDirs = []string{"/repo/.git/worktrees/issue-4-review", "/repo/.git"}
 
 func TestCommandRunsCodexHeadlessInTheSandboxWithTheGitDirs(t *testing.T) {
-	got := command(port.Run{Dir: "/repo/.crew/worktrees/issue-4-review", Prompt: "Review #4"}, "", gitDirs)
+	got := command(port.Run{Dir: "/repo/.crew/worktrees/issue-4-review", Prompt: "Review #4"}, "", worktreeGitDirs)
 
 	want := []string{
 		"exec", "--json", "--approve-for-me",
@@ -59,10 +59,10 @@ func TestCommandRunsCodexHeadlessInTheSandboxWithTheGitDirs(t *testing.T) {
 func TestCommandPassesTheModelOnlyWhenSet(t *testing.T) {
 	run := port.Run{Dir: "/w", Prompt: "p"}
 
-	if args := command(run, "", gitDirs).Args; slices.Contains(args, "-m") {
+	if args := command(run, "", worktreeGitDirs).Args; slices.Contains(args, "-m") {
 		t.Errorf("args = %q, want no -m without a model", args)
 	}
-	args := command(run, "gpt-5.5", gitDirs).Args
+	args := command(run, "gpt-5.5", worktreeGitDirs).Args
 	if i := slices.Index(args, "-m"); i < 0 || i+1 >= len(args) || args[i+1] != "gpt-5.5" {
 		t.Errorf("args = %q, want -m gpt-5.5", args)
 	}
@@ -87,7 +87,7 @@ func TestCommandAddsAGitDirOnceWhenTheWorktreeIsTheMainCheckout(t *testing.T) {
 // policy filters; the variables the bot must not inherit are set empty there.
 func TestCommandPinsTheBotsEnvironmentInsideCodex(t *testing.T) {
 	run := botRun("Review #4")
-	got := command(run, "", gitDirs)
+	got := command(run, "", worktreeGitDirs)
 
 	wantEnv := slices.Concat(run.Identity.Env, []string{
 		"CREW_CODE_OWNERS=alice bob", "CREW_BOTS=crew-developer[bot] crew-reviewer[bot]",
@@ -133,7 +133,7 @@ func hasConfig(args []string, override string) bool {
 // is still the prompt: it comes last, after --, unchanged.
 func TestCommandPassesThePromptVerbatimAfterDoubleDash(t *testing.T) {
 	for _, prompt := range []string{"- list files\n--dry-run does nothing", "review", "/compound-engineering:lfg #42"} {
-		args := command(botRun(prompt), "gpt-5.5", gitDirs).Args
+		args := command(botRun(prompt), "gpt-5.5", worktreeGitDirs).Args
 
 		if n := len(args); n < 2 || args[n-2] != "--" || args[n-1] != prompt {
 			t.Errorf("args end %q, want -- and the prompt %q", args[max(0, len(args)-2):], prompt)
@@ -144,7 +144,7 @@ func TestCommandPassesThePromptVerbatimAfterDoubleDash(t *testing.T) {
 // crew keeps codex's sandbox, the user's config and codex's session files:
 // it passes none of the flags that would drop them.
 func TestCommandKeepsTheSandboxAndTheUsersConfig(t *testing.T) {
-	args := command(botRun("p"), "gpt-5.5", gitDirs).Args
+	args := command(botRun("p"), "gpt-5.5", worktreeGitDirs).Args
 
 	for _, flag := range []string{
 		"--sandbox", "-s", "--dangerously-bypass-approvals-and-sandbox", "--yolo",
