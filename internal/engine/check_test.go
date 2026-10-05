@@ -12,12 +12,16 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // checkedDevelop is develop with a check on its action.
 var checkedDevelop = crew.Rule{
 	Name: develop.Name, Labels: develop.Labels,
-	Actions: []crew.Action{{Name: "development", Prompt: develop.Actions[0].Prompt, Checks: []crew.Check{{Name: "pr-closes-issue", Script: "gh pr list"}}}},
+	Actions: []crew.Action{{
+		Name: "development", Prompt: develop.Actions[0].Prompt,
+		Checks: []crew.Check{{Name: "pr-closes-issue", Script: "gh pr list"}},
+	}},
 }
 
 // checkedConfig is config for checkedDevelop, with checker as its checker.
@@ -86,7 +90,8 @@ func TestAE1ACheckThatFailsFailsTheActionWithItsLastLine(t *testing.T) {
 		got := checkedRun(t, tr, cfg)
 
 		want := []crew.ActionFailure{{
-			Action: "development", Reason: "the check pr-closes-issue failed: no open pull request from crew/issue-1-development",
+			Action:    "development",
+			Reason:    "the check pr-closes-issue failed: no open pull request from crew/issue-1-development",
 			Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
 		}}
 		if !reflect.DeepEqual(got, want) {
@@ -95,15 +100,8 @@ func TestAE1ACheckThatFailsFailsTheActionWithItsLastLine(t *testing.T) {
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
 			t.Errorf("#1 is in %v, want needs attention", got)
 		}
-		log, err := os.ReadFile(filepath.Join(cfg.Root, ".crew", "logs", "issue-1-development.log"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		wantLog := "\ncrew: running the check pr-closes-issue: gh pr list\n" +
-			"looking for a pull request\nno open pull request from crew/issue-1-development\n\n"
-		if string(log) != wantLog {
-			t.Errorf("log = %q, want %q", log, wantLog)
-		}
+		wantLog(t, cfg.Root, "\ncrew: running the check pr-closes-issue: gh pr list\n"+
+			"looking for a pull request\nno open pull request from crew/issue-1-development\n\n")
 	})
 }
 
@@ -201,7 +199,8 @@ func TestACheckThatCannotStartSaysWhyWithLocalPathsShortened(t *testing.T) {
 
 		got := checkedRun(t, tr, cfg)
 
-		want := "the check pr-closes-issue could not start: chdir ./.crew/worktrees/issue-1-development: no such file or directory"
+		want := "the check pr-closes-issue could not start: " +
+			"chdir ./.crew/worktrees/issue-1-development: no such file or directory"
 		if len(got) != 1 || got[0].Reason != want {
 			t.Fatalf("failures = %+v, want reason %q", got, want)
 		}
@@ -271,15 +270,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 			t.Fatalf("Run: %v", err)
 		}
 
-		checks := checker.Checks()
-		if len(checks) != 2 || checks[0].Name != "judge" || checks[1].Name != "pr-closes-issue" {
-			t.Fatalf("checks = %+v, want judge then pr-closes-issue", checks)
-		}
-		for _, c := range checks {
-			if c.Action != "development" || c.Prompt != s.Run().Prompt || c.LastMessage != "PR #2 is open.\nMerging is yours." {
-				t.Errorf("check %s got action %q, prompt %q, last message %q", c.Name, c.Action, c.Prompt, c.LastMessage)
-			}
-		}
+		wantInputs(t, checker.Checks(), s.Run().Prompt, "PR #2 is open.\nMerging is yours.")
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
 			t.Errorf("#1 is in %v, want ready to review", got)
 		}
@@ -290,16 +281,35 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 		if got := lastStatus(t, tr).Actions[0].Checks; !reflect.DeepEqual(got, wantChecks) {
 			t.Errorf("status checks = %+v, want %+v", got, wantChecks)
 		}
-		log, err := os.ReadFile(filepath.Join(cfg.Root, ".crew", "logs", "issue-1-development.log"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		wantLog := "\ncrew: running the check judge: ./judge\nasking Jev\ndone (0.97)\n" +
-			"\ncrew: running the check pr-closes-issue: gh pr list\n"
-		if string(log) != wantLog {
-			t.Errorf("log = %q, want %q", log, wantLog)
-		}
+		wantLog(t, cfg.Root, "\ncrew: running the check judge: ./judge\nasking Jev\ndone (0.97)\n"+
+			"\ncrew: running the check pr-closes-issue: gh pr list\n")
 	})
+}
+
+// wantInputs fails unless checks are judge then pr-closes-issue, each run
+// for development with prompt and last.
+func wantInputs(t *testing.T, checks []port.Check, prompt, last string) {
+	t.Helper()
+	if len(checks) != 2 || checks[0].Name != "judge" || checks[1].Name != "pr-closes-issue" {
+		t.Fatalf("checks = %+v, want judge then pr-closes-issue", checks)
+	}
+	for _, c := range checks {
+		if c.Action != "development" || c.Prompt != prompt || c.LastMessage != last {
+			t.Errorf("check %s got action %q, prompt %q, last message %q", c.Name, c.Action, c.Prompt, c.LastMessage)
+		}
+	}
+}
+
+// wantLog fails unless issue 1's development log under root is want.
+func wantLog(t *testing.T, root, want string) {
+	t.Helper()
+	log, err := os.ReadFile(filepath.Join(root, ".crew", "logs", "issue-1-development.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(log) != want {
+		t.Errorf("log = %q, want %q", log, want)
+	}
 }
 
 // R5: each check has its own ten minutes, not what the one before it left.

@@ -482,14 +482,16 @@ func writeAction(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 // writePassedChecks writes a list of the reasons of a's checks that passed,
 // in the order they ran: a failed check's reason is on the action's line.
 func writePassedChecks(b *strings.Builder, a crew.ActionStatus) {
-	list := "\n"
+	first := true
 	for _, c := range a.Checks {
-		if c.Passed {
-			list += "- " + codeSpan(c.Reason) + "\n"
+		if !c.Passed {
+			continue
 		}
-	}
-	if list != "\n" {
-		b.WriteString(list)
+		if first {
+			b.WriteString("\n")
+			first = false
+		}
+		b.WriteString("- " + codeSpan(c.Reason) + "\n")
 	}
 }
 

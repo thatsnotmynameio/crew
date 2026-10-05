@@ -19,8 +19,9 @@ func checked() []crew.Rule {
 	return w
 }
 
-// runCheck is the RunCheck the development action of key asks for.
-func runCheck(key string) core.RunCheck {
+// runCheck is the RunCheck the development action of issue 74 asks for.
+func runCheck() core.RunCheck {
+	const key = "74"
 	ws := space(key, "development")
 	return core.RunCheck{
 		IssueKey: key, Action: "development", Dir: ws.Dir, Name: "pr-closes-issue", Command: prCheck, Log: ws.Log,
@@ -36,7 +37,7 @@ func checking(d *driver, acceptance crew.Outcome) {
 	d.running(issue("74", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: acceptance})
 	cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-	wantCommands(d.t, cmds, runCheck("74"))
+	wantCommands(d.t, cmds, runCheck())
 }
 
 // failures returns the failure report in cmds.
@@ -102,7 +103,7 @@ func TestSessionAndCheckCarryTheActionsBot(t *testing.T) {
 
 	d.send(core.SessionStarted{IssueKey: "74", Action: "development"})
 	cmds, _ = d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-	check := runCheck("74")
+	check := runCheck()
 	check.Bot = "developer"
 	wantCommands(t, cmds, check)
 }
@@ -223,8 +224,10 @@ var failedCauseCases = []struct {
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseSession, Log: devSpace.Log},
 	},
 	{
-		name:   "check",
-		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}", Checks: []crew.Check{{Name: "never", Script: "false"}}},
+		name: "check",
+		action: crew.Action{
+			Name: "development", Prompt: "Do {{.Issue.Ref}}", Checks: []crew.Check{{Name: "never", Script: "false"}},
+		},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
 			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})

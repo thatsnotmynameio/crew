@@ -79,9 +79,12 @@ func TestLoadRejectsInvalidCheckLists(t *testing.T) {
 			},
 		},
 		{
-			name:  "a mapping",
-			body:  checkedRule(checks, "{lint: test}"),
-			wants: []string{"rules.implement.actions.development.check", "line 16", "must be a check's name or a list of checks' names"},
+			name: "a mapping",
+			body: checkedRule(checks, "{lint: test}"),
+			wants: []string{
+				"rules.implement.actions.development.check", "line 16",
+				"must be a check's name or a list of checks' names",
+			},
 		},
 		{
 			name:  "a list holding a list",

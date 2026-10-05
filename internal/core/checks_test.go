@@ -8,6 +8,11 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
+// passed is the outcome of a check that passed for reason.
+func passed(reason string) crew.Outcome {
+	return crew.Outcome{Succeeded: true, Reason: reason}
+}
+
 // judgeCheck is the check that runs before prCheck on development in
 // twoChecks.
 const judgeCheck = `./judge "$CREW_LAST_MESSAGE_FILE"`
@@ -35,7 +40,7 @@ func judging(d *driver, lastMessage string) {
 // judgeRun is the RunCheck of development's judge, after a session whose
 // last message was lastMessage.
 func judgeRun(lastMessage string) core.RunCheck {
-	c := runCheck("74")
+	c := runCheck()
 	c.Name, c.Command, c.LastMessage = "judge", judgeCheck, lastMessage
 	return c
 }
@@ -47,8 +52,8 @@ func TestAPassingCheckStartsTheNextWhichDecidesTheAction(t *testing.T) {
 	judging(d, "PR #20 is open.\nMerging is yours.")
 
 	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development",
-		Outcome: crew.Outcome{Succeeded: true, Reason: "the check judge passed: done (0.97)"}})
-	next := runCheck("74")
+		Outcome: passed("the check judge passed: done (0.97)")})
+	next := runCheck()
 	next.LastMessage = "PR #20 is open.\nMerging is yours."
 	wantCommands(t, cmds, next)
 
@@ -133,7 +138,7 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
 	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 	judged := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"}
-	d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: judged.Reason}})
+	d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: passed(judged.Reason)})
 
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
@@ -147,9 +152,10 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 
 	d.wrote("74")
 	closes := crew.CheckResult{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"}
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: closes.Reason}})
+	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: passed(closes.Reason)})
 	ended := statusOf(t, cmds, "74")
-	if dev := ended.Actions[1]; dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
+	dev := ended.Actions[1]
+	if dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
 		t.Fatalf("development once ended: %#v", dev)
 	}
 }

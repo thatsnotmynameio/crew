@@ -407,7 +407,8 @@ func TestCheckerRunsACheckScriptedByNameOverItsBranchsScript(t *testing.T) {
 	c.ScriptCheck("crew/issue-9-lfg", "judge", fake.CheckScript{Print: "done (0.97)\n"})
 
 	var out strings.Builder
-	if err := c.Check(context.Background(), port.Check{Branch: "crew/issue-9-lfg", Name: "judge", Output: &out}); err != nil {
+	judge := port.Check{Branch: "crew/issue-9-lfg", Name: "judge", Output: &out}
+	if err := c.Check(context.Background(), judge); err != nil {
 		t.Errorf("judge = %v, want it to pass as scripted by name", err)
 	}
 	if out.String() != "done (0.97)\n" {

@@ -290,7 +290,8 @@ func TestAnActionsCheckRunsThroughTheOptionsChecker(t *testing.T) {
 		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
 			t.Errorf("#1 is in %v, want needs attention", got)
 		}
-		if out, want := r.stdout.String(), "the check pull request failed: no open pull request"; !strings.Contains(out, want) {
+		out, want := r.stdout.String(), "the check pull request failed: no open pull request"
+		if !strings.Contains(out, want) {
 			t.Errorf("stdout lacks %q; it is:\n%s", want, out)
 		}
 	})
