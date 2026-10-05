@@ -15,7 +15,7 @@ const prCheck = `gh pr list --head "$CREW_BRANCH" --state open`
 // checked is the draft rules with a check on development only.
 func checked() []crew.Rule {
 	w := draft()
-	w[0].Actions[1].Check = prCheck
+	w[0].Actions[1].Checks = []crew.Check{{Name: "pr-closes-issue", Script: prCheck}}
 	return w
 }
 
@@ -223,7 +223,7 @@ var failedCauseCases = []struct {
 	},
 	{
 		name:   "check",
-		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}", Check: "false"},
+		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}", Checks: []crew.Check{{Name: "never", Script: "false"}}},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
 			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})

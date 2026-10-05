@@ -128,14 +128,14 @@ func (s *step) sessionEnded(in SessionEnded) {
 		cause = crew.CauseStopped
 	}
 	switch {
-	case !in.Outcome.Succeeded || a.check == "":
+	case !in.Outcome.Succeeded || len(a.checks) == 0:
 		s.end(h, a, in.Outcome, cause)
 	case s.m.stopping:
 		s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
 	default:
 		a.phase = PhaseChecking
 		s.command(RunCheck{
-			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.check, Log: a.log,
+			IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Command: a.checks[0].Script, Log: a.log,
 			IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Bot: a.bot,
 		})
 	}

@@ -330,7 +330,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	rule := m.rules[si]
 	h := &heldIssue{issue: issue.Clone(), rule: si, claim: ClaimTaking, taken: s.at}
 	for _, a := range rule.Actions {
-		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, agent: a.Agent, bot: a.Bot})
+		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, checks: a.Checks, agent: a.Agent, bot: a.Bot})
 	}
 	m.issues = append(m.issues, h)
 	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})

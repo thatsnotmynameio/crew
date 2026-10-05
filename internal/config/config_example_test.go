@@ -69,7 +69,7 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if want := []string{"refinement", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
-	if script := cfg.Rules[3].Actions[0].Check; !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
+	if script := checkScript(cfg.Rules[3].Actions[0], "pr-closes-issue"); !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
 		t.Errorf("development's check = %q, want the script of pr-closes-issue", script)
 	}
 }
@@ -105,8 +105,8 @@ func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
 		}
 	}
 	for _, want := range []string{`"crew:refinement:in progress"`, partMarker + "$CREW_ISSUE_REF -->", "/sub_issues"} {
-		if !strings.Contains(refine.Check, want) {
-			t.Errorf("refine's check = %q, want the script of split-finished, with %q", refine.Check, want)
+		if script := checkScript(refine, "split-finished"); !strings.Contains(script, want) {
+			t.Errorf("refine's check = %q, want the script of split-finished, with %q", script, want)
 		}
 	}
 }
@@ -151,7 +151,7 @@ func wantExampleRules() []exampleRule {
 		},
 		{
 			name: "refinement", queue: productManager, notify: true, labels: labels("refinement", "crew:refinement:done"),
-			actions: []string{"refine: agent product-manager, bot product-manager, check true"},
+			actions: []string{"refine: agent product-manager, bot product-manager, checks [split-finished]"},
 		},
 		{
 			name: "promote refinement", queue: clerk,
@@ -162,14 +162,34 @@ func wantExampleRules() []exampleRule {
 		{
 			name: "development", queue: developer, notify: true,
 			labels:  labels("development", "crew:development:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, check true"},
+			actions: []string{"lfg: agent developer, bot developer, checks [pr-closes-issue]"},
 		},
 		{
 			name: "fix", queue: developer, notify: true, labels: labels("fix", "crew:fix:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, check true"},
+			actions: []string{"lfg: agent developer, bot developer, checks [pr-closes-issue]"},
 		},
 	}
 	return want
+}
+
+// checkScript returns the script of a's check called name, or "" when a
+// names no such check.
+func checkScript(a crew.Action, name string) string {
+	for _, c := range a.Checks {
+		if c.Name == name {
+			return c.Script
+		}
+	}
+	return ""
+}
+
+// checkNames returns the names of checks, in order, as [a b].
+func checkNames(checks []crew.Check) string {
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	return fmt.Sprint(names)
 }
 
 // exampleRules sums rules up as exampleRule.
@@ -179,7 +199,7 @@ func exampleRules(rules []crew.Rule) []exampleRule {
 		out[i] = exampleRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
 		for _, a := range r.Actions {
 			out[i].actions = append(out[i].actions,
-				fmt.Sprintf("%s: agent %s, bot %s, check %t", a.Name, a.Agent, a.Bot, a.Check != ""))
+				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent, a.Bot, checkNames(a.Checks)))
 		}
 	}
 	return out

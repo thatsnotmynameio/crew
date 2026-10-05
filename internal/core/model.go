@@ -112,7 +112,7 @@ type actionRun struct {
 	started   time.Time
 	said      string // what its running session last said
 	outcome   crew.Outcome
-	check     string            // its check command; empty when it has none
+	checks    []crew.Check      // its checks, in the order they run
 	agent     string            // the agent whose harness runs its session
 	bot       string            // the bot its session and check act as; empty for you
 	stopped   bool              // a StopCheck was sent for its check

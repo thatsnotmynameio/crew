@@ -412,7 +412,7 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 
 func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 	wf := crewRules()
-	wf[0].Actions[0].Check = "gh pr view --json url"
+	wf[0].Actions[0].Checks = []crew.Check{{Name: "pr-open", Script: "gh pr view --json url"}}
 	d := &driver{t: t, m: core.New(wf, 2, core.RecordingRuns(nil), core.Reopening()), now: t0}
 	d.takeIssue(issue("9", 1, readyForDev))
 	d.send(created("9", "lfg", "lfg"))

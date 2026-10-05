@@ -25,15 +25,16 @@ type section struct {
 // sections are the keys of the document that stay raw nodes, each with how
 // the config package decodes it, by key path.
 var sections = map[string]section{
-	"queues":           {named: true},
-	"tracker":          {item: reflect.TypeFor[trackerDoc](), open: true},
-	"agents":           {item: reflect.TypeFor[agentDoc](), named: true},
-	"agents.*.harness": {item: reflect.TypeFor[harnessDoc](), open: true},
-	"checks":           {named: true},
-	"board":            {named: true},
-	"rules":            {item: reflect.TypeFor[ruleDoc](), named: true},
-	"rules.*.labels":   {item: reflect.TypeFor[labelsDoc]()},
-	"rules.*.actions":  {item: reflect.TypeFor[actionDoc](), named: true},
+	"queues":                  {named: true},
+	"tracker":                 {item: reflect.TypeFor[trackerDoc](), open: true},
+	"agents":                  {item: reflect.TypeFor[agentDoc](), named: true},
+	"agents.*.harness":        {item: reflect.TypeFor[harnessDoc](), open: true},
+	"checks":                  {named: true},
+	"board":                   {named: true},
+	"rules":                   {item: reflect.TypeFor[ruleDoc](), named: true},
+	"rules.*.labels":          {item: reflect.TypeFor[labelsDoc]()},
+	"rules.*.actions":         {item: reflect.TypeFor[actionDoc](), named: true},
+	"rules.*.actions.*.check": {},
 }
 
 // AcceptedKeys returns every key path the config accepts, read from the

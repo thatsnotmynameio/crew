@@ -17,7 +17,7 @@ import (
 // checkedDevelop is develop with a check on its action.
 var checkedDevelop = crew.Rule{
 	Name: develop.Name, Labels: develop.Labels,
-	Actions: []crew.Action{{Name: "development", Prompt: develop.Actions[0].Prompt, Check: "gh pr list"}},
+	Actions: []crew.Action{{Name: "development", Prompt: develop.Actions[0].Prompt, Checks: []crew.Check{{Name: "pr-closes-issue", Script: "gh pr list"}}}},
 }
 
 // checkedConfig is config for checkedDevelop, with checker as its checker.

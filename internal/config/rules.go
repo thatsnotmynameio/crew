@@ -32,7 +32,7 @@ type labelsDoc struct {
 type actionDoc struct {
 	Agent  located[string] `yaml:"agent"`
 	Prompt located[string] `yaml:"prompt"`
-	Check  located[string] `yaml:"check"`
+	Check  yaml.Node       `yaml:"check"`
 }
 
 // What each kind of named item must be, said when an item is not a mapping.
@@ -40,6 +40,7 @@ const (
 	ruleShape   = "must be a rule with labels, and optionally takes, queue, notify and actions"
 	labelsShape = "must be a mapping with ready, running, success and failure"
 	actionShape = "must be an action with prompt, and optionally agent and check"
+	checkShape  = "must be a check's name or a list of checks' names"
 )
 
 // parsedRule is a rule that passed its own checks, with what the
@@ -189,12 +190,12 @@ func parseAction(e entry, env ruleEnv) (crew.Action, error) {
 	}
 	prompt, promptErr := required(doc.Prompt, e.path+".prompt", e.key.Line)
 	agent, agentErr := env.agent(doc.Agent, e.path+".agent", e.key.Line)
-	check, checkErr := env.check(doc.Check, e.path+".check")
+	checks, checkErr := env.resolveChecks(&doc.Check, e.path+".check")
 	if err := errors.Join(promptErr, agentErr, checkErr); err != nil {
 		return crew.Action{}, err
 	}
 	action := crew.Action{
-		Name: e.key.Value, Prompt: prompt, Agent: agent.Name, Check: check, Bot: cmp.Or(agent.Bot, env.bot),
+		Name: e.key.Value, Prompt: prompt, Agent: agent.Name, Checks: checks, Bot: cmp.Or(agent.Bot, env.bot),
 	}
 	if _, err := action.Render(sampleIssue()); err != nil {
 		return crew.Action{}, keyError(e.path+".prompt", doc.Prompt.line, err.Error())
@@ -238,20 +239,55 @@ func (env ruleEnv) agentNames() string {
 	return strings.Join(names, ", ")
 }
 
-// check returns the script of the check an action names in l, at path, or
-// no script when it names none.
-func (env ruleEnv) check(l located[string], path string) (string, error) {
-	if l.line == 0 {
-		return "", nil
+// resolveChecks returns the checks an action names in n, at path: one name,
+// or a list of names in the order they run. It returns none when n is left
+// out, and reports every name that is not a check.
+func (env ruleEnv) resolveChecks(n *yaml.Node, path string) ([]crew.Check, error) {
+	switch n.Kind {
+	case 0:
+		return nil, nil
+	case yaml.ScalarNode:
+		c, err := env.check(n, path)
+		if err != nil {
+			return nil, err
+		}
+		return []crew.Check{c}, nil
+	case yaml.SequenceNode:
+		if len(n.Content) == 0 {
+			return nil, keyError(path, n.Line, "must name at least one check")
+		}
+		out := make([]crew.Check, 0, len(n.Content))
+		var errs []error
+		for i, item := range n.Content {
+			c, err := env.check(item, fmt.Sprintf("%s[%d]", path, i))
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			out = append(out, c)
+		}
+		return out, errors.Join(errs...)
+	default:
+		return nil, keyError(path, n.Line, checkShape)
 	}
-	if script, ok := env.checks[l.value]; ok {
-		return script, nil
+}
+
+// check returns the check the scalar n names, at path.
+func (env ruleEnv) check(n *yaml.Node, path string) (crew.Check, error) {
+	if n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+	if n.Kind != yaml.ScalarNode {
+		return crew.Check{}, keyError(path, n.Line, checkShape)
+	}
+	if script, ok := env.checks[n.Value]; ok {
+		return crew.Check{Name: n.Value, Script: script}, nil
 	}
 	if len(env.checks) == 0 {
-		return "", keyError(path, l.line, fmt.Sprintf("check %q does not exist; checks declares none", l.value))
+		return crew.Check{}, keyError(path, n.Line, fmt.Sprintf("check %q does not exist; checks declares none", n.Value))
 	}
-	return "", keyError(path, l.line, fmt.Sprintf("check %q does not exist; the checks are %s",
-		l.value, strings.Join(sortedKeys(env.checks), ", ")))
+	return crew.Check{}, keyError(path, n.Line, fmt.Sprintf("check %q does not exist; the checks are %s",
+		n.Value, strings.Join(sortedKeys(env.checks), ", ")))
 }
 
 // sampleIssue is the issue every prompt is rendered for at load, so a bad

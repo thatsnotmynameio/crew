@@ -186,8 +186,12 @@ func TestLoadReadsActionCheck(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).Rules[0].Actions[0].Check; got != tt.want {
-				t.Errorf("Check = %q, want %q", got, tt.want)
+			var got string
+			if checks := load(t, tt.body).Rules[0].Actions[0].Checks; len(checks) > 0 {
+				got = checks[0].Script
+			}
+			if got != tt.want {
+				t.Errorf("check script = %q, want %q", got, tt.want)
 			}
 		})
 	}

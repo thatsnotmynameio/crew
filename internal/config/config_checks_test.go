@@ -1,8 +1,11 @@
 package config_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // checkedRule is oneRule whose action names the check name, on line 13,
@@ -26,9 +29,66 @@ func TestAE7AnActionNamingACheckChecksLacksIsRefused(t *testing.T) {
 func TestLoadGivesEveryActionTheScriptOfItsCheck(t *testing.T) {
 	cfg := load(t, checkedRule("checks:\n  unused: \"false\"\n  pr-closes-issue: |-\n    gh pr list\n    exit 0\n",
 		"pr-closes-issue"))
-	if got, want := cfg.Rules[0].Actions[0].Check, "gh pr list\nexit 0"; got != want {
-		t.Errorf("Check = %q, want %q", got, want)
+	want := []crew.Check{{Name: "pr-closes-issue", Script: "gh pr list\nexit 0"}}
+	if got := cfg.Rules[0].Actions[0].Checks; !reflect.DeepEqual(got, want) {
+		t.Errorf("Checks = %q, want %q", got, want)
 	}
+}
+
+// R3: an action's check may be a list of checks, which run in the order the
+// list gives; the same check may come twice.
+func TestLoadGivesAnActionItsListOfChecksInOrder(t *testing.T) {
+	checks := "checks:\n  judge: ./judge\n  pr-closes-issue: gh pr list\n"
+	cfg := load(t, checkedRule(checks, "[judge, pr-closes-issue, judge]"))
+	want := []crew.Check{
+		{Name: "judge", Script: "./judge"},
+		{Name: "pr-closes-issue", Script: "gh pr list"},
+		{Name: "judge", Script: "./judge"},
+	}
+	if got := cfg.Rules[0].Actions[0].Checks; !reflect.DeepEqual(got, want) {
+		t.Errorf("Checks = %q, want %q", got, want)
+	}
+	block := strings.Replace(oneRule, "        prompt:", "        check:\n          - pr-closes-issue\n        prompt:", 1)
+	cfg = load(t, checks+block)
+	if got := cfg.Rules[0].Actions[0].Checks; len(got) != 1 || got[0].Name != "pr-closes-issue" {
+		t.Errorf("Checks from a block list = %q, want pr-closes-issue alone", got)
+	}
+}
+
+// An action without a check has none.
+func TestLoadLeavesAnActionWithoutACheckWithNone(t *testing.T) {
+	if got := load(t, oneRule).Rules[0].Actions[0].Checks; got != nil {
+		t.Errorf("Checks = %q, want none", got)
+	}
+}
+
+func TestLoadRejectsInvalidCheckLists(t *testing.T) {
+	checks := "checks:\n  lint: make lint\n  test: make test\n"
+	testRejects(t, []rejectCase{
+		{
+			name:  "an empty list",
+			body:  checkedRule(checks, "[]"),
+			wants: []string{"rules.implement.actions.development.check", "line 16", "must name at least one check"},
+		},
+		{
+			name: "a list with two names that are not checks",
+			body: checkedRule(checks, "[lint, vet, fmt]"),
+			wants: []string{
+				"rules.implement.actions.development.check[1]", `check "vet" does not exist; the checks are lint, test`,
+				"rules.implement.actions.development.check[2]", `check "fmt" does not exist`,
+			},
+		},
+		{
+			name:  "a mapping",
+			body:  checkedRule(checks, "{lint: test}"),
+			wants: []string{"rules.implement.actions.development.check", "line 16", "must be a check's name or a list of checks' names"},
+		},
+		{
+			name:  "a list holding a list",
+			body:  checkedRule(checks, "[lint, [test]]"),
+			wants: []string{"rules.implement.actions.development.check[1]", "must be a check's name or a list of checks' names"},
+		},
+	})
 }
 
 func TestLoadRejectsInvalidChecks(t *testing.T) {
