@@ -20,8 +20,7 @@ const stoppedReason = "stopped by crew before the session ended"
 // recorder keeps what judging a codex session needs from what it prints:
 // the JSONL events of `codex exec --json` on stdout, and the last line of
 // stderr. Its stdout and stderr writers are each written from one goroutine
-// and touch separate fields; the recorder is read once both are done, but
-// for what the session said, which may be read at any time.
+// and touch separate fields, which are read once both writers are done.
 type recorder struct {
 	out, errs lines
 
@@ -32,7 +31,7 @@ type recorder struct {
 	turns     int         // how many turns completed
 	used      *tokenUsage // the usage of the last completed turn, or nil
 	lastError string      // the message of the last top-level error event
-	said      string      // the text of the last agent message
+	said      string      // the text of the last agent message, on one line
 	errLine   string      // the last non-empty stderr line
 }
 
@@ -112,7 +111,7 @@ func (r *recorder) event(line []byte) {
 	case "item.completed":
 		if ev.Item.Type == "agent_message" {
 			r.mu.Lock()
-			r.said = ev.Item.Text
+			r.said = strings.Join(strings.Fields(ev.Item.Text), " ")
 			r.mu.Unlock()
 		}
 	}
@@ -123,7 +122,7 @@ func (r *recorder) event(line []byte) {
 func (r *recorder) lastSaid() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return strings.Join(strings.Fields(r.said), " ")
+	return r.said
 }
 
 // stderrLine keeps line when it is not blank.
@@ -163,16 +162,23 @@ func (r *recorder) usage(stopped bool) crew.Usage {
 	}
 	u := crew.Usage{Turns: r.turns, HasTurns: true}
 	if r.used != nil {
-		read, write := max(r.used.CacheRead, 0), max(r.used.CacheWrite, 0)
-		u.Tokens = crew.Tokens{
-			Input:      max(r.used.Input-read-write, 0),
-			Output:     max(r.used.Output, 0),
-			CacheRead:  read,
-			CacheWrite: write,
-		}
-		u.HasTokens = true
+		u.Tokens, u.HasTokens = r.used.tokens(), true
 	}
 	return u
+}
+
+// tokens maps u onto crew's four kinds, so that their total is Codex's input
+// plus output: the input left once both cache counts are taken out of it,
+// and the output with its reasoning. A count that does not add up, such as
+// a negative one, reads as zero.
+func (u tokenUsage) tokens() crew.Tokens {
+	read, write := max(u.CacheRead, 0), max(u.CacheWrite, 0)
+	return crew.Tokens{
+		Input:      max(u.Input-read-write, 0),
+		Output:     max(u.Output, 0),
+		CacheRead:  read,
+		CacheWrite: write,
+	}
 }
 
 // failedAfterTurn is the reason of a session whose turn completed but whose
