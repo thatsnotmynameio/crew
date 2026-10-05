@@ -123,3 +123,33 @@ func TestAStopWhileTheFirstCheckRunsEndsTheActionWithoutTheSecond(t *testing.T) 
 		t.Fatalf("failures = %#v, want development failed as stopped", got)
 	}
 }
+
+// R6: while its second check runs, an action's status shows how its first
+// ended; once it ended, both, in order.
+func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
+	d := newStatusDriver(t, twoChecks(), 2)
+	d.runAll(d.take(issue("74", 1, ready)))
+	devStarted := started(t, d.m, "development")
+	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	judged := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"}
+	d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: judged.Reason}})
+
+	cmds, _ := d.send(core.Tick{})
+	got := statusOf(t, cmds, "74")
+	want := []crew.ActionStatus{
+		{Name: "acceptance", State: crew.ActionSucceeded},
+		{Name: "development", State: crew.ActionRunning, Started: devStarted, Checks: []crew.CheckResult{judged}},
+	}
+	if got.Kind != crew.StatusRunning || !reflect.DeepEqual(got.Actions, want) {
+		t.Fatalf("status while the second check runs: %#v\nwant actions %#v", got, want)
+	}
+
+	d.wrote("74")
+	closes := crew.CheckResult{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"}
+	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: closes.Reason}})
+	ended := statusOf(t, cmds, "74")
+	if dev := ended.Actions[1]; dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
+		t.Fatalf("development once ended: %#v", dev)
+	}
+}

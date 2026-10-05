@@ -473,8 +473,29 @@ func writeHeadline(b *strings.Builder, s crew.Status) {
 }
 
 // writeAction writes the paragraph of action a, as of updated: its state
-// and, when it resumed, its worktree.
+// and, when it resumed, its worktree, then the checks of it that passed.
 func writeAction(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
+	writeState(b, a, updated)
+	writePassedChecks(b, a)
+}
+
+// writePassedChecks writes a list of the reasons of a's checks that passed,
+// in the order they ran: a failed check's reason is on the action's line.
+func writePassedChecks(b *strings.Builder, a crew.ActionStatus) {
+	list := "\n"
+	for _, c := range a.Checks {
+		if c.Passed {
+			list += "- " + codeSpan(c.Reason) + "\n"
+		}
+	}
+	if list != "\n" {
+		b.WriteString(list)
+	}
+}
+
+// writeState writes the line of action a, as of updated: its state and,
+// when it resumed, its worktree.
+func writeState(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 	// A resumed action's line names its worktree: "**`lfg`** resumed in
 	// worktree `issue-9-lfg` and failed." A fresh one reads "**`lfg`**
 	// failed."
@@ -533,12 +554,13 @@ func failureCause(a crew.ActionStatus) string {
 	case crew.CauseSession:
 		return ": its session failed"
 	case crew.CauseCheck:
-		// The reason already says the check failed, ran out of time or
+		// The reason already says which check failed, ran out of time or
 		// could not start.
-		if a.Reason == "" {
+		reason := a.FailedCheck()
+		if reason == "" {
 			return ": its check failed"
 		}
-		return ": " + codeSpan(a.Reason)
+		return ": " + codeSpan(reason)
 	case crew.CauseStopped:
 		return ": crew stopped it"
 	case crew.CauseWorkspace:

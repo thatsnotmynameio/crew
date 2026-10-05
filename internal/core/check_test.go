@@ -234,8 +234,8 @@ var failedCauseCases = []struct {
 			return cmds
 		},
 		want: crew.ActionStatus{
-			Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck,
-			Reason: "the check failed: no pull request", Log: devSpace.Log,
+			Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: devSpace.Log,
+			Checks: []crew.CheckResult{{Name: "never", Reason: "the check failed: no pull request"}},
 		},
 	},
 	{

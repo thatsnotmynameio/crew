@@ -257,7 +257,7 @@ var twoCheckedDevelop = crew.Rule{
 // message, and a passing check's reason is its last line.
 func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker, h := fake.NewTracker(issue(1, ready)), fake.NewChecker(), fake.NewMessagingHarness()
+		tr, checker, h := fake.NewReportingTracker(issue(1, ready)), fake.NewChecker(), fake.NewMessagingHarness()
 		checker.ScriptCheck("crew/issue-1-development", "judge", fake.CheckScript{Print: "asking Jev\ndone (0.97)\n"})
 		cfg := config(t, tr, twoCheckedDevelop)
 		cfg.Checker, cfg.Harnesses = checker, harnesses(h)
@@ -282,6 +282,13 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 		}
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
 			t.Errorf("#1 is in %v, want ready to review", got)
+		}
+		wantChecks := []crew.CheckResult{
+			{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"},
+			{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"},
+		}
+		if got := lastStatus(t, tr).Actions[0].Checks; !reflect.DeepEqual(got, wantChecks) {
+			t.Errorf("status checks = %+v, want %+v", got, wantChecks)
 		}
 		log, err := os.ReadFile(filepath.Join(cfg.Root, ".crew", "logs", "issue-1-development.log"))
 		if err != nil {

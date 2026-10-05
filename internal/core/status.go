@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -202,11 +203,12 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 	s.report(st)
 }
 
-// status returns h's status of kind, with each action's state, and for a
-// failed action its cause and log. Only a check's reason goes with it: a
-// session's or a tool's own words never do (R12). An action that resumed
-// also names its workspace. With ReportingUsage, an ended action whose
-// session started also carries what it spent and its pull request.
+// status returns h's status of kind, with each action's state and how its
+// checks that ran so far ended, and for a failed action its cause and log.
+// Only a check's reason goes with it: a session's or a tool's own words
+// never do (R12). An action that resumed also names its workspace. With
+// ReportingUsage, an ended action whose session started also carries what
+// it spent and its pull request.
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
 		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
@@ -220,10 +222,8 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 			as.State = crew.ActionSucceeded
 		default:
 			as.State, as.Cause, as.Log = crew.ActionFailed, a.cause, a.log
-			if a.cause == crew.CauseCheck {
-				as.Reason = a.outcome.Reason
-			}
 		}
+		as.Checks = slices.Clone(a.results)
 		if a.resumed {
 			as.Workspace = a.workspace
 		}
@@ -239,5 +239,11 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 func sameStatus(a, b crew.Status) bool {
 	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Rule == b.Rule &&
 		a.Kind == b.Kind && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
-		slices.Equal(a.Actions, b.Actions)
+		slices.EqualFunc(a.Actions, b.Actions, sameAction)
+}
+
+// sameAction reports whether a and b show the same action. Its Checks make
+// an ActionStatus not comparable with ==.
+func sameAction(a, b crew.ActionStatus) bool {
+	return reflect.DeepEqual(a, b)
 }
