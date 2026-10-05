@@ -15,7 +15,7 @@ import (
 
 // apiKey is the variable codex exec authenticates with instead of a stored
 // login. codex login status ignores it.
-const apiKey = "CODEX_API_KEY"
+const apiKey = "CODEX_API_KEY" //nolint:gosec // G101: the name of a variable crew reads, not a credential
 
 // loginTimeout bounds codex login status, which reads a local file.
 const loginTimeout = time.Minute
@@ -44,7 +44,8 @@ func (h *harness) Prepare(ctx context.Context, _ []crew.State) error {
 	case err == nil:
 		return nil
 	case exitCode(err) == 1 && strings.Contains(string(out.Stderr)+string(out.Stdout), loggedOut):
-		return fmt.Errorf("the codex harness runs the %s CLI, which is not logged in: run `codex login`, or set %s", binary, apiKey)
+		return fmt.Errorf("the codex harness runs the %s CLI, which is not logged in: run `codex login`, or set %s",
+			binary, apiKey)
 	}
 	return fmt.Errorf("could not check that %s is logged in: %w", binary, err)
 }

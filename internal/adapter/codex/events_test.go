@@ -324,7 +324,8 @@ func TestSaidFollowsTheLastCompletedAgentMessage(t *testing.T) {
 			"Reading issue #4 first."},
 		{`{"type":"item.completed","item":{"id":"item_4","type":"error","message":"Falling back"}}`,
 			"Reading issue #4 first."},
-		{`{"type":"item.completed","item":{"id":"item_5","type":"agent_message","text":"I fixed the parser.\n\nThe tests pass."}}`,
+		{`{"type":"item.completed","item":{"id":"item_5","type":"agent_message",` +
+			`"text":"I fixed the parser.\n\nThe tests pass."}}`,
 			"I fixed the parser. The tests pass."},
 	}
 	r := newRecorder()

@@ -35,7 +35,7 @@ func (l *fakeLogin) run(ctx context.Context, c proc.Command) (proc.Output, error
 func onPath(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, binary), []byte("#!/bin/sh\n"), 0o700); err != nil { //nolint:gosec // a test's stand-in codex must be executable
+	if err := os.WriteFile(filepath.Join(dir, binary), []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
