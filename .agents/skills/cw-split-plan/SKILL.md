@@ -66,14 +66,17 @@ A part's body follows the feature template, `.github/ISSUE_TEMPLATE/feature.md`,
 | `### Summary` | what this part adds, in one to three lines |
 | `### Problem Frame` | the plan's, whole |
 | `### Key Decisions` | each of the plan's decisions whose `Governs` line names one of the part's requirements, verbatim with its provenance |
+| `### Actors` | the plan's, whole |
 | `### Requirements` | the part's requirements, verbatim with their original IDs and group headings |
 | `### Key Flows` | each flow whose `Covered by` names one of the part's requirements |
 | `### Acceptance Examples` | the part's acceptance examples, verbatim with their original IDs |
+| `### Success Criteria` | the plan's, whole |
 | `### Scope Boundaries` | the plan's, whole, then one line naming the other parts, which are built in their own issues |
 | `### Dependencies / Assumptions` | the plan's, whole |
+| `### Outstanding Questions` | each question that names one of the part's requirements, or all of the plan's when none names a requirement |
 | `### Sources / Research` | `Split from #N.`, then the plan's sources |
 
-Leave out a section the plan does not have. End the body with the part marker. Write each body to its own file.
+Keep the sections in this order, and leave out a section the plan does not have. End the body with the part marker. Write each body to its own file.
 
 Measure every part: `sh .agents/skills/cw-split-plan/measure.sh <part files>`. A part with `below_part_minimum=yes` breaks rule 2, and one with `above_threshold=yes` must be one that rule 1 keeps whole. Regroup, and go back to step 3, until every part passes.
 
