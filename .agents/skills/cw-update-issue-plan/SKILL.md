@@ -21,18 +21,18 @@ Run `gh` with the repository root, from `git rev-parse --show-toplevel`, as the 
 | `crew:development:ready` | `feature.md` | a feature whose brainstorm is done |
 | `crew:fix:ready` | `bug.md` | a bug to reproduce and fix |
 | `crew:brainstorm:ready` | `idea.md` | an idea to brainstorm later |
-| `crew:brainstorm:done` | `feature.md` | a brainstormed feature to hand to triage |
-| `crew:triage:ready` | `feature.md` | a brainstormed feature whose dependencies to find |
-| `crew:triage:done` | `feature.md` | a triaged feature to hand to development |
+| `crew:brainstorm:done` | `feature.md` | a brainstormed feature to hand to refinement |
+| `crew:refinement:ready` | `feature.md` | a brainstormed feature to split when large and whose dependencies to find |
+| `crew:refinement:done` | `feature.md` | a refined feature to hand to development |
 | `crew:ci audit:ready` | `ci-audit.md` | an audit of the GitHub Actions |
 | `crew:knowledge base:ready` | `knowledge-base.md` | a solved problem to record as a learning |
 
-**Running labels.** crew puts a rule's running label on an issue while it works on it: `crew:brainstorm:promoting`, `crew:triage:in progress`, `crew:triage:promoting`, `crew:development:in progress`, `crew:fix:in progress`, `crew:ci audit:in progress` and `crew:knowledge base:in progress`.
+**Running labels.** crew puts a rule's running label on an issue while it works on it: `crew:brainstorm:promoting`, `crew:refinement:in progress`, `crew:refinement:promoting`, `crew:development:in progress`, `crew:fix:in progress`, `crew:ci audit:in progress` and `crew:knowledge base:in progress`.
 
 **crew's labels.** These are the labels a move removes:
 
 - `crew:brainstorm:ready`, `crew:brainstorm:in progress`, `crew:brainstorm:done`, `crew:brainstorm:promoting`, `crew:brainstorm:failed`
-- `crew:triage:ready`, `crew:triage:in progress`, `crew:triage:done`, `crew:triage:promoting`, `crew:triage:failed`
+- `crew:refinement:ready`, `crew:refinement:in progress`, `crew:refinement:done`, `crew:refinement:promoting`, `crew:refinement:failed`
 - `crew:development:ready`, `crew:development:in progress`, `crew:development:waiting review`, `crew:development:failed`
 - `crew:fix:ready`, `crew:fix:in progress`, `crew:fix:waiting review`, `crew:fix:failed`
 - `crew:ci audit:ready`, `crew:ci audit:in progress`, `crew:ci audit:done`, `crew:ci audit:failed`
@@ -94,7 +94,7 @@ Only when no label was given. The prompt below moves a brainstormed idea on. Rep
 | `{{.Issue.URL}}` | the issue's URL |
 
 ```text
-Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's promote brainstorm rule hands it to triage at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
+Move {{.Issue.Ref}} to `crew:brainstorm:done`, so crew's promote brainstorm rule hands it to refinement at its next poll: `gh issue edit {{.Issue.Key}} --remove-label "crew:brainstorm:in progress" --add-label "crew:brainstorm:done"`. When that fails, report the error and stop.
 ```
 
 Follow the filled prompt as if the user had typed it as their next message in this session. Run every command it gives, and stop where it says to stop. Add no checks, label changes or questions of your own.
