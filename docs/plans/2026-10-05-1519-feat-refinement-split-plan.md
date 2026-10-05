@@ -14,10 +14,10 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** a large brainstormed plan reaches development as several smaller issues, each mergeable on its own, which crew builds in parallel unless one really needs another, so no lfg session carries the whole plan and the boss never reviews a split or holds a merge.
-- **Means:** the triage rule becomes the refinement rule (KTD1, KTD2, KTD10). Its product-manager session runs a new `/cw-split-plan` skill (KTD4, KTD6) that measures the plan with a Go tool (KTD3) and, above the threshold, creates sub-issues, then finds blockers as triage does today.
+- **Means:** the triage rule becomes the refinement rule (KTD1, KTD2, KTD10). Its product-manager session runs a new `/cw-split-plan` skill (KTD4, KTD6) that measures the plan with a script (KTD3) and, above the threshold, creates sub-issues, then finds blockers as triage does today.
 - **Product authority:** the boss, through the brainstorm of #160. The Product Contract wins on behaviour; the KTDs win on mechanism.
 - **Stop conditions:** stop and report when a settled Key Decision proves unworkable, or when a gate in the Verification Contract cannot pass without changing a requirement.
-- **Execution profile:** one branch, units U1 to U4 in order, one pull request whose body carries `Closes #160` and the post-merge rollout steps (KTD9). The lfg session renames no GitHub label and does not touch the live `.crew/config.yaml`.
+- **Execution profile:** one branch, units U1 to U4 in order, with no Go code beyond the example config's test (KTD11), one pull request whose body carries `Closes #160` and the post-merge rollout steps (KTD9). The lfg session renames no GitHub label and does not touch the live `.crew/config.yaml`.
 - **Open blockers:** none.
 
 ---
@@ -158,9 +158,9 @@ The caveats bound the design. 18 runs are few. Larger plans may also be harder w
 
 - KTD1. **The rename covers the rule, its promote rule, its labels, its action and its board column; generic test fixtures keep `triage`.** The rule becomes `refinement`, the promote rule `promote refinement`, the action `refine` (so its log is `issue-N-refine.log`), and the board column follows the rule name. Tests in `internal/core`, `internal/ui/tui`, `internal/adapter/github`, `internal/crew/board_test.go` and `internal/config/config_board_test.go` use `triage` only as an arbitrary rule name in their own fixtures; R2 lists what must change, and those fixtures and their golden files are not on it. `internal/config/testdata/old/` is a fixture of the legacy keys and stays as it is. `internal/config/config_example_test.go` tests the example config itself, so it changes with it. Governs R1, R2.
 - KTD2. **The refinement prompt runs `/cw-split-plan` first, then finds blockers for whatever came out: the whole issue, or each part.** The prompt keeps triage's steps (reading the issue and its dependencies, listing the open issues crew takes, recording and removing `blocked_by` links with a reason, one closing comment) and adds three things around them. It branches on the skill's outcome. On a split, it moves the parent's existing dependencies to the parts they concern and removes them from the parent. The parent is open but never built, so an issue the parent blocks would otherwise wait until the boss closes it. #160 itself shows the case: it blocks #153. On a split it also finishes the split last (KTD6). It leaves out of every blocker search, this session's and later ones, any open issue whose body carries the split-record marker (KTD7). A split parent is never built, so work it describes is recorded against the part that carries it, never against the parent. It loosens triage's "never add or remove a `crew:` label, do not open, close or edit issues" only for what the skill and that finishing step do. Governs R3, R4, R14.
-- KTD3. **A Go tool, `tools/splitplan`, measures plans and asks Jev; the skill runs it with `go run ./tools/splitplan`.** `measure` reads one or more Markdown files and prints, for each, its characters, requirements and acceptance examples. It also prints whether the file is above the split threshold and whether it is below the part minimum. The thresholds are named constants: above 10,000 characters or above 12 requirements, and a part minimum of 4,000 characters (R5, R8). The skill treats the minimum as exact, not "about", so that nobody needs to approve a borderline part. Part sizes are measured on bodies built by U2's fixed copying rule, so a part's size depends on its grouping, not on how much context the LLM chose to copy. Characters are Unicode code points after CRLF becomes LF, the same measure as the cost analysis's issue-body length. A requirement or acceptance example counts once per distinct ID defined at the start of a line (`- R12.`, `- AE3.`), so a mention such as `Covers R5` counts nothing. A Go tool rather than a script in the skill's directory, because `tools/diffcover` sets the pattern, CI's lint, tests and coverage floors already cover `./...`, and the thresholds that decide every split then have table tests. Governs R5, R6, R8.
+- KTD3. **A shell script in the skill's directory, `.agents/skills/cw-split-plan/measure.sh`, measures plans; the skill runs it with `sh`.** For each file it prints one line with the file's characters, requirements and acceptance examples, and whether the file is above the split threshold and below the part minimum. The thresholds are named variables at the top of the script: above 10,000 characters or above 12 requirements, and a part minimum of 4,000 characters (R5, R8). The skill treats the minimum as exact, not "about", so that nobody needs to approve a borderline part. Part sizes are measured on bodies built by U2's fixed copying rule, so a part's size depends on its grouping, not on how much context the LLM chose to copy. Characters are Unicode characters (`wc -m` under a UTF-8 locale) with CRLF counted as LF, the same measure as the cost analysis's issue-body length. A requirement or acceptance example counts once per distinct ID defined at the start of a line (`- R12.`, `- AE3.`), so a mention such as `Covers R5` counts nothing. A script, not crew code, because the split is the skill's work and no Go code ships for it (KTD11). Governs R5, R6, R8.
 - KTD4. **`/cw-split-plan` creates its parts without a crew label; the refinement prompt labels them only after their blockers are recorded.** Each part is created with `gh issue create --parent <N>` (gh 2.100 has `--parent`, which makes it a sub-issue) and no label. Its body carries the marker `<!-- cw-split-plan: part of #N -->`. crew takes an issue only by a rule's ready label, so a part cannot be promoted or built before its links to other parts and to other open issues exist. Nothing then depends on which queue refinement runs in. A session that stops halfway leaves unlabeled sub-issues that crew ignores, and crew moves the parent to `crew:refinement:failed` as for any failed run. Governs R10, R11, R14.
-- KTD5. **Jev is asked by `go run ./tools/splitplan jev <file>`, one Noul per part, over a focused state; the tool, not the session, reads `TYPESAFE_API_KEY`.** The skill writes one JSON file per part. It holds the part's own body, the titles and summaries of every part it reaches through the `blocked_by` links between parts, transitively (`already_on_main`, since crew starts a part only once those are closed), and the titles and summaries of the other parts (`not_yet_merged`). The tool posts it to `https://api.typesafe.ai/v1/systemone` with model `jev-latest` and this question. Instructions: "`part` merges into main, on top of `already_on_main`, while the parts in `not_yet_merged` have not merged. Does main then have something half-built?" Criteria true: "Something `part` adds is incomplete without a part in `not_yet_merged`: a setting no behaviour reads, a command or flag that does nothing yet, README or docs text describing what does not exist, or one half of a flow whose other half is in a part not yet merged." Criteria false: "Everything `part` adds works, and is documented as it works, with only `already_on_main`; the parts in `not_yet_merged` only add more." The tool prints either the answer (`yes` when the probability is 0.5 or more, the probability, and the model the response names) or `skipped` with the reason: no key, HTTP error, timeout, or a response without the answer. It exits 0 in both cases, so the split goes ahead (R16). It prints only fixed values: `yes` or `no`, the probability as a number, the model name only when it matches `^[A-Za-z0-9._-]{1,64}$` (otherwise `unknown`), and a skip reason from a fixed list (no key, HTTP status code, timeout, invalid response). No response or error body text reaches the session or the split record. It never prints the key, and the key never appears on a command line the session runs. A bad input file is the skill's mistake, not Jev's, and exits non-zero. The 0.5 cut only names the answer; nothing reads it as a gate. Governs R15, R16.
+- KTD5. **The session asks Jev itself, through the TypeSafe agent skill, one Noul per part over a focused state.** `/cw-split-plan` loads `typesafe:typesafe-ai` and follows its live docs for the HTTP call to `https://api.typesafe.ai/v1/systemone` with model `jev-latest`, passing the key as `$TYPESAFE_API_KEY` so its value never appears in a command line or the output. The state holds the part's own body, the titles and summaries of every part it reaches through the `blocked_by` links between parts, transitively (`already_on_main`, since crew starts a part only once those are closed), and the titles and summaries of the other parts (`not_yet_merged`). Instructions: "`part` merges into main, on top of `already_on_main`, while the parts in `not_yet_merged` have not merged. Does main then have something half-built?" Criteria true: "Something `part` adds is incomplete without a part in `not_yet_merged`: a setting no behaviour reads, a command or flag that does nothing yet, README or docs text describing what does not exist, or one half of a flow whose other half is in a part not yet merged." Criteria false: "Everything `part` adds works, and is documented as it works, with only `already_on_main`; the parts in `not_yet_merged` only add more." The split record keeps only fixed values: `yes` when the probability is 0.5 or more, else `no`; the probability; the model name the response gives, or `unknown` when it is not a short plain name; or `skipped` with one reason from a fixed list (no key, HTTP status code, timeout, invalid response). No response or error body text goes into the record. Without the key, or on any failure, the split goes ahead (R16). The 0.5 cut only names the answer; nothing reads it as a gate. Governs R15, R16.
 - KTD6. **The order inside a split session keeps every intermediate state safe.** `/cw-split-plan` measures and groups, writes and measures every part body, and asks Jev, all before it creates anything. It then creates the parts, records the `blocked_by` links between them, and appends the split record to the parent's body. The refinement prompt then finds the parts' blockers with the other open issues (R14), adds `crew:refinement:done` to each part, removes the parent's crew labels (R12), and writes its closing comment. When the skill finds that the issue already has a sub-issue carrying the marker, an earlier split stopped halfway. It does not split again. The prompt moves the parent from `crew:refinement:in progress` to `crew:refinement:failed`, lists the parts it found in its comment, and stops, so the boss finishes or cleans up the split. At the end of every split, crew's own move of the parent to `crew:refinement:done` finds it without crew labels and is dropped. The status comment, the TUI's given-up pill and the desktop notification that follow are the expected end of a split. The closing comment and the README say so, so a normal split is not read as a fault. Governs R10, R12, R14.
 - KTD7. **The split record is a `## Split` section appended to the parent's body, after the whole plan.** The skill reads the body (`gh issue view --json body`), appends the section, and writes it back with one `gh issue edit --body-file`, so the plan above it is untouched (R13). The section opens with the marker `<!-- cw-split-plan: split record -->`, then one line with the plan's size and the threshold it passed. A table follows, one row per part: the issue, its requirement and acceptance-example IDs, its size, its reason for shipping alone, and Jev's answer with its probability, or `skipped` and why. Last comes a list of the `blocked_by` links between parts with their reasons, or "none: the parts run in parallel". A plan that stays whole above the threshold gets no record; the closing comment says why (R9). Governs R9, R13, R15, R16.
 - KTD8. **Refinement leaves the clerk queue for a new 1-slot `product-manager` queue.** A split session may run far longer than a triage, and in the 1-slot clerk queue it would hold `promote brainstorm` and `promote refinement` the whole time. The new queue takes the one slot `default` leaves today (`max_parallel_issues: 4` = clerk 1 + developer 2 + product-manager 1). `default` then has 0 slots, which the config accepts. Refinement sessions still run one at a time, so two of them never miss a dependency between the issues they refine. KTD4 already makes a promote that runs during a split harmless. Governs R1.
@@ -171,6 +171,7 @@ The caveats bound the design. 18 runs are few. Larger plans may also be harder w
   4. Start crew.
   Governs R2.
 - KTD10. **The refine action has a check, `split-finished`, so a split cut short never reaches development.** A session that ends its turn cleanly after `/cw-split-plan` created parts, but before the prompt finished the split, would otherwise count as a success. crew would move the parent to `crew:refinement:done`, and `promote refinement` would send the whole plan to development next to orphaned parts. The check fails, echoing its reason last as `pr-closes-issue` does, when `$CREW_ISSUE_KEY` still carries `crew:refinement:in progress` and has a sub-issue whose body holds the part marker. crew then moves the parent to `crew:refinement:failed`. A finished split, whose parent carries no crew label, passes. So does an issue that was not split, and one the prompt already moved to failed. Governs R9, R12.
+- KTD11. **No Go code ships for the split or for Jev; the only Go change is the example config's test.** (session-settled: user-directed — chosen over a Go tool in `tools/` that measured plans and called Jev over HTTP: the user wants this work to be skills, config and similar files, with Jev reached through the TypeSafe agent skill and no client inside crew.) `internal/config/config_example_test.go` pins the example config's rules, labels and queues, so it changes with the rename (U3).
 
 ### High-Level Technical Design
 
@@ -181,7 +182,8 @@ sequenceDiagram
   participant C as crew
   participant S as refinement session
   participant K as /cw-split-plan
-  participant T as tools/splitplan
+  participant T as measure.sh
+  participant J as Jev
   participant G as GitHub
   C->>G: move #N to crew:refinement:in progress
   C->>S: run refine on #N
@@ -191,8 +193,8 @@ sequenceDiagram
   T-->>K: above threshold
   K->>K: group parts, write part bodies
   K->>T: measure parts (minimum, threshold)
-  K->>T: jev per part
-  T-->>K: answer or skipped
+  K->>J: one Noul per part, through the TypeSafe skill
+  J-->>K: answer, or skipped
   K->>G: create parts with --parent, no label
   K->>G: blocked_by links between parts
   K->>G: append split record to #N body
@@ -218,9 +220,9 @@ The skill ends in one of four outcomes, and the prompt branches on them:
 
 ### Assumptions
 
-- The product-manager session has `go` on its `PATH` and runs in a worktree of this repository, so `go run ./tools/splitplan` works there, as `go test` works in the developer's sessions.
+- The product-manager session runs in a worktree of this repository, so `.claude/skills/cw-split-plan/` (a symlink to `.agents/skills/`) and its `measure.sh` are there once this merges, and the `typesafe:typesafe-ai` skill is installed for the user crew runs as.
 - `TYPESAFE_API_KEY` reaches the session only when crew itself starts with it, since a session inherits crew's environment (`internal/proc/proc.go`). Without it every split records Jev as skipped (R16).
-- Auto permission mode lets the session run `go run`, `gh issue create --parent` and `gh api` calls on this repository, as it already lets triage run `gh api`.
+- Auto permission mode lets the session run `sh`, `curl` to TypeSafe, `gh issue create --parent` and `gh api` calls on this repository, as it already lets triage run `gh api`.
 - Parts that run in parallel come from one plan, so they may edit the same files (README tables, `.crew/config.example.yaml`). The second pull request may then need a rebase once the first merges. R10 counts only a real need as a reason to block, so this is accepted, and the split records will show how often it happens.
 - The split record holds the prediction (the LLM's reason and Jev's answer), not the outcome. Whether a part's pull request had to wait is read later from the parts' pull requests, by the follow-up issue that turns Jev into a gate.
 - An issue body holds at most 65,536 characters on GitHub. The largest plan observed is under 25,000, so plan plus split record fits. A failed `gh issue edit` is reported in the closing comment like any failed command.
@@ -233,40 +235,29 @@ U1 first: the skill (U2) calls the tool. U3 and U4 depend on U2's skill name and
 
 ## Implementation Units
 
-### U1. The `splitplan` tool
+### U1. The measuring script
 
-- **Goal:** `go run ./tools/splitplan measure <file>...` and `go run ./tools/splitplan jev <file>` exist, tested, under CI's lint and coverage floors.
-- **Requirements:** R5, R6, R8, R15, R16; KTD3, KTD5.
+- **Goal:** `sh .agents/skills/cw-split-plan/measure.sh <file>...` prints each file's size and its place against the thresholds.
+- **Requirements:** R5, R6, R8; KTD3, KTD11.
 - **Dependencies:** none.
-- **Files:** `tools/splitplan/main.go`, `tools/splitplan/measure.go`, `tools/splitplan/jev.go`, `tools/splitplan/measure_test.go`, `tools/splitplan/jev_test.go`, `tools/splitplan/main_test.go`.
-- **Approach:**
-  1. `main` dispatches on the subcommand and maps errors to exit codes as `tools/diffcover` does: 0 for success and for a skipped Jev, 2 for usage errors and bad input.
-  2. `measure` prints one JSON object per file, so the skill can read it without parsing prose.
-  3. `jev` takes its endpoint and HTTP client from its caller, so tests point it at an `httptest` server. It sets a timeout of about a minute and builds the request with a context, as golangci-lint's `noctx` requires.
-  4. The key comes from the environment inside the tool and appears in no output and no error.
-- **Patterns to follow:** `tools/diffcover/main.go` (package doc with the usage line, named constants, exit codes, `run` taking readers and writers for tests).
-- **Test scenarios:**
+- **Files:** `.agents/skills/cw-split-plan/measure.sh`.
+- **Approach:** POSIX `sh` with `tr`, `wc`, `grep` and `sort`, clean under shellcheck. It exits 2 on a usage error or a file it cannot read.
+- **Test scenarios:** run by hand against generated plans and #160's body. The repository has no shell test harness, and the script is the skill's, not crew's.
   - Covers AE1. A plan of 6,000 characters with R1 to R7 is not above the threshold.
   - Covers AE2. A plan of 14,000 characters with R1 to R16 is above the threshold.
   - A plan of exactly 10,000 characters with 12 requirements is not above. 10,001 characters is above. 13 requirements in 5,000 characters is above.
   - Covers AE5. A part of 2,500 characters is below the part minimum. 4,000 is not.
-  - `Covers R5, R3.` and `Governs R6, R10.` inside lines count no requirement. `- R3.` defined twice counts once. `- AE1. **Covers R5.**` counts one acceptance example and no requirement.
-  - A body with CRLF line ends measures the same as with LF. Multi-byte characters count once each.
-  - Several files print one result each, in order. A missing file exits 2 and names it.
-  - Covers AE7. `jev` without `TYPESAFE_API_KEY` prints `skipped` with the reason, calls no server, and exits 0.
-  - With a key, the server receives `Authorization: Bearer <key>`, model `jev-latest`, and one Noul question whose state holds `part`, `already_on_main` and `not_yet_merged` from the input file. A response of 0.82 prints `yes`, 0.82 and the model.
-  - A response of 0.31 prints `no`. A response of exactly 0.5 prints `yes`.
-  - HTTP 500, a timeout, invalid JSON, and a response without the answer each print `skipped` with the reason and exit 0. No output or error text contains the key.
-  - A response whose model field is multi-line or longer than 64 characters prints `unknown` as the model. An HTTP error whose body holds text prints only the status code. Neither text appears in the output.
-  - An input file that is not JSON, or has no `part`, exits 2.
-- **Verification:** the tests pass under `-race`. Changed-line coverage is at least 90%. `measure` on #160's own body reports it above the threshold.
+  - `Covers R5, R3.` and `Covered by: R3, R5` inside lines count no requirement. `R3.` defined twice counts once. `- AE1. **Covers R5.**` counts one acceptance example.
+  - CRLF line ends measure the same as LF. Multi-byte characters count once each, under the caller's `LC_ALL=C` too.
+  - A missing file, or no file, exits 2 with a message.
+- **Verification:** every scenario above gives the expected line. #160's body measures 14,127 characters, 16 requirements and 7 acceptance examples, above the threshold. shellcheck reports nothing.
 
 ### U2. The `/cw-split-plan` skill
 
 - **Goal:** a headless product-manager session that runs `/cw-split-plan #N` ends with #N measured and, when it is above the threshold, either split into recorded, linked, unlabeled sub-issues or kept whole with a reason.
-- **Requirements:** R4 to R13, R15, R16; KTD4, KTD5, KTD6, KTD7.
+- **Requirements:** R4 to R13, R15, R16; KTD3, KTD4, KTD5, KTD6, KTD7, KTD11.
 - **Dependencies:** U1.
-- **Files:** `.agents/skills/cw-split-plan/SKILL.md`; its shared-contract test lives in `internal/config/config_example_test.go` (U3).
+- **Files:** `.agents/skills/cw-split-plan/SKILL.md`, `.agents/skills/cw-split-plan/measure.sh` (U1); its shared-contract test lives in `internal/config/config_example_test.go` (U3).
 - **Approach:**
   1. Frontmatter and opening as the other `cw-*` skills: this repository's own aid; it reads `.crew/config.yaml` for nothing; it runs `gh` from the repository root; it asks nothing.
   2. Read #N's body and sub-issues (`gh api repos/{owner}/{repo}/issues/N/sub_issues`). Stop with "earlier split did not finish" when a sub-issue carries the part marker (KTD6).
@@ -320,8 +311,8 @@ U1 first: the skill (U2) calls the tool. U3 and U4 depend on U2's skill name and
 - **Files:** `.agents/skills/cw-create-issue/SKILL.md`, `.agents/skills/cw-update-issue-plan/SKILL.md`, `README.md`, `AGENTS.md`.
 - **Approach:**
   1. In both skills' type tables, running labels and crew-label lists: `crew:triage:*` becomes `crew:refinement:*`, and "hand to triage" becomes "hand to refinement". The `crew:refinement:ready` row reads as a brainstormed feature to split when large and whose dependencies to find. Step 8's prompt in `cw-update-issue-plan` says promote brainstorm hands it to refinement.
-  2. README's `.crew/config.example.yaml` row says refinement of brainstormed features (splitting large plans into sub-issues and finding their dependencies). It says that a split parent leaves crew, so crew reporting its move to done as given up is expected (KTD6). A new "What's inside" row lists `.agents/skills/cw-split-plan/` with `tools/splitplan`.
-  3. AGENTS.md's Agents section gains a `cw-split-plan` entry in the shape of the other three, saying the refinement prompt runs it and that it is not linked into `~/.claude/skills/`, since it needs this repository's `tools/splitplan`.
+  2. README's `.crew/config.example.yaml` row says refinement of brainstormed features (splitting large plans into sub-issues and finding their dependencies). It says that a split parent leaves crew, so crew reporting its move to done as given up is expected (KTD6). A new "What's inside" row lists `.agents/skills/cw-split-plan/` and its `measure.sh`.
+  3. AGENTS.md's Agents section gains a `cw-split-plan` entry in the shape of the other three, saying the refinement prompt runs it and that it is not linked into `~/.claude/skills/`, since it is written for this repository's refinement rule.
 - **Test expectation:** none -- text only. The rename sweep of the Verification Contract is clean.
 - **Verification:** the grep above is clean. README and AGENTS describe what the branch ships.
 
@@ -331,14 +322,13 @@ U1 first: the skill (U2) calls the tool. U3 and U4 depend on U2's skill name and
 
 | Gate | Command | Applies to |
 | --- | --- | --- |
-| Format | `gofmt -l cmd internal tools` prints nothing | U1, U3 |
-| Vet | `go vet ./...` | U1, U3 |
-| Lint and layering | `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run` | U1, U3 |
-| Tests | `go test -race ./...` | U1, U3 |
+| Format | `gofmt -l cmd internal tools` prints nothing | U3 |
+| Vet | `go vet ./...` | U3 |
+| Lint and layering | `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run` | U3 |
+| Tests | `go test -race ./...` | U3 |
 | Coverage floor | `go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...` then `go run github.com/vladopajic/go-test-coverage/v2@v2.19.0 --config=.testcoverage.yml` | all |
-| Changed-line coverage | `git diff -U0 origin/main...HEAD \| go run ./tools/diffcover -profile coverage.out` at 90% or more | U1 |
-| Vulnerabilities | `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` | U1 |
-| Measure on real plans | `gh issue view 160 --json body -q .body` into a file, then `go run ./tools/splitplan measure` on it reports above the threshold | U1, U2 |
+| Shell | `shellcheck .agents/skills/cw-split-plan/measure.sh` reports nothing | U1 |
+| Measure on real plans | `gh issue view 160 --json body -q .body` into a file, then `sh .agents/skills/cw-split-plan/measure.sh` on it reports above the threshold | U1, U2 |
 | Rename sweep | `git ls-files \| xargs grep -li triage` lists nothing outside `docs/plans`, `docs/solutions`, `internal/config/testdata/old/` and KTD1's generic test fixtures | U3, U4 |
 
 ## Definition of Done
