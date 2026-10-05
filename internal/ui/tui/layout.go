@@ -22,12 +22,14 @@ const (
 	cutRows = 2
 	// cardRows are the rows a card takes on the board.
 	cardRows = 2
+	// maxCards is the most cards a board column shows, however tall the
+	// window; the rest go into its "+N more" row.
+	maxCards = 5
 )
 
 // budget is how much of each section the view draws: the rows of Events
 // and of Handled, the cards a column, whether the said lines show, and
-// whether each bot's second line shows. A negative card count means all
-// of them (KTD8).
+// whether each bot's second line shows (KTD8).
 type budget struct {
 	events, handled, cards int
 	said, botDetails       bool
@@ -72,7 +74,7 @@ func (m Model) fitted() []string {
 
 // budget returns the largest budget whose rows fit the window (KTD8).
 func (m Model) budget() budget {
-	b := budget{events: scrollRows, handled: scrollRows, cards: -1, said: true, botDetails: true}
+	b := budget{events: scrollRows, handled: scrollRows, cards: maxCards, said: true, botDetails: true}
 	if m.height <= 0 {
 		return b
 	}
@@ -86,10 +88,14 @@ func (m Model) budget() budget {
 	if over() > 0 {
 		b.said = false
 	}
-	// Capping a column at c of its t cards saves cardRows*(t-c) rows and
-	// adds the "+N more" row.
+	// Capping a column at c of the s cards it shows saves cardRows*(s-c)
+	// rows and adds the "+N more" row, unless maxCards already did.
 	if o, t := over(), m.tallestColumn(); o > 0 && t > 1 {
-		b.cards = max(t-(o+cardRows)/cardRows, 1)
+		shown, more := min(t, maxCards), 1
+		if t > maxCards {
+			more = 0
+		}
+		b.cards = max(shown-(o+more+cardRows-1)/cardRows, 1)
 	}
 	// Bots gives way last, just before the cut (KTD11).
 	if over() > 0 {

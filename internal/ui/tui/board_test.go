@@ -328,6 +328,46 @@ func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 	}
 }
 
+// elevenBugs are eleven issues, #1 to #11, each labeled bug.
+func elevenBugs() []crew.BoardIssue {
+	issues := make([]crew.BoardIssue, 0, 11)
+	for n := 1; n <= 11; n++ {
+		issues = append(issues, labeled(crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Bug"}, "bug"))
+	}
+	return issues
+}
+
+// A column shows at most maxCards cards, however tall the window, and
+// "+N more" counts the rest.
+func TestAColumnShowsAtMostFiveCards(t *testing.T) {
+	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 200})
+	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
+
+	board := boardOf(t, checkFits(t, h, 80, 200))
+	contains(t, board, "#1 ", "#5 ", "+6 more")
+	if strings.Contains(board, "#6 ") {
+		t.Errorf("a sixth card shows:\n%s", board)
+	}
+}
+
+// A window two rows short of five cards takes one card off a column past
+// maxCards: its "+N more" row is already drawn.
+func TestAShortWindowTakesOneCardOffACappedColumn(t *testing.T) {
+	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
+	least := budget{events: minScroll, handled: minScroll, cards: maxCards, said: false, botDetails: true}
+	height := len(h.current().rows(least)) - cardRows
+	h.send(tea.WindowSizeMsg{Width: 80, Height: height})
+
+	view := checkFits(t, h, 80, height)
+	board := boardOf(t, view)
+	contains(t, board, "#4 ", "+7 more")
+	if strings.Contains(board, "#5 ") || strings.Contains(view, "lines cut") {
+		t.Errorf("at %d rows the column kept five cards or the view was cut:\n%s", height, view)
+	}
+}
+
 // eightColumns are eight columns, c1 to c8, each showing the label "lN".
 func eightColumns() []crew.BoardColumn {
 	var out []crew.BoardColumn
