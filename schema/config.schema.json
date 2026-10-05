@@ -71,15 +71,15 @@
             "required": ["name"],
             "properties": {
               "name": {
-                "description": "The harness adapter's name. claude is the one crew ships.",
+                "description": "The harness adapter's name: claude or codex, the ones crew ships.",
                 "type": "string",
                 "minLength": 1,
-                "examples": ["claude"]
+                "examples": ["claude", "codex"]
               },
               "model": {
-                "description": "The model claude runs, such as claude-opus-5-5. Without it, the harness uses its adapter's default: claude-opus-5-5 for claude.",
+                "description": "The model the harness runs, such as claude-opus-5-5 or gpt-5.5. Without it, claude runs claude-opus-5-5, and codex runs the model Codex's own config or default names.",
                 "type": "string",
-                "examples": ["claude-opus-5-5"]
+                "examples": ["claude-opus-5-5", "gpt-5.5"]
               }
             }
           },
