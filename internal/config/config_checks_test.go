@@ -55,10 +55,26 @@ func TestLoadGivesAnActionItsListOfChecksInOrder(t *testing.T) {
 	}
 }
 
-// An action without a check has none.
+// An action without a check has none, as has one whose check is empty.
 func TestLoadLeavesAnActionWithoutACheckWithNone(t *testing.T) {
 	if got := load(t, oneRule).Rules[0].Actions[0].Checks; got != nil {
 		t.Errorf("Checks = %q, want none", got)
+	}
+	for _, name := range []string{"", "~", "null"} {
+		if got := load(t, checkedRule("checks:\n  lint: make lint\n", name)).Rules[0].Actions[0].Checks; got != nil {
+			t.Errorf("check: %q gives Checks = %q, want none", name, got)
+		}
+	}
+}
+
+// An alias names a check, alone or in a list.
+func TestLoadResolvesAnAliasToACheck(t *testing.T) {
+	want := []crew.Check{{Name: "lint", Script: "make lint"}}
+	for _, name := range []string{"*n", "[*n]"} {
+		cfg := load(t, checkedRule("checks:\n  &n lint: make lint\n", name))
+		if got := cfg.Rules[0].Actions[0].Checks; !reflect.DeepEqual(got, want) {
+			t.Errorf("check: %s gives Checks = %q, want %q", name, got, want)
+		}
 	}
 }
 
