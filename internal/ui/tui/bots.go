@@ -196,14 +196,14 @@ func (m Model) botState(e core.BotView) string {
 // "no actions yet" before the first one ends (R3, KTD7).
 func (m Model) botTotals(sp crew.Spend, width int) string {
 	s := m.styles
-	if sp.Sessions == 0 {
+	parts := spendParts(sp)
+	if sp.Sessions == 0 || len(parts) == 0 {
 		return s.subtle.Render(fit("no actions yet", width))
 	}
 	count := "1 action"
 	if sp.Sessions != 1 {
 		count = fmt.Sprintf("%d actions", sp.Sessions)
 	}
-	parts := spendParts(sp)
 	forms := [][]string{append([]string{count}, parts...), {count, parts[0]}, parts, parts[:1]}
 	line := ""
 	for _, form := range forms {

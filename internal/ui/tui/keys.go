@@ -71,7 +71,9 @@ func (m Model) scrollSideways(delta int) Model {
 }
 
 // scrollBots returns m with the Bots cards moved delta cards sideways, as
-// far as the cards allow: the layout clamps the offset (KTD3).
+// far as the cards allow: the layout clamps the offset (KTD3). The first
+// layout clamps an offset a resize left past the cards drawn, so delta
+// moves from what shows rather than from the stale offset.
 func (m Model) scrollBots(delta int) Model {
 	m.botsOffset = m.botsLayout().offset + delta
 	m.botsOffset = m.botsLayout().offset
