@@ -21,9 +21,9 @@ An issue's type gives its label, the template its body follows (a file in `<root
 | `crew:development:ready` | `feature.md` | a feature whose brainstorm is done | the development rule builds it and opens a pull request |
 | `crew:fix:ready` | `bug.md` | a bug to reproduce and fix | the fix rule reproduces it, fixes it and opens a pull request |
 | `crew:brainstorm:ready` | `idea.md` | an idea to brainstorm later | nothing: no rule takes it, it waits for `/cw-brainstorm` |
-| `crew:brainstorm:done` | `feature.md` | a brainstormed feature to hand to triage | the promote brainstorm rule moves it to `crew:triage:ready` |
-| `crew:triage:ready` | `feature.md` | a brainstormed feature whose dependencies to find | the triage rule finds what blocks it and what it blocks |
-| `crew:triage:done` | `feature.md` | a triaged feature to hand to development | the promote triage rule moves it to `crew:development:ready` |
+| `crew:brainstorm:done` | `feature.md` | a brainstormed feature to hand to refinement | the promote brainstorm rule moves it to `crew:refinement:ready` |
+| `crew:refinement:ready` | `feature.md` | a brainstormed feature to split when large and whose dependencies to find | the refinement rule splits a large plan into sub-issues and finds what blocks each issue and what it blocks |
+| `crew:refinement:done` | `feature.md` | a refined feature to hand to development | the promote refinement rule moves it to `crew:development:ready` |
 | `crew:ci audit:ready` | `ci-audit.md` | an audit of the GitHub Actions | the audit ci rule, which is turned off in this repository |
 | `crew:knowledge base:ready` | `knowledge-base.md` | a solved problem to record as a learning | the knowledge base rule, which is turned off in this repository |
 
