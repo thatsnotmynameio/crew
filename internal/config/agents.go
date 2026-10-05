@@ -40,6 +40,12 @@ type agentDoc struct {
 	Bot     located[string] `yaml:"bot"`
 }
 
+// harnessDoc is crew's keys of an agent's harness; every other key of the
+// harness goes to the harness adapter.
+type harnessDoc struct {
+	Name located[string] `yaml:"name"`
+}
+
 // What an agent and its harness must be, said when one is not a mapping.
 const (
 	agentShape   = "must be an agent with harness, and optionally bot"
@@ -79,9 +85,7 @@ func parseAgent(e entry) (Agent, error) {
 		return agent, keyError(path, doc.Harness.Line, harnessShape)
 	}
 	own, rest := split(entries(&doc.Harness, path), "name")
-	var harness struct {
-		Name located[string] `yaml:"name"`
-	}
+	var harness harnessDoc
 	if err := decodeFields(own, reflect.ValueOf(&harness).Elem()); err != nil {
 		return agent, err
 	}

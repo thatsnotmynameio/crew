@@ -226,6 +226,13 @@ func positive(l located[int], path, msg string) error {
 	return nil
 }
 
+// trackerDoc is crew's keys of tracker; every other key of tracker goes to
+// the tracker adapter.
+type trackerDoc struct {
+	Name string `yaml:"name"`
+	Bot  string `yaml:"bot"`
+}
+
 // trackerSection reads tracker.name and tracker.bot into cfg and returns
 // the rest of tracker: for the tracker adapter.
 func trackerSection(n *yaml.Node, cfg *Config) (Decode, error) {
@@ -234,10 +241,7 @@ func trackerSection(n *yaml.Node, cfg *Config) (Decode, error) {
 		return nil, err
 	}
 	own, rest := split(tracker, "name", "bot")
-	engine := struct {
-		Name string `yaml:"name"`
-		Bot  string `yaml:"bot"`
-	}{Name: cfg.Tracker}
+	engine := trackerDoc{Name: cfg.Tracker}
 	if err := decodeFields(own, reflect.ValueOf(&engine).Elem()); err != nil {
 		return nil, err
 	}
