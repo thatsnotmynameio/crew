@@ -200,9 +200,9 @@ func shortWindow() engine.Update {
 	u.Snapshot.Handled = manySnapshot().Snapshot.Handled
 	u.Snapshot.Recent = eventful().Snapshot.Recent
 	for _, key := range []string{"3", "4"} {
-		u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{
-			Issue: crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, Rule: "implement", Claim: core.ClaimTaking,
-		})
+		card := crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}
+		u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{Issue: card, Rule: "implement", Claim: core.ClaimTaking})
+		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: card, Labels: []string{"ready"}})
 	}
 	return u
 }

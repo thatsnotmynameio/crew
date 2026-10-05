@@ -23,7 +23,8 @@ type CallID uint64
 // outstanding. It asks at a tick with a free slot, and at once when an issue
 // it releases frees a slot after a tick skipped its listing.
 type ListIssues struct {
-	// States are the rules' trigger states, in config order.
+	// States are the rules' ready and running states, rule by rule in
+	// config order, each once (KTD10).
 	States []crew.State
 }
 

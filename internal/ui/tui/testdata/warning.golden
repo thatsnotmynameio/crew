@@ -5,7 +5,7 @@ Mates ────────────────────────�
  you
    crew's writes · implement/code · implement/tests · review/check  ▸ #1 implement/code · #1 implement/tests
 
-Workflow ───────────────────────────────────────────────────────────────────────────────────────────────────── 2 in play
+Workflow ────────────────────────────────────────────────────────────────────────────────────────────────────── 2 issues
  implement                       review                        
  ──────────────────────────────  ──────────────────────────────
  ▌ #1 Add login form             ▌ #2 Fix the flaky stream test

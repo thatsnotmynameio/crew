@@ -176,7 +176,7 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 
 	contains(t, view,
 		"Workflow ─", "Actions ─", "Queues ─", "Handled ─", "Events ─",
-		"⠋ running", "◌ taking", "→ ready to review", "○ #2",
+		"⠋ running", "◌ taking", "○ #2",
 		" GIVEN UP ", " NEEDS ATTENTION ", "×",
 	)
 	contains(t, handledText(t, 120, handledSnapshot()), " READY TO MERGE ")

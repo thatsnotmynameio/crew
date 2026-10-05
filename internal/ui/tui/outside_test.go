@@ -54,8 +54,8 @@ func ended(rule string, to crew.State, endedAt int) engine.Update {
 }
 
 // Covers AE5.
-func TestAE5ARuleEndNotifiesWhileUnfocusedButAHiddenRulesDoesNot(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+func TestAE5ARuleEndNotifiesWhileUnfocusedButAMutedRulesDoesNot(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 
 	notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
@@ -70,7 +70,7 @@ func TestAE5ARuleEndNotifiesWhileUnfocusedButAHiddenRulesDoesNot(t *testing.T) {
 }
 
 func TestARuleEndNotifiesNothingWhileFocused(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 	h.send(tea.FocusMsg{})
 
@@ -80,7 +80,7 @@ func TestARuleEndNotifiesNothingWhileFocused(t *testing.T) {
 }
 
 func TestWithoutAnyFocusReportARuleEndNotifiesNothing(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 
 	if notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3)))); len(notes) != 0 {
 		t.Errorf("a terminal that never reported focus got %q", notes)
@@ -88,7 +88,7 @@ func TestWithoutAnyFocusReportARuleEndNotifiesNothing(t *testing.T) {
 }
 
 func TestTheSameRuleEndNotifiesOnce(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 
 	first := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
@@ -100,7 +100,7 @@ func TestTheSameRuleEndNotifiesOnce(t *testing.T) {
 }
 
 func TestOnceAStopIsAskedForNothingNotifies(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 	u := ended("triage", "crew:triage:failed", 3)
 	u.Snapshot.Stopping = true
@@ -113,7 +113,7 @@ func TestOnceAStopIsAskedForNothingNotifies(t *testing.T) {
 // The last update's notification is written before the model reads the
 // closed channel and quits (KTD6).
 func TestTheLastUpdatesNotificationComesBeforeTheQuit(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 	cmd := h.send(updateMsg(ended("triage", "crew:triage:done", 3)))
 	close(h.updates)
@@ -131,7 +131,7 @@ func TestTheLastUpdatesNotificationComesBeforeTheQuit(t *testing.T) {
 }
 
 func TestANotificationIsCleanedOfControlCharacters(t *testing.T) {
-	h := newRulesHarness(t, 120, crewRules)
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 	u := ended("triage", "crew:triage:done", 3)
 	u.Snapshot.Handled[0].Issue.Title = "Stage\x07 labels\x1b]0;evil\x07"
@@ -180,15 +180,15 @@ func TestTheWindowTitleSaysCrewsState(t *testing.T) {
 
 func windingDown() updateMsg { return updateMsg(windingDownSnapshot()) }
 
-func TestAHiddenRulesFailureCountsAsNeedingAttention(t *testing.T) {
-	h := newRulesHarness(t, 80, crewRules)
+func TestAMutedRulesFailureCountsAsNeedingAttention(t *testing.T) {
+	h := newBoardHarness(t, 80, crewRules, crewBoard)
 	u := ended("promote triage", "crew:triage:failed", 1)
 	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "promote", Reason: "boom"}}
 
 	h.send(updateMsg(u))
 
 	if got := h.model.View().WindowTitle; got != "crew · 1 needs attention" {
-		t.Errorf("title = %q, want the hidden stage's failure counted", got)
+		t.Errorf("title = %q, want the muted rule's failure counted", got)
 	}
 }
 
@@ -227,9 +227,9 @@ func sequenced(msg tea.Msg) []tea.Cmd {
 	return out
 }
 
-// Covers AE9: a configured board leaves the notifications to notify.
-func TestAE9WithABoardAHiddenRulesEndStillNotifiesNothing(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
+// Covers AE9: a written board leaves the notifications to notify.
+func TestAE9WithABoardAMutedRulesEndStillNotifiesNothing(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
 	h.send(tea.BlurMsg{})
 
 	if notes := raws(h.send(updateMsg(ended("promote triage", "crew:development:ready", 3)))); len(notes) != 0 {
@@ -241,7 +241,7 @@ func TestAE9WithABoardAHiddenRulesEndStillNotifiesNothing(t *testing.T) {
 }
 
 func TestAFailureHeldAgainDoesNotCountAsNeedingAttention(t *testing.T) {
-	h := newRulesHarness(t, 80, crewRules)
+	h := newBoardHarness(t, 80, crewRules, crewBoard)
 	u := held(twelve, "development", "lfg", core.ClaimRunning)
 	e := handledBy(twelve, "fix", "crew:fix:failed").Snapshot.Handled[0]
 	e.Failures = []crew.ActionFailure{{Action: "lfg", Reason: "boom"}}
@@ -275,7 +275,7 @@ var notifyRules = []crew.Rule{
 
 // Covers R9.
 func TestNotifyDecidesWhetherARulesEndNotifies(t *testing.T) {
-	h := newRulesHarness(t, 120, notifyRules)
+	h := newBoardHarness(t, 120, notifyRules, nil)
 	h.send(tea.BlurMsg{})
 
 	u := ended("review", "needs attention", 3)
@@ -289,7 +289,7 @@ func TestNotifyDecidesWhetherARulesEndNotifies(t *testing.T) {
 }
 
 func TestAnEntryOfARuleNoLongerConfiguredIsMuted(t *testing.T) {
-	h := newRulesHarness(t, 120, notifyRules)
+	h := newBoardHarness(t, 120, notifyRules, nil)
 	h.send(tea.BlurMsg{})
 
 	if notes := raws(h.send(updateMsg(ended("gone", "ready to merge", 1)))); len(notes) != 0 {

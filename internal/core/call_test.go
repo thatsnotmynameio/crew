@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
-	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
@@ -27,14 +26,14 @@ func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing
 
 	retry, _ := d.send(core.Tick{})
 	wantCommands(t, retry,
-		core.ListIssues{States: []crew.State{ready, readyToReview}},
+		core.ListIssues{States: draftListing},
 		core.Move{IssueKey: "1", From: inProgress, To: readyToReview},
 	)
 
 	// The retry is in flight: the next tick does not issue it again.
 	d.send(core.IssuesListed{})
 	cmds, _ = d.send(core.Tick{})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview})
@@ -61,7 +60,7 @@ func TestVerdictCallMovedMeanwhileOrRefusedIsDroppedAndReported(t *testing.T) {
 			wantHeld(t, d.m)
 
 			cmds, _ := d.send(core.Tick{})
-			wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+			wantCommands(t, cmds, core.ListIssues{States: draftListing})
 		})
 	}
 }
@@ -143,7 +142,7 @@ func TestOwedTakeRetryMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
 
 			// The tick skipped its listing, so the freed slot lists at once (R4).
 			cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: result, Reason: "nope"})
-			wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+			wantCommands(t, cmds, core.ListIssues{States: draftListing})
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
 				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress,
 			}})

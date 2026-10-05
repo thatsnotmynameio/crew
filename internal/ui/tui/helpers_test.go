@@ -44,10 +44,14 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 
 // handledSnapshot is runningSnapshot 12 minutes into a one-hour run, with
 // four issues handled: a failure whose code action never had a session, a
-// given-up move and two successes, one of two actions. An earlier rule of
-// #8 spent $2.00 this run. Every action acted as you.
+// given-up move and two successes, one of two actions, #7 now idle in
+// review's column. An earlier rule of #8 spent $2.00 this run. Every action
+// acted as you.
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
+	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{
+		Issue: crew.Issue{Key: "7", Ref: "#7", Title: "Log the poll interval"}, Labels: []string{"ready to review"},
+	})
 	u.Snapshot.Handled = []core.HandledView{
 		acted(
 			failedEntry("5", "Parse the config once", 40, 30,

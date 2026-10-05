@@ -154,7 +154,7 @@ func TestARuleWithoutActionsHoldsASlotOfItsQueue(t *testing.T) {
 	}
 
 	listing, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	wantCommands(t, listing, core.ListIssues{States: []crew.State{triageDone}})
+	wantCommands(t, listing, core.ListIssues{States: []crew.State{triageDone, triagePromoting}})
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("2", 2, triageDone)}})
 	wantCommands(t, cmds, core.Move{IssueKey: "2", From: triageDone, To: triagePromoting})
 }

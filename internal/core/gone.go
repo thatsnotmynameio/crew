@@ -10,7 +10,7 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 // and marks nothing. Each later listing decides anew, so an issue found in
 // To again is no longer gone. A held issue's entry is left alone: its
 // rule's new entry replaces it, or keeps it when both ended well and that
-// rule is hidden from the board.
+// rule has no actions.
 func (m *Model) gone(issues []crew.Issue) {
 	alone := map[string]crew.State{}
 	for _, issue := range issues {

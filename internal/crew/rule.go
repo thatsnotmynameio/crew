@@ -28,10 +28,6 @@ type Rule struct {
 	// Notify tells whether the live view sends a desktop notification when
 	// the rule ends for an item.
 	Notify bool
-	// OffBoard hides the rule from the live view's board: no column, and
-	// no card for an issue it holds. Only the live view reads it; the zero
-	// value shows the rule. The config never sets it.
-	OffBoard bool
 }
 
 // Labels are a rule's states, one for each point of its run.

@@ -103,10 +103,14 @@ type Config struct {
 	// token renewal failed. The loop reads it after Prepare and every
 	// saidInterval (KTD1); nil reads none.
 	BotFailures func() map[string]string
-	// Board is the board the config draws; nil draws the rules. With one,
-	// the engine reads its issues at each poll through the tracker's
-	// port.BoardLister, and reads none when the tracker has none (KTD4).
+	// Board is the live view's board: the columns the config writes, or
+	// its default columns; nil fills no board. The engine reads a written
+	// board's issues at each poll through the tracker's port.BoardLister,
+	// and reads none when the tracker has none (KTD4); the core fills the
+	// default board from its own listings (KTD10).
 	Board []crew.BoardColumn
+	// BoardWritten tells whether Board is the columns the config writes.
+	BoardWritten bool
 }
 
 // AgentHarness is the harness of one agent: every session of an action that
@@ -139,8 +143,8 @@ type Engine struct {
 	// pullRequests is the tracker's port.PullRequestReporter; nil when the
 	// tracker has none, and the core then makes no pull request report.
 	pullRequests port.PullRequestReporter
-	// board is the tracker's port.BoardLister when the config draws a board;
-	// nil otherwise, and the core then reads no board (KTD4).
+	// board is the tracker's port.BoardLister when the config writes a
+	// board; nil otherwise, and the core then reads no board (KTD4).
 	board port.BoardLister
 	// writes is the tracker's port.WriterReporter; nil when the tracker has
 	// none, and crew's writes then never go back to you mid-run.
@@ -173,10 +177,11 @@ type Engine struct {
 // requests through it. When the workspace implements port.Reopener, a
 // failed run's action resumes in that run's workspace (KTD4). When the
 // tracker implements port.PullRequestFinder, the engine looks up the pull
-// request each action opened. When cfg has a Board and the tracker
-// implements port.BoardLister, the engine reads the board's issues at each
-// poll through it. When the tracker implements port.WriterReporter, the
-// engine reads through it whether crew's writes went back to you.
+// request each action opened. When cfg has a written Board and the
+// tracker implements port.BoardLister, the engine reads the board's issues
+// at each poll through it; a default Board fills from the listings. When
+// the tracker implements port.WriterReporter, the engine reads through it
+// whether crew's writes went back to you.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
@@ -198,11 +203,14 @@ func New(cfg Config) *Engine {
 		opts = append(opts, core.FindingPullRequests())
 	}
 	var board port.BoardLister
-	if len(cfg.Board) > 0 {
-		board, _ = cfg.Tracker.(port.BoardLister)
-	}
-	if board != nil {
-		opts = append(opts, core.ListingBoard(crew.BoardLabels(cfg.Board)))
+	switch {
+	case len(cfg.Board) == 0:
+	case cfg.BoardWritten:
+		if board, _ = cfg.Tracker.(port.BoardLister); board != nil {
+			opts = append(opts, core.ListingBoard(cfg.Board))
+		}
+	default:
+		opts = append(opts, core.BoardFromListings(cfg.Board))
 	}
 	writes, _ := cfg.Tracker.(port.WriterReporter)
 	harnesses := make(map[string]port.Harness, len(cfg.Harnesses))

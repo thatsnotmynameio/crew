@@ -40,11 +40,11 @@ type Config struct {
 	// event times are shown.
 	Now      func() time.Time
 	Location *time.Location
-	// Rules are the configured rules, in config order: the board's
-	// columns (R8) when Board is empty.
+	// Rules are the configured rules, in config order, whose notify
+	// decides which rule ends notify (KTD6).
 	Rules []crew.Rule
-	// Board is the configured board's columns, in config order; empty for
-	// the board of the rules (R4, R5, KTD9).
+	// Board is the board's columns, in board order: the ones the config
+	// writes, or its default ones (R21, R22, KTD10).
 	Board []crew.BoardColumn
 	// Repository is the repository's name, for the header (R3).
 	Repository string

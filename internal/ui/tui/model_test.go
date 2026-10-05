@@ -33,8 +33,19 @@ var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 // testRules are the rules of the test snapshots: implement takes
 // "ready", review takes "ready to review".
 var testRules = []crew.Rule{
-	{Name: "implement", Labels: crew.Labels{Ready: "ready", Success: "ready to review", Failure: "needs attention"}},
-	{Name: "review", Labels: crew.Labels{Ready: "ready to review", Success: "ready to merge", Failure: "needs attention"}},
+	{Name: "implement", Labels: crew.Labels{
+		Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
+	}},
+	{Name: "review", Labels: crew.Labels{
+		Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
+	}},
+}
+
+// testBoard is the default board of testRules: each rule's ready and
+// running labels.
+var testBoard = []crew.BoardColumn{
+	{Name: "implement", Labels: []string{"ready", "in progress"}},
+	{Name: "review", Labels: []string{"ready to review", "in review"}},
 }
 
 // harness drives a Model directly through Update and View, with a clock the
@@ -48,19 +59,15 @@ type harness struct {
 	forces  int
 }
 
+// newHarness is newBoardHarness of testRules and testBoard.
 func newHarness(t *testing.T, width int, warnings ...string) *harness {
 	t.Helper()
-	return newRulesHarness(t, width, testRules, warnings...)
+	return newBoardHarness(t, width, testRules, testBoard, warnings...)
 }
 
-func newRulesHarness(t *testing.T, width int, rules []crew.Rule, warnings ...string) *harness {
-	t.Helper()
-	return newConfiguredHarness(t, width, rules, nil, warnings...)
-}
-
-// newConfiguredHarness is newRulesHarness with board's columns
-// configured.
-func newConfiguredHarness(
+// newBoardHarness returns a harness of rules and board's columns, in a
+// window width wide and 40 rows high.
+func newBoardHarness(
 	t *testing.T, width int, rules []crew.Rule, board []crew.BoardColumn, warnings ...string,
 ) *harness {
 	t.Helper()
@@ -120,8 +127,9 @@ func you(pairs []string, running ...core.RunningAction) core.BotView {
 }
 
 // runningSnapshot is #1 running two actions in default, started 5 and 7
-// minutes before start, and #2 being taken by a later rule in clerk, 12
-// minutes into a one-hour run, with no bot configured.
+// minutes before start, and #2 being taken by a later rule in clerk, each
+// on the board in its rule's column, 12 minutes into a one-hour run, with
+// no bot configured.
 func runningSnapshot() engine.Update {
 	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
@@ -139,7 +147,10 @@ func runningSnapshot() engine.Update {
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code", "implement/tests", "review/check"},
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"},
-			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})}},
+			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})},
+			Board: []crew.BoardIssue{
+				{Issue: one, Labels: []string{"in progress"}}, {Issue: two, Labels: []string{"ready to review"}},
+			}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
 			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Rule: "implement",
@@ -220,7 +231,8 @@ func windingDownSnapshot() engine.Update {
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/42-code", Started: start.Add(-75 * time.Minute)},
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code"},
-			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})}},
+			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})},
+			Board: []crew.BoardIssue{{Issue: issue, Labels: []string{"in progress"}}}},
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},
@@ -344,6 +356,7 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 			h := newHarness(t, width)
 			snap := runningSnapshot()
 			snap.Snapshot.Issues[0].Issue.Title = strings.Repeat("A very long issue title ", 8)
+			snap.Snapshot.Board[0].Issue.Title = snap.Snapshot.Issues[0].Issue.Title
 
 			h.send(updateMsg(snap))
 			view := h.view()

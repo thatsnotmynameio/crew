@@ -287,7 +287,7 @@ func TestAFreedQueueSlotAfterASkippedTickListsAtOnce(t *testing.T) {
 
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "3", Action: "triage", Outcome: succeeded})
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "3"), Result: core.ResultDone})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{needsTriage, ready}})
+	wantCommands(t, cmds, core.ListIssues{States: []crew.State{needsTriage, triaging, ready, inProgress}})
 }
 
 // queuesOf returns the queues m's view shows, failing unless their free

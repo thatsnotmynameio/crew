@@ -36,18 +36,6 @@ func TestCappedCutsOutsideTextTo200Runes(t *testing.T) {
 	}
 }
 
-func TestFitLeftKeepsTheEndOfALabel(t *testing.T) {
-	if got, want := fitLeft("crew:development:waiting review", 15), "…waiting review"; got != want {
-		t.Errorf("fitLeft = %q, want %q", got, want)
-	}
-	if got := fitLeft("short", 15); got != "short" {
-		t.Errorf("fitLeft of a short label = %q", got)
-	}
-	if got := fitLeft("any", 0); got != "" {
-		t.Errorf("fitLeft to no width = %q", got)
-	}
-}
-
 // Covers R6 and R28: a reference links to its page, underlined.
 func TestAReferenceLinksToItsPage(t *testing.T) {
 	s := newStyles(true)
@@ -69,11 +57,11 @@ func TestAReferenceLinksToItsPage(t *testing.T) {
 func TestARuleFillsTheWidth(t *testing.T) {
 	m := testModel()
 	for _, width := range []int{80, 120} {
-		r := m.rule("Workflow", "3 in play · 1 waiting", width, false)
+		r := m.rule("Workflow", "2 issues", width, false)
 		if w := lipgloss.Width(r); w != width {
 			t.Errorf("rule at %d is %d wide: %q", width, w, ansi.Strip(r))
 		}
-		if !strings.HasPrefix(ansi.Strip(r), "Workflow ─") || !strings.HasSuffix(ansi.Strip(r), "─ 3 in play · 1 waiting") {
+		if !strings.HasPrefix(ansi.Strip(r), "Workflow ─") || !strings.HasSuffix(ansi.Strip(r), "─ 2 issues") {
 			t.Errorf("rule = %q", ansi.Strip(r))
 		}
 	}

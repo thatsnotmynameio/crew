@@ -68,3 +68,25 @@ func TestABoardWithATrackerThatListsItStartsAndReadsIt(t *testing.T) {
 		}
 	})
 }
+
+// Without board, crew starts on any tracker and never reads a board through
+// one that can: the core fills the default board from its listings (KTD10).
+func TestTheDefaultBoardIsNeverReadThroughTheTracker(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := &boardReads{BoardTracker: fake.NewBoardTracker(issue("1", ready))}
+		h := fake.NewHarness()
+		r := options(t, oneAction, tr, h)
+		r.start()
+
+		next(t, h).End(success)
+		synctest.Wait()
+		r.signals <- syscall.SIGTERM
+
+		if code := <-r.code; code != 0 {
+			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+		if n := tr.reads.Load(); n != 0 {
+			t.Errorf("the board was read %d times, want none", n)
+		}
+	})
+}

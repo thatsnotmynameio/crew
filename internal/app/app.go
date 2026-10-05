@@ -202,9 +202,6 @@ type built struct {
 	cfg       *config.Config
 	tracker   port.Tracker
 	harnesses []engine.AgentHarness
-	// board is the board the config writes, nil without one: until the
-	// live view draws the default board, it draws the rules then.
-	board []crew.BoardColumn
 }
 
 // build loads the config and builds its adapters: the tracker, and the
@@ -212,7 +209,8 @@ type built struct {
 // adapter has stops crew whether or not an action names the agent. Only the
 // agents some action names keep theirs, so an agent in no use is never
 // prepared. A written board needs a tracker that lists issues by any label,
-// a port.BoardLister (KTD3).
+// a port.BoardLister (KTD3); the default board needs none, since the core
+// fills it from its listings (KTD10).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root)
 	if err != nil {
@@ -231,14 +229,10 @@ func build(o Options) (built, error) {
 	if err := errors.Join(errs...); err != nil {
 		return built{}, err
 	}
-	b := built{cfg: cfg, tracker: tracker, harnesses: harnesses}
-	if cfg.BoardWritten {
-		b.board = cfg.Board
-	}
-	if _, ok := tracker.(port.BoardLister); len(b.board) > 0 && !ok {
+	if _, ok := tracker.(port.BoardLister); cfg.BoardWritten && !ok {
 		return built{}, fmt.Errorf("board: tracker %q cannot list issues by any label", cfg.Tracker)
 	}
-	return b, nil
+	return built{cfg: cfg, tracker: tracker, harnesses: harnesses}, nil
 }
 
 // bots makes the bots the config names act, through Options.Bots, and
@@ -280,7 +274,8 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Bots:              b.cfg.Bots,
 		Unable:            bots.Unable,
 		BotFailures:       bots.Failing,
-		Board:             b.board,
+		Board:             b.cfg.Board,
+		BoardWritten:      b.cfg.BoardWritten,
 	})
 }
 
@@ -291,7 +286,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 func run(
 	ctx context.Context, eng *engine.Engine, o Options, stopping bool, b built, warnings []string,
 ) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: b.cfg.Rules, board: b.board}
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: b.cfg.Rules, board: b.cfg.Board}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -334,9 +329,10 @@ type runner struct {
 	code int
 	// warnings are the startup warnings the renderer shows.
 	warnings []string
-	// rules are the configured rules, for the live view's board.
+	// rules are the configured rules, for the live view's notifications.
 	rules []crew.Rule
-	// board is the board the config draws; nil draws the rules.
+	// board is the live view's board: the columns the config writes, or
+	// its default columns.
 	board []crew.BoardColumn
 }
 

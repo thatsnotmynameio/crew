@@ -19,10 +19,15 @@ const (
 // (bug), implement (ready, in progress) and review (ready to review).
 var boardLabels = []string{string(brainstormReady), bug, string(ready), string(inProgress), string(readyToReview)}
 
-// newBoardDriver returns a driver whose model reads a board of labels.
+// newBoardDriver returns a driver whose model reads a written board of one
+// column of issues per label.
 func newBoardDriver(t *testing.T, rules []crew.Rule, maxParallel int, labels ...string) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(rules, maxParallel, core.ListingBoard(labels)), now: t0}
+	columns := make([]crew.BoardColumn, len(labels))
+	for i, l := range labels {
+		columns[i] = crew.BoardColumn{Name: l, Labels: []string{l}}
+	}
+	return &driver{t: t, m: core.New(rules, maxParallel, core.ListingBoard(columns)), now: t0}
 }
 
 // onBoard returns key on the board with labels.
@@ -55,7 +60,7 @@ func TestTheFirstTickListsTheIssuesAndTheBoard(t *testing.T) {
 
 	wantCommands(t, cmds,
 		core.ListBoard{Labels: boardLabels},
-		core.ListIssues{States: []crew.State{ready, readyToReview}},
+		core.ListIssues{States: draftListing},
 	)
 }
 

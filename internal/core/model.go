@@ -350,12 +350,14 @@ type View struct {
 	// Spent sums what every session that ended this run used, including
 	// those of entries Handled no longer shows (R14).
 	Spent crew.Spend
-	// Board is the board's issues, as the last board read found them with
-	// crew's moves since applied, oldest first and then by key (KTD4, KTD6);
-	// nil when the model reads no board (ListingBoard).
+	// Board is the board's items, as the last board read or listing found
+	// them with crew's moves since applied, oldest first and then by key
+	// (KTD4, KTD6, KTD10); nil when the model has no board (ListingBoard,
+	// BoardFromListings).
 	Board []crew.BoardIssue
-	// BoardFailure says why the last board read failed; empty once a read
-	// succeeds (KTD5).
+	// BoardFailure says why the last board read, or the last listing of a
+	// board filled from the listings, failed; empty once one succeeds
+	// (KTD5).
 	BoardFailure string
 	// Bots are the configured bots, the default first, in config order,
 	// then the "you" entry (KTD3).

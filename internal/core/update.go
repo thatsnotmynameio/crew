@@ -45,6 +45,7 @@ func (s *step) runInput(in Input) bool {
 		s.listed(in.Issues)
 	case ListFailed:
 		s.m.listing = false
+		s.m.listingFailed(in.Reason)
 		s.emit(ListingFailed{At: s.at, Reason: in.Reason})
 	case BoardListed:
 		s.m.boardListed(in.Issues)
@@ -115,16 +116,23 @@ func (s *step) tick(said []Said) {
 	s.retryPullRequests()
 }
 
-// listIssues asks for the issues in every rule's state, and starts the count
-// of skipped listings again (R6).
+// listIssues asks for the items in every rule's ready and running labels,
+// of both kinds, each once, and starts the count of skipped listings again
+// (R6). Only the ready labels are taken from; the running ones fill the
+// default board (KTD10).
 func (s *step) listIssues() {
 	m := s.m
 	m.listing = true
 	m.listings++
 	m.skipped = 0
-	states := make([]crew.State, len(m.rules))
-	for i, st := range m.rules {
-		states[i] = st.Labels.Ready
+	m.listingAsked()
+	var states []crew.State
+	for _, r := range m.rules {
+		for _, st := range []crew.State{r.Labels.Ready, r.Labels.Running} {
+			if !slices.Contains(states, st) {
+				states = append(states, st)
+			}
+		}
 	}
 	s.command(ListIssues{States: states})
 }
@@ -220,18 +228,20 @@ func (s *step) windDown() {
 	s.stop()
 }
 
-// listed marks the handled entries whose issue left its state (KTD4), skips
-// issues in two states (R15), reports the items in the label of a rule of
-// the other kind (#92), and takes free slots' worth of issues, each while
-// its rule's queue has a free slot (R6): the highest priority first, an
-// issue without one last; then, at the same priority, later rules first;
-// then the oldest issue first (KTD8). It reports nothing for the issues it
-// leaves, a blocked one included: a later listing with a free slot takes
-// them. It takes nothing once the run time is up.
+// listed marks the handled entries whose issue left its state (KTD4), fills
+// a board filled from the listings (KTD10), skips issues in two states
+// (R15), reports the items in the label of a rule of the other kind (#92),
+// and takes free slots' worth of issues, each while its rule's queue has a
+// free slot (R6): the highest priority first, an issue without one last;
+// then, at the same priority, later rules first; then the oldest issue
+// first (KTD8). It reports nothing for the issues it leaves, a blocked one
+// included: a later listing with a free slot takes them. It takes nothing
+// once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
 	m.gone(issues)
+	m.boardFromListing(issues)
 	if m.stopping || m.timeUp {
 		return
 	}

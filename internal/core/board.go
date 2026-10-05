@@ -7,17 +7,23 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// board is the board the model reads (KTD4).
+// board is the board the model reads (KTD4): columns of labels, each
+// showing the items of its kind (KTD10).
 type board struct {
+	// columns are the board's columns, in board order.
+	columns []crew.BoardColumn
 	// labels are the board's labels, each spelled once, so they compare
 	// exactly.
 	labels []string
 	// crewLabels are the labels a move removes: the rules' states.
 	crewLabels []crew.State
+	// listed is set when the model fills the board from its own listings
+	// rather than by reading it through ListBoard (KTD10).
+	listed bool
 	// issues are what the last read found, with crew's moves since applied.
 	issues  []crew.BoardIssue
 	reading bool   // a ListBoard is outstanding
-	reads   int    // the ListBoard asked for: the generation of the last one
+	reads   int    // the reads asked for: the generation of the last one
 	failure string // why the last read failed; empty once one succeeds
 	// moves are the moves of held issues that landed since the last
 	// answered read was requested, which that answer may predate.
@@ -32,13 +38,29 @@ type boardMove struct {
 	read  int
 }
 
-// ListingBoard has the model read the open issues that carry any of labels,
-// the board's labels, at each tick, and apply crew's moves to them as they
-// land (KTD4), removing the rules' states but to's.
-func ListingBoard(labels []string) Option {
-	return func(m *Model) {
-		m.board = &board{labels: slices.Clone(labels), crewLabels: crew.RuleStates(m.rules)}
+// ListingBoard has the model read the open issues that carry any label of
+// columns, a board the config writes, at each tick, and apply crew's moves
+// to them as they land (KTD4), removing the rules' states but to's.
+func ListingBoard(columns []crew.BoardColumn) Option {
+	return func(m *Model) { m.board = newBoard(columns, crew.RuleStates(m.rules), false) }
+}
+
+// BoardFromListings has the model fill the board of columns, the default
+// board, from its own listings, which ask for every rule's ready and
+// running labels: each listed item with a card in the columns of its kind
+// whose labels it carries. It applies crew's moves as ListingBoard does, and
+// reads no board through ListBoard (KTD10).
+func BoardFromListings(columns []crew.BoardColumn) Option {
+	return func(m *Model) { m.board = newBoard(columns, crew.RuleStates(m.rules), true) }
+}
+
+// newBoard returns the board of columns, whose moves remove crewLabels.
+func newBoard(columns []crew.BoardColumn, crewLabels []crew.State, listed bool) *board {
+	columns = slices.Clone(columns)
+	for i := range columns {
+		columns[i].Labels = slices.Clone(columns[i].Labels)
 	}
+	return &board{columns: columns, labels: crew.BoardLabels(columns), crewLabels: crewLabels, listed: listed}
 }
 
 // readBoard asks for the board's issues, unless the model reads no board or
@@ -46,7 +68,7 @@ func ListingBoard(labels []string) Option {
 // board is read even when no issue can be taken (R9).
 func (s *step) readBoard() {
 	b := s.m.board
-	if b == nil || b.reading {
+	if b == nil || b.listed || b.reading {
 		return
 	}
 	b.reading = true
@@ -74,6 +96,45 @@ func (m *Model) boardListed(issues []crew.BoardIssue) {
 	}
 }
 
+// listingAsked counts a listing as a read of a board filled from the
+// listings, so the moves that land while it is outstanding are applied
+// again to its answer.
+func (m *Model) listingAsked() {
+	if b := m.board; b != nil && b.listed {
+		b.reads++
+	}
+}
+
+// boardFromListing fills a board filled from the listings with issues, the
+// listing's answer (KTD10).
+func (m *Model) boardFromListing(issues []crew.Issue) {
+	b := m.board
+	if b == nil || !b.listed {
+		return
+	}
+	var found []crew.BoardIssue
+	for _, issue := range issues {
+		var labels []string
+		for _, l := range b.labels {
+			if slices.Contains(issue.States, crew.State(l)) && b.names(issue.Kind, l) {
+				labels = append(labels, l)
+			}
+		}
+		if len(labels) > 0 {
+			found = append(found, crew.BoardIssue{Issue: issue, Labels: labels})
+		}
+	}
+	m.boardListed(found)
+}
+
+// listingFailed records why the listing failed on a board filled from the
+// listings.
+func (m *Model) listingFailed(reason string) {
+	if b := m.board; b != nil && b.listed {
+		m.boardListFailed(reason)
+	}
+}
+
 // boardListFailed keeps the last board and records why the read failed.
 func (m *Model) boardListFailed(reason string) {
 	if b := m.board; b != nil {
@@ -93,16 +154,23 @@ func (m *Model) boardMoved(issue crew.Issue, to crew.State) {
 	b.apply(mv)
 }
 
+// names reports whether a column showing items of kind names label.
+func (b *board) names(kind crew.Kind, label string) bool {
+	return slices.ContainsFunc(b.columns, func(c crew.BoardColumn) bool {
+		return c.Takes == kind && slices.Contains(c.Labels, label)
+	})
+}
+
 // apply moves mv's issue on the board: it loses every crew label and gains
-// mv's target when the board names it. An issue not on the board joins it
-// from crew's copy when the board names the target, unless it is a pull
-// request; an issue left with no board label leaves it.
+// mv's target when a column of its kind names it. An issue not on the board
+// joins it from crew's copy when such a column names the target; an issue
+// left with no board label leaves it.
 func (b *board) apply(mv boardMove) {
 	to := string(mv.to)
-	named := slices.Contains(b.labels, to)
+	named := b.names(mv.issue.Kind, to)
 	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue.Key == mv.issue.Key })
 	if i < 0 {
-		if named && mv.issue.Kind != crew.KindPullRequest {
+		if named {
 			b.issues = append(b.issues, crew.BoardIssue{Issue: mv.issue.Clone(), Labels: []string{to}})
 		}
 		return

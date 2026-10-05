@@ -14,7 +14,7 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	i1, i2, i3 := issue("1", 1, ready), issue("2", 2, ready), issue("3", 3, ready)
 
 	cmds, _ := d.send(core.Tick{})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	cmds, events := d.send(core.IssuesListed{Issues: []crew.Issue{i1, i2, i3}})
 	wantCommands(t, cmds,
@@ -107,7 +107,7 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 
 	// A poll meanwhile leaves #1 in progress: only the listing is issued.
 	cmds, _ = d.send(core.Tick{})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 	if c := claimOf(t, d.m, "1"); c != core.ClaimRunning {
 		t.Fatalf("claim of #1: got %v, want running", c)
 	}
@@ -364,7 +364,7 @@ func TestHeldIssueIsNotTakenAgain(t *testing.T) {
 
 func TestAtMostOneListingIsOutstanding(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	list := core.ListIssues{States: []crew.State{ready, readyToReview}}
+	list := core.ListIssues{States: draftListing}
 
 	cmds, _ := d.send(core.Tick{})
 	wantCommands(t, cmds, list)
