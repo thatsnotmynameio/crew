@@ -33,7 +33,7 @@ type budget struct {
 	said, botDetails       bool
 }
 
-// View renders the dashboard (R1): the header, the warnings, Mates, Workflow,
+// View renders the dashboard (R1): the header, the warnings, Bots, Board,
 // Actions, Queues beside Handled, Events and the key-help line, fitted to
 // the window, with the keys over it while help shows. It also sets the
 // window title, the tab progress and focus reports (R23, R24, KTD6).
@@ -91,7 +91,7 @@ func (m Model) budget() budget {
 	if o, t := over(), m.tallestColumn(); o > 0 && t > 1 {
 		b.cards = max(t-(o+cardRows)/cardRows, 1)
 	}
-	// Mates gives way last, just before the cut (KTD11).
+	// Bots gives way last, just before the cut (KTD11).
 	if over() > 0 {
 		b.botDetails = false
 	}
@@ -105,10 +105,10 @@ func (m Model) rows(b budget) []string {
 		out = append(out, m.styles.warning.Render("warning: ")+m.styles.text.Render(clean(w)))
 	}
 	summary, bots := m.botsSection(b.botDetails)
-	out = append(out, "", m.rule("Mates", summary, m.width, false))
+	out = append(out, "", m.rule("Bots", summary, m.width, false))
 	out = append(out, bots...)
 	summary, board := m.board(b.cards)
-	out = append(out, "", m.rule("Workflow", summary, m.width, false))
+	out = append(out, "", m.rule("Board", summary, m.width, false))
 	out = append(out, board...)
 	summary, acts := m.actionsSection(b.said)
 	out = append(out, "", m.rule("Actions", summary, m.width, false))

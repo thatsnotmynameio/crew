@@ -84,7 +84,7 @@ func TestTheCodeOwnersComeFromWhereGitHubFindsCodeowners(t *testing.T) {
 			stdout: "* @first\n/docs/ @writer\n*   @second  @Second # the same login\n"}},
 			want: []string{"second"}},
 		"no file": {want: []string{"me"}},
-		"emails only": {owners: []reply{{prefix: codeownersAt(".github/CODEOWNERS"), stdout: "* boss@example.com\n"}},
+		"emails only": {owners: []reply{{prefix: codeownersAt(".github/CODEOWNERS"), stdout: "* owner@example.com\n"}},
 			want: []string{"me"}},
 		"a catch-all without owners": {owners: []reply{{prefix: codeownersAt(".github/CODEOWNERS"),
 			stdout: "* @first\n*\n"}}, want: []string{"me"}},
@@ -131,8 +131,8 @@ func TestPrepareFailsWithoutGhsLogin(t *testing.T) {
 	tr, _ := build(t, reply{prefix: []string{"auth", "status"}},
 		reply{prefix: []string{"api", "user"}, stderr: "gh: Bad Gateway (HTTP 502)"})
 	if err := tr.Prepare(context.Background(), []crew.State{ready}); err == nil ||
-		!strings.Contains(err.Error(), "find the boss") {
-		t.Errorf("Prepare = %v, want an error finding the boss", err)
+		!strings.Contains(err.Error(), "find the code owners") {
+		t.Errorf("Prepare = %v, want an error finding the code owners", err)
 	}
 }
 

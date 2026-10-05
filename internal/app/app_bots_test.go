@@ -67,7 +67,7 @@ func (r *resolver) resolve(ctx context.Context, def string, names []string) (app
 	if r.entered != nil {
 		close(r.entered)
 		<-ctx.Done()
-		return app.Bots{}, fmt.Errorf("resolve the mates: %w", ctx.Err())
+		return app.Bots{}, fmt.Errorf("resolve the bots: %w", ctx.Err())
 	}
 	if r.err != nil {
 		return app.Bots{}, r.err
@@ -125,7 +125,7 @@ func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 		run := session.Run()
 		if !sameIdentity(run.Identity, devID) || !slices.Equal(run.CodeOwners, []string{"mguilarducci"}) ||
 			!slices.Equal(run.Bots, logins) {
-			t.Errorf("session ran as %+v for %q with mates %q, want developer", run.Identity, run.CodeOwners, run.Bots)
+			t.Errorf("session ran as %+v for %q with bots %q, want developer", run.Identity, run.CodeOwners, run.Bots)
 		}
 		checks := checker.Checks()
 		if len(checks) != 1 || !sameIdentity(checks[0].Identity, devID) ||
@@ -167,7 +167,7 @@ func TestWithoutBotsNothingActsAsABot(t *testing.T) {
 		}
 		run := session.Run()
 		if !sameIdentity(run.Identity, port.Identity{}) || !slices.Equal(run.CodeOwners, []string{"me"}) || run.Bots != nil {
-			t.Errorf("session ran as %+v for %q with mates %q, want you", run.Identity, run.CodeOwners, run.Bots)
+			t.Errorf("session ran as %+v for %q with bots %q, want you", run.Identity, run.CodeOwners, run.Bots)
 		}
 	})
 }
@@ -178,8 +178,8 @@ func TestABotThatCannotActWarnsAndCrewActsAsYou(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
 		h := fake.NewHarness()
-		warning := "mate ops has no key on this machine for thatsnotmynameio; " +
-			"run `crew mates create ops` in this repository"
+		warning := "bot ops has no key on this machine for thatsnotmynameio; " +
+			"run `crew bots create ops` in this repository"
 		res := &resolver{bots: app.Bots{Warnings: []string{warning}}}
 		r := options(t, withOps(), tr, h)
 		r.opts.Bots = res.resolve
@@ -194,7 +194,7 @@ func TestABotThatCannotActWarnsAndCrewActsAsYou(t *testing.T) {
 		}
 		calls := tr.ActAsCalls()
 		if len(calls) != 1 || !sameIdentity(calls[0].Writer, port.Identity{}) || calls[0].Bots != nil {
-			t.Errorf("ActAs calls = %+v, want one with you and no mate", calls)
+			t.Errorf("ActAs calls = %+v, want one with you and no bot", calls)
 		}
 		if run := session.Run(); !sameIdentity(run.Identity, port.Identity{}) {
 			t.Errorf("session ran as %+v, want you", run.Identity)
@@ -214,7 +214,7 @@ func TestABotThatCannotActStillHasItsIssuesTaken(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
 		h := fake.NewHarness()
 		res := &resolver{bots: app.Bots{Logins: []string{"crew-ops[bot]"},
-			Warnings: []string{"mate ops is not installed on thatsnotmynameio/crew"}}}
+			Warnings: []string{"bot ops is not installed on thatsnotmynameio/crew"}}}
 		r := options(t, withOps(), tr, h)
 		r.opts.Bots = res.resolve
 		r.start()
@@ -233,14 +233,14 @@ func TestABotThatCannotActStillHasItsIssuesTaken(t *testing.T) {
 		}
 		if run := session.Run(); !sameIdentity(run.Identity, port.Identity{}) ||
 			!slices.Equal(run.Bots, []string{"crew-ops[bot]"}) {
-			t.Errorf("session ran as %+v with mates %q, want you and ops's login", run.Identity, run.Bots)
+			t.Errorf("session ran as %+v with bots %q, want you and ops's login", run.Identity, run.Bots)
 		}
 	})
 }
 
 func TestAResolverErrorExitsTwoBeforeAnythingRuns(t *testing.T) {
 	tr := fake.NewActingTracker(issue("1", ready))
-	res := &resolver{err: errors.New("mate Ops: a name is lowercase letters, digits and hyphens")}
+	res := &resolver{err: errors.New("bot Ops: a name is lowercase letters, digits and hyphens")}
 	r := options(t, botAction, tr, fake.NewHarness())
 	r.opts.Bots = res.resolve
 	r.start()
@@ -248,7 +248,7 @@ func TestAResolverErrorExitsTwoBeforeAnythingRuns(t *testing.T) {
 	if code := r.exitCode(t); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if stderr := r.stderr.String(); !strings.Contains(stderr, "make the mates act: mate Ops") {
+	if stderr := r.stderr.String(); !strings.Contains(stderr, "make the bots act: bot Ops") {
 		t.Errorf("stderr = %q, want the resolver's error", stderr)
 	}
 	if _, closes := res.counts(); closes != 0 || len(tr.ActAsCalls()) != 0 {
@@ -264,7 +264,7 @@ func TestBotsWithoutAResolverExitTwo(t *testing.T) {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 	if stderr := r.stderr.String(); !strings.Contains(stderr, "cannot make them act") {
-		t.Errorf("stderr = %q, want it to say crew cannot make the mates act", stderr)
+		t.Errorf("stderr = %q, want it to say crew cannot make the bots act", stderr)
 	}
 }
 
@@ -328,12 +328,12 @@ func TestABotThatCannotActIsNeverSaidToStopAndOneThatActsIs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
 		h := fake.NewHarness()
-		devWarning := "mate developer could not renew its token: GitHub is down"
+		devWarning := "bot developer could not renew its token: GitHub is down"
 		res := &resolver{bots: app.Bots{
 			Identities: map[string]port.Identity{"developer": devID},
 			Unable:     map[string]string{"ops": "no key"},
 			Failing: func() map[string]string {
-				return map[string]string{"ops": "mate ops could not renew its token", "developer": devWarning}
+				return map[string]string{"ops": "bot ops could not renew its token", "developer": devWarning}
 			},
 		}}
 		r := options(t, botAction, tr, h)
@@ -341,8 +341,8 @@ func TestABotThatCannotActIsNeverSaidToStopAndOneThatActsIs(t *testing.T) {
 
 		out := runOnce(t, r, h)
 
-		containsAll(t, out, "mate developer stopped acting: "+devWarning)
-		if strings.Contains(out, "mate ops stopped acting") {
+		containsAll(t, out, "bot developer stopped acting: "+devWarning)
+		if strings.Contains(out, "bot ops stopped acting") {
 			t.Errorf("stdout says ops stopped acting, which never acted:\n%s", out)
 		}
 	})
@@ -352,7 +352,7 @@ func TestABotThatCannotActIsNeverSaidToStopAndOneThatActsIs(t *testing.T) {
 func TestTheDefaultBotsWritesGoingBackToYouIsSaid(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
-		warning := "mate ops lacks a permission: run `crew mates create ops`; crew writes as you until it restarts"
+		warning := "bot ops lacks a permission: run `crew bots create ops`; crew writes as you until it restarts"
 		tr.SetWriterLost(warning)
 		h := fake.NewHarness()
 		res := &resolver{bots: app.Bots{Writer: opsWriter,
@@ -362,7 +362,7 @@ func TestTheDefaultBotsWritesGoingBackToYouIsSaid(t *testing.T) {
 
 		out := runOnce(t, r, h)
 
-		if n := strings.Count(out, "mate ops stopped acting: "+warning); n != 1 {
+		if n := strings.Count(out, "bot ops stopped acting: "+warning); n != 1 {
 			t.Errorf("stdout says ops stopped acting %d times, want once:\n%s", n, out)
 		}
 	})
@@ -378,7 +378,7 @@ func TestWithoutBotsNoBotStopsActing(t *testing.T) {
 		r.opts.Plain = true
 
 		if out := runOnce(t, r, h); strings.Contains(out, "stopped acting") {
-			t.Errorf("stdout says a mate stopped acting, without mates:\n%s", out)
+			t.Errorf("stdout says a bot stopped acting, without bots:\n%s", out)
 		}
 	})
 }

@@ -273,10 +273,10 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheRulesSpelling(t *testing.T) {
 		labels []string
 		want   []crew.State
 	}{
-		"two crew labels":            {[]string{"ready", "Needs Attention", "bug"}, []crew.State{ready, needsAttention}},
-		"another case":               {[]string{"Ready"}, []crew.State{ready}},
-		"AE6 a label no stage names": {[]string{"paused", "ready"}, []crew.State{ready}},
-		"a parked idea's label":      {[]string{"crew:brainstorm:ready", "ready"}, []crew.State{ready}},
+		"two crew labels":           {[]string{"ready", "Needs Attention", "bug"}, []crew.State{ready, needsAttention}},
+		"another case":              {[]string{"Ready"}, []crew.State{ready}},
+		"AE6 a label no rule names": {[]string{"paused", "ready"}, []crew.State{ready}},
+		"a parked idea's label":     {[]string{"crew:brainstorm:ready", "ready"}, []crew.State{ready}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, _ := build(t, login, reply{

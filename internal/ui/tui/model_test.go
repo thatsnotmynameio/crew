@@ -379,7 +379,7 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 // Covers R2: a startup warning shows under the header.
 func TestAStartupWarningShowsUnderTheHeader(t *testing.T) {
 	h := newHarness(t, 120,
-		"mate ops has no key on this machine for thatsnotmynameio; run `crew mates create ops` in this repository")
+		"bot ops has no key on this machine for thatsnotmynameio; run `crew bots create ops` in this repository")
 
 	h.send(updateMsg(runningSnapshot()))
 

@@ -13,8 +13,8 @@ import (
 )
 
 // reviewerNoKey is the startup warning of a bot reviewer without a key.
-const reviewerNoKey = "mate reviewer has no key on this machine for thatsnotmynameio; " +
-	"run `crew mates create reviewer` in this repository"
+const reviewerNoKey = "bot reviewer has no key on this machine for thatsnotmynameio; " +
+	"run `crew bots create reviewer` in this repository"
 
 // aeOneBots are AE1's entries: the default bot clerk for triage, with
 // three triage actions ended, developer running development on #1, and
@@ -40,13 +40,13 @@ func withBots(entries ...core.BotView) engine.Update {
 	return u
 }
 
-// botsOf returns the rows of view's Mates section under its title, down
-// to the blank row above Workflow.
+// botsOf returns the rows of view's Bots section under its title, down
+// to the blank row above Board.
 func botsOf(t *testing.T, view string) []string {
 	t.Helper()
-	all, i, j := rowsOf(view), titleRow(view, "Mates"), titleRow(view, "Workflow")
+	all, i, j := rowsOf(view), titleRow(view, "Bots"), titleRow(view, "Board")
 	if i < 0 || j < i {
-		t.Fatalf("view lacks the Mates section above Workflow:\n%s", view)
+		t.Fatalf("view lacks the Bots section above Board:\n%s", view)
 	}
 	return all[i+1 : j-1]
 }
@@ -55,7 +55,7 @@ func botsOf(t *testing.T, view string) []string {
 func rowsAre(t *testing.T, view string, rows, want []string) {
 	t.Helper()
 	if !slices.Equal(rows, want) {
-		t.Errorf("Mates rows are\n%s\nwant\n%s\nin:\n%s", strings.Join(rows, "\n"), strings.Join(want, "\n"), view)
+		t.Errorf("Bots rows are\n%s\nwant\n%s\nin:\n%s", strings.Join(rows, "\n"), strings.Join(want, "\n"), view)
 	}
 }
 
@@ -72,7 +72,7 @@ func TestAE1EachBotShowsItsStateTotalsPairsAndRunningActions(t *testing.T) {
 		" you        octocat",
 		"   none",
 	})
-	contains(t, rowsOf(view)[titleRow(view, "Mates")], "2 acting")
+	contains(t, rowsOf(view)[titleRow(view, "Bots")], "2 acting")
 }
 
 // Covers AE3: a bot that cannot act shows its short reason and that its
@@ -96,14 +96,14 @@ func TestAE3ABotThatCannotActShowsItsReasonAndActsAsYou(t *testing.T) {
 		" you                           1 action · $0.80 · 600K tokens",
 		"   review/review",
 	})
-	contains(t, rowsOf(view)[1], "warning: mate reviewer has no key")
-	contains(t, view, "crew mates create reviewer", "1 acting · 1 cannot act")
+	contains(t, rowsOf(view)[1], "warning: bot reviewer has no key")
+	contains(t, view, "crew bots create reviewer", "1 acting · 1 cannot act")
 }
 
 // Covers AE4: the default bot whose writes went back to you says so,
 // crew's writes move to you, and its live warning follows the startup ones.
 func TestAE4ADefaultBotWhoseWritesFellBackWarnsUnderTheHeader(t *testing.T) {
-	lost := "crew's writes as mate clerk went back to you: GitHub refused its credentials; " +
+	lost := "crew's writes as bot clerk went back to you: GitHub refused its credentials; " +
 		"crew writes as you until it restarts"
 	h := newHarness(t, 200, reviewerNoKey)
 	h.send(updateMsg(withBots(
@@ -115,7 +115,7 @@ func TestAE4ADefaultBotWhoseWritesFellBackWarnsUnderTheHeader(t *testing.T) {
 	view := h.view()
 
 	rows := rowsOf(view)
-	contains(t, rows[1], "warning: mate reviewer has no key")
+	contains(t, rows[1], "warning: bot reviewer has no key")
 	if rows[2] != "warning: "+lost {
 		t.Errorf("row 2 is %q, want the live warning after the startup one:\n%s", rows[2], view)
 	}
@@ -125,7 +125,7 @@ func TestAE4ADefaultBotWhoseWritesFellBackWarnsUnderTheHeader(t *testing.T) {
 		" you",
 		"   crew's writes",
 	})
-	contains(t, rows[titleRow(view, "Mates")], "1 cannot act")
+	contains(t, rows[titleRow(view, "Bots")], "1 cannot act")
 }
 
 func TestTheBotsSummaryCountsActingAndNotActingBots(t *testing.T) {
@@ -140,17 +140,17 @@ func TestTheBotsSummaryCountsActingAndNotActingBots(t *testing.T) {
 			{Name: "reviewer", State: "token not renewed"},
 			{Name: "you", You: true},
 		}, "2 acting · 1 cannot act"},
-		{"only you", []core.BotView{{Name: "you", You: true, Writes: true}}, "no mates"},
+		{"only you", []core.BotView{{Name: "you", You: true, Writes: true}}, "no bots"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			view := fitted(t, 80, 0, withBots(tt.entries...))
 
-			i := titleRow(view, "Mates")
+			i := titleRow(view, "Bots")
 			if i < 0 {
-				t.Fatalf("view lacks the Mates section:\n%s", view)
+				t.Fatalf("view lacks the Bots section:\n%s", view)
 			}
 			if rule := rowsOf(view)[i]; !strings.HasSuffix(rule, "─ "+tt.want) {
-				t.Errorf("Mates rule is %q, want it to end in %q", rule, tt.want)
+				t.Errorf("Bots rule is %q, want it to end in %q", rule, tt.want)
 			}
 		})
 	}
@@ -164,7 +164,7 @@ func TestASecondLineWiderThanTheWindowEndsInAnEllipsis(t *testing.T) {
 
 	rows := botsOf(t, view)
 	if len(rows) != 2 {
-		t.Fatalf("Mates has %d rows, want 2:\n%s", len(rows), view)
+		t.Fatalf("Bots has %d rows, want 2:\n%s", len(rows), view)
 	}
 	if !strings.HasSuffix(rows[1], "…") || lipgloss.Width(rows[1]) != 60 {
 		t.Errorf("second line %q is not cut to 60 cells with an ellipsis", rows[1])
@@ -182,7 +182,7 @@ func TestASecondLineTooWideCutsItsPairsAndKeepsTheRunningActions(t *testing.T) {
 
 	rows := botsOf(t, view)
 	if len(rows) != 2 {
-		t.Fatalf("Mates has %d rows, want 2:\n%s", len(rows), view)
+		t.Fatalf("Bots has %d rows, want 2:\n%s", len(rows), view)
 	}
 	if !strings.HasSuffix(rows[1], "▸ #1 implement/code") || !strings.Contains(rows[1], "…") {
 		t.Errorf("second line %q does not end with the running action after cut pairs", rows[1])
@@ -220,7 +220,7 @@ func TestAE6TheBotsDropTheirSecondLinesLastBeforeTheCut(t *testing.T) {
 
 	view := fitted(t, 80, height, u)
 	if len(botsOf(t, view)) != 2*entries || strings.Contains(view, "lines cut") {
-		t.Fatalf("at %d rows the mates lost their second lines or the view was cut:\n%s", height, view)
+		t.Fatalf("at %d rows the bots lost their second lines or the view was cut:\n%s", height, view)
 	}
 	if strings.Contains(view, "└") || !strings.Contains(view, "+2 more") || len(eventsRows(t, view)) != minScroll {
 		t.Errorf("at %d rows Events, the said lines or the cards did not shrink first:\n%s", height, view)
@@ -228,10 +228,10 @@ func TestAE6TheBotsDropTheirSecondLinesLastBeforeTheCut(t *testing.T) {
 
 	view = fitted(t, 80, height-1, u)
 	if rows := botsOf(t, view); len(rows) != entries || strings.Contains(view, "lines cut") {
-		t.Errorf("one row short, the mates kept their second lines or the view was cut:\n%s", view)
+		t.Errorf("one row short, the bots kept their second lines or the view was cut:\n%s", view)
 	}
 	if view := fitted(t, 80, height-entries, u); strings.Contains(view, "lines cut") {
-		t.Errorf("%d rows short, the view was cut although one row per mate fits:\n%s", entries, view)
+		t.Errorf("%d rows short, the view was cut although one row per bot fits:\n%s", entries, view)
 	}
 	if view := fitted(t, 80, height-entries-1, u); !strings.Contains(view, "lines cut") {
 		t.Errorf("%d rows short, the view was not cut:\n%s", entries+1, view)

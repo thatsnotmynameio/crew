@@ -154,7 +154,7 @@ var takeCases = []struct {
 		want:   []string{"6"},
 	},
 	{
-		name:   "the later stage first inside a queue",
+		name:   "the later rule first inside a queue",
 		rules:  queued(defaultQueue(1), defaultQueue(1)),
 		limit:  2,
 		listed: []crew.Issue{issue("5", 1, needsTriage), issue("6", 9, ready)},
@@ -176,7 +176,7 @@ var takeCases = []struct {
 		want:   []string{"2"},
 	},
 	{
-		name:   "stages without a queue share the global limit",
+		name:   "rules without a queue share the global limit",
 		rules:  queued(crew.Queue{}, crew.Queue{}),
 		limit:  2,
 		held:   []crew.Issue{issue("1", 1, ready)},
@@ -244,7 +244,7 @@ var tickCases = []struct {
 	{
 		// AE9: max_parallel_issues 2 and no queue named: the clerk has
 		// no rule, so its slot counts for nothing.
-		name:  "counts only the queues the stages run in",
+		name:  "counts only the queues the rules run in",
 		rules: queued(defaultQueue(1), defaultQueue(1)),
 		limit: 2,
 		held:  []crew.Issue{issue("1", 1, ready)},
@@ -384,7 +384,7 @@ var viewQueueCases = []struct {
 }{
 	{
 		// AE3: no rule names clerk, so it gets no line.
-		name:  "only the queues some stage runs in",
+		name:  "only the queues some rule runs in",
 		rules: queued(defaultQueue(2), defaultQueue(2)),
 		limit: 3,
 		want:  []core.QueueView{{Name: crew.DefaultQueue, Slots: 2}},
@@ -399,7 +399,7 @@ var viewQueueCases = []struct {
 		free:  []int{2, 0},
 	},
 	{
-		name:  "stages without a queue share one unnamed queue of the global limit",
+		name:  "rules without a queue share one unnamed queue of the global limit",
 		rules: queued(crew.Queue{}, crew.Queue{}),
 		limit: 2,
 		want:  []core.QueueView{{Slots: 2}},

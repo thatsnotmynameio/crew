@@ -60,7 +60,7 @@ func TestAE5ARuleEndNotifiesWhileUnfocusedButAMutedRulesDoesNot(t *testing.T) {
 
 	notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
 	if len(notes) != 1 || !strings.HasPrefix(notes[0], "\x1b]9;") ||
-		!strings.Contains(notes[0], "triage ended on #12 Stage labels; moved to crew:triage:done") {
+		!strings.Contains(notes[0], "triage ended on #12 Rule labels; moved to crew:triage:done") {
 		t.Errorf("notifications = %q, want one OSC 9 for triage on #12", notes)
 	}
 
@@ -134,7 +134,7 @@ func TestANotificationIsCleanedOfControlCharacters(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(tea.BlurMsg{})
 	u := ended("triage", "crew:triage:done", 3)
-	u.Snapshot.Handled[0].Issue.Title = "Stage\x07 labels\x1b]0;evil\x07"
+	u.Snapshot.Handled[0].Issue.Title = "Rule\x07 labels\x1b]0;evil\x07"
 
 	notes := raws(h.send(updateMsg(u)))
 

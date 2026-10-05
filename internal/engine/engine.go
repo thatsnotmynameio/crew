@@ -88,7 +88,7 @@ type Config struct {
 	Identities map[string]port.Identity
 	// BotLogins are the logins of the configured bots crew knows, whether
 	// or not they act: the tracker takes the items they opened, and every
-	// session and check gets them as CREW_MATES.
+	// session and check gets them as CREW_BOTS.
 	BotLogins []string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.

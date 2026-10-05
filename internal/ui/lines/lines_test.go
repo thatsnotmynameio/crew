@@ -1,6 +1,7 @@
 package lines_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -163,10 +164,10 @@ var sentences = []struct {
 		"run time of 1h0m0s is up: taking no new issues, winding down"},
 	// Covers AE4 (lines side): the line names the bot and its full warning.
 	{core.BotStopped{At: at("10:00:00"), Bot: "clerk", Reason: "writes as you",
-		Warning: "crew's writes as mate clerk went back to you: HTTP 401"},
-		"mate clerk stopped acting: crew's writes as mate clerk went back to you: HTTP 401"},
+		Warning: "crew's writes as bot clerk went back to you: HTTP 401"},
+		"bot clerk stopped acting: crew's writes as bot clerk went back to you: HTTP 401"},
 	{core.BotActsAgain{At: at("10:00:00"), Bot: "developer"},
-		"mate developer acts again: its token renewed"},
+		"bot developer acts again: its token renewed"},
 	{core.Stopped{At: at("10:00:00")},
 		"stopped"},
 }
@@ -178,6 +179,16 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 				t.Errorf("Text = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Covers R17 (lines side): no sentence says boss, mate, stage or workflow.
+func TestNoSentenceSaysAnOldWord(t *testing.T) {
+	old := regexp.MustCompile(`(?i)\b(boss(es)?|mates?|stages?|workflows?)\b`)
+	for _, tt := range sentences {
+		if found := old.FindAllString(lines.Text(tt.event), -1); len(found) > 0 {
+			t.Errorf("%q says %q", lines.Text(tt.event), found)
+		}
 	}
 }
 
@@ -227,8 +238,8 @@ func TestEachStartupWarningPrintsOnceBeforeTheFirstEvent(t *testing.T) {
 		engine.Update{Events: []core.Event{core.Stopped{At: at("12:00:03")}}},
 	)
 	var out strings.Builder
-	warning := "mate ops has no key on this machine for thatsnotmynameio; " +
-		"run `crew mates create ops` in this repository"
+	warning := "bot ops has no key on this machine for thatsnotmynameio; " +
+		"run `crew bots create ops` in this repository"
 	if err := lines.Run(src, &out, zone, func() time.Time { return at("12:00:01") }, warning); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

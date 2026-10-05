@@ -162,7 +162,7 @@ func actionLines(t *testing.T, tr *Tracker, s crew.Status) string {
 	body := tr.renderStatus(s)
 	_, rest, ok := strings.Cut(body, ".\n\n")
 	if !ok {
-		t.Fatalf("no stage line:\n%s", body)
+		t.Fatalf("no rule line:\n%s", body)
 	}
 	actions, _, ok := strings.Cut(rest, "\nUpdated ")
 	if !ok {

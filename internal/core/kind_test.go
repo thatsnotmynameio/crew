@@ -66,7 +66,7 @@ func TestARuleThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 		From: fixReviewReady, To: fixing,
 	})
 	if n := otherKinds(events); n != nil {
-		t.Fatalf("notices for a pull request of the stage's kind: %#v", n)
+		t.Fatalf("notices for a pull request of the rule's kind: %#v", n)
 	}
 	wantHeld(t, d.m, "90")
 }

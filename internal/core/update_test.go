@@ -310,25 +310,25 @@ func TestPicksTheHighestPriorityThenLaterRulesThenTheOldestIssue(t *testing.T) {
 			want:   core.Move{IssueKey: "6", From: readyToReview, To: inReview},
 		},
 		{
-			name:   "oldest first within a stage",
+			name:   "oldest first within a rule",
 			issues: []crew.Issue{issue("8", 9, ready), issue("7", 3, ready)},
 			want:   core.Move{IssueKey: "7", From: ready, To: inProgress},
 		},
 		{
 			// AE1: an Urgent issue passes an unprioritized one of a later rule.
-			name:   "priority before a later stage",
+			name:   "priority before a later rule",
 			issues: []crew.Issue{issue("6", 1, readyToReview), prioritized(issue("5", 2, ready), 1)},
 			want:   core.Move{IssueKey: "5", From: ready, To: inProgress},
 		},
 		{
 			// AE2: same priority and rule, the older issue first.
-			name:   "oldest first at the same priority and stage",
+			name:   "oldest first at the same priority and rule",
 			issues: []crew.Issue{prioritized(issue("8", 9, ready), 2), prioritized(issue("7", 3, ready), 2)},
 			want:   core.Move{IssueKey: "7", From: ready, To: inProgress},
 		},
 		{
 			// AE3: same priority, the later rule first.
-			name:   "later stage first at the same priority",
+			name:   "later rule first at the same priority",
 			issues: []crew.Issue{prioritized(issue("5", 1, ready), 3), prioritized(issue("6", 2, readyToReview), 3)},
 			want:   core.Move{IssueKey: "6", From: readyToReview, To: inReview},
 		},

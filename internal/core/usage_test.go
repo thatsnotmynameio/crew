@@ -245,7 +245,7 @@ func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	d.settle(verdict)
 
 	if got := onlyEntry(t, d).Rule; got != "review" {
-		t.Fatalf("handled shows %q, want only the review stage", got)
+		t.Fatalf("handled shows %q, want only the review rule", got)
 	}
 	if got := d.m.View().Spent.String(); got != "$24.80 (partial), 745 tokens" {
 		t.Fatalf("run spend = %q, want all three sessions", got)

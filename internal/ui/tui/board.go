@@ -107,7 +107,7 @@ func (m Model) boardLayout(cards []card) boardLayout {
 	return layout(columns, held, m.width-1, m.boardOffset)
 }
 
-// board is the Workflow section: its summary and its rows, with at most
+// board is the Board section: its summary and its rows, with at most
 // limit cards a column; limit < 0 means no limit (KTD8).
 func (m Model) board(limit int) (string, []string) {
 	cards := m.cards()

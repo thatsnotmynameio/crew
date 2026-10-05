@@ -56,20 +56,20 @@ func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T)
 		r.opts.Terminal, r.opts.Plain = true, true
 		r.opts.Bots = func(ctx context.Context, _ string, names []string) (app.Bots, error) {
 			for _, name := range names {
-				port.Step(ctx, "making mate "+name+" act")
+				port.Step(ctx, "making bot "+name+" act")
 			}
-			return app.Bots{Warnings: []string{"mate ops is not installed on thatsnotmynameio/crew"}}, nil
+			return app.Bots{Warnings: []string{"bot ops is not installed on thatsnotmynameio/crew"}}, nil
 		}
 
 		got := runOneIssue(t, r, h.Harness)
 
 		want := []string{
 			"loading .crew/config.yaml",
-			"making mate ops act",
+			"making bot ops act",
 			"checking the gh login",
 			"looking for claude on PATH",
 			"reading the run journal",
-			"warning: mate ops is not installed on thatsnotmynameio/crew",
+			"warning: bot ops is not installed on thatsnotmynameio/crew",
 		}
 		if len(got) <= len(want) || !slices.Equal(got[:len(want)], want) {
 			t.Fatalf("stdout starts with %q, want %q then the event lines", got, want)
@@ -86,7 +86,7 @@ func TestWithoutBotsTheBootLogHasNoBotLine(t *testing.T) {
 		h := fake.NewHarness()
 		r := options(t, oneAction, fake.NewTracker(issue("1", ready)), h)
 		r.opts.Bots = func(context.Context, string, []string) (app.Bots, error) {
-			t.Error("the mates were made to act, with none in the config")
+			t.Error("the bots were made to act, with none in the config")
 			return app.Bots{}, nil
 		}
 

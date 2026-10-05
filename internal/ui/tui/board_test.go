@@ -70,7 +70,7 @@ var ideasBugsDone = []crew.BoardColumn{
 }
 
 var (
-	twelve    = crew.Issue{Key: "12", Ref: "#12", Title: "Stage labels", URL: "https://github.com/o/r/issues/12"}
+	twelve    = crew.Issue{Key: "12", Ref: "#12", Title: "Rule labels", URL: "https://github.com/o/r/issues/12"}
 	twenty    = crew.Issue{Key: "20", Ref: "#20", Title: "Crash on start"}
 	twentyOne = crew.Issue{Key: "21", Ref: "#21", Title: "Retry the poll"}
 	twentyTwo = crew.Issue{Key: "22", Ref: "#22", Title: "Typo in help"}
@@ -104,14 +104,14 @@ func labeled(issue crew.Issue, labels ...string) crew.BoardIssue {
 	return crew.BoardIssue{Issue: issue, Labels: labels}
 }
 
-// boardOf returns the Workflow section of view: its rule up to the blank
+// boardOf returns the Board section of view: its rule up to the blank
 // line before Actions.
 func boardOf(t *testing.T, view string) string {
 	t.Helper()
-	i := strings.Index(view, "Workflow ")
+	i := strings.Index(view, "Board ")
 	j := strings.Index(view, "\n\nActions ")
 	if i < 0 || j < i {
-		t.Fatalf("view lacks the Workflow section:\n%s", view)
+		t.Fatalf("view lacks the Board section:\n%s", view)
 	}
 	return view[i:j]
 }
@@ -393,7 +393,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 // Covers KTD5 and KTD8.
 func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
-	contains(t, boardOf(t, h.view()), "Workflow ", " 0 issues")
+	contains(t, boardOf(t, h.view()), "Board ", " 0 issues")
 
 	u := onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"), labeled(twentyTwo, "bug"))
 	h.send(updateMsg(u))

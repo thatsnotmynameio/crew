@@ -47,7 +47,7 @@ func TestAPullRequestInAnIssueRulesLabelIsNoticedOnceAcrossPolls(t *testing.T) {
 			t.Fatalf("notices = %#v, want one", notices)
 		}
 		if n := notices[0]; n.IssueRef != "#90" || n.Label != ready || n.Rule != "implement" || n.Takes != crew.KindIssue {
-			t.Errorf("notice = %#v, want #90 in ready, whose stage implement takes issues", n)
+			t.Errorf("notice = %#v, want #90 in ready, whose rule implement takes issues", n)
 		}
 	})
 }

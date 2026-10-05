@@ -186,7 +186,7 @@ type BotView struct {
 	Warnings []string
 	// Writes is set on the entry crew's own writes go as (KTD7).
 	Writes bool
-	// Pairs are the "stage/action" pairs, in rule order, that act as the
+	// Pairs are the "rule/action" pairs, in rule order, that act as the
 	// entry. A bot that cannot act lists its own; the "you" entry lists
 	// them too.
 	Pairs []string
@@ -227,7 +227,7 @@ func (m *Model) botsView() []BotView {
 	})
 }
 
-// pairs returns the "stage/action" pairs, in rule order, of the actions
+// pairs returns the "rule/action" pairs, in rule order, of the actions
 // whose bot is.
 func (m *Model) pairs(is func(bot string) bool) []string {
 	var out []string

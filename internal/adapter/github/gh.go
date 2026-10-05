@@ -113,7 +113,7 @@ func (g *gh) writerLost() string {
 // it, and that crew writes as you until it restarts. It quotes nothing
 // gh printed.
 func lostWarning(kind refusalKind, bot string) string {
-	create := fmt.Sprintf("run `crew mates create %s` in this repository", bot)
+	create := fmt.Sprintf("run `crew bots create %s` in this repository", bot)
 	var why string
 	switch kind {
 	case refusedCredentials:
@@ -124,7 +124,7 @@ func lostWarning(kind refusalKind, bot string) string {
 	default:
 		why = "it lost access to the repository; " + create + " to install it"
 	}
-	return fmt.Sprintf("crew's writes as mate %s went back to you: %s; crew writes as you until it restarts", bot, why)
+	return fmt.Sprintf("crew's writes as bot %s went back to you: %s; crew writes as you until it restarts", bot, why)
 }
 
 // write runs gh with args as the writer and returns what it printed and the

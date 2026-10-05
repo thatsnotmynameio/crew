@@ -446,7 +446,7 @@ func TestAE7IssueNoRuleTakesOrInTwoStatesGetsNoStatus(t *testing.T) {
 	for range 2 {
 		cmds, _ := d.poll(issue("60", 1, inReview), issue("61", 2, ready, readyToReview))
 		if got := statuses(cmds); len(got) != 0 {
-			t.Fatalf("statuses for issues no stage takes: %#v", got)
+			t.Fatalf("statuses for issues no rule takes: %#v", got)
 		}
 	}
 }
@@ -483,7 +483,7 @@ func TestStatusesOfOneRuleRunShareItsRun(t *testing.T) {
 	done := statusOf(t, cmds, "74")
 
 	if running.Run == "" || pending.Run != running.Run || done.Run != running.Run {
-		t.Fatalf("runs of one stage run: running %q, ended %q and %q", running.Run, pending.Run, done.Run)
+		t.Fatalf("runs of one rule run: running %q, ended %q and %q", running.Run, pending.Run, done.Run)
 	}
 }
 
@@ -492,8 +492,8 @@ func TestEachRuleRunAfterAnEndedOneGetsANewRun(t *testing.T) {
 		name string
 		next crew.State
 	}{
-		{name: "the next stage", next: readyToReview},
-		{name: "the same stage again", next: ready},
+		{name: "the next rule", next: readyToReview},
+		{name: "the same rule again", next: ready},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -504,7 +504,7 @@ func TestEachRuleRunAfterAnEndedOneGetsANewRun(t *testing.T) {
 			cmds, _ := d.poll(issue("74", 1, tt.next))
 			landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 			if got := statusOf(t, landed, "74"); got.Run == "" || got.Run == done.Run {
-				t.Fatalf("new stage run's run = %q, the ended one's = %q", got.Run, done.Run)
+				t.Fatalf("new rule run's run = %q, the ended one's = %q", got.Run, done.Run)
 			}
 		})
 	}

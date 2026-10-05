@@ -18,11 +18,11 @@ import (
 
 // writesLost is the warning a tracker reports when crew's writes as ops go
 // back to you.
-const writesLost = "mate ops lost access to the repository: run `crew mates create ops` to install it; " +
+const writesLost = "bot ops lost access to the repository: run `crew bots create ops` to install it; " +
 	"crew writes as you until it restarts"
 
 // notRenewed is the warning of developer's failed renewal.
-const notRenewed = "mate developer could not renew its token: GitHub is down; its sessions and checks fail " +
+const notRenewed = "bot developer could not renew its token: GitHub is down; its sessions and checks fail " +
 	"once the current token expires, and crew tries again every minute"
 
 // fallingBack is an acting fake tracker whose writes go back to you
@@ -166,10 +166,10 @@ func TestAE4AFallbackDuringPrepareShowsAtTheFirstUpdate(t *testing.T) {
 		}
 		want := []core.Event{core.BotStopped{Bot: "ops", Reason: "writes as you", Warning: writesLost}}
 		if got := botEvents(q[:1]); !slices.Equal(got, want) {
-			t.Errorf("the first update's mate events = %#v, want %#v", got, want)
+			t.Errorf("the first update's bot events = %#v, want %#v", got, want)
 		}
 		if got := botEvents(q); len(got) != 1 {
-			t.Errorf("the queue's mate events = %#v, want the one", got)
+			t.Errorf("the queue's bot events = %#v, want the one", got)
 		}
 		if ops := botEntry(t, q[0], "ops"); ops.State != "writes as you" || ops.Writes {
 			t.Errorf("the first update's ops = %+v, want it writing as you", ops)
@@ -210,10 +210,10 @@ func TestAFallbackMidRunShowsWithinOneSaidTick(t *testing.T) {
 			t.Errorf("the latest ops = %+v, want it writing as you, with the warning", ops)
 		}
 		if got := botEvents([]engine.Update{u}); !slices.Equal(got, want) {
-			t.Errorf("the latest update's mate events = %#v, want %#v", got, want)
+			t.Errorf("the latest update's bot events = %#v, want %#v", got, want)
 		}
 		if got := botEvents(m.drained()); !slices.Equal(got, want) {
-			t.Errorf("the queue's mate events = %#v, want %#v", got, want)
+			t.Errorf("the queue's bot events = %#v, want %#v", got, want)
 		}
 
 		m.finish(t)
@@ -247,7 +247,7 @@ func TestAE5AFailedRenewalStopsTheBotAndASuccessfulOneMakesItActAgain(t *testing
 			core.BotActsAgain{Bot: "developer"},
 		}
 		if got := botEvents(m.drained()); !slices.Equal(got, want) {
-			t.Errorf("the queue's mate events = %#v, want %#v", got, want)
+			t.Errorf("the queue's bot events = %#v, want %#v", got, want)
 		}
 
 		m.finish(t)
@@ -263,7 +263,7 @@ func TestAnUnchangedReadingStepsNothing(t *testing.T) {
 		failing.set(map[string]string{"developer": notRenewed})
 		tick()
 		if got := botEvents(m.drained()); len(got) != 2 {
-			t.Fatalf("the queue's mate events = %#v, want ops's and developer's", got)
+			t.Fatalf("the queue's bot events = %#v, want ops's and developer's", got)
 		}
 		m.settle()
 
@@ -348,7 +348,7 @@ func TestABotThatCannotActAtStartupShowsItsReasonAndIgnoresItsReadings(t *testin
 		tick()
 
 		if got := botEvents(m.drained()); len(got) != 0 {
-			t.Errorf("the queue's mate events = %#v, want none for a mate that cannot act", got)
+			t.Errorf("the queue's bot events = %#v, want none for a bot that cannot act", got)
 		}
 
 		m.finish(t)

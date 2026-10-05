@@ -38,7 +38,7 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 
 	last := -1
 	for _, title := range []string{
-		"crew ╱", "Mates ─", "Workflow ─", "Actions ─", "Queues ─", "Handled ─", "Events ─", "q stop",
+		"crew ╱", "Bots ─", "Board ─", "Actions ─", "Queues ─", "Handled ─", "Events ─", "q stop",
 	} {
 		i := strings.Index(view, title)
 		if i <= last {
@@ -50,7 +50,7 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 
 // Covers R21 and KTD8: a 28-row window gives Events, then Handled, their
 // minimum, and both scroll. It is the 24 rows these sections took before
-// Mates, plus Mates' rule, your two rows and the blank row above it.
+// Bots, plus Bots' rule, your two rows and the blank row above it.
 func TestA28RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
 	view := fitted(t, 80, 28, eventful())
 
@@ -105,7 +105,7 @@ func TestFocusAndScrollMoveHandledAndEvents(t *testing.T) {
 	contains(t, h.view(), "listed 30 issues")
 
 	h.send(tab)
-	// The Mates section marks what runs as an entry with ▸ too, inside a
+	// The Bots section marks what runs as an entry with ▸ too, inside a
 	// row, so only a ▸ opening a section's title is focus.
 	if v := h.view(); strings.Contains(v, "\n▸ ") {
 		t.Errorf("a third tab left a section focused:\n%s", v)
@@ -175,7 +175,7 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 	view := fitted(t, 120, 0, handledSnapshot())
 
 	contains(t, view,
-		"Workflow ─", "Actions ─", "Queues ─", "Handled ─", "Events ─",
+		"Board ─", "Actions ─", "Queues ─", "Handled ─", "Events ─",
 		"⠋ running", "◌ taking", "○ #2",
 		" GIVEN UP ", " NEEDS ATTENTION ", "×",
 	)

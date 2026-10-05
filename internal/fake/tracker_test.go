@@ -305,7 +305,7 @@ func TestActingTrackerRecordsWhoItActsAsAndReturnsTheScriptedCodeOwners(t *testi
 	}
 	for _, other := range []any{fake.NewTracker(), fake.NewReportingTracker()} {
 		if _, ok := other.(port.Acting); ok {
-			t.Errorf("%T acts as a mate; only an ActingTracker should", other)
+			t.Errorf("%T acts as a bot; only an ActingTracker should", other)
 		}
 		if _, ok := other.(port.CodeOwnerFinder); ok {
 			t.Errorf("%T finds the code owners; only an ActingTracker should", other)
@@ -320,9 +320,9 @@ func TestActingTrackerReturnsTheScriptedWritesWarningAndLogin(t *testing.T) {
 	if got, login := reporter.WriterLost(), finder.Login(); got != "" || login != "" {
 		t.Errorf("WriterLost, Login before their setters = %q, %q; want both empty", got, login)
 	}
-	tr.SetWriterLost("crew's writes as mate ops went back to you")
+	tr.SetWriterLost("crew's writes as bot ops went back to you")
 	tr.SetLogin("octocat")
-	if got := reporter.WriterLost(); got != "crew's writes as mate ops went back to you" {
+	if got := reporter.WriterLost(); got != "crew's writes as bot ops went back to you" {
 		t.Errorf("WriterLost = %q, want the warning set", got)
 	}
 	if got := finder.Login(); got != "octocat" {

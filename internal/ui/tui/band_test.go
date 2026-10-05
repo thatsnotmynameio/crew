@@ -151,7 +151,7 @@ func TestAnEntryHeldAgainSaysWhichRuleHoldsIt(t *testing.T) {
 
 	contains(t, view, "#31 Add login form  triage 10m00s · now in development")
 	if strings.Count(view, "now in") != 1 {
-		t.Errorf("an entry no stage holds says where it is:\n%s", view)
+		t.Errorf("an entry no rule holds says where it is:\n%s", view)
 	}
 }
 

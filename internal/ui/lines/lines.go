@@ -98,9 +98,9 @@ func Text(e core.Event) string {
 func botText(e core.Event) (string, bool) {
 	switch e := e.(type) {
 	case core.BotStopped:
-		return fmt.Sprintf("mate %s stopped acting: %s", e.Bot, e.Warning), true
+		return fmt.Sprintf("bot %s stopped acting: %s", e.Bot, e.Warning), true
 	case core.BotActsAgain:
-		return fmt.Sprintf("mate %s acts again: its token renewed", e.Bot), true
+		return fmt.Sprintf("bot %s acts again: its token renewed", e.Bot), true
 	}
 	return "", false
 }

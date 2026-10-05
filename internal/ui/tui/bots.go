@@ -10,10 +10,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// entryRows are the rows a Mates entry takes with its details.
+// entryRows are the rows a Bots entry takes with its details.
 const entryRows = 2
 
-// botsSection is the Mates section: its summary and, per entry, a row with
+// botsSection is the Bots section: its summary and, per entry, a row with
 // its name, short state and totals, then, with details, a row with what
 // acts as it and what runs as it now (R1 to R8, KTD6, KTD7, KTD11).
 func (m Model) botsSection(details bool) (string, []string) {
@@ -68,7 +68,7 @@ func botsSummary(entries []core.BotView) string {
 		parts = append(parts, fmt.Sprintf("%d cannot act", unable))
 	}
 	if len(parts) == 0 {
-		return "no mates"
+		return "no bots"
 	}
 	return strings.Join(parts, " · ")
 }
@@ -105,7 +105,7 @@ func (m Model) botTotals(s crew.Spend) string {
 }
 
 // botDetails is e's second row, in width cells: crew's writes when they go
-// as it, the stage/action pairs that act as it, after "→ you:" on a bot
+// as it, the rule/action pairs that act as it, after "→ you:" on a bot
 // that cannot act, then the actions running as it now, or "none". A row too
 // wide cuts its pairs first, so the running actions stay whole (R5, KTD7).
 func (m Model) botDetails(e core.BotView, width int) string {

@@ -56,7 +56,7 @@ func TestASucceededRuleIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 		t.Fatalf("entry:\n got %#v\nwant %#v", got, want)
 	}
 	if got.NeedsAttention() {
-		t.Fatal("a succeeded stage needs attention")
+		t.Fatal("a succeeded rule needs attention")
 	}
 	if got.Duration() != ended.Sub(taken) {
 		t.Fatalf("duration: got %v, want %v", got.Duration(), ended.Sub(taken))
@@ -84,7 +84,7 @@ func TestAFailedRuleIsHandledWithItsFailedActionsOnceItsReportSettles(t *testing
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
 	if !got.NeedsAttention() {
-		t.Fatal("a failed stage does not need attention")
+		t.Fatal("a failed rule does not need attention")
 	}
 }
 
@@ -103,7 +103,7 @@ func TestASucceededRuleWhoseVerdictMoveIsGivenUpNeedsAttention(t *testing.T) {
 			got.To, got.Move, got.DropReason)
 	}
 	if got.Failures != nil {
-		t.Fatalf("failures of a succeeded stage: %#v", got.Failures)
+		t.Fatalf("failures of a succeeded rule: %#v", got.Failures)
 	}
 	if !got.NeedsAttention() {
 		t.Fatal("a given-up verdict move does not need attention")
@@ -145,13 +145,13 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) 
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
 	d.settle(verdict)
 	if got := onlyEntry(t, d); got.Rule != "implement" || got.HeldBy != "" {
-		t.Fatalf("first entry: got stage %q, held by %q; want implement, held by none", got.Rule, got.HeldBy)
+		t.Fatalf("first entry: got rule %q, held by %q; want implement, held by none", got.Rule, got.HeldBy)
 	}
 
 	take, _ := d.poll(issue("1", 1, readyToReview))
 	taken := d.now
 	if got := onlyEntry(t, d); got.Rule != "implement" || got.HeldBy != "review" {
-		t.Fatalf("entry while #1 is held again: got stage %q, held by %q; want implement, held by review",
+		t.Fatalf("entry while #1 is held again: got rule %q, held by %q; want implement, held by review",
 			got.Rule, got.HeldBy)
 	}
 	d.settle(take)

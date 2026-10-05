@@ -23,7 +23,7 @@ func recordSteps() (context.Context, *[]string) {
 // login, the code owners, the labels, then one per label it creates, naming it.
 func prepareSteps(created []string) []string {
 	steps := make([]string, 0, 3+len(created))
-	steps = append(steps, "checking the gh login", "finding the boss", "reading the repository's labels")
+	steps = append(steps, "checking the gh login", "finding the code owners", "reading the repository's labels")
 	for _, name := range created {
 		steps = append(steps, fmt.Sprintf("creating the label %q", name))
 	}
@@ -36,7 +36,7 @@ func TestPrepareWithoutAuthTellsYouToLogIn(t *testing.T) {
 	ctx, steps := recordSteps()
 	err := tr.Prepare(ctx, []crew.State{ready})
 	if err == nil || !strings.Contains(err.Error(), "gh auth login") {
-		t.Errorf("Prepare = %v, want an error telling the boss to run gh auth login", err)
+		t.Errorf("Prepare = %v, want an error telling you to run gh auth login", err)
 	}
 	if want := []string{"checking the gh login"}; !slices.Equal(*steps, want) {
 		t.Errorf("steps = %q, want %q", *steps, want)

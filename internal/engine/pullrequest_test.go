@@ -42,7 +42,7 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsVerdictOnThePullRequests(
 		}
 		end := tr.PullRequestReports("1")[1].End
 		if len(end.Actions) != 1 || end.Actions[0].State != crew.ActionSucceeded {
-			t.Errorf("stage end = %+v, want development succeeded", end)
+			t.Errorf("rule end = %+v, want development succeeded", end)
 		}
 
 		r.engine.Stop()

@@ -65,7 +65,7 @@ func TestAHandledEntryIsGoneWhenTheNextListingDoesNotFindItAloneInARulesLabel(t 
 	blockedInReady.Blocked = true
 	tests := []goneCase{
 		{
-			name: "found alone in the next stage's label", rules: reviewClosed(), outcome: succeeded,
+			name: "found alone in the next rule's label", rules: reviewClosed(), outcome: succeeded,
 			listed: []crew.Issue{in(readyToReview)}, wantTo: readyToReview,
 		},
 		{
@@ -73,23 +73,23 @@ func TestAHandledEntryIsGoneWhenTheNextListingDoesNotFindItAloneInARulesLabel(t 
 			wantTo: readyToReview, wantGone: true,
 		},
 		{
-			name: "blocked in the next stage's label", rules: draft(), outcome: succeeded,
+			name: "blocked in the next rule's label", rules: draft(), outcome: succeeded,
 			listed: []crew.Issue{blocked}, wantTo: readyToReview,
 		},
 		{
-			name: "in the next stage's label and another crew state", rules: draft(), outcome: succeeded,
+			name: "in the next rule's label and another crew state", rules: draft(), outcome: succeeded,
 			listed: []crew.Issue{in(readyToReview, ready)}, wantTo: readyToReview, wantGone: true,
 		},
 		{
-			name: "found alone in another stage's label", rules: draft(), outcome: succeeded,
+			name: "found alone in another rule's label", rules: draft(), outcome: succeeded,
 			listed: []crew.Issue{blockedInReady}, wantTo: readyToReview, wantGone: true,
 		},
 		{
-			name: "moved to a state that is no stage's label", rules: draft(), outcome: failed("tests fail"),
+			name: "moved to a state that is no rule's label", rules: draft(), outcome: failed("tests fail"),
 			wantTo: needsAttention,
 		},
 		{
-			name: "its move to the next stage's label given up", rules: draft(), outcome: succeeded,
+			name: "its move to the next rule's label given up", rules: draft(), outcome: succeeded,
 			dropped: true, wantTo: readyToReview, wantGone: true,
 		},
 	}

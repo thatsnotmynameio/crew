@@ -14,13 +14,13 @@ import (
 // Covers KTD14.
 func TestCleanStripsEscapesAndControlCharactersOntoOneLine(t *testing.T) {
 	for in, want := range map[string]string{
-		"Stage\x1b[31m labels\x1b[0m": "Stage labels",
-		"ring\x07 the bell":           "ring the bell",
-		"title\x1b]0;evil\x07 after":  "title after",
-		"two\nlines\r\n  and\ttabs":   "two lines and tabs",
-		"c1 \u009b31m control":        "c1 31m control",
-		"plain":                       "plain",
-		"  spaced   out  ":            "spaced out",
+		"Rule\x1b[31m labels\x1b[0m": "Rule labels",
+		"ring\x07 the bell":          "ring the bell",
+		"title\x1b]0;evil\x07 after": "title after",
+		"two\nlines\r\n  and\ttabs":  "two lines and tabs",
+		"c1 \u009b31m control":       "c1 31m control",
+		"plain":                      "plain",
+		"  spaced   out  ":           "spaced out",
 	} {
 		if got := clean(in); got != want {
 			t.Errorf("clean(%q) = %q, want %q", in, got, want)
@@ -57,11 +57,11 @@ func TestAReferenceLinksToItsPage(t *testing.T) {
 func TestARuleFillsTheWidth(t *testing.T) {
 	m := testModel()
 	for _, width := range []int{80, 120} {
-		r := m.rule("Workflow", "2 issues", width, false)
+		r := m.rule("Board", "2 issues", width, false)
 		if w := lipgloss.Width(r); w != width {
 			t.Errorf("rule at %d is %d wide: %q", width, w, ansi.Strip(r))
 		}
-		if !strings.HasPrefix(ansi.Strip(r), "Workflow ─") || !strings.HasSuffix(ansi.Strip(r), "─ 2 issues") {
+		if !strings.HasPrefix(ansi.Strip(r), "Board ─") || !strings.HasSuffix(ansi.Strip(r), "─ 2 issues") {
 			t.Errorf("rule = %q", ansi.Strip(r))
 		}
 	}

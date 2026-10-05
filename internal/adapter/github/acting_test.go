@@ -50,13 +50,13 @@ const opsLogin = "crew-ops[bot]"
 // The warnings the tracker reports when ops's writes went back to you,
 // one per refusal kind.
 const (
-	lostCredentials = "crew's writes as mate ops went back to you: GitHub refused its credentials, " +
-		"as when its token was revoked or expired; restart crew, and run `crew mates create ops` " +
+	lostCredentials = "crew's writes as bot ops went back to you: GitHub refused its credentials, " +
+		"as when its token was revoked or expired; restart crew, and run `crew bots create ops` " +
 		"in this repository if it happens again; crew writes as you until it restarts"
-	lostPermission = "crew's writes as mate ops went back to you: GitHub refused it a permission; " +
-		"run `crew mates create ops` in this repository; crew writes as you until it restarts"
-	lostAccess = "crew's writes as mate ops went back to you: it lost access to the repository; " +
-		"run `crew mates create ops` in this repository to install it; crew writes as you until it restarts"
+	lostPermission = "crew's writes as bot ops went back to you: GitHub refused it a permission; " +
+		"run `crew bots create ops` in this repository; crew writes as you until it restarts"
+	lostAccess = "crew's writes as bot ops went back to you: it lost access to the repository; " +
+		"run `crew bots create ops` in this repository to install it; crew writes as you until it restarts"
 )
 
 // wantWriterLost checks that tr reports want as its writes warning.
@@ -73,7 +73,7 @@ func wantWriterLost(t *testing.T, tr *Tracker, want string) {
 func opsWriter(renewed *atomic.Int32, renewErr error) port.Identity {
 	return port.Identity{
 		Bot: "ops", Login: opsLogin,
-		Env:   []string{"GH_CONFIG_DIR=/run/crew-mates/ops/crew"},
+		Env:   []string{"GH_CONFIG_DIR=/run/crew-bots/ops/crew"},
 		Unset: []string{"GH_TOKEN", "GITHUB_TOKEN"},
 		Renew: func(context.Context) error {
 			renewed.Add(1)
@@ -164,7 +164,7 @@ func checkWritesAsOps(t *testing.T, gh *fakeGh) int {
 			if runsAs(c) != asYou {
 				t.Errorf("read %q ran with %q, unset %q; want yours", c.Args, c.Env, c.Unset)
 			}
-		case !slices.Equal(c.Env, []string{"GH_CONFIG_DIR=/run/crew-mates/ops/crew"}) ||
+		case !slices.Equal(c.Env, []string{"GH_CONFIG_DIR=/run/crew-bots/ops/crew"}) ||
 			!slices.Equal(c.Unset, []string{"GH_TOKEN", "GITHUB_TOKEN"}):
 			t.Errorf("write %q ran with %q, unset %q; want ops's", c.Args, c.Env, c.Unset)
 		default:

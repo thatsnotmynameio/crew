@@ -56,7 +56,7 @@ func TestAFailingPreparerStopsTheEngineBeforeAnyListing(t *testing.T) {
 		}
 		want := [][]crew.State{{ready, inProgress, readyToReview, needsAttention}}
 		if got := tr.Calls(); !reflect.DeepEqual(got, want) {
-			t.Errorf("tracker prepared for %v, want the workflow's states %v", got, want)
+			t.Errorf("tracker prepared for %v, want the rules' states %v", got, want)
 		}
 		if got := harness.Calls(); len(got) != 0 {
 			t.Errorf("harness prepared for %v, want it never prepared after the tracker failed", got)

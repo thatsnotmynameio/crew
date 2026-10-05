@@ -245,7 +245,7 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 	}
 	if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
-		t.Errorf("#1 is in %v, want the stage's on_success, ready to review", got)
+		t.Errorf("#1 is in %v, want the rule's success label, ready to review", got)
 	}
 	out := r.stdout.String()
 	containsAll(t, out,
@@ -344,7 +344,7 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 		time.Sleep(300 * time.Second) // the second tick
 		review := next(t, h)
 		if got := review.Run().Prompt; got != "Review implementation for issue #1" {
-			t.Errorf("the second tick's prompt = %q, want the review stage's", got)
+			t.Errorf("the second tick's prompt = %q, want the review rule's", got)
 		}
 		review.End(success)
 		synctest.Wait()

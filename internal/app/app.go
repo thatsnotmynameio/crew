@@ -100,7 +100,7 @@ type Bots struct {
 	Writer port.Identity
 	// Logins are the logins of the configured bots crew knows, whether or
 	// not they act this run: crew takes the issues they opened, and every
-	// session and check gets them as CREW_MATES.
+	// session and check gets them as CREW_BOTS.
 	Logins []string
 	// Warnings say, one line each, which bot cannot act or adds no
 	// co-author, why, and the fix.
@@ -242,11 +242,11 @@ func (b built) bots(ctx context.Context, o Options) (Bots, error) {
 		return Bots{}, nil
 	}
 	if o.Bots == nil {
-		return Bots{}, errors.New("the config names mates, and crew cannot make them act here")
+		return Bots{}, errors.New("the config names bots, and crew cannot make them act here")
 	}
 	m, err := o.Bots(ctx, b.cfg.Bot, b.cfg.Bots)
 	if err != nil {
-		return Bots{}, fmt.Errorf("make the mates act: %w", err)
+		return Bots{}, fmt.Errorf("make the bots act: %w", err)
 	}
 	return m, nil
 }

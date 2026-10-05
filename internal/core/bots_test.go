@@ -55,7 +55,7 @@ func entry(t *testing.T, d *driver, name string) core.BotView {
 			return e
 		}
 	}
-	t.Fatalf("no mates entry %s in %#v", name, d.m.View().Bots)
+	t.Fatalf("no bots entry %s in %#v", name, d.m.View().Bots)
 	return core.BotView{}
 }
 
@@ -86,7 +86,7 @@ func TestAE1ABotShowsItsStateWritesPairsTotalsAndRunningActions(t *testing.T) {
 	d.running(issue("1", 1, ready))
 
 	if got := names(d); !slices.Equal(got, []string{"clerk", "developer", "reviewer", "you"}) {
-		t.Fatalf("entries = %v, want the mates in config order, then you", got)
+		t.Fatalf("entries = %v, want the bots in config order, then you", got)
 	}
 	triaged := spent.Spend().Add(spent.Spend()).Add(spent.Spend())
 	want := core.BotView{
@@ -326,6 +326,6 @@ func TestTheBotsViewSharesNoMemoryWithTheModel(t *testing.T) {
 		t.Fatalf("developer after changing a view = %#v", got)
 	}
 	if !entry(t, d, "clerk").Writes {
-		t.Fatalf("changing the config after New changed the default mate")
+		t.Fatalf("changing the config after New changed the default bot")
 	}
 }

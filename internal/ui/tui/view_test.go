@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -48,4 +51,24 @@ func TestAWrittenBoardRendersTheGoldenView(t *testing.T) {
 	h.send(updateMsg(u))
 
 	golden(t, "written-board", h.view())
+}
+
+// oldWords are the words crew's interface no longer says (R17).
+var oldWords = regexp.MustCompile(`(?i)\b(boss(es)?|mates?|stages?|workflows?)\b`)
+
+// Covers R17: no golden view says boss, mate, stage or workflow.
+func TestNoGoldenViewSaysAnOldWord(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("testdata", "*.golden"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("golden views: %v, %v", paths, err)
+	}
+	for _, path := range paths {
+		view, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found := oldWords.FindAllString(string(view), -1); len(found) > 0 {
+			t.Errorf("%s says %q", path, found)
+		}
+	}
 }

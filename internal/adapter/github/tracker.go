@@ -447,10 +447,10 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		}
 		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
 	}
-	port.Step(ctx, "finding the boss")
+	port.Step(ctx, "finding the code owners")
 	codeOwners, err := t.findCodeOwners(ctx)
 	if err != nil {
-		return fmt.Errorf("tracker github: find the boss: %w", err)
+		return fmt.Errorf("tracker github: find the code owners: %w", err)
 	}
 	t.mu.Lock()
 	t.codeOwners = codeOwners
