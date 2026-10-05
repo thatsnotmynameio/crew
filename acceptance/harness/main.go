@@ -18,9 +18,9 @@ import (
 const acceptFlag = "accept-snapshots"
 
 // Main is every test package's TestMain. When the test binary runs under
-// the name of a double, such as the probe, Main runs that double and exits
-// with its code; otherwise it registers -accept-snapshots and runs the
-// tests.
+// the name of a double (gh, claude or the probe), Main runs that double and
+// exits with its code; otherwise it registers -accept-snapshots and runs
+// the tests.
 func Main(m *testing.M) {
 	if double, ok := doubles()[filepath.Base(os.Args[0])]; ok {
 		os.Exit(double())
@@ -34,6 +34,8 @@ func Main(m *testing.M) {
 // symbolic link on PATH or exec.Cmd's Args.
 func doubles() map[string]func() int {
 	return map[string]func() int{
-		probeName: probe,
+		probeName:  probe,
+		ghName:     client(ghName),
+		claudeName: client(claudeName),
 	}
 }

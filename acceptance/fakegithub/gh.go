@@ -159,12 +159,18 @@ func printed(out string) Reply {
 	return Reply{Stdout: []byte(out)}
 }
 
-// quote returns gh's command line for args, each quoted for a POSIX shell
-// where it needs it, and any longer than 200 characters cut with its length
-// shown.
+// quote returns gh's command line for args, as CommandLine writes it.
 func quote(args []string) string {
+	return CommandLine("gh", args)
+}
+
+// CommandLine returns the command line that runs the program name with
+// args, each argument quoted for a POSIX shell where it needs it, and any
+// longer than 200 characters cut with its length shown. Violations name
+// calls this way.
+func CommandLine(name string, args []string) string {
 	words := make([]string, 0, len(args)+1)
-	words = append(words, "gh")
+	words = append(words, name)
 	for _, a := range args {
 		words = append(words, shellQuote(shorten(a)))
 	}
