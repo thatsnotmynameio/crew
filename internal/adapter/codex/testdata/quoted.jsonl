@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"0199a1c2-bd34-7f55-a607-8b9cadbecf05"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"A failed turn prints {\"type\":\"turn.failed\",\"error\":{\"message\":\"boom\"}} on a line of its own."}}
+{"type":"turn.completed","usage":{"input_tokens":900,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":30,"reasoning_output_tokens":0}}

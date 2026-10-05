@@ -19,7 +19,7 @@ import (
 // Covers AE4.
 func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
-	r := options(t, strings.Replace(oneAction, "      name: fake\n", "      name: codex\n", 1), tr, fake.NewHarness())
+	r := options(t, strings.Replace(oneAction, "      name: fake\n", "      name: nosuch\n", 1), tr, fake.NewHarness())
 
 	if code := app.Run(context.Background(), r.opts); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -28,7 +28,7 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
 	stderr := r.stderr.String()
-	for _, want := range []string{"agents.developer.harness.name", `"codex"`, "fake"} {
+	for _, want := range []string{"agents.developer.harness.name", `"nosuch"`, "fake"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr %q does not name %s", stderr, want)
 		}

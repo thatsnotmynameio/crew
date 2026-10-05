@@ -2,7 +2,7 @@
 
 Guidance for coding agents working in this repository. Claude Code reads it as `CLAUDE.md`, a symlink to this file.
 
-crew is a Go program that polls a tracker (GitHub) and moves each issue through the rules a repository declares on its labels in `.crew/config.yaml`, running one coding-agent session (Claude Code) per action in its own git worktree. Its users run it in their own repositories, where it takes the issues their code owners and bots opened.
+crew is a Go program that polls a tracker (GitHub) and moves each issue through the rules a repository declares on its labels in `.crew/config.yaml`, running one coding-agent session (Claude Code or Codex) per action in its own git worktree. Its users run it in their own repositories, where it takes the issues their code owners and bots opened.
 
 ## Commands
 
@@ -40,7 +40,7 @@ Ports and adapters with a pure core.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
 - `internal/proc`: the only way to start a child process (own process group, stop with deadline, kill all; `StartDetached` for the browser opener).
 - `internal/bots`: `crew bots create`, crew's own GitHub identities (private GitHub Apps): names, manifest, loopback page, GitHub API signed as the bot, the bots' files under the user config dir (`crew/bots`, and the older `crew/mates` read as a fallback); `Act`, which makes the configured bots act: repository tokens renewed in private gh config directories, and the git environment of the co-author hook.
-- `internal/adapter/{github,claude,git,shell}`: the adapters.
+- `internal/adapter/{github,claude,codex,git,shell}`: the adapters.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
 - **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea, Lip Gloss and Bubbles; only tests import `fake`; `bots` imports only the standard library and `proc`, and only `cmd/crew` imports it.
