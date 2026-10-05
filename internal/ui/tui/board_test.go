@@ -16,7 +16,7 @@ import (
 )
 
 // crewRules is this repository's rules, with both promote rules
-// hidden (AE1).
+// hidden (AE1) and muted, as rules without actions are by default.
 var crewRules = []crew.Rule{
 	{
 		Name:     "promote brainstorm",
@@ -26,14 +26,19 @@ var crewRules = []crew.Rule{
 	{
 		Name:   "triage",
 		Labels: crew.Labels{Ready: "crew:triage:ready", Success: "crew:triage:done", Failure: "crew:triage:failed"},
+		Notify: true,
 	},
 	{
 		Name:     "promote triage",
 		Labels:   crew.Labels{Ready: "crew:triage:done", Success: "crew:development:ready"},
 		OffBoard: true,
 	},
-	{Name: "development", Labels: crew.Labels{Ready: "crew:development:ready", Failure: "crew:development:failed"}},
-	{Name: "fix", Labels: crew.Labels{Ready: "crew:fix:ready", Failure: "crew:fix:failed"}},
+	{
+		Name:   "development",
+		Labels: crew.Labels{Ready: "crew:development:ready", Failure: "crew:development:failed"},
+		Notify: true,
+	},
+	{Name: "fix", Labels: crew.Labels{Ready: "crew:fix:ready", Failure: "crew:fix:failed"}, Notify: true},
 }
 
 var twelve = crew.Issue{Key: "12", Ref: "#12", Title: "Stage labels", URL: "https://github.com/o/r/issues/12"}

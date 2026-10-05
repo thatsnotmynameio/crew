@@ -65,7 +65,7 @@ func TestAE5ARuleEndNotifiesWhileUnfocusedButAHiddenRulesDoesNot(t *testing.T) {
 	}
 
 	if notes := raws(h.send(updateMsg(ended("promote triage", "crew:development:ready", 1)))); len(notes) != 0 {
-		t.Errorf("the hidden promote triage notified: %q", notes)
+		t.Errorf("the muted promote triage notified: %q", notes)
 	}
 }
 
@@ -227,13 +227,13 @@ func sequenced(msg tea.Msg) []tea.Cmd {
 	return out
 }
 
-// Covers AE9: a configured board leaves the notifications to on_board.
+// Covers AE9: a configured board leaves the notifications to notify.
 func TestAE9WithABoardAHiddenRulesEndStillNotifiesNothing(t *testing.T) {
 	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 	h.send(tea.BlurMsg{})
 
 	if notes := raws(h.send(updateMsg(ended("promote triage", "crew:development:ready", 3)))); len(notes) != 0 {
-		t.Errorf("the hidden promote triage notified: %q", notes)
+		t.Errorf("the muted promote triage notified: %q", notes)
 	}
 	if notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 1)))); len(notes) != 1 {
 		t.Errorf("triage's end sent %q, want one notification", notes)
@@ -259,5 +259,40 @@ func TestAFailureHeldAgainDoesNotCountAsNeedingAttention(t *testing.T) {
 	}
 	if p := h.model.View().ProgressBar; p == nil || p.State != tea.ProgressBarIndeterminate {
 		t.Errorf("progress during the retry = %+v, want indeterminate", p)
+	}
+}
+
+// notifyRules are a rule with actions whose notify is off, and a rule
+// without actions whose notify is on (R9).
+var notifyRules = []crew.Rule{
+	{
+		Name:    "review",
+		Labels:  crew.Labels{Ready: "ready to review", Success: "ready to merge", Failure: "needs attention"},
+		Actions: []crew.Action{{Name: "review"}},
+	},
+	{Name: "promote", Labels: crew.Labels{Ready: "approved", Success: "ready to merge"}, Notify: true},
+}
+
+// Covers R9.
+func TestNotifyDecidesWhetherARulesEndNotifies(t *testing.T) {
+	h := newRulesHarness(t, 120, notifyRules)
+	h.send(tea.BlurMsg{})
+
+	u := ended("review", "needs attention", 3)
+	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "review", Reason: "boom"}}
+	if notes := raws(h.send(updateMsg(u))); len(notes) != 0 {
+		t.Errorf("review's failure notified with notify off: %q", notes)
+	}
+	if notes := raws(h.send(updateMsg(ended("promote", "ready to merge", 1)))); len(notes) != 1 {
+		t.Errorf("promote's end sent %q, want one notification", notes)
+	}
+}
+
+func TestAnEntryOfARuleNoLongerConfiguredIsMuted(t *testing.T) {
+	h := newRulesHarness(t, 120, notifyRules)
+	h.send(tea.BlurMsg{})
+
+	if notes := raws(h.send(updateMsg(ended("gone", "ready to merge", 1)))); len(notes) != 0 {
+		t.Errorf("an entry of a rule not configured notified: %q", notes)
 	}
 }

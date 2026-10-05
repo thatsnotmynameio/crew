@@ -290,7 +290,7 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 }
 
 func TestTheEntriesSpendSumsToTheViewsSpent(t *testing.T) {
-	rules := hiddenReview()
+	rules := draft()
 	rules[0].Actions[1].Bot = "developer"
 	rules[1].Actions[0].Bot = "reviewer"
 	d := botsDriver(t, rules, core.BotsConfig{

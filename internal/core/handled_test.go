@@ -270,20 +270,8 @@ func TestAViewsHandledEntriesShareNoMemoryWithTheModel(t *testing.T) {
 	}
 }
 
-// hiddenReview is the draft rules with review hidden from the board and
-// a merge rule taking what review approved.
-func hiddenReview() []crew.Rule {
-	rules := draft()
-	rules[1].OffBoard = true
-	return append(rules, crew.Rule{
-		Name:    "merge",
-		Labels:  crew.Labels{Ready: readyToMerge, Running: "merging", Success: "merged", Failure: needsAttention},
-		Actions: []crew.Action{{Name: "merge", Prompt: "Merge {{.Issue.Ref}}"}},
-	})
-}
-
-// reviewed runs #1 through implement, then through the hidden review with
-// outcome, and settles every move.
+// reviewed runs #1 through implement, then through review with outcome, and
+// settles every move.
 func reviewed(d *driver, outcome crew.Outcome) {
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
@@ -294,48 +282,13 @@ func reviewed(d *driver, outcome crew.Outcome) {
 	d.settle(verdict)
 }
 
-func TestAHiddenRuleThatSucceedsKeepsTheEarlierEntryMarkedGone(t *testing.T) {
-	d := newDriver(t, hiddenReview(), 2)
+// A rule with actions replaces the earlier entry even when both ended well:
+// only a rule without actions keeps it (KTD6).
+func TestARuleWithActionsThatSucceedsReplacesAnEarlierEntryThatEndedWell(t *testing.T) {
+	d := newDriver(t, draft(), 2)
 	reviewed(d, succeeded)
-	if got := onlyEntry(t, d); got.Rule != "implement" || got.To != readyToReview || !got.Gone || got.HeldBy != "" {
-		t.Fatalf("entry after the hidden review: got %#v, want implement's, gone, held by none", got)
-	}
 
-	d.poll(issue("1", 1, readyToMerge))
-	if got := onlyEntry(t, d); got.Rule != "implement" || !got.Gone || got.HeldBy != "merge" {
-		t.Fatalf("entry while merge holds #1: got %#v, want implement's, gone, held by merge", got)
-	}
-}
-
-func TestAHiddenRuleThatFailsReplacesTheEarlierEntry(t *testing.T) {
-	d := newDriver(t, hiddenReview(), 2)
-	reviewed(d, failed("changes requested"))
-	got := onlyEntry(t, d)
-	if got.Rule != "review" || got.To != needsAttention || !got.NeedsAttention() {
-		t.Fatalf("entry after the failed hidden review: got %#v, want review's, needing attention", got)
-	}
-}
-
-func TestAHiddenRuleThatSucceedsOnAnIssueWithNoEntryAddsItsOwn(t *testing.T) {
-	d := newDriver(t, hiddenReview(), 2)
-	d.running(issue("1", 1, readyToReview))
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "custom_review", Outcome: succeeded})
-	d.settle(verdict)
 	if got := onlyEntry(t, d); got.Rule != "review" || got.To != readyToMerge || got.Gone {
-		t.Fatalf("entry: got %#v, want review's, not gone", got)
-	}
-}
-
-func TestAHiddenRuleThatSucceedsReplacesAnEarlierEntryNeedingAttention(t *testing.T) {
-	d := newDriver(t, hiddenReview(), 2)
-	reviewed(d, failed("changes requested"))
-
-	d.running(issue("1", 1, readyToReview))
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "custom_review", Outcome: succeeded})
-	d.settle(verdict)
-
-	got := onlyEntry(t, d)
-	if got.Rule != "review" || got.To != readyToMerge || got.NeedsAttention() {
-		t.Fatalf("entry after the retried hidden review: got %#v, want review's success", got)
+		t.Fatalf("entry after review: got %#v, want review's, not gone", got)
 	}
 }

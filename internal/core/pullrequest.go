@@ -27,8 +27,9 @@ type pendingReport struct {
 
 // reportPullRequests queues the report that follows h's move to to, which
 // landed, unless pull request reports are off (KTD2). ended is set when the
-// move ended h's rule, so the report carries how it ended. The report's ID
-// is fixed for its life (KTD7).
+// move ended h's rule, so the report carries how it ended, unless the rule
+// has no actions: nobody stopped watching anything, so there is nothing to
+// tell (KTD5). The report's ID is fixed for its life (KTD7).
 func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	m := s.m
 	if m.pullRequests == nil {
@@ -38,7 +39,7 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	r := crew.PullRequestReport{
 		ID: strconv.FormatUint(uint64(m.lastID), 10), IssueKey: h.issue.Key, IssueRef: h.issue.Ref, State: to,
 	}
-	if ended {
+	if ended && len(h.actions) > 0 {
 		r.End = s.ruleEnd(h)
 	}
 	sl := m.pullRequests[r.IssueKey]

@@ -409,19 +409,30 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 // taken applies the take to the board (KTD4), reports it on h's pull
 // requests and starts h's actions once its take move is done, or, after a
 // stop, ends them unstarted so the issue moves to its rule's on_failure
-// (R9).
+// (R9). A rule without actions is judged at once, after a stop too, so the
+// issue moves on to its rule's success (R8, KTD5).
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
 	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 	m.boardMoved(h.issue, c.to)
 	s.reportPullRequests(h, c.to, false)
 	h.settle(c)
-	if m.stopping {
+	switch {
+	case len(h.actions) == 0:
+		s.judge(h)
+	case m.stopping:
 		for _, a := range h.actions {
 			s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
 		}
-		return
+	default:
+		s.start(h)
 	}
+}
+
+// start starts h's actions, each in a new workspace or in its failed run's
+// (R5), and reports h running unless every action already ended.
+func (s *step) start(h *heldIssue) {
+	m := s.m
 	h.claim = ClaimRunning
 	for _, a := range h.actions {
 		prompt, err := crew.Action{Name: a.name, Prompt: a.prompt}.Render(h.issue)
@@ -545,9 +556,9 @@ func (m *Model) findCall(id CallID) (*heldIssue, *call) {
 }
 
 // release forgets h, keeping its handled entry, which replaces the issue's
-// earlier one, when its rule ended. A rule hidden from the board that
-// ended well keeps an earlier entry that ended well too, marked Gone: its
-// move took the issue out of the entry's To (#109).
+// earlier one, when its rule ended. A rule without actions that ended well
+// keeps an earlier entry that ended well too, marked Gone: its move took the
+// issue out of the entry's To (#109, R10, KTD6).
 func (m *Model) release(h *heldIssue) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
 	if h.verdict == nil {
@@ -555,7 +566,7 @@ func (m *Model) release(h *heldIssue) {
 	}
 	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
 	if i >= 0 {
-		if m.rules[h.rule].OffBoard && !h.verdict.NeedsAttention() && !m.handled[i].view.NeedsAttention() {
+		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !m.handled[i].view.NeedsAttention() {
 			m.handled[i].view.Gone = true
 			return
 		}

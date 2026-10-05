@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,9 +38,9 @@ func newOutsideState() *outsideState {
 
 // notifications returns one desktop notification for each Handled entry not
 // seen before, while the terminal has no focus (R25, KTD6). An entry of a
-// rule with on_board: false sends none, whatever the board draws (R14,
-// KTD9), and none does once a stop was asked for. Every entry counts as
-// seen, so focus coming back sends nothing late.
+// rule whose notify is off sends none, whatever the board draws (R9), and
+// none does once a stop was asked for. Every entry counts as seen, so focus
+// coming back sends nothing late.
 func (m Model) notifications() []tea.Cmd {
 	var out []tea.Cmd
 	for _, e := range m.snap.Handled {
@@ -57,11 +58,11 @@ func (m Model) notifications() []tea.Cmd {
 }
 
 // muted reports whether the rule named name sends no notification: it is
-// not in the rules, or on_board: false hides it from the board of the
-// rules (R14).
+// not in the rules, or its notify is off (R9). It looks the name up among
+// the rules, never among the board's columns.
 func (m Model) muted(name string) bool {
-	i := m.columnIndex(name)
-	return i < 0 || m.cfg.Rules[i].OffBoard
+	i := slices.IndexFunc(m.cfg.Rules, func(r crew.Rule) bool { return r.Name == name })
+	return i < 0 || !m.cfg.Rules[i].Notify
 }
 
 // noteText says which rule ended on which issue and how (R25), cleaned and
@@ -77,7 +78,7 @@ func noteText(e core.HandledView) string {
 	return capped(fmt.Sprintf("crew: %s %s on %s %s; %s", e.Rule, verb, e.Issue.Ref, e.Issue.Title, how))
 }
 
-// attention counts the Handled entries that need you, hidden rules
+// attention counts the Handled entries that need you, muted rules
 // included.
 func (m Model) attention() int {
 	n := 0
