@@ -16,7 +16,7 @@ import (
 const (
 	avatarWidth = 5
 	avatarRows  = 3
-	avatarHalf  = 3
+	avatarHalf  = (avatarWidth + 1) / 2
 	// avatarHues is how many hues an avatar takes its colour from (KTD5).
 	avatarHues = 6
 	// pixelRows are the pixel rows a cell draws, top and bottom.
