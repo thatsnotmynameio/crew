@@ -30,3 +30,4 @@ coverage.out
 .context/compound-engineering/
 
 .crew/config.yaml
+*.local*
