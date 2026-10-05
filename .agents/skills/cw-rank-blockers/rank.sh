@@ -68,7 +68,9 @@ for login in $logins; do
 done
 
 parent=$(jq -r '(.body // "") | capture("<!-- cw-split-plan: part of #(?<p>[0-9]+) -->").p' "$tmp/issue.json" | head -n 1)
-jq -s --argjson issue "$issue" --arg parent "$parent" '
+# Bodies are cut to $body_limit once the markers are read, so building each
+# request parses a small file.
+jq -s --argjson issue "$issue" --arg parent "$parent" --argjson limit "$body_limit" '
 	add // [] | unique_by(.number) | map(select(
 		.number != $issue
 		and ((.body // "") | contains("<!-- cw-split-plan: split record -->") | not)
@@ -76,7 +78,7 @@ jq -s --argjson issue "$issue" --arg parent "$parent" '
 			.number != ($parent | tonumber)
 			and ((.body // "") | contains("<!-- cw-split-plan: part of #" + $parent + " -->") | not)
 		))
-	))' "$tmp/lists.json" >"$tmp/candidates.json"
+	) | .body = ((.body // "")[:$limit]))' "$tmp/lists.json" >"$tmp/candidates.json"
 numbers=$(jq -r '.[].number' "$tmp/candidates.json")
 
 # The key reaches curl only through this file, written by the shell's own
