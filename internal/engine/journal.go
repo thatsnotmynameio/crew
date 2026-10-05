@@ -32,8 +32,8 @@ const (
 	eventEnded   = "ended"
 )
 
-// journalLine is one line of the run journal. Its field names are the
-// documented format (docs/guide/crew.mdx), so other tools can read it. A
+// journalLine is one line of the run journal. Its field names are a
+// stable format, so other tools can read it. A
 // value the harness did not report is left out, never written as zero, so
 // its field is a pointer. Rule keeps the name stage, from before rules
 // were called stages, so older journals still resume.

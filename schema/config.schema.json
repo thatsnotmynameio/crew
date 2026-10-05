@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json",
   "title": "crew's .crew/config.yaml",
-  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. See docs/guide/crew.mdx in the crew repository.",
+  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. See .crew/config.example.yaml in the crew repository.",
   "type": "object",
   "additionalProperties": false,
   "required": ["rules"],

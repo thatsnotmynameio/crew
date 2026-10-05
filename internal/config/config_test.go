@@ -244,8 +244,8 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("error %v is not fs.ErrNotExist", err)
 	}
-	if want := "docs/guide/crew.mdx"; !strings.Contains(err.Error(), want) {
-		t.Errorf("error %q does not point to the guide (%s) for creating one", err, want)
+	if want := ".crew/config.example.yaml"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not point to the example (%s) for creating one", err, want)
 	}
 }
 

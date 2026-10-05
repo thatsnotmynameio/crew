@@ -16,7 +16,7 @@ permissions:
 
 # A pull request's newer run replaces the older one. Each main commit gets a
 # group of its own and is never cancelled: Codacy waits for every commit's
-# results (docs/develop/quality.mdx).
+# results.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -99,7 +99,7 @@ jobs:
   # its servers; golangci-lint's findings stay in the go job. This is the only
   # job that sees the token, and it runs no code from the repository: it reads
   # the profile and runs Codacy's pinned, checksummed reporter. Off until the
-  # repository variable CODACY_ENABLED is true (docs/develop/quality.mdx).
+  # repository variable CODACY_ENABLED is true.
   codacy:
     name: codacy
     needs: go
@@ -118,7 +118,7 @@ jobs:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: |
           if [ -z "$CODACY_PROJECT_TOKEN" ]; then
-            echo "::error::CODACY_PROJECT_TOKEN is empty or missing. It may have expired: see 'Rotating the Codacy token' in docs/develop/quality.mdx." >&2
+            echo "::error::CODACY_PROJECT_TOKEN is empty or missing. It may have expired: create a new project API token in Codacy and save it as this secret." >&2
             exit 1
           fi
       # The reporter resolves the profile's paths against the checkout.

@@ -1,5 +1,5 @@
 # Weekly pull requests for new versions: the actions and thatsnotmynameio/.github's
-# shared workflows (pinned by SHA), and the docs.page CLI. Dependabot's "npm"
+# shared workflows (pinned by SHA), and the Codacy CLIs. Dependabot's "npm"
 # ecosystem is the one for pnpm too: it reads pnpm-lock.yaml and updates it with pnpm.
 version: 2
 updates:
