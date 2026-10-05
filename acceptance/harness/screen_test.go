@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -28,7 +29,8 @@ func startProbe(t *testing.T, env ...string) *Screen {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := &exec.Cmd{Path: exe, Args: []string{probeName}, Env: append(os.Environ(), env...)}
+	cmd := exec.CommandContext(context.Background(), exe) // the screen harness stops the probe itself
+	cmd.Args[0], cmd.Env = probeName, append(os.Environ(), env...)
 	s := StartScreen(t, cmd, Size{})
 	s.WaitForText(t, "q quit", wait)
 	return s

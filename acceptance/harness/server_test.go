@@ -322,8 +322,12 @@ func TestADoubleWithoutTheServerFailsClearly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unset := run(t, &exec.Cmd{Path: exe, Args: []string{"gh", "api", "user"}, Env: []string{}}, "")
-	gone := run(t, &exec.Cmd{Path: exe, Args: []string{"gh", "api", "user"}, Env: []string{SocketEnv + "=" + socket}}, "")
+	unsetCmd := exec.CommandContext(t.Context(), exe, "api", "user")
+	unsetCmd.Env = []string{}
+	unset := run(t, unsetCmd, "")
+	goneCmd := exec.CommandContext(t.Context(), exe, "api", "user")
+	goneCmd.Env = []string{SocketEnv + "=" + socket}
+	gone := run(t, goneCmd, "")
 
 	if unset.code == 0 || !strings.Contains(unset.stderr, SocketEnv+" is not set") {
 		t.Fatalf("without %s: %+v, want a failure naming it", SocketEnv, unset)
