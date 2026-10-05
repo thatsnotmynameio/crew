@@ -36,9 +36,9 @@ Actions on different agents can run at once on different harnesses. An agent no 
 
 ### Check
 
-A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded.
+A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded. An action points to one check or a list of checks, which run one after another in the listed order.
 
-A check runs only after a successful session, never after a failed one. A check that fails, cannot start, runs out of time or is ended by a stop fails its action, which then takes the same path as any failed action. While its check runs, the action still counts as running.
+A check runs only after a successful session, never after a failed one. It reads the issue from environment variables, and the prompt the session started with and the session's last message from files they name. A check that fails, cannot start, runs out of time or is ended by a stop fails its action, the checks after it do not run, and the action then takes the same path as any failed action. While its checks run, the action still counts as running.
 
 ### Rule run
 

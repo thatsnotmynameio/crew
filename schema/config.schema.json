@@ -183,9 +183,21 @@
                   "minLength": 1
                 },
                 "check": {
-                  "description": "The check that decides whether the action succeeded: one of checks. Without it, the session's own outcome decides.",
-                  "type": "string",
-                  "minLength": 1
+                  "description": "The check, or the list of checks, that decide whether the action succeeded, each one of checks. They run in the listed order after a successful session, and the first that does not pass fails the action. Without it, the session's own outcome decides.",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    }
+                  ]
                 }
               }
             }

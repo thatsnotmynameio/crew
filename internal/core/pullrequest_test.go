@@ -157,7 +157,7 @@ func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionFailed, Cause: crew.CauseSession, Log: space("74", "acceptance").Log},
 			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: space("74", "development").Log,
-				Reason: "no pull request"},
+				Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: "no pull request"}}},
 		}},
 	})
 }

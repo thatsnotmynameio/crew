@@ -21,6 +21,9 @@ var (
 
 	_ port.Session       = UsageSession{}
 	_ port.UsageReporter = UsageSession{}
+
+	_ port.Session             = MessagingSession{}
+	_ port.LastMessageReporter = MessagingSession{}
 )
 
 // The reasons of sessions the fake harness ends itself.
@@ -62,10 +65,12 @@ type Harness struct {
 	ignoreStop bool
 	narrating  bool // its sessions implement port.Narrator
 	reporting  bool // its sessions implement port.UsageReporter
+	messaging  bool // its sessions implement port.LastMessageReporter
 }
 
 // NewHarness returns a harness with no sessions, whose sessions obey Stop.
-// Its sessions implement neither port.Narrator nor port.UsageReporter.
+// Its sessions implement none of port.Narrator, port.UsageReporter and
+// port.LastMessageReporter.
 func NewHarness() *Harness {
 	return &Harness{started: make(chan struct{})}
 }
@@ -83,6 +88,15 @@ func NewNarratingHarness() *Harness {
 func NewUsageHarness() *Harness {
 	h := NewHarness()
 	h.reporting = true
+	return h
+}
+
+// NewMessagingHarness returns a harness like NewHarness's, whose sessions
+// implement port.LastMessageReporter: each reports what
+// Session.SetLastMessage last set.
+func NewMessagingHarness() *Harness {
+	h := NewHarness()
+	h.messaging = true
 	return h
 }
 
@@ -137,6 +151,8 @@ func (h *Harness) Start(_ context.Context, run port.Run) (port.Session, error) {
 		return NarratingSession{s}, nil
 	case h.reporting:
 		return UsageSession{s}, nil
+	case h.messaging:
+		return MessagingSession{s}, nil
 	}
 	return s, nil
 }
@@ -158,6 +174,7 @@ type Session struct {
 	stopped bool
 	said    string
 	usage   crew.Usage
+	last    string
 	done    chan struct{} // closed when the session ends
 }
 
@@ -220,6 +237,14 @@ func (s *Session) SetUsage(u crew.Usage) {
 	s.usage = u
 }
 
+// SetLastMessage sets the session's last message, for a messaging
+// harness's session.
+func (s *Session) SetLastMessage(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.last = text
+}
+
 // Stopped reports whether Stop was called on the session.
 func (s *Session) Stopped() bool {
 	s.mu.Lock()
@@ -266,4 +291,18 @@ func (u UsageSession) Usage() crew.Usage {
 	usage := u.usage
 	usage.Models = slices.Clone(usage.Models)
 	return usage
+}
+
+// MessagingSession is the session a messaging harness starts: a Session
+// that also implements port.LastMessageReporter.
+type MessagingSession struct {
+	*Session
+}
+
+// LastMessage implements port.LastMessageReporter: it returns what
+// SetLastMessage last set.
+func (m MessagingSession) LastMessage() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.last
 }
