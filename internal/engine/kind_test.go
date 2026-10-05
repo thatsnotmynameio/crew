@@ -26,8 +26,8 @@ func (r *rig) otherKinds() []core.IssueOfOtherKind {
 }
 
 // Covers AE1 of #92 through the engine: a pull request in the label of a
-// stage that takes issues gets one notice over several polls, and no session.
-func TestAPullRequestInAnIssueStagesLabelIsNoticedOnceAcrossPolls(t *testing.T) {
+// rule that takes issues gets one notice over several polls, and no session.
+func TestAPullRequestInAnIssueRulesLabelIsNoticedOnceAcrossPolls(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		pr := issue(90, ready)
 		pr.Kind = crew.KindPullRequest
@@ -46,7 +46,7 @@ func TestAPullRequestInAnIssueStagesLabelIsNoticedOnceAcrossPolls(t *testing.T) 
 		if len(notices) != 1 {
 			t.Fatalf("notices = %#v, want one", notices)
 		}
-		if n := notices[0]; n.IssueRef != "#90" || n.Label != ready || n.Stage != "implement" || n.Takes != crew.KindIssue {
+		if n := notices[0]; n.IssueRef != "#90" || n.Label != ready || n.Rule != "implement" || n.Takes != crew.KindIssue {
 			t.Errorf("notice = %#v, want #90 in ready, whose stage implement takes issues", n)
 		}
 	})

@@ -1,21 +1,21 @@
 // Package github is the tracker adapter for GitHub issues and pull requests,
-// through the gh CLI. A workflow state is the label of the same name,
-// compared ignoring case as GitHub does, and crew's labels are the workflow's
-// states plus the config's extra labels, which are never states. It lists the
-// open issues and pull requests the boss or one of crew's mates opened, as
-// items alike, and lists the board's issues the same authors opened, whatever
-// their labels. It moves items by swapping crew's labels, reports failures as
+// through the gh CLI. A rule state is the label of the same name, compared
+// ignoring case as GitHub does, and crew's labels are the rules' states plus
+// the config's extra labels, which are never states. It lists the open issues
+// and pull requests the code owners or one of crew's bots opened, as items
+// alike, and lists the board's issues the same authors opened, whatever their
+// labels. It moves items by swapping crew's labels, reports failures as
 // Markdown comments and keeps a status comment on each item, with one entry
-// per stage run. It puts the open pull requests that close an issue in the
-// issue's crew label, and comments on them when a stage ends that nobody
+// per rule run. It puts the open pull requests that close an issue in the
+// issue's crew label, and comments on them when a rule ends that nobody
 // watches them any more. It finds the pull request an action opened from its
 // branch. It works on the repository gh resolves from crew's working
 // directory, and runs every gh call through the shared process helper.
 //
-// The boss is every user the catch-all rule of the repository's CODEOWNERS
-// names, or gh's login without one. The tracker reads as gh's login and
-// writes as the mate the engine hands it, if any, falling back to gh's login
-// when that mate cannot write.
+// The code owners are every user the catch-all rule of the repository's
+// CODEOWNERS names, or gh's login without one. The tracker reads as gh's login
+// and writes as the bot the engine hands it, if any, falling back to gh's
+// login when that bot cannot write.
 package github
 
 import (
@@ -36,7 +36,7 @@ import (
 
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
-// a port.Acting, a port.BossFinder, a port.LoginFinder, a
+// a port.Acting, a port.CodeOwnerFinder, a port.LoginFinder, a
 // port.WriterReporter and a port.BoardLister.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
@@ -45,7 +45,7 @@ var (
 	_ port.PullRequestReporter = (*Tracker)(nil)
 	_ port.PullRequestFinder   = (*Tracker)(nil)
 	_ port.Acting              = (*Tracker)(nil)
-	_ port.BossFinder          = (*Tracker)(nil)
+	_ port.CodeOwnerFinder     = (*Tracker)(nil)
 	_ port.LoginFinder         = (*Tracker)(nil)
 	_ port.WriterReporter      = (*Tracker)(nil)
 	_ port.BoardLister         = (*Tracker)(nil)
@@ -198,16 +198,16 @@ type Tracker struct {
 	labels labels
 	extras extras
 
-	mu       sync.Mutex
-	comments map[string]cachedStatus // status comments by issue key, as last written or read
-	stopped  map[string][]int        // pull requests given a report's stop comment, by report ID
-	boss     []string                // the boss's logins, once Prepare found them
-	mates    []string                // the logins of the mates the config names
+	mu         sync.Mutex
+	comments   map[string]cachedStatus // status comments by issue key, as last written or read
+	stopped    map[string][]int        // pull requests given a report's stop comment, by report ID
+	codeOwners []string                // the code owners' logins, once Prepare found them
+	bots       []string                // the logins of the bots the config names
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
 // The tracker section has no key, so the factory refuses any. The tracker
-// knows the workflow's states and the extras as its labels. It runs no gh
+// knows the rules' states and the extras as its labels. It runs no gh
 // call; Prepare does.
 func Factory(group *proc.Group) port.TrackerFactory {
 	return factory(group.Run)
@@ -223,20 +223,20 @@ func factory(run proc.Runner) port.TrackerFactory {
 	}
 }
 
-// List implements port.Tracker with one GraphQL query: the open issues
-// that carry any of the states' labels and that the boss or one of the
-// mates opened, at most 100 per author, and the open pull requests the boss
-// or one of the mates opened that carry any of them, among the 100 oldest
-// pull requests carrying any of them, all oldest first. Before Prepare found
-// the boss, the boss is gh's login. An issue two authors' lists hold counts
-// once. Each item's key is its number, its reference #<number>, its kind
-// issue or pull request, and its states every workflow state its labels
-// name, in the workflow's spelling. Its other labels, extras included, are
-// no states and are ignored. An issue is blocked while an open issue blocks
-// it, as GitHub's issue dependencies record. Its priority is the position of
-// its value of the issue field Priority among that field's options, the
-// first being 1; an issue without one has priority 0. A pull request has
-// priority 0 and is never blocked.
+// List implements port.Tracker with one GraphQL query: the open issues that
+// carry any of the states' labels and that the code owners or one of the bots
+// opened, at most 100 per author, and the open pull requests the code owners
+// or one of the bots opened that carry any of them, among the 100 oldest pull
+// requests carrying any of them, all oldest first. Before Prepare found the
+// code owners, the code owner is gh's login. An issue two authors' lists hold
+// counts once. Each item's key is its number, its reference #<number>, its
+// kind issue or pull request, and its states every rule state its labels name,
+// in the rules' spelling. Its other labels, extras included, are no states and
+// are ignored. An issue is blocked while an open issue blocks it, as GitHub's
+// issue dependencies record. Its priority is the position of its value of the
+// issue field Priority among that field's options, the first being 1; an issue
+// without one has priority 0. A pull request has priority 0 and is never
+// blocked.
 func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, error) {
 	authors, err := t.authors(ctx)
 	if err != nil {
@@ -266,11 +266,11 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 }
 
 // ListBoard implements port.BoardLister with List's query without its pull
-// requests: the open issues the boss or one of the mates opened that carry
-// any of labels, at most 100 per author, oldest first, each as List returns
-// it. Each carries the labels of labels its own labels match ignoring case,
-// as GitHub compares them, in labels' spelling and order. An issue none of
-// whose labels matches, which GitHub's filter should not return, is left
+// requests: the open issues the code owners or one of the bots opened that
+// carry any of labels, at most 100 per author, oldest first, each as List
+// returns it. Each carries the labels of labels its own labels match ignoring
+// case, as GitHub compares them, in labels' spelling and order. An issue none
+// of whose labels matches, which GitHub's filter should not return, is left
 // out.
 func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error) {
 	authors, err := t.authors(ctx)
@@ -297,33 +297,33 @@ func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardI
 	return board, nil
 }
 
-// ActAs implements port.Acting: the tracker's writes go as writer, the boss
+// ActAs implements port.Acting: the tracker's writes go as writer, you
 // when it is the zero Identity, and List also takes the items the logins in
-// mates opened.
-func (t *Tracker) ActAs(writer port.Identity, mates []string) {
+// bots opened.
+func (t *Tracker) ActAs(writer port.Identity, bots []string) {
 	t.gh.actAs(writer)
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.mates = slices.Clone(mates)
+	t.bots = slices.Clone(bots)
 }
 
-// Boss implements port.BossFinder: the boss's logins as Prepare found them,
-// none before.
-func (t *Tracker) Boss() []string {
+// CodeOwners implements port.CodeOwnerFinder: the code owners' logins as
+// Prepare found them, none before.
+func (t *Tracker) CodeOwners() []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return slices.Clone(t.boss)
+	return slices.Clone(t.codeOwners)
 }
 
 // Login implements port.LoginFinder: gh's own login, which the tracker reads
-// as and writes as when no mate does, as Prepare found it, "" before.
+// as and writes as when no bot does, as Prepare found it, "" before.
 func (t *Tracker) Login() string {
 	return t.gh.known()
 }
 
 // WriterLost implements port.WriterReporter: the warning crew wrote when the
-// writes went back to the boss for the rest of the run, "" while they go as
-// the mate, or no mate writes.
+// writes went back to you for the rest of the run, "" while they go as
+// the bot, or no bot writes.
 func (t *Tracker) WriterLost() string {
 	return t.gh.writerLost()
 }
@@ -434,12 +434,12 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 	return nil
 }
 
-// Prepare implements port.Preparer. It checks that gh is installed and
-// logged in, then finds the boss in CODEOWNERS, then creates the labels of
+// Prepare implements port.Preparer. It checks that gh is installed and logged
+// in, then finds the code owners in CODEOWNERS, then creates the labels of
 // states and the extras the repository lacks, comparing names
-// case-insensitively, and no other label. It reads as the boss and creates
-// the labels as the writer. It reports each step on ctx as it starts, one
-// per label it creates.
+// case-insensitively, and no other label. It reads as you and creates the
+// labels as the writer. It reports each step on ctx as it starts, one per
+// label it creates.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	port.Step(ctx, "checking the gh login")
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
@@ -449,12 +449,12 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 		return fmt.Errorf("tracker github: gh is not logged in to GitHub; run `gh auth login`: %w", err)
 	}
 	port.Step(ctx, "finding the boss")
-	boss, err := t.findBoss(ctx)
+	codeOwners, err := t.findCodeOwners(ctx)
 	if err != nil {
 		return fmt.Errorf("tracker github: find the boss: %w", err)
 	}
 	t.mu.Lock()
-	t.boss = boss
+	t.codeOwners = codeOwners
 	t.mu.Unlock()
 	port.Step(ctx, "reading the repository's labels")
 	var present []ghLabel
@@ -479,20 +479,20 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	return nil
 }
 
-// authors returns the logins whose items List takes: the boss's, gh's login
-// until Prepare found them, then the mates', each once, ignoring case.
+// authors returns the logins whose items List takes: the code owners', gh's
+// login until Prepare found them, then the bots', each once, ignoring case.
 func (t *Tracker) authors(ctx context.Context) ([]string, error) {
 	t.mu.Lock()
-	boss, mates := slices.Clone(t.boss), slices.Clone(t.mates)
+	codeOwners, bots := slices.Clone(t.codeOwners), slices.Clone(t.bots)
 	t.mu.Unlock()
-	if len(boss) == 0 {
+	if len(codeOwners) == 0 {
 		login, err := t.gh.viewer(ctx)
 		if err != nil {
 			return nil, err
 		}
-		boss = []string{login}
+		codeOwners = []string{login}
 	}
-	return appendFold(boss, mates...), nil
+	return appendFold(codeOwners, bots...), nil
 }
 
 // item returns the issue or pull request n as a crew.Issue in the states its

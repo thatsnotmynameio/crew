@@ -23,10 +23,10 @@ const columnShape = "must be a column with name and labels"
 // board decodes and validates board: the live view's columns, each with a
 // name no other column has and one or more non-empty labels. It reports every
 // error it finds, naming each column by its path and name. Every label then
-// takes one spelling: a workflow state's or an extra's when it is one of
+// takes one spelling: a rule state's or an extra's when it is one of
 // them ignoring case, as GitHub compares labels, otherwise the one it first
 // has on the board. A label written twice in one column counts once.
-func board(n *yaml.Node, workflow []crew.Stage, extras []crew.State) ([]crew.BoardColumn, error) {
+func board(n *yaml.Node, rules []crew.Rule, extras []crew.State) ([]crew.BoardColumn, error) {
 	switch {
 	case n.Kind == 0:
 		return nil, nil
@@ -55,7 +55,7 @@ func board(n *yaml.Node, workflow []crew.Stage, extras []crew.State) ([]crew.Boa
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	respell(out, slices.Concat(crew.WorkflowStates(workflow), extras))
+	respell(out, slices.Concat(crew.RuleStates(rules), extras))
 	return out, nil
 }
 

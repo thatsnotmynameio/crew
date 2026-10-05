@@ -31,7 +31,7 @@ func load(t *testing.T, body string) *config.Config {
 	return cfg
 }
 
-const workflow = `workflow:
+const rules = `workflow:
   - name: implement
     label: ready
     moves_to: in progress
@@ -57,7 +57,7 @@ func assertErr(t *testing.T, err error, wants ...string) {
 // Covers AE4.
 func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
 	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())})
-	cfg := load(t, "config:\n  harness: codex\n"+workflow)
+	cfg := load(t, "config:\n  harness: codex\n"+rules)
 
 	h, err := r.Harness(cfg.Harness, cfg.HarnessSection)
 	assertErr(t, err, "harness", `"codex"`, "the registered harness adapters are: claude")
@@ -87,9 +87,9 @@ func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
   name: fake
   lables:
     ready: todo
-`+workflow)
+`+rules)
 
-	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
+	tr, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras)
 	assertErr(t, err, "tracker.lables", "line 3", "unknown key")
 	if tr != nil {
 		t.Errorf("Tracker = %v, want none", tr)
@@ -103,9 +103,9 @@ func TestTrackerLabelsIsAnUnknownKey(t *testing.T) {
   name: fake
   labels:
     ready: ready
-`+workflow)
+`+rules)
 
-	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
+	_, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras)
 	assertErr(t, err, "tracker.labels", "line 3", "unknown key")
 }
 
@@ -142,9 +142,9 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
   model: some-model
 tracker:
   name: fake
-`+workflow)
+`+rules)
 
-	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras)
+	gotTracker, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras)
 	if err != nil {
 		t.Fatalf("Tracker: %v", err)
 	}

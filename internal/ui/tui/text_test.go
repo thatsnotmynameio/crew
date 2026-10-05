@@ -102,7 +102,7 @@ func TestEachPillTakesItsRolesColour(t *testing.T) {
 	}
 }
 
-// testModel is a model of testWorkflow, before any update.
+// testModel is a model of testRules, before any update.
 func testModel() Model {
-	return New(Config{Now: func() time.Time { return start }, Location: zone, Workflow: testWorkflow})
+	return New(Config{Now: func() time.Time { return start }, Location: zone, Rules: testRules})
 }

@@ -12,7 +12,7 @@ import (
 // included, with its path and line.
 type settings struct{}
 
-// labels maps a GitHub label to the workflow's state it names. A state's
+// labels maps a GitHub label to the rules' state it names. A state's
 // text is its label's name. GitHub compares label names case-insensitively,
 // so it is keyed by the lowercased name and lookups ignore case.
 type labels map[string]crew.State
@@ -27,14 +27,14 @@ func newLabels(states []crew.State) labels {
 	return l
 }
 
-// stateOf returns the workflow state that label names, if any.
+// stateOf returns the rule state that label names, if any.
 func (l labels) stateOf(label string) (crew.State, bool) {
 	s, ok := l[strings.ToLower(label)]
 	return s, ok
 }
 
 // extras are the config's extra labels, in file order: crew's labels for
-// parked work, which no stage takes and which are never states.
+// parked work, which no rule takes and which are never states.
 type extras []crew.State
 
 // has reports whether label is one of the extras, ignoring case.

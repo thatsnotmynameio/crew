@@ -14,7 +14,7 @@ import (
 // sliding returns a harness whose #12 moved from triage to development.
 func sliding(t *testing.T, width int) *harness {
 	t.Helper()
-	h := newWorkflowHarness(t, width, crewWorkflow)
+	h := newRulesHarness(t, width, crewRules)
 	h.send(updateMsg(held(twelve, "triage", "triage", core.ClaimRunning)))
 	h.send(updateMsg(held(twelve, "development", "lfg", core.ClaimRunning)))
 	return h
@@ -58,7 +58,7 @@ func TestASlidesMarkerCrossesTheUnderlineRow(t *testing.T) {
 }
 
 func TestASlideToTheLeftPointsLeft(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h := newRulesHarness(t, 120, crewRules)
 	h.send(updateMsg(held(twelve, "development", "lfg", core.ClaimRunning)))
 	h.send(updateMsg(held(twelve, "triage", "triage", core.ClaimRunning)))
 
@@ -67,7 +67,7 @@ func TestASlideToTheLeftPointsLeft(t *testing.T) {
 
 // A slide whose source column was dropped starts at the edge of its side.
 func TestASlideFromADroppedColumnStartsAtTheEdge(t *testing.T) {
-	h := newWorkflowHarness(t, 50, eightStages())
+	h := newRulesHarness(t, 50, eightRules())
 	h.send(updateMsg(held(crew.Issue{Key: "1", Ref: "#1"}, "s1", "a", core.ClaimRunning)))
 	h.send(updateMsg(held(crew.Issue{Key: "1", Ref: "#1"}, "s5", "a", core.ClaimRunning)))
 
@@ -78,7 +78,7 @@ func TestASlideFromADroppedColumnStartsAtTheEdge(t *testing.T) {
 }
 
 func TestAnIssueThatStaysInItsColumnDoesNotSlide(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h := newRulesHarness(t, 120, crewRules)
 	h.send(updateMsg(held(twelve, "triage", "triage", core.ClaimRunning)))
 	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:done")))
 
@@ -92,7 +92,7 @@ func TestAnIssueThatStaysInItsColumnDoesNotSlide(t *testing.T) {
 func TestASlideFromADroppedMiddleColumnStartsBetweenItsNeighbours(t *testing.T) {
 	one := crew.Issue{Key: "1", Ref: "#1"}
 	seven := crew.Issue{Key: "7", Ref: "#7"}
-	h := newWorkflowHarness(t, 80, eightStages())
+	h := newRulesHarness(t, 80, eightRules())
 	before := held(one, "s1", "a", core.ClaimRunning)
 	before.Snapshot.Issues = append(before.Snapshot.Issues, held(seven, "s2", "a", core.ClaimRunning).Snapshot.Issues...)
 	h.send(updateMsg(before))
@@ -120,7 +120,7 @@ var triageReview = []crew.BoardColumn{
 // Covers AE3 and KTD7: an issue that had no card for a while slides from
 // the columns it was last in.
 func TestAE3ACardSlidesFromTheColumnsItWasLastIn(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, triageReview)
+	h := newConfiguredHarness(t, 120, crewRules, triageReview)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
 		labeled(twelve, "crew:triage:in progress"))))
 	if got := cardColumns(boardOf(t, h.view()), "#12"); len(got) != 1 || got[0] != 0 {
@@ -144,7 +144,7 @@ func TestAE3ACardSlidesFromTheColumnsItWasLastIn(t *testing.T) {
 // Covers KTD7: a card that only gains or only loses a column has nowhere
 // to slide from or to.
 func TestACardThatOnlyGainsOrLosesAColumnDoesNotSlide(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 	for _, labels := range [][]string{{"crew:brainstorm:ready"}, {"crew:brainstorm:ready", "bug"}, {"bug"}} {
 		h.send(updateMsg(onBoard(engine.Update{}, labeled(twentyOne, labels...))))
 		if got := h.current().memory.slides; len(got) != 0 {

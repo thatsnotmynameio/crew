@@ -46,7 +46,7 @@ func wantItems(t *testing.T, got, want []crew.Issue) {
 }
 
 // Covers AE1 and AE2 of #35: the listing also returns the open pull requests
-// the login opened that carry a stage's label, as items of kind pull request
+// the login opened that carry a rule's label, as items of kind pull request
 // with no priority that nothing blocks, oldest first among the issues. Covers
 // AE5 of #92 on the adapter's side: #90 carries the label the mirror copies
 // from an issue, and is listed in that state as a pull request.

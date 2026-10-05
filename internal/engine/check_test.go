@@ -15,7 +15,7 @@ import (
 )
 
 // checkedDevelop is develop with a check on its action.
-var checkedDevelop = crew.Stage{
+var checkedDevelop = crew.Rule{
 	Name: develop.Name, Label: develop.Label, MovesTo: develop.MovesTo, OnSuccess: develop.OnSuccess,
 	OnFailure: develop.OnFailure,
 	Actions:   []crew.Action{{Name: "development", Prompt: develop.Actions[0].Prompt, Check: "gh pr list"}},

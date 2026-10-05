@@ -10,10 +10,10 @@ import (
 
 // usageDriver is a driver whose model records runs and looks up pull
 // requests, with opts on top.
-func usageDriver(t *testing.T, workflow []crew.Stage, opts ...core.Option) *driver {
+func usageDriver(t *testing.T, rules []crew.Rule, opts ...core.Option) *driver {
 	t.Helper()
 	opts = append([]core.Option{core.RecordingRuns(nil), core.FindingPullRequests()}, opts...)
-	return &driver{t: t, m: core.New(workflow, 2, opts...), now: t0}
+	return &driver{t: t, m: core.New(rules, 2, opts...), now: t0}
 }
 
 var (
@@ -185,7 +185,7 @@ func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testi
 	})
 	t.Run("resumed", func(t *testing.T) {
 		past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-		d := &driver{t: t, m: core.New(crewWorkflow(), 2,
+		d := &driver{t: t, m: core.New(crewRules(), 2,
 			core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.FindingPullRequests()), now: t0}
 		d.takeIssue(issue("9", 1, readyForDev))
 		d.send(reopened("9", "lfg", "lfg"))
@@ -197,7 +197,7 @@ func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testi
 	})
 }
 
-func TestAE4AStageMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
+func TestAE4ARuleMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("5", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "5", Action: "acceptance", Outcome: failed("killed")})
@@ -230,7 +230,7 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 	}
 }
 
-func TestAE7TheRunSpendCountsEveryStageRunOfThisRun(t *testing.T) {
+func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("7", 1, ready))
 	for _, action := range []string{"acceptance", "development"} {
@@ -244,7 +244,7 @@ func TestAE7TheRunSpendCountsEveryStageRunOfThisRun(t *testing.T) {
 	verdict, _ := d.send(core.PullRequestFound{IssueKey: "7", Action: "custom_review", PullRequest: noPR})
 	d.settle(verdict)
 
-	if got := onlyEntry(t, d).Stage; got != "review" {
+	if got := onlyEntry(t, d).Rule; got != "review" {
 		t.Fatalf("handled shows %q, want only the review stage", got)
 	}
 	if got := d.m.View().Spent.String(); got != "$24.80 (partial), 745 tokens" {

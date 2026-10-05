@@ -39,17 +39,17 @@ var (
 	_ port.StatusReporter      = PullRequestTracker{}
 	_ port.PullRequestReporter = PullRequestTracker{}
 
-	_ port.Acting         = (*Acting)(nil)
-	_ port.BossFinder     = (*Acting)(nil)
-	_ port.LoginFinder    = (*Acting)(nil)
-	_ port.WriterReporter = (*Acting)(nil)
-	_ port.Tracker        = ActingTracker{}
-	_ port.Preparer       = ActingTracker{}
-	_ port.StatusReporter = ActingTracker{}
-	_ port.Acting         = ActingTracker{}
-	_ port.BossFinder     = ActingTracker{}
-	_ port.LoginFinder    = ActingTracker{}
-	_ port.WriterReporter = ActingTracker{}
+	_ port.Acting          = (*Acting)(nil)
+	_ port.CodeOwnerFinder = (*Acting)(nil)
+	_ port.LoginFinder     = (*Acting)(nil)
+	_ port.WriterReporter  = (*Acting)(nil)
+	_ port.Tracker         = ActingTracker{}
+	_ port.Preparer        = ActingTracker{}
+	_ port.StatusReporter  = ActingTracker{}
+	_ port.Acting          = ActingTracker{}
+	_ port.CodeOwnerFinder = ActingTracker{}
+	_ port.LoginFinder     = ActingTracker{}
+	_ port.WriterReporter  = ActingTracker{}
 
 	_ port.Tracker     = BoardTracker{}
 	_ port.BoardLister = BoardTracker{}
@@ -62,7 +62,7 @@ type TrackerSettings struct{}
 
 // TrackerFactory returns a factory that validates its section into
 // TrackerSettings and, when it is valid, returns t itself, so the test keeps
-// a handle on the tracker the engine uses. It ignores the workflow's states
+// a handle on the tracker the engine uses. It ignores the rules' states
 // and the extras; a test sets an issue's extras with SetExtras.
 func TrackerFactory(t port.Tracker) port.TrackerFactory {
 	return func(decode port.Decode, _, _ []crew.State) (port.Tracker, error) {
@@ -571,42 +571,43 @@ func NewPullRequestTracker(issues ...crew.Issue) PullRequestTracker {
 // ActAsCall is one call to port.Acting's ActAs an Acting received.
 type ActAsCall struct {
 	Writer port.Identity
-	Mates  []string
+	Bots   []string
 }
 
-// Acting is a scriptable port.Acting, port.BossFinder, port.LoginFinder and
-// port.WriterReporter, to embed in a fake tracker. It records each ActAs
-// call and returns the boss's logins set by SetBoss, the login set by
-// SetLogin and the writes warning set by SetWriterLost. Its zero value is
-// ready to use: it finds no boss and no login, and its writes never went
-// back to the boss.
+// Acting is a scriptable port.Acting, port.CodeOwnerFinder, port.LoginFinder
+// and port.WriterReporter, to embed in a fake tracker. It records each ActAs
+// call and returns the code owners' logins set by SetCodeOwners, the login set
+// by SetLogin and the writes warning set by SetWriterLost. Its zero value is
+// ready to use: it finds no code owner and no login, and its writes never went
+// back to you.
 type Acting struct {
-	mu    sync.Mutex
-	boss  []string
-	login string
-	lost  string
-	calls []ActAsCall
+	mu         sync.Mutex
+	codeOwners []string
+	login      string
+	lost       string
+	calls      []ActAsCall
 }
 
 // ActAs implements port.Acting.
-func (a *Acting) ActAs(writer port.Identity, mates []string) {
+func (a *Acting) ActAs(writer port.Identity, bots []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.calls = append(a.calls, ActAsCall{Writer: writer, Mates: slices.Clone(mates)})
+	a.calls = append(a.calls, ActAsCall{Writer: writer, Bots: slices.Clone(bots)})
 }
 
-// Boss implements port.BossFinder: it returns what SetBoss last set.
-func (a *Acting) Boss() []string {
+// CodeOwners implements port.CodeOwnerFinder: it returns what
+// SetCodeOwners last set.
+func (a *Acting) CodeOwners() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return slices.Clone(a.boss)
+	return slices.Clone(a.codeOwners)
 }
 
-// SetBoss sets the boss's logins Boss returns.
-func (a *Acting) SetBoss(logins ...string) {
+// SetCodeOwners sets the code owners' logins CodeOwners returns.
+func (a *Acting) SetCodeOwners(logins ...string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.boss = slices.Clone(logins)
+	a.codeOwners = slices.Clone(logins)
 }
 
 // Login implements port.LoginFinder: it returns what SetLogin last set.
@@ -632,7 +633,7 @@ func (a *Acting) WriterLost() string {
 }
 
 // SetWriterLost sets the warning WriterLost returns, as when the tracker's
-// writes went back to the boss; "" makes them go as the writer again.
+// writes went back to you; "" makes them go as the writer again.
 func (a *Acting) SetWriterLost(warning string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -645,25 +646,25 @@ func (a *Acting) ActAsCalls() []ActAsCall {
 	defer a.mu.Unlock()
 	out := make([]ActAsCall, len(a.calls))
 	for i, c := range a.calls {
-		c.Mates = slices.Clone(c.Mates)
+		c.Bots = slices.Clone(c.Bots)
 		out[i] = c
 	}
 	return out
 }
 
 // ActingTracker is a ReportingTracker that also implements port.Acting,
-// port.BossFinder, port.LoginFinder and port.WriterReporter, for the tests
-// about crew acting as its mates. A plain *Tracker, PreparingTracker or
+// port.CodeOwnerFinder, port.LoginFinder and port.WriterReporter, for the tests
+// about crew acting as its bots. A plain *Tracker, PreparingTracker or
 // ReportingTracker does not implement them.
 type ActingTracker struct {
 	ReportingTracker
 	*Acting
 }
 
-// NewActingTracker returns an ActingTracker holding issues, whose Prepare
-// and status writes succeed until told otherwise, which finds no boss until
-// SetBoss and no login until SetLogin, and whose writes never went back to
-// the boss until SetWriterLost.
+// NewActingTracker returns an ActingTracker holding issues, whose Prepare and
+// status writes succeed until told otherwise, which finds no code owner until
+// SetCodeOwners and no login until SetLogin, and whose writes never went back
+// to you until SetWriterLost.
 func NewActingTracker(issues ...crew.Issue) ActingTracker {
 	return ActingTracker{ReportingTracker: NewReportingTracker(issues...), Acting: &Acting{}}
 }

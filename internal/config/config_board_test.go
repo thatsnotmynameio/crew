@@ -7,9 +7,9 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// boardWorkflow is a workflow with a triage stage, and an extra, for the
+// boardRules is a set of rules with a triage rule, and an extra, for the
 // board's tests.
-const boardWorkflow = `extra_labels:
+const boardRules = `extra_labels:
   - label: crew:brainstorm:ready
 workflow:
   - name: triage
@@ -34,11 +34,11 @@ type boardCase struct {
 var validBoards = []boardCase{
 	{
 		name: "no board keeps the stages' board",
-		body: boardWorkflow,
+		body: boardRules,
 	},
 	{
 		name: "columns in file order with their labels",
-		body: boardWorkflow + `board:
+		body: boardRules + `board:
   - name: ideas
     labels: [crew:brainstorm:ready]
   - name: bugs
@@ -55,7 +55,7 @@ var validBoards = []boardCase{
 	{
 		// Covers AE6.
 		name: "a label no issue carries",
-		body: boardWorkflow + `board:
+		body: boardRules + `board:
   - name: bugs
     labels: [bgu]
 `,
@@ -63,7 +63,7 @@ var validBoards = []boardCase{
 	},
 	{
 		name: "labels take the workflow's, the extras' or their first spelling",
-		body: boardWorkflow + `board:
+		body: boardRules + `board:
   - name: triage
     labels: [Crew:Triage:Ready, CREW:BRAINSTORM:READY]
   - name: bugs
@@ -79,7 +79,7 @@ var validBoards = []boardCase{
 	},
 	{
 		name: "a label written twice in one column counts once",
-		body: boardWorkflow + `board:
+		body: boardRules + `board:
   - name: bugs
     labels: [bug, Bug, bug]
 `,
@@ -106,7 +106,7 @@ var invalidBoards = []rejectCase{
 	{
 		// Covers AE5.
 		name: "a column with no label",
-		body: oneStage + `board:
+		body: oneRule + `board:
   - name: ideas
     labels: [idea]
   - name: bugs
@@ -116,21 +116,21 @@ var invalidBoards = []rejectCase{
 	},
 	{
 		name: "a column without labels",
-		body: oneStage + `board:
+		body: oneRule + `board:
   - name: bugs
 `,
 		wants: []string{"board[0].labels", "line 11", `column "bugs"`, "one or more labels"},
 	},
 	{
 		name: "a column without a name",
-		body: oneStage + `board:
+		body: oneRule + `board:
   - labels: [bug]
 `,
 		wants: []string{"board[0].name", "line 11", "required"},
 	},
 	{
 		name: "a column with an empty label",
-		body: oneStage + `board:
+		body: oneRule + `board:
   - name: bugs
     labels: [bug, ""]
 `,
@@ -138,12 +138,12 @@ var invalidBoards = []rejectCase{
 	},
 	{
 		name:  "no column",
-		body:  oneStage + "board: []\n",
+		body:  oneRule + "board: []\n",
 		wants: []string{"board", "line 10", "one or more columns"},
 	},
 	{
 		name: "two columns share a name",
-		body: oneStage + `board:
+		body: oneRule + `board:
   - name: bugs
     labels: [bug]
   - name: bugs
@@ -153,17 +153,17 @@ var invalidBoards = []rejectCase{
 	},
 	{
 		name:  "a board that is a mapping",
-		body:  oneStage + "board:\n  bugs: [bug]\n",
+		body:  oneRule + "board:\n  bugs: [bug]\n",
 		wants: []string{"board", "line 11", "must be a list of columns"},
 	},
 	{
 		name:  "a column that is a string",
-		body:  oneStage + "board:\n  - bugs\n",
+		body:  oneRule + "board:\n  - bugs\n",
 		wants: []string{"board[0]", "line 11", "must be a column with name and labels"},
 	},
 	{
 		name: "an unknown key in a column",
-		body: oneStage + `board:
+		body: oneRule + `board:
   - name: bugs
     label: bug
 `,
@@ -171,9 +171,9 @@ var invalidBoards = []rejectCase{
 	},
 }
 
-// Errors in the board and in the workflow come together, so the boss fixes
+// Errors in the board and in the rules come together, so you fix
 // them in one go.
-func TestLoadReportsBoardAndWorkflowErrorsTogether(t *testing.T) {
+func TestLoadReportsBoardAndRulesErrorsTogether(t *testing.T) {
 	loadErr(t, `workflow:
   - name: implement
     label: ready

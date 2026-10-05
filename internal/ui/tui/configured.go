@@ -9,7 +9,7 @@ import (
 )
 
 // configured reports whether the config draws the board's columns, rather
-// than the board of the workflow's stages (KTD9).
+// than the board of the rules (KTD9).
 func (m Model) configured() bool { return len(m.cfg.Board) > 0 }
 
 // columnCount is how many columns the board has, shown or not.
@@ -17,15 +17,15 @@ func (m Model) columnCount() int {
 	if m.configured() {
 		return len(m.cfg.Board)
 	}
-	return len(m.cfg.Workflow)
+	return len(m.cfg.Rules)
 }
 
-// columnName is the name of column c: its stage's, or its configured one.
+// columnName is the name of column c: its rule's, or its configured one.
 func (m Model) columnName(c int) string {
 	if m.configured() {
 		return m.cfg.Board[c].Name
 	}
-	return m.cfg.Workflow[c].Name
+	return m.cfg.Rules[c].Name
 }
 
 // configuredCards returns a card in each configured column whose labels an

@@ -10,9 +10,9 @@ import (
 
 func TestDefaultBuildsGithubAndClaudeTheConfigDefaults(t *testing.T) {
 	r := registry.Default(&proc.Group{})
-	cfg := load(t, workflow) // tracker.name and config.harness left to their defaults
+	cfg := load(t, rules) // tracker.name and config.harness left to their defaults
 
-	if _, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras); err != nil {
+	if _, err := r.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras); err != nil {
 		t.Errorf("Tracker(%q): %v", cfg.Tracker, err)
 	}
 	if _, err := r.Harness(cfg.Harness, cfg.HarnessSection); err != nil {

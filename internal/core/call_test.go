@@ -87,7 +87,7 @@ func TestTakeMovedMeanwhileOrRefusedReleasesTheIssue(t *testing.T) {
 
 // A take that failed transiently may have landed, so the issue stays held
 // and the take is owed: the retry, which the tracker makes idempotent, either
-// moves it or finds it already moved, and the stage proceeds (KTD8).
+// moves it or finds it already moved, and the rule proceeds (KTD8).
 func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 	d := newDriver(t, draft(), 1)
 	i1 := issue("1", 1, ready)
@@ -99,7 +99,7 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 	hasEvent(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
 	want := core.View{
 		Issues: []core.IssueView{{
-			Issue: i1, Stage: "implement", Claim: core.ClaimOwed,
+			Issue: i1, Rule: "implement", Claim: core.ClaimOwed,
 			Actions: []core.ActionView{
 				{Name: "acceptance", Phase: core.PhaseWaiting},
 				{Name: "development", Phase: core.PhaseWaiting},
@@ -107,7 +107,7 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 		}},
 		Queues: []core.QueueView{{Slots: 1, Busy: 1}},
 		Owed:   []core.Call{owed},
-		Mates:  []core.MateView{{Name: "you", You: true, Writes: true, Pairs: draftPairs}},
+		Bots:   []core.BotView{{Name: "you", You: true, Writes: true, Pairs: draftPairs}},
 	}
 	if v := d.m.View(); !reflect.DeepEqual(v, want) {
 		t.Fatalf("view:\n got %#v\nwant %#v", v, want)

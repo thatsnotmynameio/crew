@@ -16,13 +16,13 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// The workflow's states in these tests, as label text.
+// The rules' states in these tests, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
 	readyToReview  crew.State = "ready to review"
 	needsAttention crew.State = "needs attention"
-	// waitingBrainstorm is an extra label: parked work no stage takes.
+	// waitingBrainstorm is an extra label: parked work no rule takes.
 	waitingBrainstorm crew.State = "waiting brainstorm"
 )
 
@@ -383,12 +383,12 @@ func TestCheckerRunsEachCheckAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
 
 func TestHarnessAndCheckerRecordTheIdentityAndTheLogins(t *testing.T) {
 	developer := port.Identity{
-		Mate: "developer", Login: "crew-developer[bot]",
+		Bot: "developer", Login: "crew-developer[bot]",
 		Env: []string{"GH_CONFIG_DIR=/run/crew/developer"},
 	}
-	boss, mates := []string{"octocat"}, []string{"crew-developer[bot]"}
-	run := port.Run{Prompt: "Implement #80", Identity: developer, Boss: boss, Mates: mates}
-	check := port.Check{Branch: "crew/issue-80-lfg", Identity: developer, Boss: boss, Mates: mates}
+	codeOwners, bots := []string{"octocat"}, []string{"crew-developer[bot]"}
+	run := port.Run{Prompt: "Implement #80", Identity: developer, CodeOwners: codeOwners, Bots: bots}
+	check := port.Check{Branch: "crew/issue-80-lfg", Identity: developer, CodeOwners: codeOwners, Bots: bots}
 	h, c := fake.NewHarness(), fake.NewChecker()
 
 	if _, err := h.Start(context.Background(), run); err != nil {

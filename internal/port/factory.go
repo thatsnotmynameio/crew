@@ -14,10 +14,10 @@ type Decode = func(target any) error
 // TrackerFactory builds a tracker adapter from its config section: every key
 // under tracker: except name. It validates the section through decode, and
 // adds its own checks of the values, before returning; it does not reach the
-// network or run tools, which is Preparer's job. states are the workflow's
-// states, crew.WorkflowStates: the tracker's states crew owns, and the only
+// network or run tools, which is Preparer's job. states are the rules'
+// states, crew.RuleStates: the tracker's states crew owns, and the only
 // ones List reports. extras are the config's extra labels, for parked work no
-// stage takes: they are crew's too, but never states. List never reports
+// rule takes: they are crew's too, but never states. List never reports
 // them, Move removes them, and Prepare creates them as it does the states.
 type TrackerFactory func(decode Decode, states, extras []crew.State) (Tracker, error)
 

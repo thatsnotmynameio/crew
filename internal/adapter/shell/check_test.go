@@ -105,19 +105,19 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	}
 }
 
-// AE6 of #80: whatever GH_TOKEN the boss's shell exports, the check's gh
-// reads its mate's directory, and the check learns the boss and the mates.
-func TestCheckActsAsItsIdentityAndNamesTheBossAndTheMates(t *testing.T) {
+// AE6 of #80: whatever GH_TOKEN your shell exports, the check's gh
+// reads its bot's directory, and the check learns the code owners and the bots.
+func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	t.Setenv("GH_TOKEN", "boss-token")
 	var out output
 	c := check(t, `echo "$GH_CONFIG_DIR|$CREW_BOSS|$CREW_MATES|${GH_TOKEN-unset}"`, &out)
 	c.Identity = port.Identity{
-		Mate: "developer", Login: "crew-developer[bot]",
+		Bot: "developer", Login: "crew-developer[bot]",
 		Env:   []string{"GH_CONFIG_DIR=/run/crew/developer"},
 		Unset: []string{"GH_TOKEN", "GITHUB_TOKEN"},
 	}
-	c.Boss = []string{"octocat"}
-	c.Mates = []string{"crew-developer[bot]", "crew-ops[bot]"}
+	c.CodeOwners = []string{"octocat"}
+	c.Bots = []string{"crew-developer[bot]", "crew-ops[bot]"}
 
 	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
 		t.Fatalf("Check: %v", err)

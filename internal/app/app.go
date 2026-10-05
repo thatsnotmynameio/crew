@@ -81,36 +81,36 @@ type Options struct {
 	// first ends the environment checks, or asks the engine to stop; the
 	// second forces the exit.
 	Signals <-chan os.Signal
-	// Mates makes the mates the config names act: names lists each once,
-	// the default mate def first. It runs among the environment checks, on
-	// their context, and only when the config names a mate. nil makes such
+	// Bots makes the bots the config names act: names lists each once,
+	// the default bot def first. It runs among the environment checks, on
+	// their context, and only when the config names a bot. nil makes such
 	// a config an environment error.
-	Mates func(ctx context.Context, def string, names []string) (Mates, error)
+	Bots func(ctx context.Context, def string, names []string) (Bots, error)
 }
 
-// Mates are the mates that act this run, as Options.Mates made them.
-type Mates struct {
-	// Identities are the identities of the mates that act, by name: what
-	// their actions' sessions and checks act as. A mate that cannot act has
-	// none, and its actions act as the boss.
+// Bots are the bots that act this run, as Options.Bots made them.
+type Bots struct {
+	// Identities are the identities of the bots that act, by name: what
+	// their actions' sessions and checks act as. A bot that cannot act has
+	// none, and its actions act as you.
 	Identities map[string]port.Identity
 	// Writer is what crew's own writes on the tracker act as: the default
-	// mate, or the zero Identity, the boss, when it cannot act.
+	// bot, or the zero Identity, you, when it cannot act.
 	Writer port.Identity
-	// Logins are the logins of the configured mates crew knows, whether or
+	// Logins are the logins of the configured bots crew knows, whether or
 	// not they act this run: crew takes the issues they opened, and every
 	// session and check gets them as CREW_MATES.
 	Logins []string
-	// Warnings say, one line each, which mate cannot act or adds no
+	// Warnings say, one line each, which bot cannot act or adds no
 	// co-author, why, and the fix.
 	Warnings []string
-	// Unable holds, by name, the short reason of each configured mate that
-	// cannot act this run, such as "no key"; nil when every mate acts.
+	// Unable holds, by name, the short reason of each configured bot that
+	// cannot act this run, such as "no key"; nil when every bot acts.
 	Unable map[string]string
-	// Failing returns, by name, the warning of each mate whose last token
+	// Failing returns, by name, the warning of each bot whose last token
 	// renewal failed; the engine reads it while it runs. nil reads none.
 	Failing func() map[string]string
-	// Close stops renewing the mates' tokens and removes them. nil does
+	// Close stops renewing the bots' tokens and removes them. nil does
 	// nothing.
 	Close func()
 }
@@ -142,23 +142,23 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 		return ExitConfig
 	}
 	var eng *engine.Engine
-	var mates Mates
+	var bots Bots
 	signalled, err := prepare(port.WithSteps(ctx, o.boot), o, func(ctx context.Context) error {
-		if mates, err = b.mates(ctx, o); err != nil {
+		if bots, err = b.bots(ctx, o); err != nil {
 			return err
 		}
-		eng = b.engine(o, mates)
+		eng = b.engine(o, bots)
 		return eng.Prepare(ctx)
 	})
-	if mates.Close != nil {
+	if bots.Close != nil {
 		// After the engine's stop sequence, on every way out of Run.
-		defer mates.Close()
+		defer bots.Close()
 	}
 	if err != nil {
 		o.errorf("%v", err)
 		return ExitConfig
 	}
-	return run(ctx, eng, o, signalled, b.cfg, mates.Warnings)
+	return run(ctx, eng, o, signalled, b.cfg, bots.Warnings)
 }
 
 // prepare runs the environment checks, check, within prepareTimeout, and a
@@ -210,7 +210,7 @@ func build(o Options) (built, error) {
 	if err != nil {
 		return built{}, err
 	}
-	states := crew.WorkflowStates(cfg.Workflow)
+	states := crew.RuleStates(cfg.Rules)
 	tracker, trackerErr := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, states, cfg.Extras)
 	harness, harnessErr := o.Registry.Harness(cfg.Harness, cfg.HarnessSection)
 	if err := errors.Join(trackerErr, harnessErr); err != nil {
@@ -222,27 +222,27 @@ func build(o Options) (built, error) {
 	return built{cfg: cfg, tracker: tracker, harness: harness}, nil
 }
 
-// mates makes the mates the config names act, through Options.Mates, and
+// bots makes the bots the config names act, through Options.Bots, and
 // none when it names none.
-func (b built) mates(ctx context.Context, o Options) (Mates, error) {
-	if len(b.cfg.Mates) == 0 {
-		return Mates{}, nil
+func (b built) bots(ctx context.Context, o Options) (Bots, error) {
+	if len(b.cfg.Bots) == 0 {
+		return Bots{}, nil
 	}
-	if o.Mates == nil {
-		return Mates{}, errors.New("the config names mates, and crew cannot make them act here")
+	if o.Bots == nil {
+		return Bots{}, errors.New("the config names mates, and crew cannot make them act here")
 	}
-	m, err := o.Mates(ctx, b.cfg.Mate, b.cfg.Mates)
+	m, err := o.Bots(ctx, b.cfg.Bot, b.cfg.Bots)
 	if err != nil {
-		return Mates{}, fmt.Errorf("make the mates act: %w", err)
+		return Bots{}, fmt.Errorf("make the mates act: %w", err)
 	}
 	return m, nil
 }
 
 // engine builds the engine of the config and its adapters, whose actions
-// act as mates.
-func (b built) engine(o Options, mates Mates) *engine.Engine {
+// act as bots.
+func (b built) engine(o Options, bots Bots) *engine.Engine {
 	return engine.New(engine.Config{
-		Workflow:          b.cfg.Workflow,
+		Rules:             b.cfg.Rules,
 		MaxParallelIssues: b.cfg.MaxParallelIssues,
 		PollInterval:      b.cfg.PollInterval,
 		RunTimeLimit:      b.cfg.RunTimeLimit,
@@ -253,14 +253,14 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 		Checker:           o.Checker,
 		Root:              o.Root,
 		Home:              o.Home,
-		ActAs:             len(b.cfg.Mates) > 0,
-		Writer:            mates.Writer,
-		Identities:        mates.Identities,
-		MateLogins:        mates.Logins,
-		DefaultMate:       b.cfg.Mate,
-		Mates:             b.cfg.Mates,
-		Unable:            mates.Unable,
-		MateFailures:      mates.Failing,
+		ActAs:             len(b.cfg.Bots) > 0,
+		Writer:            bots.Writer,
+		Identities:        bots.Identities,
+		BotLogins:         bots.Logins,
+		DefaultBot:        b.cfg.Bot,
+		Bots:              b.cfg.Bots,
+		Unable:            bots.Unable,
+		BotFailures:       bots.Failing,
 		Board:             b.cfg.Board,
 		Extras:            b.cfg.Extras,
 	})
@@ -273,7 +273,7 @@ func (b built) engine(o Options, mates Mates) *engine.Engine {
 func run(
 	ctx context.Context, eng *engine.Engine, o Options, stopping bool, cfg *config.Config, warnings []string,
 ) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, workflow: cfg.Workflow, board: cfg.Board}
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: cfg.Rules, board: cfg.Board}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -316,9 +316,9 @@ type runner struct {
 	code int
 	// warnings are the startup warnings the renderer shows.
 	warnings []string
-	// workflow is the configured stages, for the live view's board.
-	workflow []crew.Stage
-	// board is the board the config draws; nil draws the stages.
+	// rules are the configured rules, for the live view's board.
+	rules []crew.Rule
+	// board is the board the config draws; nil draws the rules.
 	board []crew.BoardColumn
 }
 
@@ -328,7 +328,7 @@ func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
 		model := tui.New(tui.Config{
 			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Now: time.Now, Location: time.Local,
-			Workflow: r.workflow, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
+			Rules: r.rules, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
 		})
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
 		r.quit = program.Quit

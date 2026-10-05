@@ -1,4 +1,4 @@
-// Command crew polls the issue tracker and runs each workflow stage's actions in
+// Command crew polls the issue tracker and runs each rule's actions in
 // coding-agent sessions, as configured in the repository's .crew/config.yaml.
 //
 // Usage:
@@ -13,9 +13,9 @@
 // exits 0 on a clean stop, 1 on a runtime failure or a forced exit, and 2 on
 // a config or environment error.
 //
-// crew mates create <name> creates a mate, a GitHub identity of crew's own,
+// crew mates create <name> creates a bot, a GitHub identity of crew's own,
 // for the GitHub repository of the git repository it runs in, and installs
-// it there. It exits 0 once the mate is ready, 2 when nothing was asked of
+// it there. It exits 0 once the bot is ready, 2 when nothing was asked of
 // GitHub yet, and 1 on any later failure.
 package main
 
@@ -60,7 +60,7 @@ func run(args []string) int {
 	// The subcommand comes before crew's own flags, so every other argument
 	// list is parsed as it always was.
 	if len(args) > 0 && args[0] == "mates" {
-		return runMates(args[1:], stdout, stderr)
+		return runBots(args[1:], stdout, stderr)
 	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -136,7 +136,7 @@ func start(plain bool, stdout, stderr *os.File) int {
 		Plain:     plain,
 		Group:     &group,
 		Signals:   signals,
-		Mates:     actingMates(group.Run, root),
+		Bots:      actingBots(group.Run, root),
 	})
 }
 

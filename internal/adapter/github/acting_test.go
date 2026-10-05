@@ -14,20 +14,20 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Who a gh call runs as: the boss, with no environment of its own, or a
-// mate, with its gh config directory.
+// Who a gh call runs as: you, with no environment of its own, or a
+// bot, with its gh config directory.
 const (
-	asBoss = "boss"
-	asMate = "mate"
+	asYou = "you"
+	asBot = "bot"
 )
 
-// runsAs returns who c runs as: asMate when it carries an environment of
-// its own, asBoss otherwise.
+// runsAs returns who c runs as: asBot when it carries an environment of
+// its own, asYou otherwise.
 func runsAs(c proc.Command) string {
 	if len(c.Env) > 0 || len(c.Unset) > 0 {
-		return asMate
+		return asBot
 	}
-	return asBoss
+	return asYou
 }
 
 // commandsTo returns the recorded commands whose arguments start with
@@ -44,10 +44,10 @@ func (f *fakeGh) commandsTo(prefix ...string) []proc.Command {
 	return out
 }
 
-// The mate ops, crew's writer in the tests below.
+// The bot ops, crew's writer in the tests below.
 const opsLogin = "crew-ops[bot]"
 
-// The warnings the tracker reports when ops's writes went back to the boss,
+// The warnings the tracker reports when ops's writes went back to you,
 // one per refusal kind.
 const (
 	lostCredentials = "crew's writes as mate ops went back to you: GitHub refused its credentials, " +
@@ -72,7 +72,7 @@ func wantWriterLost(t *testing.T, tr *Tracker, want string) {
 // renewed and fails when renewErr is set.
 func opsWriter(renewed *atomic.Int32, renewErr error) port.Identity {
 	return port.Identity{
-		Mate: "ops", Login: opsLogin,
+		Bot: "ops", Login: opsLogin,
 		Env:   []string{"GH_CONFIG_DIR=/run/crew-mates/ops/crew"},
 		Unset: []string{"GH_TOKEN", "GITHUB_TOKEN"},
 		Renew: func(context.Context) error {
@@ -109,8 +109,8 @@ func isWrite(args []string) bool {
 }
 
 // Covers AE1: every write runs as the writer, through its directory and
-// without the boss's tokens, and every read as the boss.
-func TestTheTrackerReadsAsTheBossAndWritesAsTheMate(t *testing.T) {
+// without your tokens, and every read as you.
+func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: []string{"auth", "status"}}, login, noCodeowners,
@@ -153,15 +153,15 @@ func TestTheTrackerReadsAsTheBossAndWritesAsTheMate(t *testing.T) {
 }
 
 // checkWritesAsOps checks that every recorded write ran as ops and every
-// read as the boss, and returns how many writes there were.
+// read as you, and returns how many writes there were.
 func checkWritesAsOps(t *testing.T, gh *fakeGh) int {
 	t.Helper()
 	writes := 0
 	for _, c := range gh.commandsTo() {
 		switch {
 		case !isWrite(c.Args):
-			if runsAs(c) != asBoss {
-				t.Errorf("read %q ran with %q, unset %q; want the boss's", c.Args, c.Env, c.Unset)
+			if runsAs(c) != asYou {
+				t.Errorf("read %q ran with %q, unset %q; want yours", c.Args, c.Env, c.Unset)
 			}
 		case !slices.Equal(c.Env, []string{"GH_CONFIG_DIR=/run/crew-mates/ops/crew"}) ||
 			!slices.Equal(c.Unset, []string{"GH_TOKEN", "GITHUB_TOKEN"}):
@@ -174,8 +174,8 @@ func checkWritesAsOps(t *testing.T, gh *fakeGh) int {
 }
 
 // Covers AE4: without ActAs, and without CODEOWNERS, everything runs as the
-// boss and the poll asks for the issues of gh's login alone.
-func TestWithoutAMateEverythingRunsAsTheBoss(t *testing.T) {
+// you and the poll asks for the issues of gh's login alone.
+func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 	tr, gh := build(t,
 		reply{prefix: []string{"auth", "status"}}, login, noCodeowners,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`},
@@ -202,26 +202,26 @@ func TestWithoutAMateEverythingRunsAsTheBoss(t *testing.T) {
 	if !slices.Equal(fieldValues(q, "author0"), []string{"me"}) || fieldValues(q, "author1") != nil {
 		t.Errorf("query authors = %q, %q; want me alone", fieldValues(q, "author0"), fieldValues(q, "author1"))
 	}
-	if boss := tr.Boss(); !slices.Equal(boss, []string{"me"}) {
-		t.Errorf("Boss = %q, want gh's login", boss)
+	if codeOwners := tr.CodeOwners(); !slices.Equal(codeOwners, []string{"me"}) {
+		t.Errorf("CodeOwners = %q, want gh's login", codeOwners)
 	}
 }
 
-func TestAMateRefusedAPermissionHandsEveryLaterWriteToTheBoss(t *testing.T) {
+func TestABotRefusedAPermissionHandsEveryLaterWriteToYou(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: []string{"issue", "view"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
-		reply{prefix: []string{"issue", "edit"}, as: asMate,
+		reply{prefix: []string{"issue", "edit"}, as: asBot,
 			stderr: "GraphQL: Resource not accessible by integration (addLabelsToLabelable)"},
-		reply{prefix: []string{"issue", "edit"}, as: asBoss},
+		reply{prefix: []string{"issue", "edit"}, as: asYou},
 	)
 	for range 2 {
 		if err := tr.Move(context.Background(), "74", ready, inProgress); err != nil {
 			t.Fatalf("Move: %v", err)
 		}
 	}
-	if mate, boss := countAs(gh, asMate, "issue", "edit"), countAs(gh, asBoss, "issue", "edit"); mate != 1 || boss != 2 {
-		t.Errorf("edited %d times as ops and %d as the boss, want 1 and 2", mate, boss)
+	if bot, you := countAs(gh, asBot, "issue", "edit"), countAs(gh, asYou, "issue", "edit"); bot != 1 || you != 2 {
+		t.Errorf("edited %d times as ops and %d as you, want 1 and 2", bot, you)
 	}
 	if renewed.Load() != 0 {
 		t.Errorf("renewed %d times, want none for a permission", renewed.Load())
@@ -229,11 +229,11 @@ func TestAMateRefusedAPermissionHandsEveryLaterWriteToTheBoss(t *testing.T) {
 	wantWriterLost(t, tr, lostPermission)
 }
 
-func TestAMateRefusedItsTokenRenewsItAndTriesAgain(t *testing.T) {
+func TestABotRefusedItsTokenRenewsItAndTriesAgain(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
-		reply{prefix: editComment, as: asMate, once: true, stderr: "gh: Bad credentials (HTTP 401)"},
-		reply{prefix: editComment, as: asMate},
+		reply{prefix: editComment, as: asBot, once: true, stderr: "gh: Bad credentials (HTTP 401)"},
+		reply{prefix: editComment, as: asBot},
 	)
 	tr.rememberStatus("74", cachedStatus{id: 101, body: "status", author: opsLogin})
 	for range 2 {
@@ -241,26 +241,26 @@ func TestAMateRefusedItsTokenRenewsItAndTriesAgain(t *testing.T) {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
-	if renewed.Load() != 1 || countAs(gh, asMate, editComment...) != 3 || countAs(gh, asBoss, editComment...) != 0 {
-		t.Errorf("renewed %d times and edited %d times as ops, %d as the boss; want 1, 3 and 0",
-			renewed.Load(), countAs(gh, asMate, editComment...), countAs(gh, asBoss, editComment...))
+	if renewed.Load() != 1 || countAs(gh, asBot, editComment...) != 3 || countAs(gh, asYou, editComment...) != 0 {
+		t.Errorf("renewed %d times and edited %d times as ops, %d as you; want 1, 3 and 0",
+			renewed.Load(), countAs(gh, asBot, editComment...), countAs(gh, asYou, editComment...))
 	}
 	wantWriterLost(t, tr, "")
 }
 
-func TestAMateStillRefusedAfterRenewingHandsEveryLaterWriteToTheBoss(t *testing.T) {
+func TestABotStillRefusedAfterRenewingHandsEveryLaterWriteToYou(t *testing.T) {
 	for name, tc := range map[string]struct {
 		renewErr error
-		wantMate int
+		wantBot  int
 	}{
-		"renewed":        {wantMate: 2},
-		"renewal failed": {renewErr: errors.New("GitHub answered 502"), wantMate: 1},
+		"renewed":        {wantBot: 2},
+		"renewal failed": {renewErr: errors.New("GitHub answered 502"), wantBot: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var renewed atomic.Int32
 			tr, gh := build(t, login,
-				reply{prefix: editComment, as: asMate, stderr: "gh: Bad credentials (HTTP 401)"},
-				reply{prefix: editComment, as: asBoss},
+				reply{prefix: editComment, as: asBot, stderr: "gh: Bad credentials (HTTP 401)"},
+				reply{prefix: editComment, as: asYou},
 			)
 			tr.ActAs(opsWriter(&renewed, tc.renewErr), []string{opsLogin})
 			tr.rememberStatus("74", cachedStatus{id: 101, body: "status", author: opsLogin})
@@ -269,17 +269,17 @@ func TestAMateStillRefusedAfterRenewingHandsEveryLaterWriteToTheBoss(t *testing.
 					t.Fatalf("ReportStatus: %v", err)
 				}
 			}
-			mate, boss := countAs(gh, asMate, editComment...), countAs(gh, asBoss, editComment...)
-			if mate != tc.wantMate || boss != 2 || len(gh.callsTo(createComment...)) != 0 {
-				t.Errorf("edited %d times as ops and %d as the boss, created %d; want %d, 2 and none",
-					mate, boss, len(gh.callsTo(createComment...)), tc.wantMate)
+			bot, you := countAs(gh, asBot, editComment...), countAs(gh, asYou, editComment...)
+			if bot != tc.wantBot || you != 2 || len(gh.callsTo(createComment...)) != 0 {
+				t.Errorf("edited %d times as ops and %d as you, created %d; want %d, 2 and none",
+					bot, you, len(gh.callsTo(createComment...)), tc.wantBot)
 			}
 			wantWriterLost(t, tr, lostCredentials)
 		})
 	}
 }
 
-func TestAnIssueGoneForTheBossTooKeepsTheMateWriting(t *testing.T) {
+func TestAnIssueGoneForYouTooKeepsTheBotWriting(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: commentOn(12), stderr: "gh: Not Found (HTTP 404)"},
@@ -291,17 +291,17 @@ func TestAnIssueGoneForTheBossTooKeepsTheMateWriting(t *testing.T) {
 			t.Fatalf("ReportFailure = %v, want ErrMovedMeanwhile", err)
 		}
 	}
-	if mate, boss := countAs(gh, asMate, commentOn(12)...), countAs(gh, asBoss, commentOn(12)...); mate != 2 || boss != 2 {
-		t.Errorf("posted %d times as ops and %d as the boss, want 2 and 2", mate, boss)
+	if bot, you := countAs(gh, asBot, commentOn(12)...), countAs(gh, asYou, commentOn(12)...); bot != 2 || you != 2 {
+		t.Errorf("posted %d times as ops and %d as you, want 2 and 2", bot, you)
 	}
 	wantWriterLost(t, tr, "")
 }
 
-func TestAMateThatLostAccessHandsTheStatusCommentToTheBoss(t *testing.T) {
+func TestABotThatLostAccessHandsTheStatusCommentToYou(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed, login,
-		reply{prefix: editComment, as: asMate, stderr: "gh: Not Found (HTTP 404)"},
-		reply{prefix: editComment, as: asBoss},
+		reply{prefix: editComment, as: asBot, stderr: "gh: Not Found (HTTP 404)"},
+		reply{prefix: editComment, as: asYou},
 	)
 	tr.rememberStatus("74", cachedStatus{id: 101, body: "status", author: opsLogin})
 	for range 3 {
@@ -314,8 +314,8 @@ func TestAMateThatLostAccessHandsTheStatusCommentToTheBoss(t *testing.T) {
 			t.Errorf("edited %q, want comment 101", c.Args)
 		}
 	}
-	if mate, boss := countAs(gh, asMate, editComment...), countAs(gh, asBoss, editComment...); mate != 1 || boss != 3 {
-		t.Errorf("edited %d times as ops and %d as the boss, want 1 and 3", mate, boss)
+	if bot, you := countAs(gh, asBot, editComment...), countAs(gh, asYou, editComment...); bot != 1 || you != 3 {
+		t.Errorf("edited %d times as ops and %d as you, want 1 and 3", bot, you)
 	}
 	if n := len(gh.callsTo(createComment...)); n != 0 {
 		t.Errorf("created %d comments, want none", n)
@@ -323,10 +323,10 @@ func TestAMateThatLostAccessHandsTheStatusCommentToTheBoss(t *testing.T) {
 	wantWriterLost(t, tr, lostAccess)
 }
 
-func TestARateLimitedMateKeepsWriting(t *testing.T) {
+func TestARateLimitedBotKeepsWriting(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
-		reply{prefix: commentOn(12), as: asMate, stderr: "gh: You have exceeded a secondary rate limit. (HTTP 403)"},
+		reply{prefix: commentOn(12), as: asBot, stderr: "gh: You have exceeded a secondary rate limit. (HTTP 403)"},
 	)
 	report := crew.FailureReport{IssueKey: "12", IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
 	for range 2 {
@@ -336,15 +336,15 @@ func TestARateLimitedMateKeepsWriting(t *testing.T) {
 		}
 		wantClassified(t, err, nil)
 	}
-	if mate, boss := countAs(gh, asMate, commentOn(12)...), countAs(gh, asBoss, commentOn(12)...); mate != 2 || boss != 0 {
-		t.Errorf("posted %d times as ops and %d as the boss, want 2 and 0", mate, boss)
+	if bot, you := countAs(gh, asBot, commentOn(12)...), countAs(gh, asYou, commentOn(12)...); bot != 2 || you != 0 {
+		t.Errorf("posted %d times as ops and %d as you, want 2 and 0", bot, you)
 	}
 	wantWriterLost(t, tr, "")
 }
 
-// Covers R21: a status comment the boss wrote is continued, not edited, by
-// a mate.
-func TestAMateContinuesAStatusCommentTheBossWrote(t *testing.T) {
+// Covers R21: a status comment you wrote is continued, not edited, by
+// a bot.
+func TestABotContinuesAStatusCommentYouWrote(t *testing.T) {
 	marked := "crew: an older status.\n\n" + statusMarker + "\n"
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed, login,
@@ -352,8 +352,8 @@ func TestAMateContinuesAStatusCommentTheBossWrote(t *testing.T) {
 			commentJSON(9, "someone-else", marked),
 			commentJSON(12, "me", marked),
 		}, ",") + "]"},
-		reply{prefix: createComment, as: asMate, stdout: "130\n"},
-		reply{prefix: editComment, as: asMate},
+		reply{prefix: createComment, as: asBot, stdout: "130\n"},
+		reply{prefix: editComment, as: asBot},
 	)
 	for range 2 {
 		if err := tr.ReportStatus(context.Background(), running74(time.Time{}, "")); err != nil {
@@ -375,7 +375,7 @@ func TestAMateContinuesAStatusCommentTheBossWrote(t *testing.T) {
 	}
 }
 
-func TestARestartedTrackerFindsTheStatusCommentAMateWrote(t *testing.T) {
+func TestARestartedTrackerFindsTheStatusCommentABotWrote(t *testing.T) {
 	marked := "crew: an older status.\n\n" + statusMarker + "\n"
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed, login,
@@ -384,7 +384,7 @@ func TestARestartedTrackerFindsTheStatusCommentAMateWrote(t *testing.T) {
 			commentJSON(14, "Crew-Ops[bot]", marked),
 			commentJSON(20, "crew-ops", marked),
 		}, ",") + "]"},
-		reply{prefix: editComment, as: asMate},
+		reply{prefix: editComment, as: asBot},
 	)
 	if err := tr.ReportStatus(context.Background(), running74(time.Time{}, "")); err != nil {
 		t.Fatalf("ReportStatus: %v", err)
@@ -395,74 +395,74 @@ func TestARestartedTrackerFindsTheStatusCommentAMateWrote(t *testing.T) {
 	}
 }
 
-func TestAMateRefusedEveryWriteLeavesOneStatusComment(t *testing.T) {
+func TestABotRefusedEveryWriteLeavesOneStatusComment(t *testing.T) {
 	refused := "gh: Resource not accessible by integration (HTTP 403)"
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed, login,
 		reply{prefix: listComments, stdout: "[]"},
-		reply{prefix: createComment, as: asMate, stderr: refused},
-		reply{prefix: createComment, as: asBoss, stdout: "101\n"},
-		reply{prefix: editComment, as: asMate, stderr: refused},
-		reply{prefix: editComment, as: asBoss},
+		reply{prefix: createComment, as: asBot, stderr: refused},
+		reply{prefix: createComment, as: asYou, stdout: "101\n"},
+		reply{prefix: editComment, as: asBot, stderr: refused},
+		reply{prefix: editComment, as: asYou},
 	)
 	for range 3 {
 		if err := tr.ReportStatus(context.Background(), running74(time.Time{}, "")); err != nil {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
-	if n := countAs(gh, asBoss, createComment...); n != 1 {
-		t.Errorf("created %d comments as the boss, want 1", n)
+	if n := countAs(gh, asYou, createComment...); n != 1 {
+		t.Errorf("created %d comments as you, want 1", n)
 	}
-	if mate, boss := countAs(gh, asMate, editComment...), countAs(gh, asBoss, editComment...); mate != 0 || boss != 2 {
-		t.Errorf("edited %d times as ops and %d as the boss, want 0 and 2", mate, boss)
+	if bot, you := countAs(gh, asBot, editComment...), countAs(gh, asYou, editComment...); bot != 0 || you != 2 {
+		t.Errorf("edited %d times as ops and %d as you, want 0 and 2", bot, you)
 	}
 }
 
-func TestAMateNotLoggedInHandsTheWriteToTheBoss(t *testing.T) {
+func TestABotNotLoggedInHandsTheWriteToYou(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
-		reply{prefix: []string{"label", "create"}, as: asMate,
+		reply{prefix: []string{"label", "create"}, as: asBot,
 			stderr: "To get started with GitHub CLI, please run:  gh auth login"},
-		reply{prefix: []string{"label", "create"}, as: asBoss},
+		reply{prefix: []string{"label", "create"}, as: asYou},
 	)
 	if _, _, err := tr.gh.write(context.Background(), "label", "create", "ready"); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if mate, boss := countAs(gh, asMate, "label"), countAs(gh, asBoss, "label"); mate != 1 || boss != 1 {
-		t.Errorf("created %d times as ops and %d as the boss, want 1 and 1", mate, boss)
+	if bot, you := countAs(gh, asBot, "label"), countAs(gh, asYou, "label"); bot != 1 || you != 1 {
+		t.Errorf("created %d times as ops and %d as you, want 1 and 1", bot, you)
 	}
 	wantWriterLost(t, tr, lostPermission)
 }
 
-func TestAWriteThatCannotStartIsTheMatesError(t *testing.T) {
+func TestAWriteThatCannotStartIsTheBotsError(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: []string{"label", "create"}, err: errors.New("start gh: no such file")},
 	)
-	_, mate, err := tr.gh.write(context.Background(), "label", "create", "ready")
-	if err == nil || mate != opsLogin {
-		t.Errorf("write = %q, %v; want ops and the error", mate, err)
+	_, bot, err := tr.gh.write(context.Background(), "label", "create", "ready")
+	if err == nil || bot != opsLogin {
+		t.Errorf("write = %q, %v; want ops and the error", bot, err)
 	}
 	if n := len(gh.commandsTo()); n != 1 {
 		t.Errorf("ran gh %d times, want once", n)
 	}
 }
 
-// Two writes that fall back at once, as two goroutines whose mate both
-// refused before either went back to the boss, keep the first one's warning.
+// Two writes that fall back at once, as two goroutines whose bot both
+// refused before either went back to you, keep the first one's warning.
 func TestTwoWritesFallingBackKeepTheFirstWarning(t *testing.T) {
 	var renewed atomic.Int32
 	tr, _ := actingTracker(t, &renewed)
-	tr.gh.backToBoss(refusedPermission, "ops")
-	tr.gh.backToBoss(refusedNotFound, "ops")
+	tr.gh.backToLogin(refusedPermission, "ops")
+	tr.gh.backToLogin(refusedNotFound, "ops")
 	wantWriterLost(t, tr, lostPermission)
 }
 
-// Without a mate, the boss's writes never fall back, so no warning comes.
-func TestTheBossWritingAloneReportsNoWritesWarning(t *testing.T) {
+// Without a bot, your writes never fall back, so no warning comes.
+func TestYouWritingAloneReportsNoWritesWarning(t *testing.T) {
 	tr, _ := build(t, reply{prefix: []string{"label", "create"}, stderr: "gh: Resource not accessible (HTTP 403)"})
 	if _, _, err := tr.gh.write(context.Background(), "label", "create", "ready"); err == nil {
-		t.Fatal("write = nil, want the boss's refusal")
+		t.Fatal("write = nil, want your refusal")
 	}
 	wantWriterLost(t, tr, "")
 }

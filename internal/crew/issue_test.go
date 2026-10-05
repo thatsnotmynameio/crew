@@ -18,11 +18,11 @@ func TestKindString(t *testing.T) {
 	}
 }
 
-func TestTheZeroIssueAndStageAreOfKindIssue(t *testing.T) {
+func TestTheZeroIssueAndRuleAreOfKindIssue(t *testing.T) {
 	if got := (Issue{}).Kind; got != KindIssue {
 		t.Errorf("Issue{}.Kind = %v, want %v", got, KindIssue)
 	}
-	if got := (Stage{}).Takes; got != KindIssue {
-		t.Errorf("Stage{}.Takes = %v, want %v", got, KindIssue)
+	if got := (Rule{}).Takes; got != KindIssue {
+		t.Errorf("Rule{}.Takes = %v, want %v", got, KindIssue)
 	}
 }

@@ -22,20 +22,20 @@ const (
 	bashMaxTimeout     = "BASH_MAX_TIMEOUT_MS=1800000"
 )
 
-// command builds the headless Claude Code run of run with model. It is
-// pure, and kept apart from the stream parser, so that building the command
-// and judging the session change independently. The stream-json output,
-// which needs --verbose with -p, is what the parser judges the session by;
-// proc closes stdin. The prompt goes last, after --, so one that starts with
-// a dash (a Markdown list, an issue title) is not read as an option. The
-// session acts as run's identity, with its environment added and the
-// variables it unsets removed, and gets the boss's and the mates' logins as
-// CREW_BOSS and CREW_MATES.
+// command builds the headless Claude Code run of run with model. It is pure,
+// and kept apart from the stream parser, so that building the command and
+// judging the session change independently. The stream-json output, which
+// needs --verbose with -p, is what the parser judges the session by; proc
+// closes stdin. The prompt goes last, after --, so one that starts with a dash
+// (a Markdown list, an issue title) is not read as an option. The session acts
+// as run's identity, with its environment added and the variables it unsets
+// removed, and gets the code owners' and the bots' logins as CREW_BOSS and
+// CREW_MATES.
 func command(run port.Run, model string) proc.Command {
 	env := slices.Concat(
 		[]string{bashDefaultTimeout, bashMaxTimeout},
 		run.Identity.Env,
-		[]string{"CREW_BOSS=" + strings.Join(run.Boss, " "), "CREW_MATES=" + strings.Join(run.Mates, " ")},
+		[]string{"CREW_BOSS=" + strings.Join(run.CodeOwners, " "), "CREW_MATES=" + strings.Join(run.Bots, " ")},
 	)
 	return proc.Command{
 		Name: binary,

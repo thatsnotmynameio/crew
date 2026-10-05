@@ -28,7 +28,7 @@ func New(trackers map[string]port.TrackerFactory, harnesses map[string]port.Harn
 }
 
 // Tracker builds the tracker adapter registered as name, the config's
-// tracker.name, from its config section, the workflow's states and the
+// tracker.name, from its config section, the rules' states and the
 // config's extra labels. An unregistered name is an error naming
 // tracker.name and every registered tracker; a factory's error, such as an
 // unknown key in the section, is returned with the adapter's name.

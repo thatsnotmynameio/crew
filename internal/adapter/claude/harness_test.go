@@ -148,7 +148,7 @@ func load(t *testing.T, body string) (*config.Config, error) {
 	return config.Load(root)
 }
 
-const workflow = `workflow:
+const rules = `workflow:
   - name: implement
     label: ready
     moves_to: in progress
@@ -206,9 +206,9 @@ func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
 	for _, tc := range []struct {
 		name, config, want string
 	}{
-		{"no model", workflow, "claude-opus-5-5"},
-		{"empty model", "config:\n  model: \"\"\n" + workflow, "claude-opus-5-5"},
-		{"configured model", "config:\n  model: claude-sonnet-5\n" + workflow, "claude-sonnet-5"},
+		{"no model", rules, "claude-opus-5-5"},
+		{"empty model", "config:\n  model: \"\"\n" + rules, "claude-opus-5-5"},
+		{"configured model", "config:\n  model: claude-sonnet-5\n" + rules, "claude-sonnet-5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := load(t, tc.config)
@@ -236,7 +236,7 @@ func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
 }
 
 func TestFactoryRejectsAnUnknownHarnessKeyNamingIt(t *testing.T) {
-	cfg, err := load(t, "harness:\n  effort: high\n"+workflow)
+	cfg, err := load(t, "harness:\n  effort: high\n"+rules)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

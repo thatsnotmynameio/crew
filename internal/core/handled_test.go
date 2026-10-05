@@ -28,12 +28,12 @@ func failure(key, action, reason string) crew.ActionFailure {
 	return crew.ActionFailure{Action: action, Reason: reason, Workspace: name, Log: ".crew/logs/" + name + ".log"}
 }
 
-func TestASucceededStageIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
+func TestASucceededRuleIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	i1 := issue("1", 1, ready)
 	take, events := d.poll(i1)
 	taken := d.now
-	hasEvent(t, events, core.IssueTaken{At: taken, Issue: i1, Stage: "implement", From: ready, To: inProgress})
+	hasEvent(t, events, core.IssueTaken{At: taken, Issue: i1, Rule: "implement", From: ready, To: inProgress})
 	d.settle(take)
 
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
@@ -45,7 +45,7 @@ func TestASucceededStageIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
 	want := core.HandledView{
-		Issue: i1, Stage: "implement", To: readyToReview, Move: crew.MoveDone, Taken: taken, Ended: ended,
+		Issue: i1, Rule: "implement", To: readyToReview, Move: crew.MoveDone, Taken: taken, Ended: ended,
 		Actions: []core.HandledAction{
 			{Name: "acceptance", Spend: crew.Spend{Sessions: 1}},
 			{Name: "development", Spend: crew.Spend{Sessions: 1}},
@@ -64,7 +64,7 @@ func TestASucceededStageIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 }
 
 // Covers AE2.
-func TestAFailedStageIsHandledWithItsFailedActionsOnceItsReportSettles(t *testing.T) {
+func TestAFailedRuleIsHandledWithItsFailedActionsOnceItsReportSettles(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
@@ -89,7 +89,7 @@ func TestAFailedStageIsHandledWithItsFailedActionsOnceItsReportSettles(t *testin
 }
 
 // Covers AE3.
-func TestASucceededStageWhoseVerdictMoveIsGivenUpNeedsAttention(t *testing.T) {
+func TestASucceededRuleWhoseVerdictMoveIsGivenUpNeedsAttention(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
@@ -110,7 +110,7 @@ func TestASucceededStageWhoseVerdictMoveIsGivenUpNeedsAttention(t *testing.T) {
 	}
 }
 
-func TestAFailedStageWhoseReportIsRefusedIsHandledWithTheMoveDone(t *testing.T) {
+func TestAFailedRuleWhoseReportIsRefusedIsHandledWithTheMoveDone(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	verdict := judgedNeedingAttention(d)
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
@@ -122,7 +122,7 @@ func TestAFailedStageWhoseReportIsRefusedIsHandledWithTheMoveDone(t *testing.T) 
 	}
 }
 
-func TestAFailedStageWhoseMoveIsRefusedKeepsItsFailuresAndTheGivenUpMove(t *testing.T) {
+func TestAFailedRuleWhoseMoveIsRefusedKeepsItsFailuresAndTheGivenUpMove(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	verdict := judgedNeedingAttention(d)
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultRefused, Reason: "label missing"})
@@ -138,21 +138,21 @@ func TestAFailedStageWhoseMoveIsRefusedKeepsItsFailuresAndTheGivenUpMove(t *test
 }
 
 // Covers AE1.
-func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheStageHoldingIt(t *testing.T) {
+func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
 	d.settle(verdict)
-	if got := onlyEntry(t, d); got.Stage != "implement" || got.HeldBy != "" {
-		t.Fatalf("first entry: got stage %q, held by %q; want implement, held by none", got.Stage, got.HeldBy)
+	if got := onlyEntry(t, d); got.Rule != "implement" || got.HeldBy != "" {
+		t.Fatalf("first entry: got stage %q, held by %q; want implement, held by none", got.Rule, got.HeldBy)
 	}
 
 	take, _ := d.poll(issue("1", 1, readyToReview))
 	taken := d.now
-	if got := onlyEntry(t, d); got.Stage != "implement" || got.HeldBy != "review" {
+	if got := onlyEntry(t, d); got.Rule != "implement" || got.HeldBy != "review" {
 		t.Fatalf("entry while #1 is held again: got stage %q, held by %q; want implement, held by review",
-			got.Stage, got.HeldBy)
+			got.Rule, got.HeldBy)
 	}
 	d.settle(take)
 	verdict, _ = d.send(core.SessionEnded{IssueKey: "1", Action: "custom_review", Outcome: failed("changes requested")})
@@ -160,7 +160,7 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheStageHoldingIt(t *testing.T)
 	d.settle(verdict)
 
 	got := onlyEntry(t, d)
-	if got.Stage != "review" || got.To != needsAttention || got.Taken != taken || got.Ended != ended || got.HeldBy != "" {
+	if got.Rule != "review" || got.To != needsAttention || got.Taken != taken || got.Ended != ended || got.HeldBy != "" {
 		t.Fatalf("entry after review: got %#v, want review, needs attention, taken %v, ended %v, held by none",
 			got, taken, ended)
 	}
@@ -198,7 +198,7 @@ func TestATakeGivenUpOnANewIssueIsNotHandled(t *testing.T) {
 	}
 }
 
-func TestAnOwedVerdictMoveIsHandledWhenItsRetryLandsWithTheStagesOwnDuration(t *testing.T) {
+func TestAnOwedVerdictMoveIsHandledWhenItsRetryLandsWithTheRulesOwnDuration(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
@@ -270,12 +270,12 @@ func TestAViewsHandledEntriesShareNoMemoryWithTheModel(t *testing.T) {
 	}
 }
 
-// hiddenReview is the draft workflow with review hidden from the board and
-// a merge stage taking what review approved.
-func hiddenReview() []crew.Stage {
-	workflow := draft()
-	workflow[1].OffBoard = true
-	return append(workflow, crew.Stage{
+// hiddenReview is the draft rules with review hidden from the board and
+// a merge rule taking what review approved.
+func hiddenReview() []crew.Rule {
+	rules := draft()
+	rules[1].OffBoard = true
+	return append(rules, crew.Rule{
 		Name: "merge", Label: readyToMerge, MovesTo: "merging", OnSuccess: "merged", OnFailure: needsAttention,
 		Actions: []crew.Action{{Name: "merge", Prompt: "Merge {{.Issue.Ref}}"}},
 	})
@@ -293,39 +293,39 @@ func reviewed(d *driver, outcome crew.Outcome) {
 	d.settle(verdict)
 }
 
-func TestAHiddenStageThatSucceedsKeepsTheEarlierEntryMarkedGone(t *testing.T) {
+func TestAHiddenRuleThatSucceedsKeepsTheEarlierEntryMarkedGone(t *testing.T) {
 	d := newDriver(t, hiddenReview(), 2)
 	reviewed(d, succeeded)
-	if got := onlyEntry(t, d); got.Stage != "implement" || got.To != readyToReview || !got.Gone || got.HeldBy != "" {
+	if got := onlyEntry(t, d); got.Rule != "implement" || got.To != readyToReview || !got.Gone || got.HeldBy != "" {
 		t.Fatalf("entry after the hidden review: got %#v, want implement's, gone, held by none", got)
 	}
 
 	d.poll(issue("1", 1, readyToMerge))
-	if got := onlyEntry(t, d); got.Stage != "implement" || !got.Gone || got.HeldBy != "merge" {
+	if got := onlyEntry(t, d); got.Rule != "implement" || !got.Gone || got.HeldBy != "merge" {
 		t.Fatalf("entry while merge holds #1: got %#v, want implement's, gone, held by merge", got)
 	}
 }
 
-func TestAHiddenStageThatFailsReplacesTheEarlierEntry(t *testing.T) {
+func TestAHiddenRuleThatFailsReplacesTheEarlierEntry(t *testing.T) {
 	d := newDriver(t, hiddenReview(), 2)
 	reviewed(d, failed("changes requested"))
 	got := onlyEntry(t, d)
-	if got.Stage != "review" || got.To != needsAttention || !got.NeedsAttention() {
+	if got.Rule != "review" || got.To != needsAttention || !got.NeedsAttention() {
 		t.Fatalf("entry after the failed hidden review: got %#v, want review's, needing attention", got)
 	}
 }
 
-func TestAHiddenStageThatSucceedsOnAnIssueWithNoEntryAddsItsOwn(t *testing.T) {
+func TestAHiddenRuleThatSucceedsOnAnIssueWithNoEntryAddsItsOwn(t *testing.T) {
 	d := newDriver(t, hiddenReview(), 2)
 	d.running(issue("1", 1, readyToReview))
 	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "custom_review", Outcome: succeeded})
 	d.settle(verdict)
-	if got := onlyEntry(t, d); got.Stage != "review" || got.To != readyToMerge || got.Gone {
+	if got := onlyEntry(t, d); got.Rule != "review" || got.To != readyToMerge || got.Gone {
 		t.Fatalf("entry: got %#v, want review's, not gone", got)
 	}
 }
 
-func TestAHiddenStageThatSucceedsReplacesAnEarlierEntryNeedingAttention(t *testing.T) {
+func TestAHiddenRuleThatSucceedsReplacesAnEarlierEntryNeedingAttention(t *testing.T) {
 	d := newDriver(t, hiddenReview(), 2)
 	reviewed(d, failed("changes requested"))
 
@@ -334,7 +334,7 @@ func TestAHiddenStageThatSucceedsReplacesAnEarlierEntryNeedingAttention(t *testi
 	d.settle(verdict)
 
 	got := onlyEntry(t, d)
-	if got.Stage != "review" || got.To != readyToMerge || got.NeedsAttention() {
+	if got.Rule != "review" || got.To != readyToMerge || got.NeedsAttention() {
 		t.Fatalf("entry after the retried hidden review: got %#v, want review's success", got)
 	}
 }

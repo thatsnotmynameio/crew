@@ -22,7 +22,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// The workflow's states in these tests, as label text.
+// The rules' states in these tests, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -32,8 +32,8 @@ const (
 
 const poll = 300 * time.Second
 
-// implement is the draft config's implement stage (KTD5).
-var implement = crew.Stage{
+// implement is the draft config's implement rule (KTD5).
+var implement = crew.Rule{
 	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
 	OnFailure: needsAttention,
 	Actions: []crew.Action{
@@ -42,8 +42,8 @@ var implement = crew.Stage{
 	},
 }
 
-// develop is a stage with one action, for tests about one session per issue.
-var develop = crew.Stage{
+// develop is a rule with one action, for tests about one session per issue.
+var develop = crew.Rule{
 	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
 	OnFailure: needsAttention,
 	Actions:   []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
@@ -74,9 +74,9 @@ type rig struct {
 	queue *engine.Queue
 }
 
-// config returns a config over tracker for workflow, with a fake harness and
+// config returns a config over tracker for rules, with a fake harness and
 // workspace, rooted in a fresh repository directory.
-func config(t *testing.T, tracker port.Tracker, workflow ...crew.Stage) engine.Config {
+func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Config {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "home", "repo")
 	worktrees := filepath.Join(root, ".crew", "worktrees")
@@ -84,7 +84,7 @@ func config(t *testing.T, tracker port.Tracker, workflow ...crew.Stage) engine.C
 		t.Fatal(err)
 	}
 	return engine.Config{
-		Workflow:          workflow,
+		Rules:             rules,
 		MaxParallelIssues: 2,
 		PollInterval:      poll,
 		Tracker:           tracker,

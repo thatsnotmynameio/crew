@@ -22,7 +22,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/registry"
 )
 
-// The workflow's states in these tests, as label text.
+// The rules' states in these tests, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -32,7 +32,7 @@ const (
 	readyToMerge   crew.State = "ready to merge"
 )
 
-// oneAction is a config with one stage of one action, run by the fakes.
+// oneAction is a config with one rule of one action, run by the fakes.
 const oneAction = `
 config:
   harness: fake
@@ -49,7 +49,7 @@ workflow:
         prompt: "Implement development for issue {{.Issue.Ref}}"
 `
 
-// draft is the boss's draft config (KTD5), with the fakes named in place of
+// draft is your draft config (KTD5), with the fakes named in place of
 // github and claude.
 const draft = `
 config:
@@ -260,7 +260,7 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 }
 
 // Covers AE1 through the wiring: the check in the config runs through the
-// checker the options carry, and its failure fails the stage.
+// checker the options carry, and its failure fails the rule.
 func TestAnActionsCheckRunsThroughTheOptionsChecker(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue("1", ready))
@@ -373,10 +373,10 @@ func recordingExtras(tr *fake.Tracker, h *fake.Harness, extras *[]crew.State) re
 	)
 }
 
-// Covers AE4 and R8: an issue with an extra label and a stage's label is
-// taken by that stage and loses the extra; an issue whose only crew label is
+// Covers AE4 and R8: an issue with an extra label and a rule's label is
+// taken by that rule and loses the extra; an issue whose only crew label is
 // an extra is never taken. The tracker is built with the config's extras.
-func TestAnExtraLabelNeverBlocksAStageAndNeverStartsOne(t *testing.T) {
+func TestAnExtraLabelNeverBlocksARuleAndNeverStartsOne(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const waitingBrainstorm crew.State = "waiting brainstorm"
 		tr := fake.NewTracker(issue("1", ready), issue("2"))

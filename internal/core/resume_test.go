@@ -10,7 +10,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// The states of crew's own workflow, which these tests use.
+// The states of crew's own rules, which these tests use.
 const (
 	readyForDev crew.State = "crew:ready for development"
 	readyForFix crew.State = "crew:ready for fix"
@@ -19,10 +19,10 @@ const (
 	crewFailed  crew.State = "crew:failed"
 )
 
-// crewWorkflow is crew's own development and fix stages, whose actions share
-// the name lfg, plus a two-action stage.
-func crewWorkflow() []crew.Stage {
-	return []crew.Stage{
+// crewRules is crew's own development and fix rules, whose actions share
+// the name lfg, plus a two-action rule.
+func crewRules() []crew.Rule {
+	return []crew.Rule{
 		{
 			Name: "development", Label: readyForDev, MovesTo: crewRunning, OnSuccess: crewReview, OnFailure: crewFailed,
 			Actions: []crew.Action{{Name: "lfg", Prompt: "/lfg {{.Issue.Ref}}"}},
@@ -45,15 +45,15 @@ func crewWorkflow() []crew.Stage {
 // can reopen workspaces.
 func resumeDriver(t *testing.T, past ...core.RunRecord) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(crewWorkflow(), 2, core.RecordingRuns(past), core.Reopening()), now: t0}
+	return &driver{t: t, m: core.New(crewRules(), 2, core.RecordingRuns(past), core.Reopening()), now: t0}
 }
 
-// startedRun is the start record of a run of action in stage on issue key,
+// startedRun is the start record of a run of action in rule on issue key,
 // in the workspace the engine would name issue-<key>-<workspace>.
-func startedRun(key, stage, action, workspace string) core.RunRecord {
+func startedRun(key, rule, action, workspace string) core.RunRecord {
 	name := "issue-" + key + "-" + workspace
 	return core.RunRecord{
-		Event: core.RunStarted, At: t0, IssueKey: key, IssueRef: "#" + key, Stage: stage, Action: action,
+		Event: core.RunStarted, At: t0, IssueKey: key, IssueRef: "#" + key, Rule: rule, Action: action,
 		Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }
@@ -147,7 +147,7 @@ func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 
 	_, events := d.send(core.SessionStarted{IssueKey: "9", Action: "lfg"})
 	hasEvent(t, events, core.ActionStarted{
-		At: d.now, IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+		At: d.now, IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
 	})
 	if !d.m.View().Issues[0].Actions[0].Resumed {
@@ -172,7 +172,7 @@ func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
 
 	cmds, events := d.send(core.WorkspaceGone{IssueKey: "9", Action: "lfg"})
 	hasEvent(t, events, core.WorkspaceMissing{
-		At: d.now, IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg", Workspace: "issue-9-lfg",
+		At: d.now, IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg", Workspace: "issue-9-lfg",
 	})
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Action: "lfg"})
 
@@ -182,7 +182,7 @@ func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
 	}
 }
 
-func TestAE4AnotherStagesActionOfTheSameNameStartsFresh(t *testing.T) {
+func TestAE4AnotherRulesActionOfTheSameNameStartsFresh(t *testing.T) {
 	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke")))
 
 	cmds := d.takeIssue(issue("9", 1, readyForFix))
@@ -203,7 +203,7 @@ func TestAE5ARunThatNeverRecordedItsEndResumesAsCrashed(t *testing.T) {
 	}
 }
 
-func TestAE6EachActionOfAStageIsDecidedOnItsOwn(t *testing.T) {
+func TestAE6EachActionOfARuleIsDecidedOnItsOwn(t *testing.T) {
 	d := resumeDriver(t,
 		endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail")),
 		endedRun(startedRun("5", "implement", "development", "development"), succeeded),
@@ -244,7 +244,7 @@ func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) 
 
 func TestAModelThatCannotReopenCreatesForAFailedRun(t *testing.T) {
 	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-	d := &driver{t: t, m: core.New(crewWorkflow(), 2, core.RecordingRuns([]core.RunRecord{past})), now: t0}
+	d := &driver{t: t, m: core.New(crewRules(), 2, core.RecordingRuns([]core.RunRecord{past})), now: t0}
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Action: "lfg"})
@@ -264,7 +264,7 @@ func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
 	t.Run("in memory", func(t *testing.T) {
 		d := resumeDriver(t, devFailed)
 		d.takeIssue(issue("9", 1, readyForFix))
-		// The boss removed development's worktree and its branch, so fix
+		// You removed development's worktree and its branch, so fix
 		// gets its name.
 		d.send(space("9", "lfg"))
 		d.send(core.SessionStarted{IssueKey: "9", Action: "lfg"})
@@ -373,13 +373,13 @@ func TestARecordThatFailsToWriteIsReported(t *testing.T) {
 
 	_, events := d.send(core.RecordFailed{Record: r, Reason: "disk full"})
 	wantEvents(t, events, core.RunNotRecorded{
-		At: d.now, IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg", Reason: "disk full",
+		At: d.now, IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg", Reason: "disk full",
 	})
 }
 
 func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 	past := endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail"))
-	m := core.New(crewWorkflow(), 2, core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.ReportingStatus())
+	m := core.New(crewRules(), 2, core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.ReportingStatus())
 	d := &driver{t: t, m: m, now: t0}
 	// last answers every status write and keeps the newest status.
 	var last crew.Status
@@ -409,7 +409,7 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 }
 
 func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
-	wf := crewWorkflow()
+	wf := crewRules()
 	wf[0].Actions[0].Check = "gh pr view --json url"
 	d := &driver{t: t, m: core.New(wf, 2, core.RecordingRuns(nil), core.Reopening()), now: t0}
 	d.takeIssue(issue("9", 1, readyForDev))

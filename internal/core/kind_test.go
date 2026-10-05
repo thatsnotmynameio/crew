@@ -7,16 +7,16 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// The labels of the fix review stage, which takes pull requests.
+// The labels of the fix review rule, which takes pull requests.
 const (
 	fixReviewReady crew.State = "fix review ready"
 	fixing         crew.State = "fixing review"
 )
 
-// withFixReview is the draft workflow plus a fix review stage that takes
+// withFixReview is the draft rules plus a fix review rule that takes
 // pull requests.
-func withFixReview() []crew.Stage {
-	return append(draft(), crew.Stage{
+func withFixReview() []crew.Rule {
+	return append(draft(), crew.Rule{
 		Name: "fix review", Label: fixReviewReady, MovesTo: fixing, OnSuccess: readyToReview,
 		OnFailure: needsAttention, Takes: crew.KindPullRequest,
 		Actions: []crew.Action{{Name: "fix", Prompt: "Fix the review comments on {{.Issue.Ref}}"}},
@@ -42,26 +42,26 @@ func otherKinds(events []core.Event) []core.Event {
 }
 
 // Covers AE1 of #92.
-func TestAPullRequestInTheLabelOfAStageThatTakesIssuesIsLeftAloneWithANotice(t *testing.T) {
+func TestAPullRequestInTheLabelOfARuleThatTakesIssuesIsLeftAloneWithANotice(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 
 	cmds, events := d.poll(pr90(1, ready))
 	wantCommands(t, cmds)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
-		Label: ready, Stage: "implement", Takes: crew.KindIssue,
+		Label: ready, Rule: "implement", Takes: crew.KindIssue,
 	})
 	wantHeld(t, d.m)
 }
 
 // Covers AE2 of #92.
-func TestAStageThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
+func TestARuleThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 	d := newDriver(t, withFixReview(), 2)
 
 	cmds, events := d.poll(pr90(1, fixReviewReady))
 	wantCommands(t, cmds, core.Move{IssueKey: "90", From: fixReviewReady, To: fixing})
 	hasEvent(t, events, core.IssueTaken{
-		At: d.now, Issue: pr90(1, fixReviewReady), Stage: "fix review",
+		At: d.now, Issue: pr90(1, fixReviewReady), Rule: "fix review",
 		From: fixReviewReady, To: fixing,
 	})
 	if n := otherKinds(events); n != nil {
@@ -71,14 +71,14 @@ func TestAStageThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 }
 
 // Covers AE3 of #92.
-func TestAnIssueInTheLabelOfAStageThatTakesPullRequestsGetsTheNoticeOnce(t *testing.T) {
+func TestAnIssueInTheLabelOfARuleThatTakesPullRequestsGetsTheNoticeOnce(t *testing.T) {
 	d := newDriver(t, withFixReview(), 2)
 
 	cmds, events := d.poll(issue("42", 1, fixReviewReady))
 	wantCommands(t, cmds)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
-		Label: fixReviewReady, Stage: "fix review", Takes: crew.KindPullRequest,
+		Label: fixReviewReady, Rule: "fix review", Takes: crew.KindPullRequest,
 	})
 
 	cmds, events = d.poll(issue("42", 1, fixReviewReady))
@@ -110,20 +110,20 @@ func TestTheNoticeShowsAgainOnceAListingFoundTheItemWithoutTheLabel(t *testing.T
 			_, events = d.poll(pr90(1, ready))
 			wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 				At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
-				Label: ready, Stage: "implement", Takes: crew.KindIssue,
+				Label: ready, Rule: "implement", Takes: crew.KindIssue,
 			})
 		})
 	}
 }
 
-func TestAnItemMovedToTheLabelOfAnotherStageOfTheOtherKindGetsANewNotice(t *testing.T) {
+func TestAnItemMovedToTheLabelOfAnotherRuleOfTheOtherKindGetsANewNotice(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.poll(pr90(1, ready))
 
 	_, events := d.poll(pr90(1, readyToReview))
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
-		Label: readyToReview, Stage: "review", Takes: crew.KindIssue,
+		Label: readyToReview, Rule: "review", Takes: crew.KindIssue,
 	})
 }
 
@@ -148,7 +148,7 @@ func TestAFailedOrSkippedListingDoesNotRepeatTheNotice(t *testing.T) {
 }
 
 // Covers AE5 of #92: the mirror gave #90 the label of the issue it closes,
-// whose stage takes issues.
+// whose rule takes issues.
 func TestAMirroredPullRequestGetsTheNoticeWhileItsIssueIsTaken(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 
@@ -156,7 +156,7 @@ func TestAMirroredPullRequestGetsTheNoticeWhileItsIssueIsTaken(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueKey: "42", From: ready, To: inProgress})
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
-		Label: ready, Stage: "implement", Takes: crew.KindIssue,
+		Label: ready, Rule: "implement", Takes: crew.KindIssue,
 	})
 	wantHeld(t, d.m, "42")
 }
@@ -172,7 +172,7 @@ func TestAnItemWithTwoCrewLabelsGetsOnlyTheTwoLabelSkip(t *testing.T) {
 	wantEvents(t, otherKinds(events))
 }
 
-func TestABlockedIssueInTheLabelOfAStageThatTakesPullRequestsGetsTheNotice(t *testing.T) {
+func TestABlockedIssueInTheLabelOfARuleThatTakesPullRequestsGetsTheNotice(t *testing.T) {
 	d := newDriver(t, withFixReview(), 2)
 	blocked := issue("42", 1, fixReviewReady)
 	blocked.Blocked = true
@@ -180,7 +180,7 @@ func TestABlockedIssueInTheLabelOfAStageThatTakesPullRequestsGetsTheNotice(t *te
 	_, events := d.poll(blocked)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
 		At: d.now, IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
-		Label: fixReviewReady, Stage: "fix review", Takes: crew.KindPullRequest,
+		Label: fixReviewReady, Rule: "fix review", Takes: crew.KindPullRequest,
 	})
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-type stageDoc struct {
+type ruleDoc struct {
 	Name          located[string] `yaml:"name"`
 	Description   located[string] `yaml:"description"`
 	IssueTemplate located[string] `yaml:"issue_template"`
@@ -25,7 +25,7 @@ type stageDoc struct {
 	Actions       yaml.Node       `yaml:"actions"`
 }
 
-// extraDoc is one item of extra_labels: a label no stage takes.
+// extraDoc is one item of extra_labels: a label no rule takes.
 type extraDoc struct {
 	Label         located[string] `yaml:"label"`
 	Description   located[string] `yaml:"description"`
@@ -36,30 +36,30 @@ type actionDoc struct {
 	Name   located[string] `yaml:"name"`
 	Prompt located[string] `yaml:"prompt"`
 	Check  located[string] `yaml:"check"`
-	Mate   located[string] `yaml:"mate"`
+	Bot    located[string] `yaml:"mate"`
 }
 
 // What each kind of list item must be, said when an item is not a mapping.
 const (
-	stageShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
+	ruleShape = "must be a stage with name, label, moves_to, on_success, on_failure, actions, " +
 		"and optionally description, issue_template, queue, takes and on_board"
 	actionShape = "must be an action with name and prompt, and optionally check and mate"
 	extraShape  = "must be an extra label with label, and optionally description and issue_template"
 )
 
-// parsedStage is a stage that passed its own checks, with what the
-// workflow-graph checks need to name its keys.
-type parsedStage struct {
-	crew.Stage
+// parsedRule is a rule that passed its own checks, with what the
+// rule-graph checks need to name its keys.
+type parsedRule struct {
+	crew.Rule
 
 	path string
-	doc  stageDoc
+	doc  ruleDoc
 }
 
-// workflow decodes and validates workflow:, giving each stage its queue from
-// table and each action that names no mate of its own mate, the default. It
+// rules decodes and validates workflow:, giving each rule its queue from
+// table and each action that names no bot of its own bot, the default. It
 // reports every error it finds.
-func workflow(n *yaml.Node, table queueTable, mate string) ([]crew.Stage, error) {
+func rules(n *yaml.Node, table queueTable, bot string) ([]crew.Rule, error) {
 	if n.Kind == 0 {
 		return nil, errors.New("workflow: missing; list at least one stage")
 	}
@@ -67,14 +67,14 @@ func workflow(n *yaml.Node, table queueTable, mate string) ([]crew.Stage, error)
 		return nil, keyError("workflow", n.Line, "list at least one stage")
 	}
 	var errs []error
-	parsed := make([]parsedStage, 0, len(n.Content))
+	parsed := make([]parsedRule, 0, len(n.Content))
 	for i, item := range n.Content {
-		stage, err := parseStage(item, fmt.Sprintf("workflow[%d]", i), table, mate)
+		rule, err := parseRule(item, fmt.Sprintf("workflow[%d]", i), table, bot)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		parsed = append(parsed, stage)
+		parsed = append(parsed, rule)
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -83,19 +83,19 @@ func workflow(n *yaml.Node, table queueTable, mate string) ([]crew.Stage, error)
 	if err := checkGraph(parsed); err != nil {
 		return nil, err
 	}
-	stages := make([]crew.Stage, len(parsed))
+	out := make([]crew.Rule, len(parsed))
 	for i, p := range parsed {
-		stages[i] = p.Stage
+		out[i] = p.Rule
 	}
-	return stages, nil
+	return out, nil
 }
 
-func parseStage(n *yaml.Node, path string, table queueTable, mate string) (parsedStage, error) {
-	var doc stageDoc
-	if err := decodeItem(n, path, stageShape, &doc); err != nil {
-		return parsedStage{}, err
+func parseRule(n *yaml.Node, path string, table queueTable, bot string) (parsedRule, error) {
+	var doc ruleDoc
+	if err := decodeItem(n, path, ruleShape, &doc); err != nil {
+		return parsedRule{}, err
 	}
-	p := parsedStage{path: path, doc: doc}
+	p := parsedRule{path: path, doc: doc}
 	var errs []error
 	collect := func(err error) {
 		if err != nil {
@@ -114,26 +114,26 @@ func parseStage(n *yaml.Node, path string, table queueTable, mate string) (parse
 	collect(err)
 	p.OnFailure, err = state(doc.OnFailure, path+".on_failure", n.Line)
 	collect(err)
-	p.Queue, err = stageQueue(doc.Queue, path, table)
+	p.Queue, err = ruleQueue(doc.Queue, path, table)
 	collect(err)
-	p.Takes, err = stageTakes(doc.Takes, path)
+	p.Takes, err = ruleTakes(doc.Takes, path)
 	collect(err)
-	// on_board defaults to true: only a written false hides the stage.
+	// on_board defaults to true: only a written false hides the rule.
 	p.OffBoard = doc.OnBoard.line != 0 && !doc.OnBoard.value
-	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line, mate)
+	p.Actions, err = actions(&doc.Actions, path+".actions", n.Line, bot)
 	collect(err)
 	return p, errors.Join(errs...)
 }
 
-// The values of a stage's takes, one per kind.
+// The values of a rule's takes, one per kind.
 const (
 	takesIssues       = "issues"
 	takesPullRequests = "pull_requests"
 )
 
-// stageTakes returns the kind of item the stage at path takes: issues when
+// ruleTakes returns the kind of item the rule at path takes: issues when
 // takes is left out, and otherwise the kind its value names.
-func stageTakes(l located[string], path string) (crew.Kind, error) {
+func ruleTakes(l located[string], path string) (crew.Kind, error) {
 	switch {
 	case l.line == 0, l.value == takesIssues:
 		return crew.KindIssue, nil
@@ -144,10 +144,10 @@ func stageTakes(l located[string], path string) (crew.Kind, error) {
 		fmt.Sprintf("%q must be %s or %s", l.value, takesIssues, takesPullRequests))
 }
 
-func actions(n *yaml.Node, path string, stageLine int, mate string) ([]crew.Action, error) {
+func actions(n *yaml.Node, path string, ruleLine int, bot string) ([]crew.Action, error) {
 	switch {
 	case n.Kind == 0:
-		return nil, keyError(path, stageLine, "list at least one action")
+		return nil, keyError(path, ruleLine, "list at least one action")
 	case n.Kind != yaml.SequenceNode || len(n.Content) == 0:
 		return nil, keyError(path, n.Line, "list at least one action")
 	}
@@ -155,7 +155,7 @@ func actions(n *yaml.Node, path string, stageLine int, mate string) ([]crew.Acti
 	out := make([]crew.Action, 0, len(n.Content))
 	firstPath := make(map[string]string, len(n.Content))
 	for i, item := range n.Content {
-		action, err := parseAction(item, fmt.Sprintf("%s[%d]", path, i), mate, firstPath)
+		action, err := parseAction(item, fmt.Sprintf("%s[%d]", path, i), bot, firstPath)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -165,11 +165,11 @@ func actions(n *yaml.Node, path string, stageLine int, mate string) ([]crew.Acti
 	return out, errors.Join(errs...)
 }
 
-// parseAction decodes and checks the action n at path, whose mate is its own
-// or mate, the default. An action can name its own mate only when there is a
-// default. firstPath holds the path of each action name the stage already
+// parseAction decodes and checks the action n at path, whose bot is its own
+// or bot, the default. An action can name its own bot only when there is a
+// default. firstPath holds the path of each action name the rule already
 // has; a valid name is added to it.
-func parseAction(n *yaml.Node, path, mate string, firstPath map[string]string) (crew.Action, error) {
+func parseAction(n *yaml.Node, path, bot string, firstPath map[string]string) (crew.Action, error) {
 	var doc actionDoc
 	if err := decodeItem(n, path, actionShape, &doc); err != nil {
 		return crew.Action{}, err
@@ -187,14 +187,14 @@ func parseAction(n *yaml.Node, path, mate string, firstPath map[string]string) (
 	if doc.Check.line != 0 && strings.TrimSpace(doc.Check.value) == "" {
 		return crew.Action{}, keyError(path+".check", doc.Check.line, "must not be empty")
 	}
-	if own := doc.Mate.value; own != "" {
-		if mate == "" {
-			return crew.Action{}, keyError(path+".mate", doc.Mate.line,
+	if own := doc.Bot.value; own != "" {
+		if bot == "" {
+			return crew.Action{}, keyError(path+".mate", doc.Bot.line,
 				fmt.Sprintf("names mate %q, but config.mate names no default mate; set config.mate too", own))
 		}
-		mate = own
+		bot = own
 	}
-	action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value, Mate: mate}
+	action := crew.Action{Name: name, Prompt: prompt, Check: doc.Check.value, Bot: bot}
 	if _, err := action.Render(sampleIssue()); err != nil {
 		return crew.Action{}, keyError(path+".prompt", doc.Prompt.line, err.Error())
 	}
@@ -252,16 +252,16 @@ func prompts(n *yaml.Node) error {
 }
 
 // extraLabels decodes and validates extra_labels: labels for parked work
-// that no stage takes. Each must be none of workflow's states and no earlier
+// that no rule takes. Each must be none of rules' states and no earlier
 // extra, ignoring case as GitHub does. It reports every error it finds.
-func extraLabels(n *yaml.Node, workflow []crew.Stage) ([]crew.State, error) {
+func extraLabels(n *yaml.Node, rules []crew.Rule) ([]crew.State, error) {
 	switch {
 	case n.Kind == 0:
 		return nil, nil
 	case n.Kind != yaml.SequenceNode:
 		return nil, keyError("extra_labels", n.Line, "must be a list of labels")
 	}
-	taken := lowerStates(workflow)
+	taken := lowerStates(rules)
 	firstPath := make(map[string]string, len(n.Content))
 	var errs []error
 	out := make([]crew.State, 0, len(n.Content))
@@ -288,17 +288,17 @@ func extraLabels(n *yaml.Node, workflow []crew.Stage) ([]crew.State, error) {
 	return out, nil
 }
 
-// lowerStates returns the workflow's states, lowercased.
-func lowerStates(workflow []crew.Stage) map[string]bool {
+// lowerStates returns the rules' states, lowercased.
+func lowerStates(rules []crew.Rule) map[string]bool {
 	states := map[string]bool{}
-	for _, s := range crew.WorkflowStates(workflow) {
+	for _, s := range crew.RuleStates(rules) {
 		states[strings.ToLower(string(s))] = true
 	}
 	return states
 }
 
 // extraLabel checks the label of the extra at path, whose mapping is on
-// itemLine. taken holds the workflow's states and firstPath the path of
+// itemLine. taken holds the rules' states and firstPath the path of
 // each earlier extra, both by lowercased label; a valid label is added to
 // firstPath.
 func extraLabel(l located[string], path string, itemLine int, taken map[string]bool,
@@ -320,7 +320,7 @@ func extraLabel(l located[string], path string, itemLine int, taken map[string]b
 	return label, nil
 }
 
-// described checks the optional description and issue_template that a stage
+// described checks the optional description and issue_template that a rule
 // or an extra label may have. Nothing in crew reads them, the
 // /cw-create-issue skill does, so they are checked but not kept.
 func described(description, template located[string], path string) error {
@@ -335,14 +335,14 @@ func described(description, template located[string], path string) error {
 	return errors.Join(errs...)
 }
 
-// spellOnce gives every label the spelling it first has in the workflow, in
-// stage order and then label, moves_to, on_success, on_failure. GitHub does
+// spellOnce gives every label the spelling it first has in the rules, in
+// rule order and then label, moves_to, on_success, on_failure. GitHub does
 // not tell labels apart by case, so "In Review" and "in review" are one
 // label; after this, comparing states exactly compares them as GitHub does.
-func spellOnce(stages []parsedStage) {
+func spellOnce(rules []parsedRule) {
 	first := map[string]crew.State{}
-	for i := range stages {
-		s := &stages[i]
+	for i := range rules {
+		s := &rules[i]
 		for _, state := range []*crew.State{&s.Label, &s.MovesTo, &s.OnSuccess, &s.OnFailure} {
 			key := strings.ToLower(string(*state))
 			if spelling, ok := first[key]; ok {
@@ -354,13 +354,13 @@ func spellOnce(stages []parsedStage) {
 	}
 }
 
-// checkGraph rejects a workflow that would loop or take an issue twice. It
+// checkGraph rejects a set of rules that would loop or take an issue twice. It
 // runs after spellOnce, so it compares labels ignoring case.
-func checkGraph(stages []parsedStage) error {
+func checkGraph(rules []parsedRule) error {
 	var errs []error
-	byLabel := make(map[crew.State]parsedStage, len(stages))
-	byName := make(map[string]parsedStage, len(stages))
-	for _, s := range stages {
+	byLabel := make(map[crew.State]parsedRule, len(rules))
+	byName := make(map[string]parsedRule, len(rules))
+	for _, s := range rules {
 		if other, ok := byName[s.Name]; ok {
 			errs = append(errs, keyError(s.path+".name", s.doc.Name.line,
 				fmt.Sprintf("stage %q is already %s", s.Name, other.path)))
@@ -383,7 +383,7 @@ func checkGraph(stages []parsedStage) error {
 				fmt.Sprintf("%q is the stage's own label, so stage %q would take the failed issue again", s.OnFailure, s.Name)))
 		}
 	}
-	for _, s := range stages {
+	for _, s := range rules {
 		if other, ok := byLabel[s.MovesTo]; ok {
 			errs = append(errs, keyError(s.path+".moves_to", s.doc.MovesTo.line,
 				fmt.Sprintf("%q is the label of stage %q (%s.label), which would take the issue while stage %q runs",

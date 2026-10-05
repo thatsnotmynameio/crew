@@ -49,7 +49,7 @@ func (m Model) queuesSection() (string, []string) {
 
 // handledSection is the Handled section: its summary and its rows, the
 // entries that need attention first, each with its pill, reference, title,
-// stage, time, spend and pull request, then its reasons and its actions'
+// rule, time, spend and pull request, then its reasons and its actions'
 // pull requests (R5, R16), in width cells.
 func (m Model) handledSection(width int) (string, []string) {
 	summary := strconv.Itoa(len(m.snap.Handled))
@@ -82,14 +82,14 @@ func (m Model) handledSection(width int) (string, []string) {
 }
 
 // pill says how e ended: given up, needing attention, or the last part of
-// the state its stage moved it to (R5, KTD13). A failure whose issue a stage
-// holds again shows that state as an error: it needs the boss no longer
+// the state its rule moved it to (R5, KTD13). A failure whose issue a rule
+// holds again shows that state as an error: it needs you no longer
 // (#109).
 func (m Model) pill(e core.HandledView) string {
 	switch {
 	case e.Move == crew.MoveDropped:
 		return m.styles.warningPill.Render("GIVEN UP")
-	case needsBoss(e):
+	case needsAttention(e):
 		return m.styles.errorPill.Render("NEEDS ATTENTION")
 	}
 	state := string(e.To)
@@ -103,14 +103,14 @@ func (m Model) pill(e core.HandledView) string {
 	return pill.Render(strings.ToUpper(state))
 }
 
-// needsBoss reports whether e needs the boss: it needs attention and no
-// stage holds its issue again (#109).
-func needsBoss(e core.HandledView) bool { return e.NeedsAttention() && e.HeldBy == "" }
+// needsAttention reports whether e needs you: it needs attention and no
+// rule holds its issue again (#109).
+func needsAttention(e core.HandledView) bool { return e.NeedsAttention() && e.HeldBy == "" }
 
-// handledDetails is e's stage and time, then its spend and pull request
-// when it has them, then the stage holding its issue again (#109).
+// handledDetails is e's rule and time, then its spend and pull request
+// when it has them, then the rule holding its issue again (#109).
 func (m Model) handledDetails(e core.HandledView) string {
-	parts := []string{m.styles.muted.Render(e.Stage + " " + elapsed(e.Duration()))}
+	parts := []string{m.styles.muted.Render(e.Rule + " " + elapsed(e.Duration()))}
 	if cost := spendParts(e.Spend()); len(cost) > 0 {
 		parts = append(parts, m.styles.text.Render(strings.Join(cost, " · ")))
 	}
@@ -147,7 +147,7 @@ func (m Model) reasons(e core.HandledView) []string {
 }
 
 // pullRequestOf is the pull request on e's row: that of its one action,
-// when it had a session; a stage of several actions gives each its own row.
+// when it had a session; a rule of several actions gives each its own row.
 func (m Model) pullRequestOf(e core.HandledView) string {
 	if len(e.Actions) != 1 || e.Actions[0].Spend.Sessions == 0 {
 		return ""
@@ -178,14 +178,14 @@ func (m Model) pullRequests(e core.HandledView) []string {
 	return out
 }
 
-// byAttention orders entries for Handled: those that need the boss first,
+// byAttention orders entries for Handled: those that need you first,
 // then the rest, each the most recently ended first, then the most recently
 // released first.
 func byAttention(handled []core.HandledView) []core.HandledView {
 	out := slices.Clone(handled)
 	slices.Reverse(out)
 	slices.SortStableFunc(out, func(a, b core.HandledView) int {
-		return cmp.Or(trueFirst(needsBoss(a), needsBoss(b)), b.Ended.Compare(a.Ended))
+		return cmp.Or(trueFirst(needsAttention(a), needsAttention(b)), b.Ended.Compare(a.Ended))
 	})
 	return out
 }

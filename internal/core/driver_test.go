@@ -10,7 +10,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// The workflow's states in these tests, as label text.
+// The rules' states in these tests, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -22,9 +22,9 @@ const (
 
 var t0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 
-// draft is the workflow of the boss's draft config (KTD5).
-func draft() []crew.Stage {
-	return []crew.Stage{
+// draft is the rules of your draft config (KTD5).
+func draft() []crew.Rule {
+	return []crew.Rule{
 		{
 			Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
 			OnFailure: needsAttention,
@@ -65,9 +65,9 @@ type driver struct {
 	now time.Time
 }
 
-func newDriver(t *testing.T, workflow []crew.Stage, maxParallel int) *driver {
+func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(workflow, maxParallel), now: t0}
+	return &driver{t: t, m: core.New(rules, maxParallel), now: t0}
 }
 
 func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {

@@ -8,7 +8,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// The labels of these tests that are no stage's: an extra label and one
+// The labels of these tests that are no rule's: an extra label and one
 // crew never moves to.
 const (
 	brainstormReady crew.State = "brainstorm ready"
@@ -20,11 +20,11 @@ const (
 var boardLabels = []string{string(brainstormReady), bug, string(ready), string(inProgress), string(readyToReview)}
 
 // newBoardDriver returns a driver whose model reads a board of labels, with
-// workflow's states and brainstorm ready as crew's labels.
-func newBoardDriver(t *testing.T, workflow []crew.Stage, maxParallel int, labels ...string) *driver {
+// rules' states and brainstorm ready as crew's labels.
+func newBoardDriver(t *testing.T, rules []crew.Rule, maxParallel int, labels ...string) *driver {
 	t.Helper()
-	crewLabels := append(crew.WorkflowStates(workflow), brainstormReady)
-	return &driver{t: t, m: core.New(workflow, maxParallel, core.ListingBoard(labels, crewLabels)), now: t0}
+	crewLabels := append(crew.RuleStates(rules), brainstormReady)
+	return &driver{t: t, m: core.New(rules, maxParallel, core.ListingBoard(labels, crewLabels)), now: t0}
 }
 
 // onBoard returns key on the board with labels.
@@ -155,7 +155,7 @@ func (d *driver) tick() []core.Command {
 func TestATakeMoveChangesTheIssuesLabelsOnTheBoard(t *testing.T) {
 	tests := []struct {
 		name   string
-		state  crew.State // the issue's stage label, which crew takes it from
+		state  crew.State // the issue's rule label, which crew takes it from
 		before []string
 		want   []crew.BoardIssue
 	}{

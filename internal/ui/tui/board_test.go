@@ -15,9 +15,9 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
-// crewWorkflow is this repository's workflow, with both promote stages
+// crewRules is this repository's rules, with both promote rules
 // hidden (AE1).
-var crewWorkflow = []crew.Stage{
+var crewRules = []crew.Rule{
 	{Name: "promote brainstorm", Label: "crew:brainstorm:done", OnSuccess: "crew:triage:ready", OffBoard: true},
 	{Name: "triage", Label: "crew:triage:ready", OnSuccess: "crew:triage:done", OnFailure: "crew:triage:failed"},
 	{Name: "promote triage", Label: "crew:triage:done", OnSuccess: "crew:development:ready", OffBoard: true},
@@ -27,18 +27,18 @@ var crewWorkflow = []crew.Stage{
 
 var twelve = crew.Issue{Key: "12", Ref: "#12", Title: "Stage labels", URL: "https://github.com/o/r/issues/12"}
 
-// held is a snapshot of issue held by stage in claim, with one running
+// held is a snapshot of issue held by rule in claim, with one running
 // action.
-func held(issue crew.Issue, stage, action string, claim core.Claim) engine.Update {
+func held(issue crew.Issue, rule, action string, claim core.Claim) engine.Update {
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: []core.IssueView{{
-		Issue: issue, Stage: stage, Queue: "clerk", Claim: claim,
+		Issue: issue, Rule: rule, Queue: "clerk", Claim: claim,
 		Actions: []core.ActionView{{Name: action, Phase: core.PhaseRunning, Started: start.Add(-time.Minute)}},
 	}}}}}
 }
 
-// handledBy is a snapshot of issue handled by stage, moved to to.
-func handledBy(issue crew.Issue, stage string, to crew.State) engine.Update {
-	e := entry(issue.Key, issue.Title, stage, to, 10, 1)
+// handledBy is a snapshot of issue handled by rule, moved to to.
+func handledBy(issue crew.Issue, rule string, to crew.State) engine.Update {
+	e := entry(issue.Key, issue.Title, rule, to, 10, 1)
 	e.Issue = issue
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Handled: []core.HandledView{e}}}}
 }
@@ -56,8 +56,8 @@ func boardOf(t *testing.T, view string) string {
 }
 
 // Covers AE1.
-func TestAE1HiddenStagesHaveNoColumnAndTheirIssuesNoCard(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+func TestAE1HiddenRulesHaveNoColumnAndTheirIssuesNoCard(t *testing.T) {
+	h := newRulesHarness(t, 120, crewRules)
 
 	h.send(updateMsg(held(twelve, "promote triage", "promote", core.ClaimRunning)))
 	board := boardOf(t, h.view())
@@ -73,8 +73,8 @@ func TestAE1HiddenStagesHaveNoColumnAndTheirIssuesNoCard(t *testing.T) {
 }
 
 // Covers AE2.
-func TestAE2ACardWaitsInItsColumnThenSlidesToTheNextStage(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+func TestAE2ACardWaitsInItsColumnThenSlidesToTheNextRule(t *testing.T) {
+	h := newRulesHarness(t, 120, crewRules)
 	h.send(updateMsg(held(twelve, "triage", "triage", core.ClaimRunning)))
 
 	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:done")))
@@ -132,8 +132,8 @@ func schedulesSlideTick(cmd tea.Cmd) bool {
 }
 
 // Covers AE3.
-func TestAE3AFailedStageTakesItsCardOffTheBoard(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+func TestAE3AFailedRuleTakesItsCardOffTheBoard(t *testing.T) {
+	h := newRulesHarness(t, 120, crewRules)
 	five := crew.Issue{Key: "5", Ref: "#5", Title: "Parse the config"}
 	h.send(updateMsg(held(five, "development", "lfg", core.ClaimRunning)))
 
@@ -148,11 +148,11 @@ func TestAE3AFailedStageTakesItsCardOffTheBoard(t *testing.T) {
 	contains(t, view, "NEEDS ATTENTION   #5")
 }
 
-// eightStages are eight shown stages, s1 to s8, each taking "sN".
-func eightStages() []crew.Stage {
-	var out []crew.Stage
+// eightRules are eight shown rules, s1 to s8, each taking "sN".
+func eightRules() []crew.Rule {
+	var out []crew.Rule
 	for i := 1; i <= 8; i++ {
-		out = append(out, crew.Stage{Name: fmt.Sprintf("s%d", i), Label: crew.State(fmt.Sprintf("s%d", i))})
+		out = append(out, crew.Rule{Name: fmt.Sprintf("s%d", i), Label: crew.State(fmt.Sprintf("s%d", i))})
 	}
 	return out
 }
@@ -160,11 +160,11 @@ func eightStages() []crew.Stage {
 // Covers AE4.
 func TestAE4EmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 	u := engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: []core.IssueView{
-		{Issue: crew.Issue{Key: "1", Ref: "#1", Title: "One"}, Stage: "s2", Claim: core.ClaimRunning},
-		{Issue: crew.Issue{Key: "2", Ref: "#2", Title: "Two"}, Stage: "s6", Claim: core.ClaimRunning},
+		{Issue: crew.Issue{Key: "1", Ref: "#1", Title: "One"}, Rule: "s2", Claim: core.ClaimRunning},
+		{Issue: crew.Issue{Key: "2", Ref: "#2", Title: "Two"}, Rule: "s6", Claim: core.ClaimRunning},
 	}}}}
 
-	h := newWorkflowHarness(t, 80, eightStages())
+	h := newRulesHarness(t, 80, eightRules())
 	h.send(updateMsg(u))
 	board := boardOf(t, h.view())
 	contains(t, board, "6 empty stages not shown")
@@ -172,7 +172,7 @@ func TestAE4EmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 		t.Errorf("columns = %q, want s2 s6:\n%s", got, board)
 	}
 
-	h = newWorkflowHarness(t, 30, eightStages())
+	h = newRulesHarness(t, 30, eightRules())
 	h.send(updateMsg(u))
 	board = boardOf(t, h.view())
 	contains(t, board, "s2", "1 ▸", "#1")
@@ -192,7 +192,7 @@ func TestAWaitingCardWhoseIssueIsGoneLeavesTheBoard(t *testing.T) {
 	u := handledBy(twelve, "triage", "crew:triage:done")
 	u.Snapshot.Handled[0].Gone = true
 
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h := newRulesHarness(t, 120, crewRules)
 	h.send(updateMsg(u))
 
 	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
@@ -204,7 +204,7 @@ func TestAGivenUpMoveLeavesNoCard(t *testing.T) {
 	u := handledBy(twelve, "triage", "crew:triage:done")
 	u.Snapshot.Handled[0].Move = crew.MoveDropped
 
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h := newRulesHarness(t, 120, crewRules)
 	h.send(updateMsg(u))
 
 	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
@@ -212,11 +212,11 @@ func TestAGivenUpMoveLeavesNoCard(t *testing.T) {
 	}
 }
 
-func TestAnItemTheNextStageWouldNotTakeHasNoWaitingCard(t *testing.T) {
+func TestAnItemTheNextRuleWouldNotTakeHasNoWaitingCard(t *testing.T) {
 	pr := twelve
 	pr.Kind = crew.KindPullRequest
 
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+	h := newRulesHarness(t, 120, crewRules)
 	h.send(updateMsg(handledBy(pr, "triage", "crew:triage:done")))
 
 	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
@@ -224,8 +224,8 @@ func TestAnItemTheNextStageWouldNotTakeHasNoWaitingCard(t *testing.T) {
 	}
 }
 
-func TestWithEveryStageHiddenTheBoardSaysSo(t *testing.T) {
-	h := newWorkflowHarness(t, 80, []crew.Stage{{Name: "only", Label: "ready", OffBoard: true}})
+func TestWithEveryRuleHiddenTheBoardSaysSo(t *testing.T) {
+	h := newRulesHarness(t, 80, []crew.Rule{{Name: "only", Label: "ready", OffBoard: true}})
 
 	contains(t, boardOf(t, h.view()), "every stage is hidden")
 }
@@ -236,7 +236,7 @@ func TestEachClaimReadsThroughItsIcon(t *testing.T) {
 		core.ClaimRunning: "⠋ running", core.ClaimJudging: "⠋ judging", core.ClaimTaking: "◌ taking",
 		core.ClaimOwed: "! owed", core.ClaimStopping: "■ stopping",
 	} {
-		h := newWorkflowHarness(t, 120, crewWorkflow)
+		h := newRulesHarness(t, 120, crewRules)
 		h.send(updateMsg(held(twelve, "triage", "triage", claim)))
 		contains(t, boardOf(t, h.view()), "▌ "+want)
 	}
@@ -246,11 +246,11 @@ func TestAColumnCapsItsCardsWhenTheWindowIsShort(t *testing.T) {
 	issues := make([]core.IssueView, 0, 8)
 	for n := range 8 {
 		issues = append(issues, core.IssueView{
-			Issue: crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Card"}, Stage: "triage",
+			Issue: crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Card"}, Rule: "triage",
 			Claim: core.ClaimRunning,
 		})
 	}
-	h := newWorkflowHarness(t, 80, crewWorkflow)
+	h := newRulesHarness(t, 80, crewRules)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.send(updateMsg(engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: issues}}}))
 
@@ -269,7 +269,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		for k := range n {
 			key := fmt.Sprintf("%d-%d", col, k)
 			issues = append(issues, core.IssueView{
-				Issue: crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, Stage: fmt.Sprintf("s%d", col+1),
+				Issue: crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, Rule: fmt.Sprintf("s%d", col+1),
 				Claim: core.ClaimRunning,
 			})
 		}
@@ -278,7 +278,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 	// The two heights just above the lowest that fits: a cap counting the
 	// scrolled-off column of 6 would leave both cut.
 	for _, height := range []int{25, 26} {
-		h := newWorkflowHarness(t, 80, eightStages()[:5])
+		h := newRulesHarness(t, 80, eightRules()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))
 
@@ -298,8 +298,8 @@ func heldAgain() engine.Update {
 	return u
 }
 
-func TestAnIssueHeldAgainHasOnlyTheCardOfTheStageHoldingIt(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
+func TestAnIssueHeldAgainHasOnlyTheCardOfTheRuleHoldingIt(t *testing.T) {
+	h := newRulesHarness(t, 120, crewRules)
 
 	h.send(updateMsg(heldAgain()))
 

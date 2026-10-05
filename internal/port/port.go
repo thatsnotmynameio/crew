@@ -3,7 +3,7 @@
 // Workspace for each action's checkout. Each port holds only what every
 // adapter must provide; anything an adapter may or may not support is a
 // separate optional interface, such as Preparer, StatusReporter,
-// PullRequestReporter, Acting, BossFinder, LoginFinder, WriterReporter,
+// PullRequestReporter, Acting, CodeOwnerFinder, LoginFinder, WriterReporter,
 // BoardLister, Narrator or Reopener, that the engine detects by type
 // assertion. An adapter therefore never wraps another adapter value, because
 // a wrapper hides the optional interfaces of what it wraps.
@@ -34,16 +34,16 @@ var (
 )
 
 // ErrWorkspaceGone is the error class of Reopener.Reopen for a workspace
-// that no longer exists, such as a worktree the boss removed. An adapter
+// that no longer exists, such as a worktree you removed. An adapter
 // wraps it with %w and its own context.
 var ErrWorkspaceGone = errors.New("the workspace is gone")
 
-// Tracker is an issue tracker, spoken to in the workflow's states. A state
+// Tracker is an issue tracker, spoken to in the rules' states. A state
 // is text the tracker shows, such as a label's name on GitHub or a status on
 // another tracker; the adapter knows how its tracker shows it, and is built
-// knowing the workflow's states and the config's extra labels
+// knowing the rules' states and the config's extra labels
 // (TrackerFactory). Those states are crew's states. The extras are crew's
-// too, for parked work no stage takes, but they are never states.
+// too, for parked work no rule takes, but they are never states.
 type Tracker interface {
 	// List returns the open issues that are in any of states. Each issue
 	// carries every crew state it is in, not only the ones asked for, so the
@@ -86,28 +86,29 @@ type Run struct {
 	// once Wait has returned.
 	Output io.Writer
 	// Identity is who the session acts as on the tracker; the zero Identity
-	// is the boss.
+	// is you.
 	Identity Identity
-	// Boss and Mates are the boss's logins and the logins of the mates the
-	// config names. The session gets them as CREW_BOSS and CREW_MATES, each
-	// joined by single spaces, so a prompt can name the issues crew takes.
-	Boss  []string
-	Mates []string
+	// CodeOwners and Bots are the code owners' logins and the logins of the
+	// bots the config names. The session gets them as CREW_BOSS and
+	// CREW_MATES, each joined by single spaces, so a prompt can name the
+	// issues crew takes.
+	CodeOwners []string
+	Bots       []string
 }
 
 // Identity is who a child process, such as a session or a check, acts as on
-// the tracker: one of crew's mates, or, as the zero Identity, the boss. The
+// the tracker: one of crew's bots, or, as the zero Identity, you. The
 // zero Identity changes nothing. An Identity never holds a key or a token,
 // only where the child finds one.
 type Identity struct {
-	// Mate is the mate's name, as the config names it.
-	Mate string
-	// Login is the login the mate acts as, such as crew-ops[bot].
+	// Bot is the bot's name, as the config names it.
+	Bot string
+	// Login is the login the bot acts as, such as crew-ops[bot].
 	Login string
 	// Env holds KEY=value entries added to the child's environment.
 	Env []string
 	// Unset names the variables of crew's environment the child must not
-	// inherit, such as a token of the boss's.
+	// inherit, such as a token of yours.
 	Unset []string
 	// Renew, when not nil, renews the identity's token at once, such as when
 	// the tracker was refused for an expired one.
@@ -151,9 +152,9 @@ type Space struct {
 // Preparer is an optional interface of any port's adapter: it checks the
 // adapter's tools and prepares the adapter before the first poll.
 type Preparer interface {
-	// Prepare checks and prepares the adapter for a workflow that can
-	// request states, so an adapter creates or checks only what the workflow
-	// uses; a Tracker also creates or checks the extras it was built with.
+	// Prepare checks and prepares the adapter for a set of rules that can
+	// request states, so an adapter creates or checks only what the rules
+	// use; a Tracker also creates or checks the extras it was built with.
 	// An error names the tool or setting at fault, and crew stops before
 	// polling.
 	Prepare(ctx context.Context, states []crew.State) error
@@ -175,7 +176,7 @@ func Prepare(ctx context.Context, states []crew.State, adapters ...any) error {
 
 // StatusReporter is an optional interface of a Tracker: it keeps a status
 // comment on each issue that shows where the issue stands, with one entry
-// per stage run, oldest first. A tracker without it reports no status, and
+// per rule run, oldest first. A tracker without it reports no status, and
 // crew works as it does without status comments.
 type StatusReporter interface {
 	// ReportStatus shows status on its issue, formatted in the tracker's own
@@ -195,7 +196,7 @@ type PullRequestReporter interface {
 	// issue in report.State, as Move puts the issue, removing every other
 	// crew state and extra it carries without touching what is not crew's.
 	// When report.End is set, it also posts a new comment on each saying
-	// that the stage ended and nobody watches the pull request any more. An
+	// that the rule ended and nobody watches the pull request any more. An
 	// issue without such a pull request gets nothing. A retry of the same
 	// report, by its ID, posts no comment twice. The engine never has two
 	// calls for one issue in flight. Its errors are classified as
@@ -204,41 +205,41 @@ type PullRequestReporter interface {
 }
 
 // Acting is an optional interface of a Tracker: it acts as one of crew's
-// mates. A tracker without it acts as the boss and takes only the boss's
-// items, and crew works as it does without mates.
+// bots. A tracker without it acts as the gh login and takes only the code
+// owners' items, and crew works as it does without bots.
 type Acting interface {
 	// ActAs makes the tracker's own writes, such as its moves, comments and
-	// failure reports, as writer, the zero Identity being the boss, and
-	// makes it take the items the logins in mates opened as well as the
-	// boss's. The engine calls it once, before Prepare.
-	ActAs(writer Identity, mates []string)
+	// failure reports, as writer, the zero Identity being you, and
+	// makes it take the items the logins in bots opened as well as the
+	// code owners'. The engine calls it once, before Prepare.
+	ActAs(writer Identity, bots []string)
 }
 
-// BossFinder is an optional interface of a Tracker: it tells who the boss
-// is. A tracker without it names no boss.
-type BossFinder interface {
-	// Boss returns the boss's logins as Prepare found them. The engine calls
-	// it once Prepare succeeded.
-	Boss() []string
+// CodeOwnerFinder is an optional interface of a Tracker: it tells who the
+// code owners are. A tracker without it names no code owner.
+type CodeOwnerFinder interface {
+	// CodeOwners returns the code owners' logins as Prepare found them. The
+	// engine calls it once Prepare succeeded.
+	CodeOwners() []string
 }
 
 // LoginFinder is an optional interface of a Tracker: it tells the login the
-// tracker acts as when it acts as the boss. A tracker without it names no
+// tracker acts as when it acts as you. A tracker without it names no
 // login.
 type LoginFinder interface {
-	// Login returns the login the tracker acts as when it acts as the boss,
+	// Login returns the login the tracker acts as when it acts as you,
 	// as Prepare found it, or "" before. It is safe to call from any
 	// goroutine.
 	Login() string
 }
 
-// WriterReporter is an optional interface of a Tracker that acts as a mate:
-// it tells when the tracker's own writes went back to the boss. A tracker
+// WriterReporter is an optional interface of a Tracker that acts as a bot:
+// it tells when the tracker's own writes went back to you. A tracker
 // without it never reports one.
 type WriterReporter interface {
 	// WriterLost returns the warning crew wrote when the tracker's writes
-	// went back to the boss for the rest of the run, or "" while they go as
-	// the writer, or the writer is the boss. It is safe to call from any
+	// went back to you for the rest of the run, or "" while they go as
+	// the writer, or the writer is you. It is safe to call from any
 	// goroutine.
 	WriterLost() string
 }
@@ -247,11 +248,11 @@ type WriterReporter interface {
 // the board the config draws, whose labels need not be crew's. crew refuses a
 // config with a board when its tracker lacks it.
 type BoardLister interface {
-	// ListBoard returns the open issues the boss or one of the mates opened
-	// that carry any of labels, never a pull request, oldest first. Each
-	// carries the labels of labels it carries, matched as the tracker
-	// matches labels, spelled as labels spells them and in its order. An
-	// error means the board could not be read; it is transient.
+	// ListBoard returns the open issues the code owners or one of the bots
+	// opened that carry any of labels, never a pull request, oldest first.
+	// Each carries the labels of labels it carries, matched as the tracker
+	// matches labels, spelled as labels spells them and in its order. An error
+	// means the board could not be read; it is transient.
 	ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error)
 }
 
@@ -301,7 +302,7 @@ type PullRequestFinder interface {
 // ErrCheckFailed means a check ran and exited with a non-zero status.
 var ErrCheckFailed = errors.New("the check failed")
 
-// Checker runs action checks: a command the boss wrote, run in an action's
+// Checker runs action checks: a command you wrote, run in an action's
 // workspace once its session succeeded, so crew does not judge the action
 // by what its session says alone.
 type Checker interface {
@@ -331,10 +332,10 @@ type Check struct {
 	// together, from one goroutine at a time; nil discards it.
 	Output io.Writer
 	// Identity is who the command acts as on the tracker, the same as its
-	// action's session; the zero Identity is the boss.
+	// action's session; the zero Identity is you.
 	Identity Identity
-	// Boss and Mates are the boss's logins and the logins of the mates the
-	// config names, as in Run.
-	Boss  []string
-	Mates []string
+	// CodeOwners and Bots are the code owners' logins and the logins of the
+	// bots the config names, as in Run.
+	CodeOwners []string
+	Bots       []string
 }

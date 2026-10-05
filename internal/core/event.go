@@ -16,12 +16,12 @@ type Event interface {
 	event()
 }
 
-// IssueTaken is an issue a stage picked. Its take move, From the stage's
+// IssueTaken is an issue a rule picked. Its take move, From the rule's
 // label To its moves_to, is now in flight.
 type IssueTaken struct {
 	At    time.Time
 	Issue crew.Issue
-	Stage string
+	Rule  string
 	From  crew.State
 	To    crew.State
 }
@@ -32,7 +32,7 @@ type ActionStarted struct {
 	At        time.Time
 	IssueKey  string
 	IssueRef  string
-	Stage     string
+	Rule      string
 	Action    string
 	Workspace string
 	Branch    string
@@ -47,7 +47,7 @@ type WorkspaceMissing struct {
 	At        time.Time
 	IssueKey  string
 	IssueRef  string
-	Stage     string
+	Rule      string
 	Action    string
 	Workspace string
 }
@@ -58,7 +58,7 @@ type RunNotRecorded struct {
 	At       time.Time
 	IssueKey string
 	IssueRef string
-	Stage    string
+	Rule     string
 	Action   string
 	Reason   string
 }
@@ -71,7 +71,7 @@ type ActionEnded struct {
 	At        time.Time
 	IssueKey  string
 	IssueRef  string
-	Stage     string
+	Rule      string
 	Action    string
 	Outcome   crew.Outcome
 	Workspace string
@@ -103,7 +103,7 @@ type IssueSkipped struct {
 	States   []crew.State
 }
 
-// IssueOfOtherKind is a listed item in one crew state, the Label of a stage
+// IssueOfOtherKind is a listed item in one crew state, the Label of a rule
 // that Takes the other kind of item. It is not taken, moved or commented on
 // (#92). It is emitted once while the item stays in that state, and again
 // once a listing found it in no such state.
@@ -113,10 +113,10 @@ type IssueOfOtherKind struct {
 	IssueRef string
 	// Kind is the item's kind.
 	Kind crew.Kind
-	// Label is the crew state the item is in, Stage's label.
+	// Label is the crew state the item is in, Rule's label.
 	Label crew.State
-	Stage string
-	// Takes is the kind Stage takes.
+	Rule  string
+	// Takes is the kind Rule takes.
 	Takes crew.Kind
 }
 
@@ -130,14 +130,14 @@ type PollDone struct {
 }
 
 // PollSkipped is a tick that did not list because every slot is busy: the
-// issues the core holds reach max_parallel_issues, or every queue some stage
+// issues the core holds reach max_parallel_issues, or every queue some rule
 // runs in is full, so a listing could take nothing. The rest of the tick ran
 // as usual.
 type PollSkipped struct {
 	At time.Time
 	// Busy is how many issues the core holds.
 	Busy int
-	// Slots is how many the stages can use: the slots of the queues they
+	// Slots is how many the rules can use: the slots of the queues they
 	// run in, summed, at most max_parallel_issues (R9).
 	Slots int
 }
@@ -196,23 +196,23 @@ type Stopped struct {
 	At time.Time
 }
 
-// MateStopped is a mate that stopped acting during the run: crew's writes as
-// the default mate went back to the boss, or the mate's token was not
-// renewed (R9, R11). It is emitted once per problem, when the mate gains it.
-type MateStopped struct {
-	At   time.Time
-	Mate string
+// BotStopped is a bot that stopped acting during the run: crew's writes as
+// the default bot went back to you, or the bot's token was not
+// renewed (R9, R11). It is emitted once per problem, when the bot gains it.
+type BotStopped struct {
+	At  time.Time
+	Bot string
 	// Reason is the short reason: "writes as you" or "token not renewed".
 	Reason string
 	// Warning is the full reason and its fix.
 	Warning string
 }
 
-// MateActsAgain is a mate whose state returned to acting during the run:
+// BotActsAgain is a bot whose state returned to acting during the run:
 // its token was renewed after a failure (R10).
-type MateActsAgain struct {
-	At   time.Time
-	Mate string
+type BotActsAgain struct {
+	At  time.Time
+	Bot string
 }
 
 // CallKind tells a Move, a ReportFailure and a ReportPullRequests apart in a
@@ -305,10 +305,10 @@ func (e WindingDown) Time() time.Time { return e.At }
 func (e Stopped) Time() time.Time { return e.At }
 
 // Time implements Event.
-func (e MateStopped) Time() time.Time { return e.At }
+func (e BotStopped) Time() time.Time { return e.At }
 
 // Time implements Event.
-func (e MateActsAgain) Time() time.Time { return e.At }
+func (e BotActsAgain) Time() time.Time { return e.At }
 
 func (IssueTaken) event()       {}
 func (ActionStarted) event()    {}
@@ -327,5 +327,5 @@ func (CallDropped) event()      {}
 func (StatusFailed) event()     {}
 func (WindingDown) event()      {}
 func (Stopped) event()          {}
-func (MateStopped) event()      {}
-func (MateActsAgain) event()    {}
+func (BotStopped) event()       {}
+func (BotActsAgain) event()     {}

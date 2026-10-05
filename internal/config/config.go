@@ -1,5 +1,5 @@
 // Package config loads a repository's .crew/config.yaml: it decodes the file
-// strictly, applies the engine-owned defaults, validates the workflow, and
+// strictly, applies the engine-owned defaults, validates the rules, and
 // hands each adapter its own section as a strict Decode. It does not resolve
 // adapter names; the registry does, so config holds no adapter knowledge.
 package config
@@ -33,7 +33,7 @@ type Config struct {
 	// PollInterval is config.poll_interval_seconds, 300 seconds by default.
 	PollInterval time.Duration
 	// MaxParallelIssues is config.max_parallel_issues, 2 by default. It counts
-	// issues, not sessions, and is split into the stages' queues.
+	// issues, not sessions, and is split into the rules' queues.
 	MaxParallelIssues int
 	// RunTimeLimit is config.run_time_limit_seconds: how long crew runs from
 	// its first poll before it winds down. Zero, the default, is no limit.
@@ -48,27 +48,27 @@ type Config struct {
 	// Tracker is tracker.name, the tracker adapter's name, "github" by
 	// default. It is not checked against the registered adapters.
 	Tracker string
-	// Mate is config.mate, the default mate: it acts for crew's own writes on
-	// the tracker and for every action that names no mate of its own. Empty,
-	// the default, means the boss. Its spelling is not checked here.
-	Mate string
-	// Mates is every mate the config names, each once, the default first and
-	// then the actions' own in workflow order. It is empty when Mate is.
-	Mates []string
-	// Workflow is the stages in file order. Every state is non-empty text,
+	// Bot is config.mate, the default bot: it acts for crew's own writes on
+	// the tracker and for every action that names no bot of its own. Empty,
+	// the default, means you. Its spelling is not checked here.
+	Bot string
+	// Bots is every bot the config names, each once, the default first and
+	// then the actions' own in rule order. It is empty when Bot is.
+	Bots []string
+	// Rules are the rules in file order. Every state is non-empty text,
 	// spelled everywhere as it is first written, since labels that differ
-	// only in case are one label. The stages cannot loop or take an issue
-	// twice, and every prompt renders. Every stage has its queue: the one it
+	// only in case are one label. The rules cannot loop or take an issue
+	// twice, and every prompt renders. Every rule has its queue: the one it
 	// names, or default, with the queue's slots.
-	Workflow []crew.Stage
+	Rules []crew.Rule
 	// Extras is extra_labels' labels in file order: labels for parked work
-	// that no stage takes. Each is written as in the file, is none of the
-	// workflow's states and is no other extra, ignoring case.
+	// that no rule takes. Each is written as in the file, is none of the
+	// rules' states and is no other extra, ignoring case.
 	Extras []crew.State
 	// Board is board's columns in file order: the live view's board, drawn
-	// from the issues carrying each column's labels instead of the stages.
-	// Nil, without board, keeps the board of the stages. Every label is
-	// spelled once across the board, as the workflow or the extras spell it
+	// from the issues carrying each column's labels instead of the rules.
+	// Nil, without board, keeps the board of the rules. Every label is
+	// spelled once across the board, as the rules or the extras spell it
 	// when it is one of their labels ignoring case.
 	Board []crew.BoardColumn
 	// HarnessSection decodes the harness adapter's settings: config.model plus
@@ -84,7 +84,7 @@ type document struct {
 	Config      settings  `yaml:"config"`
 	Tracker     yaml.Node `yaml:"tracker"`
 	Harness     yaml.Node `yaml:"harness"`
-	Workflow    yaml.Node `yaml:"workflow"`
+	Rules       yaml.Node `yaml:"workflow"`
 	ExtraLabels yaml.Node `yaml:"extra_labels"`
 	Prompts     yaml.Node `yaml:"prompts"`
 	Board       yaml.Node `yaml:"board"`
@@ -101,7 +101,7 @@ type settings struct {
 	UsageInStatus       located[bool]   `yaml:"usage_in_status"`
 	Harness             located[string] `yaml:"harness"`
 	Model               yaml.Node       `yaml:"model"`
-	Mate                located[string] `yaml:"mate"`
+	Bot                 located[string] `yaml:"mate"`
 }
 
 // located is a scalar that remembers its line, for errors found after
@@ -122,7 +122,7 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 // Load reads root/.crew/config.yaml, where root is the repository's root,
 // and returns it decoded, defaulted and validated. Every error names the file,
 // and every error about the file's content names the key path and its line;
-// all the workflow's errors are reported together.
+// all the rules' errors are reported together.
 func Load(root string) (*Config, error) {
 	path := filepath.Join(root, ".crew", "config.yaml")
 	data, err := os.ReadFile(path) //nolint:gosec // the path is the repository's own .crew/config.yaml
@@ -164,13 +164,13 @@ func parse(root *yaml.Node) (*Config, error) {
 	errs = append(errs, err)
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
 	errs = append(errs, err)
-	cfg.Workflow, err = workflow(&doc.Workflow, table, cfg.Mate)
+	cfg.Rules, err = rules(&doc.Rules, table, cfg.Bot)
 	errs = append(errs, err)
-	cfg.Mates = namedMates(cfg.Mate, cfg.Workflow)
-	// With an invalid workflow, the extras are checked only on their own.
-	cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Workflow)
+	cfg.Bots = namedBots(cfg.Bot, cfg.Rules)
+	// With invalid rules, the extras are checked only on their own.
+	cfg.Extras, err = extraLabels(&doc.ExtraLabels, cfg.Rules)
 	errs = append(errs, err)
-	cfg.Board, err = board(&doc.Board, cfg.Workflow, cfg.Extras)
+	cfg.Board, err = board(&doc.Board, cfg.Rules, cfg.Extras)
 	errs = append(errs, err)
 	errs = append(errs, prompts(&doc.Prompts))
 	if err := errors.Join(errs...); err != nil {
@@ -210,7 +210,7 @@ func engineSettings(s *settings, cfg *Config) []error {
 	if s.Harness.line > 0 {
 		cfg.Harness = s.Harness.value
 	}
-	cfg.Mate = s.Mate.value
+	cfg.Bot = s.Bot.value
 	return []error{
 		positive(s.PollIntervalSeconds, "config.poll_interval_seconds", "must be a positive number of seconds"),
 		positive(s.MaxParallelIssues, "config.max_parallel_issues", "must be a positive number of issues"),
@@ -218,18 +218,18 @@ func engineSettings(s *settings, cfg *Config) []error {
 	}
 }
 
-// namedMates lists the mate def, the default, and then each action's own
-// mate in workflow order, each once. Without a default no action has a mate,
+// namedBots lists the bot def, the default, and then each action's own
+// bot in rule order, each once. Without a default no action has a bot,
 // so the list is empty.
-func namedMates(def string, workflow []crew.Stage) []string {
+func namedBots(def string, rules []crew.Rule) []string {
 	if def == "" {
 		return nil
 	}
 	out := []string{def}
-	for _, s := range workflow {
+	for _, s := range rules {
 		for _, a := range s.Actions {
-			if !slices.Contains(out, a.Mate) {
-				out = append(out, a.Mate)
+			if !slices.Contains(out, a.Bot) {
+				out = append(out, a.Bot)
 			}
 		}
 	}

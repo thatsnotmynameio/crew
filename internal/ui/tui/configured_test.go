@@ -66,7 +66,7 @@ func cardColumns(board, ref string) []int {
 
 // Covers AE1.
 func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning), labeled(twenty, "bug"))))
 	board := boardOf(t, h.view())
@@ -82,7 +82,7 @@ func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
 
 // Covers AE2.
 func TestAE2AnIssueWithTwoColumnsLabelsHasACardInEach(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"))))
 	board := boardOf(t, h.view())
@@ -93,7 +93,7 @@ func TestAE2AnIssueWithTwoColumnsLabelsHasACardInEach(t *testing.T) {
 }
 
 func TestAHeldIssueOnNoColumnsLabelHasNoCardButShowsInActions(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
 	view := h.view()
@@ -104,17 +104,17 @@ func TestAHeldIssueOnNoColumnsLabelHasNoCardButShowsInActions(t *testing.T) {
 	contains(t, view, "development/lfg")
 }
 
-// The configured columns ignore the stages: every stage hidden from the
+// The configured columns ignore the rules: every rule hidden from the
 // board leaves them as they are, empty ones included.
-func TestTheConfiguredColumnsShowInConfigOrderWhateverTheStages(t *testing.T) {
-	hidden := []crew.Stage{{Name: "only", Label: "ready", OffBoard: true}}
+func TestTheConfiguredColumnsShowInConfigOrderWhateverTheRules(t *testing.T) {
+	hidden := []crew.Rule{{Name: "only", Label: "ready", OffBoard: true}}
 	board := []crew.BoardColumn{
 		{Name: "done", Labels: []string{"crew:triage:done"}},
 		{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
 		{Name: "bugs", Labels: []string{"bug"}},
 	}
-	for _, workflow := range [][]crew.Stage{crewWorkflow, hidden} {
-		h := newConfiguredHarness(t, 120, workflow, board)
+	for _, rules := range [][]crew.Rule{crewRules, hidden} {
+		h := newConfiguredHarness(t, 120, rules, board)
 		h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "bug"))))
 
 		got := boardOf(t, h.view())
@@ -134,7 +134,7 @@ func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 	for n := 1; n <= 8; n++ {
 		issues = append(issues, labeled(crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Bug"}, "bug"))
 	}
-	h := newConfiguredHarness(t, 80, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 80, crewRules, ideasBugsDone)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.send(updateMsg(onBoard(engine.Update{}, issues...)))
 
@@ -162,7 +162,7 @@ func TestEmptyConfiguredColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 		labeled(crew.Issue{Key: "1", Ref: "#1", Title: "One"}, "l2"),
 		labeled(crew.Issue{Key: "2", Ref: "#2", Title: "Two"}, "l6"))
 
-	h := newConfiguredHarness(t, 80, crewWorkflow, eightColumns())
+	h := newConfiguredHarness(t, 80, crewRules, eightColumns())
 	h.send(updateMsg(u))
 	board := boardOf(t, h.view())
 	contains(t, board, "6 empty columns not shown")
@@ -170,7 +170,7 @@ func TestEmptyConfiguredColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 		t.Errorf("columns = %q, want c2 c6:\n%s", got, board)
 	}
 
-	h = newConfiguredHarness(t, 30, crewWorkflow, eightColumns())
+	h = newConfiguredHarness(t, 30, crewRules, eightColumns())
 	h.send(updateMsg(u))
 	contains(t, boardOf(t, h.view()), "c2", "1 ▸", "#1")
 	h.send(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -179,7 +179,7 @@ func TestEmptyConfiguredColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 
 // Covers KTD5 and KTD8.
 func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 	contains(t, boardOf(t, h.view()), "Workflow ", " 0 issues")
 
 	u := onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"), labeled(twentyTwo, "bug"))
@@ -209,7 +209,7 @@ func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
 // Covers #126: an unheld card keeps its two rows, the second a status of
 // its own, ○ idle, and no claim.
 func TestAnUnheldCardShowsIdle(t *testing.T) {
-	h := newConfiguredHarness(t, 120, crewWorkflow, ideasBugsDone)
+	h := newConfiguredHarness(t, 120, crewRules, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning),
 		labeled(twenty, "bug"), labeled(twentyTwo, "bug"))))

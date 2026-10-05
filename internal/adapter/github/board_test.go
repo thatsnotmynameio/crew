@@ -22,9 +22,9 @@ func boardJSON(byAuthor ...[]string) string {
 	return `{"data":{"repository":{` + strings.Join(fields, ",") + `}}}`
 }
 
-// Covers AE7: the board's query lists only the issues the boss and the mates
-// opened, one issues field per author and no pull requests, filtered by the
-// board's labels. Before Prepare the boss is gh's login.
+// Covers AE7: the board's query lists only the issues the code owners and the
+// bots opened, one issues field per author and no pull requests, filtered by
+// the board's labels. Before Prepare the code owner is gh's login.
 func TestListBoardSendsOneQueryPerAuthorWithoutPullRequests(t *testing.T) {
 	tr, gh := build(t, login, reply{prefix: []string{"api", "graphql"}, stdout: boardJSON(nil, nil)})
 	tr.ActAs(port.Identity{}, []string{opsLogin})

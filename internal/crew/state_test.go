@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-func TestWorkflowStates(t *testing.T) {
+func TestRuleStates(t *testing.T) {
 	tests := []struct {
-		name     string
-		workflow []Stage
-		want     []State
+		name  string
+		rules []Rule
+		want  []State
 	}{
 		{
 			name: "every key of every stage, in file order, each once",
-			workflow: []Stage{
+			rules: []Rule{
 				{Label: "ready", MovesTo: "in progress", OnSuccess: "in review", OnFailure: "needs attention"},
 				{Label: "in review", MovesTo: "reviewing", OnSuccess: "done", OnFailure: "needs attention"},
 			},
@@ -21,7 +21,7 @@ func TestWorkflowStates(t *testing.T) {
 		},
 		{
 			name: "a failure label that is another stage's label is listed once",
-			workflow: []Stage{
+			rules: []Rule{
 				{Label: "ready", MovesTo: "in progress", OnSuccess: "ready to review", OnFailure: "needs attention"},
 				{Label: "ready to review", MovesTo: "in review", OnSuccess: "done", OnFailure: "ready"},
 			},
@@ -34,8 +34,8 @@ func TestWorkflowStates(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := WorkflowStates(tt.workflow); !slices.Equal(got, tt.want) {
-				t.Errorf("WorkflowStates() = %q, want %q", got, tt.want)
+			if got := RuleStates(tt.rules); !slices.Equal(got, tt.want) {
+				t.Errorf("RuleStates() = %q, want %q", got, tt.want)
 			}
 		})
 	}

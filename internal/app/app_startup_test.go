@@ -56,7 +56,7 @@ func TestAConfigWithTrackerLabelsExitsTwoNamingTheKey(t *testing.T) {
 }
 
 // Covers AE4 of #92.
-func TestAStageTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.T) {
+func TestARuleTakingNeitherKindExitsTwoBeforeAnyListingNamingTheKey(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
 	body := strings.Replace(oneAction, "    on_failure: needs attention\n",
 		"    on_failure: needs attention\n    takes: prs\n", 1)

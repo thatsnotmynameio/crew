@@ -13,7 +13,7 @@ import (
 )
 
 // TestTheRepositorysIssueTemplatesMatchItsConfig keeps this repository's
-// example config and .github/ISSUE_TEMPLATE/ in step: every stage and
+// example config and .github/ISSUE_TEMPLATE/ in step: every rule and
 // extra label names a template that exists, and that template's frontmatter
 // gives exactly the type's label, so an issue opened on the web lands where
 // the /cw-create-issue skill would put it. Config keeps no template fields,
@@ -21,7 +21,7 @@ import (
 func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
 	root := filepath.Join("..", "..")
 	loadExample(t)
-	// Several types may share a template, such as a stage and an extra that
+	// Several types may share a template, such as a rule and an extra that
 	// both hold a brainstormed feature. Its labels name one of them.
 	templates, labelsOf := templateLabels(t, repositoryIssueTypes(t))
 	for _, name := range templates {
@@ -29,7 +29,7 @@ func TestTheRepositorysIssueTemplatesMatchItsConfig(t *testing.T) {
 	}
 }
 
-// issueType is a stage or an extra label of .crew/config.yaml, with the keys
+// issueType is a rule or an extra label of .crew/config.yaml, with the keys
 // an issue template is chosen and labelled by.
 type issueType struct {
 	Name          string `yaml:"name"`
@@ -45,7 +45,7 @@ type namedIssueType struct {
 	what string
 }
 
-// repositoryIssueTypes reads the stages and extra labels of the repository's
+// repositoryIssueTypes reads the rules and extra labels of the repository's
 // example config.
 func repositoryIssueTypes(t *testing.T) []namedIssueType {
 	t.Helper()
@@ -54,14 +54,14 @@ func repositoryIssueTypes(t *testing.T) []namedIssueType {
 		t.Fatal(err)
 	}
 	var cfg struct {
-		Workflow    []issueType `yaml:"workflow"`
+		Rules       []issueType `yaml:"workflow"`
 		ExtraLabels []issueType `yaml:"extra_labels"`
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	types := make([]namedIssueType, 0, len(cfg.Workflow)+len(cfg.ExtraLabels))
-	for _, s := range cfg.Workflow {
+	types := make([]namedIssueType, 0, len(cfg.Rules)+len(cfg.ExtraLabels))
+	for _, s := range cfg.Rules {
 		types = append(types, namedIssueType{issueType: s, what: "workflow stage " + s.Name})
 	}
 	for _, e := range cfg.ExtraLabels {

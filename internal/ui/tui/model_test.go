@@ -30,9 +30,9 @@ var zone = time.FixedZone("test", -3*60*60)
 // start is the clock's time when a test begins.
 var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 
-// testWorkflow is the workflow of the test snapshots: implement takes
+// testRules are the rules of the test snapshots: implement takes
 // "ready", review takes "ready to review".
-var testWorkflow = []crew.Stage{
+var testRules = []crew.Rule{
 	{Name: "implement", Label: "ready", OnSuccess: "ready to review", OnFailure: "needs attention"},
 	{Name: "review", Label: "ready to review", OnSuccess: "ready to merge", OnFailure: "needs attention"},
 }
@@ -50,25 +50,25 @@ type harness struct {
 
 func newHarness(t *testing.T, width int, warnings ...string) *harness {
 	t.Helper()
-	return newWorkflowHarness(t, width, testWorkflow, warnings...)
+	return newRulesHarness(t, width, testRules, warnings...)
 }
 
-func newWorkflowHarness(t *testing.T, width int, workflow []crew.Stage, warnings ...string) *harness {
+func newRulesHarness(t *testing.T, width int, rules []crew.Rule, warnings ...string) *harness {
 	t.Helper()
-	return newConfiguredHarness(t, width, workflow, nil, warnings...)
+	return newConfiguredHarness(t, width, rules, nil, warnings...)
 }
 
-// newConfiguredHarness is newWorkflowHarness with board's columns
+// newConfiguredHarness is newRulesHarness with board's columns
 // configured.
 func newConfiguredHarness(
-	t *testing.T, width int, workflow []crew.Stage, board []crew.BoardColumn, warnings ...string,
+	t *testing.T, width int, rules []crew.Rule, board []crew.BoardColumn, warnings ...string,
 ) *harness {
 	t.Helper()
 	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
 	h.model = New(Config{
 		Updates: h.updates, Stop: func() { h.stops++ }, Force: func() { h.forces++ },
 		Now: func() time.Time { return h.clock }, Location: zone,
-		Workflow: workflow, Board: board, Repository: "crew", Warnings: warnings,
+		Rules: rules, Board: board, Repository: "crew", Warnings: warnings,
 	})
 	h.send(tea.WindowSizeMsg{Width: width, Height: 40})
 	return h
@@ -113,15 +113,15 @@ func quits(cmd tea.Cmd) bool {
 	}
 }
 
-// boss is the boss's entry with no mate configured: crew's writes and
-// every pair act as the boss, and the actions in running run as it.
-func boss(pairs []string, running ...core.RunningAction) core.MateView {
-	return core.MateView{Name: "you", You: true, Writes: true, Pairs: pairs, Running: running}
+// you is the "you" entry with no bot configured: crew's writes and
+// every pair act as you, and the actions in running run as it.
+func you(pairs []string, running ...core.RunningAction) core.BotView {
+	return core.BotView{Name: "you", You: true, Writes: true, Pairs: pairs, Running: running}
 }
 
 // runningSnapshot is #1 running two actions in default, started 5 and 7
-// minutes before start, and #2 being taken by a later stage in clerk, 12
-// minutes into a one-hour run, with no mate configured.
+// minutes before start, and #2 being taken by a later rule in clerk, 12
+// minutes into a one-hour run, with no bot configured.
 func runningSnapshot() engine.Update {
 	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
@@ -130,26 +130,26 @@ func runningSnapshot() engine.Update {
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
 			{Name: crew.ClerkQueue, Slots: 1, Busy: 1},
 		}, Issues: []core.IssueView{
-			{Issue: one, Stage: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
+			{Issue: one, Rule: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5 * time.Minute)},
 				{Name: "tests", Phase: core.PhaseRunning, Branch: "crew/1-tests", Started: start.Add(-7 * time.Minute)},
 			}},
-			{Issue: two, Stage: "review", Queue: crew.ClerkQueue, Claim: core.ClaimTaking, Actions: []core.ActionView{
+			{Issue: two, Rule: "review", Queue: crew.ClerkQueue, Claim: core.ClaimTaking, Actions: []core.ActionView{
 				{Name: "check", Phase: core.PhaseWaiting},
 			}},
-		}, Mates: []core.MateView{boss([]string{"implement/code", "implement/tests", "review/check"},
-			core.RunningAction{IssueRef: "#1", Stage: "implement", Action: "code"},
-			core.RunningAction{IssueRef: "#1", Stage: "implement", Action: "tests"})}},
+		}, Bots: []core.BotView{you([]string{"implement/code", "implement/tests", "review/check"},
+			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"},
+			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
-			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Stage: "implement",
+			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Rule: "implement",
 				From: "ready", To: "in progress"},
-			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "tests",
+			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Rule: "implement", Action: "tests",
 				Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
-			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Stage: "implement", Action: "code",
+			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Rule: "implement", Action: "code",
 				Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
 			core.PollDone{At: start.Add(-10 * time.Second), Listed: 2, Taken: 1},
-			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Stage: "review",
+			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Rule: "review",
 				From: "ready to review", To: "in review"},
 		},
 	}}
@@ -189,21 +189,21 @@ func resumingSnapshot() engine.Update {
 	issue := crew.Issue{Key: "9", Ref: "#9", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{{Name: crew.DefaultQueue, Slots: 2, Busy: 1}}, Issues: []core.IssueView{
-			{Issue: issue, Stage: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
+			{Issue: issue, Rule: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "docs", Phase: core.PhaseReopening, Workspace: "issue-9-docs", Branch: "crew/issue-9-docs"},
 				{Name: "lfg", Phase: core.PhaseRunning, Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 					Started: start.Add(-3 * time.Minute), Resumed: true},
 				{Name: "tests", Phase: core.PhaseRunning, Workspace: "issue-9-tests", Branch: "crew/issue-9-tests",
 					Started: start.Add(-2 * time.Minute)},
 			}},
-		}, Mates: []core.MateView{boss([]string{"development/docs", "development/lfg", "development/tests"},
-			core.RunningAction{IssueRef: "#9", Stage: "development", Action: "lfg"},
-			core.RunningAction{IssueRef: "#9", Stage: "development", Action: "tests"})}},
+		}, Bots: []core.BotView{you([]string{"development/docs", "development/lfg", "development/tests"},
+			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "lfg"},
+			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "tests"})}},
 		Started: start.Add(-4 * time.Minute),
 		Recent: []core.Event{
-			core.ActionStarted{At: start.Add(-3 * time.Minute), IssueRef: "#9", Stage: "development", Action: "lfg",
+			core.ActionStarted{At: start.Add(-3 * time.Minute), IssueRef: "#9", Rule: "development", Action: "lfg",
 				Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
-			core.ActionStarted{At: start.Add(-2 * time.Minute), IssueRef: "#9", Stage: "development", Action: "tests",
+			core.ActionStarted{At: start.Add(-2 * time.Minute), IssueRef: "#9", Rule: "development", Action: "tests",
 				Workspace: "issue-9-tests", Branch: "crew/issue-9-tests", Log: ".crew/logs/issue-9-tests.log"},
 		},
 	}}
@@ -216,11 +216,11 @@ func windingDownSnapshot() engine.Update {
 		View: core.View{TimeUp: true, Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
 		}, Issues: []core.IssueView{
-			{Issue: issue, Stage: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
+			{Issue: issue, Rule: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/42-code", Started: start.Add(-75 * time.Minute)},
 			}},
-		}, Mates: []core.MateView{boss([]string{"implement/code"},
-			core.RunningAction{IssueRef: "#42", Stage: "implement", Action: "code"})}},
+		}, Bots: []core.BotView{you([]string{"implement/code"},
+			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})}},
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},

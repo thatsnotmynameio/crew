@@ -23,8 +23,8 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	)
 	at := d.now
 	wantEvents(t, events,
-		core.IssueTaken{At: at, Issue: i1, Stage: "implement", From: ready, To: inProgress},
-		core.IssueTaken{At: at, Issue: i2, Stage: "implement", From: ready, To: inProgress},
+		core.IssueTaken{At: at, Issue: i1, Rule: "implement", From: ready, To: inProgress},
+		core.IssueTaken{At: at, Issue: i2, Rule: "implement", From: ready, To: inProgress},
 		core.PollDone{At: at, Listed: 3, Taken: 2},
 	)
 
@@ -86,7 +86,7 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 	cmds, events := d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
 	wantCommands(t, cmds)
 	hasEvent(t, events, core.ActionEnded{
-		At: d.now, IssueKey: "1", IssueRef: "#1", Stage: "implement", Action: "acceptance", Outcome: succeeded,
+		At: d.now, IssueKey: "1", IssueRef: "#1", Rule: "implement", Action: "acceptance", Outcome: succeeded,
 		Workspace: "issue-1-acceptance", Log: ".crew/logs/issue-1-acceptance.log",
 	})
 
@@ -140,10 +140,10 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 	}
 }
 
-func TestAE1AE5FailedStageMovesToItsOwnOnFailure(t *testing.T) {
-	workflow := draft()
-	workflow[1].OnFailure = workflow[0].Label // a failed review goes back to implement
-	d := newDriver(t, workflow, 2)
+func TestAE1AE5FailedRuleMovesToItsOwnOnFailure(t *testing.T) {
+	rules := draft()
+	rules[1].OnFailure = rules[0].Label // a failed review goes back to implement
+	d := newDriver(t, rules, 2)
 
 	// AE1: implement fails, so #1 moves to implement's on_failure.
 	d.running(issue("1", 1, ready))
@@ -259,9 +259,9 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 }
 
 func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
-	workflow := draft()
-	workflow[0].Actions[0].Prompt = "Fix {{.Issue.Number}}"
-	d := newDriver(t, workflow, 2)
+	rules := draft()
+	rules[0].Actions[0].Prompt = "Fix {{.Issue.Number}}"
+	d := newDriver(t, rules, 2)
 	cmds, _ := d.poll(issue("1", 1, ready))
 
 	cmds, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
@@ -283,7 +283,7 @@ func prioritized(i crew.Issue, p int) crew.Issue {
 	return i
 }
 
-func TestPicksTheHighestPriorityThenLaterStagesThenTheOldestIssue(t *testing.T) {
+func TestPicksTheHighestPriorityThenLaterRulesThenTheOldestIssue(t *testing.T) {
 	tests := []struct {
 		name   string
 		issues []crew.Issue
@@ -300,19 +300,19 @@ func TestPicksTheHighestPriorityThenLaterStagesThenTheOldestIssue(t *testing.T) 
 			want:   core.Move{IssueKey: "7", From: ready, To: inProgress},
 		},
 		{
-			// AE1: an Urgent issue passes an unprioritized one of a later stage.
+			// AE1: an Urgent issue passes an unprioritized one of a later rule.
 			name:   "priority before a later stage",
 			issues: []crew.Issue{issue("6", 1, readyToReview), prioritized(issue("5", 2, ready), 1)},
 			want:   core.Move{IssueKey: "5", From: ready, To: inProgress},
 		},
 		{
-			// AE2: same priority and stage, the older issue first.
+			// AE2: same priority and rule, the older issue first.
 			name:   "oldest first at the same priority and stage",
 			issues: []crew.Issue{prioritized(issue("8", 9, ready), 2), prioritized(issue("7", 3, ready), 2)},
 			want:   core.Move{IssueKey: "7", From: ready, To: inProgress},
 		},
 		{
-			// AE3: same priority, the later stage first.
+			// AE3: same priority, the later rule first.
 			name:   "later stage first at the same priority",
 			issues: []crew.Issue{prioritized(issue("5", 1, ready), 3), prioritized(issue("6", 2, readyToReview), 3)},
 			want:   core.Move{IssueKey: "6", From: readyToReview, To: inReview},
@@ -371,7 +371,7 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 	started := d.now
 
 	want := core.View{Issues: []core.IssueView{{
-		Issue: issue("1", 1, ready), Stage: "implement", Claim: core.ClaimRunning,
+		Issue: issue("1", 1, ready), Rule: "implement", Claim: core.ClaimRunning,
 		Actions: []core.ActionView{
 			{
 				Name: "acceptance", Phase: core.PhaseRunning, Workspace: "issue-1-acceptance",
@@ -379,9 +379,9 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 			},
 			{Name: "development", Phase: core.PhaseCreating},
 		},
-	}}, Queues: []core.QueueView{{Slots: 2, Busy: 1}}, Mates: []core.MateView{{
+	}}, Queues: []core.QueueView{{Slots: 2, Busy: 1}}, Bots: []core.BotView{{
 		Name: "you", You: true, Writes: true, Pairs: draftPairs,
-		Running: []core.RunningAction{{IssueRef: "#1", Stage: "implement", Action: "acceptance"}},
+		Running: []core.RunningAction{{IssueRef: "#1", Rule: "implement", Action: "acceptance"}},
 	}}}
 	v := d.m.View()
 	if !reflect.DeepEqual(v, want) {
@@ -391,7 +391,7 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 	v.Issues[0].Issue.States[0] = "done"
 	v.Issues[0].Actions[0].Name = "changed"
 	v.Queues[0].Busy = 9
-	v.Mates[0].Pairs[0] = "changed"
+	v.Bots[0].Pairs[0] = "changed"
 	if again := d.m.View(); !reflect.DeepEqual(again, want) {
 		t.Fatalf("changing a view changed the model:\n got %#v\nwant %#v", again, want)
 	}

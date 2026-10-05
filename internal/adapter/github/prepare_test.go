@@ -20,7 +20,7 @@ func recordSteps() (context.Context, *[]string) {
 }
 
 // prepareSteps returns the steps a Prepare that succeeds reports: the gh
-// login, the boss, the labels, then one per label it creates, naming it.
+// login, the code owners, the labels, then one per label it creates, naming it.
 func prepareSteps(created []string) []string {
 	steps := make([]string, 0, 3+len(created))
 	steps = append(steps, "checking the gh login", "finding the boss", "reading the repository's labels")
@@ -30,7 +30,7 @@ func prepareSteps(created []string) []string {
 	return steps
 }
 
-func TestPrepareWithoutAuthTellsTheBossToLogIn(t *testing.T) {
+func TestPrepareWithoutAuthTellsYouToLogIn(t *testing.T) {
 	tr, gh := build(t,
 		reply{prefix: []string{"auth", "status"}, stderr: "You are not logged into any GitHub hosts."})
 	ctx, steps := recordSteps()

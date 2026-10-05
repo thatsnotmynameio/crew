@@ -21,50 +21,50 @@ const (
 	edgeMarker = 4
 )
 
-// card is an issue on the board. On the board of the stages (KTD3), it is
-// held by a shown stage, or waits in its stage's column for the next stage
+// card is an issue on the board. On the board of the rules (KTD3), it is
+// held by a shown rule, or waits in its rule's column for the next rule
 // to take it. On a configured board, it is in a column whose labels the
 // issue carries, held or not (KTD9).
 type card struct {
 	issue crew.Issue
-	// column is the card's column: an index into the workflow, or into the
+	// column is the card's column: an index into the rules, or into the
 	// configured board.
 	column int
 	// held is set while crew holds the issue, with claim its claim; the
 	// zero claim is ClaimTaking, so claim alone cannot tell.
 	held  bool
 	claim core.Claim
-	// waiting is set for a card whose stage ended; label is the state the
-	// stage moved its issue to.
+	// waiting is set for a card whose rule ended; label is the state the
+	// rule moved its issue to.
 	waiting bool
 	label   crew.State
 }
 
-// columnIndex returns the index of the stage named name in the workflow, or
+// columnIndex returns the index of the rule named name in the rules, or
 // -1.
 func (m Model) columnIndex(name string) int {
-	return slices.IndexFunc(m.cfg.Workflow, func(s crew.Stage) bool { return s.Name == name })
+	return slices.IndexFunc(m.cfg.Rules, func(s crew.Rule) bool { return s.Name == name })
 }
 
-// shown reports whether column i is on the board: a stage not hidden from
+// shown reports whether column i is on the board: a rule not hidden from
 // it (R12), or any column of a configured board (R5).
 func (m Model) shown(i int) bool {
 	if m.configured() {
 		return i >= 0 && i < len(m.cfg.Board)
 	}
-	return i >= 0 && !m.cfg.Workflow[i].OffBoard
+	return i >= 0 && !m.cfg.Rules[i].OffBoard
 }
 
 // cards returns the cards of the snapshot: a configured board's (KTD9), or
-// the stages' (KTD3), each held issue of a shown stage, in the order taken,
-// then each waiting card, by when its stage ended.
+// the rules' (KTD3), each held issue of a shown rule, in the order taken,
+// then each waiting card, by when its rule ended.
 func (m Model) cards() []card {
 	if m.configured() {
 		return m.configuredCards()
 	}
 	var out []card
 	for _, iv := range m.snap.Issues {
-		if i := m.columnIndex(iv.Stage); m.shown(i) {
+		if i := m.columnIndex(iv.Rule); m.shown(i) {
 			out = append(out, card{issue: iv.Issue, column: i, held: true, claim: iv.Claim})
 		}
 	}
@@ -76,20 +76,20 @@ func (m Model) cards() []card {
 	}
 	slices.SortStableFunc(waiting, func(a, b core.HandledView) int { return a.Ended.Compare(b.Ended) })
 	for _, e := range waiting {
-		out = append(out, card{issue: e.Issue, column: m.columnIndex(e.Stage), waiting: true, label: e.To})
+		out = append(out, card{issue: e.Issue, column: m.columnIndex(e.Rule), waiting: true, label: e.To})
 	}
 	return out
 }
 
-// waits reports whether e's issue waits on the board for the next stage:
-// no stage holds it again, its move is done, the issue is still where the
-// move put it, its stage is shown, and a stage of its kind takes that state
+// waits reports whether e's issue waits on the board for the next rule:
+// no rule holds it again, its move is done, the issue is still where the
+// move put it, its rule is shown, and a rule of its kind takes that state
 // (R10, KTD3, KTD4, #109).
 func (m Model) waits(e core.HandledView) bool {
-	if e.HeldBy != "" || e.Move != crew.MoveDone || e.Gone || !m.shown(m.columnIndex(e.Stage)) {
+	if e.HeldBy != "" || e.Move != crew.MoveDone || e.Gone || !m.shown(m.columnIndex(e.Rule)) {
 		return false
 	}
-	return slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool {
+	return slices.ContainsFunc(m.cfg.Rules, func(s crew.Rule) bool {
 		return s.Label == e.To && s.Takes == e.Issue.Kind
 	})
 }
@@ -158,7 +158,7 @@ func (m Model) board(limit int) (string, []string) {
 		l := m.boardLayout(cards)
 		return m.configuredSummary(cards, l), m.boardRows(l, cards, limit)
 	}
-	if !slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool { return !s.OffBoard }) {
+	if !slices.ContainsFunc(m.cfg.Rules, func(s crew.Rule) bool { return !s.OffBoard }) {
 		return "", []string{" " + m.styles.muted.Render("every stage is hidden")}
 	}
 	cards := m.cards()

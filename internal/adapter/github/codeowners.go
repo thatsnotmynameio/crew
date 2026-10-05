@@ -11,11 +11,11 @@ import (
 // rawAccept asks GitHub's contents API for a file's raw text.
 const rawAccept = "Accept: application/vnd.github.raw+json"
 
-// findBoss returns the boss's logins (KTD5): every user the catch-all `*`
-// rule of the repository's CODEOWNERS names, its teams expanded to their
-// members, each once, ignoring case. With no CODEOWNERS, or a `*` rule that
-// names no user, the boss is gh's login.
-func (t *Tracker) findBoss(ctx context.Context) ([]string, error) {
+// findCodeOwners returns the code owners' logins (KTD5): every user the
+// catch-all `*` rule of the repository's CODEOWNERS names, its teams expanded
+// to their members, each once, ignoring case. With no CODEOWNERS, or a `*`
+// rule that names no user, the code owner is gh's login.
+func (t *Tracker) findCodeOwners(ctx context.Context) ([]string, error) {
 	login, err := t.gh.viewer(ctx)
 	if err != nil {
 		return nil, err
@@ -24,7 +24,7 @@ func (t *Tracker) findBoss(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var boss []string
+	var codeOwners []string
 	for _, owner := range catchAllOwners(text) {
 		logins := []string{owner}
 		if org, team, ok := strings.Cut(owner, "/"); ok {
@@ -32,12 +32,12 @@ func (t *Tracker) findBoss(ctx context.Context) ([]string, error) {
 				return nil, err
 			}
 		}
-		boss = appendFold(boss, logins...)
+		codeOwners = appendFold(codeOwners, logins...)
 	}
-	if len(boss) == 0 {
+	if len(codeOwners) == 0 {
 		return []string{login}, nil
 	}
-	return boss, nil
+	return codeOwners, nil
 }
 
 // codeowners returns the text of the repository's CODEOWNERS on its default

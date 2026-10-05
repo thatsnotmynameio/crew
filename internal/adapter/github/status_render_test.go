@@ -12,7 +12,7 @@ import (
 // running74 is #74 in implement with one action, lfg, running since started
 // and having said said.
 func running74(started time.Time, said string) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusRunning,
+	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: said}},
 		Updated: updated}
 }
@@ -34,7 +34,7 @@ func TestASessionsWordsAreFencedAsText(t *testing.T) {
 }
 
 // Covers AE2.
-func TestARunningStatusShowsTheStageElapsedTimeAndLastWords(t *testing.T) {
+func TestARunningStatusShowsTheRuleElapsedTimeAndLastWords(t *testing.T) {
 	tr, _ := build(t)
 	said := "U1 committed: 168 tests pass. Starting U2."
 	body := tr.renderStatus(running74(updated.Add(-42*time.Minute-10*time.Second), said))
@@ -90,7 +90,7 @@ func TestElapsedTimeIsInWholeMinutes(t *testing.T) {
 // Covers AE3 and AE4.
 func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 	tr, _ := build(t)
-	status := crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded,
+	status := crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
 		Actions: []crew.ActionStatus{
 			{Name: "development", State: crew.ActionFailed},
 			{Name: "acceptance", State: crew.ActionSucceeded},
@@ -122,7 +122,7 @@ func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
 	spent := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{CacheRead: 17_200_000}, HasTokens: true}.Spend()
 	ended := func(a crew.ActionStatus) crew.Status {
 		a.Name = "lfg"
-		return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded,
+		return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
 			Actions: []crew.ActionStatus{a}, To: needsAttention, Updated: updated}
 	}
 	tests := []struct {
@@ -155,7 +155,7 @@ func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
 	}
 }
 
-// actionLines renders s and returns the body between the stage's line and
+// actionLines renders s and returns the body between the rule's line and
 // the update line, which holds the actions' lines.
 func actionLines(t *testing.T, tr *Tracker, s crew.Status) string {
 	t.Helper()
@@ -177,10 +177,10 @@ func resumed(s crew.Status) crew.Status {
 	return s
 }
 
-// lfgEnded is #74's implement stage, ended with its one action, lfg, in
+// lfgEnded is #74's implement rule, ended with its one action, lfg, in
 // state.
 func lfgEnded(state crew.ActionState) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Stage: "implement", Kind: crew.StatusEnded,
+	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
 		Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, To: needsAttention, Updated: updated}
 }
 

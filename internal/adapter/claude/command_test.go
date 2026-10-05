@@ -8,20 +8,20 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// developer is the identity of a session acting as the mate developer.
+// developer is the identity of a session acting as the bot developer.
 var developer = port.Identity{
-	Mate:  "developer",
+	Bot:   "developer",
 	Login: "crew-developer[bot]",
 	Env:   []string{"GH_CONFIG_DIR=/run/crew/developer"},
 	Unset: []string{"GH_TOKEN", "GITHUB_TOKEN"},
 }
 
-// AE6: whatever GH_TOKEN the boss's shell exports, the session's gh reads
-// the mate's directory, because its command removes the token.
-func TestAE6CommandActsAsTheRunsIdentityAndNamesTheBossAndTheMates(t *testing.T) {
+// AE6: whatever GH_TOKEN your shell exports, the session's gh reads
+// the bot's directory, because its command removes the token.
+func TestAE6CommandActsAsTheRunsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	run := port.Run{
 		Dir: "/work", Prompt: "Implement #4", Identity: developer,
-		Boss: []string{"octocat"}, Mates: []string{"crew-developer[bot]", "crew-ops[bot]"},
+		CodeOwners: []string{"octocat"}, Bots: []string{"crew-developer[bot]", "crew-ops[bot]"},
 	}
 
 	got := command(run, "claude-opus-5-5")
@@ -40,8 +40,8 @@ func TestAE6CommandActsAsTheRunsIdentityAndNamesTheBossAndTheMates(t *testing.T)
 	}
 }
 
-func TestCommandOfTheBossIsTodaysPlusTheBossAndTheMates(t *testing.T) {
-	run := port.Run{Dir: "/work", Prompt: "Implement #4", Boss: []string{"octocat", "hubot"}}
+func TestCommandAsYouIsTodaysPlusTheCodeOwnersAndTheBots(t *testing.T) {
+	run := port.Run{Dir: "/work", Prompt: "Implement #4", CodeOwners: []string{"octocat", "hubot"}}
 
 	got := command(run, "claude-opus-5-5")
 

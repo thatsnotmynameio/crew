@@ -43,7 +43,7 @@ type journalLine struct {
 	Run       string    `json:"run,omitempty"`
 	Issue     string    `json:"issue"`
 	Ref       string    `json:"ref"`
-	Stage     string    `json:"stage"`
+	Rule      string    `json:"stage"`
 	Action    string    `json:"action"`
 	Workspace string    `json:"workspace"`
 	Branch    string    `json:"branch"`
@@ -106,7 +106,7 @@ func (l journalLine) record() (core.RunRecord, bool) {
 		return core.RunRecord{}, false
 	}
 	r := core.RunRecord{
-		At: l.Time, IssueKey: l.Issue, IssueRef: l.Ref, Stage: l.Stage, Action: l.Action,
+		At: l.Time, IssueKey: l.Issue, IssueRef: l.Ref, Rule: l.Rule, Action: l.Action,
 		Workspace: l.Workspace, Branch: l.Branch, Log: l.Log,
 	}
 	switch l.Event {
@@ -127,7 +127,7 @@ func (l journalLine) record() (core.RunRecord, bool) {
 func lineOf(r core.RunRecord, run string) journalLine {
 	l := journalLine{
 		Version: journalVersion, Event: eventStarted, Time: r.At.UTC(), Run: run, Issue: r.IssueKey,
-		Ref: r.IssueRef, Stage: r.Stage, Action: r.Action, Workspace: r.Workspace, Branch: r.Branch, Log: r.Log,
+		Ref: r.IssueRef, Rule: r.Rule, Action: r.Action, Workspace: r.Workspace, Branch: r.Branch, Log: r.Log,
 	}
 	if r.Event != core.RunEnded {
 		return l

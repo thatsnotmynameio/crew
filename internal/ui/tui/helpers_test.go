@@ -16,11 +16,11 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
-// entry is #key handled by stage into to, taken and ended the given minutes
+// entry is #key handled by rule into to, taken and ended the given minutes
 // before start.
-func entry(key, title, stage string, to crew.State, taken, ended int) core.HandledView {
+func entry(key, title, rule string, to crew.State, taken, ended int) core.HandledView {
 	return core.HandledView{
-		Issue: crew.Issue{Key: key, Ref: "#" + key, Title: title}, Stage: stage, To: to, Move: crew.MoveDone,
+		Issue: crew.Issue{Key: key, Ref: "#" + key, Title: title}, Rule: rule, To: to, Move: crew.MoveDone,
 		Taken: start.Add(-time.Duration(taken) * time.Minute), Ended: start.Add(-time.Duration(ended) * time.Minute),
 	}
 }
@@ -44,8 +44,8 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 
 // handledSnapshot is runningSnapshot 12 minutes into a one-hour run, with
 // four issues handled: a failure whose code action never had a session, a
-// given-up move and two successes, one of two actions. An earlier stage of
-// #8 spent $2.00 this run. Every action acted as the boss.
+// given-up move and two successes, one of two actions. An earlier rule of
+// #8 spent $2.00 this run. Every action acted as you.
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
@@ -66,13 +66,13 @@ func handledSnapshot() engine.Update {
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
 	}
-	u.Snapshot.Mates[0].Spend = u.Snapshot.Spent
+	u.Snapshot.Bots[0].Spend = u.Snapshot.Spent
 	return u
 }
 
 // manySnapshot is runningSnapshot with ten issues handled: #11 and #12
 // failed, and the successes #13 to #20 in crew:waiting review, the higher
-// the number the more recent, every action as the boss.
+// the number the more recent, every action as you.
 func manySnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
@@ -91,7 +91,7 @@ func manySnapshot() engine.Update {
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
 	}
-	u.Snapshot.Mates[0].Spend = u.Snapshot.Spent
+	u.Snapshot.Bots[0].Spend = u.Snapshot.Spent
 	return u
 }
 
@@ -144,7 +144,7 @@ func found(ref string) crew.PullRequest {
 
 var noPullRequest = crew.PullRequest{Lookup: crew.PullRequestNone}
 
-// acted is e with its stage's actions.
+// acted is e with its rule's actions.
 func acted(e core.HandledView, actions ...core.HandledAction) core.HandledView {
 	e.Actions = actions
 	return e

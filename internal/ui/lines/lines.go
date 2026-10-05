@@ -87,20 +87,20 @@ func Text(e core.Event) string {
 	if text, ok := issueText(e); ok {
 		return text
 	}
-	if text, ok := mateText(e); ok {
+	if text, ok := botText(e); ok {
 		return text
 	}
 	return loopText(e)
 }
 
-// mateText describes the events about crew's mates, and reports false for
+// botText describes the events about crew's bots, and reports false for
 // any other event.
-func mateText(e core.Event) (string, bool) {
+func botText(e core.Event) (string, bool) {
 	switch e := e.(type) {
-	case core.MateStopped:
-		return fmt.Sprintf("mate %s stopped acting: %s", e.Mate, e.Warning), true
-	case core.MateActsAgain:
-		return fmt.Sprintf("mate %s acts again: its token renewed", e.Mate), true
+	case core.BotStopped:
+		return fmt.Sprintf("mate %s stopped acting: %s", e.Bot, e.Warning), true
+	case core.BotActsAgain:
+		return fmt.Sprintf("mate %s acts again: its token renewed", e.Bot), true
 	}
 	return "", false
 }
@@ -110,15 +110,15 @@ func mateText(e core.Event) (string, bool) {
 func issueText(e core.Event) (string, bool) {
 	switch e := e.(type) {
 	case core.IssueTaken:
-		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Stage, e.Issue.Ref, e.Issue.Title, e.From, e.To), true
+		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Rule, e.Issue.Ref, e.Issue.Title, e.From, e.To), true
 	case core.ActionStarted:
 		return actionStarted(e), true
 	case core.WorkspaceMissing:
 		return fmt.Sprintf("%s %s/%s: worktree %s is gone, creating a new one",
-			e.IssueRef, e.Stage, e.Action, e.Workspace), true
+			e.IssueRef, e.Rule, e.Action, e.Workspace), true
 	case core.RunNotRecorded:
 		return withReason(fmt.Sprintf("could not record %s %s/%s's run, so a restart may not resume it",
-			e.IssueRef, e.Stage, e.Action), e.Reason), true
+			e.IssueRef, e.Rule, e.Action), e.Reason), true
 	case core.ActionEnded:
 		return actionEnded(e), true
 	case core.IssueMoved:
@@ -161,21 +161,21 @@ func loopText(e core.Event) string {
 func actionStarted(e core.ActionStarted) string {
 	if e.Resumed {
 		return fmt.Sprintf("%s %s/%s resumed in worktree %s on branch %s, log %s",
-			e.IssueRef, e.Stage, e.Action, e.Workspace, e.Branch, e.Log)
+			e.IssueRef, e.Rule, e.Action, e.Workspace, e.Branch, e.Log)
 	}
-	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Stage, e.Action, e.Branch, e.Log)
+	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Rule, e.Action, e.Branch, e.Log)
 }
 
 // actionEnded is the line for an action that ended, with its result.
 func actionEnded(e core.ActionEnded) string {
 	// The reason is shown for successes too: without a check, a clean end is
-	// the only success signal, so its last message is what tells the boss
+	// the only success signal, so its last message is what tells you
 	// whether the work was done.
 	verdict := "failed"
 	if e.Outcome.Succeeded {
 		verdict = "succeeded"
 	}
-	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Stage, e.Action, verdict), e.Outcome.Reason)
+	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Rule, e.Action, verdict), e.Outcome.Reason)
 }
 
 // issueSkipped is the line for an issue crew left alone, and why.
@@ -189,7 +189,7 @@ func issueSkipped(e core.IssueSkipped) string {
 }
 
 // issueOfOtherKind is the line for an item crew left alone because its
-// label is a stage's that takes the other kind of item.
+// label is a rule's that takes the other kind of item.
 func issueOfOtherKind(e core.IssueOfOtherKind) string {
 	article, takes := "an", "issues"
 	if e.Kind == crew.KindPullRequest {
@@ -199,7 +199,7 @@ func issueOfOtherKind(e core.IssueOfOtherKind) string {
 		takes = "pull requests"
 	}
 	return fmt.Sprintf("left %s alone: it is %s %s, and %s is the label of %s, which takes %s",
-		e.IssueRef, article, e.Kind, e.Label, e.Stage, takes)
+		e.IssueRef, article, e.Kind, e.Label, e.Rule, takes)
 }
 
 func call(c core.Call) string {

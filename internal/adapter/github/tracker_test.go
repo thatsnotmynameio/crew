@@ -24,8 +24,8 @@ import (
 // prefix, as the old dispatcher's FakeGh scripted them.
 type reply struct {
 	prefix []string
-	// as, when set, matches only calls as the boss (asBoss) or as a mate
-	// (asMate).
+	// as, when set, matches only calls as you (asYou) or as a bot
+	// (asBot).
 	as string
 	// once makes the reply answer one call only.
 	once   bool
@@ -100,7 +100,7 @@ func (f *fakeGh) callsTo(prefix ...string) [][]string {
 	return out
 }
 
-// The workflow's states, as label text.
+// The rules' states, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -110,15 +110,15 @@ const (
 )
 
 // extraLabels is the config's one extra label, waiting brainstorm: parked
-// work no stage takes.
+// work no rule takes.
 const extraLabels = `extra_labels:
   - label: waiting brainstorm
 `
 
-// workflow is the draft config's workflow, so the files below load. Its
+// rules are the draft config's rules, so the files below load. Its
 // states are ready, in progress, ready to review, needs attention, in review
 // and ready to merge; it does not name paused.
-const workflow = `workflow:
+const rules = `workflow:
   - name: implement
     label: ready
     moves_to: in progress
@@ -138,7 +138,7 @@ const workflow = `workflow:
 `
 
 // section loads a .crew/config.yaml holding tracker, which is the tracker:
-// section's body, and returns the section's strict decoder, the workflow's
+// section's body, and returns the section's strict decoder, the rules'
 // states and the extra labels, as the app passes them to the factory.
 func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.State) {
 	t.Helper()
@@ -146,7 +146,7 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.St
 	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	body := "tracker:\n  name: github\n" + tracker + extraLabels + workflow
+	body := "tracker:\n  name: github\n" + tracker + extraLabels + rules
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.St
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	return cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras
+	return cfg.TrackerSection, crew.RuleStates(cfg.Rules), cfg.Extras
 }
 
 // build builds the tracker from a config with an empty tracker section, with
@@ -279,7 +279,7 @@ func TestListResolvesTheLoginOnce(t *testing.T) {
 	}
 }
 
-func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) {
+func TestListReturnsEveryCrewStateOfAnIssueInTheRulesSpelling(t *testing.T) {
 	for name, tc := range map[string]struct {
 		labels []string
 		want   []crew.State
@@ -406,7 +406,7 @@ func blockedNode(node string, open, total int) string {
 }
 
 // Covers AE1, AE4 and AE6: the move swaps crew's labels, removes every extra
-// label, and leaves the others, bug and paused, which no stage names.
+// label, and leaves the others, bug and paused, which no rule names.
 func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 	for name, tc := range map[string]struct {
 		labels string

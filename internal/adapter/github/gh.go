@@ -15,27 +15,27 @@ import (
 
 // gh calls the gh CLI through a proc.Runner. It works on the repository gh
 // resolves from crew's working directory, the repository's root. It reads as
-// the boss, gh's own login, and writes as the writer, one of crew's mates,
-// falling back to the boss when the mate cannot write (KTD4).
+// you, gh's own login, and writes as the writer, one of crew's bots,
+// falling back to you when the bot cannot write (KTD4).
 type gh struct {
 	run proc.Runner
 
 	mu     sync.Mutex
 	login  string        // the authenticated user, once resolved
-	writer port.Identity // who writes; the zero Identity is the boss
-	// lost is the warning crew wrote when writes went back to the boss for
+	writer port.Identity // who writes; the zero Identity is you
+	// lost is the warning crew wrote when writes went back to you for
 	// the rest of the run; "" while they go as the writer.
 	lost string
 }
 
-// call runs gh with args as the boss and returns what it printed. On a
+// call runs gh with args as you and returns what it printed. On a
 // non-zero exit the error carries gh's stderr, and Output still holds it for
 // classifying.
 func (g *gh) call(ctx context.Context, args ...string) (proc.Output, error) {
 	return g.run(ctx, proc.Command{Name: "gh", Args: args})
 }
 
-// decode runs gh with args as the boss and decodes its JSON output into v.
+// decode runs gh with args as you and decodes its JSON output into v.
 func (g *gh) decode(ctx context.Context, v any, args ...string) error {
 	out, err := g.call(ctx, args...)
 	if err != nil {
@@ -82,38 +82,38 @@ func (g *gh) actAs(writer port.Identity) {
 	g.writer = writer
 }
 
-// mate returns the mate that writes, and whether one does: not when the
-// writer is the boss, or writes went back to the boss.
-func (g *gh) mate() (port.Identity, bool) {
+// bot returns the bot that writes, and whether one does: not when the
+// writer is you, or writes went back to you.
+func (g *gh) bot() (port.Identity, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.writer, g.writer.Login != "" && g.lost == ""
 }
 
-// backToBoss makes every later write of the run go as the boss, because
-// GitHub refused mate's write for kind. The first call records the warning
+// backToLogin makes every later write of the run go as you, because
+// GitHub refused bot's write for kind. The first call records the warning
 // lostWarning words; a later one, from a write that raced it, keeps it.
-func (g *gh) backToBoss(kind refusalKind, mate string) {
+func (g *gh) backToLogin(kind refusalKind, bot string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.lost == "" {
-		g.lost = lostWarning(kind, mate)
+		g.lost = lostWarning(kind, bot)
 	}
 }
 
-// writerLost returns the warning backToBoss recorded, "" before.
+// writerLost returns the warning backToLogin recorded, "" before.
 func (g *gh) writerLost() string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.lost
 }
 
-// lostWarning returns the warning crew writes when mate's writes went back
-// to the boss because GitHub refused one for kind: what happened, what fixes
-// it, and that crew writes as the boss until it restarts. It quotes nothing
+// lostWarning returns the warning crew writes when bot's writes went back
+// to you because GitHub refused one for kind: what happened, what fixes
+// it, and that crew writes as you until it restarts. It quotes nothing
 // gh printed.
-func lostWarning(kind refusalKind, mate string) string {
-	create := fmt.Sprintf("run `crew mates create %s` in this repository", mate)
+func lostWarning(kind refusalKind, bot string) string {
+	create := fmt.Sprintf("run `crew mates create %s` in this repository", bot)
 	var why string
 	switch kind {
 	case refusedCredentials:
@@ -124,22 +124,22 @@ func lostWarning(kind refusalKind, mate string) string {
 	default:
 		why = "it lost access to the repository; " + create + " to install it"
 	}
-	return fmt.Sprintf("crew's writes as mate %s went back to you: %s; crew writes as you until it restarts", mate, why)
+	return fmt.Sprintf("crew's writes as mate %s went back to you: %s; crew writes as you until it restarts", bot, why)
 }
 
 // write runs gh with args as the writer and returns what it printed and the
-// login of the mate it wrote as, "" when it wrote as the boss. A mate whose
+// login of the bot it wrote as, "" when it wrote as you. A bot whose
 // write fails is handled as KTD4 says:
 //
 //   - refused for its credentials, it renews its token and tries once more;
-//   - still refused, or refused a permission, the write runs again as the
-//     boss, and so does every later write of the run;
-//   - answered 404 or 410, the write runs again as the boss, and when the
-//     boss gets through, every later write of the run goes as the boss too.
+//   - still refused, or refused a permission, the write runs again as
+//     you, and so does every later write of the run;
+//   - answered 404 or 410, the write runs again as you, and when that
+//     write gets through, every later write of the run goes as you too.
 //
-// Any other failure is the mate's, as is.
+// Any other failure is the bot's, as is.
 func (g *gh) write(ctx context.Context, args ...string) (proc.Output, string, error) {
-	w, ok := g.mate()
+	w, ok := g.bot()
 	if !ok {
 		out, err := g.call(ctx, args...)
 		return out, "", err
@@ -156,13 +156,13 @@ func (g *gh) write(ctx context.Context, args ...string) (proc.Output, string, er
 	}
 	switch kind := refusal(out); kind {
 	case refusedCredentials, refusedPermission:
-		g.backToBoss(kind, w.Mate)
+		g.backToLogin(kind, w.Bot)
 		out, err = g.call(ctx, args...)
 		return out, "", err
 	case refusedNotFound:
 		out, err = g.call(ctx, args...)
 		if err == nil {
-			g.backToBoss(kind, w.Mate)
+			g.backToLogin(kind, w.Bot)
 		}
 		return out, "", err
 	default:
@@ -170,15 +170,15 @@ func (g *gh) write(ctx context.Context, args ...string) (proc.Output, string, er
 	}
 }
 
-// refusalKind is why GitHub refused a mate's write, as gh printed it.
+// refusalKind is why GitHub refused a bot's write, as gh printed it.
 type refusalKind int
 
-// The refusals a mate's write can meet that KTD4 handles.
+// The refusals a bot's write can meet that KTD4 handles.
 const (
 	refusedOther       refusalKind = iota // anything else, such as a locked issue or a rate limit
 	refusedCredentials                    // HTTP 401 or bad credentials: the token expired or was revoked
-	refusedPermission                     // the mate lacks a permission, or gh holds no login
-	refusedNotFound                       // HTTP 404 or 410: the mate lost access, or the item is gone
+	refusedPermission                     // the bot lacks a permission, or gh holds no login
+	refusedNotFound                       // HTTP 404 or 410: the bot lost access, or the item is gone
 )
 
 // refusal returns why gh's failed call, which printed out, was refused.

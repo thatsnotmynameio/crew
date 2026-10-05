@@ -255,8 +255,8 @@ func (e *Engine) ready(key, action string, space port.Space, resumed bool) core.
 // startSession starts the session with its output going to its log, after
 // a marker line when the session resumes a failed run (KTD8), then waits for
 // it to end in the same goroutine (R19). The session acts as its action's
-// mate, or as the boss when that mate does not act, and learns the boss's
-// and the mates' logins.
+// bot, or as you when that bot does not act, and learns the code
+// owners' and the bots' logins.
 func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	log, err := e.openLog(c.Log)
 	if err == nil && c.Resumed {
@@ -270,7 +270,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	}
 	s, err := e.cfg.Harness.Start(ctx, port.Run{
 		Dir: c.Dir, Prompt: c.Prompt, Output: log,
-		Identity: e.cfg.Identities[c.Mate], Boss: e.boss, Mates: e.cfg.MateLogins,
+		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
 	})
 	if err != nil {
 		_ = log.Close() // nothing was written to it worth keeping
@@ -324,7 +324,7 @@ type resumeMarker struct {
 }
 
 // markResumed writes the resume marker to log, on a line of its own, so the
-// resumed session and the boss can tell where the failed run's output ends.
+// resumed session and you can tell where the failed run's output ends.
 func markResumed(log *os.File) error {
 	data, err := json.Marshal(resumeMarker{Type: "crew", Subtype: "resumed", Time: time.Now().UTC()})
 	if err != nil {
@@ -345,7 +345,7 @@ func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core
 	e.post(core.CheckEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: e.check(ctx, c)})
 }
 
-// check runs c, as its action's mate like its session, and returns its
+// check runs c, as its action's bot like its session, and returns its
 // verdict.
 func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	if e.cfg.Checker == nil {
@@ -362,7 +362,7 @@ func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	err = e.cfg.Checker.Check(ctx, port.Check{
 		Dir: c.Dir, Command: c.Command, IssueRef: c.IssueRef, IssueKey: c.IssueKey, IssueURL: c.IssueURL,
 		Branch: c.Branch, Output: io.MultiWriter(log, &last),
-		Identity: e.cfg.Identities[c.Mate], Boss: e.boss, Mates: e.cfg.MateLogins,
+		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
 	})
 	switch {
 	case err == nil:

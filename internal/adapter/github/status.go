@@ -23,8 +23,8 @@ import (
 // Markdown, by which ReportStatus finds the comment again after a restart.
 const statusMarker = "<!-- crew:status -->"
 
-// The status comment holds one entry per stage run, oldest first, each
-// starting with a hidden marker line that names its run, kind and stage.
+// The status comment holds one entry per rule run, oldest first, each
+// starting with a hidden marker line that names its run, kind and rule.
 // Entries are separated by a horizontal rule, and a marker counts only at
 // the start of the comment, after a continuation preamble, or right after a
 // separator, so a marker-shaped line inside an entry is entry text.
@@ -60,15 +60,15 @@ type cachedStatus struct {
 // marker line says. A comment written before entries is one entry without a
 // marker.
 type entry struct {
-	text             string
-	marked           bool
-	run, kind, stage string
+	text            string
+	marked          bool
+	run, kind, rule string
 }
 
-// ReportStatus implements port.StatusReporter. It keeps one entry per stage
+// ReportStatus implements port.StatusReporter. It keeps one entry per rule
 // run in the issue's status comment: it replaces the latest entry when that
 // entry is of status's run, or is an earlier crew version's queued entry of
-// status's stage, and appends one otherwise. A latest entry still running
+// status's rule, and appends one otherwise. A latest entry still running
 // from another run, as when crew stopped before that run ended, first
 // becomes one line saying so. When the edit would make the comment longer
 // than GitHub allows, it leaves the comment as it is and creates a new one
@@ -76,7 +76,7 @@ type entry struct {
 //
 // It remembers each issue's comment, by issue key, with the body it last
 // wrote and the login it wrote it as; without one, it lists the issue's
-// comments and takes the newest one by gh's login or one of the mates whose
+// comments and takes the newest one by gh's login or one of the bots whose
 // body ends with the marker line, and creates the comment when there is
 // none. It writes as the writer, and a comment another login wrote is not
 // edited: a new comment continues it, holding only the new entry (KTD10). An
@@ -156,16 +156,16 @@ func (t *Tracker) createStatus(ctx context.Context, issueKey, body string) error
 	return nil
 }
 
-// writerLogin returns the login the tracker writes as now: the mate's, or
+// writerLogin returns the login the tracker writes as now: the bot's, or
 // gh's own.
 func (t *Tracker) writerLogin(ctx context.Context) (string, error) {
-	if w, ok := t.gh.mate(); ok {
+	if w, ok := t.gh.bot(); ok {
 		return w.Login, nil
 	}
 	return t.gh.viewer(ctx)
 }
 
-// loginOf returns the login a write went as: login, the mate's login
+// loginOf returns the login a write went as: login, the bot's login
 // gh.write returned, or gh's own when that is "".
 func (t *Tracker) loginOf(ctx context.Context, login string) (string, error) {
 	if login != "" {
@@ -174,8 +174,8 @@ func (t *Tracker) loginOf(ctx context.Context, login string) (string, error) {
 	return t.gh.viewer(ctx)
 }
 
-// findStatus lists the issue's comments, as the boss, and returns the
-// newest one by gh's login or one of the mates whose body ends with the
+// findStatus lists the issue's comments, as you, and returns the
+// newest one by gh's login or one of the bots whose body ends with the
 // marker line, and whether there is one.
 func (t *Tracker) findStatus(ctx context.Context, issueKey string) (cachedStatus, bool, error) {
 	login, err := t.gh.viewer(ctx)
@@ -183,7 +183,7 @@ func (t *Tracker) findStatus(ctx context.Context, issueKey string) (cachedStatus
 		return cachedStatus{}, false, err
 	}
 	t.mu.Lock()
-	crewLogins := append([]string{login}, t.mates...)
+	crewLogins := append([]string{login}, t.bots...)
 	t.mu.Unlock()
 	out, err := t.gh.call(ctx, "api", "--method", "GET", "--paginate",
 		"repos/{owner}/{repo}/issues/"+issueKey+"/comments?per_page=100")
@@ -253,13 +253,13 @@ func nextStatus(current string, status crew.Status, text string) (string, bool) 
 	}
 	switch {
 	case latest != nil && (latest.run == status.Run ||
-		latest.kind == legacyQueuedKind && latest.stage == status.Stage):
+		latest.kind == legacyQueuedKind && latest.rule == status.Rule):
 		latest.text = text
 	default:
 		if latest != nil && latest.kind == kindName(crew.StatusRunning) {
 			marker, _, _ := strings.Cut(latest.text, "\n")
 			latest.text = fmt.Sprintf("%s\ncrew stopped following %s on %s before it ended.",
-				marker, codeSpan(latest.stage), status.IssueRef)
+				marker, codeSpan(latest.rule), status.IssueRef)
 		}
 		entries = append(entries, entry{text: text})
 	}
@@ -356,7 +356,7 @@ func parseMarker(s string) (entry, bool) {
 		case "kind":
 			e.kind = value
 		case "stage":
-			e.stage = value
+			e.rule = value
 		default:
 			return entry{}, false
 		}
@@ -368,13 +368,13 @@ func parseMarker(s string) (entry, bool) {
 // query-escaped, so none can hold a space or close the HTML comment.
 func markerLine(s crew.Status) string {
 	return fmt.Sprintf("%srun=%s kind=%s stage=%s -->",
-		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(s.Stage))
+		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(s.Rule))
 }
 
 // legacyQueuedKind marks the entry of an issue an earlier crew version
 // reported as queued, waiting for a free slot. crew no longer writes it, but
 // such an entry may still end a comment, and taking that issue for the same
-// stage replaces it.
+// rule replaces it.
 const legacyQueuedKind = "queued"
 
 // kindName names a status kind in an entry marker.
@@ -417,7 +417,7 @@ func classify(err error, out proc.Output, onIssue bool) error {
 }
 
 // renderStatus renders a status as its entry in the status comment, in
-// Markdown: the entry's marker line, what the stage does, each action with
+// Markdown: the entry's marker line, what the rule does, each action with
 // its state and, when it resumed, its worktree, then the update time in
 // UTC. A session's last words go in a fenced code block, so nothing in them
 // may render, link or mention anyone. A failed action says why in crew's
@@ -459,14 +459,14 @@ func usage(a crew.ActionStatus) string {
 	return " Usage: " + a.Spend.String() + ". Pull request: " + pr + "."
 }
 
-// writeHeadline writes the status entry's first line: what the stage does.
+// writeHeadline writes the status entry's first line: what the rule does.
 func writeHeadline(b *strings.Builder, s crew.Status) {
-	stage := codeSpan(s.Stage)
+	rule := codeSpan(s.Rule)
 	switch s.Kind {
 	case crew.StatusRunning:
-		fmt.Fprintf(b, "crew: %s is running on %s.\n", stage, s.IssueRef)
+		fmt.Fprintf(b, "crew: %s is running on %s.\n", rule, s.IssueRef)
 	case crew.StatusEnded:
-		fmt.Fprintf(b, "crew: %s ended on %s.\n", stage, s.IssueRef)
+		fmt.Fprintf(b, "crew: %s ended on %s.\n", rule, s.IssueRef)
 	}
 }
 
@@ -499,7 +499,7 @@ func writeAction(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 	}
 }
 
-// writeMove writes where an ended stage's issue moves.
+// writeMove writes where an ended rule's issue moves.
 func writeMove(b *strings.Builder, s crew.Status) {
 	to := codeSpan(string(s.To))
 	switch s.Move {

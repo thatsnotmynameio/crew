@@ -97,7 +97,7 @@ func TestPrepareReportsTheJournalStepAfterEveryPortPrepared(t *testing.T) {
 	})
 }
 
-func TestPrepareGetsOnlyTheStatesTheWorkflowNames(t *testing.T) {
+func TestPrepareGetsOnlyTheStatesTheRulesName(t *testing.T) {
 	blocked := develop
 	blocked.OnFailure = "blocked"
 	tr := fake.NewPreparingTracker()

@@ -44,22 +44,22 @@ func TestLoadReportsAQueueMistakeOnce(t *testing.T) {
 	}{
 		{
 			name: "max_parallel_issues not positive skips the queue sums",
-			body: "config:\n  max_parallel_issues: 0\n  clerk_slots: 1\n" + oneStage,
+			body: "config:\n  max_parallel_issues: 0\n  clerk_slots: 1\n" + oneRule,
 			want: "config.max_parallel_issues",
 		},
 		{
 			name: "clerk_slots at the limit skips default's sum",
-			body: "config:\n  max_parallel_issues: 3\n  clerk_slots: 3\n" + oneStage,
+			body: "config:\n  max_parallel_issues: 3\n  clerk_slots: 3\n" + oneRule,
 			want: "config.clerk_slots",
 		},
 		{
 			name: "a limit of 1 without clerk_slots",
-			body: "config:\n  max_parallel_issues: 1\n" + oneStage,
+			body: "config:\n  max_parallel_issues: 1\n" + oneRule,
 			want: "config.max_parallel_issues",
 		},
 		{
 			name: "a stage naming a queue whose slots are wrong",
-			body: "config:\n  queues: {review: 0}\n" + queuedStages("review"),
+			body: "config:\n  queues: {review: 0}\n" + queuedRules("review"),
 			want: "config.queues.review",
 		},
 	}
@@ -91,21 +91,21 @@ var invalidSettings = []rejectCase{
 		name: "unknown key",
 		body: `config:
   pol_interval_seconds: 60
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.pol_interval_seconds", "line 2", "unknown key"},
 	},
 	{
 		name: "unknown top-level key",
 		body: `trackers:
   name: github
-` + oneStage,
+` + oneRule,
 		wants: []string{"trackers", "line 1", "unknown key"},
 	},
 	{
 		name: "wrong type",
 		body: `config:
   poll_interval_seconds: soon
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.poll_interval_seconds", "line 2", "soon"},
 	},
 	{
@@ -113,63 +113,63 @@ var invalidSettings = []rejectCase{
 		body: `config:
   max_parallel_issues: 2
   max_parallel_issues: 3
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.max_parallel_issues", "line 3", "duplicate", "line 2"},
 	},
 	{
 		name: "config.mate of the wrong type",
 		body: `config:
   mate: {name: ops}
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.mate", "line 2"},
 	},
 	{
 		name: "poll interval not positive",
 		body: `config:
   poll_interval_seconds: 0
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.poll_interval_seconds", "line 2", "positive"},
 	},
 	{
 		name: "run time limit zero",
 		body: `config:
   run_time_limit_seconds: 0
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.run_time_limit_seconds", "line 2", "positive"},
 	},
 	{
 		name: "run time limit negative",
 		body: `config:
   run_time_limit_seconds: -5
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.run_time_limit_seconds", "line 2", "positive"},
 	},
 	{
 		name: "run time limit as a duration",
 		body: `config:
   run_time_limit_seconds: "8h"
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.run_time_limit_seconds", "line 2", "8h"},
 	},
 	{
 		name: "usage in status not a boolean",
 		body: `config:
   usage_in_status: maybe
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.usage_in_status", "line 2", "maybe"},
 	},
 	{
 		name: "parallel issues not positive",
 		body: `config:
   max_parallel_issues: -1
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.max_parallel_issues", "line 2", "positive"},
 	},
 	{
 		name: "model under harness",
 		body: `harness:
   model: claude-opus-5-5
-` + oneStage,
+` + oneRule,
 		wants: []string{"harness.model", "line 2", "config.model"},
 	},
 }
@@ -183,7 +183,7 @@ var invalidQueues = []rejectCase{
   max_parallel_issues: 3
   clerk_slots: 2
   queues: {review: 2}
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues", "line 4", "3 - 2 - 2 = -1"},
 	},
 	{
@@ -192,35 +192,35 @@ var invalidQueues = []rejectCase{
 		body: `config:
   max_parallel_issues: 3
   clerk_slots: 3
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.clerk_slots", "line 3", "below max_parallel_issues (3)"},
 	},
 	{
 		name: "clerk_slots of 0",
 		body: `config:
   clerk_slots: 0
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.clerk_slots", "line 2", "positive"},
 	},
 	{
 		name: "a limit of 1 leaves no room for the 1-slot clerk",
 		body: `config:
   max_parallel_issues: 1
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.max_parallel_issues", "line 2", "1-slot clerk"},
 	},
 	{
 		name: "a queue of 0 slots",
 		body: `config:
   queues: {review: 0}
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues.review", "line 2", "positive"},
 	},
 	{
 		name: "a queue named clerk",
 		body: `config:
   queues: {clerk: 1}
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues.clerk", "line 2", "config.clerk_slots"},
 	},
 	{
@@ -228,7 +228,7 @@ var invalidQueues = []rejectCase{
 		body: `config:
   max_parallel_issues: 3
   queues: {Default: 1}
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues.Default", "line 3", "default queue"},
 	},
 	{
@@ -238,21 +238,21 @@ var invalidQueues = []rejectCase{
   queues:
     review: 1
     review: 2
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues.review", "line 5", "duplicate key", "line 4"},
 	},
 	{
 		name: "queues is a list",
 		body: `config:
   queues: [review]
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues", "line 2", "must be a mapping"},
 	},
 	{
 		name: "a queue's slots are not a number",
 		body: `config:
   queues: {review: two}
-` + oneStage,
+` + oneRule,
 		wants: []string{"config.queues.review", "line 2", "two"},
 	},
 }
@@ -297,21 +297,21 @@ workflow:
 		body: `extra_labels:
   - label: crew:parked
   - label: Crew:Parked
-` + oneStage,
+` + oneRule,
 		wants: []string{"extra_labels[1].label", "line 3", "extra_labels[0]"},
 	},
 	{
 		name: "an extra without a label",
 		body: `extra_labels:
   - description: Parked work
-` + oneStage,
+` + oneRule,
 		wants: []string{"extra_labels[0].label", "line 2", "required"},
 	},
 	{
 		name: "an extra with an empty label",
 		body: `extra_labels:
   - label: ""
-` + oneStage,
+` + oneRule,
 		wants: []string{"extra_labels[0].label", "line 2", "required"},
 	},
 	{
@@ -319,7 +319,7 @@ workflow:
 		body: `extra_labels:
   - label: crew:parked
     labels: crew:waiting
-` + oneStage,
+` + oneRule,
 		wants: []string{"extra_labels[0].labels", "line 3", "unknown key"},
 	},
 	{
@@ -327,7 +327,7 @@ workflow:
 		body: `extra_labels:
   - label: crew:parked
     issue_template: templates/bug.md
-` + oneStage,
+` + oneRule,
 		wants: []string{"extra_labels[0].issue_template", "line 3", ".md"},
 	},
 }
@@ -338,7 +338,7 @@ var invalidPrompts = []rejectCase{
 		name: "prompts is a list",
 		body: `prompts:
   - brainstorm
-` + oneStage,
+` + oneRule,
 		wants: []string{"prompts", "line 2", "must be a mapping"},
 	},
 	{
@@ -346,28 +346,28 @@ var invalidPrompts = []rejectCase{
 		body: `prompts:
   brainstorm:
     prompt: "Brainstorm {{.Issue.Ref}}"
-` + oneStage,
+` + oneRule,
 		wants: []string{"prompts.brainstorm", "line 3"},
 	},
 	{
 		name: "an empty prompt",
 		body: `prompts:
   brainstorm:
-` + oneStage,
+` + oneRule,
 		wants: []string{"prompts.brainstorm", "line 2", "empty"},
 	},
 	{
 		name: "a prompt with an unknown field",
 		body: `prompts:
   brainstorm: "Brainstorm {{.Issue.Number}}"
-` + oneStage,
+` + oneRule,
 		wants: []string{"prompts.brainstorm", "line 2", "Number"},
 	},
 	{
 		name: "a prompt that does not parse",
 		body: `prompts:
   brainstorm: "Brainstorm {{.Issue.Ref"
-` + oneStage,
+` + oneRule,
 		wants: []string{"prompts.brainstorm", "line 2"},
 	},
 	{
@@ -375,7 +375,7 @@ var invalidPrompts = []rejectCase{
 		body: `prompts:
   brainstorm: "Brainstorm {{.Issue.Ref}}"
   brainstorm: "Again {{.Issue.Ref}}"
-` + oneStage,
+` + oneRule,
 		wants: []string{"prompts.brainstorm", "line 3", "duplicate key"},
 	},
 }

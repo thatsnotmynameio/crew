@@ -52,8 +52,8 @@ func loadErr(t *testing.T, body string, wants ...string) {
 	}
 }
 
-// oneStage is a minimal valid workflow, for tests about other keys.
-const oneStage = `workflow:
+// oneRule is a minimal valid set of rules, for tests about other keys.
+const oneRule = `workflow:
   - name: implement
     label: ready
     moves_to: in progress
@@ -81,7 +81,7 @@ func TestLoadDraftConfig(t *testing.T) {
 	if cfg.Tracker != "github" {
 		t.Errorf("Tracker = %q, want github", cfg.Tracker)
 	}
-	wantWorkflow := []crew.Stage{
+	wantRules := []crew.Rule{
 		{
 			Name: "implement", Label: "ready", MovesTo: "in progress",
 			OnSuccess: "ready to review", OnFailure: "needs attention",
@@ -100,8 +100,8 @@ func TestLoadDraftConfig(t *testing.T) {
 			},
 		},
 	}
-	if !reflect.DeepEqual(cfg.Workflow, wantWorkflow) {
-		t.Errorf("Workflow = %+v\nwant %+v", cfg.Workflow, wantWorkflow)
+	if !reflect.DeepEqual(cfg.Rules, wantRules) {
+		t.Errorf("Rules = %+v\nwant %+v", cfg.Rules, wantRules)
 	}
 
 	var harness struct {
@@ -122,7 +122,7 @@ func TestLoadReadsEngineSettingsAsWritten(t *testing.T) {
   harness: codex
 tracker:
   name: jira
-`+oneStage)
+`+oneRule)
 	if cfg.PollInterval != time.Minute || cfg.MaxParallelIssues != 5 || cfg.Harness != "codex" || cfg.Tracker != "jira" {
 		t.Errorf("got poll %v, parallel %d, harness %q, tracker %q; want 1m0s, 5, codex, jira",
 			cfg.PollInterval, cfg.MaxParallelIssues, cfg.Harness, cfg.Tracker)
@@ -130,7 +130,7 @@ tracker:
 }
 
 func TestLoadAppliesEngineDefaults(t *testing.T) {
-	cfg := load(t, oneStage)
+	cfg := load(t, oneRule)
 	if cfg.PollInterval != 300*time.Second {
 		t.Errorf("PollInterval = %v, want 5m0s", cfg.PollInterval)
 	}
@@ -172,7 +172,7 @@ func TestLoadReadsExtraLabels(t *testing.T) {
 		body string
 		want []crew.State
 	}{
-		{name: "left out", body: oneStage, want: nil},
+		{name: "left out", body: oneRule, want: nil},
 		{
 			name: "a label with a description and a template",
 			body: `extra_labels:
@@ -180,7 +180,7 @@ func TestLoadReadsExtraLabels(t *testing.T) {
     description: Ideas to brainstorm later
     issue_template: idea.md
   - label: crew:parked
-` + oneStage,
+` + oneRule,
 			want: []crew.State{"crew:waiting brainstorm", "crew:parked"},
 		},
 	}
@@ -200,9 +200,9 @@ func TestLoadAcceptsPrompts(t *testing.T) {
   brainstorm: |-
     Brainstorm {{.Issue.Ref}} ({{.Issue.URL}}): {{.Issue.Title}}, issue {{.Issue.Key}}.
   triage: "Look at {{.Issue.Ref}}"
-` + oneStage
-	got, want := load(t, body), load(t, oneStage)
-	if !reflect.DeepEqual(got.Workflow, want.Workflow) || !reflect.DeepEqual(got.Extras, want.Extras) {
+` + oneRule
+	got, want := load(t, body), load(t, oneRule)
+	if !reflect.DeepEqual(got.Rules, want.Rules) || !reflect.DeepEqual(got.Extras, want.Extras) {
 		t.Errorf("Load = %+v, want %+v", got, want)
 	}
 }
@@ -213,9 +213,9 @@ func TestLoadReadsUsageInStatus(t *testing.T) {
 		body string
 		want bool
 	}{
-		{name: "left out", body: oneStage, want: false},
-		{name: "on", body: "config:\n  usage_in_status: true\n" + oneStage, want: true},
-		{name: "off", body: "config:\n  usage_in_status: false\n" + oneStage, want: false},
+		{name: "left out", body: oneRule, want: false},
+		{name: "on", body: "config:\n  usage_in_status: true\n" + oneRule, want: true},
+		{name: "off", body: "config:\n  usage_in_status: false\n" + oneRule, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -226,7 +226,7 @@ func TestLoadReadsUsageInStatus(t *testing.T) {
 	}
 }
 
-func TestLoadReadsWhetherAStageIsOnTheBoard(t *testing.T) {
+func TestLoadReadsWhetherARuleIsOnTheBoard(t *testing.T) {
 	tests := []struct {
 		name string
 		key  string
@@ -238,7 +238,7 @@ func TestLoadReadsWhetherAStageIsOnTheBoard(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, takingStage(tt.key)).Workflow[0].OffBoard; got != tt.want {
+			if got := load(t, takingRule(tt.key)).Rules[0].OffBoard; got != tt.want {
 				t.Errorf("OffBoard = %v, want %v", got, tt.want)
 			}
 		})
@@ -251,9 +251,9 @@ func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 		body string
 		want time.Duration
 	}{
-		{name: "left out", body: oneStage, want: 0},
-		{name: "eight hours", body: "config:\n  run_time_limit_seconds: 28800\n" + oneStage, want: 8 * time.Hour},
-		{name: "empty", body: "config:\n  run_time_limit_seconds:\n" + oneStage, want: 0},
+		{name: "left out", body: oneRule, want: 0},
+		{name: "eight hours", body: "config:\n  run_time_limit_seconds: 28800\n" + oneRule, want: 8 * time.Hour},
+		{name: "empty", body: "config:\n  run_time_limit_seconds:\n" + oneRule, want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,7 +265,7 @@ func TestLoadReadsTheRunTimeLimit(t *testing.T) {
 }
 
 func TestLoadReadsActionCheck(t *testing.T) {
-	stage := func(check string) string {
+	rule := func(check string) string {
 		return `workflow:
   - name: implement
     label: ready
@@ -282,33 +282,33 @@ func TestLoadReadsActionCheck(t *testing.T) {
 		body string
 		want string
 	}{
-		{name: "left out", body: oneStage, want: ""},
-		{name: "a command", body: stage("        check: \"test -n \\\"$CREW_BRANCH\\\"\"\n"), want: `test -n "$CREW_BRANCH"`},
+		{name: "left out", body: oneRule, want: ""},
+		{name: "a command", body: rule("        check: \"test -n \\\"$CREW_BRANCH\\\"\"\n"), want: `test -n "$CREW_BRANCH"`},
 		// A check is a shell command, never a template: braces stay as written.
 		{
 			name: "not a template",
-			body: stage("        check: \"echo '{{.Issue.Title}}'\"\n"),
+			body: rule("        check: \"echo '{{.Issue.Title}}'\"\n"),
 			want: "echo '{{.Issue.Title}}'",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).Workflow[0].Actions[0].Check; got != tt.want {
+			if got := load(t, tt.body).Rules[0].Actions[0].Check; got != tt.want {
 				t.Errorf("Check = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-// matedStages is a workflow of two stages, implement with the actions
-// development and review, and fix with the action fix, each naming the mate
-// in mates, in that order; "" names none.
-func matedStages(mates ...string) string {
-	mate := func(i int) string {
-		if mates[i] == "" {
+// botRules is a set of two rules, implement with the actions
+// development and review, and fix with the action fix, each naming the bot
+// in bots, in that order; "" names none.
+func botRules(bots ...string) string {
+	bot := func(i int) string {
+		if bots[i] == "" {
 			return ""
 		}
-		return "        mate: " + mates[i] + "\n"
+		return "        mate: " + bots[i] + "\n"
 	}
 	return `workflow:
   - name: implement
@@ -319,9 +319,9 @@ func matedStages(mates ...string) string {
     actions:
       - name: development
         prompt: "Implement {{.Issue.Ref}}"
-` + mate(0) + `      - name: review
+` + bot(0) + `      - name: review
         prompt: "Review {{.Issue.Ref}}"
-` + mate(1) + `  - name: fix
+` + bot(1) + `  - name: fix
     label: ready to fix
     moves_to: fixing
     on_success: done
@@ -329,72 +329,72 @@ func matedStages(mates ...string) string {
     actions:
       - name: fix
         prompt: "Fix {{.Issue.Ref}}"
-` + mate(2)
+` + bot(2)
 }
 
-func TestLoadGivesEveryActionItsMate(t *testing.T) {
+func TestLoadGivesEveryActionItsBot(t *testing.T) {
 	tests := []struct {
-		name      string
-		body      string
-		wantMate  string
-		wantMates []string
-		// want is each action's mate, in workflow order.
+		name     string
+		body     string
+		wantBot  string
+		wantBots []string
+		// want is each action's bot, in rule order.
 		want []string
 	}{
 		{
 			// Covers R5.
-			name: "no mate anywhere", body: matedStages("", "", ""),
-			wantMate: "", wantMates: nil, want: []string{"", "", ""},
+			name: "no mate anywhere", body: botRules("", "", ""),
+			wantBot: "", wantBots: nil, want: []string{"", "", ""},
 		},
 		{
-			name: "an action's own mate, or the default", body: "config:\n  mate: ops\n" + matedStages("developer", "", ""),
-			wantMate: "ops", wantMates: []string{"ops", "developer"}, want: []string{"developer", "ops", "ops"},
+			name: "an action's own mate, or the default", body: "config:\n  mate: ops\n" + botRules("developer", "", ""),
+			wantBot: "ops", wantBots: []string{"ops", "developer"}, want: []string{"developer", "ops", "ops"},
 		},
 		{
-			name:     "each mate listed once, the default first",
-			body:     "config:\n  mate: ops\n" + matedStages("developer", "ops", "developer"),
-			wantMate: "ops", wantMates: []string{"ops", "developer"}, want: []string{"developer", "ops", "developer"},
+			name:    "each mate listed once, the default first",
+			body:    "config:\n  mate: ops\n" + botRules("developer", "ops", "developer"),
+			wantBot: "ops", wantBots: []string{"ops", "developer"}, want: []string{"developer", "ops", "developer"},
 		},
 		{
-			name: "only the default", body: "config:\n  mate: ops\n" + matedStages("", "", ""),
-			wantMate: "ops", wantMates: []string{"ops"}, want: []string{"ops", "ops", "ops"},
+			name: "only the default", body: "config:\n  mate: ops\n" + botRules("", "", ""),
+			wantBot: "ops", wantBots: []string{"ops"}, want: []string{"ops", "ops", "ops"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := load(t, tt.body)
-			if got := actionMates(cfg.Workflow); !reflect.DeepEqual(got, tt.want) {
+			if got := actionBots(cfg.Rules); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("action mates = %q, want %q", got, tt.want)
 			}
-			if cfg.Mate != tt.wantMate {
-				t.Errorf("Mate = %q, want %q", cfg.Mate, tt.wantMate)
+			if cfg.Bot != tt.wantBot {
+				t.Errorf("Bot = %q, want %q", cfg.Bot, tt.wantBot)
 			}
-			if !reflect.DeepEqual(cfg.Mates, tt.wantMates) {
-				t.Errorf("Mates = %q, want %q", cfg.Mates, tt.wantMates)
+			if !reflect.DeepEqual(cfg.Bots, tt.wantBots) {
+				t.Errorf("Bots = %q, want %q", cfg.Bots, tt.wantBots)
 			}
 		})
 	}
 }
 
-// actionMates returns the mate of each of workflow's actions, in workflow
+// actionBots returns the bot of each of rules' actions, in rule
 // order.
-func actionMates(workflow []crew.Stage) []string {
+func actionBots(rules []crew.Rule) []string {
 	var out []string
-	for _, s := range workflow {
+	for _, s := range rules {
 		for _, a := range s.Actions {
-			out = append(out, a.Mate)
+			out = append(out, a.Bot)
 		}
 	}
 	return out
 }
 
 func TestLoadRendersPromptForIssue(t *testing.T) {
-	cfg := load(t, oneStage)
-	if len(cfg.Workflow) != 1 || len(cfg.Workflow[0].Actions) != 1 {
-		t.Fatalf("Workflow = %+v, want one stage with one action", cfg.Workflow)
+	cfg := load(t, oneRule)
+	if len(cfg.Rules) != 1 || len(cfg.Rules[0].Actions) != 1 {
+		t.Fatalf("Rules = %+v, want one stage with one action", cfg.Rules)
 	}
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
-	got, err := cfg.Workflow[0].Actions[0].Render(issue)
+	got, err := cfg.Rules[0].Actions[0].Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 }
 
 // exampleConfig is the repository's committed example of .crew/config.yaml;
-// the boss's own copy is ignored by git.
+// your own copy is ignored by git.
 var exampleConfig = filepath.Join("..", "..", ".crew", "config.example.yaml")
 
 // loadExample loads exampleConfig as a repository's .crew/config.yaml, linked
@@ -449,9 +449,9 @@ func loadExample(t *testing.T) *config.Config {
 // crew runs on its own repository, so its example config must stay valid.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadExample(t)
-	// The stages that open a pull request check that it exists; the others
+	// The rules that open a pull request check that it exists; the others
 	// have no check (R15).
-	for _, s := range cfg.Workflow {
+	for _, s := range cfg.Rules {
 		for _, a := range s.Actions {
 			want := s.Name == "development" || s.Name == "fix"
 			if got := a.Check != ""; got != want {
@@ -459,8 +459,8 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 			}
 		}
 	}
-	// The promote stages only hand an issue on, so the live view hides them.
-	for _, s := range cfg.Workflow {
+	// The promote rules only hand an issue on, so the live view hides them.
+	for _, s := range cfg.Rules {
 		want := strings.HasPrefix(s.Name, "promote ")
 		if s.OffBoard != want {
 			t.Errorf("%s is off the board: %v, want %v", s.Name, s.OffBoard, want)
@@ -484,7 +484,7 @@ tracker:
       state: ready
     - name: Doing
       stat: in progress
-`+oneStage)
+`+oneRule)
 
 	var harness struct {
 		Model  string `yaml:"model"`
@@ -525,7 +525,7 @@ func TestSectionDecoderNamesNestedTypeErrors(t *testing.T) {
 	cfg := load(t, `tracker:
   limits:
     per_poll: many
-`+oneStage)
+`+oneRule)
 	var tracker struct {
 		Limits struct {
 			PerPoll int `yaml:"per_poll"`

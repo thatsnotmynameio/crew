@@ -8,16 +8,16 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// The triage stage's states in these tests, as label text.
+// The triage rule's states in these tests, as label text.
 const (
 	needsTriage crew.State = "needs triage"
 	triaging    crew.State = "triaging"
 )
 
-// queued returns a workflow of two one-action stages: triage, in the queue
+// queued returns a set of two one-action rules: triage, in the queue
 // triage, then development, in the queue development.
-func queued(triage, development crew.Queue) []crew.Stage {
-	return []crew.Stage{
+func queued(triage, development crew.Queue) []crew.Rule {
+	return []crew.Rule{
 		{
 			Name: "triage", Label: needsTriage, MovesTo: triaging, OnSuccess: ready, OnFailure: needsAttention,
 			Actions: []crew.Action{{Name: "triage", Prompt: "Triage issue {{.Issue.Ref}}"}},
@@ -31,12 +31,12 @@ func queued(triage, development crew.Queue) []crew.Stage {
 	}
 }
 
-// inQueues returns workflow with its stages in queues, in stage order.
-func inQueues(workflow []crew.Stage, queues ...crew.Queue) []crew.Stage {
+// inQueues puts each of rules in the queue of queues at its index.
+func inQueues(rules []crew.Rule, queues ...crew.Queue) []crew.Rule {
 	for i, q := range queues {
-		workflow[i].Queue = q
+		rules[i].Queue = q
 	}
-	return workflow
+	return rules
 }
 
 // clerk is the clerk queue of 1 slot.
@@ -76,43 +76,43 @@ func (d *driver) hold(held []crew.Issue) {
 // takeCases are listings and what they take, each after its held issues
 // were taken.
 var takeCases = []struct {
-	name     string
-	workflow []crew.Stage
-	limit    int
-	held     []crew.Issue
-	listed   []crew.Issue
-	want     []string
+	name   string
+	rules  []crew.Rule
+	limit  int
+	held   []crew.Issue
+	listed []crew.Issue
+	want   []string
 }{
 	{
 		// AE1: the clerk's slot is free while default is full.
-		name:     "a triage issue while development fills default",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
-		listed:   []crew.Issue{issue("3", 3, needsTriage)},
-		want:     []string{"3"},
+		name:   "a triage issue while development fills default",
+		rules:  queued(clerk, defaultQueue(2)),
+		limit:  3,
+		held:   []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
+		listed: []crew.Issue{issue("3", 3, needsTriage)},
+		want:   []string{"3"},
 	},
 	{
 		// AE2: the free clerk slot is not lent to development.
-		name:     "a third development issue waits although the clerk is free",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
-		listed:   []crew.Issue{issue("3", 3, ready)},
-		want:     nil,
+		name:   "a third development issue waits although the clerk is free",
+		rules:  queued(clerk, defaultQueue(2)),
+		limit:  3,
+		held:   []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
+		listed: []crew.Issue{issue("3", 3, ready)},
+		want:   nil,
 	},
 	{
-		name:     "a full queue first in order does not stop the walk",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
-		listed:   []crew.Issue{issue("3", 3, ready), issue("4", 4, needsTriage)},
-		want:     []string{"4"},
+		name:   "a full queue first in order does not stop the walk",
+		rules:  queued(clerk, defaultQueue(2)),
+		limit:  3,
+		held:   []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
+		listed: []crew.Issue{issue("3", 3, ready), issue("4", 4, needsTriage)},
+		want:   []string{"4"},
 	},
 	{
-		name:     "each queue fills to its size from one listing",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    3,
+		name:  "each queue fills to its size from one listing",
+		rules: queued(clerk, defaultQueue(2)),
+		limit: 3,
 		listed: []crew.Issue{
 			issue("1", 1, needsTriage), issue("2", 2, needsTriage),
 			issue("3", 3, ready), issue("4", 4, ready), issue("5", 5, ready),
@@ -121,73 +121,73 @@ var takeCases = []struct {
 	},
 	{
 		// AE4: default has 0 slots, the queue review 2.
-		name:     "default with 0 slots takes nothing, another free queue does",
-		workflow: queued(crew.Queue{Name: "review", Slots: 2}, defaultQueue(0)),
-		limit:    3,
-		listed:   []crew.Issue{issue("1", 1, ready), issue("2", 2, needsTriage)},
-		want:     []string{"2"},
+		name:   "default with 0 slots takes nothing, another free queue does",
+		rules:  queued(crew.Queue{Name: "review", Slots: 2}, defaultQueue(0)),
+		limit:  3,
+		listed: []crew.Issue{issue("1", 1, ready), issue("2", 2, needsTriage)},
+		want:   []string{"2"},
 	},
 	{
 		// AE8: the two actions of #1 hold one slot.
-		name:     "an issue of two actions holds one slot",
-		workflow: inQueues(draft(), defaultQueue(2), clerk),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready)},
-		listed:   []crew.Issue{issue("2", 2, ready)},
-		want:     []string{"2"},
+		name:   "an issue of two actions holds one slot",
+		rules:  inQueues(draft(), defaultQueue(2), clerk),
+		limit:  3,
+		held:   []crew.Issue{issue("1", 1, ready)},
+		listed: []crew.Issue{issue("2", 2, ready)},
+		want:   []string{"2"},
 	},
 	{
-		// AE8: #1 fills the 1-slot queue of its stage.
-		name:     "an issue of two actions fills a 1-slot queue",
-		workflow: inQueues(draft(), defaultQueue(1), clerk),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready)},
-		listed:   []crew.Issue{issue("2", 2, ready), issue("3", 3, readyToReview)},
-		want:     []string{"3"},
+		// AE8: #1 fills the 1-slot queue of its rule.
+		name:   "an issue of two actions fills a 1-slot queue",
+		rules:  inQueues(draft(), defaultQueue(1), clerk),
+		limit:  3,
+		held:   []crew.Issue{issue("1", 1, ready)},
+		listed: []crew.Issue{issue("2", 2, ready), issue("3", 3, readyToReview)},
+		want:   []string{"3"},
 	},
 	{
-		name:     "the higher priority first inside a queue",
-		workflow: queued(defaultQueue(1), defaultQueue(1)),
-		limit:    2,
-		listed:   []crew.Issue{prioritized(issue("5", 1, ready), 2), prioritized(issue("6", 9, ready), 1)},
-		want:     []string{"6"},
+		name:   "the higher priority first inside a queue",
+		rules:  queued(defaultQueue(1), defaultQueue(1)),
+		limit:  2,
+		listed: []crew.Issue{prioritized(issue("5", 1, ready), 2), prioritized(issue("6", 9, ready), 1)},
+		want:   []string{"6"},
 	},
 	{
-		name:     "the later stage first inside a queue",
-		workflow: queued(defaultQueue(1), defaultQueue(1)),
-		limit:    2,
-		listed:   []crew.Issue{issue("5", 1, needsTriage), issue("6", 9, ready)},
-		want:     []string{"6"},
+		name:   "the later stage first inside a queue",
+		rules:  queued(defaultQueue(1), defaultQueue(1)),
+		limit:  2,
+		listed: []crew.Issue{issue("5", 1, needsTriage), issue("6", 9, ready)},
+		want:   []string{"6"},
 	},
 	{
-		name:     "the oldest first inside a queue",
-		workflow: queued(defaultQueue(1), defaultQueue(1)),
-		limit:    2,
-		listed:   []crew.Issue{issue("8", 9, ready), issue("7", 3, ready)},
-		want:     []string{"7"},
+		name:   "the oldest first inside a queue",
+		rules:  queued(defaultQueue(1), defaultQueue(1)),
+		limit:  2,
+		listed: []crew.Issue{issue("8", 9, ready), issue("7", 3, ready)},
+		want:   []string{"7"},
 	},
 	{
-		name:     "the global limit stops the walk though a queue has room",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    2,
-		held:     []crew.Issue{issue("1", 1, ready)},
-		listed:   []crew.Issue{issue("2", 2, ready), issue("3", 3, needsTriage)},
-		want:     []string{"2"},
+		name:   "the global limit stops the walk though a queue has room",
+		rules:  queued(clerk, defaultQueue(2)),
+		limit:  2,
+		held:   []crew.Issue{issue("1", 1, ready)},
+		listed: []crew.Issue{issue("2", 2, ready), issue("3", 3, needsTriage)},
+		want:   []string{"2"},
 	},
 	{
-		name:     "stages without a queue share the global limit",
-		workflow: queued(crew.Queue{}, crew.Queue{}),
-		limit:    2,
-		held:     []crew.Issue{issue("1", 1, ready)},
-		listed:   []crew.Issue{issue("2", 2, ready), issue("3", 3, needsTriage)},
-		want:     []string{"2"},
+		name:   "stages without a queue share the global limit",
+		rules:  queued(crew.Queue{}, crew.Queue{}),
+		limit:  2,
+		held:   []crew.Issue{issue("1", 1, ready)},
+		listed: []crew.Issue{issue("2", 2, ready), issue("3", 3, needsTriage)},
+		want:   []string{"2"},
 	},
 }
 
-func TestTakesAnIssueOnlyWhileItsStagesQueueHasAFreeSlot(t *testing.T) {
+func TestTakesAnIssueOnlyWhileItsRulesQueueHasAFreeSlot(t *testing.T) {
 	for _, tt := range takeCases {
 		t.Run(tt.name, func(t *testing.T) {
-			d := newDriver(t, tt.workflow, tt.limit)
+			d := newDriver(t, tt.rules, tt.limit)
 			d.hold(tt.held)
 
 			_, events := d.poll(tt.listed...)
@@ -219,7 +219,7 @@ func TestAnIssueWhoseVerdictMoveIsOwedKeepsItsQueuesSlot(t *testing.T) {
 // listing and with which counts.
 var tickCases = []struct {
 	name        string
-	workflow    []crew.Stage
+	rules       []crew.Rule
 	limit       int
 	held        []crew.Issue
 	skip        bool
@@ -227,41 +227,41 @@ var tickCases = []struct {
 }{
 	{
 		// AE9: default is full, the clerk's slot is free.
-		name:     "lists while the clerk has a free slot",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
+		name:  "lists while the clerk has a free slot",
+		rules: queued(clerk, defaultQueue(2)),
+		limit: 3,
+		held:  []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
 	},
 	{
 		// AE9: once a triage issue also runs.
-		name:     "skips once every queue is full",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    3,
-		held:     []crew.Issue{issue("1", 1, ready), issue("2", 2, ready), issue("3", 3, needsTriage)},
-		skip:     true, busy: 3, slots: 3,
+		name:  "skips once every queue is full",
+		rules: queued(clerk, defaultQueue(2)),
+		limit: 3,
+		held:  []crew.Issue{issue("1", 1, ready), issue("2", 2, ready), issue("3", 3, needsTriage)},
+		skip:  true, busy: 3, slots: 3,
 	},
 	{
 		// AE9: max_parallel_issues 2 and no queue named: the clerk has
-		// no stage, so its slot counts for nothing.
-		name:     "counts only the queues the stages run in",
-		workflow: queued(defaultQueue(1), defaultQueue(1)),
-		limit:    2,
-		held:     []crew.Issue{issue("1", 1, ready)},
-		skip:     true, busy: 1, slots: 1,
+		// no rule, so its slot counts for nothing.
+		name:  "counts only the queues the stages run in",
+		rules: queued(defaultQueue(1), defaultQueue(1)),
+		limit: 2,
+		held:  []crew.Issue{issue("1", 1, ready)},
+		skip:  true, busy: 1, slots: 1,
 	},
 	{
-		name:     "skips at the global limit though a queue has room",
-		workflow: queued(clerk, defaultQueue(2)),
-		limit:    2,
-		held:     []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
-		skip:     true, busy: 2, slots: 2,
+		name:  "skips at the global limit though a queue has room",
+		rules: queued(clerk, defaultQueue(2)),
+		limit: 2,
+		held:  []crew.Issue{issue("1", 1, ready), issue("2", 2, ready)},
+		skip:  true, busy: 2, slots: 2,
 	},
 }
 
-func TestATickSkipsItsListingOnlyWhenNoStagesQueueHasAFreeSlot(t *testing.T) {
+func TestATickSkipsItsListingOnlyWhenNoRulesQueueHasAFreeSlot(t *testing.T) {
 	for _, tt := range tickCases {
 		t.Run(tt.name, func(t *testing.T) {
-			d := newDriver(t, tt.workflow, tt.limit)
+			d := newDriver(t, tt.rules, tt.limit)
 			d.hold(tt.held)
 
 			cmds, events := d.send(core.Tick{})
@@ -326,7 +326,7 @@ func wantQueues(t *testing.T, got []core.QueueView, want ...core.QueueView) {
 // Covers AE1 (core side).
 func TestTheViewShowsEachQueuesSlotsAndBusyCountAndEachIssuesQueue(t *testing.T) {
 	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
-	// The later stage is taken first.
+	// The later rule is taken first.
 	d.hold([]crew.Issue{issue("1", 1, ready), issue("7", 7, needsTriage)})
 
 	wantQueues(t, queuesOf(t, d.m, 0, 1),
@@ -372,44 +372,44 @@ func TestAReleasedIssueFreesItsQueuesSlot(t *testing.T) {
 		core.QueueView{Name: crew.DefaultQueue, Slots: 2})
 }
 
-// viewQueueCases are workflows and the queues the view shows for them
+// viewQueueCases are sets of rules and the queues the view shows for them
 // before any take.
 var viewQueueCases = []struct {
-	name     string
-	workflow []crew.Stage
-	limit    int
-	want     []core.QueueView
-	free     []int
+	name  string
+	rules []crew.Rule
+	limit int
+	want  []core.QueueView
+	free  []int
 }{
 	{
-		// AE3: no stage names clerk, so it gets no line.
-		name:     "only the queues some stage runs in",
-		workflow: queued(defaultQueue(2), defaultQueue(2)),
-		limit:    3,
-		want:     []core.QueueView{{Name: crew.DefaultQueue, Slots: 2}},
-		free:     []int{2},
+		// AE3: no rule names clerk, so it gets no line.
+		name:  "only the queues some stage runs in",
+		rules: queued(defaultQueue(2), defaultQueue(2)),
+		limit: 3,
+		want:  []core.QueueView{{Name: crew.DefaultQueue, Slots: 2}},
+		free:  []int{2},
 	},
 	{
 		// AE4: the other queues take every slot.
-		name:     "a default of 0 slots still has its line",
-		workflow: queued(crew.Queue{Name: "review", Slots: 2}, defaultQueue(0)),
-		limit:    2,
-		want:     []core.QueueView{{Name: "review", Slots: 2}, {Name: crew.DefaultQueue}},
-		free:     []int{2, 0},
+		name:  "a default of 0 slots still has its line",
+		rules: queued(crew.Queue{Name: "review", Slots: 2}, defaultQueue(0)),
+		limit: 2,
+		want:  []core.QueueView{{Name: "review", Slots: 2}, {Name: crew.DefaultQueue}},
+		free:  []int{2, 0},
 	},
 	{
-		name:     "stages without a queue share one unnamed queue of the global limit",
-		workflow: queued(crew.Queue{}, crew.Queue{}),
-		limit:    2,
-		want:     []core.QueueView{{Slots: 2}},
-		free:     []int{2},
+		name:  "stages without a queue share one unnamed queue of the global limit",
+		rules: queued(crew.Queue{}, crew.Queue{}),
+		limit: 2,
+		want:  []core.QueueView{{Slots: 2}},
+		free:  []int{2},
 	},
 }
 
-func TestTheViewShowsTheQueuesTheStagesRunIn(t *testing.T) {
+func TestTheViewShowsTheQueuesTheRulesRunIn(t *testing.T) {
 	for _, tt := range viewQueueCases {
 		t.Run(tt.name, func(t *testing.T) {
-			d := newDriver(t, tt.workflow, tt.limit)
+			d := newDriver(t, tt.rules, tt.limit)
 
 			wantQueues(t, queuesOf(t, d.m, tt.free...), tt.want...)
 		})

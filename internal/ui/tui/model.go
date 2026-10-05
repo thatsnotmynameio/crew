@@ -40,11 +40,11 @@ type Config struct {
 	// event times are shown.
 	Now      func() time.Time
 	Location *time.Location
-	// Workflow is the configured stages, in config order: the board's
+	// Rules are the configured rules, in config order: the board's
 	// columns (R8) when Board is empty.
-	Workflow []crew.Stage
+	Rules []crew.Rule
 	// Board is the configured board's columns, in config order; empty for
-	// the board of the workflow's stages (R4, R5, KTD9).
+	// the board of the rules (R4, R5, KTD9).
 	Board []crew.BoardColumn
 	// Repository is the repository's name, for the header (R3).
 	Repository string
@@ -73,7 +73,7 @@ type Model struct {
 	// width and height are the window's size in columns and rows; a zero
 	// height, before the first size, fits nothing to it.
 	width, height int
-	// stopping is true once the boss asked to stop.
+	// stopping is true once you asked to stop.
 	stopping bool
 
 	styles  styles
@@ -92,7 +92,7 @@ type Model struct {
 	// memory remembers each issue's last columns this run and the slides
 	// running (KTD10).
 	memory *boardMemory
-	// outside tracks focus reports and the stage ends already notified
+	// outside tracks focus reports and the rule ends already notified
 	// (KTD6).
 	outside *outsideState
 }
@@ -155,7 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updated takes in a new snapshot: it starts the slides of the cards that
-// moved and sends the notifications of the stages that ended, before it
+// moved and sends the notifications of the rules that ended, before it
 // waits for the next update, so the read that finds the channel closed, and
 // with it the quit, comes after them (KTD6, KTD10).
 func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {

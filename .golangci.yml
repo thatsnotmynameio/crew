@@ -155,33 +155,33 @@ linters:
               desc: adapters never import each other
             - pkg: github.com/thatsnotmynameio/crew/internal/config
               desc: adapters get their section through port.Decode, not config
-        mates:
+        bots:
           files:
-            - "**/internal/mates/**"
+            - "**/internal/bots/**"
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal/core
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/engine
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/config
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/port
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/registry
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/app
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/adapter
-              desc: mates import only the standard library and proc
+              desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/ui
-              desc: mates import only the standard library and proc
-        mates-users:
+              desc: bots import only the standard library and proc
+        bots-users:
           files:
             - "!**/cmd/crew/**"
-            - "!**/internal/mates/**"
+            - "!**/internal/bots/**"
           deny:
-            - pkg: github.com/thatsnotmynameio/crew/internal/mates
-              desc: only cmd/crew uses mates; nothing in the engine sees them
+            - pkg: github.com/thatsnotmynameio/crew/internal/bots
+              desc: only cmd/crew uses bots; nothing in the engine sees them
         fakes:
           files:
             - "!$test"

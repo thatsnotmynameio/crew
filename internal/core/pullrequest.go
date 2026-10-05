@@ -27,7 +27,7 @@ type pendingReport struct {
 
 // reportPullRequests queues the report that follows h's move to to, which
 // landed, unless pull request reports are off (KTD2). ended is set when the
-// move ended h's stage, so the report carries how it ended. The report's ID
+// move ended h's rule, so the report carries how it ended. The report's ID
 // is fixed for its life (KTD7).
 func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	m := s.m
@@ -39,7 +39,7 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 		ID: strconv.FormatUint(uint64(m.lastID), 10), IssueKey: h.issue.Key, IssueRef: h.issue.Ref, State: to,
 	}
 	if ended {
-		r.End = s.stageEnd(h)
+		r.End = s.ruleEnd(h)
 	}
 	sl := m.pullRequests[r.IssueKey]
 	if sl == nil {
@@ -50,10 +50,10 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	s.pumpPullRequests(sl)
 }
 
-// stageEnd returns how h's stage ended, with each action as its ended status
+// ruleEnd returns how h's rule ended, with each action as its ended status
 // shows it.
-func (s *step) stageEnd(h *heldIssue) *crew.StageEnd {
-	return &crew.StageEnd{Stage: s.m.stages[h.stage].Name, Actions: s.status(h, crew.StatusEnded).Actions}
+func (s *step) ruleEnd(h *heldIssue) *crew.RuleEnd {
+	return &crew.RuleEnd{Rule: s.m.rules[h.rule].Name, Actions: s.status(h, crew.StatusEnded).Actions}
 }
 
 // pumpPullRequests sends the slot's oldest report, unless a report is in

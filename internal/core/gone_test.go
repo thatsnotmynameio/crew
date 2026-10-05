@@ -7,9 +7,9 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// reviewClosed is the draft workflow with review in a queue of no slots, so
+// reviewClosed is the draft rules with review in a queue of no slots, so
 // a listing that finds an issue in ready to review leaves it there.
-func reviewClosed() []crew.Stage {
+func reviewClosed() []crew.Rule {
 	return inQueues(draft(), defaultQueue(2), crew.Queue{Name: "review", Slots: 0})
 }
 
@@ -25,10 +25,10 @@ func implemented(d *driver, development crew.Outcome) []core.Command {
 // in returns #1 in states.
 func in(states ...crew.State) crew.Issue { return issue("1", 1, states...) }
 
-// goneCase is a stage of #1 ending with outcome, then the next listing.
+// goneCase is a rule of #1 ending with outcome, then the next listing.
 type goneCase struct {
 	name     string
-	workflow []crew.Stage
+	rules    []crew.Rule
 	outcome  crew.Outcome
 	dropped  bool // the verdict move is given up
 	listed   []crew.Issue
@@ -39,7 +39,7 @@ type goneCase struct {
 // run ends implement on #1 as c says, lists c.listed and checks the entry.
 func (c goneCase) run(t *testing.T) {
 	t.Helper()
-	d := newDriver(t, c.workflow, 2)
+	d := newDriver(t, c.rules, 2)
 	verdict := implemented(d, c.outcome)
 	if c.dropped {
 		d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultRefused, Reason: "nope"})
@@ -58,38 +58,38 @@ func (c goneCase) run(t *testing.T) {
 	}
 }
 
-func TestAHandledEntryIsGoneWhenTheNextListingDoesNotFindItAloneInAStagesLabel(t *testing.T) {
+func TestAHandledEntryIsGoneWhenTheNextListingDoesNotFindItAloneInARulesLabel(t *testing.T) {
 	blocked := in(readyToReview)
 	blocked.Blocked = true
 	blockedInReady := in(ready)
 	blockedInReady.Blocked = true
 	tests := []goneCase{
 		{
-			name: "found alone in the next stage's label", workflow: reviewClosed(), outcome: succeeded,
+			name: "found alone in the next stage's label", rules: reviewClosed(), outcome: succeeded,
 			listed: []crew.Issue{in(readyToReview)}, wantTo: readyToReview,
 		},
 		{
-			name: "missing from the listing", workflow: draft(), outcome: succeeded,
+			name: "missing from the listing", rules: draft(), outcome: succeeded,
 			wantTo: readyToReview, wantGone: true,
 		},
 		{
-			name: "blocked in the next stage's label", workflow: draft(), outcome: succeeded,
+			name: "blocked in the next stage's label", rules: draft(), outcome: succeeded,
 			listed: []crew.Issue{blocked}, wantTo: readyToReview,
 		},
 		{
-			name: "in the next stage's label and another crew state", workflow: draft(), outcome: succeeded,
+			name: "in the next stage's label and another crew state", rules: draft(), outcome: succeeded,
 			listed: []crew.Issue{in(readyToReview, ready)}, wantTo: readyToReview, wantGone: true,
 		},
 		{
-			name: "found alone in another stage's label", workflow: draft(), outcome: succeeded,
+			name: "found alone in another stage's label", rules: draft(), outcome: succeeded,
 			listed: []crew.Issue{blockedInReady}, wantTo: readyToReview, wantGone: true,
 		},
 		{
-			name: "moved to a state that is no stage's label", workflow: draft(), outcome: failed("tests fail"),
+			name: "moved to a state that is no stage's label", rules: draft(), outcome: failed("tests fail"),
 			wantTo: needsAttention,
 		},
 		{
-			name: "its move to the next stage's label given up", workflow: draft(), outcome: succeeded,
+			name: "its move to the next stage's label given up", rules: draft(), outcome: succeeded,
 			dropped: true, wantTo: readyToReview, wantGone: true,
 		},
 	}

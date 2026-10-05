@@ -42,8 +42,8 @@ func (c *Checker) Check(ctx context.Context, check port.Check) error {
 		"CREW_ISSUE_KEY="+check.IssueKey,
 		"CREW_ISSUE_URL="+check.IssueURL,
 		"CREW_BRANCH="+check.Branch,
-		"CREW_BOSS="+strings.Join(check.Boss, " "),
-		"CREW_MATES="+strings.Join(check.Mates, " "),
+		"CREW_BOSS="+strings.Join(check.CodeOwners, " "),
+		"CREW_MATES="+strings.Join(check.Bots, " "),
 	)
 	p, err := c.group.Start(proc.Command{
 		Name: "sh", Args: []string{"-c", check.Command}, Dir: check.Dir,

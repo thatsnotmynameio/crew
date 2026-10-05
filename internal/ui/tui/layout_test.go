@@ -50,7 +50,7 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 
 // Covers R21 and KTD8: a 28-row window gives Events, then Handled, their
 // minimum, and both scroll. It is the 24 rows these sections took before
-// Mates, plus Mates' rule, the boss's two rows and the blank row above it.
+// Mates, plus Mates' rule, your two rows and the blank row above it.
 func TestA28RowWindowShrinksEventsThenHandledToTheirMinimum(t *testing.T) {
 	view := fitted(t, 80, 28, eventful())
 

@@ -15,7 +15,7 @@ import (
 // defaultClerkSlots is clerk's size when config.clerk_slots is left out.
 const defaultClerkSlots = 1
 
-// queueTable is the queues a stage may name: clerk, the declared queues in
+// queueTable is the queues a rule may name: clerk, the declared queues in
 // file order, then default.
 type queueTable []crew.Queue
 
@@ -41,7 +41,7 @@ func (t queueTable) names() string {
 // queues splits limit, max_parallel_issues, into the queues of config:, and
 // returns what is wrong with them. A limit that is not positive is reported
 // elsewhere, so the sums that depend on it are not checked. Every declared
-// queue stays in the table, even one whose slots are wrong, so a stage that
+// queue stays in the table, even one whose slots are wrong, so a rule that
 // names it is not reported again.
 func queues(s *settings, limit int) (queueTable, []error) {
 	clerk, clerkOK, err := clerkSlots(s, limit)
@@ -133,9 +133,9 @@ func declaredQueue(e entry) (int, error) {
 	return slots.value, nil
 }
 
-// stageQueue returns the queue of the stage at path: the one its queue key
+// ruleQueue returns the queue of the rule at path: the one its queue key
 // names, or default when it names none.
-func stageQueue(l located[string], path string, table queueTable) (crew.Queue, error) {
+func ruleQueue(l located[string], path string, table queueTable) (crew.Queue, error) {
 	name := l.value
 	switch {
 	case l.line == 0:

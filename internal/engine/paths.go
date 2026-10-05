@@ -12,7 +12,7 @@ import (
 const logDir = ".crew/logs"
 
 // The permissions of the log directory and of the files in it: logs hold
-// what sessions printed, so only the boss reads them.
+// what sessions printed, so only you read them.
 const (
 	logDirPerm  = 0o700
 	logFilePerm = 0o600
@@ -67,7 +67,7 @@ func (e *Engine) openAppend(rel string) (*os.File, error) {
 // stderr or a session's last message often names absolute paths, and
 // failure reports end up on public issues. The root goes first, as it
 // usually sits inside the home directory. It also redacts GitHub tokens and
-// PEM private keys, a session acting as a mate holding one, before anything
+// PEM private keys, a session acting as a bot holding one, before anything
 // cuts the text, so no cut leaves part of a token without its prefix.
 func (e *Engine) scrub(text string) string {
 	text = privateKey.ReplaceAllString(text, "[redacted private key]")
