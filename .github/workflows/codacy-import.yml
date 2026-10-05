@@ -1,7 +1,7 @@
 # Applies .codacy/codacy.config.json (which Codacy tools run, with which
 # patterns and thresholds) to Codacy whenever it changes on main, so the file
-# in the repository is what Codacy enforces. Run it by hand once after the
-# Codacy setup in docs/develop/quality.mdx. Off until the repository variable
+# in the repository is what Codacy enforces. Run it by hand once after
+# setting Codacy up. Off until the repository variable
 # CODACY_ENABLED is true.
 name: Codacy import
 
@@ -46,6 +46,6 @@ jobs:
         run: |
           pnpm exec codacy tools gh ${{ github.repository_owner }} ${{ github.event.repository.name }} --import --skip-approval 2>&1 | tee "$RUNNER_TEMP/import.log"
           if grep -q "error(s)" "$RUNNER_TEMP/import.log"; then
-            echo "::error::The Codacy import did not apply every tool; see the errors above and docs/develop/quality.mdx." >&2
+            echo "::error::The Codacy import did not apply every tool; see the errors above." >&2
             exit 1
           fi

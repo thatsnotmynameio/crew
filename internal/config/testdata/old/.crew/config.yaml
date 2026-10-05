@@ -1,4 +1,4 @@
-# crew's own workflow: crew runs on this repository too. See docs/guide/crew.mdx.
+# crew's own workflow: crew runs on this repository too.
 # Every label crew uses is `crew:<stage>:<state>`, so it says which stage an
 # issue is in and where it stands there. Each stage takes `crew:<stage>:ready`,
 # moves the issue to `crew:<stage>:in progress` and ends in
