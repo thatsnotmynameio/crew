@@ -24,7 +24,7 @@ const (
 	RunEnded
 )
 
-// RunRecord is one line of the run journal: how a run of Action, in Stage,
+// RunRecord is one line of the run journal: how a run of Action, in Rule,
 // on the issue, started or ended (KTD1). A run's start is recorded once it
 // has a workspace; its end is recorded whatever happened, and names no
 // workspace when the action never got one.
@@ -33,7 +33,7 @@ type RunRecord struct {
 	At       time.Time
 	IssueKey string
 	IssueRef string
-	Stage    string
+	Rule     string
 	Action   string
 	// Workspace, Branch and Log are the run's workspace name, branch and
 	// repository-relative log path.
@@ -53,12 +53,12 @@ type RunRecord struct {
 }
 
 // runKey identifies the runs one record replaces: those of an action, in a
-// stage, on an issue (R3).
+// rule, on an issue (R3).
 type runKey struct {
-	issue, stage, action string
+	issue, rule, action string
 }
 
-func keyOf(r RunRecord) runKey { return runKey{r.IssueKey, r.Stage, r.Action} }
+func keyOf(r RunRecord) runKey { return runKey{r.IssueKey, r.Rule, r.Action} }
 
 // failed reports whether the run r records counts as failed (R2): it ended
 // and did not succeed, or it never recorded an end.
@@ -108,10 +108,10 @@ func (m *Model) remember(r RunRecord) {
 	m.lastRuns[keyOf(r)] = r
 }
 
-// lastRun returns the last run record of a, in h's stage, on h's issue
+// lastRun returns the last run record of a, in h's rule, on h's issue
 // (R3).
 func (m *Model) lastRun(h *heldIssue, a *actionRun) (RunRecord, bool) {
-	r, ok := m.lastRuns[runKey{h.issue.Key, m.stages[h.stage].Name, a.name}]
+	r, ok := m.lastRuns[runKey{h.issue.Key, m.rules[h.rule].Name, a.name}]
 	return r, ok
 }
 
@@ -141,7 +141,7 @@ func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
 	}
 	r := RunRecord{
 		Event: event, At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref,
-		Stage: m.stages[h.stage].Name, Action: a.name,
+		Rule: m.rules[h.rule].Name, Action: a.name,
 		Workspace: a.workspace, Branch: a.branch, Log: a.log,
 	}
 	if event == RunEnded {

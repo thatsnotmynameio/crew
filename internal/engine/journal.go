@@ -35,7 +35,8 @@ const (
 // journalLine is one line of the run journal. Its field names are the
 // documented format (docs/guide/crew.mdx), so other tools can read it. A
 // value the harness did not report is left out, never written as zero, so
-// its field is a pointer.
+// its field is a pointer. Rule keeps the name stage, from before rules
+// were called stages, so older journals still resume.
 type journalLine struct {
 	Version   int       `json:"v"`
 	Event     string    `json:"event"`
@@ -43,7 +44,7 @@ type journalLine struct {
 	Run       string    `json:"run,omitempty"`
 	Issue     string    `json:"issue"`
 	Ref       string    `json:"ref"`
-	Stage     string    `json:"stage"`
+	Rule      string    `json:"stage"`
 	Action    string    `json:"action"`
 	Workspace string    `json:"workspace"`
 	Branch    string    `json:"branch"`
@@ -106,7 +107,7 @@ func (l journalLine) record() (core.RunRecord, bool) {
 		return core.RunRecord{}, false
 	}
 	r := core.RunRecord{
-		At: l.Time, IssueKey: l.Issue, IssueRef: l.Ref, Stage: l.Stage, Action: l.Action,
+		At: l.Time, IssueKey: l.Issue, IssueRef: l.Ref, Rule: l.Rule, Action: l.Action,
 		Workspace: l.Workspace, Branch: l.Branch, Log: l.Log,
 	}
 	switch l.Event {
@@ -127,7 +128,7 @@ func (l journalLine) record() (core.RunRecord, bool) {
 func lineOf(r core.RunRecord, run string) journalLine {
 	l := journalLine{
 		Version: journalVersion, Event: eventStarted, Time: r.At.UTC(), Run: run, Issue: r.IssueKey,
-		Ref: r.IssueRef, Stage: r.Stage, Action: r.Action, Workspace: r.Workspace, Branch: r.Branch, Log: r.Log,
+		Ref: r.IssueRef, Rule: r.Rule, Action: r.Action, Workspace: r.Workspace, Branch: r.Branch, Log: r.Log,
 	}
 	if r.Event != core.RunEnded {
 		return l

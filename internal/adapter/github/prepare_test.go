@@ -20,23 +20,23 @@ func recordSteps() (context.Context, *[]string) {
 }
 
 // prepareSteps returns the steps a Prepare that succeeds reports: the gh
-// login, the boss, the labels, then one per label it creates, naming it.
+// login, the code owners, the labels, then one per label it creates, naming it.
 func prepareSteps(created []string) []string {
 	steps := make([]string, 0, 3+len(created))
-	steps = append(steps, "checking the gh login", "finding the boss", "reading the repository's labels")
+	steps = append(steps, "checking the gh login", "finding the code owners", "reading the repository's labels")
 	for _, name := range created {
 		steps = append(steps, fmt.Sprintf("creating the label %q", name))
 	}
 	return steps
 }
 
-func TestPrepareWithoutAuthTellsTheBossToLogIn(t *testing.T) {
+func TestPrepareWithoutAuthTellsYouToLogIn(t *testing.T) {
 	tr, gh := build(t,
 		reply{prefix: []string{"auth", "status"}, stderr: "You are not logged into any GitHub hosts."})
 	ctx, steps := recordSteps()
 	err := tr.Prepare(ctx, []crew.State{ready})
 	if err == nil || !strings.Contains(err.Error(), "gh auth login") {
-		t.Errorf("Prepare = %v, want an error telling the boss to run gh auth login", err)
+		t.Errorf("Prepare = %v, want an error telling you to run gh auth login", err)
 	}
 	if want := []string{"checking the gh login"}; !slices.Equal(*steps, want) {
 		t.Errorf("steps = %q, want %q", *steps, want)
@@ -55,17 +55,18 @@ func TestPrepareWithoutGhSaysItIsMissing(t *testing.T) {
 	}
 }
 
+// Prepare creates each rule label the repository lacks, and no other (R24).
 func TestPrepareCreatesOnlyTheMissingLabels(t *testing.T) {
 	for name, tc := range map[string]struct {
 		present string
 		want    []string
 	}{
 		"AE7 only ready": {`[{"name":"ready"}]`,
-			[]string{"in progress", "in review", "needs attention", "waiting brainstorm"}},
-		"AE1 another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"},{"name":"Waiting Brainstorm"}]`,
+			[]string{"in progress", "in review", "needs attention"}},
+		"AE1 another case": {`[{"name":"ready"},{"name":"In Progress"},{"name":"bug"}]`,
 			[]string{"in review", "needs attention"}},
 		"AE2 every label": {`[{"name":"Ready"},{"name":"in progress"},{"name":"IN REVIEW"},` +
-			`{"name":"needs attention"},{"name":"waiting brainstorm"}]`, nil},
+			`{"name":"needs attention"}]`, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,

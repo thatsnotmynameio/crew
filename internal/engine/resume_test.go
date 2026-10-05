@@ -37,7 +37,7 @@ func (r *rig) session() *fake.Session {
 }
 
 // failOnce runs issue 1's development session in r and fails it with reason
-// after it printed output, then puts the issue back in ready, as the boss
+// after it printed output, then puts the issue back in ready, as you
 // would, and returns the session.
 func failOnce(t *testing.T, r *rig, tr *fake.Tracker, output, reason string) *fake.Session {
 	t.Helper()

@@ -39,17 +39,17 @@ var (
 	_ port.StatusReporter      = PullRequestTracker{}
 	_ port.PullRequestReporter = PullRequestTracker{}
 
-	_ port.Acting         = (*Acting)(nil)
-	_ port.BossFinder     = (*Acting)(nil)
-	_ port.LoginFinder    = (*Acting)(nil)
-	_ port.WriterReporter = (*Acting)(nil)
-	_ port.Tracker        = ActingTracker{}
-	_ port.Preparer       = ActingTracker{}
-	_ port.StatusReporter = ActingTracker{}
-	_ port.Acting         = ActingTracker{}
-	_ port.BossFinder     = ActingTracker{}
-	_ port.LoginFinder    = ActingTracker{}
-	_ port.WriterReporter = ActingTracker{}
+	_ port.Acting          = (*Acting)(nil)
+	_ port.CodeOwnerFinder = (*Acting)(nil)
+	_ port.LoginFinder     = (*Acting)(nil)
+	_ port.WriterReporter  = (*Acting)(nil)
+	_ port.Tracker         = ActingTracker{}
+	_ port.Preparer        = ActingTracker{}
+	_ port.StatusReporter  = ActingTracker{}
+	_ port.Acting          = ActingTracker{}
+	_ port.CodeOwnerFinder = ActingTracker{}
+	_ port.LoginFinder     = ActingTracker{}
+	_ port.WriterReporter  = ActingTracker{}
 
 	_ port.Tracker     = BoardTracker{}
 	_ port.BoardLister = BoardTracker{}
@@ -62,10 +62,9 @@ type TrackerSettings struct{}
 
 // TrackerFactory returns a factory that validates its section into
 // TrackerSettings and, when it is valid, returns t itself, so the test keeps
-// a handle on the tracker the engine uses. It ignores the workflow's states
-// and the extras; a test sets an issue's extras with SetExtras.
+// a handle on the tracker the engine uses. It ignores the rules' states.
 func TrackerFactory(t port.Tracker) port.TrackerFactory {
-	return func(decode port.Decode, _, _ []crew.State) (port.Tracker, error) {
+	return func(decode port.Decode, _ []crew.State) (port.Tracker, error) {
 		var settings TrackerSettings
 		if err := decode(&settings); err != nil {
 			return nil, err
@@ -82,10 +81,8 @@ type Move struct {
 
 // Tracker is an in-memory issue tracker. It lists issues in the order they
 // were added, and a Move leaves an issue in exactly the state it moved to.
-// An issue's extra labels, set with SetExtras, are kept apart from its
-// states: List never reports them and a Move clears them. Its other labels,
-// set with SetLabels, are neither crew's states nor extras: List never
-// reports them and a Move leaves them. Its zero value is not usable; use
+// An issue's other labels, set with SetLabels, are not crew's states: List
+// never reports them and a Move leaves them. Its zero value is not usable; use
 // NewTracker.
 type Tracker struct {
 	mu         sync.Mutex
@@ -98,7 +95,6 @@ type Tracker struct {
 
 type trackedIssue struct {
 	issue  crew.Issue
-	extras []crew.State
 	labels []string // the labels that are not crew's
 	closed bool
 }
@@ -112,14 +108,14 @@ func NewTracker(issues ...crew.Issue) *Tracker {
 	return t
 }
 
-// Add adds issue as an open issue without extras or other labels,
+// Add adds issue as an open issue without other labels,
 // replacing any issue with the same key.
 func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	issue = issue.Clone()
 	if ti := t.find(issue.Key); ti != nil {
-		ti.issue, ti.extras, ti.labels, ti.closed = issue, nil, nil, false
+		ti.issue, ti.labels, ti.closed = issue, nil, false
 		return
 	}
 	t.issues = append(t.issues, &trackedIssue{issue: issue})
@@ -135,16 +131,6 @@ func (t *Tracker) SetStates(key string, states ...crew.State) {
 	}
 }
 
-// SetExtras sets the extra labels of the issue with key, as a person
-// editing it would. It does nothing for an unknown key.
-func (t *Tracker) SetExtras(key string, extras ...crew.State) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if ti := t.find(key); ti != nil {
-		ti.extras = slices.Clone(extras)
-	}
-}
-
 // SetLabels sets the labels of the issue with key that are not crew's, such
 // as bug, as a person editing it would. It does nothing for an unknown key.
 func (t *Tracker) SetLabels(key string, labels ...string) {
@@ -155,12 +141,12 @@ func (t *Tracker) SetLabels(key string, labels ...string) {
 	}
 }
 
-// Extras returns the extra labels the issue with key has now.
-func (t *Tracker) Extras(key string) []crew.State {
+// Labels returns the labels that are not crew's the issue with key has now.
+func (t *Tracker) Labels(key string) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
-		return slices.Clone(ti.extras)
+		return slices.Clone(ti.labels)
 	}
 	return nil
 }
@@ -242,9 +228,9 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 
 // Move implements port.Tracker. A scripted failure comes first; then an
 // unknown or closed issue is ErrMovedMeanwhile. An open issue not in from but
-// exactly in to, whatever its extras, is already moved, so Move returns nil
+// exactly in to, whatever its other labels, is already moved, so Move returns nil
 // and records no move, as the github adapter does on a retry. Any other issue
-// not in from is ErrMovedMeanwhile. A move clears the issue's extras.
+// not in from is ErrMovedMeanwhile. A move leaves the issue's other labels.
 func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -261,7 +247,7 @@ func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) 
 		}
 		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, port.ErrMovedMeanwhile)
 	}
-	ti.issue.States, ti.extras = []crew.State{to}, nil
+	ti.issue.States = []crew.State{to}
 	t.moves = append(t.moves, Move{Key: issueKey, From: from, To: to})
 	return nil
 }
@@ -571,42 +557,43 @@ func NewPullRequestTracker(issues ...crew.Issue) PullRequestTracker {
 // ActAsCall is one call to port.Acting's ActAs an Acting received.
 type ActAsCall struct {
 	Writer port.Identity
-	Mates  []string
+	Bots   []string
 }
 
-// Acting is a scriptable port.Acting, port.BossFinder, port.LoginFinder and
-// port.WriterReporter, to embed in a fake tracker. It records each ActAs
-// call and returns the boss's logins set by SetBoss, the login set by
-// SetLogin and the writes warning set by SetWriterLost. Its zero value is
-// ready to use: it finds no boss and no login, and its writes never went
-// back to the boss.
+// Acting is a scriptable port.Acting, port.CodeOwnerFinder, port.LoginFinder
+// and port.WriterReporter, to embed in a fake tracker. It records each ActAs
+// call and returns the code owners' logins set by SetCodeOwners, the login set
+// by SetLogin and the writes warning set by SetWriterLost. Its zero value is
+// ready to use: it finds no code owner and no login, and its writes never went
+// back to you.
 type Acting struct {
-	mu    sync.Mutex
-	boss  []string
-	login string
-	lost  string
-	calls []ActAsCall
+	mu         sync.Mutex
+	codeOwners []string
+	login      string
+	lost       string
+	calls      []ActAsCall
 }
 
 // ActAs implements port.Acting.
-func (a *Acting) ActAs(writer port.Identity, mates []string) {
+func (a *Acting) ActAs(writer port.Identity, bots []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.calls = append(a.calls, ActAsCall{Writer: writer, Mates: slices.Clone(mates)})
+	a.calls = append(a.calls, ActAsCall{Writer: writer, Bots: slices.Clone(bots)})
 }
 
-// Boss implements port.BossFinder: it returns what SetBoss last set.
-func (a *Acting) Boss() []string {
+// CodeOwners implements port.CodeOwnerFinder: it returns what
+// SetCodeOwners last set.
+func (a *Acting) CodeOwners() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return slices.Clone(a.boss)
+	return slices.Clone(a.codeOwners)
 }
 
-// SetBoss sets the boss's logins Boss returns.
-func (a *Acting) SetBoss(logins ...string) {
+// SetCodeOwners sets the code owners' logins CodeOwners returns.
+func (a *Acting) SetCodeOwners(logins ...string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.boss = slices.Clone(logins)
+	a.codeOwners = slices.Clone(logins)
 }
 
 // Login implements port.LoginFinder: it returns what SetLogin last set.
@@ -632,7 +619,7 @@ func (a *Acting) WriterLost() string {
 }
 
 // SetWriterLost sets the warning WriterLost returns, as when the tracker's
-// writes went back to the boss; "" makes them go as the writer again.
+// writes went back to you; "" makes them go as the writer again.
 func (a *Acting) SetWriterLost(warning string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -645,25 +632,25 @@ func (a *Acting) ActAsCalls() []ActAsCall {
 	defer a.mu.Unlock()
 	out := make([]ActAsCall, len(a.calls))
 	for i, c := range a.calls {
-		c.Mates = slices.Clone(c.Mates)
+		c.Bots = slices.Clone(c.Bots)
 		out[i] = c
 	}
 	return out
 }
 
 // ActingTracker is a ReportingTracker that also implements port.Acting,
-// port.BossFinder, port.LoginFinder and port.WriterReporter, for the tests
-// about crew acting as its mates. A plain *Tracker, PreparingTracker or
+// port.CodeOwnerFinder, port.LoginFinder and port.WriterReporter, for the tests
+// about crew acting as its bots. A plain *Tracker, PreparingTracker or
 // ReportingTracker does not implement them.
 type ActingTracker struct {
 	ReportingTracker
 	*Acting
 }
 
-// NewActingTracker returns an ActingTracker holding issues, whose Prepare
-// and status writes succeed until told otherwise, which finds no boss until
-// SetBoss and no login until SetLogin, and whose writes never went back to
-// the boss until SetWriterLost.
+// NewActingTracker returns an ActingTracker holding issues, whose Prepare and
+// status writes succeed until told otherwise, which finds no code owner until
+// SetCodeOwners and no login until SetLogin, and whose writes never went back
+// to you until SetWriterLost.
 func NewActingTracker(issues ...crew.Issue) ActingTracker {
 	return ActingTracker{ReportingTracker: NewReportingTracker(issues...), Acting: &Acting{}}
 }
@@ -681,8 +668,8 @@ func NewBoardTracker(issues ...crew.Issue) BoardTracker {
 }
 
 // ListBoard implements port.BoardLister: the open issues of kind issue
-// whose states, extras or other labels match any of labels ignoring case,
-// as GitHub compares them, oldest first and otherwise in the order they were
+// whose states or other labels match any of labels ignoring case, as
+// GitHub compares them, oldest first and otherwise in the order they were
 // added. Each carries the labels of labels it matches, in labels' spelling
 // and order.
 func (b BoardTracker) ListBoard(_ context.Context, labels []string) ([]crew.BoardIssue, error) {
@@ -694,7 +681,7 @@ func (b BoardTracker) ListBoard(_ context.Context, labels []string) ([]crew.Boar
 			continue
 		}
 		carries := slices.Clone(ti.labels)
-		for _, s := range slices.Concat(ti.issue.States, ti.extras) {
+		for _, s := range ti.issue.States {
 			carries = append(carries, string(s))
 		}
 		var matched []string

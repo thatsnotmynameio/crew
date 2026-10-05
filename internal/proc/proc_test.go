@@ -133,8 +133,8 @@ func run(t *testing.T, c proc.Command) string {
 }
 
 func TestStartRemovesTheInheritedVariablesInUnsetAndAddsEnv(t *testing.T) {
-	t.Setenv("GH_TOKEN", "boss-token")
-	t.Setenv("GITHUB_TOKEN", "boss-token")
+	t.Setenv("GH_TOKEN", "your-token")
+	t.Setenv("GITHUB_TOKEN", "your-token")
 	t.Setenv("CREW_KEPT", "kept")
 	c := sh(`echo "${GH_TOKEN-unset}|${GITHUB_TOKEN-unset}|$GH_CONFIG_DIR|$CREW_KEPT"`)
 	c.Env = []string{"GH_CONFIG_DIR=/run/crew/developer"}

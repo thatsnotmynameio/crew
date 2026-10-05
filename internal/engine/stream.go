@@ -24,7 +24,7 @@ type Update struct {
 }
 
 // Snapshot is the engine's view after a step: the issues the core holds, by
-// stage and claim, their actions with start times, the owed calls, the issues
+// rule and claim, their actions with start times, the owed calls, the issues
 // handled this run, the latest events, when the run started, and what the
 // running sessions last said. Its View shares no memory with the core.
 type Snapshot struct {

@@ -19,7 +19,7 @@ type Issue struct {
 	// URL is the issue's web address.
 	URL string
 	// Created is when the issue was opened. Among issues of the same
-	// priority and stage, the oldest is taken first.
+	// priority and rule, the oldest is taken first.
 	Created time.Time
 	// Priority is the issue's rank as the tracker sets it: 1 is the highest
 	// and larger numbers rank lower. 0 means no priority, which ranks after
@@ -32,7 +32,7 @@ type Issue struct {
 	// not taken until every issue blocking it is closed. A tracker that
 	// knows no dependencies leaves it false.
 	Blocked bool
-	// Kind is whether the item is an issue or a pull request. Only a stage
+	// Kind is whether the item is an issue or a pull request. Only a rule
 	// that takes its kind takes it. A tracker that knows no pull requests
 	// leaves it KindIssue.
 	Kind Kind

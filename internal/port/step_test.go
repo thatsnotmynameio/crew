@@ -13,9 +13,9 @@ func TestStepReportsEachStepInOrder(t *testing.T) {
 	ctx := port.WithSteps(context.Background(), func(step string) { got = append(got, step) })
 
 	port.Step(ctx, "checking the gh login")
-	port.Step(ctx, "finding the boss")
+	port.Step(ctx, "finding the code owners")
 
-	if want := []string{"checking the gh login", "finding the boss"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"checking the gh login", "finding the code owners"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("reported %q, want %q", got, want)
 	}
 }

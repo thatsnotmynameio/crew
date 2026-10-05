@@ -5,8 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"charm.land/lipgloss/v2"
-
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/ui/lines"
@@ -21,77 +19,38 @@ const (
 	edgeMarker = 4
 )
 
-// card is an issue on the board. On the board of the stages (KTD3), it is
-// held by a shown stage, or waits in its stage's column for the next stage
-// to take it. On a configured board, it is in a column whose labels the
-// issue carries, held or not (KTD9).
+// card is an item on the board, in a column whose labels it carries and
+// that shows its kind, held by crew or not (KTD9, KTD10).
 type card struct {
 	issue crew.Issue
-	// column is the card's column: an index into the workflow, or into the
-	// configured board.
+	// column is the card's column: an index into the board's columns.
 	column int
-	// held is set while crew holds the issue, with claim its claim; the
+	// held is set while crew holds the item, with claim its claim; the
 	// zero claim is ClaimTaking, so claim alone cannot tell.
 	held  bool
 	claim core.Claim
-	// waiting is set for a card whose stage ended; label is the state the
-	// stage moved its issue to.
-	waiting bool
-	label   crew.State
 }
 
-// columnIndex returns the index of the stage named name in the workflow, or
-// -1.
-func (m Model) columnIndex(name string) int {
-	return slices.IndexFunc(m.cfg.Workflow, func(s crew.Stage) bool { return s.Name == name })
-}
-
-// shown reports whether column i is on the board: a stage not hidden from
-// it (R12), or any column of a configured board (R5).
-func (m Model) shown(i int) bool {
-	if m.configured() {
-		return i >= 0 && i < len(m.cfg.Board)
-	}
-	return i >= 0 && !m.cfg.Workflow[i].OffBoard
-}
-
-// cards returns the cards of the snapshot: a configured board's (KTD9), or
-// the stages' (KTD3), each held issue of a shown stage, in the order taken,
-// then each waiting card, by when its stage ended.
+// cards returns a card in each column whose labels an item of the board
+// carries and that shows its kind, item by item in the board's order,
+// oldest first (R7, KTD6, R23). A card of an item crew holds carries its
+// claim (R10, KTD9); no card waits for the next rule (R28).
 func (m Model) cards() []card {
-	if m.configured() {
-		return m.configuredCards()
+	claims := map[string]core.Claim{}
+	for _, iv := range m.snap.Issues {
+		claims[iv.Issue.Key] = iv.Claim
 	}
 	var out []card
-	for _, iv := range m.snap.Issues {
-		if i := m.columnIndex(iv.Stage); m.shown(i) {
-			out = append(out, card{issue: iv.Issue, column: i, held: true, claim: iv.Claim})
+	for _, bi := range m.snap.Board {
+		claim, held := claims[bi.Issue.Key]
+		for i, c := range m.cfg.Board {
+			carries := slices.ContainsFunc(c.Labels, func(l string) bool { return slices.Contains(bi.Labels, l) })
+			if carries && c.Takes == bi.Issue.Kind {
+				out = append(out, card{issue: bi.Issue, column: i, held: held, claim: claim})
+			}
 		}
-	}
-	var waiting []core.HandledView
-	for _, e := range m.snap.Handled {
-		if m.waits(e) {
-			waiting = append(waiting, e)
-		}
-	}
-	slices.SortStableFunc(waiting, func(a, b core.HandledView) int { return a.Ended.Compare(b.Ended) })
-	for _, e := range waiting {
-		out = append(out, card{issue: e.Issue, column: m.columnIndex(e.Stage), waiting: true, label: e.To})
 	}
 	return out
-}
-
-// waits reports whether e's issue waits on the board for the next stage:
-// no stage holds it again, its move is done, the issue is still where the
-// move put it, its stage is shown, and a stage of its kind takes that state
-// (R10, KTD3, KTD4, #109).
-func (m Model) waits(e core.HandledView) bool {
-	if e.HeldBy != "" || e.Move != crew.MoveDone || e.Gone || !m.shown(m.columnIndex(e.Stage)) {
-		return false
-	}
-	return slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool {
-		return s.Label == e.To && s.Takes == e.Issue.Kind
-	})
 }
 
 // boardLayout is which columns the board draws and how wide (KTD9).
@@ -137,46 +96,41 @@ func layout(shown []int, held map[int]bool, avail, offset int) boardLayout {
 
 // boardLayout lays out the board for the current snapshot and window.
 func (m Model) boardLayout(cards []card) boardLayout {
-	var shown []int
-	for i := range m.columnCount() {
-		if m.shown(i) {
-			shown = append(shown, i)
-		}
+	columns := make([]int, len(m.cfg.Board))
+	for i := range columns {
+		columns[i] = i
 	}
 	held := map[int]bool{}
 	for _, c := range cards {
 		held[c.column] = true
 	}
-	return layout(shown, held, m.width-1, m.boardOffset)
+	return layout(columns, held, m.width-1, m.boardOffset)
 }
 
-// board is the Workflow section: its summary and its rows, with at most
+// board is the Board section: its summary and its rows, with at most
 // limit cards a column; limit < 0 means no limit (KTD8).
 func (m Model) board(limit int) (string, []string) {
-	if m.configured() {
-		cards := m.cards()
-		l := m.boardLayout(cards)
-		return m.configuredSummary(cards, l), m.boardRows(l, cards, limit)
-	}
-	if !slices.ContainsFunc(m.cfg.Workflow, func(s crew.Stage) bool { return !s.OffBoard }) {
-		return "", []string{" " + m.styles.muted.Render("every stage is hidden")}
-	}
 	cards := m.cards()
 	l := m.boardLayout(cards)
-	held := 0
+	return m.boardSummary(cards, l), m.boardRows(l, cards, limit)
+}
+
+// boardSummary is the board's summary (KTD8): the items with a card, the
+// empty columns dropped, and, in the warning style, that the last board
+// read or listing failed (KTD5).
+func (m Model) boardSummary(cards []card, l boardLayout) string {
+	issues := map[string]bool{}
 	for _, c := range cards {
-		if !c.waiting {
-			held++
-		}
+		issues[c.issue.Key] = true
 	}
-	summary := fmt.Sprintf("%d in play", held)
-	if waiting := len(cards) - held; waiting > 0 {
-		summary += fmt.Sprintf(" · %d waiting", waiting)
-	}
+	summary := fmt.Sprintf("%d %s", len(issues), lines.Plural(len(issues), "issue", "issues"))
 	if l.dropped > 0 {
-		summary += fmt.Sprintf(" · %d empty %s not shown", l.dropped, lines.Plural(l.dropped, "stage", "stages"))
+		summary += fmt.Sprintf(" · %d empty %s not shown", l.dropped, lines.Plural(l.dropped, "column", "columns"))
 	}
-	return summary, m.boardRows(l, cards, limit)
+	if m.snap.BoardFailure != "" {
+		summary += " · " + m.styles.warning.Render("board not read")
+	}
+	return summary
 }
 
 // boardRows draws the column names, their underlines with the slides, then
@@ -234,7 +188,7 @@ func (m Model) columnNames(l boardLayout, byColumn [][]card) []string {
 		if len(byColumn[i]) > 0 {
 			st = m.styles.accent
 		}
-		names[i] = st.Render(m.columnName(c))
+		names[i] = st.Render(m.cfg.Board[c].Name)
 	}
 	return names
 }
@@ -264,8 +218,7 @@ func (m Model) boardRow(l boardLayout, cells []string, names bool) string {
 }
 
 // cardLines are a card's two rows: its reference and title, then its claim
-// or the label it waits in (R11, KTD13), or ○ idle when crew does not hold
-// its issue (#126).
+// (R11, KTD13), or ○ idle when crew does not hold its issue (#126).
 func (m Model) cardLines(c card, width int) (string, string) {
 	s := m.styles
 	bar := s.subtle.Render("▌")
@@ -275,8 +228,6 @@ func (m Model) cardLines(c card, width int) (string, string) {
 	top := fit(bar+" "+s.link(c.issue.Ref, c.issue.URL)+" "+s.text.Render(clean(c.issue.Title)), width)
 	var state string
 	switch {
-	case c.waiting:
-		state = s.warning.Render("→ " + fitLeft(string(c.label), width-lipgloss.Width("▌ → ")))
 	case !c.held:
 		state = s.muted.Render("○ idle")
 	case c.claim == core.ClaimRunning || c.claim == core.ClaimJudging:

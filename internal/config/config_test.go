@@ -52,15 +52,45 @@ func loadErr(t *testing.T, body string, wants ...string) {
 	}
 }
 
-// oneStage is a minimal valid workflow, for tests about other keys.
-const oneStage = `workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+// rejectCase is a config that Load must reject, with what its error must
+// say.
+type rejectCase struct {
+	name  string
+	body  string
+	wants []string
+}
+
+// testRejects checks that Load rejects each case's body with an error
+// holding each of its wants.
+func testRejects(t *testing.T, cases []rejectCase) {
+	t.Helper()
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			loadErr(t, tt.body, tt.wants...)
+		})
+	}
+}
+
+// oneAgent declares one agent, claude, for tests about other keys.
+const oneAgent = `agents:
+  claude:
+    harness: {name: claude}
+`
+
+// oneRule is a minimal valid config, one agent and one rule of one action,
+// for tests about other keys. Its rules key is on line 4.
+const oneRule = oneAgent + ruleOnly
+
+// ruleOnly is oneRule without its agent.
+const ruleOnly = `rules:
+  implement:
+    labels:
+      ready: ready
+      running: in progress
+      success: ready to review
+      failure: needs attention
     actions:
-      - name: development
+      development:
         prompt: "Implement {{.Issue.Ref}}"
 `
 
@@ -69,45 +99,43 @@ func TestLoadDraftConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.PollInterval != 300*time.Second {
-		t.Errorf("PollInterval = %v, want 5m0s", cfg.PollInterval)
+	if cfg.PollInterval != 300*time.Second || cfg.MaxParallelIssues != 2 || cfg.Tracker != "github" {
+		t.Errorf("got poll %v, parallel %d, tracker %q; want 5m0s, 2, github",
+			cfg.PollInterval, cfg.MaxParallelIssues, cfg.Tracker)
 	}
-	if cfg.MaxParallelIssues != 2 {
-		t.Errorf("MaxParallelIssues = %d, want 2", cfg.MaxParallelIssues)
-	}
-	if cfg.Harness != "claude" {
-		t.Errorf("Harness = %q, want claude", cfg.Harness)
-	}
-	if cfg.Tracker != "github" {
-		t.Errorf("Tracker = %q, want github", cfg.Tracker)
-	}
-	wantWorkflow := []crew.Stage{
+	queue := crew.Queue{Name: "default", Slots: 2}
+	wantRules := []crew.Rule{
 		{
-			Name: "implement", Label: "ready", MovesTo: "in progress",
-			OnSuccess: "ready to review", OnFailure: "needs attention",
-			Queue: defaultQueue,
+			Name: "implement", Queue: queue, Notify: true,
+			Labels: crew.Labels{
+				Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
+			},
 			Actions: []crew.Action{
-				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
-				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
+				{Name: "acceptance", Agent: "claude", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
+				{Name: "development", Agent: "claude", Prompt: "Implement development for issue {{.Issue.Ref}}"},
 			},
 		},
 		{
-			Name: "review", Label: "ready to review", MovesTo: "in review",
-			OnSuccess: "ready to merge", OnFailure: "needs attention",
-			Queue: defaultQueue,
+			Name: "review", Queue: queue, Notify: true,
+			Labels: crew.Labels{
+				Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
+			},
 			Actions: []crew.Action{
-				{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"},
+				{Name: "custom_review", Agent: "claude", Prompt: "Review implementation for issue {{.Issue.Ref}}"},
 			},
 		},
 	}
-	if !reflect.DeepEqual(cfg.Workflow, wantWorkflow) {
-		t.Errorf("Workflow = %+v\nwant %+v", cfg.Workflow, wantWorkflow)
+	if !reflect.DeepEqual(cfg.Rules, wantRules) {
+		t.Errorf("Rules = %+v\nwant %+v", cfg.Rules, wantRules)
 	}
-
+	if len(cfg.Agents) != 1 || cfg.Agents[0].Name != "claude" || cfg.Agents[0].Harness != "claude" ||
+		!cfg.Agents[0].Used {
+		t.Fatalf("Agents = %+v, want claude on claude, in use", cfg.Agents)
+	}
 	var harness struct {
 		Model string `yaml:"model"`
 	}
-	if err := cfg.HarnessSection(&harness); err != nil {
+	if err := cfg.Agents[0].HarnessSection(&harness); err != nil {
 		t.Fatalf("HarnessSection: %v", err)
 	}
 	if harness.Model != "claude-opus-5-5" {
@@ -115,33 +143,59 @@ func TestLoadDraftConfig(t *testing.T) {
 	}
 }
 
+// Covers F1: a tracker, one agent and one rule of one action that names no
+// agent is a whole config.
+func TestLoadAMinimalConfig(t *testing.T) {
+	cfg := load(t, `tracker:
+  name: github
+agents:
+  developer:
+    harness:
+      name: claude
+rules:
+  development:
+    labels: {ready: todo, running: doing, success: review, failure: failed}
+    actions:
+      lfg:
+        prompt: "/lfg {{.Issue.Ref}}"
+`)
+	rule := cfg.Rules[0]
+	if got := rule.Actions[0].Agent; got != "developer" {
+		t.Errorf("the action's agent = %q, want developer", got)
+	}
+	if want := (crew.Queue{Name: "default", Slots: 2}); rule.Queue != want {
+		t.Errorf("Queue = %+v, want %+v", rule.Queue, want)
+	}
+	wantBoard := []crew.BoardColumn{{Name: "development", Labels: []string{"todo", "doing"}}}
+	if !reflect.DeepEqual(cfg.Board, wantBoard) || cfg.BoardWritten {
+		t.Errorf("Board = %+v (written %v), want %+v, not written", cfg.Board, cfg.BoardWritten, wantBoard)
+	}
+	if cfg.Bot != "" || cfg.Bots != nil {
+		t.Errorf("Bot = %q, Bots = %q, want none", cfg.Bot, cfg.Bots)
+	}
+}
+
 func TestLoadReadsEngineSettingsAsWritten(t *testing.T) {
-	cfg := load(t, `config:
-  poll_interval_seconds: 60
-  max_parallel_issues: 5
-  harness: codex
+	cfg := load(t, `poll_interval_seconds: 60
+max_parallel_issues: 5
+run_time_limit_seconds: 28800
+usage_in_status: true
 tracker:
   name: jira
-`+oneStage)
-	if cfg.PollInterval != time.Minute || cfg.MaxParallelIssues != 5 || cfg.Harness != "codex" || cfg.Tracker != "jira" {
-		t.Errorf("got poll %v, parallel %d, harness %q, tracker %q; want 1m0s, 5, codex, jira",
-			cfg.PollInterval, cfg.MaxParallelIssues, cfg.Harness, cfg.Tracker)
+`+oneRule)
+	if cfg.PollInterval != time.Minute || cfg.MaxParallelIssues != 5 || cfg.Tracker != "jira" ||
+		cfg.RunTimeLimit != 8*time.Hour || !cfg.UsageInStatus {
+		t.Errorf("got poll %v, parallel %d, tracker %q, run time %v, usage %v; want 1m0s, 5, jira, 8h0m0s, true",
+			cfg.PollInterval, cfg.MaxParallelIssues, cfg.Tracker, cfg.RunTimeLimit, cfg.UsageInStatus)
 	}
 }
 
 func TestLoadAppliesEngineDefaults(t *testing.T) {
-	cfg := load(t, oneStage)
-	if cfg.PollInterval != 300*time.Second {
-		t.Errorf("PollInterval = %v, want 5m0s", cfg.PollInterval)
-	}
-	if cfg.MaxParallelIssues != 2 {
-		t.Errorf("MaxParallelIssues = %d, want 2", cfg.MaxParallelIssues)
-	}
-	if cfg.Harness != "claude" {
-		t.Errorf("Harness = %q, want claude", cfg.Harness)
-	}
-	if cfg.Tracker != "github" {
-		t.Errorf("Tracker = %q, want github", cfg.Tracker)
+	cfg := load(t, "run_time_limit_seconds:\n"+oneRule)
+	if cfg.PollInterval != 300*time.Second || cfg.MaxParallelIssues != 2 || cfg.Tracker != "github" ||
+		cfg.RunTimeLimit != 0 || cfg.UsageInStatus {
+		t.Errorf("got poll %v, parallel %d, tracker %q, run time %v, usage %v; want 5m0s, 2, github, 0s, false",
+			cfg.PollInterval, cfg.MaxParallelIssues, cfg.Tracker, cfg.RunTimeLimit, cfg.UsageInStatus)
 	}
 
 	// The model's default belongs to the harness adapter, so an omitted model
@@ -149,7 +203,7 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 	harness := struct {
 		Model string `yaml:"model"`
 	}{Model: "adapter default"}
-	if err := cfg.HarnessSection(&harness); err != nil {
+	if err := cfg.Agents[0].HarnessSection(&harness); err != nil {
 		t.Fatalf("HarnessSection: %v", err)
 	}
 	if harness.Model != "adapter default" {
@@ -166,235 +220,10 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadReadsExtraLabels(t *testing.T) {
-	tests := []struct {
-		name string
-		body string
-		want []crew.State
-	}{
-		{name: "left out", body: oneStage, want: nil},
-		{
-			name: "a label with a description and a template",
-			body: `extra_labels:
-  - label: "crew:waiting brainstorm"
-    description: Ideas to brainstorm later
-    issue_template: idea.md
-  - label: crew:parked
-` + oneStage,
-			want: []crew.State{"crew:waiting brainstorm", "crew:parked"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).Extras; !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Extras = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-// crew runs none of the prompts under prompts:, skills do, so a config with
-// them loads like one without.
-func TestLoadAcceptsPrompts(t *testing.T) {
-	body := `prompts:
-  brainstorm: |-
-    Brainstorm {{.Issue.Ref}} ({{.Issue.URL}}): {{.Issue.Title}}, issue {{.Issue.Key}}.
-  triage: "Look at {{.Issue.Ref}}"
-` + oneStage
-	got, want := load(t, body), load(t, oneStage)
-	if !reflect.DeepEqual(got.Workflow, want.Workflow) || !reflect.DeepEqual(got.Extras, want.Extras) {
-		t.Errorf("Load = %+v, want %+v", got, want)
-	}
-}
-
-func TestLoadReadsUsageInStatus(t *testing.T) {
-	tests := []struct {
-		name string
-		body string
-		want bool
-	}{
-		{name: "left out", body: oneStage, want: false},
-		{name: "on", body: "config:\n  usage_in_status: true\n" + oneStage, want: true},
-		{name: "off", body: "config:\n  usage_in_status: false\n" + oneStage, want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).UsageInStatus; got != tt.want {
-				t.Errorf("UsageInStatus = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLoadReadsWhetherAStageIsOnTheBoard(t *testing.T) {
-	tests := []struct {
-		name string
-		key  string
-		want bool
-	}{
-		{name: "left out", key: "", want: false},
-		{name: "on", key: "on_board: true", want: false},
-		{name: "off", key: "on_board: false", want: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, takingStage(tt.key)).Workflow[0].OffBoard; got != tt.want {
-				t.Errorf("OffBoard = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLoadReadsTheRunTimeLimit(t *testing.T) {
-	tests := []struct {
-		name string
-		body string
-		want time.Duration
-	}{
-		{name: "left out", body: oneStage, want: 0},
-		{name: "eight hours", body: "config:\n  run_time_limit_seconds: 28800\n" + oneStage, want: 8 * time.Hour},
-		{name: "empty", body: "config:\n  run_time_limit_seconds:\n" + oneStage, want: 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).RunTimeLimit; got != tt.want {
-				t.Errorf("RunTimeLimit = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLoadReadsActionCheck(t *testing.T) {
-	stage := func(check string) string {
-		return `workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
-    actions:
-      - name: development
-        prompt: "Implement {{.Issue.Ref}}"
-` + check
-	}
-	tests := []struct {
-		name string
-		body string
-		want string
-	}{
-		{name: "left out", body: oneStage, want: ""},
-		{name: "a command", body: stage("        check: \"test -n \\\"$CREW_BRANCH\\\"\"\n"), want: `test -n "$CREW_BRANCH"`},
-		// A check is a shell command, never a template: braces stay as written.
-		{
-			name: "not a template",
-			body: stage("        check: \"echo '{{.Issue.Title}}'\"\n"),
-			want: "echo '{{.Issue.Title}}'",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).Workflow[0].Actions[0].Check; got != tt.want {
-				t.Errorf("Check = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-// matedStages is a workflow of two stages, implement with the actions
-// development and review, and fix with the action fix, each naming the mate
-// in mates, in that order; "" names none.
-func matedStages(mates ...string) string {
-	mate := func(i int) string {
-		if mates[i] == "" {
-			return ""
-		}
-		return "        mate: " + mates[i] + "\n"
-	}
-	return `workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to fix
-    on_failure: needs attention
-    actions:
-      - name: development
-        prompt: "Implement {{.Issue.Ref}}"
-` + mate(0) + `      - name: review
-        prompt: "Review {{.Issue.Ref}}"
-` + mate(1) + `  - name: fix
-    label: ready to fix
-    moves_to: fixing
-    on_success: done
-    on_failure: needs attention
-    actions:
-      - name: fix
-        prompt: "Fix {{.Issue.Ref}}"
-` + mate(2)
-}
-
-func TestLoadGivesEveryActionItsMate(t *testing.T) {
-	tests := []struct {
-		name      string
-		body      string
-		wantMate  string
-		wantMates []string
-		// want is each action's mate, in workflow order.
-		want []string
-	}{
-		{
-			// Covers R5.
-			name: "no mate anywhere", body: matedStages("", "", ""),
-			wantMate: "", wantMates: nil, want: []string{"", "", ""},
-		},
-		{
-			name: "an action's own mate, or the default", body: "config:\n  mate: ops\n" + matedStages("developer", "", ""),
-			wantMate: "ops", wantMates: []string{"ops", "developer"}, want: []string{"developer", "ops", "ops"},
-		},
-		{
-			name:     "each mate listed once, the default first",
-			body:     "config:\n  mate: ops\n" + matedStages("developer", "ops", "developer"),
-			wantMate: "ops", wantMates: []string{"ops", "developer"}, want: []string{"developer", "ops", "developer"},
-		},
-		{
-			name: "only the default", body: "config:\n  mate: ops\n" + matedStages("", "", ""),
-			wantMate: "ops", wantMates: []string{"ops"}, want: []string{"ops", "ops", "ops"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := load(t, tt.body)
-			if got := actionMates(cfg.Workflow); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("action mates = %q, want %q", got, tt.want)
-			}
-			if cfg.Mate != tt.wantMate {
-				t.Errorf("Mate = %q, want %q", cfg.Mate, tt.wantMate)
-			}
-			if !reflect.DeepEqual(cfg.Mates, tt.wantMates) {
-				t.Errorf("Mates = %q, want %q", cfg.Mates, tt.wantMates)
-			}
-		})
-	}
-}
-
-// actionMates returns the mate of each of workflow's actions, in workflow
-// order.
-func actionMates(workflow []crew.Stage) []string {
-	var out []string
-	for _, s := range workflow {
-		for _, a := range s.Actions {
-			out = append(out, a.Mate)
-		}
-	}
-	return out
-}
-
 func TestLoadRendersPromptForIssue(t *testing.T) {
-	cfg := load(t, oneStage)
-	if len(cfg.Workflow) != 1 || len(cfg.Workflow[0].Actions) != 1 {
-		t.Fatalf("Workflow = %+v, want one stage with one action", cfg.Workflow)
-	}
+	cfg := load(t, oneRule)
 	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
-	got, err := cfg.Workflow[0].Actions[0].Render(issue)
+	got, err := cfg.Rules[0].Actions[0].Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -420,63 +249,18 @@ func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	}
 }
 
-// exampleConfig is the repository's committed example of .crew/config.yaml;
-// the boss's own copy is ignored by git.
-var exampleConfig = filepath.Join("..", "..", ".crew", "config.example.yaml")
-
-// loadExample loads exampleConfig as a repository's .crew/config.yaml, linked
-// into a new repository root.
-func loadExample(t *testing.T) *config.Config {
-	t.Helper()
-	example, err := filepath.Abs(exampleConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(example, filepath.Join(root, ".crew", "config.yaml")); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.Load(root)
-	if err != nil {
-		t.Fatalf("Load(%s) = %v", exampleConfig, err)
-	}
-	return cfg
-}
-
-// crew runs on its own repository, so its example config must stay valid.
-func TestTheRepositorysOwnConfigLoads(t *testing.T) {
-	cfg := loadExample(t)
-	// The stages that open a pull request check that it exists; the others
-	// have no check (R15).
-	for _, s := range cfg.Workflow {
-		for _, a := range s.Actions {
-			want := s.Name == "development" || s.Name == "fix"
-			if got := a.Check != ""; got != want {
-				t.Errorf("%s/%s has a check: %v, want %v", s.Name, a.Name, got, want)
-			}
-		}
-	}
-	// The promote stages only hand an issue on, so the live view hides them.
-	for _, s := range cfg.Workflow {
-		want := strings.HasPrefix(s.Name, "promote ")
-		if s.OffBoard != want {
-			t.Errorf("%s is off the board: %v, want %v", s.Name, s.OffBoard, want)
-		}
-	}
-}
-
 // The section decoders are what adapter factories receive: they reject
 // unknown keys at any depth, naming the key path and its line.
 func TestSectionDecodersAreStrict(t *testing.T) {
-	cfg := load(t, `config:
-  model: claude-opus-5-5
-harness:
-  effort: high
+	cfg := load(t, `agents:
+  claude:
+    harness:
+      name: claude
+      model: claude-opus-5-5
+      effort: high
 tracker:
   name: github
+  bot: clerk
   lables:
     ready: todo
   columns:
@@ -484,23 +268,22 @@ tracker:
       state: ready
     - name: Doing
       stat: in progress
-`+oneStage)
+`+ruleOnly)
 
 	var harness struct {
 		Model  string `yaml:"model"`
 		Effort string `yaml:"effort"`
 	}
-	if err := cfg.HarnessSection(&harness); err != nil {
+	if err := cfg.Agents[0].HarnessSection(&harness); err != nil {
 		t.Fatalf("HarnessSection: %v", err)
 	}
 	if harness.Model != "claude-opus-5-5" || harness.Effort != "high" {
 		t.Errorf("harness = %+v, want model claude-opus-5-5 and effort high", harness)
 	}
-
 	var noEffort struct {
 		Model string `yaml:"model"`
 	}
-	assertErr(t, cfg.HarnessSection(&noEffort), "harness.effort", "line 4", "unknown key")
+	assertErr(t, cfg.Agents[0].HarnessSection(&noEffort), "agents.claude.harness.effort", "line 6", "unknown key")
 
 	var labelsTypo struct {
 		Labels  map[string]string `yaml:"labels"`
@@ -509,7 +292,7 @@ tracker:
 			State string `yaml:"state"`
 		} `yaml:"columns"`
 	}
-	assertErr(t, cfg.TrackerSection(&labelsTypo), "tracker.lables", "line 7", "unknown key")
+	assertErr(t, cfg.TrackerSection(&labelsTypo), "tracker.lables", "line 10", "unknown key")
 
 	var nestedTypo struct {
 		Lables  map[string]string `yaml:"lables"`
@@ -518,14 +301,14 @@ tracker:
 			State string `yaml:"state"`
 		} `yaml:"columns"`
 	}
-	assertErr(t, cfg.TrackerSection(&nestedTypo), "tracker.columns[1].stat", "line 13", "unknown key")
+	assertErr(t, cfg.TrackerSection(&nestedTypo), "tracker.columns[1].stat", "line 16", "unknown key")
 }
 
 func TestSectionDecoderNamesNestedTypeErrors(t *testing.T) {
 	cfg := load(t, `tracker:
   limits:
     per_poll: many
-`+oneStage)
+`+oneRule)
 	var tracker struct {
 		Limits struct {
 			PerPoll int `yaml:"per_poll"`
@@ -544,4 +327,67 @@ func assertErr(t *testing.T, err error, wants ...string) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
 	}
+}
+
+func TestLoadRejectsInvalidSettings(t *testing.T) {
+	testRejects(t, invalidSettings)
+}
+
+// invalidSettings are errors in the top-level keys and the tracker.
+var invalidSettings = []rejectCase{
+	{
+		name:  "unknown top-level key",
+		body:  "harnes: claude\n" + oneRule,
+		wants: []string{"harnes", "line 1", "unknown key"},
+	},
+	{
+		name:  "wrong type",
+		body:  "poll_interval_seconds: soon\n" + oneRule,
+		wants: []string{"poll_interval_seconds", "line 1", "soon"},
+	},
+	{
+		name:  "duplicate key",
+		body:  "max_parallel_issues: 2\nmax_parallel_issues: 3\n" + oneRule,
+		wants: []string{"max_parallel_issues", "line 2", "duplicate key, first set on line 1"},
+	},
+	{
+		name:  "poll interval not positive",
+		body:  "poll_interval_seconds: 0\n" + oneRule,
+		wants: []string{"poll_interval_seconds", "line 1", "positive"},
+	},
+	{
+		name:  "parallel issues not positive",
+		body:  "max_parallel_issues: -1\n" + oneRule,
+		wants: []string{"max_parallel_issues", "line 1", "positive"},
+	},
+	{
+		name:  "run time limit zero",
+		body:  "run_time_limit_seconds: 0\n" + oneRule,
+		wants: []string{"run_time_limit_seconds", "line 1", "positive"},
+	},
+	{
+		name:  "run time limit as a duration",
+		body:  "run_time_limit_seconds: 8h\n" + oneRule,
+		wants: []string{"run_time_limit_seconds", "line 1", "8h"},
+	},
+	{
+		name:  "usage in status not a boolean",
+		body:  "usage_in_status: maybe\n" + oneRule,
+		wants: []string{"usage_in_status", "line 1", "maybe"},
+	},
+	{
+		name:  "tracker.bot of the wrong type",
+		body:  "tracker:\n  bot: {name: ops}\n" + oneRule,
+		wants: []string{"tracker.bot", "line 2"},
+	},
+	{
+		name:  "tracker is a list",
+		body:  "tracker: [github]\n" + oneRule,
+		wants: []string{"tracker", "line 1", "must be a mapping"},
+	},
+	{
+		name:  "the config is a list",
+		body:  "- rules\n",
+		wants: []string{"line 1", "must be a mapping", "rules"},
+	},
 }

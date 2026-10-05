@@ -11,7 +11,7 @@ import (
 // action gets its name and its log's repository-relative path, or a line
 // saying it failed before it had a log. A reason is a session's or a tool's
 // last words, which can hold commands and their output, so the comment never
-// carries it: the boss reads it in the log or in crew's output.
+// carries it: you read it in the log or in crew's output.
 func renderReport(r crew.FailureReport) string {
 	var b strings.Builder
 	noun := "action"
@@ -55,7 +55,7 @@ func longestBacktickRun(s string) int {
 }
 
 // renderStop renders a pull request report's stop comment, for a report
-// with an end, in Markdown: how the stage ended on the issue and the label
+// with an end, in Markdown: how the rule ended on the issue and the label
 // the issue and the pull request moved to, each failed action as the status
 // comment words it, that nobody watches the pull request any more, then
 // link. Like the status comment, it carries no session's words.
@@ -66,7 +66,7 @@ func renderStop(r crew.PullRequestReport, link string) string {
 		outcome = "failed"
 	}
 	fmt.Fprintf(&b, "crew: %s %s on %s, which moved to %s, as did this pull request.\n",
-		codeSpan(r.End.Stage), outcome, r.IssueRef, codeSpan(string(r.State)))
+		codeSpan(r.End.Rule), outcome, r.IssueRef, codeSpan(string(r.State)))
 	for _, a := range r.End.Actions {
 		if a.State == crew.ActionFailed {
 			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(a.Name)+"**", a))

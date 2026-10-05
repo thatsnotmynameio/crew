@@ -26,14 +26,14 @@ const (
 
 // budget is how much of each section the view draws: the rows of Events
 // and of Handled, the cards a column, whether the said lines show, and
-// whether each mate's second line shows. A negative card count means all
+// whether each bot's second line shows. A negative card count means all
 // of them (KTD8).
 type budget struct {
 	events, handled, cards int
-	said, mateDetails      bool
+	said, botDetails       bool
 }
 
-// View renders the dashboard (R1): the header, the warnings, Mates, Workflow,
+// View renders the dashboard (R1): the header, the warnings, Bots, Board,
 // Actions, Queues beside Handled, Events and the key-help line, fitted to
 // the window, with the keys over it while help shows. It also sets the
 // window title, the tab progress and focus reports (R23, R24, KTD6).
@@ -55,7 +55,7 @@ func (m Model) View() tea.View {
 
 // fitted returns the view's rows, at most the window's height of them when
 // the height is known, giving rows up in KTD8's order: Events, Handled, the
-// said lines, the cards past a column's limit, the mates' second lines
+// said lines, the cards past a column's limit, the bots' second lines
 // (R13), then the rows above the key-help line.
 func (m Model) fitted() []string {
 	b := m.budget()
@@ -72,7 +72,7 @@ func (m Model) fitted() []string {
 
 // budget returns the largest budget whose rows fit the window (KTD8).
 func (m Model) budget() budget {
-	b := budget{events: scrollRows, handled: scrollRows, cards: -1, said: true, mateDetails: true}
+	b := budget{events: scrollRows, handled: scrollRows, cards: -1, said: true, botDetails: true}
 	if m.height <= 0 {
 		return b
 	}
@@ -91,9 +91,9 @@ func (m Model) budget() budget {
 	if o, t := over(), m.tallestColumn(); o > 0 && t > 1 {
 		b.cards = max(t-(o+cardRows)/cardRows, 1)
 	}
-	// Mates gives way last, just before the cut (KTD11).
+	// Bots gives way last, just before the cut (KTD11).
 	if over() > 0 {
-		b.mateDetails = false
+		b.botDetails = false
 	}
 	return b
 }
@@ -104,11 +104,11 @@ func (m Model) rows(b budget) []string {
 	for _, w := range m.warnings() {
 		out = append(out, m.styles.warning.Render("warning: ")+m.styles.text.Render(clean(w)))
 	}
-	summary, mates := m.matesSection(b.mateDetails)
-	out = append(out, "", m.rule("Mates", summary, m.width, false))
-	out = append(out, mates...)
+	summary, bots := m.botsSection(b.botDetails)
+	out = append(out, "", m.rule("Bots", summary, m.width, false))
+	out = append(out, bots...)
 	summary, board := m.board(b.cards)
-	out = append(out, "", m.rule("Workflow", summary, m.width, false))
+	out = append(out, "", m.rule("Board", summary, m.width, false))
 	out = append(out, board...)
 	summary, acts := m.actionsSection(b.said)
 	out = append(out, "", m.rule("Actions", summary, m.width, false))
@@ -121,11 +121,11 @@ func (m Model) rows(b budget) []string {
 	return append(out, "", m.keyHelp())
 }
 
-// warnings are the startup warnings, then each mate's live warnings, in
-// the order of the mates (R11, R12, KTD11).
+// warnings are the startup warnings, then each bot's live warnings, in
+// the order of the bots (R11, R12, KTD11).
 func (m Model) warnings() []string {
 	out := slices.Clone(m.cfg.Warnings)
-	for _, e := range m.snap.Mates {
+	for _, e := range m.snap.Bots {
 		out = append(out, e.Warnings...)
 	}
 	return out

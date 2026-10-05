@@ -1,4 +1,4 @@
-// Package core is crew's workflow as a pure reducer: Model.Update takes an
+// Package core is crew's rules as a pure reducer: Model.Update takes an
 // Input and returns the Commands to run and the domain Events to publish.
 // It performs no I/O, reads no clock, starts no goroutine and builds no path;
 // times and paths arrive as input data (R11, KTD2, KTD12). The engine's loop
@@ -20,7 +20,7 @@ import (
 // Model is the core's state. Its zero value is not usable; use New. A Model
 // is not safe for concurrent use: one goroutine owns it (KTD2).
 type Model struct {
-	stages      []crew.Stage
+	rules       []crew.Rule
 	maxParallel int
 	issues      []*heldIssue // in the order they were taken
 	listing     bool         // a ListIssues is outstanding
@@ -31,12 +31,12 @@ type Model struct {
 	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
 	stopped     bool         // the Stopped event was emitted
 	lastID      CallID
-	// queueOf holds the queue each stage runs in, by stage index, as an
+	// queueOf holds the queue each rule runs in, by rule index, as an
 	// index into queues (KTD2). maxParallel caps every queue together.
 	queueOf []int
-	// queues holds each queue some stage runs in, with the slots it has.
+	// queues holds each queue some rule runs in, with the slots it has.
 	queues []crew.Queue
-	// slots is what the stages can use: the queues' slots summed, at most
+	// slots is what the rules can use: the queues' slots summed, at most
 	// maxParallel (KTD4).
 	slots int
 	// statuses holds each issue's status slot, by issue key; nil when
@@ -46,12 +46,12 @@ type Model struct {
 	// it has a report not settled; nil when pull request reports are off
 	// (KTD3).
 	pullRequests map[string]*pullRequestSlot
-	// handled holds one entry per issue whose stage ended this run, in the
+	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
-	// runs counts the stage runs statuses were reported for, for their ids.
+	// runs counts the rule runs statuses were reported for, for their ids.
 	runs int
-	// lastRuns holds the last run record of each issue, stage and action; nil
+	// lastRuns holds the last run record of each issue, rule and action; nil
 	// when the model records no runs (KTD1, KTD2).
 	lastRuns map[runKey]RunRecord
 	// reopening is set when the workspace can reopen a failed run's
@@ -65,25 +65,25 @@ type Model struct {
 	statusUsage bool
 	// spent sums what every session that ended this run used (R14).
 	spent crew.Spend
-	// otherKinds holds, by item key, the stage label of each item the last
-	// listing found in the label of a stage of the other kind, which was
+	// otherKinds holds, by item key, the rule label of each item the last
+	// listing found in the label of a rule of the other kind, which was
 	// reported then or before (#92).
 	otherKinds map[string]crew.State
 	// board is the board the model reads; nil when it reads none (KTD4).
 	board *board
-	// mates is what the model knows of the identities crew acts as (KTD3).
-	mates mates
+	// bots is what the model knows of the identities crew acts as (KTD3).
+	bots bots
 }
 
 // heldIssue is an issue the core holds, from its take until its verdict calls
 // are settled.
 type heldIssue struct {
 	issue   crew.Issue
-	stage   int // index into Model.stages
+	rule    int // index into Model.rules
 	claim   Claim
-	actions []*actionRun // in the stage's action order
+	actions []*actionRun // in the rule's action order
 	calls   []*call      // the take move, then the verdict calls
-	taken   time.Time    // when the stage took the issue
+	taken   time.Time    // when the rule took the issue
 	// verdict is the issue's handled entry, set once every action ended and
 	// completed by its verdict move's result; nil before.
 	verdict *HandledView
@@ -113,7 +113,8 @@ type actionRun struct {
 	said      string // what its running session last said
 	outcome   crew.Outcome
 	check     string            // its check command; empty when it has none
-	mate      string            // the mate its session and check act as; empty for the boss
+	agent     string            // the agent whose harness runs its session
+	bot       string            // the bot its session and check act as; empty for you
 	stopped   bool              // a StopCheck was sent for its check
 	cause     crew.FailureCause // what made it fail, once it ended failed
 	// prev is the key's run record from before this run, set when the run
@@ -155,36 +156,36 @@ type call struct {
 	final    bool // its current or last attempt is its one try after stop
 }
 
-// New returns a model for workflow, whose stages are in config order and
+// New returns a model for rules, whose rules are in config order and
 // already validated, taking at most maxParallelIssues issues at once (R6),
-// and for each stage at most its queue's slots (R6, KTD2).
-func New(workflow []crew.Stage, maxParallelIssues int, opts ...Option) *Model {
-	stages := make([]crew.Stage, len(workflow))
-	for i, s := range workflow {
-		s.Actions = slices.Clone(s.Actions)
-		stages[i] = s
+// and for each rule at most its queue's slots (R6, KTD2).
+func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
+	own := make([]crew.Rule, len(rules))
+	for i, r := range rules {
+		r.Actions = slices.Clone(r.Actions)
+		own[i] = r
 	}
-	m := &Model{stages: stages, maxParallel: maxParallelIssues}
-	m.queueOf, m.queues, m.slots = queues(stages, maxParallelIssues)
+	m := &Model{rules: own, maxParallel: maxParallelIssues}
+	m.queueOf, m.queues, m.slots = queues(own, maxParallelIssues)
 	for _, o := range opts {
 		o(m)
 	}
 	return m
 }
 
-// queues returns the queue each of stages runs in, as an index into the
-// second result; each queue some stage runs in, told apart by name, with its
-// slots; and what the stages can use, the sum of those slots at most
-// maxParallelIssues (KTD2, KTD4). The stages with the zero Queue share one
+// queues returns the queue each of rules runs in, as an index into the
+// second result; each queue some rule runs in, told apart by name, with its
+// slots; and what the rules can use, the sum of those slots at most
+// maxParallelIssues (KTD2, KTD4). The rules with the zero Queue share one
 // unnamed queue of maxParallelIssues slots, so the global cap alone limits
 // them.
-func queues(stages []crew.Stage, maxParallelIssues int) ([]int, []crew.Queue, int) {
-	queueOf := make([]int, len(stages))
+func queues(rules []crew.Rule, maxParallelIssues int) ([]int, []crew.Queue, int) {
+	queueOf := make([]int, len(rules))
 	var out []crew.Queue
 	usable := 0
 	index := map[string]int{}
-	for i, s := range stages {
-		queue := s.Queue
+	for i, r := range rules {
+		queue := r.Queue
 		if queue == (crew.Queue{}) {
 			queue.Slots = maxParallelIssues
 		}
@@ -293,10 +294,10 @@ const (
 	// PhaseRunning: its session runs.
 	PhaseRunning
 	// PhaseChecking: its session succeeded and its check runs. The action
-	// has not ended: it is still running for the boss.
+	// has not ended: it is still running for you.
 	PhaseChecking
 	// PhaseFinishing: its outcome is known and it waits for the lookup of
-	// its pull request. It is still running for the boss.
+	// its pull request. It is still running for you.
 	PhaseFinishing
 	// PhaseEnded: it ended; see its Outcome.
 	PhaseEnded
@@ -335,43 +336,45 @@ type View struct {
 	TimeUp bool
 	// Issues are the held issues, in the order they were taken.
 	Issues []IssueView
-	// Queues are the queues some stage runs in, in the order of the first
-	// stage that runs in each.
+	// Queues are the queues some rule runs in, in the order of the first
+	// rule that runs in each.
 	Queues []QueueView
 	// Owed are the tracker calls waiting for a retry: the held issues'
 	// moves and failure reports, then the pull request reports.
 	Owed []Call
-	// Handled are the issues whose stage ended this run, one entry per
-	// issue holding its latest stage, in the order they were released. An
-	// issue held again keeps its entry, marked HeldBy, until its new stage
+	// Handled are the issues whose rule ended this run, one entry per
+	// issue holding its latest rule, in the order they were released. An
+	// issue held again keeps its entry, marked HeldBy, until its new rule
 	// ends (#109).
 	Handled []HandledView
 	// Spent sums what every session that ended this run used, including
 	// those of entries Handled no longer shows (R14).
 	Spent crew.Spend
-	// Board is the board's issues, as the last board read found them with
-	// crew's moves since applied, oldest first and then by key (KTD4, KTD6);
-	// nil when the model reads no board (ListingBoard).
+	// Board is the board's items, as the last board read or listing found
+	// them with crew's moves since applied, oldest first and then by key
+	// (KTD4, KTD6, KTD10); nil when the model has no board (ListingBoard,
+	// BoardFromListings).
 	Board []crew.BoardIssue
-	// BoardFailure says why the last board read failed; empty once a read
-	// succeeds (KTD5).
+	// BoardFailure says why the last board read, or the last listing of a
+	// board filled from the listings, failed; empty once one succeeds
+	// (KTD5).
 	BoardFailure string
-	// Mates are the configured mates, the default first, in config order,
-	// then the boss's entry (KTD3).
-	Mates []MateView
+	// Bots are the configured bots, the default first, in config order,
+	// then the "you" entry (KTD3).
+	Bots []BotView
 }
 
-// HandledView is an issue whose stage ended this run, as that stage left it.
+// HandledView is an issue whose rule ended this run, as that rule left it.
 type HandledView struct {
 	Issue crew.Issue
-	Stage string
-	// To is the state the stage's verdict moved the issue to, or meant to
+	Rule  string
+	// To is the state the rule's verdict moved the issue to, or meant to
 	// when Move is MoveDropped.
 	To crew.State
-	// Failures are the stage's failed actions, in its action order; nil
+	// Failures are the rule's failed actions, in its action order; nil
 	// when every action succeeded.
 	Failures []crew.ActionFailure
-	// Actions are the stage's actions, in its action order, with what each
+	// Actions are the rule's actions, in its action order, with what each
 	// spent and the pull request it opened (R12).
 	Actions []HandledAction
 	// Move is MoveDone, or MoveDropped when crew gave the verdict move up.
@@ -380,14 +383,14 @@ type HandledView struct {
 	DropReason string
 	// Gone is set when a listing requested after the verdict move landed, or
 	// was given up, did not find the issue alone in To, and To is the label
-	// of a stage: only those states are listed (KTD4). A blocked issue stays
+	// of a rule: only those states are listed (KTD4). A blocked issue stays
 	// in its label and stays listed, so it is not gone; an issue in two crew
 	// states is, since crew skips it. Each such listing decides it anew.
 	Gone bool
-	// HeldBy names the stage that holds the issue again; empty while no
-	// stage does (#109).
+	// HeldBy names the rule that holds the issue again; empty while no
+	// rule does (#109).
 	HeldBy string
-	// Taken is when the stage took the issue; Ended is when its last action
+	// Taken is when the rule took the issue; Ended is when its last action
 	// ended.
 	Taken time.Time
 	Ended time.Time
@@ -403,7 +406,7 @@ type HandledAction struct {
 	PullRequest crew.PullRequest
 }
 
-// Spend sums what the stage's sessions used.
+// Spend sums what the rule's sessions used.
 func (h HandledView) Spend() crew.Spend {
 	var sum crew.Spend
 	for _, a := range h.Actions {
@@ -412,13 +415,13 @@ func (h HandledView) Spend() crew.Spend {
 	return sum
 }
 
-// NeedsAttention reports whether the boss should look at the issue: an
+// NeedsAttention reports whether you should look at the issue: an
 // action failed, or crew gave the verdict move up.
 func (h HandledView) NeedsAttention() bool {
 	return len(h.Failures) > 0 || h.Move == crew.MoveDropped
 }
 
-// Duration is the stage's time, from the take to the verdict.
+// Duration is the rule's time, from the take to the verdict.
 func (h HandledView) Duration() time.Duration { return h.Ended.Sub(h.Taken) }
 
 // clone returns a copy of h that shares no memory with it.
@@ -429,9 +432,9 @@ func (h HandledView) clone() HandledView {
 	return h
 }
 
-// QueueView is one queue some stage runs in.
+// QueueView is one queue some rule runs in.
 type QueueView struct {
-	// Name is the queue's name; empty for the queue the stages with the
+	// Name is the queue's name; empty for the queue the rules with the
 	// zero crew.Queue share.
 	Name string
 	// Slots is how many issues the queue may hold at once.
@@ -447,8 +450,8 @@ func (q QueueView) Free() int { return max(q.Slots-q.Busy, 0) }
 // IssueView is one held issue.
 type IssueView struct {
 	Issue crew.Issue
-	Stage string
-	// Queue is the name of the queue the issue's stage runs in.
+	Rule  string
+	// Queue is the name of the queue the issue's rule runs in.
 	Queue   string
 	Claim   Claim
 	Actions []ActionView
@@ -478,8 +481,8 @@ func (m *Model) View() View {
 	}
 	for _, h := range m.issues {
 		iv := IssueView{
-			Issue: h.issue.Clone(), Stage: m.stages[h.stage].Name,
-			Queue: m.queues[m.queueOf[h.stage]].Name, Claim: h.claim,
+			Issue: h.issue.Clone(), Rule: m.rules[h.rule].Name,
+			Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim,
 		}
 		for _, a := range h.actions {
 			iv.Actions = append(iv.Actions, ActionView{
@@ -498,14 +501,14 @@ func (m *Model) View() View {
 	for _, e := range m.handled {
 		hv := e.view.clone()
 		if h := m.held(hv.Issue.Key); h != nil {
-			hv.HeldBy = m.stages[h.stage].Name
+			hv.HeldBy = m.rules[h.rule].Name
 		}
 		v.Handled = append(v.Handled, hv)
 	}
 	if m.board != nil {
 		v.Board, v.BoardFailure = m.board.view(), m.board.failure
 	}
-	v.Mates = m.matesView()
+	v.Bots = m.botsView()
 	return v
 }
 

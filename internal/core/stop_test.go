@@ -199,7 +199,7 @@ func TestStopWithNothingHeldStopsAtOnceAndPollsNoMore(t *testing.T) {
 		t.Fatal("not stopped with nothing held")
 	}
 	hasEvent(t, events, core.Stopped{At: d.now})
-	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, readyToReview}})
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
 	wantCommands(t, cmds)

@@ -1,6 +1,7 @@
 package lines_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -65,14 +66,14 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 	issue := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
 	src := newSource(0,
 		engine.Update{Events: []core.Event{
-			core.IssueTaken{At: at("09:00:01"), Issue: issue, Stage: "implement", From: "ready", To: "in progress"},
+			core.IssueTaken{At: at("09:00:01"), Issue: issue, Rule: "implement", From: "ready", To: "in progress"},
 		}},
 		engine.Update{Events: []core.Event{
-			core.ActionStarted{At: at("09:00:02"), IssueKey: "1", IssueRef: "#1", Stage: "implement", Action: "code",
+			core.ActionStarted{At: at("09:00:02"), IssueKey: "1", IssueRef: "#1", Rule: "implement", Action: "code",
 				Workspace: "1-code", Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
 		}},
 		engine.Update{Events: []core.Event{
-			core.ActionEnded{At: at("09:12:30"), IssueKey: "1", IssueRef: "#1", Stage: "implement", Action: "code",
+			core.ActionEnded{At: at("09:12:30"), IssueKey: "1", IssueRef: "#1", Rule: "implement", Action: "code",
 				Outcome: crew.Outcome{Succeeded: true, Reason: "Opened pull request #7"}},
 			core.IssueMoved{At: at("09:12:31"), IssueKey: "1", IssueRef: "#1", From: "in progress", To: "ready to review"},
 		}},
@@ -100,25 +101,25 @@ var sentences = []struct {
 	event core.Event
 	want  string
 }{
-	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log"},
 		"#9 development/lfg started on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
 		"#9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-	{core.WorkspaceMissing{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+	{core.WorkspaceMissing{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg"},
 		"#9 development/lfg: worktree issue-9-lfg is gone, creating a new one"},
-	{core.RunNotRecorded{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Stage: "development", Action: "lfg",
+	{core.RunNotRecorded{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
 		Reason: "disk full"},
 		"could not record #9 development/lfg's run, so a restart may not resume it: disk full"},
-	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
+	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "review", Action: "check",
 		Outcome: crew.Outcome{Reason: "session exited with status 1"}},
 		"#2 review/check failed: session exited with status 1"},
-	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "review", Action: "check",
+	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "review", Action: "check",
 		Outcome: crew.Outcome{Succeeded: true}},
 		"#2 review/check succeeded"},
-	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Stage: "implement", Action: "lfg",
+	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "implement", Action: "lfg",
 		Outcome: crew.Outcome{Reason: "the check failed: no open pull request from crew/issue-2-lfg"}},
 		"#2 implement/lfg failed: the check failed: no open pull request from crew/issue-2-lfg"},
 	{core.FailureReported{At: at("10:00:00"), IssueRef: "#2"},
@@ -126,10 +127,10 @@ var sentences = []struct {
 	{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
 		"skipped #3: it carries 2 crew labels (ready, in progress)"},
 	{core.IssueOfOtherKind{At: at("10:00:00"), IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
-		Label: "crew:development:ready", Stage: "development", Takes: crew.KindIssue},
+		Label: "crew:development:ready", Rule: "development", Takes: crew.KindIssue},
 		"left #90 alone: it is a pull request, and crew:development:ready is the label of development, which takes issues"},
 	{core.IssueOfOtherKind{At: at("10:00:00"), IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
-		Label: "fix review ready", Stage: "fix review", Takes: crew.KindPullRequest},
+		Label: "fix review ready", Rule: "fix review", Takes: crew.KindPullRequest},
 		"left #42 alone: it is an issue, and fix review ready is the label of fix review, which takes pull requests"},
 	{core.PollDone{At: at("10:00:00"), Listed: 3, Taken: 1},
 		"poll: listed 3 issues, took 1"},
@@ -161,12 +162,12 @@ var sentences = []struct {
 		"could not update the status comment on #2: the tracker refused: issue is locked"},
 	{core.WindingDown{At: at("10:00:00"), Limit: time.Hour},
 		"run time of 1h0m0s is up: taking no new issues, winding down"},
-	// Covers AE4 (lines side): the line names the mate and its full warning.
-	{core.MateStopped{At: at("10:00:00"), Mate: "clerk", Reason: "writes as you",
-		Warning: "crew's writes as mate clerk went back to you: HTTP 401"},
-		"mate clerk stopped acting: crew's writes as mate clerk went back to you: HTTP 401"},
-	{core.MateActsAgain{At: at("10:00:00"), Mate: "developer"},
-		"mate developer acts again: its token renewed"},
+	// Covers AE4 (lines side): the line names the bot and its full warning.
+	{core.BotStopped{At: at("10:00:00"), Bot: "clerk", Reason: "writes as you",
+		Warning: "crew's writes as bot clerk went back to you: HTTP 401"},
+		"bot clerk stopped acting: crew's writes as bot clerk went back to you: HTTP 401"},
+	{core.BotActsAgain{At: at("10:00:00"), Bot: "developer"},
+		"bot developer acts again: its token renewed"},
 	{core.Stopped{At: at("10:00:00")},
 		"stopped"},
 }
@@ -178,6 +179,16 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 				t.Errorf("Text = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Covers R17 (lines side): no sentence says boss, mate, stage or workflow.
+func TestNoSentenceSaysAnOldWord(t *testing.T) {
+	old := regexp.MustCompile(`(?i)\b(boss(es)?|mates?|stages?|workflows?)\b`)
+	for _, tt := range sentences {
+		if found := old.FindAllString(lines.Text(tt.event), -1); len(found) > 0 {
+			t.Errorf("%q says %q", lines.Text(tt.event), found)
+		}
 	}
 }
 
@@ -209,7 +220,7 @@ func TestNoDropsPrintNoDropLine(t *testing.T) {
 func TestANoticeOfAnItemOfTheOtherKindPrintsAtItsPollsTime(t *testing.T) {
 	src := newSource(0, engine.Update{Events: []core.Event{
 		core.IssueOfOtherKind{At: at("12:30:00"), IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
-			Label: "ready", Stage: "implement", Takes: crew.KindIssue},
+			Label: "ready", Rule: "implement", Takes: crew.KindIssue},
 	}})
 
 	got := render(t, src, at("12:30:05"))
@@ -227,8 +238,8 @@ func TestEachStartupWarningPrintsOnceBeforeTheFirstEvent(t *testing.T) {
 		engine.Update{Events: []core.Event{core.Stopped{At: at("12:00:03")}}},
 	)
 	var out strings.Builder
-	warning := "mate ops has no key on this machine for thatsnotmynameio; " +
-		"run `crew mates create ops` in this repository"
+	warning := "bot ops has no key on this machine for thatsnotmynameio; " +
+		"run `crew bots create ops` in this repository"
 	if err := lines.Run(src, &out, zone, func() time.Time { return at("12:00:01") }, warning); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

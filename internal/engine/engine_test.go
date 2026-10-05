@@ -22,7 +22,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// The workflow's states in these tests, as label text.
+// The rules' states in these tests, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -32,21 +32,21 @@ const (
 
 const poll = 300 * time.Second
 
-// implement is the draft config's implement stage (KTD5).
-var implement = crew.Stage{
-	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
-	OnFailure: needsAttention,
+// implement is the draft config's implement rule (KTD5).
+var implement = crew.Rule{
+	Name:   "implement",
+	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 	Actions: []crew.Action{
 		{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
 		{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
 	},
 }
 
-// develop is a stage with one action, for tests about one session per issue.
-var develop = crew.Stage{
-	Name: "implement", Label: ready, MovesTo: inProgress, OnSuccess: readyToReview,
-	OnFailure: needsAttention,
-	Actions:   []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
+// develop is a rule with one action, for tests about one session per issue.
+var develop = crew.Rule{
+	Name:    "implement",
+	Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+	Actions: []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
 }
 
 // epoch dates the issues: issue n was created n minutes after it, so #1 is
@@ -74,9 +74,9 @@ type rig struct {
 	queue *engine.Queue
 }
 
-// config returns a config over tracker for workflow, with a fake harness and
+// config returns a config over tracker for rules, with a fake harness and
 // workspace, rooted in a fresh repository directory.
-func config(t *testing.T, tracker port.Tracker, workflow ...crew.Stage) engine.Config {
+func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Config {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "home", "repo")
 	worktrees := filepath.Join(root, ".crew", "worktrees")
@@ -84,15 +84,20 @@ func config(t *testing.T, tracker port.Tracker, workflow ...crew.Stage) engine.C
 		t.Fatal(err)
 	}
 	return engine.Config{
-		Workflow:          workflow,
+		Rules:             rules,
 		MaxParallelIssues: 2,
 		PollInterval:      poll,
 		Tracker:           tracker,
-		Harness:           fake.NewHarness(),
+		Harnesses:         harnesses(fake.NewHarness()),
 		Workspace:         fake.NewWorkspace(worktrees),
 		Root:              root,
 		Home:              filepath.Dir(root),
 	}
+}
+
+// harnesses gives h to the actions that name no agent, as the only harness.
+func harnesses(h port.Harness) []engine.AgentHarness {
+	return []engine.AgentHarness{{Harness: h}}
 }
 
 // start runs an engine for cfg. The test must stop it and call wait.
@@ -112,7 +117,7 @@ func run(t *testing.T, cfg engine.Config, e *engine.Engine) *rig {
 		t: t, root: cfg.Root, engine: e, cancel: cancel, done: make(chan error, 1), final: make(chan engine.Update, 1),
 		queue: queue,
 	}
-	if h, ok := cfg.Harness.(*fake.Harness); ok {
+	if h, ok := cfg.Harnesses[0].Harness.(*fake.Harness); ok {
 		r.harness = h
 	}
 	go func() {

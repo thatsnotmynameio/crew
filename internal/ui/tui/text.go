@@ -51,18 +51,6 @@ func fit(s string, width int) string {
 	return ansi.Truncate(s, width, ellipsis)
 }
 
-// fitLeft cuts s to width cells from the left, starting a cut line with an
-// ellipsis: the end of a crew label tells its states apart (KTD9).
-func fitLeft(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if w := lipgloss.Width(s); w > width {
-		return ansi.TruncateLeft(s, w-width+1, ellipsis)
-	}
-	return s
-}
-
 // pad cuts or pads s, which may be styled, to exactly width cells.
 func pad(s string, width int) string {
 	s = fit(s, width)

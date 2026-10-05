@@ -12,11 +12,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// defaultClerkSlots is clerk's size when config.clerk_slots is left out.
-const defaultClerkSlots = 1
-
-// queueTable is the queues a stage may name: clerk, the declared queues in
-// file order, then default.
+// queueTable is the queues a rule may name: the declared queues in file
+// order, then default.
 type queueTable []crew.Queue
 
 // find returns the queue called name.
@@ -38,74 +35,41 @@ func (t queueTable) names() string {
 	return strings.Join(names, ", ")
 }
 
-// queues splits limit, max_parallel_issues, into the queues of config:, and
-// returns what is wrong with them. A limit that is not positive is reported
-// elsewhere, so the sums that depend on it are not checked. Every declared
-// queue stays in the table, even one whose slots are wrong, so a stage that
-// names it is not reported again.
-func queues(s *settings, limit int) (queueTable, []error) {
-	clerk, clerkOK, err := clerkSlots(s, limit)
+// queues splits limit, max_parallel_issues, into the queues n declares and
+// default, which gets the slots they leave, and returns what is wrong with
+// them. A limit that is not positive is reported elsewhere, so the sum that
+// depends on it is not checked. Every declared queue stays in the table,
+// even one whose slots are wrong, so a rule that names it is not reported
+// again.
+func queues(n *yaml.Node, limit int) (queueTable, []error) {
+	declared, sum, err := declaredQueues(n)
 	errs := []error{err}
-	declared, sum, err := declaredQueues(&s.Queues)
-	errs = append(errs, err)
-	free := limit - clerk - sum
-	if clerkOK && free < 0 {
-		errs = append(errs, keyError("config.queues", s.Queues.Line,
-			fmt.Sprintf("the default queue would have %d - %d - %d = %d slots "+
-				"(max_parallel_issues - clerk_slots - these queues' slots); it must have 0 or more",
-				limit, clerk, sum, free)))
+	free := limit - sum
+	if limit > 0 && free < 0 {
+		errs = append(errs, keyError("queues", n.Line,
+			fmt.Sprintf("the default queue would have %d - %d = %d slots "+
+				"(max_parallel_issues - these queues' slots); it must have 0 or more",
+				limit, sum, free)))
 	}
-	table := append(queueTable{{Name: crew.ClerkQueue, Slots: clerk}}, declared...)
-	table = append(table, crew.Queue{Name: crew.DefaultQueue, Slots: free})
-	return table, errs
+	return append(queueTable(declared), crew.Queue{Name: crew.DefaultQueue, Slots: free}), errs
 }
 
-// clerkSlots returns clerk's slots, whether they and limit are valid, so
-// default's slots are worth checking, and what is wrong with them.
-func clerkSlots(s *settings, limit int) (int, bool, error) {
-	clerk := s.ClerkSlots
-	switch {
-	case clerk.line == 0 && limit > 0 && limit <= defaultClerkSlots:
-		return defaultClerkSlots, false, keyError("config.max_parallel_issues", s.MaxParallelIssues.line,
-			fmt.Sprintf("must be at least %d, to leave room for the %d-slot clerk queue",
-				defaultClerkSlots+1, defaultClerkSlots))
-	case clerk.line == 0:
-		return defaultClerkSlots, limit > 0, nil
-	case clerk.value < 1:
-		return clerk.value, false, keyError("config.clerk_slots", clerk.line, "must be a positive number of slots")
-	case limit > 0 && clerk.value >= limit:
-		return clerk.value, false, keyError("config.clerk_slots", clerk.line,
-			fmt.Sprintf("must be below max_parallel_issues (%d), which the other queues share too", limit))
-	}
-	return clerk.value, limit > 0, nil
-}
-
-// declaredQueues reads config.queues: a mapping from a queue's name to its
-// slots. It returns the queues in file order, the sum of their valid slots,
-// and what is wrong with them.
+// declaredQueues reads queues: a mapping from a queue's name to its slots.
+// It returns the queues in file order, the sum of their valid slots, and
+// what is wrong with them.
 func declaredQueues(n *yaml.Node) ([]crew.Queue, int, error) {
-	section, err := mapping(n, "config.queues")
-	if err != nil {
-		return nil, 0, err
-	}
-	var errs []error
+	section, err := named(n, "queues")
+	errs := []error{err}
 	out := make([]crew.Queue, 0, len(section))
 	sum := 0
-	seen := make(map[string]int, len(section))
 	for _, e := range section {
-		name := e.key.Value
-		if first, ok := seen[name]; ok {
-			errs = append(errs, keyError(e.path, e.key.Line, fmt.Sprintf("duplicate key, first set on line %d", first)))
-			continue
-		}
-		seen[name] = e.key.Line
 		slots, err := declaredQueue(e)
 		if err != nil {
 			errs = append(errs, err)
 		} else {
 			sum += slots
 		}
-		out = append(out, crew.Queue{Name: name, Slots: slots})
+		out = append(out, crew.Queue{Name: e.key.Value, Slots: slots})
 	}
 	return out, sum, errors.Join(errs...)
 }
@@ -114,11 +78,7 @@ func declaredQueues(n *yaml.Node) ([]crew.Queue, int, error) {
 // with it.
 func declaredQueue(e entry) (int, error) {
 	name := e.key.Value
-	switch {
-	case strings.EqualFold(name, crew.ClerkQueue):
-		return 0, keyError(e.path, e.key.Line,
-			fmt.Sprintf("%q is crew's clerk queue; set its slots in config.clerk_slots", name))
-	case strings.EqualFold(name, crew.DefaultQueue):
+	if strings.EqualFold(name, crew.DefaultQueue) {
 		return 0, keyError(e.path, e.key.Line,
 			fmt.Sprintf("%q is crew's default queue, which has the slots the other queues leave; "+
 				"name this queue another way", name))
@@ -133,9 +93,9 @@ func declaredQueue(e entry) (int, error) {
 	return slots.value, nil
 }
 
-// stageQueue returns the queue of the stage at path: the one its queue key
+// ruleQueue returns the queue of the rule at path: the one its queue key
 // names, or default when it names none.
-func stageQueue(l located[string], path string, table queueTable) (crew.Queue, error) {
+func ruleQueue(l located[string], path string, table queueTable) (crew.Queue, error) {
 	name := l.value
 	switch {
 	case l.line == 0:

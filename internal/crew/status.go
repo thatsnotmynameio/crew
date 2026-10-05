@@ -5,20 +5,20 @@ import (
 	"time"
 )
 
-// Status is where an issue crew took stands, for the tracker to show the boss
+// Status is where an issue crew took stands, for the tracker to show you
 // in one place it edits in place. The tracker adapter formats it in its own
 // markup and computes elapsed times from Updated.
 type Status struct {
 	// IssueKey and IssueRef identify the issue, as in Issue.
 	IssueKey string
 	IssueRef string
-	// Stage is the name of the stage that runs or ran on the issue.
-	Stage string
+	// Rule is the name of the rule that runs or ran on the issue.
+	Rule string
 	// Kind says which of the fields below apply.
 	Kind StatusKind
-	// Actions are the stage's actions, in its action order.
+	// Actions are the rule's actions, in its action order.
 	Actions []ActionStatus
-	// To is the state the issue moves to once the stage ended; set when Kind
+	// To is the state the issue moves to once the rule ended; set when Kind
 	// is StatusEnded.
 	To State
 	// Move says whether the move to To is under way, landed or was given up;
@@ -26,10 +26,10 @@ type Status struct {
 	Move MoveProgress
 	// Updated is when crew computed this status.
 	Updated time.Time
-	// Run identifies the stage run this status belongs to: it stays the same
-	// from the issue's first running status for a stage until the status
-	// after that stage ended, and differs between crew processes. A tracker
-	// that keeps a history of stage runs edits the run's entry, or starts a
+	// Run identifies the rule run this status belongs to: it stays the same
+	// from the issue's first running status for a rule until the status
+	// after that rule ended, and differs between crew processes. A tracker
+	// that keeps a history of rule runs edits the run's entry, or starts a
 	// new one.
 	Run string
 }
@@ -39,9 +39,9 @@ type StatusKind int
 
 // The kinds of status.
 const (
-	// StatusRunning: the stage took the issue and its actions run.
+	// StatusRunning: the rule took the issue and its actions run.
 	StatusRunning StatusKind = iota
-	// StatusEnded: every action of the stage ended.
+	// StatusEnded: every action of the rule ended.
 	StatusEnded
 )
 
@@ -110,10 +110,10 @@ const (
 	ActionFailed
 )
 
-// MoveProgress is how the move that ends a stage stands.
+// MoveProgress is how the move that ends a rule stands.
 type MoveProgress int
 
-// The progress of the move that ends a stage.
+// The progress of the move that ends a rule.
 const (
 	// MovePending: the move is in flight or waits for a retry.
 	MovePending MoveProgress = iota

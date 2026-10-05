@@ -148,16 +148,16 @@ func (m Model) marked(row []rune, marks []bool) string {
 }
 
 // columnX is the x of column c on the underline row: its own x when
-// drawn; the left edge for a hidden stage or a column left of every
-// drawn one; else the gap where it falls among the drawn columns, which is
-// the right edge past the last one (KTD10).
+// drawn; the left edge for a column left of every drawn one; else the gap
+// where it falls among the drawn columns, which is the right edge past the
+// last one (KTD10).
 func (m Model) columnX(l boardLayout, prefix, c int) int {
 	step := l.width + columnGap
 	i, drawn := slices.BinarySearch(l.columns, c)
 	switch {
 	case drawn:
 		return prefix + i*step
-	case !m.shown(c) || i == 0:
+	case i == 0:
 		return 0
 	}
 	return prefix + i*step - columnGap

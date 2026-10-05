@@ -22,7 +22,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/registry"
 )
 
-// The workflow's states in these tests, as label text.
+// The rules' states in these tests, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -32,51 +32,54 @@ const (
 	readyToMerge   crew.State = "ready to merge"
 )
 
-// oneAction is a config with one stage of one action, run by the fakes.
+// oneAction is a config with one rule of one action, run by the fakes.
+// Its tracker name is on line 3 and its agent's harness name on line 7.
 const oneAction = `
-config:
-  harness: fake
 tracker:
   name: fake
-workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+agents:
+  developer:
+    harness:
+      name: fake
+rules:
+  implement:
+    labels:
+      ready: ready
+      running: in progress
+      success: ready to review
+      failure: needs attention
     actions:
-      - name: development
+      development:
         prompt: "Implement development for issue {{.Issue.Ref}}"
 `
 
-// draft is the boss's draft config (KTD5), with the fakes named in place of
+// withOps is oneAction with tracker.bot ops.
+func withOps() string {
+	return strings.Replace(oneAction, "  name: fake\n", "  name: fake\n  bot: ops\n", 1)
+}
+
+// draft is your draft config (KTD5), with the fakes named in place of
 // github and claude.
 const draft = `
-config:
-  poll_interval_seconds: 300
-  max_parallel_issues: 2
-  harness: fake
-  model: claude-opus-5-5
+poll_interval_seconds: 300
+max_parallel_issues: 2
 tracker:
   name: fake
-workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+agents:
+  claude:
+    harness: {name: fake, model: claude-opus-5-5}
+rules:
+  implement:
+    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
     actions:
-      - name: acceptance
+      acceptance:
         prompt: "Implement test acceptance for issue {{.Issue.Ref}}"
-      - name: development
+      development:
         prompt: "Implement development for issue {{.Issue.Ref}}"
-  - name: review
-    label: ready to review
-    moves_to: in review
-    on_success: ready to merge
-    on_failure: needs attention
+  review:
+    labels: {ready: ready to review, running: in review, success: ready to merge, failure: needs attention}
     actions:
-      - name: custom_review
+      custom_review:
         prompt: "Review implementation for issue {{.Issue.Ref}}"
 `
 
@@ -242,7 +245,7 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 	}
 	if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
-		t.Errorf("#1 is in %v, want the stage's on_success, ready to review", got)
+		t.Errorf("#1 is in %v, want the rule's success label, ready to review", got)
 	}
 	out := r.stdout.String()
 	containsAll(t, out,
@@ -260,14 +263,15 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 }
 
 // Covers AE1 through the wiring: the check in the config runs through the
-// checker the options carry, and its failure fails the stage.
+// checker the options carry, and its failure fails the rule.
 func TestAnActionsCheckRunsThroughTheOptionsChecker(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
 		checker := fake.NewChecker()
 		checker.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: 1})
-		body := strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n        check: gh pr list\n", 1)
+		body := "checks:\n  pull request: gh pr list\n" +
+			strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n        check: pull request\n", 1)
 		r := options(t, body, tr, h)
 		r.opts.Plain = true
 		r.opts.Checker = checker
@@ -297,7 +301,7 @@ func TestARunTimeLimitWindsCrewDownAndExitsZero(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker()
 		h := fake.NewHarness()
-		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  run_time_limit_seconds: 3600\n", 1), tr, h)
+		r := options(t, "run_time_limit_seconds: 3600\n"+oneAction, tr, h)
 		r.opts.Plain = true
 		t0 := time.Now()
 		r.start()
@@ -340,7 +344,7 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 		time.Sleep(300 * time.Second) // the second tick
 		review := next(t, h)
 		if got := review.Run().Prompt; got != "Review implementation for issue #1" {
-			t.Errorf("the second tick's prompt = %q, want the review stage's", got)
+			t.Errorf("the second tick's prompt = %q, want the review rule's", got)
 		}
 		review.End(success)
 		synctest.Wait()
@@ -361,42 +365,22 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 	})
 }
 
-// recordingExtras returns a registry of tr and h that records in extras the
-// extra labels the tracker is built with.
-func recordingExtras(tr *fake.Tracker, h *fake.Harness, extras *[]crew.State) registry.Registry {
-	return registry.New(
-		map[string]port.TrackerFactory{"fake": func(decode port.Decode, states, got []crew.State) (port.Tracker, error) {
-			*extras = got
-			return fake.TrackerFactory(tr)(decode, states, got)
-		}},
-		map[string]port.HarnessFactory{"fake": fake.HarnessFactory(h)},
-	)
-}
-
-// Covers AE4 and R8: an issue with an extra label and a stage's label is
-// taken by that stage and loses the extra; an issue whose only crew label is
-// an extra is never taken. The tracker is built with the config's extras.
-func TestAnExtraLabelNeverBlocksAStageAndNeverStartsOne(t *testing.T) {
+// Covers AE6: crew moves only its rules' labels. An issue carrying a rule's
+// label and labels no rule names, a parked idea's and bug, is taken and
+// keeps them; an issue carrying only labels no rule names is never taken.
+func TestAE6LabelsNoRuleNamesAreNeverTouched(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		const waitingBrainstorm crew.State = "waiting brainstorm"
+		const brainstormReady = "crew:brainstorm:ready"
 		tr := fake.NewTracker(issue("1", ready), issue("2"))
-		tr.SetExtras("1", waitingBrainstorm)
-		tr.SetExtras("2", waitingBrainstorm)
+		tr.SetLabels("1", brainstormReady, "bug")
+		tr.SetLabels("2", brainstormReady)
 		h := fake.NewHarness()
-		r := options(t, "extra_labels:\n  - label: waiting brainstorm\n"+oneAction, tr, h)
-		var extras []crew.State
-		r.opts.Registry = recordingExtras(tr, h, &extras)
+		r := options(t, oneAction, tr, h)
 		r.start()
 
 		s := next(t, h)
 		if got := s.Run().Prompt; got != "Implement development for issue #1" {
 			t.Errorf("the session's prompt = %q, want #1's", got)
-		}
-		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{inProgress}) {
-			t.Errorf("#1 is in %v, want in progress", got)
-		}
-		if got := tr.Extras("1"); len(got) != 0 {
-			t.Errorf("#1 still has the extras %v, want none", got)
 		}
 		s.End(success)
 		synctest.Wait()
@@ -407,9 +391,6 @@ func TestAnExtraLabelNeverBlocksAStageAndNeverStartsOne(t *testing.T) {
 		if code := <-r.code; code != 0 {
 			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 		}
-		if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(extras, want) {
-			t.Errorf("the tracker was built with the extras %v, want %v", extras, want)
-		}
 		wantMoves := []fake.Move{
 			{Key: "1", From: ready, To: inProgress},
 			{Key: "1", From: inProgress, To: readyToReview},
@@ -417,8 +398,8 @@ func TestAnExtraLabelNeverBlocksAStageAndNeverStartsOne(t *testing.T) {
 		if got := tr.Moves(); !reflect.DeepEqual(got, wantMoves) {
 			t.Errorf("moves = %v, want %v, and none of #2", got, wantMoves)
 		}
-		if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(tr.Extras("2"), want) {
-			t.Errorf("#2 has the extras %v, want %v", tr.Extras("2"), want)
+		if want := []string{brainstormReady, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
+			t.Errorf("#1 has the labels %q, want %q", tr.Labels("1"), want)
 		}
 	})
 }

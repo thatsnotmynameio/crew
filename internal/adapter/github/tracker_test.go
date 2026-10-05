@@ -24,8 +24,8 @@ import (
 // prefix, as the old dispatcher's FakeGh scripted them.
 type reply struct {
 	prefix []string
-	// as, when set, matches only calls as the boss (asBoss) or as a mate
-	// (asMate).
+	// as, when set, matches only calls as you (asYou) or as a bot
+	// (asBot).
 	as string
 	// once makes the reply answer one call only.
 	once   bool
@@ -100,7 +100,7 @@ func (f *fakeGh) callsTo(prefix ...string) [][]string {
 	return out
 }
 
-// The workflow's states, as label text.
+// The rules' states, as label text.
 const (
 	ready          crew.State = "ready"
 	inProgress     crew.State = "in progress"
@@ -109,44 +109,33 @@ const (
 	needsAttention crew.State = "needs attention"
 )
 
-// extraLabels is the config's one extra label, waiting brainstorm: parked
-// work no stage takes.
-const extraLabels = `extra_labels:
-  - label: waiting brainstorm
-`
-
-// workflow is the draft config's workflow, so the files below load. Its
+// rules are the draft config's rules, so the files below load. Its
 // states are ready, in progress, ready to review, needs attention, in review
 // and ready to merge; it does not name paused.
-const workflow = `workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+const rules = `agents:
+  claude:
+    harness: {name: claude}
+rules:
+  implement:
+    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
     actions:
-      - name: development
-        prompt: "Implement {{.Issue.Ref}}"
-  - name: review
-    label: ready to review
-    moves_to: in review
-    on_success: ready to merge
-    on_failure: needs attention
+      development: {prompt: "Implement {{.Issue.Ref}}"}
+  review:
+    labels: {ready: ready to review, running: in review, success: ready to merge, failure: needs attention}
     actions:
-      - name: custom_review
-        prompt: "Review {{.Issue.Ref}}"
+      custom_review: {prompt: "Review {{.Issue.Ref}}"}
 `
 
 // section loads a .crew/config.yaml holding tracker, which is the tracker:
-// section's body, and returns the section's strict decoder, the workflow's
-// states and the extra labels, as the app passes them to the factory.
-func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.State) {
+// section's body, and returns the section's strict decoder and the rules'
+// states, as the app passes them to the factory.
+func section(t *testing.T, tracker string) (port.Decode, []crew.State) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	body := "tracker:\n  name: github\n" + tracker + extraLabels + workflow
+	body := "tracker:\n  name: github\n" + tracker + rules
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +143,7 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State, []crew.St
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	return cfg.TrackerSection, crew.WorkflowStates(cfg.Workflow), cfg.Extras
+	return cfg.TrackerSection, crew.RuleStates(cfg.Rules)
 }
 
 // build builds the tracker from a config with an empty tracker section, with
@@ -279,15 +268,15 @@ func TestListResolvesTheLoginOnce(t *testing.T) {
 	}
 }
 
-func TestListReturnsEveryCrewStateOfAnIssueInTheWorkflowsSpelling(t *testing.T) {
+func TestListReturnsEveryCrewStateOfAnIssueInTheRulesSpelling(t *testing.T) {
 	for name, tc := range map[string]struct {
 		labels []string
 		want   []crew.State
 	}{
-		"two crew labels":            {[]string{"ready", "Needs Attention", "bug"}, []crew.State{ready, needsAttention}},
-		"another case":               {[]string{"Ready"}, []crew.State{ready}},
-		"AE6 a label no stage names": {[]string{"paused", "ready"}, []crew.State{ready}},
-		"an extra label":             {[]string{"waiting brainstorm", "ready"}, []crew.State{ready}},
+		"two crew labels":           {[]string{"ready", "Needs Attention", "bug"}, []crew.State{ready, needsAttention}},
+		"another case":              {[]string{"Ready"}, []crew.State{ready}},
+		"AE6 a label no rule names": {[]string{"paused", "ready"}, []crew.State{ready}},
+		"a parked idea's label":     {[]string{"crew:brainstorm:ready", "ready"}, []crew.State{ready}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, _ := build(t, login, reply{
@@ -405,8 +394,9 @@ func blockedNode(node string, open, total int) string {
 		fmt.Sprintf(`,"issueDependenciesSummary":{"blockedBy":%d,"totalBlockedBy":%d}}`, open, total)
 }
 
-// Covers AE1, AE4 and AE6: the move swaps crew's labels, removes every extra
-// label, and leaves the others, bug and paused, which no stage names.
+// Covers AE1 and AE6: the move swaps crew's labels, the labels the rules
+// name, and leaves the others, such as bug, paused or a parked idea's
+// crew:brainstorm:ready, which no rule names.
 func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 	for name, tc := range map[string]struct {
 		labels string
@@ -416,12 +406,10 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 			[]string{"--remove-label=ready", "--add-label=in progress"}},
 		"two crew labels": {`{"name":"ready"},{"name":"bug"},{"name":"Needs Attention"}`,
 			[]string{"--remove-label=ready", "--remove-label=Needs Attention", "--add-label=in progress"}},
-		"AE6 a label no stage names": {`{"name":"paused"},{"name":"ready"}`,
+		"AE6 a label no rule names": {`{"name":"paused"},{"name":"ready"}`,
 			[]string{"--remove-label=ready", "--add-label=in progress"}},
-		"AE4 an extra label": {`{"name":"waiting brainstorm"},{"name":"ready"},{"name":"bug"}`,
-			[]string{"--remove-label=waiting brainstorm", "--remove-label=ready", "--add-label=in progress"}},
-		"an extra label in another case": {`{"name":"ready"},{"name":"Waiting Brainstorm"}`,
-			[]string{"--remove-label=ready", "--remove-label=Waiting Brainstorm", "--add-label=in progress"}},
+		"AE6 a parked idea's label and bug": {`{"name":"crew:brainstorm:ready"},{"name":"ready"},{"name":"bug"}`,
+			[]string{"--remove-label=ready", "--add-label=in progress"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,
@@ -463,12 +451,12 @@ func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 }
 
 // A retry of a move that landed although gh reported an error finds the issue
-// already in to: the move is done, and nothing is edited again (KTD8). An
-// extra label added since does not make it a move made meanwhile.
+// already in to: the move is done, and nothing is edited again (KTD8). A
+// label no rule names, added since, does not make it a move made meanwhile.
 func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
 	for name, labels := range map[string]string{
-		"in to":                           `{"name":"In Progress"},{"name":"bug"}`,
-		"in to with an extra added since": `{"name":"in progress"},{"name":"waiting brainstorm"}`,
+		"in to":                                `{"name":"In Progress"},{"name":"bug"}`,
+		"in to with another label added since": `{"name":"in progress"},{"name":"crew:brainstorm:ready"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,
@@ -492,7 +480,7 @@ func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"blocked, \"waiting\""}]}`},
 		reply{prefix: []string{"issue", "edit", "3"}},
 	)
-	tr, err := factory(gh.run)(func(any) error { return nil }, []crew.State{ready, blocked}, nil)
+	tr, err := factory(gh.run)(func(any) error { return nil }, []crew.State{ready, blocked})
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}

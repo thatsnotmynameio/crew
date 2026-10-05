@@ -44,32 +44,32 @@ func runOneIssue(t *testing.T, r *crewRun, h *fake.Harness) []string {
 	return unstamped(t, r.stdout.String())
 }
 
-// Covers AE1 and AE4: each step prints as it starts, one per mate, then
-// the mates' warnings, then the event lines.
+// Covers AE1 and AE4: each step prints as it starts, one per bot, then
+// the bots' warnings, then the event lines.
 func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewPreparingTracker(issue("1", ready))
 		tr.ReportStep("checking the gh login")
 		h := fake.NewPreparingHarness()
 		h.ReportStep("looking for claude on PATH")
-		r := options(t, strings.Replace(oneAction, "config:\n", "config:\n  mate: ops\n", 1), tr, h)
+		r := options(t, withOps(), tr, h)
 		r.opts.Terminal, r.opts.Plain = true, true
-		r.opts.Mates = func(ctx context.Context, _ string, names []string) (app.Mates, error) {
+		r.opts.Bots = func(ctx context.Context, _ string, names []string) (app.Bots, error) {
 			for _, name := range names {
-				port.Step(ctx, "making mate "+name+" act")
+				port.Step(ctx, "making bot "+name+" act")
 			}
-			return app.Mates{Warnings: []string{"mate ops is not installed on thatsnotmynameio/crew"}}, nil
+			return app.Bots{Warnings: []string{"bot ops is not installed on thatsnotmynameio/crew"}}, nil
 		}
 
 		got := runOneIssue(t, r, h.Harness)
 
 		want := []string{
 			"loading .crew/config.yaml",
-			"making mate ops act",
+			"making bot ops act",
 			"checking the gh login",
 			"looking for claude on PATH",
 			"reading the run journal",
-			"warning: mate ops is not installed on thatsnotmynameio/crew",
+			"warning: bot ops is not installed on thatsnotmynameio/crew",
 		}
 		if len(got) <= len(want) || !slices.Equal(got[:len(want)], want) {
 			t.Fatalf("stdout starts with %q, want %q then the event lines", got, want)
@@ -80,14 +80,14 @@ func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T)
 	})
 }
 
-// Covers AE2: without mates, no mate step runs, so none prints.
-func TestWithoutMatesTheBootLogHasNoMateLine(t *testing.T) {
+// Covers AE2: without bots, no bot step runs, so none prints.
+func TestWithoutBotsTheBootLogHasNoBotLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := fake.NewHarness()
 		r := options(t, oneAction, fake.NewTracker(issue("1", ready)), h)
-		r.opts.Mates = func(context.Context, string, []string) (app.Mates, error) {
-			t.Error("the mates were made to act, with none in the config")
-			return app.Mates{}, nil
+		r.opts.Bots = func(context.Context, string, []string) (app.Bots, error) {
+			t.Error("the bots were made to act, with none in the config")
+			return app.Bots{}, nil
 		}
 
 		got := runOneIssue(t, r, h)

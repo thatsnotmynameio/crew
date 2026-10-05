@@ -15,99 +15,142 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
-// crewWorkflow is this repository's workflow, with both promote stages
-// hidden (AE1).
-var crewWorkflow = []crew.Stage{
-	{Name: "promote brainstorm", Label: "crew:brainstorm:done", OnSuccess: "crew:triage:ready", OffBoard: true},
-	{Name: "triage", Label: "crew:triage:ready", OnSuccess: "crew:triage:done", OnFailure: "crew:triage:failed"},
-	{Name: "promote triage", Label: "crew:triage:done", OnSuccess: "crew:development:ready", OffBoard: true},
-	{Name: "development", Label: "crew:development:ready", OnFailure: "crew:development:failed"},
-	{Name: "fix", Label: "crew:fix:ready", OnFailure: "crew:fix:failed"},
+// crewRules is this repository's rules, both promote rules muted, as rules
+// without actions are by default.
+var crewRules = []crew.Rule{
+	{
+		Name: "promote brainstorm",
+		Labels: crew.Labels{
+			Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting", Success: "crew:triage:ready",
+		},
+	},
+	{
+		Name: "triage",
+		Labels: crew.Labels{
+			Ready: "crew:triage:ready", Running: "crew:triage:in progress", Success: "crew:triage:done",
+			Failure: "crew:triage:failed",
+		},
+		Notify: true,
+	},
+	{
+		Name: "promote triage",
+		Labels: crew.Labels{
+			Ready: "crew:triage:done", Running: "crew:triage:promoting", Success: "crew:development:ready",
+		},
+	},
+	{
+		Name: "development",
+		Labels: crew.Labels{
+			Ready: "crew:development:ready", Running: "crew:development:in progress",
+			Failure: "crew:development:failed",
+		},
+		Notify: true,
+	},
+	{
+		Name:   "fix",
+		Labels: crew.Labels{Ready: "crew:fix:ready", Running: "crew:fix:in progress", Failure: "crew:fix:failed"},
+		Notify: true,
+	},
 }
 
-var twelve = crew.Issue{Key: "12", Ref: "#12", Title: "Stage labels", URL: "https://github.com/o/r/issues/12"}
+// crewBoard is the default board of crewRules, as config builds it: a
+// column per rule with actions, triage, development and fix, each with
+// its ready and running labels (R22).
+var crewBoard = []crew.BoardColumn{
+	{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:in progress"}},
+	{Name: "development", Labels: []string{"crew:development:ready", "crew:development:in progress"}},
+	{Name: "fix", Labels: []string{"crew:fix:ready", "crew:fix:in progress"}},
+}
 
-// held is a snapshot of issue held by stage in claim, with one running
+// ideasBugsDone is a written board.
+var ideasBugsDone = []crew.BoardColumn{
+	{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
+	{Name: "bugs", Labels: []string{"bug"}},
+	{Name: "done", Labels: []string{"crew:brainstorm:done", "crew:triage:done"}},
+}
+
+var (
+	twelve    = crew.Issue{Key: "12", Ref: "#12", Title: "Rule labels", URL: "https://github.com/o/r/issues/12"}
+	twenty    = crew.Issue{Key: "20", Ref: "#20", Title: "Crash on start"}
+	twentyOne = crew.Issue{Key: "21", Ref: "#21", Title: "Retry the poll"}
+	twentyTwo = crew.Issue{Key: "22", Ref: "#22", Title: "Typo in help"}
+)
+
+// held is a snapshot of issue held by rule in claim, with one running
 // action.
-func held(issue crew.Issue, stage, action string, claim core.Claim) engine.Update {
+func held(issue crew.Issue, rule, action string, claim core.Claim) engine.Update {
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: []core.IssueView{{
-		Issue: issue, Stage: stage, Queue: "clerk", Claim: claim,
+		Issue: issue, Rule: rule, Queue: "clerk", Claim: claim,
 		Actions: []core.ActionView{{Name: action, Phase: core.PhaseRunning, Started: start.Add(-time.Minute)}},
 	}}}}}
 }
 
-// handledBy is a snapshot of issue handled by stage, moved to to.
-func handledBy(issue crew.Issue, stage string, to crew.State) engine.Update {
-	e := entry(issue.Key, issue.Title, stage, to, 10, 1)
+// handledBy is a snapshot of issue handled by rule, moved to to.
+func handledBy(issue crew.Issue, rule string, to crew.State) engine.Update {
+	e := entry(issue.Key, issue.Title, rule, to, 10, 1)
 	e.Issue = issue
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Handled: []core.HandledView{e}}}}
 }
 
-// boardOf returns the Workflow section of view: its rule up to the blank
+// onBoard is u with the board finding each issue with its labels, in the
+// order given.
+func onBoard(u engine.Update, issues ...crew.BoardIssue) engine.Update {
+	u.Snapshot.Board = issues
+	return u
+}
+
+// labeled is issue carrying the board labels labels.
+func labeled(issue crew.Issue, labels ...string) crew.BoardIssue {
+	return crew.BoardIssue{Issue: issue, Labels: labels}
+}
+
+// boardOf returns the Board section of view: its rule up to the blank
 // line before Actions.
 func boardOf(t *testing.T, view string) string {
 	t.Helper()
-	i := strings.Index(view, "Workflow ")
+	i := strings.Index(view, "Board ")
 	j := strings.Index(view, "\n\nActions ")
 	if i < 0 || j < i {
-		t.Fatalf("view lacks the Workflow section:\n%s", view)
+		t.Fatalf("view lacks the Board section:\n%s", view)
 	}
 	return view[i:j]
 }
 
-// Covers AE1.
-func TestAE1HiddenStagesHaveNoColumnAndTheirIssuesNoCard(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-
-	h.send(updateMsg(held(twelve, "promote triage", "promote", core.ClaimRunning)))
-	board := boardOf(t, h.view())
-
-	names := strings.Fields(strings.Split(board, "\n")[1])
-	if got, want := strings.Join(names, " "), "triage development fix"; got != want {
-		t.Errorf("columns = %q, want %q:\n%s", got, want, board)
-	}
-	if strings.Contains(board, "#12") {
-		t.Errorf("the board shows #12 while a hidden stage holds it:\n%s", board)
-	}
-	contains(t, h.view(), "promote triage/promote")
+// columnNamesOf returns the board's column names, as its names row shows
+// them.
+func columnNamesOf(t *testing.T, board string) string {
+	t.Helper()
+	return strings.Join(strings.Fields(strings.Split(board, "\n")[1]), " ")
 }
 
-// Covers AE2.
-func TestAE2ACardWaitsInItsColumnThenSlidesToTheNextStage(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-	h.send(updateMsg(held(twelve, "triage", "triage", core.ClaimRunning)))
-
-	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:done")))
-	board := boardOf(t, h.view())
-	contains(t, board, "▌ #12 Stage labels", "▌ → crew:triage:done")
-	if col := cardColumn(t, board, "#12"); col != 0 {
-		t.Errorf("waiting card is in column %d, want triage's 0:\n%s", col, board)
+// cardColumns returns every drawn column holding a card for ref, by its x
+// on the board's rows.
+func cardColumns(board, ref string) []int {
+	var out []int
+	for l := range strings.SplitSeq(board, "\n") {
+		rest, x := l, 0
+		for {
+			i := strings.Index(rest, "▌ "+ref+" ")
+			if i < 0 {
+				break
+			}
+			x += len([]rune(rest[:i]))
+			out = append(out, x/(maxColumn+columnGap))
+			rest, x = rest[i+1:], x+1
+		}
 	}
-
-	cmd := h.send(updateMsg(held(twelve, "development", "lfg", core.ClaimRunning)))
-	board = boardOf(t, h.view())
-	if col := cardColumn(t, board, "#12"); col != 1 {
-		t.Errorf("card is in column %d, want development's 1 at once:\n%s", col, board)
-	}
-	if got := h.current().memory.slides; len(got) != 1 || got[0].from != 1 || got[0].to != 3 {
-		t.Errorf("slides = %+v, want one from triage (1) to development (3)", got)
-	}
-	if !schedulesSlideTick(cmd) {
-		t.Error("the move scheduled no slide frame")
-	}
+	return out
 }
 
 // cardColumn returns which drawn column holds ref's card, by its x on the
 // board's rows.
 func cardColumn(t *testing.T, board, ref string) int {
 	t.Helper()
-	for l := range strings.SplitSeq(board, "\n") {
-		if i := strings.Index(l, "▌ "+ref+" "); i >= 0 {
-			return len([]rune(l[:i])) / (maxColumn + columnGap)
-		}
+	got := cardColumns(board, ref)
+	if len(got) == 0 {
+		t.Fatalf("board has no card for %s:\n%s", ref, board)
 	}
-	t.Fatalf("board has no card for %s:\n%s", ref, board)
-	return -1
+	return got[0]
 }
 
 // schedulesSlideTick reports whether cmd, or a command it batches, sends a
@@ -131,154 +174,213 @@ func schedulesSlideTick(cmd tea.Cmd) bool {
 	return false
 }
 
-// Covers AE3.
-func TestAE3AFailedStageTakesItsCardOffTheBoard(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-	five := crew.Issue{Key: "5", Ref: "#5", Title: "Parse the config"}
-	h.send(updateMsg(held(five, "development", "lfg", core.ClaimRunning)))
+// Covers AE5 of #134: the default board of promote triage, triage and
+// development has two columns, triage then development, and an issue the
+// rule without actions holds has no card.
+func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, crewBoard[:2])
 
-	u := handledBy(five, "development", "crew:development:failed")
-	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "lfg", Reason: "tests failed"}}
-	h.send(updateMsg(u))
+	h.send(updateMsg(onBoard(held(twelve, "promote triage", "promote", core.ClaimRunning),
+		labeled(twenty, "crew:development:ready"))))
+	board := boardOf(t, h.view())
 
-	view := h.view()
-	if strings.Contains(boardOf(t, view), "#5") {
-		t.Errorf("the board still shows #5:\n%s", view)
+	if got := columnNamesOf(t, board); got != "triage development" {
+		t.Errorf("columns = %q, want triage development:\n%s", got, board)
 	}
-	contains(t, view, "NEEDS ATTENTION   #5")
+	if got := cardColumns(board, "#20"); len(got) != 1 || got[0] != 1 {
+		t.Errorf("#20's cards are in columns %v, want one in development (1):\n%s", got, board)
+	}
+	if strings.Contains(board, "#12") {
+		t.Errorf("the board shows #12, which carries no column's label:\n%s", board)
+	}
 }
 
-// eightStages are eight shown stages, s1 to s8, each taking "sN".
-func eightStages() []crew.Stage {
-	var out []crew.Stage
+// Covers KTD10: an item left in a rule's running label that crew does not
+// hold shows in that rule's column as idle.
+func TestAnItemInARunningLabelCrewDoesNotHoldHasAnIdleCard(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
+
+	h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "crew:development:in progress"))))
+	board := boardOf(t, h.view())
+
+	if col := cardColumn(t, board, "#12"); col != 1 {
+		t.Errorf("#12's card is in column %d, want development's 1:\n%s", col, board)
+	}
+	contains(t, board, "▌ ○ idle")
+}
+
+// Covers R23 and R28: an issue whose rule ended in a label no column names
+// has no card, and no card waits for the next rule.
+func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
+		labeled(twelve, "crew:triage:in progress"))))
+
+	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:done")))
+	board := boardOf(t, h.view())
+
+	if strings.Contains(board, "#12") || strings.Contains(board, "→") {
+		t.Errorf("the board shows #12 or a waiting card:\n%s", board)
+	}
+	contains(t, board, " 0 issues")
+}
+
+// Covers R22: a pull request shows only in a column of pull requests, and
+// never in an issue column whose label its issue mirrored onto it.
+func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
+	board := append(slices.Clone(crewBoard[1:2]),
+		crew.BoardColumn{Name: "fix review", Labels: []string{"crew:fix-review:ready"}, Takes: crew.KindPullRequest})
+	pr := crew.Issue{Key: "90", Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
+	h := newBoardHarness(t, 120, crewRules, board)
+
+	h.send(updateMsg(onBoard(engine.Update{},
+		labeled(twelve, "crew:development:in progress"),
+		labeled(pr, "crew:development:in progress", "crew:fix-review:ready"))))
+	got := boardOf(t, h.view())
+
+	if cols := cardColumns(got, "#90"); len(cols) != 1 || cols[0] != 1 {
+		t.Errorf("#90's cards are in columns %v, want one in fix review (1):\n%s", cols, got)
+	}
+	if cols := cardColumns(got, "#12"); len(cols) != 1 || cols[0] != 0 {
+		t.Errorf("#12's cards are in columns %v, want one in development (0):\n%s", cols, got)
+	}
+}
+
+// Covers AE1: a held issue has one card, in the column of its board label.
+func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning), labeled(twenty, "bug"))))
+	board := boardOf(t, h.view())
+
+	if got := columnNamesOf(t, board); got != "ideas bugs done" {
+		t.Errorf("columns = %q, want ideas bugs done:\n%s", got, board)
+	}
+	if got := cardColumns(board, "#20"); len(got) != 1 || got[0] != 1 {
+		t.Errorf("#20's cards are in columns %v, want one in bugs (1):\n%s", got, board)
+	}
+	contains(t, board, "▌ ⠋ running")
+}
+
+// Covers AE2 and R23: an issue with two columns' labels has a card in each.
+func TestAE2AnIssueWithTwoColumnsLabelsHasACardInEach(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"))))
+	board := boardOf(t, h.view())
+
+	if got := cardColumns(board, "#21"); len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Errorf("#21's cards are in columns %v, want ideas (0) and bugs (1):\n%s", got, board)
+	}
+}
+
+func TestAHeldIssueOnNoColumnsLabelHasNoCardButShowsInActions(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
+	view := h.view()
+
+	if board := boardOf(t, view); strings.Contains(board, "#12") {
+		t.Errorf("the board shows #12, which carries no column's label:\n%s", board)
+	}
+	contains(t, view, "development/lfg")
+}
+
+// The columns show in board order, empty ones included, whatever the
+// rules.
+func TestTheColumnsShowInBoardOrder(t *testing.T) {
+	board := []crew.BoardColumn{
+		{Name: "done", Labels: []string{"crew:triage:done"}},
+		{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
+		{Name: "bugs", Labels: []string{"bug"}},
+	}
+	h := newBoardHarness(t, 120, crewRules, board)
+	h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "bug"))))
+
+	got := boardOf(t, h.view())
+	if names := columnNamesOf(t, got); names != "done ideas bugs" {
+		t.Errorf("columns = %q, want done ideas bugs:\n%s", names, got)
+	}
+}
+
+// Covers KTD6: a column lists its cards as the board orders them, oldest
+// first, and "+N more" hides the newest.
+func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
+	issues := make([]crew.BoardIssue, 0, 8)
+	for n := 1; n <= 8; n++ {
+		issues = append(issues, labeled(crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Bug"}, "bug"))
+	}
+	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
+	h.send(updateMsg(onBoard(engine.Update{}, issues...)))
+
+	view := checkFits(t, h, 80, 24)
+	board := boardOf(t, view)
+	contains(t, board, "▌ #1 Bug", "more")
+	if strings.Contains(board, "#8 ") {
+		t.Errorf("the newest card shows while the column is cut:\n%s", board)
+	}
+	if first, second := strings.Index(board, "#1 "), strings.Index(board, "#2 "); second >= 0 && second < first {
+		t.Errorf("#2 is drawn above #1:\n%s", board)
+	}
+	if !strings.HasSuffix(view, "? help") {
+		t.Errorf("view does not end with the key-help line:\n%s", view)
+	}
+}
+
+// eightColumns are eight columns, c1 to c8, each showing the label "lN".
+func eightColumns() []crew.BoardColumn {
+	var out []crew.BoardColumn
 	for i := 1; i <= 8; i++ {
-		out = append(out, crew.Stage{Name: fmt.Sprintf("s%d", i), Label: crew.State(fmt.Sprintf("s%d", i))})
+		out = append(out, crew.BoardColumn{Name: fmt.Sprintf("c%d", i), Labels: []string{fmt.Sprintf("l%d", i)}})
 	}
 	return out
 }
 
 // Covers AE4.
-func TestAE4EmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
-	u := engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: []core.IssueView{
-		{Issue: crew.Issue{Key: "1", Ref: "#1", Title: "One"}, Stage: "s2", Claim: core.ClaimRunning},
-		{Issue: crew.Issue{Key: "2", Ref: "#2", Title: "Two"}, Stage: "s6", Claim: core.ClaimRunning},
-	}}}}
+func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
+	u := onBoard(engine.Update{},
+		labeled(crew.Issue{Key: "1", Ref: "#1", Title: "One"}, "l2"),
+		labeled(crew.Issue{Key: "2", Ref: "#2", Title: "Two"}, "l6"))
 
-	h := newWorkflowHarness(t, 80, eightStages())
+	h := newBoardHarness(t, 80, crewRules, eightColumns())
 	h.send(updateMsg(u))
 	board := boardOf(t, h.view())
-	contains(t, board, "6 empty stages not shown")
-	if got := strings.Join(strings.Fields(strings.Split(board, "\n")[1]), " "); got != "s2 s6" {
-		t.Errorf("columns = %q, want s2 s6:\n%s", got, board)
+	contains(t, board, "6 empty columns not shown")
+	if got := columnNamesOf(t, board); got != "c2 c6" {
+		t.Errorf("columns = %q, want c2 c6:\n%s", got, board)
 	}
 
-	h = newWorkflowHarness(t, 30, eightStages())
+	h = newBoardHarness(t, 30, crewRules, eightColumns())
 	h.send(updateMsg(u))
 	board = boardOf(t, h.view())
-	contains(t, board, "s2", "1 ▸", "#1")
+	contains(t, board, "c2", "1 ▸", "#1")
 	if strings.Contains(board, "#2") {
 		t.Errorf("a 30-column board shows both columns:\n%s", board)
 	}
 	h.send(tea.KeyPressMsg{Code: tea.KeyRight})
-	board = boardOf(t, h.view())
-	contains(t, board, "◂ 1", "s6", "#2")
+	contains(t, boardOf(t, h.view()), "◂ 1", "c6", "#2")
 	h.send(tea.KeyPressMsg{Code: tea.KeyRight})
 	contains(t, boardOf(t, h.view()), "◂ 1", "#2")
 	h.send(tea.KeyPressMsg{Code: tea.KeyLeft})
 	contains(t, boardOf(t, h.view()), "#1", "1 ▸")
 }
 
-func TestAWaitingCardWhoseIssueIsGoneLeavesTheBoard(t *testing.T) {
-	u := handledBy(twelve, "triage", "crew:triage:done")
-	u.Snapshot.Handled[0].Gone = true
-
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-	h.send(updateMsg(u))
-
-	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
-		t.Errorf("the board shows a gone issue:\n%s", board)
-	}
-}
-
-func TestAGivenUpMoveLeavesNoCard(t *testing.T) {
-	u := handledBy(twelve, "triage", "crew:triage:done")
-	u.Snapshot.Handled[0].Move = crew.MoveDropped
-
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-	h.send(updateMsg(u))
-
-	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
-		t.Errorf("the board shows an issue whose move was given up:\n%s", board)
-	}
-}
-
-func TestAnItemTheNextStageWouldNotTakeHasNoWaitingCard(t *testing.T) {
-	pr := twelve
-	pr.Kind = crew.KindPullRequest
-
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-	h.send(updateMsg(handledBy(pr, "triage", "crew:triage:done")))
-
-	if board := boardOf(t, h.view()); strings.Contains(board, "#12") {
-		t.Errorf("the board shows a pull request no stage of its kind takes:\n%s", board)
-	}
-}
-
-func TestWithEveryStageHiddenTheBoardSaysSo(t *testing.T) {
-	h := newWorkflowHarness(t, 80, []crew.Stage{{Name: "only", Label: "ready", OffBoard: true}})
-
-	contains(t, boardOf(t, h.view()), "every stage is hidden")
-}
-
-// Covers R11 and KTD13: each claim reads through its icon.
-func TestEachClaimReadsThroughItsIcon(t *testing.T) {
-	for claim, want := range map[core.Claim]string{
-		core.ClaimRunning: "⠋ running", core.ClaimJudging: "⠋ judging", core.ClaimTaking: "◌ taking",
-		core.ClaimOwed: "! owed", core.ClaimStopping: "■ stopping",
-	} {
-		h := newWorkflowHarness(t, 120, crewWorkflow)
-		h.send(updateMsg(held(twelve, "triage", "triage", claim)))
-		contains(t, boardOf(t, h.view()), "▌ "+want)
-	}
-}
-
-func TestAColumnCapsItsCardsWhenTheWindowIsShort(t *testing.T) {
-	issues := make([]core.IssueView, 0, 8)
-	for n := range 8 {
-		issues = append(issues, core.IssueView{
-			Issue: crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Card"}, Stage: "triage",
-			Claim: core.ClaimRunning,
-		})
-	}
-	h := newWorkflowHarness(t, 80, crewWorkflow)
-	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
-	h.send(updateMsg(engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: issues}}}))
-
-	view := checkFits(t, h, 80, 24)
-	contains(t, boardOf(t, view), "more")
-	if !strings.HasSuffix(view, "? help") {
-		t.Errorf("view does not end with the key-help line:\n%s", view)
-	}
-}
-
 // The card cap counts only the columns the board draws: a taller column
 // scrolled off to the side must not keep the view from fitting (KTD8).
 func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
-	var issues []core.IssueView
+	var issues []crew.BoardIssue
 	for col, n := range []int{3, 3, 3, 1, 6} {
 		for k := range n {
 			key := fmt.Sprintf("%d-%d", col, k)
-			issues = append(issues, core.IssueView{
-				Issue: crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, Stage: fmt.Sprintf("s%d", col+1),
-				Claim: core.ClaimRunning,
-			})
+			issues = append(issues, labeled(crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, fmt.Sprintf("l%d", col+1)))
 		}
 	}
-	u := engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: issues}}}
+	u := onBoard(engine.Update{}, issues...)
 	// The two heights just above the lowest that fits: a cap counting the
 	// scrolled-off column of 6 would leave both cut.
 	for _, height := range []int{25, 26} {
-		h := newWorkflowHarness(t, 80, eightStages()[:5])
+		h := newBoardHarness(t, 80, crewRules, eightColumns()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))
 
@@ -288,26 +390,70 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 	}
 }
 
-// heldAgain is a snapshot of #12 held by development with the entry its
-// triage left, marked held.
-func heldAgain() engine.Update {
-	u := held(twelve, "development", "lfg", core.ClaimRunning)
-	e := handledBy(twelve, "triage", "crew:triage:done").Snapshot.Handled[0]
-	e.HeldBy = "development"
-	u.Snapshot.Handled = []core.HandledView{e}
-	return u
+// Covers KTD5 and KTD8.
+func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	contains(t, boardOf(t, h.view()), "Board ", " 0 issues")
+
+	u := onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"), labeled(twentyTwo, "bug"))
+	h.send(updateMsg(u))
+	rule, _, _ := strings.Cut(boardOf(t, h.view()), "\n")
+	if !strings.HasSuffix(rule, " 2 issues") {
+		t.Errorf("summary of two issues with three cards: %q", rule)
+	}
+
+	u.Snapshot.BoardFailure = "gh: rate limited"
+	h.send(updateMsg(u))
+	rule, _, _ = strings.Cut(boardOf(t, h.view()), "\n")
+	if !strings.HasSuffix(rule, " 2 issues · board not read") {
+		t.Errorf("summary while the board read fails: %q", rule)
+	}
+	if want := h.current().styles.warning.Render("board not read"); !strings.Contains(h.raw(), want) {
+		t.Errorf("board not read is not in the warning style:\n%q", h.raw())
+	}
+
+	u.Snapshot.BoardFailure = ""
+	h.send(updateMsg(u))
+	if board := boardOf(t, h.view()); strings.Contains(board, "board not read") {
+		t.Errorf("the summary keeps the failure after a read succeeded:\n%s", board)
+	}
 }
 
-func TestAnIssueHeldAgainHasOnlyTheCardOfTheStageHoldingIt(t *testing.T) {
-	h := newWorkflowHarness(t, 120, crewWorkflow)
-
-	h.send(updateMsg(heldAgain()))
-
-	board := boardOf(t, h.view())
-	if n := strings.Count(board, "#12"); n != 1 {
-		t.Fatalf("board shows #12 %d times, want once:\n%s", n, board)
+// Covers R11 and KTD13: each claim reads through its icon.
+func TestEachClaimReadsThroughItsIcon(t *testing.T) {
+	for claim, want := range map[core.Claim]string{
+		core.ClaimRunning: "⠋ running", core.ClaimJudging: "⠋ judging", core.ClaimTaking: "◌ taking",
+		core.ClaimOwed: "! owed", core.ClaimStopping: "■ stopping",
+	} {
+		h := newBoardHarness(t, 120, crewRules, crewBoard)
+		h.send(updateMsg(onBoard(held(twelve, "triage", "triage", claim), labeled(twelve, "crew:triage:in progress"))))
+		contains(t, boardOf(t, h.view()), "▌ "+want)
 	}
-	if col := cardColumn(t, board, "#12"); col != 1 {
-		t.Errorf("card is in column %d, want development's 1:\n%s", col, board)
+}
+
+// Covers #126: an unheld card keeps its two rows, the second a status of
+// its own, ○ idle, and no claim.
+func TestAnUnheldCardShowsIdle(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning),
+		labeled(twenty, "bug"), labeled(twentyTwo, "bug"))))
+	board := boardOf(t, h.view())
+
+	contains(t, board, "▌ #22 Typo in help", "▌ ⠋ running")
+	if strings.Contains(board, "◌") {
+		t.Errorf("an unheld card draws a claim:\n%s", board)
+	}
+	rows := strings.Split(board, "\n")
+	for i, l := range rows {
+		if lead, _, found := strings.Cut(l, "▌ #22"); found {
+			x := len([]rune(lead))
+			if got := strings.TrimRight(string([]rune(rows[i+1])[x:]), " "); got != "▌ ○ idle" {
+				t.Errorf("#22's second row = %q, want ▌ ○ idle:\n%s", got, board)
+			}
+		}
+	}
+	if strings.Count(board, "○ idle") != 1 {
+		t.Errorf("want one idle card, #22's; the running #20 is not idle:\n%s", board)
 	}
 }

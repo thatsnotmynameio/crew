@@ -33,7 +33,7 @@ func prepared(t *testing.T, owners []reply, script ...reply) (*Tracker, *fakeGh)
 }
 
 // Covers AE7.
-func TestTheCatchAllRuleOfCodeownersNamesTheBoss(t *testing.T) {
+func TestTheCatchAllRuleOfCodeownersNamesTheCodeOwners(t *testing.T) {
 	tr, gh := prepared(t,
 		[]reply{{prefix: codeownersAt(".github/CODEOWNERS"), stdout: "# owners\n*.go @gophers\n* @mguilarducci @alice\n"}},
 		reply{prefix: []string{"api", "graphql"}, stdout: listJSON(
@@ -44,8 +44,8 @@ func TestTheCatchAllRuleOfCodeownersNamesTheBoss(t *testing.T) {
 			},
 		)},
 	)
-	if boss := tr.Boss(); !slices.Equal(boss, []string{"mguilarducci", "alice"}) {
-		t.Errorf("Boss = %q, want mguilarducci and alice", boss)
+	if codeOwners := tr.CodeOwners(); !slices.Equal(codeOwners, []string{"mguilarducci", "alice"}) {
+		t.Errorf("CodeOwners = %q, want mguilarducci and alice", codeOwners)
 	}
 	got, err := tr.List(context.Background(), []crew.State{ready})
 	if err != nil {
@@ -71,7 +71,7 @@ func TestTheCatchAllRuleOfCodeownersNamesTheBoss(t *testing.T) {
 	}
 }
 
-func TestTheBossComesFromWhereGitHubFindsCodeowners(t *testing.T) {
+func TestTheCodeOwnersComeFromWhereGitHubFindsCodeowners(t *testing.T) {
 	for name, tc := range map[string]struct {
 		owners []reply
 		want   []string
@@ -84,7 +84,7 @@ func TestTheBossComesFromWhereGitHubFindsCodeowners(t *testing.T) {
 			stdout: "* @first\n/docs/ @writer\n*   @second  @Second # the same login\n"}},
 			want: []string{"second"}},
 		"no file": {want: []string{"me"}},
-		"emails only": {owners: []reply{{prefix: codeownersAt(".github/CODEOWNERS"), stdout: "* boss@example.com\n"}},
+		"emails only": {owners: []reply{{prefix: codeownersAt(".github/CODEOWNERS"), stdout: "* owner@example.com\n"}},
 			want: []string{"me"}},
 		"a catch-all without owners": {owners: []reply{{prefix: codeownersAt(".github/CODEOWNERS"),
 			stdout: "* @first\n*\n"}}, want: []string{"me"}},
@@ -95,8 +95,8 @@ func TestTheBossComesFromWhereGitHubFindsCodeowners(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, _ := prepared(t, tc.owners)
-			if boss := tr.Boss(); !slices.Equal(boss, tc.want) {
-				t.Errorf("Boss = %q, want %q", boss, tc.want)
+			if codeOwners := tr.CodeOwners(); !slices.Equal(codeOwners, tc.want) {
+				t.Errorf("CodeOwners = %q, want %q", codeOwners, tc.want)
 			}
 		})
 	}
@@ -131,13 +131,13 @@ func TestPrepareFailsWithoutGhsLogin(t *testing.T) {
 	tr, _ := build(t, reply{prefix: []string{"auth", "status"}},
 		reply{prefix: []string{"api", "user"}, stderr: "gh: Bad Gateway (HTTP 502)"})
 	if err := tr.Prepare(context.Background(), []crew.State{ready}); err == nil ||
-		!strings.Contains(err.Error(), "find the boss") {
-		t.Errorf("Prepare = %v, want an error finding the boss", err)
+		!strings.Contains(err.Error(), "find the code owners") {
+		t.Errorf("Prepare = %v, want an error finding the code owners", err)
 	}
 }
 
-// Covers AE8: the issues a mate opened are listed, each once.
-func TestListTakesTheIssuesTheMatesOpened(t *testing.T) {
+// Covers AE8: the issues a bot opened are listed, each once.
+func TestListTakesTheIssuesTheBotsOpened(t *testing.T) {
 	tr, gh := build(t, login, reply{prefix: []string{"api", "graphql"},
 		stdout: `{"data":{"repository":{` +
 			`"issues0":{"nodes":[` + issueNode(12, "2026-09-01T10:00:00Z", "ready") + `]},` +
@@ -162,7 +162,7 @@ func TestListTakesTheIssuesTheMatesOpened(t *testing.T) {
 	wantItems(t, got, want)
 }
 
-func TestListTakesThePullRequestsAMateOpenedAsABot(t *testing.T) {
+func TestListTakesThePullRequestsABotOpenedAsABot(t *testing.T) {
 	bot := func(number int, typename, login string) string {
 		return strings.Replace(pullNode(number, "2026-09-01T10:00:00Z", login, "ready"),
 			`"__typename":"User"`, `"__typename":"`+typename+`"`, 1)

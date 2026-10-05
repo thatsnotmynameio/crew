@@ -1,28 +1,32 @@
-# The boss's draft config, with #XXX written as a template and on_success added
-# (KTD5). It is the schema's reference.
-config:
-  poll_interval_seconds: 300
-  max_parallel_issues: 2
-  harness: claude
-  model: claude-opus-5-5
+# The code owner's draft config, with #XXX written as a template and
+# labels.success added (KTD5). It is the schema's reference.
+poll_interval_seconds: 300
+max_parallel_issues: 2
 tracker:
   name: github
-workflow:
-  - name: implement
-    label: ready
-    moves_to: in progress
-    on_success: ready to review
-    on_failure: needs attention
+agents:
+  claude:
+    harness:
+      name: claude
+      model: claude-opus-5-5
+rules:
+  implement:
+    labels:
+      ready: ready
+      running: in progress
+      success: ready to review
+      failure: needs attention
     actions:
-      - name: acceptance
+      acceptance:
         prompt: "Implement test acceptance for issue {{.Issue.Ref}}"
-      - name: development
+      development:
         prompt: "Implement development for issue {{.Issue.Ref}}"
-  - name: review
-    label: ready to review
-    moves_to: in review
-    on_success: ready to merge
-    on_failure: needs attention
+  review:
+    labels:
+      ready: ready to review
+      running: in review
+      success: ready to merge
+      failure: needs attention
     actions:
-      - name: custom_review
+      custom_review:
         prompt: "Review implementation for issue {{.Issue.Ref}}"

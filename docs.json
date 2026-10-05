@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.page/schema.json",
   "name": "crew",
-  "description": "Moves your issues through a workflow you declare, running a coding-agent session for each action.",
+  "description": "Moves your issues through rules you declare on their labels, running a coding-agent session for each action.",
   "social": {
     "github": "thatsnotmynameio/crew"
   },
@@ -16,7 +16,7 @@
       "pages": [
         { "title": "Overview", "href": "/" },
         { "title": "crew", "href": "/guide/crew" },
-        { "title": "Mates", "href": "/guide/mates" },
+        { "title": "Bots", "href": "/guide/bots" },
         { "title": "Acceptance tester", "href": "/guide/acceptance-tester" },
         { "title": "Create an issue", "href": "/guide/create-issue" }
       ]
