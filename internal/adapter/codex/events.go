@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -19,9 +20,12 @@ const stoppedReason = "stopped by crew before the session ended"
 // recorder keeps what judging a codex session needs from what it prints:
 // the JSONL events of `codex exec --json` on stdout, and the last line of
 // stderr. Its stdout and stderr writers are each written from one goroutine
-// and touch separate fields; the recorder is read once both are done.
+// and touch separate fields; the recorder is read once both are done, but
+// for what the session said, which may be read at any time.
 type recorder struct {
 	out, errs lines
+
+	mu sync.Mutex // guards said, which lastSaid reads while stdout is written
 
 	evented   bool        // stdout held at least one event
 	turn      *ending     // the turn's terminal event, or nil
@@ -107,9 +111,19 @@ func (r *recorder) event(line []byte) {
 		r.lastError = ev.Message
 	case "item.completed":
 		if ev.Item.Type == "agent_message" {
+			r.mu.Lock()
 			r.said = ev.Item.Text
+			r.mu.Unlock()
 		}
 	}
+}
+
+// lastSaid returns the text of the last agent message so far, on one line,
+// or "" before the first. It may be called from any goroutine.
+func (r *recorder) lastSaid() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return strings.Join(strings.Fields(r.said), " ")
 }
 
 // stderrLine keeps line when it is not blank.

@@ -16,10 +16,12 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the engine finds UsageReporter by type assertion.
+// Compile-time guards: the engine finds Narrator and UsageReporter by type
+// assertion.
 var (
 	_ port.Harness       = (*harness)(nil)
 	_ port.Session       = (*session)(nil)
+	_ port.Narrator      = (*session)(nil)
 	_ port.UsageReporter = (*session)(nil)
 )
 
@@ -90,7 +92,7 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 	if err != nil {
 		return nil, err
 	}
-	s := &session{process: p, done: make(chan struct{})}
+	s := &session{process: p, rec: rec, done: make(chan struct{})}
 	s.verdict = sync.OnceValue(func() crew.Outcome {
 		defer close(s.done)
 		exit := p.Wait() // codex's output is fully copied once it returns
@@ -106,6 +108,7 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 // session is a running codex process.
 type session struct {
 	process process
+	rec     *recorder // codex's output, recorded as it is printed
 	stopped atomic.Bool
 	verdict func() crew.Outcome // waits for the process once, then judges it
 	usage   crew.Usage          // set by verdict before it returns
@@ -114,6 +117,10 @@ type session struct {
 
 // Wait implements port.Session.
 func (s *session) Wait() crew.Outcome { return s.verdict() }
+
+// Said implements port.Narrator: the text of the session's last agent
+// message so far, on one line. Reasoning, commands and errors never count.
+func (s *session) Said() string { return s.rec.lastSaid() }
 
 // Usage implements port.UsageReporter: the tokens and turns of the
 // session's completed turn, and never a cost, or nothing when crew stopped

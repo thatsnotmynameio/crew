@@ -304,3 +304,34 @@ func TestCodexUsageMarksASumWithAClaudeCostPartial(t *testing.T) {
 		t.Errorf("spend = %q, want %q", got, want)
 	}
 }
+
+// TestSaidFollowsTheLastCompletedAgentMessage feeds a recorder one line at a
+// time and reads what the session said after each.
+func TestSaidFollowsTheLastCompletedAgentMessage(t *testing.T) {
+	steps := []struct {
+		line string
+		want string
+	}{
+		{`{"type":"thread.started","thread_id":"t"}`, ""},
+		{`{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Reading**"}}`, ""},
+		{`{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Reading issue #4 first."}}`,
+			"Reading issue #4 first."},
+		{`{"type":"item.started","item":{"id":"item_2","type":"agent_message","text":"Half a"}}`,
+			"Reading issue #4 first."},
+		{`{"type":"item.updated","item":{"id":"item_2","type":"agent_message","text":"Half a thought"}}`,
+			"Reading issue #4 first."},
+		{`{"type":"item.completed","item":{"id":"item_3","type":"command_execution","aggregated_output":"ok"}}`,
+			"Reading issue #4 first."},
+		{`{"type":"item.completed","item":{"id":"item_4","type":"error","message":"Falling back"}}`,
+			"Reading issue #4 first."},
+		{`{"type":"item.completed","item":{"id":"item_5","type":"agent_message","text":"I fixed the parser.\n\nThe tests pass."}}`,
+			"I fixed the parser. The tests pass."},
+	}
+	r := newRecorder()
+	for _, step := range steps {
+		_, _ = r.stdout().Write([]byte(step.line + "\n"))
+		if got := r.lastSaid(); got != step.want {
+			t.Fatalf("after %s: said %q, want %q", step.line, got, step.want)
+		}
+	}
+}

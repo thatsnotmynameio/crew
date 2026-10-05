@@ -353,6 +353,36 @@ func TestStoppedSessionReportsNoUsage(t *testing.T) {
 	}
 }
 
+// saidBy returns what s last said, failing when it cannot tell.
+func saidBy(t *testing.T, s port.Session) string {
+	t.Helper()
+	n, ok := s.(port.Narrator)
+	if !ok {
+		t.Fatalf("session %T is not a port.Narrator", s)
+	}
+	return n.Said()
+}
+
+// The engine reads what a session said from its own goroutine while codex
+// still prints, and again once the session was stopped.
+func TestSaidIsTheLastMessageWhileCodexRunsAndAfterItWasStopped(t *testing.T) {
+	p := newProcess(fixture(t, "success.jsonl"))
+	p.hang = true
+	s := start(t, p)
+
+	const want = "I fixed the parser. The tests pass."
+	for saidBy(t, s) != want {
+		time.Sleep(time.Millisecond) // codex is still printing
+	}
+	if err := s.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if got := saidBy(t, s); got != want {
+		t.Errorf("said after the stop = %q, want %q", got, want)
+	}
+}
+
 // failingWriter is a log that cannot be written, such as on a full disk.
 type failingWriter struct{}
 
