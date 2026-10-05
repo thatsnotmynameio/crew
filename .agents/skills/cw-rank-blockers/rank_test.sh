@@ -11,8 +11,8 @@
 # list.LOGIN.json for `gh issue list --author LOGIN`, and jev.TITLE for the
 # Jev answers about the candidate titled TITLE, one line per attempt (the
 # last line repeats): "200 BLOCKER BLOCKED", "200 invalid", an HTTP status,
-# or "timeout". The stubs log their arguments to gh.log and curl.log and
-# keep every request body under requests/.
+# "timeout" or "unreachable". The stubs log their arguments to gh.log and
+# curl.log and keep every request body under requests/.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -53,14 +53,32 @@ EOF
 cat >"$root/bin/curl" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$FIXTURE/curl.log"
-out= data=
+out= data= auth= url=
 while [ "$#" -gt 0 ]; do
 	case $1 in
 	-o) out=$2; shift ;;
 	--data) data=${2#@}; shift ;;
+	-H)
+		case $2 in @*) auth=${2#@} ;; esac
+		shift
+		;;
+	-*) ;;
+	*) url=$1 ;;
 	esac
 	shift
 done
+# Like TypeSafe, answer 401 to a request without the key's header, and 404
+# to any other URL, so every passing case proves both reach curl.
+if [ -z "$auth" ] || [ "$(cat "$auth")" != "Authorization: Bearer $TYPESAFE_API_KEY" ]; then
+	echo '{"detail":"unauthorized"}' >"$out"
+	printf 401
+	exit 0
+fi
+if [ "$url" != https://api.typesafe.ai/v1/systemone ]; then
+	echo '{"detail":"not found"}' >"$out"
+	printf 404
+	exit 0
+fi
 title=$(jq -r .state.candidate.title "$data")
 count=$(cat "$FIXTURE/count.$title" 2>/dev/null || echo 0)
 count=$((count + 1))
@@ -76,6 +94,7 @@ fi
 set -- $answer
 case $1 in
 timeout) exit 28 ;;
+unreachable) exit 7 ;;
 200)
 	if [ "$2" = invalid ]; then
 		echo '{"model":"jev-1.13.0","answers":{}}' >"$out"
@@ -358,6 +377,33 @@ expect_err "#11"
 expect_err "HTTP 529"
 expect_err "3 attempts"
 if [ "$(calls t11)" -eq 3 ]; then ok; else bad "want 3 attempts, got $(calls t11)"; fi
+
+new_case other-retried-statuses
+list owner 11 t11 b 12 t12 b
+jev t11 503 "200 0.3 0.1"
+jev t12 429 "200 0.2 0.4"
+run 100
+expect_status 0
+if [ "$(calls t11)" -eq 2 ] && [ "$(calls t12)" -eq 2 ]; then ok; else bad "503 and 429 were not retried once: $(calls t11), $(calls t12)"; fi
+
+new_case unreachable-always
+list owner 11 t11 b
+jev t11 unreachable
+run 100
+expect_status 1
+expect_no_out
+expect_err "connection failed"
+expect_err "3 attempts"
+
+new_case parent-without-record
+issue 100 "the refined issue" "Part body.
+<!-- cw-split-plan: part of #40 -->"
+list owner 40 parent "Plan whose split did not finish." 11 t11 b
+jev t11 "200 0.1 0.1"
+run 100
+expect_status 0
+expect_not_judged parent
+expect_judged t11
 
 new_case invalid-response
 list owner 11 t11 b
