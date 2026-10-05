@@ -239,7 +239,7 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 			if on {
 				want.Spend, want.PullRequest = used.Spend(), pr
 			}
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Errorf("usage_in_status %v: action status = %#v, want %#v", on, got, want)
 			}
 		})

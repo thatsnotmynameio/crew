@@ -107,22 +107,26 @@ type StopSession struct {
 	Action   string
 }
 
-// RunCheck asks the engine to run Command, the action's check, in Dir once
-// its session succeeded, its output going to the log at Log after the
-// session's. The issue's ref, key and URL and the action's Branch reach the
-// command as environment variables, never as part of it. Bot is the
-// action's bot, whom the check acts as on the tracker; empty means you.
-// Its result is CheckEnded.
+// RunCheck asks the engine to run Command, the script of the action's
+// check called Name, in Dir once its session succeeded, its output going to
+// the log at Log after the session's. The issue's ref, key and URL, the
+// action's Branch, the Prompt its session started with and the session's
+// LastMessage reach the command as environment variables and files, never
+// as part of it. Bot is the action's bot, whom the check acts as on the
+// tracker; empty means you. Its result is CheckEnded.
 type RunCheck struct {
-	IssueKey string
-	Action   string
-	Dir      string
-	Command  string
-	Log      string
-	IssueRef string
-	IssueURL string
-	Branch   string
-	Bot      string
+	IssueKey    string
+	Action      string
+	Dir         string
+	Name        string
+	Command     string
+	Log         string
+	IssueRef    string
+	IssueURL    string
+	Branch      string
+	Bot         string
+	Prompt      string
+	LastMessage string
 }
 
 // FindPullRequest asks the tracker for the pull request opened from Branch

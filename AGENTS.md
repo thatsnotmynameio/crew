@@ -34,7 +34,7 @@ Ports and adapters with a pure core.
 - `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
 - `internal/crew`: the domain (states, issues, rules with their labels and queues, actions, board columns, outcomes, failure reports, statuses).
 - `internal/config`: `.crew/config.yaml`: refuses the old keys with their replacements (`legacy.go`), strict decoding, engine defaults, one file per section (rules, agents, checks, queues, board); resolves each action's agent, check and bot; hands the tracker and each agent's harness its section as a `port.Decode`.
-- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `CodeOwnerFinder`, `LoginFinder`, `WriterReporter`, `BoardLister`, `Narrator`, `Reopener`, `UsageReporter` and `PullRequestFinder`, sentinel errors, factory types.
+- `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `CodeOwnerFinder`, `LoginFinder`, `WriterReporter`, `BoardLister`, `Narrator`, `Reopener`, `UsageReporter`, `LastMessageReporter` and `PullRequestFinder`, sentinel errors, factory types.
 - `internal/registry`: name to factory; `default.go` is the production list.
 - `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.

@@ -5,12 +5,15 @@ import "testing"
 func TestPullRequestReportCloneSharesNoMemory(t *testing.T) {
 	r := PullRequestReport{
 		ID: "7", IssueKey: "42", IssueRef: "#42", State: "crew:failed",
-		End: &RuleEnd{Rule: "development", Actions: []ActionStatus{{Name: "lfg", State: ActionFailed}}},
+		End: &RuleEnd{Rule: "development", Actions: []ActionStatus{
+			{Name: "lfg", State: ActionFailed, Checks: []CheckResult{{Name: "judge", Reason: "unfinished"}}},
+		}},
 	}
 	c := r.Clone()
 	c.End.Rule = "review"
 	c.End.Actions[0].Name = "other"
-	if r.End.Rule != "development" || r.End.Actions[0].Name != "lfg" {
+	c.End.Actions[0].Checks[0].Reason = "changed"
+	if r.End.Rule != "development" || r.End.Actions[0].Name != "lfg" || r.End.Actions[0].Checks[0].Reason != "unfinished" {
 		t.Fatalf("changing the clone changed the original: %+v", r.End)
 	}
 }

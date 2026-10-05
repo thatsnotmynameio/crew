@@ -285,6 +285,16 @@ type UsageReporter interface {
 	Usage() crew.Usage
 }
 
+// LastMessageReporter is an optional interface of a harness's Session: it
+// tells the session's last message, which crew hands to the action's checks.
+// A session without it gives its checks an empty message.
+type LastMessageReporter interface {
+	// LastMessage returns the session's last message as it wrote it, every
+	// line kept, or "" when it ended without one. It is called once Wait
+	// has returned.
+	LastMessage() string
+}
+
 // PullRequestFinder is an optional interface of a Tracker: it finds the
 // pull request an action opened from its branch. A tracker without it
 // leaves every action's pull request not looked up.
@@ -312,14 +322,23 @@ type Checker interface {
 	Check(ctx context.Context, check Check) error
 }
 
-// Check is what a Checker needs to run a check. The issue reaches the
-// command only through these fields, as environment variables, never as
-// part of the command, so no issue text can run as code.
+// Check is what a Checker needs to run a check. The issue and the session
+// reach the command only through these fields, as environment variables
+// and files they name, never as part of the command, so no issue or
+// session text can run as code.
 type Check struct {
 	// Dir is the action's workspace directory, where the command runs.
 	Dir string
-	// Command is the shell command to run.
+	// Name is the check's name, and Command the shell command to run.
+	Name    string
 	Command string
+	// Action is the name of the action the check follows.
+	Action string
+	// Prompt is the rendered prompt the action's session started with, and
+	// LastMessage what the session last said, as in LastMessageReporter;
+	// the command reads them from files, never as part of it.
+	Prompt      string
+	LastMessage string
 	// IssueRef, IssueKey and IssueURL identify the issue, as in crew.Issue.
 	IssueRef string
 	IssueKey string

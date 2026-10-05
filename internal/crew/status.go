@@ -61,11 +61,12 @@ type ActionStatus struct {
 	// Cause says what made a failed action fail; set when State is
 	// ActionFailed.
 	Cause FailureCause
-	// Reason is the check's one-line reason when Cause is CauseCheck, and
-	// empty otherwise. A session's or a tool's own words never go in a
-	// status: a tracker may show it in public, and those words can hold
-	// commands, output and secrets.
-	Reason string
+	// Checks are how its checks that ran so far ended, in the order they
+	// ran; when Cause is CauseCheck, the last is the one that did not pass.
+	// Only a check's reason goes in a status: a session's or a tool's own
+	// words never do, since a tracker may show it in public, and those
+	// words can hold commands, output and secrets.
+	Checks []CheckResult
 	// Log is the repository-relative path of its log, once it has one.
 	Log string
 	// Workspace is the name of the workspace the action resumed in; empty
@@ -127,6 +128,24 @@ const (
 // Clone returns a copy of s with its own Actions, so the copy shares no
 // slice with s.
 func (s Status) Clone() Status {
-	s.Actions = slices.Clone(s.Actions)
+	s.Actions = cloneActions(s.Actions)
 	return s
+}
+
+// cloneActions returns a copy of actions, each with its own Checks.
+func cloneActions(actions []ActionStatus) []ActionStatus {
+	out := slices.Clone(actions)
+	for i := range out {
+		out[i].Checks = slices.Clone(out[i].Checks)
+	}
+	return out
+}
+
+// FailedCheck returns the reason of the check that failed a, when its Cause
+// is CauseCheck, or "".
+func (a ActionStatus) FailedCheck() string {
+	if a.Cause != CauseCheck || len(a.Checks) == 0 {
+		return ""
+	}
+	return a.Checks[len(a.Checks)-1].Reason
 }

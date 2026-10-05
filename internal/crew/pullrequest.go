@@ -27,9 +27,9 @@ type RuleEnd struct {
 	// Rule is the rule's name.
 	Rule string
 	// Actions are the rule's actions, in its action order, as an ended
-	// Status carries them: each succeeded or failed, and a failed one with
-	// its cause, its log and, for a failed check, the check's reason. The
-	// rule failed when any action failed.
+	// Status carries them: each succeeded or failed, with its checks'
+	// reasons, and a failed one with its cause and its log. The rule failed
+	// when any action failed.
 	Actions []ActionStatus
 }
 
@@ -43,7 +43,7 @@ func (e RuleEnd) Failed() bool {
 func (r PullRequestReport) Clone() PullRequestReport {
 	if r.End != nil {
 		end := *r.End
-		end.Actions = slices.Clone(end.Actions)
+		end.Actions = cloneActions(end.Actions)
 		r.End = &end
 	}
 	return r
