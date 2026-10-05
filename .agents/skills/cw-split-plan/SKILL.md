@@ -35,7 +35,7 @@ The skill ends with exactly one of these outcomes, named on the first line of it
 ## 1. Read the issue
 
 1. Run `gh issue view N --json number,title,body,labels,url` and write the body to a file.
-2. Run `gh api repos/{owner}/{repo}/issues/N/sub_issues --paginate` and read each sub-issue's body.
+2. Run `gh api repos/{owner}/{repo}/issues/N/sub_issues --paginate --jq '.[] | {number, title, body}'` and read each sub-issue's body. Run it as it is: its filter already prints every field step 3 needs.
 3. When a sub-issue's body carries the part marker for `#N`, an earlier run created parts and stopped before it finished. Do not split again: end with `earlier split did not finish`, listing those sub-issues.
 
 ## 2. Measure the plan
