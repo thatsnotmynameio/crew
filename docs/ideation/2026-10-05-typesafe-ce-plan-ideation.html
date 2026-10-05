@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: ce-plan on TypeSafe and Jev</title>
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --text: #1d1f23; --muted: #5b616b;
+  --border: #e3e0d8; --accent: #2f5bd3; --accent-soft: #e8eefc; --accent-text: #1f3f99;
+  --ok-soft: #e6f4ea; --ok-text: #1d6b35; --warn-soft: #fdf1dc; --warn-text: #8a5300;
+  --rej-soft: #f6e8e8; --rej-text: #8b2b2b; --code-bg: #f1efe9; --diagram-bg: #ffffff;
+  --node: #eef1f6; --node-stroke: #8b94a3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b; --surface: #1c1f24; --text: #e6e7ea; --muted: #a2a8b3;
+    --border: #2e333b; --accent: #7fa2ff; --accent-soft: #22304f; --accent-text: #b9cbff;
+    --ok-soft: #1c3325; --ok-text: #9fdcb2; --warn-soft: #3a2f1a; --warn-text: #f0c98a;
+    --rej-soft: #3a2224; --rej-text: #f0b0b0; --code-bg: #24282f; --diagram-bg: #1c1f24;
+    --node: #262b33; --node-stroke: #6c7584;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b; --surface: #1c1f24; --text: #e6e7ea; --muted: #a2a8b3;
+  --border: #2e333b; --accent: #7fa2ff; --accent-soft: #22304f; --accent-text: #b9cbff;
+  --ok-soft: #1c3325; --ok-text: #9fdcb2; --warn-soft: #3a2f1a; --warn-text: #f0c98a;
+  --rej-soft: #3a2224; --rej-text: #f0b0b0; --code-bg: #24282f; --diagram-bg: #1c1f24;
+  --node: #262b33; --node-stroke: #6c7584;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15.5px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 920px; margin-inline: auto; padding: 32px 16px 64px; }
+p, li, dd { max-width: 72ch; }
+h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 8px; }
+h2 { font-size: 1.35rem; margin: 48px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.12rem; margin: 0 0 6px; }
+h4 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 6px; }
+strong { color: inherit; }
+a { color: var(--accent); }
+code { font: .88em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: .85rem; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+.eyebrow { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent-text); font-weight: 600; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 0; padding: 0; color: var(--muted); font-size: .9rem; }
+.meta div { display: flex; gap: 6px; }
+.meta dt { font-weight: 600; color: var(--text); }
+.meta dd { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 24px 0 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.stat b { display: block; font-size: 1.4rem; }
+.stat span { color: var(--muted); font-size: .85rem; }
+.callout { background: var(--accent-soft); color: var(--accent-text); border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+.callout p { margin: 0; color: inherit; }
+.callout.warn { background: var(--warn-soft); color: var(--warn-text); }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .92rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+ol.jump { columns: 2; column-gap: 28px; padding-left: 20px; }
+ol.jump li { margin: 2px 0; break-inside: avoid; }
+article.idea { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; margin: 18px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.chip { display: inline-block; font-size: .76rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--node); color: var(--text); }
+.chip.id { background: var(--accent-soft); color: var(--accent-text); }
+.chip.conf { background: var(--ok-soft); color: var(--ok-text); }
+.chip.cx { background: var(--warn-soft); color: var(--warn-text); }
+dl.fields { margin: 0; }
+dl.fields dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin-top: 12px; }
+dl.fields dd { margin: 2px 0 0; }
+.basis-tag { font-family: ui-monospace, monospace; font-size: .82em; font-weight: 700; }
+figure { margin: 16px 0; }
+figure svg { width: 100%; height: auto; display: block; background: var(--diagram-bg); border: 1px solid var(--border); border-radius: 10px; }
+figcaption { color: var(--muted); font-size: .85rem; margin-top: 6px; }
+svg text { fill: var(--text); font: 13px ui-sans-serif, system-ui, sans-serif; }
+svg .small { font-size: 11px; fill: var(--muted); }
+svg .node { fill: var(--node); stroke: var(--node-stroke); stroke-width: 1.2; }
+svg .hl { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+svg .gen { fill: var(--warn-soft); stroke: var(--warn-text); stroke-width: 1.2; }
+svg .arrow { stroke: var(--node-stroke); stroke-width: 1.4; fill: none; marker-end: url(#ah); }
+svg #ah path, svg #ah2 path, svg #ah3 path { fill: var(--node-stroke); }
+.rej td:first-child { color: var(--muted); white-space: nowrap; }
+footer.composition-signal { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+@media (max-width: 640px) { ol.jump { columns: 1; } article.idea { padding: 16px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">Ideation</div>
+  <h1>Ideation: a deterministic ce-plan on TypeSafe and Jev, in Python</h1>
+  <dl class="meta">
+    <div><dt>date</dt><dd><time datetime="2026-10-05">2026-10-05</time></dd></div>
+    <div><dt>topic</dt><dd><code>typesafe-ce-plan</code></dd></div>
+    <div><dt>mode</dt><dd>elsewhere-software</dd></div>
+    <div><dt>focus</dt><dd>A Python application that uses TypeSafe and Jev to reproduce a flow like the ce-plan skill, as deterministically as possible, following TypeSafe's best practices</dd></div>
+  </dl>
+  <div class="stats">
+    <div class="stat"><b>47</b><span>raw ideas from 5 frames</span></div>
+    <div class="stat"><b>22</b><span>after merge and dedupe</span></div>
+    <div class="stat"><b>7</b><span>survivors</span></div>
+    <div class="stat"><b>5 / 5</b><span>axes covered</span></div>
+  </div>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<div class="eyebrow">Topic Context</div>
+
+<h4>The thing being reproduced</h4>
+<p>ce-plan (compound-engineering 3.30.3) is a long prose procedure: a 60-line SKILL.md plus 19 reference files. Its phases run in order: output and resume routing, source intake, bootstrap, blockers, the Output Contract gate (Direct, Chat brief or Durable), depth (Lightweight, Standard or Deep), scoping synthesis, research, planning questions, structure (implementation units with stable U-IDs), writing, a pre-write review of about 20 checks, the confidence check that picks sections to deepen, document review, and a handoff menu.</p>
+<p>About 23 decisions branch the flow. Most are written as prose heuristics: "use judgment", "borderline means stay silent", "clearly high", "material", "thin". Two gates overlap and depend on order: contract and depth are decided separately, and research can later bump Lightweight to Standard. The plan body is free generation. Research runs through about 14 subagents whose output depends on the tools the host has. Timestamps, random scratch directories and model-chosen filenames add more variation.</p>
+
+<h4>What Jev is, measured live today</h4>
+<ul>
+  <li>Jev returns typed answers with calibrated probabilities, not text. There are three primitives: <strong>Choice</strong> picks one of a set and returns a <code>confidence</code>. <strong>Noul</strong> returns the probability of yes, with no confidence field. <strong>Score</strong> returns a probability-weighted position on 2 to 10 described levels. One request is one <code>state</code> plus many named questions, answered in parallel. No answer sees another.</li>
+  <li>Calls through the env var key worked with the Python SDK (<code>pip install typesafe-sdk</code>; <code>TypeSafeClient().system_one(state=..., questions=...)</code>). A 3-question call used about 525 input tokens, about $0.00002, and took about 250 ms warm. 60 Nouls in one request took 335 ms. Output tokens are free.</li>
+  <li><strong>Jev is not deterministic.</strong> Six identical requests returned the same winning answer every time, but the probabilities moved by 0.01 to 0.03. The order of keys in the probabilities dict also changed. The docs describe no cache or idempotency key.</li>
+  <li>The docs' jaggedness page for jev-1.13 says Jev reads literally, so write exact conditions and boundary cases. Don't ask it to count, do math or compare dates. Don't send irrelevant state. Treat state as untrusted. It does not generate text, so turn extraction into a Choice over candidates. Keep questions and thresholds in one reviewable place, edit questions written by agents by hand, and pin <code>jev-1.13.0</code> once thresholds are tuned.</li>
+</ul>
+
+<h4>The SDK shape that worked</h4>
+<pre><code>from typesafe_sdk import TypeSafeClient, Choice, Noul, Score
+
+with TypeSafeClient(model="jev-1.13.0") as client:   # reads TYPESAFE_API_KEY
+    r = client.system_one(
+        state={"request": request_text, "upstream": contract_summary},
+        questions={
+            "tier": Choice(instructions="...", criteria={"direct": "...", "chat_brief": "...", "durable": "..."}),
+            "risk_surface": Noul(instructions="...", criteria={"true": "...", "false": "..."}),
+            "ambiguity": Score(instructions="...", criteria=["one reading", "minor gaps", "several readings", "goal unclear"]),
+        })
+    r.answers["tier"].choice, r.answers["tier"].probabilities, r.model, r.usage.input_tokens</code></pre>
+
+<h4>What this repository already learned</h4>
+<ul>
+  <li><code>cw-split-plan</code> measures plan size in code (<code>measure.sh</code>: characters and distinct R/AE IDs) and asks Jev one Noul per part in shadow. The answer is recorded and gates nothing. The split plan's own decision: "Size is measured in code; Jev judges delivery, not size … no Jev score could be shown to predict cost better than size, whose correlation is already 0.83."</li>
+  <li>Jev experiments on 2026-10-05 found two strong uses: judging how a session ended from its last message, and ranking likely blockers. They found one failure: auto-answering brainstorm questions was "no better than always taking the recommended option once thresholds were chosen on held-out sessions". Rules carried forward: one pair per request beat 49 candidates in one state (0.93 vs 0.58), choose thresholds on held-out data, run each Choice in two option orders, and never send empty text.</li>
+  <li>The evaluation data is real but thin: 34 lfg sessions in <code>.crew/logs</code>, 18 complete cost runs, and a handful of plans.</li>
+</ul>
+
+<h4>Prior art</h4>
+<p>Spec-driven tools (Spec Kit, Kiro) fix the phase sequence and templates, but an LLM still writes the prose and makes the scoping calls. Structured-output libraries (Instructor, BAML, Outlines) fix the shape of output, not its content. Temporal makes workflows reproducible by recording each activity's result and replaying it, with workflow code free of clocks and randomness. Research on selective prediction warns against abstaining on a single raw confidence (arXiv 2603.21172). The web search found no tool that makes the planning decisions themselves typed, calibrated judgments with logged probabilities.</p>
+
+<div class="callout warn"><p><strong>The limit every idea below accepts:</strong> Jev decides; it does not write. Plan prose (Problem Frame, decision rationale, unit Approach, test scenarios) still needs a generative model. "As deterministic as possible" can cover the gates, the structure, the IDs, the rendering and the verification. It cannot cover the words.</p></div>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ol>
+  <li><strong>Gates:</strong> the routing and classification decisions before and during planning.</li>
+  <li><strong>The plan as data:</strong> schema, units, IDs, the generated residue, rendering.</li>
+  <li><strong>Review and verification:</strong> the confidence gate, pre-write checks, claims checked against sources.</li>
+  <li><strong>Run record, replay and calibration:</strong> reproducibility, model pinning, thresholds from held-out data.</li>
+  <li><strong>People and escalation:</strong> when the app asks a person, and how uncertainty is handled.</li>
+</ol>
+
+<figure>
+<svg viewBox="0 0 880 300" role="img" aria-labelledby="arch-title">
+  <title id="arch-title">How the seven survivors fit together</title>
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <rect class="node" x="20" y="40" width="150" height="60" rx="8"/>
+  <text x="95" y="66" text-anchor="middle">Request + repo</text>
+  <text x="95" y="84" text-anchor="middle" class="small">code builds the state</text>
+  <rect class="hl" x="210" y="40" width="160" height="60" rx="8"/>
+  <text x="290" y="66" text-anchor="middle">1 · Intake snapshot</text>
+  <text x="290" y="84" text-anchor="middle" class="small">facets → decision table</text>
+  <rect class="hl" x="210" y="130" width="160" height="60" rx="8"/>
+  <text x="290" y="156" text-anchor="middle">7 · Local research</text>
+  <text x="290" y="174" text-anchor="middle" class="small">code finds, Noul filters</text>
+  <rect class="gen" x="410" y="85" width="160" height="60" rx="8"/>
+  <text x="490" y="111" text-anchor="middle">LLM fills slots</text>
+  <text x="490" y="129" text-anchor="middle" class="small">the only generation</text>
+  <rect class="hl" x="610" y="40" width="160" height="60" rx="8"/>
+  <text x="690" y="66" text-anchor="middle">4 · Typed acceptance</text>
+  <text x="690" y="84" text-anchor="middle" class="small">quotes + checklist Nouls</text>
+  <rect class="hl" x="610" y="130" width="160" height="60" rx="8"/>
+  <text x="690" y="156" text-anchor="middle">3 · PlanRecord</text>
+  <text x="690" y="174" text-anchor="middle" class="small">IDs, balance, templates</text>
+  <rect class="hl" x="20" y="225" width="240" height="56" rx="8"/>
+  <text x="140" y="249" text-anchor="middle">2 · Judgment cassette</text>
+  <text x="140" y="267" text-anchor="middle" class="small">every Jev call recorded, replayed</text>
+  <rect class="hl" x="300" y="225" width="240" height="56" rx="8"/>
+  <text x="420" y="249" text-anchor="middle">5 · Question bank</text>
+  <text x="420" y="267" text-anchor="middle" class="small">questions, thresholds, shadow → active</text>
+  <rect class="hl" x="580" y="225" width="240" height="56" rx="8"/>
+  <text x="700" y="249" text-anchor="middle">6 · Ask policy</text>
+  <text x="700" y="267" text-anchor="middle" class="small">Jev decides whether, a person decides what</text>
+  <path class="arrow" d="M170,70 L206,70"/>
+  <path class="arrow" d="M170,85 L206,150"/>
+  <path class="arrow" d="M370,70 L406,105"/>
+  <path class="arrow" d="M370,160 L406,125"/>
+  <path class="arrow" d="M570,105 L606,72"/>
+  <path class="arrow" d="M690,100 L690,126"/>
+</svg>
+<figcaption>Illustrative only. Blue boxes are code plus typed judgments; the amber box is the one generative step. The bottom row runs across every step.</figcaption>
+</figure>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+<ol class="jump">
+  <li><a href="#idea-1">Single-snapshot intake: atomic facets in one request, routing in a decision table</a></li>
+  <li><a href="#idea-2">Judgment cassette: record every Jev call and replay it</a></li>
+  <li><a href="#idea-3">The plan is a typed record; markdown is a rendering</a></li>
+  <li><a href="#idea-4">The generator proposes, Jev and code accept</a></li>
+  <li><a href="#idea-5">A question bank where every gate starts in shadow</a></li>
+  <li><a href="#idea-6">Jev decides whether to ask, never what the answer is</a></li>
+  <li><a href="#idea-7">Local research by enumeration plus pairwise Nouls</a></li>
+</ol>
+
+<article class="idea" id="idea-1">
+  <h3>1. Single-snapshot intake: atomic facets in one request, routing in a decision table</h3>
+  <div class="chips"><span class="chip id">Gates</span><span class="chip conf">Confidence 80%</span><span class="chip cx">Complexity Medium</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Replace ce-plan's chain of prose gates with one <code>system_one</code> request. It asks every intake facet as its own atomic question over one small state that code builds. Facets include: touches a risk surface, has a decision the user would weigh, needs multi-pass verification, asks for a file or format, spans several components, bug-shaped, domain, ambiguity, and needs external research. A plain Python decision table then applies ce-plan's precedence: pins first, then "uncertain → heavier tier", then the Lightweight → Standard bump. It emits the Output Contract tier, the depth and the flags. For each outcome the table also prints which facets drove it, like the reason codes a credit scorecard gives.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> ce-plan's pain point is "overlapping order-dependent gates (contract vs depth decided separately, reclassified later)". SKILL.md: "When the tier is still uncertain after those reads, take the heavier one." TypeSafe docs: "ask every question once in one request, including speculative ones" and "split complex judgments into atomic questions weighted in code". Measured live: answers never feed each other, and 60 Nouls took 335 ms. <span class="basis-tag">external:</span> faceted classification (Ranganathan) and adverse-action reason codes.</dd>
+    <dt>Rationale</dt>
+    <dd>Order dependence is the largest source of path variation that does not come from generation. When every facet is read from the same snapshot, routing becomes a pure function of logged answers. A disagreement can then be traced to one named facet, and the table itself becomes the spec that people review and test.</dd>
+    <dt>Downsides</dt>
+    <dd>Each facet must be written literally, with boundary cases, and checked by a person. The table encodes ce-plan's heuristics, which gets them wrong in the same places the prose does until real data corrects them. Running this gate on every issue to skip planning altogether is tempting, but how many issues it would skip is unmeasured.</dd>
+    <dt>Confidence</dt><dd>80%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 860 210" role="img" aria-labelledby="facet-title">
+    <title id="facet-title">Facets to decision table to tier</title>
+    <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    <rect class="hl" x="20" y="20" width="250" height="170" rx="8"/>
+    <text x="36" y="44">One request, one state</text>
+    <text x="36" y="70" class="small">Noul · risk surface</text><text x="256" y="70" class="small" text-anchor="end">0.97</text>
+    <text x="36" y="90" class="small">Noul · user would weigh</text><text x="256" y="90" class="small" text-anchor="end">0.22</text>
+    <text x="36" y="110" class="small">Noul · multi-pass verify</text><text x="256" y="110" class="small" text-anchor="end">0.61</text>
+    <text x="36" y="130" class="small">Noul · asks for a file</text><text x="256" y="130" class="small" text-anchor="end">0.04</text>
+    <text x="36" y="150" class="small">Choice · domain</text><text x="256" y="150" class="small" text-anchor="end">software</text>
+    <text x="36" y="170" class="small">Score · ambiguity</text><text x="256" y="170" class="small" text-anchor="end">1.26</text>
+    <rect class="node" x="330" y="55" width="220" height="100" rx="8"/>
+    <text x="440" y="84" text-anchor="middle">Decision table (code)</text>
+    <text x="440" y="106" text-anchor="middle" class="small">pins → uncertain → heavier</text>
+    <text x="440" y="124" text-anchor="middle" class="small">→ depth bump</text>
+    <rect class="node" x="610" y="55" width="230" height="100" rx="8"/>
+    <text x="725" y="84" text-anchor="middle">Tier: Durable · Standard</text>
+    <text x="725" y="106" text-anchor="middle" class="small">reason: risk surface 0.97</text>
+    <text x="725" y="124" text-anchor="middle" class="small">reason: multi-pass 0.61</text>
+    <path d="M270,105 L326,105" stroke="var(--node-stroke)" stroke-width="1.4" fill="none" marker-end="url(#ah2)"/>
+    <path d="M550,105 L606,105" stroke="var(--node-stroke)" stroke-width="1.4" fill="none" marker-end="url(#ah2)"/>
+  </svg>
+  <figcaption>Illustrative values. The model never sees the precedence rules; code applies them.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="idea-2">
+  <h3>2. Judgment cassette: record every Jev call and replay it</h3>
+  <div class="chips"><span class="chip id">Run record, replay and calibration</span><span class="chip conf">Confidence 85%</span><span class="chip cx">Complexity Low</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Store every Jev call in a cassette (SQLite or JSONL next to the plan). The key is a hash of the pinned model, the canonical state JSON and the canonical question. The value holds the answer, the sorted probabilities, <code>response.model</code> and the token usage. Re-runs, resumes and deepening replay what is recorded and pay only for questions whose facts changed. The orchestrator contains no clock or randomness: IDs, filenames and "recent" windows come from the input or the cassette. Live answers within 0.03 of a threshold, the observed jitter, are flagged as unstable and never re-asked.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> live probe: "NOT bit-identical — probabilities jitter 0.01-0.03 … No caching/idempotency key documented". TypeSafe docs: "pin <code>jev-1.13.0</code> when thresholds were tuned, log <code>response.model</code>". ce-plan's pain points include timestamps, random scratch directories and model-chosen filenames. <span class="basis-tag">external:</span> Temporal's event-sourced replay, in which completed activities return their recorded results and workflow code must be deterministic.</dd>
+    <dt>Rationale</dt>
+    <dd>The API promises no repeatability, so the app has to supply it. The cassette turns "as deterministic as possible" into a property you can test: the same inputs give the same plan bytes. Every difference then comes from a named fact that changed. The same file later supplies the labelled data for idea 5.</dd>
+    <dt>Downsides</dt>
+    <dd>This is reproducibility of a recorded run, not determinism of a fresh one. The rule for canonicalising state decides what counts as "the same case", and a careless rule either busts the cache on whitespace or replays stale answers. Re-asking inside the band was considered and dropped, because a re-ask can flip again.</dd>
+    <dt>Confidence</dt><dd>85%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+
+<article class="idea" id="idea-3">
+  <h3>3. The plan is a typed record; markdown is a rendering</h3>
+  <div class="chips"><span class="chip id">The plan as data</span><span class="chip conf">Confidence 75%</span><span class="chip cx">Complexity Medium</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>The app's output is a Pydantic <code>PlanRecord</code> holding the Goal Capsule, the R/A/F/AE IDs, the decisions, the U-IDs, the Verification Contract, the Definition of Done and every gate answer with its probability. Code assigns the IDs and enforces uniqueness, no renumbering and acyclic dependencies. A Jinja template renders it to ce-plan's markdown or HTML with identical bytes every time. Traceability works like double-entry bookkeeping: each R/AE has to appear in at least one unit and in the Verification Contract, or the write fails. Jev checks each pair's substance with one Noul per (requirement, unit), asking "does this unit advance this requirement?". Free text lives only in named slots: copied verbatim from the source, or filled by a labelled generative step.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> TypeSafe autoformat cookbook: "the model never generates text … and code does the rendering, so every character of the output comes from the input". ce-plan plan-sections: "the section names and anchor ids are the stable contract". The deepening-workflow checklist flags requirements "vague or disconnected from implementation units". Memory: one pair per request beat 49 candidates in one state (0.93 vs 0.58).</dd>
+    <dt>Rationale</dt>
+    <dd>Variation stays inside a few slots you can audit, not spread across a whole document. Downstream consumers (cw-split-plan's size measure, an lfg session, an acceptance tester) can read the record instead of re-parsing prose. For crew, that makes the record the contract between brainstorm, plan, split and work.</dd>
+    <dt>Downsides</dt>
+    <dd>Units still come from a generative step, so the balance check verifies them but does not create them. Computing units from a requirement × component matrix was considered and set aside as an experiment, because it may produce worse plans than ce-plan. Pairwise checks mean one small request per pair, run in parallel with the async client, rather than one large shared state.</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="idea-4">
+  <h3>4. The generator proposes, Jev and code accept</h3>
+  <div class="chips"><span class="chip id">Review and verification</span><span class="chip conf">Confidence 70%</span><span class="chip cx">Complexity Medium</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Each generated slot (Problem Frame, decision rationale, unit Approach, test scenarios) comes from a bounded per-field LLM call that sees only that field's inputs. Nothing is accepted until it passes a typed acceptance suite in two layers. In the first layer, every claim carries <code>{file, line range, quote}</code>. Code checks that the quote exists, and one Choice per claim asks whether the quote supports it (the citation_check pattern). In the second layer, ce-plan's confidence checklist runs as atomic Nouls, each over only its own section. Trigger counts, the critical-section bonus, the 2+ threshold and the top-N sort run in code, with ties broken by registry order. A field that fails is regenerated with only the failing item as feedback, up to N times, then becomes a blocker. Keep a final post-write pass too, because the gate is meant to score a finished plan.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> deepening-workflow: "Trigger count … Critical-section bonus - add 1 … Treat a section as a candidate if: it hits 2+ total points". The grounding calls the confidence gate "code arithmetic + Noul per checklist line — the cleanest Jev fit". Jaggedness page: don't ask Jev to count. citation_check cookbook: string-match the quote first, then a Choice on support. Docs: "state is untrusted", which argues for short, bounded quotes.</dd>
+    <dt>Rationale</dt>
+    <dd>Code verifies that the evidence exists, and Jev judges only whether it supports the claim. So the generator can stay creative while acceptance is typed, logged and repeatable. "Which sections get deepened", the most variable step in ce-plan, becomes a pure function you can unit-test.</dd>
+    <dt>Downsides</dt>
+    <dd>The generator is not Jev, so the plan's words stay non-deterministic. The suite constrains and verifies them. Judgments like "describes product behavior absent from requirements" are unmeasured. Tuning checklist weights from revision history is a later step, because there are too few plans to fit them today.</dd>
+    <dt>Confidence</dt><dd>70%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <figure>
+  <svg viewBox="0 0 860 170" role="img" aria-labelledby="accept-title">
+    <title id="accept-title">Propose and accept loop</title>
+    <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    <rect class="gen" x="20" y="50" width="180" height="64" rx="8"/>
+    <text x="110" y="78" text-anchor="middle">LLM drafts one slot</text>
+    <text x="110" y="96" text-anchor="middle" class="small">claims carry quotes</text>
+    <rect class="node" x="250" y="50" width="170" height="64" rx="8"/>
+    <text x="335" y="78" text-anchor="middle">Code: quote exists?</text>
+    <text x="335" y="96" text-anchor="middle" class="small">exact string match</text>
+    <rect class="hl" x="470" y="50" width="170" height="64" rx="8"/>
+    <text x="555" y="78" text-anchor="middle">Jev: supported?</text>
+    <text x="555" y="96" text-anchor="middle" class="small">+ checklist Nouls</text>
+    <rect class="node" x="690" y="50" width="150" height="64" rx="8"/>
+    <text x="765" y="78" text-anchor="middle">Accept or</text>
+    <text x="765" y="96" text-anchor="middle" class="small">retry ≤ N, then blocker</text>
+    <path d="M200,82 L246,82" stroke="var(--node-stroke)" stroke-width="1.4" fill="none" marker-end="url(#ah3)"/>
+    <path d="M420,82 L466,82" stroke="var(--node-stroke)" stroke-width="1.4" fill="none" marker-end="url(#ah3)"/>
+    <path d="M640,82 L686,82" stroke="var(--node-stroke)" stroke-width="1.4" fill="none" marker-end="url(#ah3)"/>
+    <path d="M765,114 L765,150 L110,150 L110,118" stroke="var(--node-stroke)" stroke-width="1.4" fill="none" marker-end="url(#ah3)"/>
+    <text x="440" y="143" text-anchor="middle" class="small">failing item only, as feedback</text>
+  </svg>
+  <figcaption>Illustrative. Existence is code's job; support is Jev's; prose is the LLM's.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="idea-5">
+  <h3>5. A question bank where every gate starts in shadow</h3>
+  <div class="chips"><span class="chip id">Run record, replay and calibration</span><span class="chip conf">Confidence 80%</span><span class="chip cx">Complexity Medium</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Every question lives in one versioned bank (YAML or a Python module), not as strings scattered through code. Each entry holds its ID, primitive, instructions, criteria, pinned model, act / confirm / don't-act bands, risk class and a pointer to labelled examples. A lint enforces the docs' rules: no empty state, no "and" inside a Noul, no numeric-only Score levels, and every Choice has an <code>other</code> or <code>none</code> option. Every gate starts in shadow and is recorded next to what ce-plan, a person or a trivial rule decided. Trivial rules include "always Durable", "always the recommended option" and a zero-LLM plan built only from the repo's own precedent. A gate is promoted to acting only after it beats its trivial baseline leave-one-session-out, with each Choice run in both option orders. CI re-checks every promoted gate when the model pin moves.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> TypeSafe docs: "keep questions and thresholds in one reviewable place, agents write weak questions so edit by hand". Memory: auto-answering brainstorm questions was "no better than always taking the recommended option once thresholds were chosen on held-out sessions", and "an in-sample threshold misled once". cw-split-plan: Jev's answers are recorded in shadow so that "the records it leaves become the labelled data".</dd>
+    <dt>Rationale</dt>
+    <dd>Without this, the app becomes a Jev showcase full of gates of unknown accuracy. With it, each gate earns its autonomy, a non-fit is recorded honestly (the repo's own rule: "say plainly when Jev does not fit"), and model upgrades fail a test instead of silently changing plans.</dd>
+    <dt>Downsides</dt>
+    <dd>34 sessions and a few plans will only label a few gates. Most gates will stay in shadow for a long time, and that is the honest result. Calibrating against downstream outcomes (session cost, how the session ended) is the long-term goal, but those outcomes are confounded by issue size and too few to fit today.</dd>
+    <dt>Confidence</dt><dd>80%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+
+<article class="idea" id="idea-6">
+  <h3>6. Jev decides whether to ask, never what the answer is</h3>
+  <div class="chips"><span class="chip id">People and escalation</span><span class="chip conf">Confidence 75%</span><span class="chip cx">Complexity Low</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Jev classifies each open question as technical or product, and flags "a decision the user would weigh". It never answers a product question. With a person present, middle-band questions are collected and asked once per phase, with Jev's pick shown as a visible default. With no person present (crew's normal case), technical unknowns become typed entries. Each entry goes either into ce-plan's own "Deferred to implementation" list or into an Assumptions table that shows its probability. A product question ends the run with <code>status: blocked</code> and a <code>recovery_path</code>, or carries the brainstorm's recommended option marked unconfirmed. "Never re-ask a settled decision" is enforced in code against a store of settled decisions. For a consequential Choice, the bank asks it in both option orders within the same request. If the two orders disagree, the gate goes to the confirm band whatever the top probability is.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> memory: Jev "FAILED for auto-answering brainstorm questions", and adding past answers "made the brainstorm prediction worse". structure.md: "Deferred to implementation - the answer depends on code changes, runtime behavior, or execution-time discovery". confidence.md: "Low confidence: Do not act. Route to a human, request clarification, or fall back". Live probe and docs: first-option lean, and running each Choice in two orders.</dd>
+    <dt>Rationale</dt>
+    <dd>Jev is used where it measured well (routing, flagging) and kept away from where it failed. Interruptions, the main source of path variation in ce-plan, become rare, batched and recorded. Unattended runs stay deterministic and auditable instead of guessing.</dd>
+    <dt>Downsides</dt>
+    <dd>The technical-vs-product Choice is itself unmeasured, so it starts in shadow like every other gate. Value-of-information question selection and an escalation cascade to a reasoning LLM were considered and left out. The first is over-engineered for a handful of facets, and the second puts an LLM back into the gates.</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+</article>
+
+<article class="idea" id="idea-7">
+  <h3>7. Local research by enumeration plus pairwise Nouls</h3>
+  <div class="chips"><span class="chip id">Gates</span><span class="chip conf">Confidence 70%</span><span class="chip cx">Complexity Medium</span></div>
+  <dl class="fields">
+    <dt>Description</dt>
+    <dd>Replace the cheap lookups done by ce-plan's research subagents. Code lists the candidates: <code>git ls-files</code>, <code>docs/solutions/</code> frontmatter (<code>module</code>, <code>tags</code>, <code>problem_type</code>), past <code>docs/plans/</code> units and <code>git log</code>. Jev filters them with one small request per (requirement, candidate) pair, run in parallel with the async client, and code keeps those above the threshold. "Fewer than 3 local examples, so research externally" becomes an exact count. External research runs only when explicitly requested, or when a Noul and the count agree it is needed.</dd>
+    <dt>Basis</dt>
+    <dd><span class="basis-tag">direct:</span> the grounding's pain point: "research by ~14 subagents varies with environment/tools". rerank cookbook: one question per query-candidate pair. Memory: one pair per request scored 0.93 vs 0.58 for bulk state. Jaggedness page: "don't send irrelevant state … filter first, or a Noul relevance filter".</dd>
+    <dt>Rationale</dt>
+    <dd>Research is the largest source of variation in ce-plan's input. The same repo SHA, candidates and threshold give the same evidence set, so everything downstream can replay. It costs cents and stops depending on the tools a host exposes.</dd>
+    <dt>Downsides</dt>
+    <dd>It loses the open-ended discovery that a research agent does. Treat it as the baseline that covers routine lookups, with an agent kept for the gaps it reports. At 80 requests per second, a large repo needs a prefilter in code before the pairwise pass.</dd>
+    <dt>Confidence</dt><dd>70%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<div class="table-wrap">
+<table class="rej">
+  <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+  <tbody>
+    <tr><td>C3</td><td>Deadband that re-asks or routes everything near a threshold to the heavier tier</td><td>A re-ask can flip again, and "always heavier" biases toward Durable/Deep. Only the flag-without-re-ask part survives, inside idea 2.</td></tr>
+    <tr><td>C4</td><td>Paraphrase "voting channels" in one request (modular redundancy)</td><td>Paraphrases on one model are correlated, so they are not independent channels, and Noul has no option order. The option-order check survives inside idea 6.</td></tr>
+    <tr><td>C6</td><td>Calibrate every gate against session cost and outcome (Brier, reliability curves)</td><td>Not enough data: 34 sessions, 18 cost runs, and outcomes confounded by issue size. Kept as the long-term goal of idea 5.</td></tr>
+    <tr><td>C9</td><td>Compute units from a requirement × component Noul matrix plus clustering</td><td>Clustering matches does not produce coherent, mergeable units, and could give worse plans than ce-plan. Better run as an experiment against idea 5's zero-LLM baseline.</td></tr>
+    <tr><td>C10</td><td>Zero-LLM plan built from repository precedent</td><td>Gives a thin plan on its own. Folded into idea 5 as a baseline that shows which fields really need generation.</td></tr>
+    <tr><td>C13</td><td>Item analysis of the checklist from plan revision history</td><td>Too few labelled plans, and a rewritten section is a noisy proxy. A later step for idea 4.</td></tr>
+    <tr><td>C15</td><td>Settled decision × finding Choice with an asymmetric overturn threshold</td><td>Sound design, but there are no labelled cases to set the "invalidating" threshold. The gate fits idea 1's table and starts in shadow under idea 5.</td></tr>
+    <tr><td>C17</td><td>Value-of-information interview: ask only the facet that would flip a tier</td><td>The facet probabilities are uncalibrated, and with a handful of facets a hand-written table does the same job.</td></tr>
+    <tr><td>C18</td><td>Escalation cascade: rules → Jev → reasoning LLM → human on disagreement</td><td>Puts a non-deterministic LLM back into the gates, against the stated goal. Possible later as an optional extension.</td></tr>
+    <tr><td>C19</td><td>Every human answer becomes a label that shrinks the question budget</td><td>Duplicates idea 5's label collection, and there are too few human answers per gate to see the budget shrink.</td></tr>
+    <tr><td>C20</td><td>Run the output-contract gate on every issue and plan only Durable ones</td><td>It is idea 1's gate, not a separate bet. Skipping planning could silently under-plan, and the skip rate is unmeasured.</td></tr>
+    <tr><td>S1</td><td>Reference architecture (snapshot → table → record → render)</td><td>Not an idea of its own. It is the overview figure under Topic Axes, built from ideas 1, 2, 3 and 5.</td></tr>
+    <tr><td>S2</td><td>Shadow-first port of ce-plan inside crew, promoted gate by gate</td><td>Folded into idea 5 and reframed as label collection, because the promotion pace depends on data that does not exist yet.</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<footer class="composition-signal">Composed 2026-10-05 by ce-ideate from the user's prompt, with live TypeSafe API probes and the ce-plan 3.30.3 skill files as grounding.</footer>
+</main>
+</body>
+</html>
