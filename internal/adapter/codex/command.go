@@ -39,10 +39,8 @@ func command(run port.Run, model string, gitDirs []string) proc.Command {
 		[]string{"CREW_CODE_OWNERS=" + strings.Join(run.CodeOwners, " "), "CREW_BOTS=" + strings.Join(run.Bots, " ")},
 	)
 	args := []string{"exec", "--json", "--approve-for-me", "-c", "sandbox_workspace_write.network_access=true"}
-	var added []string
-	for _, dir := range gitDirs {
-		if !slices.Contains(added, dir) {
-			added = append(added, dir)
+	for i, dir := range gitDirs {
+		if !slices.Contains(gitDirs[:i], dir) {
 			args = append(args, "--add-dir", dir)
 		}
 	}
@@ -52,10 +50,10 @@ func command(run port.Run, model string, gitDirs []string) proc.Command {
 	args = append(args, "-c", envPolicy+".include_only=[]")
 	for _, entry := range env {
 		name, value, _ := strings.Cut(entry, "=")
-		args = append(args, "-c", envPolicy+".set."+name+"="+tomlString(value))
+		args = setEnv(args, name, value)
 	}
 	for _, name := range run.Identity.Unset {
-		args = append(args, "-c", envPolicy+".set."+name+"="+tomlString(""))
+		args = setEnv(args, name, "")
 	}
 	return proc.Command{
 		Name:  binary,
@@ -64,4 +62,10 @@ func command(run port.Run, model string, gitDirs []string) proc.Command {
 		Env:   env,
 		Unset: run.Identity.Unset,
 	}
+}
+
+// setEnv returns args with the override that sets the variable name to value
+// in the commands codex runs.
+func setEnv(args []string, name, value string) []string {
+	return append(args, "-c", envPolicy+".set."+name+"="+tomlString(value))
 }
