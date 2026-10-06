@@ -19,6 +19,9 @@ var configSchema = filepath.Join("..", "..", "schema", "config.schema.json")
 
 const schemaURL = "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json"
 
+// modeline is the first line of crew's own config and of the example.
+const modeline = "# yaml-language-server: $schema=" + schemaURL
+
 func readSchema(t *testing.T) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(configSchema)

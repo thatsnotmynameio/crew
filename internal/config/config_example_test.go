@@ -3,7 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,109 +12,100 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/config"
 )
 
-// exampleConfig is the reference of every key crew accepts, each commented
-// out: a config line is "# " and YAML, and a prose line starts with "##".
+// exampleConfig is the committed reference of .crew/config.yaml: every key,
+// commented out. A code owner's own copy is ignored by git.
 var exampleConfig = filepath.Join("..", "..", ".crew", "config.example.yaml")
 
-// modeline is the first line of the example and of crew's own config.
-const modeline = "# yaml-language-server: $schema=" + schemaURL
-
-// uncomment takes one "#", and the space after it, off each line of a
-// commented config but the modeline, so its config lines become YAML and its
-// "##" prose lines stay comments.
-func uncomment(text string) string {
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		if line == modeline {
-			continue
-		}
-		if rest, ok := strings.CutPrefix(line, "#"); ok {
-			lines[i] = strings.TrimPrefix(rest, " ")
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func readExample(t *testing.T) string {
+// uncommented returns the example with its settings uncommented: "# " and a
+// lone "#" are taken off each line but the schema modeline, so its "## "
+// explanations stay comments.
+func uncommented(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile(exampleConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "# yaml-language-server:") {
+			continue
+		}
+		if line == "#" {
+			lines[i] = ""
+		} else if rest, ok := strings.CutPrefix(line, "# "); ok {
+			lines[i] = rest
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
-// missingKeys returns each of keys, key paths with config.AnyName for any
-// name, that the YAML text does not set.
-func missingKeys(t *testing.T, text string, keys []string) []string {
-	t.Helper()
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+// The example sets nothing as it is: every line is a comment, so a copy
+// does only what its code owner uncomments.
+func TestTheExampleIsAllComments(t *testing.T) {
+	data, err := os.ReadFile(exampleConfig)
+	if err != nil {
 		t.Fatal(err)
 	}
-	var missing []string
-	for _, key := range keys {
-		if len(doc.Content) == 0 || !hasPath(doc.Content[0], strings.Split(key, ".")) {
-			missing = append(missing, key)
+	for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		if line != "" && !strings.HasPrefix(line, "#") {
+			t.Errorf("%s:%d: %q is not a comment", exampleConfig, i+1, line)
 		}
 	}
-	return missing
 }
 
-// hasPath tells whether the mapping n holds the key path segs, where
-// config.AnyName matches any key.
-func hasPath(n *yaml.Node, segs []string) bool {
-	if len(segs) == 0 {
-		return true
+// Uncommented whole, the example is a valid config.
+func TestTheExampleLoadsUncommented(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
+		t.Fatal(err)
 	}
-	if n.Kind != yaml.MappingNode {
-		return false
+	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(uncommented(t)), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if (segs[0] == config.AnyName || n.Content[i].Value == segs[0]) && hasPath(n.Content[i+1], segs[1:]) {
-			return true
-		}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatalf("Load(uncommented %s) = %v", exampleConfig, err)
 	}
-	return false
+	names := make([]string, 0, len(cfg.Rules))
+	for _, r := range cfg.Rules {
+		names = append(names, r.Name)
+	}
+	if want := []string{"development", "review", "approve"}; !slices.Equal(names, want) {
+		t.Errorf("rules = %q, want %q", names, want)
+	}
 }
 
-// Every key the schema defines is in the example, so a key cannot ship
-// without its entry (R12 of #135).
-func TestTheExampleListsEveryKey(t *testing.T) {
+// The example is the reference of every key: it sets each key the schema
+// describes at least once.
+func TestTheExampleSetsEveryKey(t *testing.T) {
 	var w schemaWalk
 	w.object(readSchema(t), "")
-	for _, key := range missingKeys(t, uncomment(readExample(t)), w.keys) {
-		t.Errorf("%s does not list %s", exampleConfig, key)
-	}
-}
-
-func TestMissingKeysNamesAKeyTheTextLacks(t *testing.T) {
-	text := uncomment("## the poll\n# poll_interval_seconds: 300\n# rules:\n#   implement:\n#     queue: default\n")
-	keys := []string{"poll_interval_seconds", "usage_in_status", "rules.*.queue", "rules.*.notify"}
-	want := []string{"usage_in_status", "rules.*.notify"}
-	if got := missingKeys(t, text, keys); !reflect.DeepEqual(got, want) {
-		t.Errorf("missingKeys = %q, want %q", got, want)
-	}
-}
-
-// The example, uncommented, is a config crew loads.
-func TestTheUncommentedExampleLoads(t *testing.T) {
-	cfg, err := config.Load(writeFiles(t, uncomment(readExample(t)), noFile))
-	if err != nil {
-		t.Fatalf("Load(the uncommented %s) = %v", exampleConfig, err)
-	}
-	if len(cfg.Rules) == 0 || len(cfg.Agents) < 2 || !cfg.BoardWritten {
-		t.Errorf("Config = %+v, want rules, both sample agents and the board", cfg)
-	}
-}
-
-// The example as committed sets no key, so copying it changes nothing.
-func TestTheExampleSetsNoKey(t *testing.T) {
 	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(readExample(t)), &doc); err != nil {
+	if err := yaml.Unmarshal([]byte(uncommented(t)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Content) != 0 {
-		t.Errorf("%s sets keys; every key must be commented out", exampleConfig)
+	var set []string
+	exampleKeys(doc.Content[0], "", w.keys, &set)
+	for _, k := range w.keys {
+		if !slices.Contains(set, k) {
+			t.Errorf("%s does not set %s", exampleConfig, k)
+		}
+	}
+}
+
+// exampleKeys adds to set the key path of each key below the mapping n,
+// whose own path is path, as schemaWalk names it: config.AnyName for a name
+// the code owner chooses.
+func exampleKeys(n *yaml.Node, path string, schema []string, set *[]string) {
+	if n.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key := schemaKey(path, n.Content[i].Value)
+		if !slices.Contains(schema, key) {
+			key = schemaKey(path, config.AnyName)
+		}
+		*set = append(*set, key)
+		exampleKeys(n.Content[i+1], key, schema, set)
 	}
 }
