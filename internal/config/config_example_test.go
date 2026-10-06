@@ -62,7 +62,7 @@ func TestTheExampleLoadsUncommented(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(uncommented(t)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root)
+	cfg, err := config.Load(root, "")
 	if err != nil {
 		t.Fatalf("Load(uncommented %s) = %v", exampleConfig, err)
 	}

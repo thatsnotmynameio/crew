@@ -11,49 +11,102 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The two files crew reads, by their path from the repository's root: the
-// shared config, and the local one whose top-level keys replace its keys.
+// The repository's two files crew reads, by their path from the
+// repository's root: the shared config, and the local one whose top-level
+// keys replace its keys and those of the global file.
 const (
 	sharedFile = ".crew/config.yaml"
 	localFile  = ".crew/config.local.yaml"
 )
 
-// source is one config file that exists: its path from the root, and the
-// mapping at its top level, empty when the file holds no YAML.
+// GlobalFile returns the path of the user's global config file, whose
+// top-level keys the repository's files replace: crew/config.yaml under
+// xdgConfigHome, $XDG_CONFIG_HOME, or else under home/.config, on every OS.
+// It is "", no global file, when the directory is relative or unknown: a
+// relative one would resolve against the repository crew runs in. It is
+// never under os.UserConfigDir, which is ~/Library/Application Support on
+// macOS.
+func GlobalFile(xdgConfigHome, home string) string {
+	dir := xdgConfigHome
+	if dir == "" && home != "" {
+		dir = filepath.Join(home, ".config")
+	}
+	if !filepath.IsAbs(dir) {
+		return ""
+	}
+	return filepath.Join(dir, "crew", "config.yaml")
+}
+
+// source is one config file that exists: the name its errors carry, and
+// the mapping at its top level, empty when the file holds no YAML.
 type source struct {
 	name string
 	top  *yaml.Node
 }
 
-// readSources reads the config files that exist, the shared one first. At
-// least one must; neither is an error wrapping fs.ErrNotExist.
-func readSources(root string) ([]source, error) {
+// readSources reads the config files that exist, in the order their keys
+// replace each other: the global file at global, unless it is "", then the
+// repository's shared and local files. At least one must exist; none is an
+// error wrapping fs.ErrNotExist.
+func readSources(root, global string) ([]source, error) {
+	type file struct{ name, path string }
+	var files []file
+	if global != "" {
+		files = append(files, file{global, global})
+	}
+	files = append(files,
+		file{sharedFile, filepath.Join(root, sharedFile)},
+		file{localFile, filepath.Join(root, localFile)})
 	var out []source
-	for _, name := range []string{sharedFile, localFile} {
-		path := filepath.Join(root, name)
-		data, err := os.ReadFile(path) //nolint:gosec // the path is one of the repository's own config files
+	for _, f := range files {
+		s, err := readSource(f.name, f.path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read crew config: %w", err)
+			return nil, err
 		}
-		var doc yaml.Node
-		if err := yaml.Unmarshal(data, &doc); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		top, err := topMapping(&doc)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		out = append(out, source{name: name, top: top})
+		out = append(out, s)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("read crew config: %w: neither %s nor %s is in %s "+
-			"(create one: see .crew/config.example.yaml in the crew repository)",
-			fs.ErrNotExist, sharedFile, localFile, root)
+		return nil, missingConfig(root, global)
 	}
 	return out, nil
+}
+
+// missingConfig is the error for none of the three files: it names them
+// all, and says why there is no global file when global is "", since crew
+// then looks for none and creating one would change nothing.
+func missingConfig(root, global string) error {
+	noGlobal := "there is no " + global
+	if global == "" {
+		noGlobal = "crew reads no global $XDG_CONFIG_HOME/crew/config.yaml or ~/.config/crew/config.yaml, " +
+			"since neither XDG_CONFIG_HOME nor the home directory is an absolute path"
+	}
+	return fmt.Errorf("read crew config: %w: neither %s nor %s is in %s, and %s "+
+		"(create one: see .crew/config.example.yaml in the crew repository)",
+		fs.ErrNotExist, sharedFile, localFile, root, noGlobal)
+}
+
+// readSource reads the file at path, named name in its errors. A missing
+// file is an error wrapping fs.ErrNotExist, returned as is.
+func readSource(name, path string) (source, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // the path is one of crew's own config files
+	if errors.Is(err, fs.ErrNotExist) {
+		return source{}, err //nolint:wrapcheck // the caller skips a missing file
+	}
+	if err != nil {
+		return source{}, fmt.Errorf("read crew config: %w", err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return source{}, fmt.Errorf("%s: %w", path, err)
+	}
+	top, err := topMapping(&doc)
+	if err != nil {
+		return source{}, fmt.Errorf("%s: %w", name, err)
+	}
+	return source{name: name, top: top}, nil
 }
 
 // topMapping returns the mapping at the top of a file's YAML document, or
@@ -82,9 +135,9 @@ func refuseOldKeys(sources []source) error {
 }
 
 // merge builds the mapping of the sources' top-level keys, each set by the
-// last source that sets it: the shared file's keys the local file leaves
-// out, in file order, then the local file's keys. It returns the mapping
-// and where each of its keys came from.
+// last source that sets it: each file's keys no later file sets, in file
+// order, file after file. It returns the mapping and where each of its keys
+// came from.
 func merge(sources []source) (*yaml.Node, origin) {
 	o := origin{files: map[string]string{}}
 	names := make([]string, len(sources))
@@ -94,7 +147,7 @@ func merge(sources []source) (*yaml.Node, origin) {
 			o.files[e.key.Value] = s.name
 		}
 	}
-	o.all = strings.Join(names, " and ")
+	o.all = joinNames(names)
 	top := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	for _, s := range sources {
 		for _, e := range entries(s.top, "") {
@@ -106,13 +159,22 @@ func merge(sources []source) (*yaml.Node, origin) {
 	return top, o
 }
 
+// joinNames lists names as "a", "a and b" or "a, b and c".
+func joinNames(names []string) string {
+	last := len(names) - 1
+	if last < 1 { // no name, or one: nothing to join
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:last], ", ") + " and " + names[last]
+}
+
 // origin tells which file each top-level key of the merged config came
 // from, so every error names the file of its key.
 type origin struct {
 	// files maps each top-level key to the file that set it.
 	files map[string]string
 	// all names every file read, for an error about no key of any file,
-	// such as a section neither file sets.
+	// such as a section no file sets.
 	all string
 }
 

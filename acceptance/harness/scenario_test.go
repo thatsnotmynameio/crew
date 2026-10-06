@@ -321,3 +321,33 @@ func gone(pid int, timeout time.Duration) bool {
 		time.Sleep(pollInterval)
 	}
 }
+
+// configHome returns the scenario's XDG_CONFIG_HOME.
+func configHome(t *testing.T, s *Scenario) string {
+	t.Helper()
+	for _, kv := range s.env {
+		if v, ok := strings.CutPrefix(kv, "XDG_CONFIG_HOME="); ok {
+			return v
+		}
+	}
+	t.Fatal("the scenario's environment has no XDG_CONFIG_HOME")
+	return ""
+}
+
+// Options.GlobalConfig is crew's global config file, in the scenario's own
+// XDG_CONFIG_HOME; without it, that directory stays empty.
+func TestGlobalConfigIsWrittenInTheScenariosConfigHome(t *testing.T) {
+	opts := standInOptions(t)
+	opts.GlobalConfig = "poll_interval_seconds: 60\n"
+	s := New(t, opts)
+
+	got, err := os.ReadFile(filepath.Join(configHome(t, s), "crew", "config.yaml"))
+	if err != nil || string(got) != opts.GlobalConfig {
+		t.Errorf("crew/config.yaml = %q (%v), want %q", got, err, opts.GlobalConfig)
+	}
+
+	empty := New(t, standInOptions(t))
+	if entries, err := os.ReadDir(configHome(t, empty)); err != nil || len(entries) != 0 {
+		t.Errorf("XDG_CONFIG_HOME holds %v (%v), want nothing", entries, err)
+	}
+}

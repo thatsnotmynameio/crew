@@ -21,7 +21,7 @@ func writeRoot(t *testing.T, body string) string {
 
 func load(t *testing.T, body string) *config.Config {
 	t.Helper()
-	cfg, err := config.Load(writeRoot(t, body))
+	cfg, err := config.Load(writeRoot(t, body), "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -32,7 +32,7 @@ func load(t *testing.T, body string) *config.Config {
 // wants.
 func loadErr(t *testing.T, body string, wants ...string) {
 	t.Helper()
-	cfg, err := config.Load(writeRoot(t, body))
+	cfg, err := config.Load(writeRoot(t, body), "")
 	if err == nil {
 		t.Fatalf("Load succeeded with %+v, want an error", cfg)
 	}
@@ -86,7 +86,7 @@ const ruleOnly = `rules:
 `
 
 func TestLoadDraftConfig(t *testing.T) {
-	cfg, err := config.Load("testdata/draft")
+	cfg, err := config.Load("testdata/draft", "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestLoadRendersPromptForIssue(t *testing.T) {
 // and points to the example.
 func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	root := t.TempDir()
-	_, err := config.Load(root)
+	_, err := config.Load(root, "")
 	if err == nil {
 		t.Fatal("Load succeeded without a config file")
 	}

@@ -35,7 +35,7 @@ func errLines(t *testing.T, err error) []string {
 // with.
 func oldKeyLines(t *testing.T, body string) []string {
 	t.Helper()
-	_, err := config.Load(writeRoot(t, body))
+	_, err := config.Load(writeRoot(t, body), "")
 	return errLines(t, err)
 }
 
@@ -174,7 +174,7 @@ const oldExample = "testdata/old"
 // Today's example config is refused with every old key it uses, each once
 // and on its line.
 func TestTheOldExampleConfigIsRefusedWithEveryOldKey(t *testing.T) {
-	_, err := config.Load(oldExample)
+	_, err := config.Load(oldExample, "")
 	got := errLines(t, err)
 	want := []string{
 		"config.poll_interval_seconds", "config.max_parallel_issues", "config.clerk_slots", "config.queues",

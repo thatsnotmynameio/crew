@@ -60,6 +60,10 @@ type Options struct {
 	Checker port.Checker
 	// Root is the repository's absolute root, where .crew/ lives.
 	Root string
+	// GlobalConfig is the path of the user's global config file, read
+	// before the repository's .crew/ files, whose top-level keys replace
+	// its keys; empty reads none.
+	GlobalConfig string
 	// Home is the user's home directory, shortened to ~ in failure reports;
 	// empty shortens nothing.
 	Home string
@@ -212,7 +216,7 @@ type built struct {
 // a port.BoardLister (KTD3); the default board needs none, since the core
 // fills it from its listings (KTD10).
 func build(o Options) (built, error) {
-	cfg, err := config.Load(o.Root)
+	cfg, err := config.Load(o.Root, o.GlobalConfig)
 	if err != nil {
 		return built{}, err
 	}
