@@ -198,3 +198,13 @@ Uma versão instalada mais nova ou mais antiga pode ser diferente.
 
 Termina num resumo no chat e num menu com Create a plan, Save summary, Publish to Proof e Done.
 Não grava nada em `plans/`.
+
+## Skills que ele chama antes do handoff
+
+- [`ce-pov`](ce-pov-steps.md): o veredito sobre adotar um candidato externo (passo 5).
+- [`ce-explain`](ce-explain-steps.md): a explicação de um comportamento do sistema ou de um território que você não conhece (passos 9 e 11).
+- [`ce-prototype`](ce-prototype-steps.md): o protótipo de uma decisão cara de desfazer (passos 11, 12 e 15).
+- [`ce-bakeoff`](ce-bakeoff-steps.md): a competição entre abordagens, quando você pede (passo 12).
+- [`ce-noslop`](ce-noslop-steps.md): a disciplina de escrita da síntese e do plano (passos 13 e 14).
+
+As skills que ele só chama no handoff (`ce-plan`, `lfg`, `ce-doc-review` e `ce-proof`) não estão descritas aqui.
