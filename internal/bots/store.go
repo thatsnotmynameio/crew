@@ -67,11 +67,29 @@ func NewStore(root, old string) *Store {
 // the bots older crews saved in <user config dir>/crew/mates (KTD9).
 // Without a user config directory it returns an EnvError.
 func DefaultStore() (*Store, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := configDir(os.Getenv)
 	if err != nil {
 		return nil, envErrorf("find where to keep bots: %w", err)
 	}
 	return NewStore(filepath.Join(dir, "crew", "bots"), filepath.Join(dir, "crew", "mates")), nil
+}
+
+// configDir returns your user config directory, the same on every OS:
+// $XDG_CONFIG_HOME, which must be absolute, else $HOME/.config. It is
+// the one os.UserConfigDir returns on Linux, but not on macOS, where
+// os.UserConfigDir returns ~/Library/Application Support.
+func configDir(getenv func(string) string) (string, error) {
+	if dir := getenv("XDG_CONFIG_HOME"); dir != "" {
+		if !filepath.IsAbs(dir) {
+			return "", errors.New("$XDG_CONFIG_HOME is a relative path")
+		}
+		return dir, nil
+	}
+	home := getenv("HOME")
+	if home == "" {
+		return "", errors.New("neither $XDG_CONFIG_HOME nor $HOME is set")
+	}
+	return filepath.Join(home, ".config"), nil
 }
 
 // Path returns the path Save writes the file of owner's bot called name
