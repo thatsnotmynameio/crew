@@ -1,0 +1,175 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
+## Every key crew's config accepts, commented out, with what it does, how to
+## fill it and its default. A line that starts with "# " is a key: copy it
+## without its "# ". A line that starts with "##" explains the keys below it.
+##
+## crew reads two files from the repository's root:
+##
+## - .crew/config.yaml, the repository's shared workflow. Commit it.
+## - .crew/config.local.yaml, your own settings on this machine, such as
+##   poll_interval_seconds or a board. Have git ignore it.
+##
+## Either file may be missing, but not both. Each top-level key that
+## config.local.yaml sets replaces that whole key of config.yaml: a local
+## board replaces the board, and a local agents replaces every agent, so to
+## change one agent's model, copy all of agents. A local key with no value,
+## such as "board:", brings back crew's default for it. Keys the local file
+## leaves out keep their value from config.yaml, and keys neither file sets
+## keep crew's defaults.
+##
+## The modeline on this file's first line gives editors completion and help
+## for every key. It works in both files.
+##
+## crew's own rules, which run on crew's repository, are in
+## .crew/config.yaml beside this file.
+
+## ---- The engine ----
+
+## Seconds between polls of the tracker. Must be positive. 300 by default.
+# poll_interval_seconds: 300
+
+## How many issues crew works on at once, split into the queues. It counts
+## issues, not sessions: an issue whose rule has two actions takes one slot.
+## 2 by default.
+# max_parallel_issues: 2
+
+## How long crew runs, counted from its first poll, before it winds down.
+## Must be positive: 28800 is 8 hours. Without it, crew runs until you stop
+## it.
+# run_time_limit_seconds: 28800
+
+## Whether the status comment shows each ended action's cost, tokens and
+## pull request. false by default.
+# usage_in_status: false
+
+## ---- Queues ----
+
+## Queues by name, each with its slots: how many issues its rules work on at
+## once, a positive number. A queue's slots are only for the rules that name
+## it, so a long session never holds up a quick rule of another queue. The
+## default queue, which crew always has, gets the slots max_parallel_issues
+## leaves, and runs every rule that names no queue. A queue cannot be called
+## default. Without queues, every rule runs in default.
+# queues:
+#   clerk: 1
+
+## ---- The tracker ----
+
+## The tracker crew polls for issues and pull requests, and writes to.
+# tracker:
+## The tracker adapter's name. github, the default, is the one crew ships;
+## it takes no keys of its own.
+#   name: github
+## The bot crew's own writes on the tracker act as, and the bot of every
+## agent that names none. Without it, they act as the gh login crew runs
+## as. Create a bot with crew bots create.
+#   bot: clerk
+
+## ---- Agents ----
+
+## Agents by name: each is the harness that runs an action's session, with
+## its model, and the bot the session acts as. Required when a rule has
+## actions. An action names its agent with agent.
+# agents:
+#   developer:
+## The harness that runs the agent's sessions: its name, and the harness
+## adapter's own keys.
+#     harness:
+## The harness adapter's name: claude or codex, the ones crew ships.
+#       name: claude
+## The model the harness runs. Without it, claude runs claude-opus-5-5.
+#       model: claude-opus-5-5
+## The bot the agent's sessions and checks act as. Without it, they act as
+## tracker.bot, and as the gh login crew runs as when that is not set
+## either.
+#     bot: developer
+#   reviewer:
+#     harness:
+#       name: codex
+## Without model, codex runs the model Codex's own config or default names.
+#       model: gpt-5.5
+#     bot: reviewer
+
+## ---- Checks ----
+
+## Checks by name, each a shell script that decides whether an action
+## succeeded. It runs in the action's worktree after its session ends, and
+## the action succeeds only when it exits 0; its last line of output reaches
+## the status comment. It is not a template: it reads the issue from
+## CREW_ISSUE_REF, CREW_ISSUE_KEY, CREW_ISSUE_URL and CREW_BRANCH, and the
+## logins from CREW_CODE_OWNERS and CREW_BOTS. An action names its checks
+## with check.
+# checks:
+#   pr-closes-issue: |
+#     gh pr view "$CREW_BRANCH" --json state,body --jq '.state == "OPEN" and (.body | contains("Closes " + env.CREW_ISSUE_REF))' | grep -qx true
+
+## ---- The board ----
+
+## The live view's board: columns by name, drawn in file order. A column
+## holds a card for each open issue that carries one of its labels, any
+## label, a rule's or not. A column takes one label, or a list of one or
+## more. Without board, the board has one column per rule that has actions,
+## in file order, with the items of the rule's kind that carry its ready or
+## running label.
+# board:
+#   To do: ready
+#   Doing: [in progress, in review]
+
+## ---- Rules ----
+
+## Rules by name; at least one. Each rule takes the items of its kind that
+## carry its ready label, moves each to running, runs its actions, and moves
+## it to success when every action succeeded or to failure when any failed.
+## Rules form no sequence: the order of work comes only from how their
+## labels chain. Among rules of equal priority, a later rule in the file
+## takes first.
+# rules:
+#   implement:
+## The kind of item the rule takes: issues, the default, or pull_requests.
+#     takes: issues
+## The queue the rule runs in: one of queues, or default, the default.
+#     queue: default
+## Whether crew sends a desktop notification when the rule ends. On by
+## default for a rule with actions, off for a rule without.
+#     notify: true
+## The rule's labels, by state. Labels compare ignoring case, as GitHub
+## compares them.
+#     labels:
+## The label the rule takes items from. No two rules take the same label.
+#       ready: ready
+## The label an item moves to while the rule works on it. It cannot be any
+## rule's ready label.
+#       running: in progress
+## The label an item moves to when every action succeeded, or at once for a
+## rule without actions. It cannot be the rule's own ready label.
+#       success: in review
+## The label an item moves to when any action failed. Required when the
+## rule has actions; a rule without actions never fails. It cannot be the
+## rule's own ready label.
+#       failure: needs attention
+## The rule's actions by name, each a session of its own, all started
+## together. Without actions, crew moves the item to running and on to
+## success itself, without a session, so the rule spends no tokens.
+#     actions:
+#       development:
+## The agent that runs the action's session: one of agents. It can be left
+## out only when agents declares exactly one agent.
+#         agent: developer
+## The session's prompt: a Go template over the item the rule took, such as
+## {{.Issue.Ref}}.
+#         prompt: |
+#           Implement {{.Issue.Ref}} and open a pull request whose body says
+#           "Closes {{.Issue.Ref}}".
+## The check, or the list of checks, that decide whether the action
+## succeeded, each one of checks: check: pr-closes-issue names one. They
+## run in the listed order after a successful session, and the first that
+## does not pass fails the action. Without it, the session's own outcome
+## decides.
+#         check: [pr-closes-issue]
+## A rule without actions hands items on: crew moves the label itself.
+#   hand on:
+#     queue: clerk
+#     labels:
+#       ready: in review
+#       running: handing on
+#       success: done

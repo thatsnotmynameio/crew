@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -163,18 +162,19 @@ func TestKeyDiffNamesAKeyMissingOnEitherSide(t *testing.T) {
 	}
 }
 
-func TestOwnConfigNamesThePublishedSchema(t *testing.T) {
+// crew's own config and the example both name the published schema on
+// their first line, as editors read it.
+func TestTheConfigsNameThePublishedSchema(t *testing.T) {
 	if id := readSchema(t)["$id"]; id != schemaURL {
 		t.Errorf("%s: $id = %v, want %s", configSchema, id, schemaURL)
 	}
-	f, err := os.Open(ownConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = f.Close() }()
-	lines := bufio.NewScanner(f)
-	lines.Scan()
-	if want := "# yaml-language-server: $schema=" + schemaURL; lines.Text() != want {
-		t.Errorf("%s: first line = %q, want %q", ownConfig, lines.Text(), want)
+	for _, path := range []string{ownConfig, exampleConfig} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first, _, _ := strings.Cut(string(data), "\n"); first != modeline {
+			t.Errorf("%s: first line = %q, want %q", path, first, modeline)
+		}
 	}
 }
