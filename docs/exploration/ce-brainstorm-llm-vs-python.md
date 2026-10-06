@@ -228,3 +228,79 @@ Separadas, o Python oferece o protótipo quando a primeira é sim e a segunda é
 
 - Que opção a pessoa escolheu? *(escolha entre as opções visíveis)*
 - Esta pendência foi resolvida? *(sim/não, uma por pendência)*
+
+## Como passar o fluxo a uma LLM de forma determinística
+
+A pergunta: se uma pessoa pedisse um brainstorm a uma LLM numa sessão, e a função de perguntas existisse, como outra coisa (uma LLM, uma pessoa, um script) passaria o fluxo a ela com checagens reais, sem só dizer "faça de 1 a 8"?
+
+A resposta curta: em vez de dar a lista à LLM, dar a ela um motor que guarda o fluxo e libera um passo de cada vez.
+O fluxo e o estado ficam fora da cabeça da LLM, num arquivo.
+Ela só faz o passo atual, entrega um resultado num formato fixo, e o motor confere antes de deixá-la avançar.
+
+### As peças
+
+1. **Um arquivo que define o fluxo.** É declarativo, em YAML por exemplo, e quem escreve pode ser uma pessoa ou outra LLM. Para cada estado, ele diz:
+   - qual é o passo;
+   - o que a LLM recebe;
+   - o formato do que ela devolve;
+   - como se checa a saída;
+   - para onde se vai em cada resultado.
+2. **Um motor genérico em Python.** Lê o arquivo, guarda o estado atual em disco, roda as checagens e faz a transição. Os comandos seriam algo como:
+   - `flow next`: diz em que estado a LLM está, qual é o único passo agora e o formato da resposta;
+   - `flow submit resposta.json`: valida a saída e avança, ou recusa explicando o motivo.
+3. **A função de perguntas como checagem.** As condições de saída deixam de ser "quando achar que entendeu". Viram perguntas atômicas que o motor faz sobre o estado, com um limite de confiança.
+4. **Hooks do Claude Code** para a LLM não conseguir contornar o motor (detalhes abaixo).
+
+Um estado ficaria mais ou menos assim:
+
+```yaml
+em_dialogo:
+  passo: fazer a próxima pergunta
+  recebe: [pedido, lacunas_pendentes, respostas]
+  devolve: schemas/pergunta.json        # {texto, opcoes}
+  antes:
+    - pergunta: "Preciso de um humano pra decidir?"
+      sim: mostrar a pergunta à pessoa
+      nao: resolver com o repositório
+  sai_quando:
+    todas_sim:                          # função de perguntas, confiança >= 0.8
+      - "Sabemos quem vai usar?"
+      - "Sabemos o resultado esperado?"
+      - "Sabemos o que fica de fora?"
+      - "Sabemos como medir o sucesso?"
+    e: lacunas_pendentes == 0           # Python
+  proximo: ideia_entendida
+  senao: em_dialogo
+```
+
+### Do mais fraco ao mais forte
+
+| Nível | Como o fluxo chega à LLM | Onde ela ainda pode se perder |
+|---|---|---|
+| 0 | Prosa: "faça de 1 a 8". É o `ce-brainstorm` hoje. | Em qualquer ponto. Esquece uma regra, pula uma checagem ou dá um passo por encerrado sem ter terminado. |
+| 1 | Uma lista de tarefas (`TaskCreate`). | Pode marcar uma tarefa como concluída sem ter feito o trabalho. A lista é só uma visão. |
+| 2 | Arquivo de fluxo mais `flow next` e `flow submit`. | O motor recusa saída inválida e fora de ordem. Mas a LLM ainda poderia não chamá-lo. |
+| 3 | O nível 2 mais hooks do Claude Code. | Quase nada: o harness a impede. |
+| 4 | Um programa externo (Agent SDK, ou o próprio crew) que chama a LLM uma vez por passo. | Nada no fluxo: ela nunca vê o fluxo inteiro, só o passo que recebeu. |
+
+Os hooks do nível 3:
+
+- **Stop:** bloqueia o fim do turno se o estado não é final nem "esperando a pessoa", e diz qual é o próximo passo. A sessão em que este rascunho foi escrito já passou por isso: o `stop-hook-git-check.sh` forçou um commit antes de parar.
+- **PreToolUse:** bloqueia escrita em `plans/` fora do estado "escrita", e o disparo do verificador fora da "síntese".
+- **UserPromptSubmit:** a cada mensagem da pessoa, injeta "estado atual: X, esperando resposta à pergunta Y". Assim a resposta cai no lugar certo do fluxo, mesmo se a LLM tiver se distraído.
+
+### O que muda na prática
+
+- **A LLM não precisa lembrar do fluxo.** A cada momento, ela sabe só o passo atual e o formato da resposta, e isso é o que mais reduz a chance de se perder.
+- **As checagens não são dela.** O motor roda o schema, as regras em Python e a função de perguntas. A LLM não corrige o próprio trabalho.
+- **Dá para retomar.** Se a sessão cair, o estado está no arquivo. A fase 0.1 da skill, "procura trabalho para retomar", vira ler esse arquivo.
+- **Fica registrado.** Cada transição é gravada, e isso vira dado para medir a função de perguntas depois.
+
+### Numa sessão, e no crew
+
+Para um brainstorm numa sessão, conversando com a pessoa, o **nível 3** é o que serve: a conversa continua natural, e os hooks garantem a ordem.
+
+O **nível 4** é o desenho que o crew já usa um nível acima.
+Uma label é um estado, cada ação roda uma sessão própria, e os `checks` do `.crew/config.yaml` validam o resultado antes de a issue mudar de label.
+O fluxo do brainstorm seria a mesma ideia aplicada dentro de uma ação.
+A diferença é que cada passo precisaria da pessoa em tempo real, e o crew hoje roda sessões sem ninguém olhando.
