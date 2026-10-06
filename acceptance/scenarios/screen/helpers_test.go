@@ -2,6 +2,7 @@ package screen
 
 import (
 	"context"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -125,23 +126,81 @@ func wantText(t *testing.T, text string, wants ...string) {
 	}
 }
 
-// inColumn reports whether a line below the column header holds text,
-// ignoring case, starting at or right of the header's first cell: a card in
-// that column of the board.
+// inColumn reports whether the cards of the board's column header hold text,
+// ignoring case. It reads only the board: the rows between the column headers
+// and the Queues and Events sections, which the README puts under the board,
+// and in those rows only the cells from the header's first cell to the next
+// column's, so neither an event line nor a card of another column counts.
 func inColumn(screen, header, text string) bool {
+	cards, found := columnCards(screen, header)
+	return found && strings.Contains(strings.ToLower(cards), strings.ToLower(text))
+}
+
+// columnCards returns the text of the cards in the board's column header, one
+// row per line, and false when the screen has no Board section, no such column
+// under it, or no Queues or Events section under the board to end it.
+func columnCards(screen, header string) (string, bool) {
 	lines := strings.Split(screen, "\n")
-	for i, line := range lines {
-		x := cell(line, header)
-		if x < 0 {
-			continue
+	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
+	if board < 0 {
+		return "", false
+	}
+	start, end, row := -1, 0, board+1
+	for ; row < len(lines) && start < 0; row++ {
+		if isSection(lines[row], "Queues") || isSection(lines[row], "Events") {
+			return "", false
 		}
-		for _, below := range lines[i+1:] {
-			if y := cell(strings.ToLower(below), strings.ToLower(text)); y >= x {
-				return true
-			}
+		if start = cell(lines[row], header); start >= 0 {
+			end = nextColumn(lines[row], start+len([]rune(header)))
 		}
 	}
-	return false
+	var cards []string
+	for _, line := range lines[row:] {
+		if isSection(line, "Queues") || isSection(line, "Events") {
+			return strings.Join(cards, "\n"), true
+		}
+		cards = append(cards, cells(line, start, end))
+	}
+	return "", false
+}
+
+// isSection reports whether line opens the section name: its title first,
+// after the marker of the section that has focus.
+func isSection(line, name string) bool {
+	title := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "▸"))
+	return title == name || strings.HasPrefix(title, name+" ")
+}
+
+// nextColumn is the first cell, from the cell from on, of the next column's
+// header in the header row line: the first text after a gap of two or more
+// spaces. It is math.MaxInt when no column follows, since a card may be wider
+// than its header row.
+func nextColumn(line string, from int) int {
+	runes := []rune(line)
+	gap := 0
+	for x := from; x < len(runes); x++ {
+		switch {
+		case runes[x] == ' ':
+			gap++
+		case gap >= columnGap:
+			return x
+		default:
+			gap = 0
+		}
+	}
+	return math.MaxInt
+}
+
+// columnGap is the fewest spaces between two column headers. One space
+// separates the words of a single header, such as "Handled 1 · $0.25".
+const columnGap = 2
+
+// cells is the text of line from the cell start up to, not including, the
+// cell end.
+func cells(line string, start, end int) string {
+	runes := []rune(line)
+	start, end = min(start, len(runes)), min(end, len(runes))
+	return string(runes[start:end])
 }
 
 // cell is the column, counted in runes, where line holds text, or -1.

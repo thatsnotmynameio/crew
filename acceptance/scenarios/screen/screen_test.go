@@ -1,6 +1,8 @@
 package screen
 
 import (
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -101,17 +103,45 @@ func TestScreenHandledFailedIssue(t *testing.T) {
 
 // TestScreenKeys checks the list of keys.
 //
-// README: "`?` lists every key", among them Enter, Esc and Tab. After `?`, the
-// screen names those three keys.
+// README: "`?` lists every key", among them "Tab cycles the board, Bots and
+// Events, `b` and `e` jump to Bots and Events, and Esc returns to the board".
+// The board's own footer already names some keys, such as tab and enter, so
+// the scenario reads only the rows `?` changed: they name Esc, b and e, which
+// only the full list has, and the screen then names Enter and Tab too.
 func TestScreenKeys(t *testing.T) {
-	sc, _ := newScenario(t)
-	sc.Claude.Script(prompt, fakeclaude.Succeed("Added the search box."))
+	sc, n := newScenario(t)
+	release := make(chan struct{})
+	sc.Claude.Script(prompt, heldSession(release))
 	sc.Start()
-	sc.Screen().WaitForText(t, "Bots", timeout)
+	waitForLabel(sc, n, running)
+	sc.Screen().WaitForText(t, title, timeout)
+	board := sc.Screen().WaitStable(t, settle, timeout, masks()...)
 	sc.Screen().Send(t, "?")
-	sc.Screen().WaitFor(t, func(text string) bool {
-		lower := strings.ToLower(text)
-		return strings.Contains(lower, "enter") && strings.Contains(lower, "esc") && strings.Contains(lower, "tab")
+	text := sc.Screen().WaitFor(t, func(text string) bool {
+		added := addedRows(board, harness.MaskText(text, masks()...))
+		return namesKey(added, "esc") && namesKey(added, "b") && namesKey(added, "e")
 	}, timeout)
+	wantText(t, strings.ToLower(text), "enter", "tab")
+	close(release)
+	waitForLabel(sc, n, success)
 	stop(sc)
+}
+
+// addedRows is the rows of after that before does not hold, one per line.
+func addedRows(before, after string) string {
+	rows := strings.Split(before, "\n")
+	var added []string
+	for row := range strings.SplitSeq(after, "\n") {
+		if !slices.Contains(rows, row) {
+			added = append(added, row)
+		}
+	}
+	return strings.Join(added, "\n")
+}
+
+// namesKey reports whether text names key, ignoring case, as a word of its
+// own: not inside a longer word, as the b of "Bots" is.
+func namesKey(text, key string) bool {
+	word := regexp.MustCompile(`(?i)(^|[^\pL\pN])` + regexp.QuoteMeta(key) + `([^\pL\pN]|$)`)
+	return word.MatchString(text)
 }

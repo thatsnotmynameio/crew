@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -115,5 +116,24 @@ func wantOnly(t *testing.T, sc *harness.Scenario, number int, want string, state
 func commentHolding(sc *harness.Scenario, number int, text string) bool {
 	return slices.ContainsFunc(sc.GitHub.Comments(number), func(c fakegithub.Comment) bool {
 		return strings.Contains(c.Body, text)
+	})
+}
+
+// failedWord is the word failed on its own, ignoring case.
+var failedWord = regexp.MustCompile(`(?i)\bfailed\b`)
+
+// commentSaysFailed reports whether a comment on the issue number says that
+// action failed: one of its lines names action and holds the word failed once
+// the rule's failure label is taken out of it, so a line that only names the
+// label an issue moves to on failure does not count.
+func commentSaysFailed(sc *harness.Scenario, number int, action string) bool {
+	return slices.ContainsFunc(sc.GitHub.Comments(number), func(c fakegithub.Comment) bool {
+		for line := range strings.SplitSeq(c.Body, "\n") {
+			line = strings.ReplaceAll(strings.ToLower(line), failure, "")
+			if strings.Contains(line, action) && failedWord.MatchString(line) {
+				return true
+			}
+		}
+		return false
 	})
 }

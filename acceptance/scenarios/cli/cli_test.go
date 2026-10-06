@@ -237,7 +237,12 @@ func TestCLIPlainEventLines(t *testing.T) {
 // forceTimeout is how long crew may take to exit after a second Ctrl+C.
 const forceTimeout = 15 * time.Second
 
+// pressGap is how long the scenario leaves crew between the first Ctrl+C and
+// the end of a session, so the session ends after crew got the first press.
+const pressGap = 2 * time.Second
+
 // sessionConfig is a valid config whose only rule has one action, implement.
+// The default max_parallel_issues, 2, lets it work on two issues at once.
 const sessionConfig = `poll_interval_seconds: 1
 agents:
   developer:
@@ -256,41 +261,78 @@ rules:
           Implement "{{.Issue.Title}}".
 `
 
-// TestCLISecondInterrupt checks that a second Ctrl+C forces crew to exit.
+// The titles of the second interrupt's issues: crew must wait for the first,
+// whose session never ends, and finishes the second, whose session ends after
+// the first Ctrl+C.
+const (
+	stuckTitle    = "Add a search box"
+	finishedTitle = "Add a footer"
+)
+
+// TestCLISecondInterrupt checks what a second Ctrl+C adds to the first.
 //
-// Edge case: while a session still works and has not been told to end, a
-// first SIGINT may let crew wind down and wait for it, but a second SIGINT
-// ends crew within seconds, without waiting for the session. A user who presses
-// Ctrl+C twice wants crew gone now, and must not have to kill it by hand.
-// The README says nothing about how crew stops.
+// Edge case: two sessions work and neither stops when asked. A first SIGINT
+// makes crew wind down, as the config reference says it does at its run time
+// limit: the sessions that run go on and crew waits for them, so when one of
+// them succeeds after the press, crew still moves its issue to the success
+// label, and the other issue keeps its running label. That session never
+// ends, and a second SIGINT then ends crew within seconds, without waiting for
+// it. A first Ctrl+C that stopped the sessions at once would throw away work in
+// flight and leave nothing for a second press to force; a user who presses
+// Ctrl+C twice wants crew gone now, and must not have to kill it by hand. The
+// README says nothing about how crew stops.
 func TestCLISecondInterrupt(t *testing.T) {
 	t.Parallel()
 	sc := harness.New(t, harness.Options{Config: sessionConfig, Args: []string{"--plain"}})
 	sc.GitHub.AddLabel("cli:ready", "cli:running", "cli:done", "cli:failed")
-	n := sc.GitHub.AddIssue(fakegithub.Issue{Title: "Add a search box", Labels: []string{"cli:ready"}})
-	started := make(chan struct{})
-	sc.Claude.Script(`Implement "Add a search box".`, func(ctx context.Context, s *fakeclaude.Session) int {
-		_ = s.Emit(s.Init(), s.Said("Writing the search box."))
-		close(started)
-		<-ctx.Done()
-		return 1
-	})
+	stuck := sc.GitHub.AddIssue(fakegithub.Issue{Title: stuckTitle, Labels: []string{"cli:ready"}})
+	finished := sc.GitHub.AddIssue(fakegithub.Issue{Title: finishedTitle, Labels: []string{"cli:ready"}})
+	done, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	started := make(chan struct{}, 2)
+	sc.Claude.Script(`Implement "`+stuckTitle+`".`, stubbornSession(started, nil, done))
+	sc.Claude.Script(`Implement "`+finishedTitle+`".`, stubbornSession(started, release, done))
 	sc.Start()
 	sc.Wait(func() bool {
-		issue, _ := sc.GitHub.Issue(n)
-		return slices.Contains(issue.Labels, "cli:running") && isClosed(started)
+		return isRunning(sc, stuck) && isRunning(sc, finished) && len(started) == 2
 	}, timeout)
 	sc.Stop()
+	time.Sleep(pressGap)
+	close(release)
+	sc.Wait(func() bool { return !isRunning(sc, finished) }, timeout)
+	if issue, _ := sc.GitHub.Issue(finished); !slices.Contains(issue.Labels, "cli:done") {
+		t.Fatalf("after the first Ctrl+C, the issue whose session then succeeded carries %q, want cli:done: "+
+			"the first press did not let crew wind down and wait for the running sessions, "+
+			"so a second press has nothing to force", issue.Labels)
+	}
+	if !isRunning(sc, stuck) {
+		t.Fatal("the issue whose session never ended left cli:running before the second Ctrl+C")
+	}
 	sc.Stop()
 	sc.Exit(forceTimeout)
 }
 
-// isClosed reports whether ch is closed.
-func isClosed(ch <-chan struct{}) bool {
-	select {
-	case <-ch:
-		return true
-	default:
-		return false
+// stubbornSession is a session that ignores crew asking it to stop. It says
+// it works and sends on started, then succeeds when release closes; it ends
+// without a result when done closes, at the end of the test. A nil release
+// never closes.
+func stubbornSession(started chan<- struct{}, release, done <-chan struct{}) fakeclaude.ScriptFunc {
+	return func(_ context.Context, s *fakeclaude.Session) int {
+		_ = s.Emit(s.Init(), s.Said("Writing it."))
+		started <- struct{}{}
+		select {
+		case <-release:
+			_ = s.Emit(s.Success("Done."))
+			return 0
+		case <-done:
+			return 1
+		}
 	}
+}
+
+// isRunning reports whether the issue number carries the running label of
+// sessionConfig's rule.
+func isRunning(sc *harness.Scenario, number int) bool {
+	issue, _ := sc.GitHub.Issue(number)
+	return slices.Contains(issue.Labels, "cli:running")
 }

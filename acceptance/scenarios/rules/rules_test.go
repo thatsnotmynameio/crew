@@ -31,8 +31,10 @@ func TestRulesSessionSucceeds(t *testing.T) {
 // TestRulesSessionFails checks a rule whose session fails.
 //
 // README: "or to its failure label with a comment saying what failed". The
-// issue ends with the failure label, and a comment on it names the action that
-// failed, implement.
+// issue ends with the failure label, and a comment on it says that the action
+// implement failed: one of its lines names implement and says failed, apart
+// from the failure label dev:failed. A comment that only names the action, such
+// as one saying it runs, does not say what failed.
 func TestRulesSessionFails(t *testing.T) {
 	t.Parallel()
 	sc := newScenario(t, developmentConfig, states...)
@@ -40,7 +42,7 @@ func TestRulesSessionFails(t *testing.T) {
 	sc.Claude.Script(implementSearchBox, fakeclaude.Fail("The build is broken."))
 	sc.Start()
 	waitForAny(sc, n, success, failure)
-	sc.Wait(func() bool { return commentHolding(sc, n, "implement") }, timeout)
+	sc.Wait(func() bool { return commentSaysFailed(sc, n, "implement") }, timeout)
 	stop(sc)
 	wantOnly(t, sc, n, failure, states...)
 }
