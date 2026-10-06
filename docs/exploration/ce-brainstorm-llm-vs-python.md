@@ -296,6 +296,89 @@ Os hooks do nível 3:
 - **Dá para retomar.** Se a sessão cair, o estado está no arquivo. A fase 0.1 da skill, "procura trabalho para retomar", vira ler esse arquivo.
 - **Fica registrado.** Cada transição é gravada, e isso vira dado para medir a função de perguntas depois.
 
+### Mantendo a LLM no laço: `/goal` e o hook Stop
+
+A pessoa pode chamar a LLM com um objetivo como "pegue a próxima tarefa do X até ele dizer que acabou ou te dar outra instrução".
+No Claude Code isso tem duas formas, e elas combinam.
+
+**O `/goal`.** Recebe uma condição de término. Ao fim de cada turno, um modelo lê o que a LLM produziu e julga se a condição foi cumprida; se não foi, começa outro turno.
+A decisão de parar é desse modelo, não do X.
+Para o X mandar, a condição precisa ser algo que só ele produz e que aparece na saída da LLM. Por exemplo: "o comando `flow status` imprime `DONE`".
+
+**O hook Stop de comando.** Roda quando a LLM tenta encerrar o turno, pergunta ao X e repassa a resposta.
+Aqui quem decide é o X, sem modelo no meio.
+O `/goal` dá o objetivo, e o hook garante que a LLM não para antes.
+
+#### Como o hook fala com a LLM
+
+Pela mensagem de bloqueio. Quando o hook impede o fim do turno, o Claude Code entrega o texto dele à LLM como próxima instrução, e ela segue trabalhando a partir dele.
+Há duas formas de bloquear:
+
+- sair com código `2` e escrever a instrução no stderr;
+- sair com `0` e imprimir no stdout `{"decision": "block", "reason": "<instrução>"}`.
+
+A sessão em que este rascunho foi escrito tem um exemplo real, o `stop-hook-git-check.sh`.
+Quando a LLM tentou parar com um arquivo sem commit, ele escreveu "There are untracked files in the repository. Please commit and push these changes to the remote branch." no stderr e saiu com `2`, e a LLM fez o commit.
+
+#### Os três estados do X
+
+Num brainstorm há um caso a mais além de "falta trabalho" e "acabou": esperar a pessoa.
+Quando o fluxo está num ponto que pergunta algo à pessoa, o turno precisa terminar, senão a LLM fica girando sem resposta.
+
+| `flow status` | O hook faz |
+|---|---|
+| `pending`: há passo pendente | Bloqueia e entrega a instrução do X |
+| `waiting_human`: esperando a pessoa | Libera: a LLM mostra a pergunta e para |
+| `done`: concluído | Libera, e o objetivo acaba |
+
+Com o `/goal`, a condição seria "o X diz `done` **ou** o X diz `waiting_human`". Senão o checador manda a LLM continuar enquanto a pergunta ainda está sem resposta.
+Quando a pessoa responde, o hook UserPromptSubmit entrega a resposta ao X, e o laço recomeça.
+
+#### O hook
+
+O hook não decide nada; só pergunta ao X e repassa:
+
+```bash
+#!/bin/bash
+input=$(cat)                          # JSON do Claude Code: session_id, stop_hook_active...
+status=$(flow status --json)          # o X responde: {"state": "...", "next": "..."}
+
+case "$(echo "$status" | jq -r .state)" in
+  pending)                            # ainda há passo: bloqueia e passa a instrução do X
+    echo "$status" | jq -r .next >&2
+    exit 2 ;;
+  waiting_human)                      # esperando a pessoa: libera, a LLM mostra a pergunta
+    exit 0 ;;
+  done)                               # o X disse que acabou: libera
+    exit 0 ;;
+esac
+```
+
+No caso `pending`, a LLM recebe o texto do X. Por exemplo:
+
+> Estado: em_dialogo. Próximo passo: faça a próxima pergunta sobre a lacuna "evidência". Devolva com `flow submit` no formato `schemas/pergunta.json`.
+
+Para dar uma instrução diferente, o X só muda o `next`, sem mexer no hook.
+
+O registro vai em `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {"hooks": [{"type": "command", "command": ".claude/hooks/flow-stop.sh"}]}
+    ]
+  }
+}
+```
+
+#### Dois detalhes
+
+- **`stop_hook_active`.** O Claude Code passa `true` nesse campo quando a LLM já está continuando por causa de um bloqueio anterior. O hook do git usa isso para bloquear uma vez só. O hook do fluxo não deve fazer isso, porque a ideia é bloquear enquanto houver passo. Quem garante o fim é o X dizer `done` ou `waiting_human`.
+- **O limite de bloqueios seguidos.** Por padrão o Claude Code aceita 8 e depois deixa a LLM parar mesmo assim. A variável `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` ajusta isso. Num brainstorm, 8 costuma bastar, porque o laço para a cada pergunta à pessoa.
+
+O funcionamento do `/goal` e o limite do hook Stop vêm da documentação do Claude Code: `code.claude.com/docs/en/goal.md` e a seção de hooks em `code.claude.com/docs/en/hooks-guide.md`.
+
 ### Numa sessão, e no crew
 
 Para um brainstorm numa sessão, conversando com a pessoa, o **nível 3** é o que serve: a conversa continua natural, e os hooks garantem a ordem.
