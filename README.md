@@ -64,12 +64,28 @@ The issue's status comment shows each check that ran, with crew's words and the 
 
 In this repository's own config, the lfg actions first run `session-finished`, which asks TypeSafe's Jev whether the session's last message says it is still waiting on work it started or stopped without doing it. It sends the session's prompt and last message to TypeSafe, whose zero data retention is offered only on its enterprise plan. It needs `TYPESAFE_API_KEY` in crew's environment, and `jq` and `curl` on the `PATH`; without the key it fails the action. When the last message is empty or TypeSafe cannot answer, it passes and says it did not judge.
 
+## A session's task
+
+A coding-agent session crew runs can ask crew what to do next, from the terminal, by its Claude Code or Codex session id:
+
+```sh
+crew sessions 0199b2a4-7c1e-7d3a-9f00-2b6c1e8a4d10 tasks next
+```
+
+crew prints the task as one JSON line: its own id, the session's id and a prompt.
+
+```json
+{"id":"019a3c51-2b7e-7f10-8c4d-5e6f7a8b9c0d","session_id":"0199b2a4-7c1e-7d3a-9f00-2b6c1e8a4d10","prompt":"Carry on with the work your session was started with."}
+```
+
+For now the captain, which answers, decides nothing: every task carries that same prompt, `tasks current` answers as `tasks next` does, and each answer has a new task id. The session id may be any form of UUID, and crew prints it in its canonical lower-case form; nothing checks that the session exists. The command needs no repository or config, and asks GitHub and the agents nothing. It exits 0 once it printed the task, 2 on a command line it cannot use, such as an id that is not a UUID, and 1 when it failed while running.
+
 ## What's inside
 
 | Path | What it does |
 | --- | --- |
 | `cmd/crew` | The `crew` binary. |
-| `internal/` | crew's engine, its adapters (`github`, `claude`, `codex`, `git`), its TUI, and `bots` for `crew bots create`. See `AGENTS.md`. |
+| `internal/` | crew's engine, its adapters (`github`, `claude`, `codex`, `git`), its TUI, `bots` for `crew bots create`, and `captain` for `crew sessions`. See `AGENTS.md`. |
 | `acceptance/` | The acceptance suite, a Go module of its own: it runs the `crew` binary that the release config builds against doubles for `gh` and `claude` on its `PATH`, and checks what crew does on GitHub and on the screen. `go -C acceptance run ./cmd/acceptance`, from the repository root, builds crew and runs the suite. See [`acceptance/README.md`](acceptance/README.md). |
 | `.crew/config.yaml` | crew's own rules: crew runs on this repository too, with rules for features, bugs, refinement of brainstormed features (splitting a large plan into sub-issues, then finding their dependencies, reading in full only the open issues Jev's shortlist names, or every open issue when the shortlist is unavailable) and the hand-offs between them, and labels that start with `crew:`. A split plan's issue stays open as the parts' parent and leaves crew, so crew reports its move to done as given up; that is how a split ends. Keep your own settings in `.crew/config.local.yaml`, which git ignores. |
 | `.crew/config.example.yaml` | The reference of every key crew's config accepts, commented out, with what each does and its default. |

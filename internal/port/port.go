@@ -1,12 +1,13 @@
 // Package port holds the interfaces the engine reaches the outside world
 // through: a Tracker for issues, a Harness for coding-agent sessions and a
-// Workspace for each action's checkout. Each port holds only what every
-// adapter must provide; anything an adapter may or may not support is a
-// separate optional interface, such as Preparer, StatusReporter,
-// PullRequestReporter, Acting, CodeOwnerFinder, LoginFinder, WriterReporter,
-// BoardLister, Narrator or Reopener, that the engine detects by type
-// assertion. An adapter therefore never wraps another adapter value, because
-// a wrapper hides the optional interfaces of what it wraps.
+// Workspace for each action's checkout. A Captain answers a session's next
+// task. Each port holds only what every adapter must provide; anything an
+// adapter may or may not support is a separate optional interface, such as
+// Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
+// LoginFinder, WriterReporter, BoardLister, Narrator or Reopener, that the
+// engine detects by type assertion. An adapter therefore never wraps another
+// adapter value, because a wrapper hides the optional interfaces of what it
+// wraps.
 //
 // The package imports only the domain, so adapters and the engine share it
 // without knowing each other.
@@ -17,6 +18,7 @@ import (
 	"errors"
 	"io"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -64,6 +66,16 @@ type Tracker interface {
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
 	ReportFailure(ctx context.Context, report crew.FailureReport) error
+}
+
+// Captain answers what a coding-agent session crew runs should do next.
+// The session is the one asked about, the captain the one who answers, as
+// an issue is to its Tracker.
+type Captain interface {
+	// Task returns the next task of the session whose id is session, a
+	// Claude Code or Codex session id. An error means the captain could not
+	// answer.
+	Task(ctx context.Context, session uuid.UUID) (crew.Task, error)
 }
 
 // Harness runs coding-agent sessions.
