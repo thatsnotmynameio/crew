@@ -118,7 +118,7 @@ func TestUsableToken(t *testing.T) {
 }
 
 // asked is the permissions crew asks for, as its warnings write them.
-const asked = "actions:read checks:read contents:read issues:write metadata:read pull_requests:write statuses:read"
+const asked = "actions:read checks:read contents:write issues:write metadata:read pull_requests:write statuses:read"
 
 // unusableBots are the ways the bot ops cannot act: how its file and
 // GitHub's replies are scripted, then its warning, <path> standing for its
@@ -155,11 +155,15 @@ var unusableBots = []struct {
 		want: "bot ops could not get a token: mint a token of ops for crew: GitHub answered 500 Internal Server Error: " +
 			"Server Error; crew acts as you in its place this run"},
 	{name: "more granted", saved: true, granted: map[string]string{
-		"actions": permRead, "administration": permWrite, "checks": permRead, "contents": permRead,
+		"actions": permRead, "administration": permWrite, "checks": permRead, "contents": permWrite,
 		"issues": permWrite, "metadata": permRead, "pull_requests": permWrite, "statuses": permRead,
 	}, reason: "no token", want: "bot ops could not get a token: GitHub granted actions:read administration:write " +
-		"checks:read contents:read issues:write metadata:read pull_requests:write statuses:read, not the " + asked +
+		"checks:read contents:write issues:write metadata:read pull_requests:write statuses:read, not the " + asked +
 		" crew asked for; crew acts as you in its place this run"},
+	{name: "permissions not granted", saved: true, tokenStatus: http.StatusUnprocessableEntity, reason: "no token",
+		want: "bot ops could not get a token: its app crew-ops does not grant " + asked + "; grant them in the " +
+			"app's settings on GitHub, accept them on its installation and restart crew; crew acts as you in its " +
+			"place this run"},
 	{name: "fewer granted", saved: true, granted: map[string]string{"metadata": permRead}, reason: "no token",
 		want: "bot ops could not get a token: GitHub granted metadata:read, not the " + asked +
 			" crew asked for; crew acts as you in its place this run"},
