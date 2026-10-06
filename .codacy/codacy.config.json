@@ -7,13 +7,14 @@
     "repositoryId": null,
     "repositoryName": null,
     "createdAt": "2026-10-03T01:12:04.280Z",
-    "updatedAt": "2026-10-03T01:12:04.280Z",
+    "updatedAt": "2026-10-05T23:24:40.131Z",
     "languages": [
       "Go",
       "HTML",
       "JSON",
       "Javascript",
       "Markdown",
+      "Shell",
       "TypeScript",
       "YAML"
     ]
@@ -308,6 +309,9 @@
         },
         {
           "patternId": "Semgrep_yaml_spring_rule-SpringActuatorFullyEnabled"
+        },
+        {
+          "patternId": "Semgrep_bash.curl.security.curl-eval.curl-eval"
         }
       ]
     },
@@ -547,26 +551,109 @@
         {
           "patternId": "Lizard_ccn-medium",
           "parameters": {
-            "threshold": 15
+            "threshold": "15"
           }
         },
         {
           "patternId": "Lizard_nloc-medium",
           "parameters": {
-            "threshold": 50
+            "threshold": "50"
           }
         },
         {
           "patternId": "Lizard_parameter-count-medium",
           "parameters": {
-            "threshold": 8
+            "threshold": "8"
           }
         },
         {
           "patternId": "Lizard_file-nloc-medium",
           "parameters": {
-            "threshold": 500
+            "threshold": "500"
           }
+        },
+        {
+          "patternId": "Lizard_nloc-critical"
+        },
+        {
+          "patternId": "Lizard_ccn-critical"
+        },
+        {
+          "patternId": "Lizard_parameter-count-critical"
+        },
+        {
+          "patternId": "Lizard_file-nloc-critical"
+        }
+      ]
+    },
+    {
+      "toolId": "shellcheck",
+      "patterns": [
+        {
+          "patternId": "shellcheck_SC2001"
+        },
+        {
+          "patternId": "shellcheck_SC2002"
+        },
+        {
+          "patternId": "shellcheck_SC2003"
+        },
+        {
+          "patternId": "shellcheck_SC2004"
+        },
+        {
+          "patternId": "shellcheck_SC2006"
+        },
+        {
+          "patternId": "shellcheck_SC2015"
+        },
+        {
+          "patternId": "shellcheck_SC2016"
+        },
+        {
+          "patternId": "shellcheck_SC2020"
+        },
+        {
+          "patternId": "shellcheck_SC2022"
+        },
+        {
+          "patternId": "shellcheck_SC2024"
+        },
+        {
+          "patternId": "shellcheck_SC2025"
+        },
+        {
+          "patternId": "shellcheck_SC2026"
+        },
+        {
+          "patternId": "shellcheck_SC2027"
+        },
+        {
+          "patternId": "shellcheck_SC2028"
+        },
+        {
+          "patternId": "shellcheck_SC2029"
+        },
+        {
+          "patternId": "shellcheck_SC2031"
+        },
+        {
+          "patternId": "shellcheck_SC2033"
+        },
+        {
+          "patternId": "shellcheck_SC2034"
+        },
+        {
+          "patternId": "shellcheck_SC2035"
+        },
+        {
+          "patternId": "shellcheck_SC2036"
+        },
+        {
+          "patternId": "shellcheck_SC2086"
+        },
+        {
+          "patternId": "shellcheck_SC2148"
         }
       ]
     }

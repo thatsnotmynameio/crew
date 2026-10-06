@@ -11,19 +11,20 @@ Run every command from the repository root. Go 1.27 (`go.mod`).
 ```sh
 go build ./cmd/crew   # the binary, at the root (ignored by git)
 go test -race ./...   # every test; one package: go test -race ./internal/core; one test: add -run TestName
-gofmt -l cmd internal tools # prints the unformatted files; must print nothing
+gofmt -l cmd internal tools acceptance # prints the unformatted files; must print nothing
 go vet ./...
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run   # lint + layering (depguard)
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...   # coverage profile
 go run github.com/vladopajic/go-test-coverage/v2@v2.19.0 --config=.testcoverage.yml   # total >= 90%
 git diff -U0 origin/main...HEAD | go run ./tools/diffcover -profile coverage.out   # changed lines >= 90%
+go -C acceptance run ./cmd/acceptance   # builds crew with the release config, runs the acceptance suite against it; go test flags pass through
 pnpm install          # once: the Codacy CLIs
 pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Opengrep, Trivy, Checkov
 ```
 
 - **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
-- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `codacy` job uploads the coverage to Codacy, which analyses the code on its own servers.
+- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `acceptance` job builds crew with GoReleaser (a Linux amd64 snapshot), runs vet, golangci-lint and govulncheck in `acceptance/`, then the suite with `CREW_BIN` set; on failure it uploads the tests' artifacts. Its `codacy` job uploads the coverage to Codacy, which analyses the code on its own servers.
 - **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`.
 
 ## Architecture
@@ -44,6 +45,7 @@ Ports and adapters with a pure core.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
 - **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea, Lip Gloss and Bubbles; only tests import `fake`; `bots` imports only the standard library and `proc`, and only `cmd/crew` imports it.
+- `acceptance/`: the black-box acceptance suite, a nested Go module outside the layering. It reaches crew only through the built binary and never imports crew's packages (a `depguard` rule denies `internal` and `cmd` there). The root `go test ./...`, lint, coverage floors and `tools/diffcover` stop at its `go.mod`: run its vet, golangci-lint and govulncheck with `go -C acceptance` (`acceptance/README.md`, which documents the doubles without crew's internals).
 - **New adapter:** one package under `internal/adapter/` with a `Factory(group)`, plus one entry in `internal/registry/default.go`. Optional capabilities are separate interfaces found by type assertion: never wrap an adapter value, never add "not implemented" stubs.
 
 ## Tests
@@ -54,6 +56,7 @@ Ports and adapters with a pure core.
 - **Adapters:** scripted `gh` and `git` runners, and recorded `stream-json` fixtures in `internal/adapter/claude/testdata/`.
 - **Real git:** only in temporary repositories (`t.TempDir()`, a local bare `origin`), with `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM` set so the user's config cannot leak in.
 - **Golden files:** the TUI's views in `internal/ui/tui/testdata/`, with escape codes stripped; rewrite with `go test ./internal/ui/tui -update` and review the diff.
+- **Acceptance:** `acceptance/` runs the binary in `CREW_BIN` (unset fails, never skips) against `gh` and `claude` doubles on `PATH`: the test binary itself, through `harness.Main`, answering from a stateful fake GitHub and scripted sessions. Screen scenarios run crew in a pseudo-terminal and compare masked screens with snapshots. Always `-count=1`: a rebuilt binary keeps its mtime. The pull request that changes how crew calls `gh` or `claude` teaches `acceptance/fakegithub` or `acceptance/fakeclaude` the call. Scenarios (`acceptance/scenarios/`) and their snapshots are the tester's: only the tester rewrites snapshots (`-accept-snapshots`).
 
 ## Docs
 
@@ -65,7 +68,7 @@ Ports and adapters with a pure core.
 
 - **Releases:** the version is `VERSION`, starting at `0.1.0`. A pull request that changes it is a release. After it merges to `main`, the Release workflow runs GoReleaser (`.goreleaser.yaml`), which publishes `vX.Y.Z` as a GitHub release with crew's binaries for macOS and Linux and `checksums.txt`, and publishes nothing unless every one built. Unlike the other workflows, it publishes without the shared release action and uses only its `check` mode. The version must be `MAJOR.MINOR.PATCH` and not below the latest release (CI's `version` check).
 - **Shared workflows:** CI, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
-- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). Use pnpm, never npm: `package.json` pins pnpm itself (`packageManager`). The `checks` ruleset requires `version`, `actionlint / actionlint` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
+- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). Use pnpm, never npm: `package.json` pins pnpm itself (`packageManager`). The `checks` ruleset requires `version`, `actionlint / actionlint` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`); `acceptance` joins it that way once it is on `main`.
 - **Codacy:** its jobs are off until the repository variable `CODACY_ENABLED` is `true`. Fix a finding; suppress only a genuine false positive, at the finding, naming the rule and the reason (`//nolint:<linter> // <reason>`). Never exclude crew's own source from analysis. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files. The gates live in Codacy's UI.
 
 ## Agents

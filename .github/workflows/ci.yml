@@ -1,8 +1,9 @@
 # Every pull request: the release rule on VERSION, actionlint over the
-# workflows, and the Go module. Pushes to main run the Go module too, so
-# Codacy gets each main commit's results and coverage baseline. Add the
-# project's build and test jobs here, and their check names to the "checks"
-# ruleset (bootstrap.sh --checks, in thatsnotmynameio/.github).
+# workflows, the Go module, and the acceptance suite against the release
+# build. Pushes to main run the Go module too, so Codacy gets each main
+# commit's results and coverage baseline, and the suite. Add the project's
+# build and test jobs here, and their check names to the "checks" ruleset
+# (bootstrap.sh --checks, in thatsnotmynameio/.github).
 name: CI
 
 on:
@@ -60,7 +61,7 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: |
-          unformatted="$(gofmt -l cmd internal tools)"
+          unformatted="$(gofmt -l cmd internal tools acceptance)"
           if [ -n "$unformatted" ]; then
             echo "Not gofmt-formatted:" >&2
             echo "$unformatted" >&2
@@ -94,6 +95,62 @@ jobs:
           path: coverage.out
           if-no-files-found: ignore
           retention-days: 3
+
+  # The acceptance suite (acceptance/, its own Go module): its vet, lint and
+  # known vulnerabilities, then its tests against crew's binary. GoReleaser
+  # builds that binary from .goreleaser.yaml as a Linux amd64 snapshot, so the
+  # suite tests what a release ships, with the release's build flags and
+  # stamped version, not a plain go build. No paths filter: this job belongs
+  # in the checks ruleset, and a required check that is skipped stays pending.
+  acceptance:
+    name: acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the snapshot's version is the latest v* tag
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - id: build
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          args: build --snapshot --single-target --clean --output ${{ runner.temp }}/crew
+        env:
+          GOOS: linux
+          GOARCH: amd64
+      - name: go vet
+        run: go -C acceptance vet ./...
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+          working-directory: acceptance
+      - name: govulncheck
+        working-directory: acceptance
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      # Runs after a vet, lint or govulncheck failure too, but not without the
+      # binary. go test -outputdir needs the directory to exist.
+      - name: go test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: acceptance
+        env:
+          CREW_BIN: ${{ runner.temp }}/crew
+          ARTIFACTS: ${{ runner.temp }}/acceptance-artifacts
+        run: |
+          mkdir -p "$ARTIFACTS"
+          go test -race -count=1 -timeout 10m -artifacts -outputdir "$ARTIFACTS" ./...
+      # What the tests saved in t.ArtifactDir(), to see why they failed.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: acceptance-artifacts
+          path: ${{ runner.temp }}/acceptance-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Sends the go job's coverage to Codacy. Codacy analyses the code itself, on
   # its servers; golangci-lint's findings stay in the go job. This is the only
