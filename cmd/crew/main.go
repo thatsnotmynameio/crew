@@ -65,15 +65,16 @@ func main() {
 // code.
 func run(args []string) int {
 	stdout, stderr := os.Stdout, os.Stderr
+	// SIGPIPE is ignored on every path, so a closed stdout fails the write
+	// instead of killing crew: the renderer's failed write stops crew
+	// cleanly, and each subcommand handles its own write errors.
+	signal.Ignore(syscall.SIGPIPE)
 	// The subcommands come before crew's own flags, so every other argument
 	// list is parsed as it always was.
 	if len(args) > 0 && args[0] == "bots" {
 		return runBots(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "sessions" {
-		// A closed stdout then fails the write, which exits 1, instead of
-		// killing crew by SIGPIPE.
-		signal.Ignore(syscall.SIGPIPE)
 		return runSessions(args[1:], stdout, stderr, captain.Dumb{})
 	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
@@ -124,11 +125,9 @@ func start(plain bool, stdout, stderr *os.File) int {
 	// Signals are caught from here on: none may kill crew before the
 	// engine's stop sequence, or a forced exit, has ended its children.
 	// SIGHUP, from a closing terminal, stops crew as SIGINT and SIGTERM do.
-	// SIGPIPE is ignored, so a closed stdout fails the renderer's write,
-	// which stops crew cleanly too.
+	// run already ignores SIGPIPE.
 	signals := make(chan os.Signal, signalBuffer)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	signal.Ignore(syscall.SIGPIPE)
 
 	ctx := context.Background()
 	var group proc.Group

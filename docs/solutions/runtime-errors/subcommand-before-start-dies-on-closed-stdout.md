@@ -33,16 +33,19 @@ tags: [sigpipe, signals, stdout, subcommand, exit-code, cli, subprocess-test]
 
 ## Solution
 
-Ignore SIGPIPE in the `sessions` branch of `run` (`cmd/crew/main.go:73-78`), as `start` does (`cmd/crew/main.go:124-131`). A broken stdout then makes `enc.Encode` return `EPIPE`, and `runSessions` prints `crew: write /dev/stdout: broken pipe` and exits 1:
+Ignore SIGPIPE once, at the top of `run` (`cmd/crew/main.go:66-71`), before any subcommand is dispatched. `start` no longer ignores it itself. Every path now gets the same treatment, `crew bots` included. A broken stdout makes `enc.Encode` return `EPIPE`, and `runSessions` prints `crew: write /dev/stdout: broken pipe` and exits 1:
 
 ```go
-if len(args) > 0 && args[0] == "sessions" {
-	// A closed stdout then fails the write, which exits 1, instead of
-	// killing crew by SIGPIPE.
+func run(args []string) int {
+	stdout, stderr := os.Stdout, os.Stderr
+	// SIGPIPE is ignored on every path, so a closed stdout fails the write
+	// instead of killing crew: the renderer's failed write stops crew
+	// cleanly, and each subcommand handles its own write errors.
 	signal.Ignore(syscall.SIGPIPE)
-	return runSessions(args[1:], stdout, stderr, captain.Dumb{})
-}
+	// ...the subcommands, then crew's flags and start
 ```
+
+The first fix ignored SIGPIPE only in the `sessions` branch. Codacy's review of #217 pointed out that `crew bots create` had the same gap. Its progress lines ignore write errors (`internal/bots/create.go:320`), so a closed stdout killed it in the middle of creating the bot. Moving the call to the top of `run` closes both gaps, and any later subcommand gets it too.
 
 The test re-runs the test binary as crew in a child process whose fd 1 really is a pipe with its read end closed (`TestSessionsExitsOneWhenStdoutIsClosed` in `cmd/crew/sessions_test.go`):
 
@@ -63,11 +66,11 @@ With the `signal.Ignore` line removed, the test fails with `signal: broken pipe`
 
 ## Why This Works
 
-When SIGPIPE is ignored, the kernel still refuses the write, but the Go runtime no longer exits on it. The write returns `syscall.EPIPE`, and the command's ordinary error branch handles it. The fault was not in `runSessions`. Process-wide setup that every path to output needs lived in `start`, and the subcommands are dispatched before `start` runs.
+When SIGPIPE is ignored, the kernel still refuses the write, but the Go runtime no longer exits on it. The write returns `syscall.EPIPE`, and the command's ordinary error branch handles it. The fault was not in `runSessions`. Process-wide setup that every path to output needs lived in `start`, and the subcommands are dispatched before `start` runs. At the top of `run`, it reaches every path.
 
 ## Prevention
 
-- Any subcommand `run` dispatches before `start` (`crew bots` and `crew sessions` today) skips `start`'s signal setup. It must decide its own SIGPIPE handling if it writes to stdout and documents an exit code for a failed write. `crew bots create` sets up only SIGINT, SIGTERM and SIGHUP (`cmd/crew/bots.go`). Whether a closed stdout matters there was not judged here.
+- Put process-wide signal setup at the top of `run`, not in `start` or one subcommand's branch. Any subcommand `run` dispatches before `start` (`crew bots` and `crew sessions` today) skips everything `start` does. Stop signals stay per path: `start` and `crew bots create` (`cmd/crew/bots.go`) each catch SIGINT, SIGTERM and SIGHUP their own way.
 - Test stdout-failure behaviour with a child process whose fd 1 is a real closed pipe, not with a fake writer or a swapped `os.Stdout`. A unit test with a fake writer covers only the error branch, not whether the process lives long enough to reach it.
 - When a plan review flags a gap between a documented exit code and the runtime's default signal behaviour, carry it into the plan's KTDs or tests even at low confidence. Reproducing it with the built binary takes about a minute (`os.pipe()`, close the read end, run the binary with the write end as stdout).
 
