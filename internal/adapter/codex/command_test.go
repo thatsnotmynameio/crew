@@ -2,6 +2,7 @@ package codex
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/port"
@@ -43,9 +44,10 @@ func TestCommandRunsCodexHeadlessInTheSandboxWithTheGitDirs(t *testing.T) {
 		"-c", "sandbox_workspace_write.network_access=true",
 		"--add-dir", "/repo/.git/worktrees/issue-4-review",
 		"--add-dir", "/repo/.git",
+		"-c", `shell_environment_policy.inherit="all"`,
+		"-c", "shell_environment_policy.ignore_default_excludes=true",
+		"-c", "shell_environment_policy.exclude=[]",
 		"-c", "shell_environment_policy.include_only=[]",
-		"-c", `shell_environment_policy.set.CREW_CODE_OWNERS=""`,
-		"-c", `shell_environment_policy.set.CREW_BOTS=""`,
 		"--", "Review #4",
 	}
 	if got.Name != "codex" || got.Dir != "/repo/.crew/worktrees/issue-4-review" || !slices.Equal(got.Args, want) {
@@ -82,9 +84,9 @@ func TestCommandAddsAGitDirOnceWhenTheWorktreeIsTheMainCheckout(t *testing.T) {
 	}
 }
 
-// The bot's environment reaches codex's process and, through the shell
-// environment policy, every command codex runs, whatever the user's own
-// policy filters; the variables the bot must not inherit are set empty there.
+// The bot's environment reaches codex's process, and every command codex
+// runs inherits it whatever the user's own policy filters; the variables the
+// bot must not inherit are set empty there.
 func TestCommandPinsTheBotsEnvironmentInsideCodex(t *testing.T) {
 	run := botRun("Review #4")
 	got := command(run, "", worktreeGitDirs)
@@ -99,22 +101,39 @@ func TestCommandPinsTheBotsEnvironmentInsideCodex(t *testing.T) {
 		t.Errorf("unset = %q, want %q", got.Unset, run.Identity.Unset)
 	}
 	for _, want := range []string{
-		`shell_environment_policy.set.GH_CONFIG_DIR="/home/me/.config/crew/bots/reviewer/sessions"`,
-		`shell_environment_policy.set.GIT_CONFIG_COUNT="3"`,
-		`shell_environment_policy.set.GIT_CONFIG_KEY_2="hook.crew-co-author.command"`,
-		`shell_environment_policy.set.GIT_CONFIG_VALUE_2="git interpret-trailers --in-place --if-exists addIfDifferent ` +
-			`--trailer 'Co-authored-by: crew-reviewer[bot] <7+crew-reviewer[bot]@users.noreply.github.com>'"`,
-		`shell_environment_policy.set.CREW_CODE_OWNERS="alice bob"`,
-		`shell_environment_policy.set.CREW_BOTS="crew-developer[bot] crew-reviewer[bot]"`,
+		`shell_environment_policy.inherit="all"`,
+		"shell_environment_policy.ignore_default_excludes=true",
+		"shell_environment_policy.exclude=[]",
+		"shell_environment_policy.include_only=[]",
 		`shell_environment_policy.set.GH_TOKEN=""`,
 		`shell_environment_policy.set.GITHUB_TOKEN=""`,
 		`shell_environment_policy.set.GH_ENTERPRISE_TOKEN=""`,
 		`shell_environment_policy.set.GITHUB_ENTERPRISE_TOKEN=""`,
 		`shell_environment_policy.set.GH_HOST=""`,
-		"shell_environment_policy.include_only=[]",
 	} {
 		if !hasConfig(got.Args, want) {
 			t.Errorf("args = %q, want -c %s", got.Args, want)
+		}
+	}
+}
+
+// Any process on the machine can read a command line, so the session's
+// environment values reach codex only through its environment: no argument
+// holds one.
+func TestCommandKeepsTheEnvironmentValuesOutOfItsArguments(t *testing.T) {
+	run := botRun("Review #4")
+	run.Identity.Env = append(run.Identity.Env, "SECRET_PROBE=s3cret")
+	got := command(run, "", worktreeGitDirs)
+
+	if !slices.Contains(got.Env, "SECRET_PROBE=s3cret") {
+		t.Errorf("env = %q, want SECRET_PROBE=s3cret", got.Env)
+	}
+	values := []string{"s3cret", "/home/me/.config/crew/bots/reviewer/sessions", "hook.crew-co-author", "alice bob"}
+	for _, arg := range got.Args {
+		for _, value := range values {
+			if strings.Contains(arg, value) {
+				t.Errorf("argument %q holds the value %q", arg, value)
+			}
 		}
 	}
 }

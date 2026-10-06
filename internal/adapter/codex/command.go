@@ -28,11 +28,12 @@ const envPolicy = "shell_environment_policy"
 //
 // The session acts as run's identity, with its environment added and the
 // variables it unsets removed, and gets the code owners' and the bots'
-// logins as CREW_CODE_OWNERS and CREW_BOTS. Each of those variables is also
-// set inside Codex's shell environment policy, and the user's include_only
-// is cleared, so no filter of the user's drops them from the commands codex
-// runs; the unset variables are set empty there, so no shell profile brings
-// a token of yours back.
+// logins as CREW_CODE_OWNERS and CREW_BOTS. Those values reach codex only
+// through its environment, never its arguments, which any process on the
+// machine can read. Codex's shell environment policy is reset to inherit
+// everything and filter nothing, so no filter of the user's drops them from
+// the commands codex runs; the unset variables are set empty there, by name
+// only, so no shell profile brings a token of yours back.
 func command(run port.Run, model string, gitDirs []string) proc.Command {
 	env := slices.Concat(
 		run.Identity.Env,
@@ -47,13 +48,14 @@ func command(run port.Run, model string, gitDirs []string) proc.Command {
 	if model != "" {
 		args = append(args, "-m", model)
 	}
-	args = append(args, "-c", envPolicy+".include_only=[]")
-	for _, entry := range env {
-		name, value, _ := strings.Cut(entry, "=")
-		args = setEnv(args, name, value)
-	}
+	args = append(args,
+		"-c", envPolicy+`.inherit="all"`,
+		"-c", envPolicy+".ignore_default_excludes=true",
+		"-c", envPolicy+".exclude=[]",
+		"-c", envPolicy+".include_only=[]",
+	)
 	for _, name := range run.Identity.Unset {
-		args = setEnv(args, name, "")
+		args = append(args, "-c", envPolicy+".set."+name+`=""`)
 	}
 	return proc.Command{
 		Name:  binary,
@@ -62,10 +64,4 @@ func command(run port.Run, model string, gitDirs []string) proc.Command {
 		Env:   env,
 		Unset: run.Identity.Unset,
 	}
-}
-
-// setEnv returns args with the override that sets the variable name to value
-// in the commands codex runs.
-func setEnv(args []string, name, value string) []string {
-	return append(args, "-c", envPolicy+".set."+name+"="+tomlString(value))
 }
