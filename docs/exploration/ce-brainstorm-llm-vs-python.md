@@ -93,3 +93,138 @@ O `extra_sections` existe porque a skill deixa a LLM criar seções que não est
 - A checagem Complete, que hoje é a LLM conferindo o próprio trabalho.
 
 O que continua só com a LLM é o que a skill chama de qualidade do texto: se o plano se contradiz, se cobre um trabalho só e se o `ce-plan` consegue planejar sem inventar.
+
+## Uma função de perguntas
+
+Outro ângulo: uma função que recebe um estado e uma lista de perguntas sobre ele, e responde todas de uma vez.
+Cada pergunta tem um tipo:
+
+- **escolha:** a pergunta vem com as opções, e a resposta é uma delas, com um nível de confiança;
+- **score:** a resposta é um número;
+- **sim/não:** a resposta é sim ou não, com um nível de confiança.
+
+Tanto o Python quanto a LLM podem chamar a função.
+
+### Onde cabe
+
+Nos losangos do fluxo: os pontos em que a skill julga um texto e escolhe uma saída de uma lista fechada.
+Hoje a LLM principal faz esses julgamentos no meio da conversa, sem número nenhum.
+Com a função, o Python passa o estado, recebe respostas tipadas e decide a transição.
+
+| Etapa | Estado passado | Que julgamentos viram perguntas |
+|---|---|---|
+| **1. Entrada e rota** | O pedido e a conversa até ali | O domínio do pedido; se é um veredito sobre algo de fora; o formato pedido; a classe de cada decisão trazida; se um plano existente é do mesmo tema. |
+| **2. Escopo** | O pedido e um resumo do repositório | Se os requisitos já estão claros; o tier; se há mais de um resultado independente; os gatilhos visual e de território desconhecido. |
+| **3. Contexto** | O pedido | O pressure test: uma pergunta por lacuna do catálogo do tier. É o encaixe mais limpo, porque o catálogo já é uma lista fechada. |
+| **4. Diálogo** | A conversa e a última resposta | Os gatilhos antes de cada pergunta; se a pessoa não sabe avaliar ou só não decidiu; cada critério da condição de saída. |
+| **5. Abordagens** | As abordagens geradas e o objetivo | Quanto cada abordagem cumpre o objetivo e quanto escopo acrescenta. A skill manda recomendar a de menor escopo que cumpre o objetivo; com os scores, isso vira uma regra no Python. |
+| **6. Síntese** | A síntese mostrada e a resposta da pessoa | O tipo da resposta; qual item da síntese uma revisão tocou, para o Python contar "mesmo item revisado 2 vezes"; se um trecho confirma uma afirmação, quando o estado já traz a evidência. |
+| **7. Escrita** | A conversa, ou o plano escrito | Se o arquivo se justifica; as checagens Consistent, Focused e Usable; se um requisito pede duas coisas; se uma correção muda o escopo; se um termo ficou definido. |
+| **8. Handoff** | O menu visível e a resposta da pessoa | Que opção foi escolhida; o que fazer com cada item de Resolve Before Planning. |
+
+### Por que funciona nesses pontos
+
+1. **São julgamentos estreitos com respostas fixas.** É o formato exato da função. A LLM grande deixa de fazer esse trabalho dentro da conversa.
+2. **O lote aproveita o mesmo estado.** As perguntas de uma etapa leem o mesmo texto, então uma chamada só responde todas.
+3. **A confiança substitui regras escritas em prosa.** A skill diz "se o tier continua incerto, escolha o mais pesado", "na dúvida, continue perguntando", "uma entrada que não bate com nenhuma opção é pedido de esclarecimento". Com a confiança, todas viram a mesma regra: abaixo do limite, pergunte à pessoa ou siga o caminho seguro.
+4. **As respostas tipadas entram direto na máquina de estados em Python.** O Python não precisa interpretar texto.
+5. **Dá para medir.** Cada pergunta tem um gabarito possível: os logs do `.crew/logs`, as issues e os planos já escritos. Os limites de confiança saem de dados separados para teste, que é o que o `AGENTS.md` pede para o Jev. Essa função tem o mesmo formato do Jev: uma pergunta estreita por vez, só o texto necessário no estado e uma probabilidade na resposta.
+
+### Onde não cabe
+
+- **Gerar texto.** Escrever as perguntas do diálogo, as abordagens, a síntese, o mapa do território e o plano. A função escolhe ou pontua; não escreve.
+- **Procurar evidência.** O scout, o verificador e o pesquisador do Slack precisam abrir arquivos. A função só julga o que já está no estado.
+- **Regras fixas.** Path A ou B, pular a Etapa 5, a visibilidade das opções do menu, a ordem de precedência do formato. Isso já é Python e não precisa de confiança.
+- **A checagem de integração (1.3).** Dá para perguntar "existe consequência não óbvia?", mas a resposta útil é qual consequência, e isso é texto.
+
+### Dois cuidados
+
+- **Perguntas dependentes.** Algumas só fazem sentido depois de outras, como o tier, que só importa se o pedido é de software. Elas podem ir no mesmo lote, e o Python descarta as que não se aplicam. Mas se a resposta de uma muda o estado que a outra precisa ler, elas vão em lotes separados.
+- **Confiança calibrada.** O número só serve para decidir se, quando ele diz 0,8, a resposta acerta umas 8 em 10. Isso precisa ser medido por pergunta antes de valer como regra.
+
+## As perguntas, atômicas e simples
+
+Uma pergunta por julgamento, escrita como uma pessoa perguntaria, sem o jargão da skill.
+
+### A pergunta que abre cada pergunta à pessoa
+
+**Preciso de um humano pra decidir?**
+Ela cabe antes de cada paralelogramo laranja do fluxo, os pontos em que a skill pergunta algo à pessoa.
+É a Interaction Rule 8 ("pergunte só o que o repositório não responde") virando código:
+
+- **sim:** o Python faz a pergunta à pessoa;
+- **não:** o Python resolve com o repositório ou com o padrão;
+- **confiança baixa:** trata como sim;
+- **run sem humano (pipeline):** sim quer dizer bloquear e devolver a pendência.
+
+### Por etapa
+
+**Etapa 1, entrada e rota**
+
+- O pedido é sobre construir ou mudar software? *(sim/não)*
+- O pedido é uma dúvida rápida que se responde direto? *(sim/não)*
+- O pedido pergunta se vale adotar algo de fora? *(sim/não)*
+- Em que formato o pedido quer o documento? *(escolha: markdown, HTML, não diz)*
+- A pessoa escolheu isto depois de ver outra opção? *(sim/não, uma por decisão)*
+- A pessoa só concordou com uma proposta? *(sim/não, uma por decisão)*
+- Este plano fala do mesmo assunto do pedido? *(score, um por plano)*
+
+**Etapa 2, escopo**
+
+- O pedido já diz como deve funcionar? *(sim/não)*
+- Qual é o tamanho do trabalho? *(escolha: pequeno, médio, grande)*
+- O produto em volta já existe? *(sim/não)*
+- Dá para entregar uma parte sem as outras? *(sim/não)*
+- O assunto é visual? *(sim/não)*
+- A pessoa disse que não conhece o assunto? *(sim/não)*
+
+**Etapa 3, contexto** (uma pergunta por lacuna)
+
+- O pedido mostra algo que alguém já fez para resolver isso? *(sim/não)*
+- O pedido diz quem ganha com isso? *(sim/não)*
+- O pedido diz o que se faz hoje sem isso? *(sim/não)*
+- O pedido já chega com a solução pronta? *(sim/não)*
+
+**Etapa 4, diálogo**
+
+- Preciso de um humano pra decidir? *(sim/não, antes de cada pergunta)*
+- A resposta contradiz o código? *(sim/não)*
+- A resposta usa um termo com outro sentido no glossário? *(sim/não)*
+- A pessoa sabe avaliar esta pergunta? *(sim/não)*
+- A próxima decisão é sobre aparência? *(sim/não)*
+- Errar esta decisão sai caro? *(sim/não)*
+- Conversar resolve esta decisão? *(sim/não)*
+- Sabemos quem vai usar? *(sim/não)*
+- Sabemos o resultado esperado? *(sim/não)*
+- Sabemos o que fica de fora? *(sim/não)*
+- Sabemos como medir o sucesso? *(sim/não)*
+
+"Errar esta decisão sai caro?" e "Conversar resolve esta decisão?" eram uma regra só na skill: a Rule 7, que manda oferecer o `ce-prototype`.
+Separadas, o Python oferece o protótipo quando a primeira é sim e a segunda é não.
+
+**Etapa 5, abordagens**
+
+- Esta abordagem resolve o problema? *(score, uma por abordagem)*
+- Quanto esta abordagem acrescenta além do pedido? *(score, uma por abordagem)*
+
+**Etapa 6, síntese**
+
+- O que a pessoa respondeu? *(escolha: confirmou, pediu mudança, quer outra skill)*
+- Que item a mudança toca? *(escolha entre os itens da síntese)*
+- Este trecho confirma esta afirmação? *(sim/não, uma por afirmação)*
+
+**Etapa 7, escrita**
+
+- A pessoa pediu um arquivo? *(sim/não)*
+- Alguém vai precisar citar estas decisões depois? *(sim/não)*
+- Uma seção contradiz outra? *(sim/não)*
+- O plano cobre um trabalho só? *(sim/não)*
+- Dá para planejar sem inventar comportamento? *(sim/não)*
+- Este requisito pede duas coisas? *(sim/não, uma por requisito)*
+- Esta correção muda o que vai ser construído? *(sim/não)*
+- Este termo ficou bem definido? *(sim/não, um por termo)*
+
+**Etapa 8, handoff**
+
+- Que opção a pessoa escolheu? *(escolha entre as opções visíveis)*
+- Esta pendência foi resolvida? *(sim/não, uma por pendência)*
