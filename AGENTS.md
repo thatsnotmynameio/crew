@@ -31,10 +31,10 @@ pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Op
 
 Ports and adapters with a pure core.
 
-- `cmd/crew`: flags, signals, the repository root; builds the `git` workspace, the `shell` checker and `app.Options.Bots` (through `internal/bots`) and calls `app.Run`. `crew bots create <name>` is chosen before the flags and runs the `internal/bots` flow instead.
+- `cmd/crew`: flags, signals, the repository root, the global config file's path; builds the `git` workspace, the `shell` checker and `app.Options.Bots` (through `internal/bots`) and calls `app.Run`. `crew bots create <name>` is chosen before the flags and runs the `internal/bots` flow instead.
 - `internal/app`: config, registry, engine, renderer, stop signals, exit codes (0 clean, 1 failure or forced, 2 config or environment).
 - `internal/crew`: the domain (states, issues, rules with their labels and queues, actions, board columns, outcomes, failure reports, statuses).
-- `internal/config`: `.crew/config.yaml` and `.crew/config.local.yaml`, whose top-level keys replace those of `config.yaml` (`files.go`, which also names each error's file): refuses the old keys with their replacements (`legacy.go`), strict decoding, engine defaults, one file per section (rules, agents, checks, queues, board); resolves each action's agent, check and bot; hands the tracker and each agent's harness its section as a `port.Decode`.
+- `internal/config`: the global config file (`~/.config/crew/config.yaml`, or `$XDG_CONFIG_HOME/crew/config.yaml`), then `.crew/config.yaml` and `.crew/config.local.yaml`, each file's top-level keys replacing those of the files before it (`files.go`, which also resolves the global file's path with `GlobalFile` and names each error's file): refuses the old keys with their replacements (`legacy.go`), strict decoding, engine defaults, one file per section (rules, agents, checks, queues, board); resolves each action's agent, check and bot; hands the tracker and each agent's harness its section as a `port.Decode`.
 - `internal/port`: `Tracker`, `Harness`, `Workspace`, `Checker`, `Identity`, the optional `Preparer`, `StatusReporter`, `PullRequestReporter`, `Acting`, `CodeOwnerFinder`, `LoginFinder`, `WriterReporter`, `BoardLister`, `Narrator`, `Reopener`, `UsageReporter`, `LastMessageReporter` and `PullRequestFinder`, sentinel errors, factory types.
 - `internal/registry`: name to factory; `default.go` is the production list.
 - `internal/core`: the pure reducer, (model, input) to (commands, events). No I/O, no clock.

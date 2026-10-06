@@ -1,26 +1,31 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
 ## Every key crew reads, commented out. Copy what you need to
-## .crew/config.yaml or .crew/config.local.yaml and uncomment it. A line with
-## one # is a setting; a line with ## explains the setting below it, so
-## uncommenting a whole block keeps its explanations as comments. A value
-## shown is the key's default when it has one, otherwise an example.
+## .crew/config.yaml, .crew/config.local.yaml or your global config file and
+## uncomment it. A line with one # is a setting; a line with ## explains the
+## setting below it, so uncommenting a whole block keeps its explanations as
+## comments. A value shown is the key's default when it has one, otherwise an
+## example.
 ##
-## crew reads two files from the repository's root:
+## crew reads three files, in this order:
 ##
+## - Your global config file, ~/.config/crew/config.yaml on Linux and macOS,
+##   or $XDG_CONFIG_HOME/crew/config.yaml when XDG_CONFIG_HOME is set: your
+##   settings for every repository crew runs in, such as your agents or a
+##   board.
 ## - .crew/config.yaml, the repository's shared workflow. Commit it.
 ## - .crew/config.local.yaml, your own settings on this machine, such as
 ##   poll_interval_seconds or a board. Have git ignore it.
 ##
-## Either file may be missing, but not both, and together they need rules.
-## Each top-level key that config.local.yaml sets replaces that whole key of
-## config.yaml: a local board replaces the board, and a local agents replaces
-## every agent, so to change one agent's model, copy all of agents. A local
-## key with no value, such as "board:", brings back crew's default for it.
-## Keys the local file leaves out keep their value from config.yaml, and keys
-## neither file sets keep crew's defaults.
+## Any of them may be missing, but not all three, and together they need
+## rules. Each top-level key a later file sets replaces that whole key of the
+## earlier ones: a local board replaces the board, and a local agents
+## replaces every agent, so to change one agent's model, copy all of agents.
+## A key with no value, such as "board:", brings back crew's default for it.
+## Keys a later file leaves out keep their value from an earlier one, and
+## keys no file sets keep crew's defaults.
 ##
 ## The modeline on this file's first line gives editors completion and help
-## for every key. It works in both files.
+## for every key. It works in all three files.
 ##
 ## crew's own rules, which run on crew's repository, are in
 ## .crew/config.yaml beside this file.
