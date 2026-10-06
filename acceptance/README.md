@@ -13,7 +13,7 @@ The module is its own Go module (`github.com/thatsnotmynameio/crew/acceptance`).
 | `smoke/` | The developer's smoke runs. |
 | `scenarios/<area>/` | The tester's scenarios, one package per area of crew. |
 
-Two roles work here. The tester writes the scenarios and their snapshots from crew's README, never from crew's code. The developer builds and maintains the doubles and the harness. The first part of this file is the tester's; [For the developer](#for-the-developer) is the developer's.
+Two roles work here. The tester, a session running the `/cw-tester` skill (`.agents/skills/cw-tester/SKILL.md`), writes the scenarios and their snapshots from crew's README, never from crew's code. The developer builds and maintains the doubles and the harness. The first part of this file is the tester's; [For the developer](#for-the-developer) is the developer's.
 
 ## Running the suite
 
