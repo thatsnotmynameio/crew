@@ -17,10 +17,6 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// defaultModel is the model a session runs when its agent's harness sets no
-// model.
-const defaultModel = "claude-opus-5-5"
-
 // stoppedReason is the Outcome.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
@@ -36,7 +32,8 @@ var (
 )
 
 // settings is the claude adapter's config section: the keys of an agent's
-// harness but its name, which are model alone.
+// harness but its name, which are model alone. Without a model, Claude Code
+// picks it: the one set in the user's own settings, or its default.
 type settings struct {
 	Model string `yaml:"model"`
 }
@@ -52,7 +49,7 @@ type process interface {
 type spawner func(c proc.Command, stdout, stderr io.Writer) (process, error)
 
 // Factory returns the claude harness factory. Its section is an agent's
-// harness without its name: model, which defaults to claude-opus-5-5.
+// harness without its name: model, which is optional.
 // The harness it builds is a port.Preparer that checks claude is on PATH.
 // Every session runs through group, in its own process group, so a forced
 // exit kills it.
@@ -65,18 +62,16 @@ func Factory(group *proc.Group) port.HarnessFactory {
 		return p, nil
 	}
 	return func(decode port.Decode) (port.Harness, error) {
-		s := settings{Model: defaultModel}
+		var s settings
 		if err := decode(&s); err != nil {
 			return nil, err
-		}
-		if s.Model == "" {
-			s.Model = defaultModel
 		}
 		return &harness{model: s.Model, spawn: spawn}, nil
 	}
 }
 
-// harness starts claude sessions with one model.
+// harness starts claude sessions with one model, or Claude Code's own when
+// empty.
 type harness struct {
 	model string
 	spawn spawner

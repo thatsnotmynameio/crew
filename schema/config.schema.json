@@ -77,7 +77,7 @@
                 "examples": ["claude", "codex"]
               },
               "model": {
-                "description": "The model the harness runs, such as claude-opus-5-5 or gpt-5.5. Without it, claude runs claude-opus-5-5, and codex runs the model Codex's own config or default names.",
+                "description": "The model the harness runs, such as claude-opus-5-5 or gpt-5.5. Without it, claude and codex pick the model themselves: the one set in their own config, or their default.",
                 "type": "string",
                 "examples": ["claude-opus-5-5", "gpt-5.5"]
               }

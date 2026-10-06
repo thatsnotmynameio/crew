@@ -22,7 +22,8 @@ const (
 	bashMaxTimeout     = "BASH_MAX_TIMEOUT_MS=1800000"
 )
 
-// command builds the headless Claude Code run of run with model. It is pure,
+// command builds the headless Claude Code run of run with model, or with the
+// model Claude Code picks when model is empty. It is pure,
 // and kept apart from the stream parser, so that building the command and
 // judging the session change independently. The stream-json output, which
 // needs --verbose with -p, is what the parser judges the session by; proc
@@ -37,16 +38,13 @@ func command(run port.Run, model string) proc.Command {
 		run.Identity.Env,
 		[]string{"CREW_CODE_OWNERS=" + strings.Join(run.CodeOwners, " "), "CREW_BOTS=" + strings.Join(run.Bots, " ")},
 	)
+	args := []string{"-p"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
 	return proc.Command{
-		Name: binary,
-		Args: []string{
-			"-p",
-			"--model", model,
-			"--permission-mode", "auto",
-			"--output-format", "stream-json",
-			"--verbose",
-			"--", run.Prompt,
-		},
+		Name:  binary,
+		Args:  append(args, "--permission-mode", "auto", "--output-format", "stream-json", "--verbose", "--", run.Prompt),
 		Dir:   run.Dir,
 		Env:   env,
 		Unset: run.Identity.Unset,
