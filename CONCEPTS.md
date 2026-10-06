@@ -136,6 +136,20 @@ You can have many bots, and a bot is only an identity: it carries no model, prom
 
 A bot acts when crew could make it act at startup. One that cannot act then stays that way until crew restarts, and its actions act as you. A bot that acts can stop acting while crew runs: when crew's own writes as `tracker.bot` go back to you, which lasts until restart, or when its token fails to renew, which lasts until a renewal succeeds. An action's cost counts on the identity it acted as.
 
+## Sessions
+
+### Captain
+
+Who answers what a coding-agent session crew runs should do next, given the session's id. The session is what is asked about, and the captain is who answers, as an issue is to the tracker.
+
+Its only captain today decides nothing: it hands every session the same placeholder task.
+
+### Task
+
+What a session is asked to do next, as its captain answers it: the task's own id, the id of the session it belongs to, and a prompt.
+
+`crew sessions <session-id> tasks next|current` asks the captain for one and prints it as JSON. Nothing stores a task or checks that its session exists.
+
 ## TypeSafe
 
 ### Judge

@@ -140,13 +140,10 @@ func TestSavingWhereNoDirectoryCanBeMadeFails(t *testing.T) {
 	}
 }
 
-func TestDefaultStoreLivesInTheUserConfigDir(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+func TestDefaultStoreLivesInXDGConfigHome(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", t.TempDir())
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		t.Fatal(err)
-	}
 	s, err := DefaultStore()
 	if err != nil {
 		t.Fatalf("DefaultStore: %v", err)
@@ -161,6 +158,41 @@ func TestDefaultStoreLivesInTheUserConfigDir(t *testing.T) {
 	}
 	if _, from, err := s.Load("o", "tester"); err != nil || from != old.Path("o", "tester") {
 		t.Errorf("Load = %s, %v; want the bot under crew/mates, from %s", from, err, old.Path("o", "tester"))
+	}
+}
+
+// On every OS, macOS included, the bots live in ~/.config/crew/bots, not
+// in ~/Library/Application Support, where Go's os.UserConfigDir points
+// on macOS (#215).
+func TestDefaultStoreLivesInDotConfigOnEveryOS(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", home)
+	s, err := DefaultStore()
+	if err != nil {
+		t.Fatalf("DefaultStore: %v", err)
+	}
+	if want := filepath.Join(home, ".config", "crew", "bots", "o", "n.json"); s.Path("o", "n") != want {
+		t.Errorf("Path = %s, want %s", s.Path("o", "n"), want)
+	}
+}
+
+func TestConfigDirIsXDGConfigHomeElseDotConfig(t *testing.T) {
+	for _, tc := range []struct {
+		env     map[string]string
+		want    string
+		wantErr bool
+	}{
+		{env: map[string]string{"XDG_CONFIG_HOME": "/xdg", "HOME": "/home/b"}, want: "/xdg"},
+		{env: map[string]string{"HOME": "/home/b"}, want: "/home/b/.config"},
+		{env: map[string]string{"XDG_CONFIG_HOME": "xdg", "HOME": "/home/b"}, wantErr: true},
+		{env: map[string]string{"HOME": "home/b"}, wantErr: true},
+		{env: map[string]string{}, wantErr: true},
+	} {
+		got, err := configDir(func(k string) string { return tc.env[k] })
+		if got != tc.want || (err != nil) != tc.wantErr {
+			t.Errorf("configDir(%v) = %q, %v; want %q, error %t", tc.env, got, err, tc.want, tc.wantErr)
+		}
 	}
 }
 
