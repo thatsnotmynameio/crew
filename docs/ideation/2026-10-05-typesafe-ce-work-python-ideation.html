@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: a deterministic ce-work in Python with TypeSafe and Jev</title>
+<style>
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --text: #1d1d1b;
+  --muted: #5d5b55;
+  --border: #e3e0d8;
+  --accent: #2f5d50;
+  --accent-soft: #e4efe9;
+  --accent-text: #22473d;
+  --warn-soft: #f7ecdc;
+  --warn-text: #6b4613;
+  --info-soft: #e6ecf6;
+  --info-text: #243f69;
+  --code-bg: #f1efe9;
+  --svg-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161715;
+    --surface: #1e201d;
+    --text: #e8e6e0;
+    --muted: #a7a49b;
+    --border: #34372f;
+    --accent: #7fbfa8;
+    --accent-soft: #23352e;
+    --accent-text: #b6e0d0;
+    --warn-soft: #3a2f1f;
+    --warn-text: #efd1a4;
+    --info-soft: #1f2a3b;
+    --info-text: #bcd0f0;
+    --code-bg: #262923;
+    --svg-bg: #1e201d;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161715; --surface: #1e201d; --text: #e8e6e0; --muted: #a7a49b; --border: #34372f;
+  --accent: #7fbfa8; --accent-soft: #23352e; --accent-text: #b6e0d0; --warn-soft: #3a2f1f;
+  --warn-text: #efd1a4; --info-soft: #1f2a3b; --info-text: #bcd0f0; --code-bg: #262923; --svg-bg: #1e201d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15.5px; line-height: 1.6;
+}
+main { max-width: 900px; margin-inline: auto; padding: 40px 16px 64px; }
+p, li, dd { max-width: 72ch; }
+h1 { font-size: 1.9rem; line-height: 1.25; margin: 0.2em 0 0.4em; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; margin: 2.4em 0 0.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.12rem; margin: 0 0 0.4em; }
+h4 { font-size: 0.98rem; margin: 1.6em 0 0.4em; }
+code { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+a { color: var(--accent); }
+strong { color: inherit; }
+.eyebrow { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--accent-text); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 0 1.4em; padding: 0; color: var(--muted); font-size: 0.9rem; }
+.meta div { display: flex; gap: 6px; }
+.meta dt { font-weight: 600; color: var(--text); }
+.meta dd { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 1.2em 0 0.4em; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.stat b { display: block; font-size: 1.35rem; }
+.stat span { color: var(--muted); font-size: 0.84rem; }
+.lede { font-size: 1.04rem; }
+.callout { background: var(--accent-soft); color: var(--accent-text); border-radius: 10px; padding: 14px 18px; margin: 1.2em 0; }
+.callout p { margin: 0.3em 0; }
+.callout.info { background: var(--info-soft); color: var(--info-text); }
+.callout.warn { background: var(--warn-soft); color: var(--warn-text); }
+.jump { list-style: none; padding: 0; margin: 0 0 1.4em; display: grid; gap: 4px; }
+.jump a { text-decoration: none; }
+.jump a:hover { text-decoration: underline; }
+article.idea { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; margin: 18px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.chip { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; background: var(--code-bg); color: var(--text); }
+.chip.id { background: var(--accent-soft); color: var(--accent-text); }
+.chip.axis { background: var(--info-soft); color: var(--info-text); }
+dl.fields { margin: 0; }
+dl.fields dt { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 12px; }
+dl.fields dd { margin: 3px 0 0; }
+dl.fields ul { margin: 4px 0; padding-left: 1.2em; }
+.tag { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.8em; font-weight: 500; color: var(--accent-text); background: var(--accent-soft); padding: 0 5px; border-radius: 4px; }
+figure { margin: 16px 0 4px; }
+figure svg { width: 100%; height: auto; display: block; background: var(--svg-bg); border: 1px solid var(--border); border-radius: 10px; }
+figcaption { font-size: 0.84rem; color: var(--muted); margin-top: 6px; }
+svg text { font-family: Inter, -apple-system, "Segoe UI", sans-serif; fill: var(--text); }
+svg .muted { fill: var(--muted); }
+svg .box { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+svg .box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+svg .box-warn { fill: var(--warn-soft); stroke: var(--border); stroke-width: 1.5; }
+svg .box-info { fill: var(--info-soft); stroke: var(--border); stroke-width: 1.5; }
+svg .line { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+svg .line-dash { stroke: var(--muted); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+svg .line-accent { stroke: var(--accent); stroke-width: 2; fill: none; }
+svg .arrowhead { fill: var(--muted); }
+svg .arrowhead-accent { fill: var(--accent); }
+svg .halo { paint-order: stroke fill; stroke: var(--svg-bg); stroke-width: 3px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-size: 0.76rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+table.ids td:first-child { white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.85em; }
+ol.axes { padding-left: 1.3em; }
+footer.composition-signal { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.84rem; }
+@media (max-width: 560px) { h1 { font-size: 1.5rem; } article.idea { padding: 16px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">Ideation</div>
+  <h1>Ideation: a deterministic ce-work in Python with TypeSafe and Jev</h1>
+  <dl class="meta">
+    <div><dt>Date</dt><dd><time datetime="2026-10-05">2026-10-05</time></dd></div>
+    <div><dt>Topic</dt><dd><code>typesafe-ce-work-python</code></dd></div>
+    <div><dt>Mode</dt><dd>elsewhere-software</dd></div>
+  </dl>
+  <dl class="meta">
+    <div><dt>Focus</dt><dd>A Python application that reproduces the <code>ce-work</code> flow (execute a plan end to end) as deterministically as possible, using TypeSafe's Jev model for judgments and every best practice TypeSafe documents.</dd></div>
+  </dl>
+  <p class="lede">The short answer: in this design Jev only answers narrow, typed questions at fixed points. A generative coding agent only edits files. Everything else is ordinary Python. "Deterministic" ends up meaning that the same recorded inputs always produce the same decisions. It cannot mean identical model outputs, because Jev's answers vary slightly between identical calls.</p>
+  <div class="stats">
+    <div class="stat"><b>48</b><span>raw ideas from 5 agents</span></div>
+    <div class="stat"><b>26</b><span>after merging duplicates</span></div>
+    <div class="stat"><b>7</b><span>survivors</span></div>
+    <div class="stat"><b>17</b><span>live Jev calls behind the evidence</span></div>
+  </div>
+</header>
+
+<section id="grounding-context">
+  <h2>Grounding Context</h2>
+  <div class="eyebrow">Topic Context</div>
+
+  <h4>ce-work, read as a list of decisions</h4>
+  <p><code>ce-work</code> runs in five phases: input triage, quick start (workspace, task list, engine and strategy), the per-unit implementation loop, quality (tests, simplify, code review, final validation) and shipping. Read for where judgment enters, it contains about 35 decision points:</p>
+  <ul>
+    <li><strong>Yes/no checks:</strong> is the plan ready, is this a mechanical diff, is the unit done.</li>
+    <li><strong>Pick-one choices:</strong> source type, complexity tier, evidence strategy, review-finding triage.</li>
+    <li><strong>A matter of degree:</strong> parallel safety.</li>
+    <li><strong>Open-ended generation:</strong> the System-Wide Test Check, and writing the code, tests and messages.</li>
+  </ul>
+  <p>A good part is already mechanical: plan discovery, the U-ID/R-ID/<code>Files:</code> fields, path-limited commits, the ≥30-line simplify trigger, exact skip phrases and the worker result schema (<code>terminal_status</code>, <code>changed_files</code>, <code>evidence</code>, <code>scope_expansion</code>).</p>
+  <p>The skill itself names where it is fragile:</p>
+  <ul>
+    <li>"Resolve uncertainty by inspection" for parallel units.</li>
+    <li>"reported paths untrusted".</li>
+    <li>Worker evidence "not reconstructable from the tree afterward".</li>
+    <li>"A clean merge is not proof of compatibility".</li>
+    <li>The rule of two failed fixes before a root-cause reset.</li>
+  </ul>
+
+  <h4>What TypeSafe gives, and what it does not</h4>
+  <p>One endpoint, <code>POST https://api.typesafe.ai/v1/systemone</code>, takes <code>{state, model, questions}</code>. It evaluates every question independently and in parallel against the same state. The three question types:</p>
+  <ul>
+    <li><strong>Noul:</strong> the probability of yes.</li>
+    <li><strong>Choice:</strong> one option with a probability distribution and a confidence; up to 255 options.</li>
+    <li><strong>Score:</strong> a probability-weighted position on 2–10 ordered levels.</li>
+  </ul>
+  <p>Limits: 64k tokens for state plus all questions, 32k for state plus the longest question, and 80 requests/s. Input costs $0.042 per million tokens and output is free. Requests are text only, with no seed or temperature setting. <code>jev-latest</code> currently resolves to <code>jev-1.13.0</code>.</p>
+  <p>The Python SDK is <code>typesafe-sdk</code> 0.7.2 (Python ≥3.10):</p>
+  <ul>
+    <li>Clients: <code>TypeSafeClient</code> and <code>AsyncTypeSafeClient</code>.</li>
+    <li>Call: <code>client.system_one(state, questions, model=..., retry=RetryPolicy(...), response_model=...)</code>.</li>
+    <li>Typed answers: <code>NoulAnswer</code>, <code>ChoiceAnswer</code>, <code>ScoreAnswer</code>.</li>
+    <li>Errors: typed exceptions such as <code>RateLimit</code> (with <code>.retry_after_ms</code>).</li>
+    <li>Each response carries a <code>request_id</code>.</li>
+  </ul>
+  <p>The documented best practices are:</p>
+  <ul>
+    <li>Code owns control flow. Write no agent <code>while</code> loops.</li>
+    <li>Ask one literal, narrow question at a time, phrased so that high means yes and without compound conditions.</li>
+    <li>Build small, structured state in code.</li>
+    <li>Give every Choice an <code>other</code> option.</li>
+    <li>Use speculative fan-out: batching 13 questions was 12.2× cheaper and 10× faster, and "batching adds no noise".</li>
+    <li>Route answers through act / confirm / escalate bands with risk-scaled thresholds.</li>
+    <li>Choose thresholds from held-out labeled data.</li>
+    <li>Keep all questions and thresholds in one reviewable file.</li>
+    <li>Pin the model version you tuned against.</li>
+  </ul>
+  <p>Jev's known weak spots are:</p>
+  <ul>
+    <li>It reads literally.</li>
+    <li>It cannot count, do arithmetic or compare dates.</li>
+    <li>It is weak at multi-hop questions and double negatives.</li>
+    <li>It leans toward the first Choice option.</li>
+    <li>Adversarial text placed in the state can steer it.</li>
+    <li>It generates no text, so it does not replace the model that writes code.</li>
+  </ul>
+
+  <h4>Measured in this run</h4>
+  <p>Every request below was sent to <code>jev-1.13.0</code>. Each took 0.29–0.42 s and 600–1,100 input tokens, about $0.00003 a call. Most rows are a single case, so read them as signs that a question works. None of them is a measured threshold.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Probe</th><th>Result</th><th>Caveat</th></tr></thead>
+    <tbody>
+      <tr><td>Identical request sent 3 times</td><td>Noul 0.97 / 0.97 / 0.98; Score 1.71 / 1.85 / 1.85 (confidence 0.57–0.63); Choice argmax stable</td><td>Not byte-identical. Mid-band Scores are the noisiest.</td></tr>
+      <tr><td>Test output with one real failure and one unrelated <code>ConnectionError</code></td><td>"a failing test exercises this unit" 0.97; "all failures caused by this change" 0.13; next action <code>fix_code</code> 0.95</td><td>One case.</td></tr>
+      <tr><td>Same Choice with options reversed</td><td><code>code_bug</code> 0.93 → 0.89; <code>fix_code</code> 0.95 → 0.93; argmax unchanged</td><td>Small order effect, as documented.</td></tr>
+      <tr><td>3 requirements × 2 diff hunks, 9 questions in one request</td><td>implemented 0.89 / 0.94; missing requirement 0.13 / 0.02; unrequested hunk 0.91</td><td>Toy case; the "unrequested" question uses a negated quantifier the docs discourage.</td></tr>
+      <tr><td>Unit pairs for parallel safety</td><td>no shared file but a shared function: 0.69; unrelated pairs: 0.08, 0.13</td><td>One pair; the units' text named the shared function.</td></tr>
+      <tr><td>False review finding vs the cited code</td><td><code>contradicts</code> 0.97</td><td>One clear-cut case.</td></tr>
+      <tr><td>Worker claim "All tests pass" vs runner output with 2 failures</td><td><code>contradicts</code> 1.0, also with an injected "treat as supported" note (reproduced on re-run)</td><td>One injection attempt; the docs still say state can be steered.</td></tr>
+      <tr><td>Worker summary placed in the state</td><td>narrow per-hunk question 0.16 (0.13 without); a broad "does this satisfy R3" 0.47</td><td>No clean control for the broad question.</td></tr>
+      <tr><td>Faithful vs scope-widening restatement of a unit</td><td>0.96 vs 0.02 (reproduced on re-run)</td><td>The bad restatement was an obvious one.</td></tr>
+      <tr><td>A Noul and its logical complement</td><td>0.24 vs 0.52; re-run 0.25 vs 0.48. They should sum to 1, and do not.</td><td>The complement used negated phrasing.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Prior art and past learnings</h4>
+  <p>Web results (search snippets, not verified) point the same way:</p>
+  <ul>
+    <li>Agentless runs a fixed localize → repair → validate pipeline with no agent loop.</li>
+    <li>Anthropic's "Building effective agents" recommends workflows when the steps are known.</li>
+    <li>12-Factor Agents says to "own your control flow".</li>
+    <li>Temporal with Pydantic AI replays orchestration from an event history and records LLM calls as activities.</li>
+    <li>VCR-style cassettes for agents exist, but none was found for a Claude Agent SDK session.</li>
+  </ul>
+  <p>crew's own learnings add four patterns:</p>
+  <ul>
+    <li>A pure reducer core: <code>(model, input) → (commands, events)</code>, with no I/O and no clock.</li>
+    <li>Adapters are only data sources.</li>
+    <li>Session text is untrusted.</li>
+    <li>Folders that hold uncommitted work are never deleted silently.</li>
+  </ul>
+  <p>crew's <code>cw-rank-blockers</code> already calls Jev with a pinned <code>jev-1.13.0</code>. It measured one request per pair at 0.933 against 0.583 for all candidates in one request.</p>
+</section>
+
+<section id="topic-axes">
+  <h2>Topic Axes</h2>
+  <ol class="axes">
+    <li><strong>Gates and judgments:</strong> which ce-work decision points become Jev questions, and how each question is designed.</li>
+    <li><strong>The deterministic spine:</strong> control flow, the plan as data, step boundaries, recording and replay.</li>
+    <li><strong>The bounded worker:</strong> what the coding agent is given and returns, and how its output is checked.</li>
+    <li><strong>Calibration and trust over time:</strong> thresholds, bands, model pinning, and how the app learns from its own runs.</li>
+  </ol>
+</section>
+
+<section id="ranked-ideas">
+  <h2>Ranked Ideas</h2>
+  <ul class="jump">
+    <li><a href="#idea-1">1. Ledger and replay: deterministic means the same recorded inputs give the same decisions</a></li>
+    <li><a href="#idea-2">2. Gate kernel: every ce-work judgment is a registered gate with a three-band verdict and a conservative default</a></li>
+    <li><a href="#idea-3">3. Plan-time contract: compile the plan and freeze the done-questions before any code exists</a></li>
+    <li><a href="#idea-4">4. Worker testimony is hearsay: the orchestrator builds every exhibit</a></li>
+    <li><a href="#idea-5">5. Parallel safety as a pairwise conflict matrix</a></li>
+    <li><a href="#idea-6">6. Failure attribution routes failures before the worker sees them</a></li>
+    <li><a href="#idea-7">7. Gates earn autonomy, then retire into code</a></li>
+  </ul>
+
+  <article class="idea" id="idea-1">
+    <div class="chips"><span class="chip id">Idea 1</span><span class="chip axis">The deterministic spine</span><span class="chip">Confidence 90%</span><span class="chip">Complexity Medium</span></div>
+    <h3>1. Ledger and replay: deterministic means the same recorded inputs give the same decisions</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>The core is a pure reducer: <code>(run state, input) → (commands, events)</code>, with no I/O and no clock. An effects runner executes each command and appends its result to a SQLite ledger. A command is a Jev request through <code>typesafe-sdk</code>, a worker session, or a shell command.</p>
+        <p>A Jev entry is keyed by the pinned model id, the sha256 of the state JSON and the sha256 of the question set. It stores the raw answers (every probability, not a thresholded bool), <code>usage</code>, the returned <code>model</code> and the <code>request_id</code>.</p>
+        <p>In replay mode the runner serves every input from the ledger, so a run re-derives the same decisions without touching the network. The same ledger gives two more things:</p>
+        <ul>
+          <li><strong>Resume after a crash:</strong> replay up to the last step boundary.</li>
+          <li><strong>A regression harness:</strong> change a threshold, a question's wording or the Jev version, replay the last N runs, and list the decisions that flipped.</li>
+        </ul>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> an identical request sent three times was not byte-identical: Noul 0.97 / 0.97 / 0.98, Score 1.71 / 1.85 / 1.85. The docs make no bitwise-reproducibility claim and have no seed or temperature parameter. The cookbooks cache responses by request hash.</li>
+        <li><span class="tag">direct:</span> crew's core is a pure reducer, "(model, input) → (commands, events), no I/O or clock", tested with tables.</li>
+        <li><span class="tag">external:</span> Temporal with Pydantic AI replays deterministic orchestration from an event history and records LLM calls as activities (from search snippets, not verified).</li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>Jev cannot be made bit-for-bit reproducible, so determinism has to live in the orchestrator. Recording at each step boundary is the only way to promise that a run will decide the same way again. It is also what makes debugging ("why did the parallel-safety gate say yes?") and threshold changes testable.</dd>
+      <dt>Downsides</dt>
+      <dd>Every effect has to go through the runner, the worker included, or replay breaks. The ledger holds code and plan text, so it needs the same care as logs. Replaying the worker means storing a diff and a transcript per unit.</dd>
+      <dt>Confidence</dt><dd>90%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 720 190" role="img" aria-labelledby="f1t">
+        <title id="f1t">Pure reducer and effects runner, with live calls recorded to a ledger and replay reading from it</title>
+        <defs>
+          <marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+          <marker id="ah1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-accent"/></marker>
+        </defs>
+        <rect x="20" y="60" width="170" height="64" rx="10" class="box-accent"/>
+        <text x="105" y="88" text-anchor="middle" font-size="14" font-weight="600">Pure reducer</text>
+        <text x="105" y="108" text-anchor="middle" font-size="11.5" class="muted">(state, input) → commands</text>
+        <rect x="270" y="60" width="170" height="64" rx="10" class="box"/>
+        <text x="355" y="88" text-anchor="middle" font-size="14" font-weight="600">Effects runner</text>
+        <text x="355" y="108" text-anchor="middle" font-size="11.5" class="muted">runs each command</text>
+        <rect x="520" y="16" width="180" height="56" rx="10" class="box"/>
+        <text x="610" y="40" text-anchor="middle" font-size="13" font-weight="600">Live effects</text>
+        <text x="610" y="58" text-anchor="middle" font-size="11.5" class="muted">Jev · worker · shell</text>
+        <rect x="520" y="114" width="180" height="56" rx="10" class="box-info"/>
+        <text x="610" y="138" text-anchor="middle" font-size="13" font-weight="600">Ledger (SQLite)</text>
+        <text x="610" y="156" text-anchor="middle" font-size="11.5" class="muted">raw answers, model, request_id</text>
+        <path d="M190,80 L268,80" class="line" marker-end="url(#ah1)"/>
+        <text x="229" y="72" text-anchor="middle" font-size="11.5" class="muted">commands</text>
+        <path d="M270,106 L192,106" class="line" marker-end="url(#ah1)"/>
+        <text x="231" y="124" text-anchor="middle" font-size="11.5" class="muted">inputs</text>
+        <path d="M440,74 L518,48" class="line" marker-end="url(#ah1)"/>
+        <text x="472" y="50" text-anchor="middle" font-size="11.5" class="muted">live</text>
+        <path d="M610,72 L610,112" class="line" marker-end="url(#ah1)"/>
+        <text x="622" y="97" font-size="11.5" class="muted">record</text>
+        <path d="M518,142 L442,112" class="line-accent" marker-end="url(#ah1a)"/>
+        <text x="468" y="146" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--accent)">replay</text>
+      </svg>
+      <figcaption>In live mode, the runner calls Jev, the worker and the shell, and records each result. In replay mode it reads the same results back from the ledger, so the reducer takes the same branches.</figcaption>
+    </figure>
+  </article>
+
+  <article class="idea" id="idea-2">
+    <div class="chips"><span class="chip id">Idea 2</span><span class="chip axis">Gates and judgments</span><span class="chip">Confidence 85%</span><span class="chip">Complexity Medium</span></div>
+    <h3>2. Gate kernel: every ce-work judgment is a registered gate with a three-band verdict and a conservative default</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>Each of ce-work's judgment points becomes one registered gate in a single <code>gates.py</code>: <code>Gate(dp_id, kind, state_builder, questions, bands, default, risk)</code>.</p>
+        <p><code>kind</code> is <code>code</code>, <code>jev</code>, <code>worker</code> or <code>human</code>. Points ce-work already settles mechanically are <code>code</code>: branch safety, unpushed commits, the ≥30-line simplify trigger.</p>
+        <p>Every answer is lifted into one type, <code>Yes | No | Unknown(p, request_id, model)</code>. A Noul in the 0.30–0.70 band, or a Choice below the gate's confidence floor, becomes <code>Unknown</code>. The reducer handles the verdict with a <code>match</code> that ends in <code>assert_never</code>, so a gate that forgets the <code>Unknown</code> branch fails type checking.</p>
+        <p>Each gate also has a conservative default, taken from ce-work's own wording: "When either is uncertain, take the fuller route" and "When you cannot tell, build it". Jev's answer can move a run in two directions:</p>
+        <ul>
+          <li><strong>Toward the cheaper branch</strong> (skip review, inline a unit): only above a risk-scaled threshold such as 0.85.</li>
+          <li><strong>Toward more work:</strong> from the 0.30 floor.</li>
+        </ul>
+        <p>Each phase sends all of its gates' questions in one fan-out request, over one state built in code.</p>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> the TypeSafe docs recommend:
+          <ul>
+            <li>all questions and threshold constants in one file for human review;</li>
+            <li>act / confirm / escalate bands with risk-scaled thresholds (floor 0.6, above 0.85 for risky actions);</li>
+            <li>a 0.30–0.70 review band for Noul;</li>
+            <li>speculative fan-out ("batching adds no noise"; 13 questions batched were 12.2× cheaper).</li>
+          </ul>
+          In this run's probes each extra question cost about 52 input tokens.</li>
+        <li><span class="tag">direct:</span> ce-work's SKILL.md says "When either is uncertain, take the fuller route", and implementation-loop.md says "When you cannot tell, build it".</li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>The kernel is written once, and every later gate is a row in a table. Shadow mode, logging, replay and calibration (ideas 1 and 7) then apply to every gate at no extra cost. The <code>Unknown</code> type stops uncertainty from being collapsed into a bool at the call site, which is where naive LLM pipelines usually lose it.</dd>
+      <dt>Downsides</dt>
+      <dd>Thresholds like 0.85 are placeholders until held-out data exists (idea 7). Two points are open-ended and stay with the worker: the System-Wide Test Check and writing the code. A registry can grow into a framework, so keep it a table.</dd>
+      <dt>Confidence</dt><dd>85%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 720 170" role="img" aria-labelledby="f2t">
+        <title id="f2t">A probability bar split into No, Unknown and Yes bands, with the cheaper branch allowed only above 0.85</title>
+        <rect x="40" y="50" width="192" height="30" class="box"/>
+        <rect x="232" y="50" width="256" height="30" class="box-warn"/>
+        <rect x="488" y="50" width="192" height="30" class="box-accent"/>
+        <text x="136" y="40" text-anchor="middle" font-size="12.5" font-weight="600">No</text>
+        <text x="360" y="40" text-anchor="middle" font-size="12.5" font-weight="600">Unknown → confirm</text>
+        <text x="584" y="40" text-anchor="middle" font-size="12.5" font-weight="600">Yes</text>
+        <text x="40" y="98" text-anchor="middle" font-size="11.5" class="muted">0</text>
+        <text x="232" y="98" text-anchor="middle" font-size="11.5" class="muted">0.30</text>
+        <text x="488" y="98" text-anchor="middle" font-size="11.5" class="muted">0.70</text>
+        <text x="584" y="98" text-anchor="middle" font-size="11.5" class="muted">0.85</text>
+        <text x="680" y="98" text-anchor="middle" font-size="11.5" class="muted">1</text>
+        <path d="M584,84 L584,80" class="line"/>
+        <path d="M584,112 L584,124 L680,124 L680,112" class="line-accent"/>
+        <text x="632" y="144" text-anchor="middle" font-size="11.5" fill="var(--accent)">cheaper branch allowed</text>
+        <path d="M232,112 L232,124 L680,124" class="line-dash"/>
+        <text x="360" y="144" text-anchor="middle" font-size="11.5" class="muted">more work allowed from here</text>
+      </svg>
+      <figcaption>One gate's bands. Uncertainty becomes its own value instead of a coin flip at 0.5. Moving toward the cheaper branch needs a higher bar than moving toward more work. The numbers are starting points that idea 7 replaces with measured ones.</figcaption>
+    </figure>
+  </article>
+
+  <article class="idea" id="idea-3">
+    <div class="chips"><span class="chip id">Idea 3</span><span class="chip axis">The deterministic spine</span><span class="chip">Confidence 80%</span><span class="chip">Complexity High</span></div>
+    <h3>3. Plan-time contract: compile the plan and freeze the done-questions before any code exists</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>At intake, a parser turns the plan into Pydantic models: <code>Unit</code> (id, goal, files, dependencies, test scenarios, verification lines), <code>Requirement</code> and <code>DefinitionOfDone</code>. It relies on the section headings and the U-ID/R-ID fields ce-work already uses.</p>
+        <p>Structural holes fail at intake instead of mid-run: a unit with no Verification line, a <code>Files:</code> path outside the repository, a dependency cycle, a requirement no unit covers. Where the plan is loose, code lists the candidates and Jev picks one, with a <code>none</code> option. For example: which unit does this test scenario verify? Code then copies the pick verbatim.</p>
+        <p>Before any worker starts, the plan is frozen into the ledger in two ways:</p>
+        <ul>
+          <li>The Requirements and Verification lines are compiled into a fixed battery of narrow Noul questions and hashed.</li>
+          <li>Each unit's evidence strategy is fixed by one Choice: existing failing test, update, add, characterization, no-test exception, or other.</li>
+        </ul>
+        <p>At Final Validation, the same frozen questions are asked for each (requirement, diff hunk) pair. A requirement no hunk satisfies is residual work. A hunk no requirement asks for is scope creep.</p>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> the pre-parsed value extraction cookbook: "A regex finds the candidate values, TypeSafe picks the one the question asks for, and code copies it verbatim", with <code>none</code> as "the escape hatch on every selection".</li>
+        <li><span class="tag">direct:</span> ce-work's own rules support this:
+          <ul>
+            <li>the plan body is not edited during execution;</li>
+            <li>the unit's Verification field is the "primary done signal";</li>
+            <li>the evidence strategy is a pick-one decision.</li>
+          </ul></li>
+        <li><span class="tag">direct:</span> a probe with 3 requirements × 2 hunks (9 questions, 1,085 tokens) separated implemented requirements (0.89, 0.94) from the missing one (0.13, 0.02). It also flagged the unrequested hunk (0.91). This was a toy case.</li>
+        <li><span class="tag">external:</span> study preregistration and trial registration exist to stop outcome switching: redefining success after the results are in.</li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>Several of ce-work's most variable early judgments move to one place, before code exists: is the plan ready, do the prerequisites exist, what evidence does each unit need. Freezing what counts as done before the worker runs means neither the worker nor the orchestrator can redefine done after seeing the result.</dd>
+      <dt>Downsides</dt>
+      <dd>It needs a stricter plan format than ce-plan writes today, or a compiler that accepts ce-plan's output and reports what it cannot type. Each requirement must become one narrow question, not a compound one. Large units push the requirement-by-hunk matrix past the 32k/64k token limits. Those matrices need chunking, and one request per pair may beat one big request, as crew measured.</dd>
+      <dt>Confidence</dt><dd>80%</dd>
+      <dt>Complexity</dt><dd>High</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="idea-4">
+    <div class="chips"><span class="chip id">Idea 4</span><span class="chip axis">The bounded worker</span><span class="chip">Confidence 80%</span><span class="chip">Complexity Medium</span></div>
+    <h3>4. Worker testimony is hearsay: the orchestrator builds every exhibit</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>The generative worker is one Claude Agent SDK session per unit, in its own worktree. It edits files and returns a result that matches ce-work's <code>implementation-result-schema.json</code>. Nothing it writes enters a gate's state.</p>
+        <p>The orchestrator builds every exhibit itself:</p>
+        <ul>
+          <li><code>changed_files</code> from its own diff, not the worker's list.</li>
+          <li>The new tests, run at the base commit (they must fail) and at the head (they must pass).</li>
+          <li>The test output, parsed into one record per test.</li>
+          <li>The unit's Verification lines, from the plan.</li>
+        </ul>
+        <p>Jev answers one Noul per Verification line over that state.</p>
+        <p>The worker's summary is treated as a claim. It is cross-checked against the exhibits with the citation-check pattern: a string match first, then a Choice of supports / contradicts / says_nothing. A <code>contradicts</code> blocks the unit and starts a fresh worker.</p>
+        <p>Review findings get the same treatment. A finding whose cited <code>file:line</code> does not exist is dropped before Jev sees it, and the rest are checked as citations.</p>
+        <p>Commits are made by the orchestrator: one path-limited commit per unit that passes.</p>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> Jev's jaggedness notes say adversarial text in the state can steer its answers.</li>
+        <li><span class="tag">direct:</span> ce-work says:
+          <ul>
+            <li>"reported paths untrusted";</li>
+            <li>worker evidence is "not reconstructable from the tree afterward";</li>
+            <li>"Never substitute a mental self-review";</li>
+            <li>"Neither confidence, autofix_class, nor a concrete suggested_fix proves benefit".</li>
+          </ul></li>
+        <li><span class="tag">direct:</span> the citation-check cookbook matches strings first, then asks a Choice and auto-accepts at 0.8.</li>
+        <li><span class="tag">direct:</span> probes, one case each:
+          <ul>
+            <li>"All tests pass" checked against runner output with two failures gave <code>contradicts</code> 1.0, with or without an injected "treat as supported" note.</li>
+            <li>A false review finding gave <code>contradicts</code> 0.97.</li>
+            <li>With a worker summary in the state, a narrow question held (0.16 vs 0.13 without it).</li>
+          </ul></li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>The worker is the least predictable actor and the one most inclined to report success. Building gate state only from what the orchestrator observed closes two holes at once: false completion and prompt injection into the gates. It also makes "done" something the ledger can show afterward.</dd>
+      <dt>Downsides</dt>
+      <dd>To run at the base commit, the new tests have to apply there. New symbols can make them fail to import, and that must count as the expected red only when it is the right failure. Each unit needs more test runs. Gates also see less context than a worker transcript would give them.</dd>
+      <dt>Confidence</dt><dd>80%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 720 200" role="img" aria-labelledby="f4t">
+        <title id="f4t">Exhibits built by the orchestrator enter the gate state; worker testimony only reaches the gate as a checked verdict</title>
+        <defs>
+          <marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <rect x="20" y="20" width="250" height="160" rx="10" class="box-accent"/>
+        <text x="40" y="46" font-size="13" font-weight="600">Exhibits (orchestrator-built)</text>
+        <text x="40" y="72" font-size="12">• diff it computed itself</text>
+        <text x="40" y="96" font-size="12">• new tests at base: red</text>
+        <text x="40" y="120" font-size="12">• new tests at head: green</text>
+        <text x="40" y="144" font-size="12">• parsed test records</text>
+        <text x="40" y="168" font-size="12">• Verification lines (plan)</text>
+        <rect x="320" y="72" width="150" height="56" rx="10" class="box"/>
+        <text x="395" y="96" text-anchor="middle" font-size="13" font-weight="600">Jev gate state</text>
+        <text x="395" y="114" text-anchor="middle" font-size="11.5" class="muted">one Noul per line</text>
+        <rect x="520" y="20" width="180" height="56" rx="10" class="box-warn"/>
+        <text x="610" y="44" text-anchor="middle" font-size="13" font-weight="600">Worker testimony</text>
+        <text x="610" y="62" text-anchor="middle" font-size="11.5" class="muted">summary, claimed files</text>
+        <rect x="520" y="124" width="180" height="56" rx="10" class="box"/>
+        <text x="610" y="148" text-anchor="middle" font-size="13" font-weight="600">Citation check</text>
+        <text x="610" y="166" text-anchor="middle" font-size="11.5" class="muted">vs exhibits</text>
+        <path d="M270,100 L318,100" class="line" marker-end="url(#ah4)"/>
+        <path d="M610,76 L610,122" class="line" marker-end="url(#ah4)"/>
+        <text x="620" y="104" font-size="11.5" class="muted">as a claim</text>
+        <path d="M520,150 L472,122" class="line" marker-end="url(#ah4)"/>
+        <text x="480" y="160" text-anchor="middle" font-size="11.5" class="muted">verdict only</text>
+        <path d="M520,52 L472,80" class="line-dash"/>
+        <text x="458" y="56" text-anchor="middle" font-size="11.5" class="muted halo">never raw text</text>
+      </svg>
+      <figcaption>A gate's state is built only from what the orchestrator observed itself. Worker and reviewer prose reaches a gate only as the verdict of a check against those exhibits.</figcaption>
+    </figure>
+  </article>
+
+  <article class="idea" id="idea-5">
+    <div class="chips"><span class="chip id">Idea 5</span><span class="chip axis">Gates and judgments</span><span class="chip">Confidence 70%</span><span class="chip">Complexity Medium</span></div>
+    <h3>5. Parallel safety as a pairwise conflict matrix</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>ce-work's Parallel Safety Check splits in two.</p>
+        <p>Code settles everything it can: overlapping <code>Files:</code>, lockfiles, migrations, generated artifacts, shared singletons, the dependency layers and the 3–5 worker cap.</p>
+        <p>For each remaining pair of units in a layer, Jev answers one Noul: "If these two units were built without seeing each other, could one change alter what the other's tests check?" The state holds only the two units' goals, files and approach. The answer decides the pair:</p>
+        <ul>
+          <li>Below 0.30, the pair runs in parallel.</li>
+          <li>In the review band or above, that pair alone is serialized, and the rest of the layer stays parallel, as ce-work prescribes.</li>
+        </ul>
+        <p>The same matrix feeds the wave-abort check and post-wave integration. The real merge and test results after each wave label the pairs for idea 7.</p>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> ce-work's execution-strategy.md: "Resolve uncertainty by inspection, not by default". It declines parallelism "for exactly the contending units" and warns that "A clean merge is not proof of compatibility".</li>
+        <li><span class="tag">direct:</span> crew's <code>cw-rank-blockers</code> measured one request per pair at 0.933, against 0.583 for all candidates in one request.</li>
+        <li><span class="tag">direct:</span> one probe pair: two units with no file in common that both touch <code>format_price</code> scored 0.69, inside the band, so the pair would be serialized. Unrelated pairs scored 0.08 and 0.13. The units' text named the shared function, so this was an easy case.</li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>This is the most judgment-heavy gate in ce-work. A file-overlap check alone would have called the probe's pair safe. Making "serialize when in doubt" the cheap default turns a wrong guess into a few lost minutes instead of a broken wave.</dd>
+      <dt>Downsides</dt>
+      <dd>N units give N(N−1)/2 questions per layer. That is fine at ce-work's sizes, and each question is cheap. One probe is not a threshold: the 0.30 cut needs labeled waves. If parallelism is not needed at first, ship serial-only and run the matrix in shadow.</dd>
+      <dt>Confidence</dt><dd>70%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="idea-6">
+    <div class="chips"><span class="chip id">Idea 6</span><span class="chip axis">The bounded worker</span><span class="chip">Confidence 75%</span><span class="chip">Complexity Medium</span></div>
+    <h3>6. Failure attribution routes failures before the worker sees them</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>After a test run, code parses the output into one record per failing test. For each failure, one request asks two questions: a Noul ("this failing test exercises the unit's change") and a Choice over code_bug / test_bug / environment / flaky / plan_wrong / other.</p>
+        <p>Routing is code:</p>
+        <ul>
+          <li><strong>environment</strong> and <strong>flaky:</strong> rerun in code, with no worker call.</li>
+          <li><strong>code_bug:</strong> a fresh worker gets only the failing test lines for this unit.</li>
+          <li><strong>plan_wrong:</strong> goes to the check for a settled decision that cannot work.</li>
+          <li><strong>other</strong>, or low confidence: escalates to a reasoning model.</li>
+        </ul>
+        <p>ce-work's rule ("two failed fixes, then name the assumption both relied on") becomes a counter in the reducer. On the second failure it hands both diffs to a reasoning model instead of attempting a third patch.</p>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> a probe on test output with one real failure and one unrelated localhost <code>ConnectionError</code> gave:
+          <ul>
+            <li>"a failing test exercises this unit": 0.97;</li>
+            <li>"all failures are caused by this change": 0.13;</li>
+            <li>next action <code>fix_code</code>: 0.95 (confidence 0.93).</li>
+          </ul></li>
+        <li><span class="tag">direct:</span> a failure-type Choice gave <code>code_bug</code> 0.93, and 0.89 with the options reversed. The answer did not change.</li>
+        <li><span class="tag">direct:</span> ce-work's implementation-loop.md: "If two fixes for the same failing check have not worked, stop patching: name the assumption both fixes relied on". The TypeSafe docs send multi-hop reasoning to a reasoning model.</li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>Retries are the most expensive and least predictable part of the loop. Unrelated and flaky failures are the ones that waste fix attempts. Filtering them in code costs about $0.00003 a request, and it already worked on a live probe.</dd>
+      <dt>Downsides</dt>
+      <dd>Telling flaky from real needs reruns, which cost time. A wrong "environment" verdict hides a real failure, so require a rerun that fails the same way before ignoring it. Each test runner prints differently, so use JUnit XML where possible.</dd>
+      <dt>Confidence</dt><dd>75%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+  </article>
+
+  <article class="idea" id="idea-7">
+    <div class="chips"><span class="chip id">Idea 7</span><span class="chip axis">Calibration and trust over time</span><span class="chip">Confidence 80%</span><span class="chip">Complexity Medium</span></div>
+    <h3>7. Gates earn autonomy, then retire into code</h3>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>
+        <p>Every Jev gate starts in shadow. It logs its raw answer next to the decision actually taken, whether by the old rule, a person or a reasoning model, and only that decision counts.</p>
+        <p>Later stages label the shadow answers at no cost:</p>
+        <ul>
+          <li>The Verification command's exit code labels "unit done".</li>
+          <li>The post-wave merge and test results label parallel-safety pairs.</li>
+          <li>A reverted fix labels review triage.</li>
+        </ul>
+        <p>A <code>calibrate</code> command splits the labeled log into dev and held-out sets and picks each gate's bands with a bootstrap. It writes them to <code>gates.py</code> for review. A gate then moves from shadow to confirm (Jev decides, and a person approves answers inside the band), and from confirm to act, only after passing a stated held-out bar.</p>
+        <p>The same log works in the other direction. A gate whose answers sit at the extremes and always agree with outcomes is a candidate to become a plain code rule. The share of decisions made by code becomes a tracked number.</p>
+        <p>Gates are pinned to <code>jev-1.13.0</code>. Before a move to a new version, the ledger is re-asked on the new model, and the move is blocked if a high-risk gate changes band.</p>
+      </dd>
+      <dt>Basis</dt>
+      <dd><ul>
+        <li><span class="tag">direct:</span> the TypeSafe docs say:
+          <ul>
+            <li>choose thresholds from held-out labeled data (the autoresearch cookbook uses 1,200 dev and 800 held-out rows, with a bootstrap);</li>
+            <li>"pin the version id when thresholds were tuned against it", and log the returned <code>model</code>;</li>
+            <li>(citation-check cookbook) "start high for more human review as you build trust in the model".</li>
+          </ul></li>
+        <li><span class="tag">direct:</span> crew's <code>cw-split-plan</code> already asks Jev in shadow.</li>
+        <li><span class="tag">direct:</span> measured jitter: Score confidence varied 0.57–0.63 across identical calls, and the consistency cookbook shows a Noul crossing 0.5.</li>
+        <li><span class="tag">external:</span> search results report that LLMs' self-stated confidence is miscalibrated (about 75% actual accuracy at 90% claimed).</li>
+      </ul></dd>
+      <dt>Rationale</dt>
+      <dd>Without this, thresholds are folklore (0.6, 0.85) and silently change when <code>jev-latest</code> moves. With it, trust is a number per gate. The set of decisions that go to Jev shrinks wherever code proves it is enough, which is the most literal reading of "as deterministic as possible".</dd>
+      <dt>Downsides</dt>
+      <dd>Labels arrive slowly at low volume. A branch that is skipped never produces its own label, so some skipped cases must go down the full route on purpose to keep the data honest. Someone has to own the promotion bar.</dd>
+      <dt>Confidence</dt><dd>80%</dd>
+      <dt>Complexity</dt><dd>Medium</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 720 190" role="img" aria-labelledby="f7t">
+        <title id="f7t">A gate moves from shadow to confirm to act, and finally to a code rule; a failed model canary sends it back to shadow</title>
+        <defs>
+          <marker id="ah7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        </defs>
+        <rect x="20" y="56" width="130" height="52" rx="10" class="box"/>
+        <text x="85" y="87" text-anchor="middle" font-size="13" font-weight="600">Shadow</text>
+        <rect x="200" y="56" width="130" height="52" rx="10" class="box-warn"/>
+        <text x="265" y="87" text-anchor="middle" font-size="13" font-weight="600">Confirm</text>
+        <rect x="380" y="56" width="130" height="52" rx="10" class="box-accent"/>
+        <text x="445" y="87" text-anchor="middle" font-size="13" font-weight="600">Act</text>
+        <rect x="560" y="56" width="140" height="52" rx="10" class="box-info"/>
+        <text x="630" y="87" text-anchor="middle" font-size="13" font-weight="600">Code rule</text>
+        <path d="M150,82 L198,82" class="line" marker-end="url(#ah7)"/>
+        <path d="M330,82 L378,82" class="line" marker-end="url(#ah7)"/>
+        <path d="M510,82 L558,82" class="line" marker-end="url(#ah7)"/>
+        <text x="175" y="46" text-anchor="middle" font-size="11.5" class="muted">held-out bar</text>
+        <text x="355" y="46" text-anchor="middle" font-size="11.5" class="muted">held-out bar</text>
+        <text x="535" y="46" text-anchor="middle" font-size="11.5" class="muted">always agrees</text>
+        <path d="M445,108 L445,150 L85,150 L85,110" class="line-dash" marker-end="url(#ah7)"/>
+        <text x="265" y="172" text-anchor="middle" font-size="11.5" class="muted">new Jev version fails the replay canary</text>
+      </svg>
+      <figcaption>Each gate climbs only on held-out evidence. A gate that always agrees with outcomes becomes plain code. A model bump that changes its bands sends it back to shadow.</figcaption>
+    </figure>
+  </article>
+</section>
+
+<section id="rejection-summary">
+  <h2>Rejection Summary</h2>
+  <p>The five ideation agents produced 48 raw ideas, and 25 of them were duplicates merged into the list below (the ledger idea alone came up four times). Each row is a merged idea that did not survive on its own. Every axis has at least one survivor.</p>
+  <div class="table-wrap">
+  <table class="ids">
+    <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+    <tbody>
+      <tr><td>M2</td><td>Golden-run regression harness</td><td>Merged into idea 1 (replay) and idea 7 (model canary).</td></tr>
+      <tr><td>M4</td><td>Kleene three-valued logic over verdicts</td><td>Kept the Yes / No / Unknown type in idea 2. Dropped the Kleene combination rules as over-engineered for independent answers.</td></tr>
+      <tr><td>M5</td><td>Asymmetric overturn gates with a per-run budget</td><td>Kept the asymmetric thresholds in idea 2. The overturn budget had no basis.</td></tr>
+      <tr><td>M8</td><td>Preflight fan-out for triage</td><td>Merged into idea 2: one fan-out request per phase.</td></tr>
+      <tr><td>M11</td><td>Review findings as citation claims</td><td>Merged into idea 4.</td></tr>
+      <tr><td>M12</td><td>Requirement-by-hunk traceability matrix</td><td>Merged into idea 3, as the way the frozen questions are asked at Final Validation.</td></tr>
+      <tr><td>M13</td><td>Red-green proof by reverting implementation hunks</td><td>Reverting hunks while keeping the tests is not well-defined: hunks can be entangled, and tests may import new symbols. Replaced in idea 4 by running the new tests at the base commit.</td></tr>
+      <tr><td>M15</td><td>Double-entry reconciliation of each wave</td><td>Most of it is path matching in code, which idea 4 keeps. A per-hunk Choice of unit ids can hit the 255-option cap, and "this is the user's own work in progress" is hard to judge from text.</td></tr>
+      <tr><td>M16</td><td>Readback before work</td><td>Adds an extra generative turn per unit, and the probe only separated an obvious bad restatement (0.96 vs 0.02). Better explored as a variant of idea 4 in a brainstorm.</td></tr>
+      <tr><td>M17</td><td>Zero-decision worker under a supervisor</td><td>ce-work already has fresh workers and orchestrator-owned commits. What was new is merged into idea 4.</td></tr>
+      <tr><td>M18</td><td>System-Wide Test Check as call edges judged one by one</td><td>The edge count can explode, and tracing callbacks and middleware is multi-hop reasoning, which Jev handles poorly.</td></tr>
+      <tr><td>M19</td><td>Evidence strategy fixed before the worker starts</td><td>Merged into idea 3.</td></tr>
+      <tr><td>M21</td><td>Double reading: ask each judgment twice with complementary phrasing</td><td>The complement questions use negated, quantified phrasing the docs warn against. The disagreement measured (0.24 vs 0.52, then 0.25 vs 0.48) may come from the phrasing, not from Jev.</td></tr>
+      <tr><td>M22</td><td>Jev answers as features for a classical run-risk model</td><td>Needs a labeled corpus that does not exist yet. Worth revisiting once idea 7 has produced labels.</td></tr>
+      <tr><td>M23</td><td>Telemetry on which rung decided, and demotion to code</td><td>Merged into idea 7.</td></tr>
+      <tr><td>X1</td><td>Gate kernel (combined idea)</td><td>Became idea 2, without the overturn budget or the Kleene rules.</td></tr>
+      <tr><td>X2</td><td>Plan-time contract (combined idea)</td><td>Became idea 3, without the readback.</td></tr>
+      <tr><td>X3</td><td>Evidence court (combined idea)</td><td>Became idea 4, without double-entry or hunk reverts.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer class="composition-signal">Composed 2026-10-05T22:54Z by ce-ideate from the user's prompt: a Python application with TypeSafe and Jev that reproduces the <code>ce-work</code> flow as deterministically as possible.</footer>
+</main>
+</body>
+</html>

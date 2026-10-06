@@ -287,7 +287,11 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	if r, ok := s.(port.UsageReporter); ok {
 		usage = r.Usage()
 	}
-	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome, Usage: usage})
+	var last string
+	if r, ok := s.(port.LastMessageReporter); ok {
+		last = r.LastMessage()
+	}
+	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome, Usage: usage, LastMessage: last})
 }
 
 // findPullRequest looks up the pull request c's action opened, within
@@ -336,10 +340,11 @@ func markResumed(log *os.File) error {
 	return nil
 }
 
-// runCheck runs the action's check within checkTimeout, its output going to
-// the action's log after the session's, and posts its verdict. Its reason
-// says how the check ended in crew's words, followed, for a check that
-// failed, by the last line it printed (R5).
+// runCheck runs one of the action's checks within checkTimeout, its output
+// going to the action's log after the session's, and posts its verdict. Its
+// reason says, in crew's words and naming the check, how the check ended,
+// followed, for a check that passed or failed, by the last line it printed
+// (R5, R6).
 func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
 	defer cancel()
 	e.post(core.CheckEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: e.check(ctx, c)})
@@ -348,37 +353,48 @@ func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core
 // check runs c, as its action's bot like its session, and returns its
 // verdict.
 func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
+	subject := "the check " + c.Name
 	if e.cfg.Checker == nil {
-		return crew.Outcome{Reason: "the check could not start: crew has no check runner"}
+		return crew.Outcome{Reason: subject + " could not start: crew has no check runner"}
 	}
 	log, err := e.openLog(c.Log)
 	if err != nil {
-		return crew.Outcome{Reason: "the check could not start: " + e.scrub(err.Error())}
+		return crew.Outcome{Reason: subject + " could not start: " + e.scrub(err.Error())}
 	}
 	// A failed write or close cannot change the check's verdict.
 	defer func() { _ = log.Close() }()
-	_, _ = fmt.Fprintf(log, "\ncrew: running the check: %s\n", c.Command)
+	_, _ = fmt.Fprintf(log, "\ncrew: running %s: %s\n", subject, c.Command)
 	var last lastLine
 	err = e.cfg.Checker.Check(ctx, port.Check{
-		Dir: c.Dir, Command: c.Command, IssueRef: c.IssueRef, IssueKey: c.IssueKey, IssueURL: c.IssueURL,
+		Dir: c.Dir, Name: c.Name, Command: c.Command, Action: c.Action, Prompt: c.Prompt, LastMessage: c.LastMessage,
+		IssueRef: c.IssueRef, IssueKey: c.IssueKey, IssueURL: c.IssueURL,
 		Branch: c.Branch, Output: io.MultiWriter(log, &last),
 		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
 	})
 	switch {
 	case err == nil:
-		return crew.Outcome{Succeeded: true, Reason: "the check passed"}
+		return crew.Outcome{Succeeded: true, Reason: e.saying(subject+" passed", last.String())}
 	case errors.Is(err, port.ErrCheckFailed):
 		line := last.String()
 		if line == "" {
-			return crew.Outcome{Reason: "the check failed and printed nothing"}
+			return crew.Outcome{Reason: subject + " failed and printed nothing"}
 		}
-		return crew.Outcome{Reason: "the check failed: " + lastWords(e.scrub(line))}
+		return crew.Outcome{Reason: e.saying(subject+" failed", line)}
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return crew.Outcome{Reason: fmt.Sprintf("the check ran out of time after %s", checkTimeout)}
+		return crew.Outcome{Reason: fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout)}
 	case ctx.Err() != nil:
-		return crew.Outcome{Reason: "the check was stopped"}
+		return crew.Outcome{Reason: subject + " was stopped"}
 	}
-	return crew.Outcome{Reason: "the check could not start: " + e.scrub(err.Error())}
+	return crew.Outcome{Reason: subject + " could not start: " + e.scrub(err.Error())}
+}
+
+// saying returns verdict, followed by line, the last line a check printed,
+// scrubbed and cut, when the check printed one.
+func (e *Engine) saying(verdict, line string) string {
+	if line == "" {
+		return verdict
+	}
+	return verdict + ": " + lastWords(e.scrub(line))
 }
 
 // maxLine bounds how much of a check's current line lastLine keeps: the end

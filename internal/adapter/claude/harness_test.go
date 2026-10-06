@@ -182,6 +182,21 @@ func TestCommandRunsClaudeHeadlessWithTheModelInTheDirectory(t *testing.T) {
 	}
 }
 
+func TestCommandWithoutAModelLetsClaudeCodePickIt(t *testing.T) {
+	got := command(port.Run{Dir: "/work", Prompt: "Implement #4"}, "")
+
+	want := []string{
+		"-p",
+		"--permission-mode", "auto",
+		"--output-format", "stream-json",
+		"--verbose",
+		"--", "Implement #4",
+	}
+	if !slices.Equal(got.Args, want) {
+		t.Errorf("args = %q, want %q", got.Args, want)
+	}
+}
+
 // A Bash command that outlives its timeout moves to the background, and a
 // headless session that ends its turn waiting on it ends with a success. A
 // ten-minute default keeps a full test run in the foreground.
@@ -205,12 +220,12 @@ func TestCommandPassesAPromptStartingWithADashAsThePrompt(t *testing.T) {
 	}
 }
 
-func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
+func TestFactoryRunsTheConfiguredModelOrClaudeCodesOwn(t *testing.T) {
 	for _, tc := range []struct {
 		name, config, want string
 	}{
-		{"no model", agent(""), "claude-opus-5-5"},
-		{"empty model", agent(`, model: ""`), "claude-opus-5-5"},
+		{"no model", agent(""), ""},
+		{"empty model", agent(`, model: ""`), ""},
 		{"configured model", agent(", model: claude-sonnet-5"), "claude-sonnet-5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -230,12 +245,20 @@ func TestFactoryRunsTheConfiguredModelAndDefaultsToOpus(t *testing.T) {
 			if len(spawn.commands) != 1 {
 				t.Fatalf("spawned %d commands, want 1", len(spawn.commands))
 			}
-			args := spawn.commands[0].Args
-			if i := slices.Index(args, "--model"); i < 0 || i+1 >= len(args) || args[i+1] != tc.want {
-				t.Errorf("args = %q, want --model %s", args, tc.want)
+			if args := spawn.commands[0].Args; modelArg(args) != tc.want {
+				t.Errorf("args = %q, want the model %q", args, tc.want)
 			}
 		})
 	}
+}
+
+// modelArg is the value args give --model, or "" without one.
+func modelArg(args []string) string {
+	i := slices.Index(args, "--model")
+	if i < 0 || i+1 >= len(args) {
+		return ""
+	}
+	return args[i+1]
 }
 
 func TestFactoryRejectsAnUnknownHarnessKeyNamingIt(t *testing.T) {

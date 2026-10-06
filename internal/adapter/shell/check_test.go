@@ -100,7 +100,7 @@ func TestCheckReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 
 func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	// The title is not part of port.Check at all, so it cannot reach the
-	// command: the check sees only crew's six variables, and the command
+	// command: the check sees only crew's nine variables, and the command
 	// runs as written.
 	withoutCrewEnv(t)
 	var out output
@@ -111,7 +111,8 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
-		case "CREW_BOTS", "CREW_BRANCH", "CREW_CODE_OWNERS", "CREW_ISSUE_KEY", "CREW_ISSUE_REF", "CREW_ISSUE_URL":
+		case "CREW_ACTION", "CREW_BOTS", "CREW_BRANCH", "CREW_CODE_OWNERS", "CREW_ISSUE_KEY", "CREW_ISSUE_REF",
+			"CREW_ISSUE_URL", "CREW_LAST_MESSAGE_FILE", "CREW_PROMPT_FILE":
 		default:
 			t.Errorf("unexpected variable %q", line)
 		}
@@ -143,6 +144,83 @@ func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	want := "/run/crew/developer|octocat|crew-developer[bot] crew-ops[bot]|unset|unset|unset\n"
 	if got := out.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
+	}
+}
+
+// R1, R2: a check reads the action's name from CREW_ACTION, and the
+// session's prompt and last message, as written, from the files
+// CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name.
+func TestCheckReadsTheActionThePromptAndTheLastMessage(t *testing.T) {
+	var out output
+	c := check(t, `echo "$CREW_ACTION"; cat "$CREW_PROMPT_FILE"; echo '|'; cat "$CREW_LAST_MESSAGE_FILE"`, &out)
+	c.Action = "lfg"
+	c.Prompt = "/lfg #14\n\nYou are resuming a failed run."
+	c.LastMessage = "PR #20 is open.\n\n- CI is green\n- merging is yours"
+
+	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	want := "lfg\n" + c.Prompt + "|\n" + c.LastMessage
+	if got := out.String(); got != want {
+		t.Errorf("output = %q, want %q", got, want)
+	}
+}
+
+// R2: an empty last message is an empty file, which a check tells apart
+// from a message.
+func TestCheckGetsAnEmptyLastMessageAsAnEmptyFile(t *testing.T) {
+	var out output
+	c := check(t, `test -f "$CREW_LAST_MESSAGE_FILE" && ! test -s "$CREW_LAST_MESSAGE_FILE"`, &out)
+	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
+		t.Errorf("Check = %v, want an empty file", err)
+	}
+}
+
+// A message longer than one environment string may be (128 KiB on Linux)
+// still reaches the check whole.
+func TestCheckGetsALongLastMessageWhole(t *testing.T) {
+	var out output
+	c := check(t, `wc -c < "$CREW_LAST_MESSAGE_FILE"`, &out)
+	c.LastMessage = strings.Repeat("a", 200*1024)
+	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if got := strings.TrimSpace(out.String()); got != strconv.Itoa(len(c.LastMessage)) {
+		t.Errorf("the check read %s bytes, want %d", got, len(c.LastMessage))
+	}
+}
+
+// The files hold the session's words, so they go once the check ended,
+// however it ended.
+func TestCheckRemovesItsFilesWhenItEnds(t *testing.T) {
+	for _, tt := range []struct {
+		name, command string
+		timeout       time.Duration
+	}{
+		{name: "passed", command: "true"},
+		{name: "failed", command: "exit 1"},
+		{name: "stopped", command: "sleep 60", timeout: 100 * time.Millisecond},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var out output
+			c := check(t, `dirname "$CREW_PROMPT_FILE" > files; dirname "$CREW_LAST_MESSAGE_FILE" >> files; `+tt.command, &out)
+			ctx := context.Background()
+			if tt.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+				defer cancel()
+			}
+			_ = shell.New(&proc.Group{}).Check(ctx, c) // each way of ending is tested elsewhere
+			dirs, err := os.ReadFile(filepath.Join(c.Dir, "files"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for dir := range strings.FieldsSeq(string(dirs)) {
+				if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("%s is still there after the check: %v", dir, err)
+				}
+			}
+		})
 	}
 }
 

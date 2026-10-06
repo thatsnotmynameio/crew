@@ -20,3 +20,33 @@ func TestDefaultBuildsGithubAndClaude(t *testing.T) {
 		t.Errorf("Harness(%q): %v", a.Harness, err)
 	}
 }
+
+// A config can run one rule's actions on Claude Code and another's on Codex,
+// each agent with its own bot: both harnesses build from the one registry.
+func TestDefaultBuildsAClaudeAgentAndACodexAgentSideBySide(t *testing.T) {
+	r := registry.Default(&proc.Group{})
+	cfg := load(t, `agents:
+  developer:
+    harness: {name: claude}
+    bot: developer
+  reviewer:
+    harness: {name: codex, model: gpt-5.5}
+    bot: reviewer
+rules:
+  implement:
+    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    actions:
+      development: {agent: developer, prompt: "Implement {{.Issue.Ref}}"}
+  review:
+    labels: {ready: ready to review, running: in review, success: reviewed, failure: review failed}
+    actions:
+      review: {agent: reviewer, prompt: "Review {{.Issue.Ref}}"}
+`)
+
+	for _, a := range cfg.Agents {
+		h, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+		if err != nil || h == nil {
+			t.Errorf("Harness(%q) for %s = %v, %v; want a harness", a.Harness, a.Name, h, err)
+		}
+	}
+}

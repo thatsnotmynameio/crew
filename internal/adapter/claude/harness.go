@@ -17,25 +17,23 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// defaultModel is the model a session runs when its agent's harness sets no
-// model.
-const defaultModel = "claude-opus-5-5"
-
 // stoppedReason is the Outcome.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
-// Compile-time guards: the engine finds Preparer, Narrator and
-// UsageReporter by type assertion.
+// Compile-time guards: the engine finds Preparer, Narrator, UsageReporter
+// and LastMessageReporter by type assertion.
 var (
-	_ port.Harness       = (*harness)(nil)
-	_ port.Preparer      = (*harness)(nil)
-	_ port.Session       = (*session)(nil)
-	_ port.Narrator      = (*session)(nil)
-	_ port.UsageReporter = (*session)(nil)
+	_ port.Harness             = (*harness)(nil)
+	_ port.Preparer            = (*harness)(nil)
+	_ port.Session             = (*session)(nil)
+	_ port.Narrator            = (*session)(nil)
+	_ port.UsageReporter       = (*session)(nil)
+	_ port.LastMessageReporter = (*session)(nil)
 )
 
 // settings is the claude adapter's config section: the keys of an agent's
-// harness but its name, which are model alone.
+// harness but its name, which are model alone. Without a model, Claude Code
+// picks it: the one set in the user's own settings, or its default.
 type settings struct {
 	Model string `yaml:"model"`
 }
@@ -51,7 +49,7 @@ type process interface {
 type spawner func(c proc.Command, stdout, stderr io.Writer) (process, error)
 
 // Factory returns the claude harness factory. Its section is an agent's
-// harness without its name: model, which defaults to claude-opus-5-5.
+// harness without its name: model, which is optional.
 // The harness it builds is a port.Preparer that checks claude is on PATH.
 // Every session runs through group, in its own process group, so a forced
 // exit kills it.
@@ -64,18 +62,16 @@ func Factory(group *proc.Group) port.HarnessFactory {
 		return p, nil
 	}
 	return func(decode port.Decode) (port.Harness, error) {
-		s := settings{Model: defaultModel}
+		var s settings
 		if err := decode(&s); err != nil {
 			return nil, err
-		}
-		if s.Model == "" {
-			s.Model = defaultModel
 		}
 		return &harness{model: s.Model, spawn: spawn}, nil
 	}
 }
 
-// harness starts claude sessions with one model.
+// harness starts claude sessions with one model, or Claude Code's own when
+// empty.
 type harness struct {
 	model string
 	spawn spawner
@@ -117,6 +113,7 @@ type session struct {
 	stopped atomic.Bool
 	outcome crew.Outcome  // set before done is closed
 	usage   crew.Usage    // set before done is closed
+	last    string        // the last result's text; set before done is closed
 	done    chan struct{} // closed once the process is reaped and judged
 }
 
@@ -140,6 +137,13 @@ func (s *session) Usage() crew.Usage {
 	return s.usage
 }
 
+// LastMessage implements port.LastMessageReporter: the text of the last
+// top-level result event, as claude wrote it, or "" when there was none.
+func (s *session) LastMessage() string {
+	<-s.done
+	return s.last
+}
+
 // Stop implements port.Session. proc sends the terminate signal to the
 // session's process group, and the kill signal once ctx is done. The
 // session's outcome is then a failure saying it was stopped.
@@ -158,11 +162,15 @@ func (s *session) Stop(ctx context.Context) error {
 }
 
 // reap waits for the process, whose output is fully copied once Wait
-// returns, judges it and reads its usage. A session crew stopped, or one a
-// signal ended, reports no usage.
+// returns, judges it, keeps its last message and reads its usage. A session
+// crew stopped, or one a signal ended, reports no usage.
 func (s *session) reap() {
 	err := s.process.Wait()
-	s.outcome = judge(s.events.end(), err)
+	last := s.events.end()
+	s.outcome = judge(last, err)
+	if last != nil {
+		s.last = last.Result
+	}
 	switch {
 	case s.stopped.Load():
 		s.outcome = crew.Outcome{Reason: stoppedReason}

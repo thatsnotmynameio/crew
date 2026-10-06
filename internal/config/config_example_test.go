@@ -69,7 +69,8 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if want := []string{"refinement", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
-	if script := cfg.Rules[3].Actions[0].Check; !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
+	script := checkScript(cfg.Rules[3].Actions[0], "pr-closes-issue")
+	if !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
 		t.Errorf("development's check = %q, want the script of pr-closes-issue", script)
 	}
 }
@@ -105,8 +106,8 @@ func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
 		}
 	}
 	for _, want := range []string{`"crew:refinement:in progress"`, partMarker + "$CREW_ISSUE_REF -->", "/sub_issues"} {
-		if !strings.Contains(refine.Check, want) {
-			t.Errorf("refine's check = %q, want the script of split-finished, with %q", refine.Check, want)
+		if script := checkScript(refine, "split-finished"); !strings.Contains(script, want) {
+			t.Errorf("refine's check = %q, want the script of split-finished, with %q", script, want)
 		}
 	}
 }
@@ -131,6 +132,32 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 	}
 }
 
+// The refine prompt reads in full only the candidates /cw-rank-blockers
+// shortlists for each issue it refines, after the split and before it
+// records a dependency, and falls back to reading every candidate when the
+// script fails (#166).
+func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
+	skill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "cw-rank-blockers", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
+		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
+	}
+	prompt := loadExample(t).Rules[1].Actions[0].Prompt
+	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
+	rank := strings.Index(prompt, "/cw-rank-blockers")
+	record := strings.Index(prompt, "dependencies/blocked_by -F")
+	if split < 0 || rank < split || record < rank {
+		t.Errorf("the prompt does not run /cw-rank-blockers between /cw-split-plan and recording:\n%s", prompt)
+	}
+	for _, want := range []string{"--json number,title,body,labels", "unavailable"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the prompt lacks the full read when the shortlist is unavailable: %q", want)
+		}
+	}
+}
+
 // wantExampleRules are the example config's rules, as in the old keys: the
 // promote rules, now without actions, notify nothing and need no failure.
 func wantExampleRules() []exampleRule {
@@ -151,7 +178,7 @@ func wantExampleRules() []exampleRule {
 		},
 		{
 			name: "refinement", queue: productManager, notify: true, labels: labels("refinement", "crew:refinement:done"),
-			actions: []string{"refine: agent product-manager, bot product-manager, check true"},
+			actions: []string{"refine: agent product-manager, bot product-manager, checks [split-finished]"},
 		},
 		{
 			name: "promote refinement", queue: clerk,
@@ -162,14 +189,34 @@ func wantExampleRules() []exampleRule {
 		{
 			name: "development", queue: developer, notify: true,
 			labels:  labels("development", "crew:development:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, check true"},
+			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
 		},
 		{
 			name: "fix", queue: developer, notify: true, labels: labels("fix", "crew:fix:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, check true"},
+			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
 		},
 	}
 	return want
+}
+
+// checkScript returns the script of a's check called name, or "" when a
+// names no such check.
+func checkScript(a crew.Action, name string) string {
+	for _, c := range a.Checks {
+		if c.Name == name {
+			return c.Script
+		}
+	}
+	return ""
+}
+
+// checkNames returns the names of checks, in order, as [a b].
+func checkNames(checks []crew.Check) string {
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	return fmt.Sprint(names)
 }
 
 // exampleRules sums rules up as exampleRule.
@@ -179,7 +226,7 @@ func exampleRules(rules []crew.Rule) []exampleRule {
 		out[i] = exampleRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
 		for _, a := range r.Actions {
 			out[i].actions = append(out[i].actions,
-				fmt.Sprintf("%s: agent %s, bot %s, check %t", a.Name, a.Agent, a.Bot, a.Check != ""))
+				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent, a.Bot, checkNames(a.Checks)))
 		}
 	}
 	return out

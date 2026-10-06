@@ -9,7 +9,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -154,25 +153,6 @@ func acted(e core.HandledView, actions ...core.HandledAction) core.HandledView {
 	return e
 }
 
-// handledView renders a snapshot handling entries, in a window wide enough
-// for their whole lines.
-func handledView(t *testing.T, entries ...core.HandledView) string {
-	t.Helper()
-	u := runningSnapshot()
-	u.Snapshot.Handled = entries
-	return fitted(t, 160, 0, u)
-}
-
-// handledText is every Handled row of u in a window width wide, past the
-// rows the view has room for, with its styles stripped.
-func handledText(t *testing.T, width int, u engine.Update) string {
-	t.Helper()
-	h := newHarness(t, width)
-	h.send(updateMsg(u))
-	_, rows := h.current().handledSection(width)
-	return ansi.Strip(strings.Join(rows, "\n"))
-}
-
 // contains fails t unless view holds each of wants.
 func contains(t *testing.T, view string, wants ...string) {
 	t.Helper()
@@ -181,4 +161,19 @@ func contains(t *testing.T, view string, wants ...string) {
 			t.Errorf("view lacks %q:\n%s", want, view)
 		}
 	}
+}
+
+// nextCard returns the byte index in l of the left border of the first
+// card whose first row starts with prefix, after the highlight's marker
+// when it has one, and its reference; -1 when l has none.
+func nextCard(l, prefix string) (int, string) {
+	i, rest := strings.Index(l, "│ "+prefix), "│ "
+	if j := strings.Index(l, "│ "+focusMark+prefix); j >= 0 && (i < 0 || j < i) {
+		i, rest = j, "│ "+focusMark
+	}
+	if i < 0 {
+		return -1, ""
+	}
+	ref, _, _ := strings.Cut(l[i+len(rest):], " ")
+	return i, ref
 }

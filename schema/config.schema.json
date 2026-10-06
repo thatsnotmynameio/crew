@@ -71,15 +71,15 @@
             "required": ["name"],
             "properties": {
               "name": {
-                "description": "The harness adapter's name. claude is the one crew ships.",
+                "description": "The harness adapter's name: claude or codex, the ones crew ships.",
                 "type": "string",
                 "minLength": 1,
-                "examples": ["claude"]
+                "examples": ["claude", "codex"]
               },
               "model": {
-                "description": "The model claude runs, such as claude-opus-5-5. Without it, the harness uses its adapter's default: claude-opus-5-5 for claude.",
+                "description": "The model the harness runs, such as claude-opus-5-5 or gpt-5.5. Without it, claude and codex pick the model themselves: the one set in their own config, or their default.",
                 "type": "string",
-                "examples": ["claude-opus-5-5"]
+                "examples": ["claude-opus-5-5", "gpt-5.5"]
               }
             }
           },
@@ -183,9 +183,21 @@
                   "minLength": 1
                 },
                 "check": {
-                  "description": "The check that decides whether the action succeeded: one of checks. Without it, the session's own outcome decides.",
-                  "type": "string",
-                  "minLength": 1
+                  "description": "The check, or the list of checks, that decide whether the action succeeded, each one of checks. They run in the listed order after a successful session, and the first that does not pass fails the action. Without it, the session's own outcome decides.",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    }
+                  ]
                 }
               }
             }

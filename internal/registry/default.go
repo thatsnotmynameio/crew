@@ -2,6 +2,7 @@ package registry
 
 import (
 	"github.com/thatsnotmynameio/crew/internal/adapter/claude"
+	"github.com/thatsnotmynameio/crew/internal/adapter/codex"
 	"github.com/thatsnotmynameio/crew/internal/adapter/github"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
@@ -17,6 +18,7 @@ func Default(group *proc.Group) Registry {
 		},
 		map[string]port.HarnessFactory{
 			"claude": claude.Factory(group),
+			"codex":  codex.Factory(group),
 		},
 	)
 }

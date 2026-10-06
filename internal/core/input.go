@@ -231,14 +231,16 @@ type SessionFailedToStart struct {
 	Reason   string
 }
 
-// SessionEnded is a running session that ended, with its harness's verdict
-// and what the harness reported it used.
+// SessionEnded is a running session that ended, with its harness's
+// verdict, what the harness reported it used, and the session's last
+// message, which only the action's checks read.
 type SessionEnded struct {
-	At       time.Time
-	IssueKey string
-	Action   string
-	Outcome  crew.Outcome
-	Usage    crew.Usage
+	At          time.Time
+	IssueKey    string
+	Action      string
+	Outcome     crew.Outcome
+	Usage       crew.Usage
+	LastMessage string
 }
 
 // CheckEnded is a RunCheck that ended, with the check's verdict: it passed,

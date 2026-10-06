@@ -251,7 +251,7 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 		s := developmentEnded()
 		s.Actions[0].Cause = cause
 		// Only a check's reason may show; any other reason must not.
-		s.Actions[0].Reason = "`gh` found no @someone **pull request**"
+		s.Actions[0].Checks = []crew.CheckResult{{Name: "pr", Reason: "`gh` found no @someone **pull request**"}}
 		body := tr.renderStatus(s)
 		if !slices.Contains(strings.Split(body, "\n"), want) {
 			t.Errorf("cause %d: body has no line %q:\n%s", cause, want, body)
@@ -290,4 +290,63 @@ func fenced(t *testing.T, markdown string) []string {
 		i += end + 1
 	}
 	return blocks
+}
+
+// R6: an action's line is followed by the reasons of its checks that
+// passed, one item each; a failed check's reason is on the action's line.
+func TestAnActionListsTheReasonsOfItsChecks(t *testing.T) {
+	tr, _ := build(t)
+	judged := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"}
+	person := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: needs a person (0.95)"}
+	closes := crew.CheckResult{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"}
+	unfinished := crew.CheckResult{Name: "judge", Reason: "the check judge failed: unfinished (1.00)"}
+	noPR := crew.CheckResult{Name: "pr-closes-issue", Reason: "the check pr-closes-issue failed: no open pull request"}
+	withChecks := func(s crew.Status, cause crew.FailureCause, checks ...crew.CheckResult) crew.Status {
+		s.Actions[0].Cause, s.Actions[0].Checks = cause, checks
+		return s
+	}
+	const log = " Its log is `.crew/logs/issue-9-lfg.log`.\n"
+	tests := []struct {
+		name   string
+		status crew.Status
+		want   string
+	}{
+		{
+			// Covers AE2.
+			"both passed", withChecks(lfgEnded(crew.ActionSucceeded), crew.CauseNone, judged, closes),
+			"**`lfg`** succeeded.\n\n- `the check judge passed: done (0.97)`\n- `the check pr-closes-issue passed`\n",
+		},
+		{
+			// Covers AE4.
+			"needs a person", withChecks(lfgEnded(crew.ActionSucceeded), crew.CauseNone, person, closes),
+			"**`lfg`** succeeded.\n\n- `the check judge passed: needs a person (0.95)`\n" +
+				"- `the check pr-closes-issue passed`\n",
+		},
+		{
+			// Covers AE1.
+			"the first failed", withChecks(lfgFailed(), crew.CauseCheck, unfinished),
+			"**`lfg`** failed: `the check judge failed: unfinished (1.00)`." + log,
+		},
+		{
+			// Covers AE3.
+			"the second failed", withChecks(lfgFailed(), crew.CauseCheck, judged, noPR),
+			"**`lfg`** failed: `the check pr-closes-issue failed: no open pull request`." + log +
+				"\n- `the check judge passed: done (0.97)`\n",
+		},
+		{
+			"the second runs", withChecks(running74(updated.Add(-5*time.Minute), ""), crew.CauseNone, judged),
+			"**`lfg`** has been running for 5 minutes.\n\n- `the check judge passed: done (0.97)`\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := actionLines(t, tr, tt.status)
+			if tt.status.Kind == crew.StatusEnded {
+				got, _, _ = strings.Cut(got, "\n#74 ")
+			}
+			if got != tt.want {
+				t.Errorf("action lines:\n got %q\nwant %q", got, tt.want)
+			}
+		})
+	}
 }

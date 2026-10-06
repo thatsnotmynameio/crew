@@ -112,7 +112,7 @@ type actionRun struct {
 	started   time.Time
 	said      string // what its running session last said
 	outcome   crew.Outcome
-	check     string            // its check command; empty when it has none
+	checks    []crew.Check      // its checks, in the order they run
 	agent     string            // the agent whose harness runs its session
 	bot       string            // the bot its session and check act as; empty for you
 	stopped   bool              // a StopCheck was sent for its check
@@ -128,6 +128,11 @@ type actionRun struct {
 	since time.Time
 	// usage is what its session reported it used, once the session ended.
 	usage crew.Usage
+	// lastMessage is its session's last message, which its checks read.
+	lastMessage string
+	// results are how its checks that ended so far ended, in order; the
+	// running check is checks[len(results)].
+	results []crew.CheckResult
 	// finding is set while its pull request is being looked up; pr holds
 	// what the lookup found once it is done. An action whose outcome is
 	// known before the lookup is done waits in PhaseFinishing, holding its
@@ -394,6 +399,9 @@ type HandledView struct {
 	// ended.
 	Taken time.Time
 	Ended time.Time
+	// Earlier sums what the rules that ended on the issue before this one
+	// spent this run, whose entries this one replaced (KTD14).
+	Earlier crew.Spend
 }
 
 // HandledAction is one action of a HandledView.

@@ -16,10 +16,6 @@ const (
 	minCard = 24
 	maxCard = 34
 	cardGap = 1
-	// cardFrame is the cells a card's border and padding take, cardCorners
-	// those of its corners on a border row.
-	cardFrame   = 4
-	cardCorners = 2
 	// botCardRows are the rows a card takes: its border and five rows.
 	botCardRows = 7
 	// botsTitle is the section's title.
@@ -29,6 +25,9 @@ const (
 // cannotAct opens the state of a bot that cannot act at startup; the card
 // shows only the reason after it (KTD6).
 const cannotAct = "cannot act: "
+
+// cellGap is the space between the strip's entries.
+const cellGap = "  "
 
 // botsLayout is which Bots cards show and how wide (KTD2, KTD3).
 type botsLayout struct {
@@ -167,13 +166,7 @@ func (m Model) botCard(e core.BotView, width int) []string {
 	if len(e.Running) > 0 {
 		edge = s.strongAccent
 	}
-	b := lipgloss.RoundedBorder()
-	out := make([]string, 0, botCardRows)
-	out = append(out, edge.Render(b.TopLeft+strings.Repeat(b.Top, width-cardCorners)+b.TopRight))
-	for _, c := range content {
-		out = append(out, edge.Render(b.Left)+" "+pad(c, inner)+" "+edge.Render(b.Right))
-	}
-	return append(out, edge.Render(b.BottomLeft+strings.Repeat(b.Bottom, width-cardCorners)+b.BottomRight))
+	return framed(content, width, edge)
 }
 
 // botState is e's state: ● acting in the success colour, or ▲ and its
@@ -259,10 +252,21 @@ func (m Model) botsStrip(entries []core.BotView) string {
 	s := m.styles
 	items := make([]string, 0, len(entries))
 	for _, e := range entries {
-		mark := lipgloss.NewStyle().Foreground(s.avatarColour(e)).Render("■")
-		items = append(items, mark+" "+s.text.Render(clean(e.Name))+m.stripGlyph(e))
+		items = append(items, s.botName(e)+m.stripGlyph(e))
 	}
 	return s.items(items, cellGap, m.width-1)
+}
+
+// mark is e's mark in its avatar's colour, as the strip and the board
+// cards draw it (R3 of #151, KTD9).
+func (s styles) mark(e core.BotView) string {
+	return lipgloss.NewStyle().Foreground(s.avatarColour(e)).Render("■")
+}
+
+// botName is e's mark, then its name, as the strip, the board cards and
+// the popup show a bot (R3, KTD8 of #151).
+func (s styles) botName(e core.BotView) string {
+	return s.mark(e) + " " + s.text.Render(clean(e.Name))
 }
 
 // stripGlyph is e's glyph in the strip, after a space: ▲ while a bot cannot

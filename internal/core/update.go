@@ -330,7 +330,9 @@ func (s *step) take(si int, issue crew.Issue) {
 	rule := m.rules[si]
 	h := &heldIssue{issue: issue.Clone(), rule: si, claim: ClaimTaking, taken: s.at}
 	for _, a := range rule.Actions {
-		h.actions = append(h.actions, &actionRun{name: a.Name, prompt: a.Prompt, check: a.Check, agent: a.Agent, bot: a.Bot})
+		h.actions = append(h.actions, &actionRun{
+			name: a.Name, prompt: a.Prompt, checks: a.Checks, agent: a.Agent, bot: a.Bot,
+		})
 	}
 	m.issues = append(m.issues, h)
 	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
@@ -574,15 +576,18 @@ func (m *Model) release(h *heldIssue) {
 	if h.verdict == nil {
 		return
 	}
+	view := *h.verdict
 	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
 	if i >= 0 {
-		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !m.handled[i].view.NeedsAttention() {
+		old := m.handled[i].view
+		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !old.NeedsAttention() {
 			m.handled[i].view.Gone = true
 			return
 		}
+		view.Earlier = old.Spend().Add(old.Earlier)
 		m.handled = slices.Delete(m.handled, i, i+1)
 	}
-	m.handled = append(m.handled, handledEntry{view: *h.verdict, landed: h.landed})
+	m.handled = append(m.handled, handledEntry{view: view, landed: h.landed})
 }
 
 // ended reports whether every action of h has ended.

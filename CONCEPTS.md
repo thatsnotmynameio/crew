@@ -36,9 +36,9 @@ Actions on different agents can run at once on different harnesses. An agent no 
 
 ### Check
 
-A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded.
+A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded. An action points to one check or a list of checks, which run one after another in the listed order.
 
-A check runs only after a successful session, never after a failed one. A check that fails, cannot start, runs out of time or is ended by a stop fails its action, which then takes the same path as any failed action. While its check runs, the action still counts as running.
+A check runs only after a successful session, never after a failed one. It reads the issue from environment variables, and the prompt the session started with and the session's last message from files they name. A check that fails, cannot start, runs out of time or is ended by a stop fails its action, the checks after it do not run, and the action then takes the same path as any failed action. While its checks run, the action still counts as running.
 
 ### Rule run
 
@@ -72,9 +72,11 @@ The live view's columns of labels, each holding a card for each item that carrie
 
 The config may write the columns, any labels, crew's or not, which show issues only. Without that, the board has one column per rule that has actions, with the rule's ready and running labels and its kind. An item sits in every column whose labels it carries and nowhere else; no card waits for the next rule.
 
+After its columns, the board shows a Not on board column, only while it holds a card, for each held item with actions that no column shows, and a last column, Handled, with a card for each Handled entry.
+
 ### Handled entry
 
-The live view's record of how an issue's latest rule run in this crew process ended: the rule, where it moved the issue, what its sessions cost, and why it failed when it did. An issue has at most one.
+The live view's record of how an issue's latest rule run in this crew process ended: the rule, where it moved the issue, what its sessions cost, and why it failed when it did. An issue has at most one: a later rule's entry replaces it and keeps what the earlier rules' sessions cost.
 
 A later rule run that ends replaces the entry, except that a rule without actions ending well leaves an entry that ended well in place; without one, it leaves its own. While a rule holds the issue again, the entry stays and names that rule, and a failure in it no longer counts as needing you.
 

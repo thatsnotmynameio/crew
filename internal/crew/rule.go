@@ -70,15 +70,36 @@ type Action struct {
 	// Agent is the name of the agent whose harness runs the action's
 	// session.
 	Agent string
-	// Check is a shell command run in the action's workspace once its
-	// session succeeded; empty when the action has none. It is never a
-	// template: it reads the issue from environment variables, so no issue
-	// text becomes part of the command. A failing check fails the action.
-	Check string
+	// Checks run in the action's workspace once its session succeeded, one
+	// after another in this order, until one does not pass; empty when the
+	// action has none. A check that does not pass fails the action.
+	Checks []Check
 	// Bot is the name of the bot that acts for the action's session and
 	// check on the tracker: its agent's, or the tracker's when the agent
 	// names none. Empty means you.
 	Bot string
+}
+
+// Check is one of an action's checks.
+type Check struct {
+	// Name is the check's name in the config's checks.
+	Name string
+	// Script is a shell command. It is never a template: it reads the
+	// issue, the session's prompt and its last message from environment
+	// variables and the files they name, so no issue or session text
+	// becomes part of the command.
+	Script string
+}
+
+// CheckResult is how one check of an action ended.
+type CheckResult struct {
+	// Name is the check's name.
+	Name string
+	// Passed is true when the check exited 0.
+	Passed bool
+	// Reason is crew's one line on how it ended, naming the check, followed
+	// by the last line the check printed when it printed one.
+	Reason string
 }
 
 // promptIssue is the only issue data a prompt template can reach. A struct,
