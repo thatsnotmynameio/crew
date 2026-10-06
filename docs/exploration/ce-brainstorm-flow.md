@@ -3,7 +3,7 @@
 O fluxo de [ce-brainstorm-steps.md](ce-brainstorm-steps.md) desenhado como uma máquina de estados com passos entre os estados.
 Cobre da chamada até o menu de handoff. Quando o fluxo sai para outra skill, o diagrama só aponta para ela.
 O fluxo está quebrado em uma visão geral e 8 etapas. Cada etapa começa no estado em que a anterior termina.
-O código Mermaid de cada diagrama também está em [`ce-brainstorm-flow/`](ce-brainstorm-flow/), um arquivo `.mmd` por etapa.
+Cada diagrama também está renderizado em PNG em [`ce-brainstorm-flow/`](ce-brainstorm-flow/), um arquivo por etapa.
 
 ## Legenda
 
