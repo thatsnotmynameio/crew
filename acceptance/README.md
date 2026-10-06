@@ -97,9 +97,10 @@ func TestSessionThatSucceeds(t *testing.T) {
 }
 ```
 
-`harness.Options` has four fields:
+`harness.Options` has five fields:
 
 - `Config`: the text of `.crew/config.yaml`, committed in the repository's first commit. `""` leaves the repository without one.
+- `GlobalConfig`: the text of crew's global config file, `crew/config.yaml` in the scenario's own `XDG_CONFIG_HOME`. `""` leaves crew without one.
 - `Args`: crew's command-line arguments. Nothing is added for you: pass `--plain` yourself for plain output.
 - `Screen`: run crew in a pseudo-terminal, as a user runs it in a terminal (see [Screens](#screens)).
 - `Size`: the terminal's size in screen mode; the default is 120 columns by 50 rows.
@@ -113,14 +114,14 @@ crew runs in a clone, in a directory named `widgets` (`harness.RepositoryName`),
 crew's environment is built from a short list, never from the test's environment:
 
 - `PATH`: the doubles' directory first, then the directories of `git` and `sh`.
-- `HOME` and `XDG_CONFIG_HOME`: empty temporary directories.
+- `HOME` and `XDG_CONFIG_HOME`: temporary directories, empty but for `crew/config.yaml` under `XDG_CONFIG_HOME` when the scenario sets `GlobalConfig`.
 - `TZ=UTC` and `LANG=C.UTF-8`.
 - Git reads no system config, and a global config with a test identity.
 - `TERM=xterm-256color`, in screen mode only.
 
-No GitHub token is set, and the user config directory is empty. Before crew starts, the harness checks that `gh` and `claude` resolve to the doubles, and fails otherwise.
+No GitHub token is set, and the user config directory holds no bot. Before crew starts, the harness checks that `gh` and `claude` resolve to the doubles, and fails otherwise.
 
-**Bots that act are out of reach.** With an empty config directory, crew finds no bot of its own, so a scenario cannot cover a bot acting or creating a bot.
+**Bots that act are out of reach.** With no bot in the config directory, crew finds no bot of its own, so a scenario cannot cover a bot acting or creating a bot.
 
 ### The fake GitHub
 

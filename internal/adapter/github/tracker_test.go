@@ -139,7 +139,7 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State) {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root)
+	cfg, err := config.Load(root, "")
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}

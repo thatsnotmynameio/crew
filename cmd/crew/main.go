@@ -1,11 +1,13 @@
 // Command crew polls the issue tracker and runs each rule's actions in
-// coding-agent sessions, as configured in the repository's .crew/config.yaml
-// and .crew/config.local.yaml.
+// coding-agent sessions, as configured in the user's global
+// $XDG_CONFIG_HOME/crew/config.yaml (~/.config/crew/config.yaml without it)
+// and the repository's .crew/config.yaml and .crew/config.local.yaml.
 //
 // Usage:
 //
 //	crew [--plain] [--version]
 //	crew bots create <name>
+//	crew sessions <session-id> tasks next|current
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a
 // TUI; otherwise, or with --plain, it prints timestamped event lines. The
@@ -18,6 +20,11 @@
 // for the GitHub repository of the git repository it runs in, and installs
 // it there. It exits 0 once the bot is ready, 2 when nothing was asked of
 // GitHub yet, and 1 on any later failure.
+//
+// crew sessions <session-id> tasks next|current asks the captain for the
+// task of a coding-agent session crew runs and prints it as one JSON line.
+// It needs no repository or config. It exits 0 once the task is printed, 2
+// on a malformed command line, and 1 when the captain or the output fails.
 package main
 
 import (
@@ -36,6 +43,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/adapter/git"
 	"github.com/thatsnotmynameio/crew/internal/adapter/shell"
 	"github.com/thatsnotmynameio/crew/internal/app"
+	"github.com/thatsnotmynameio/crew/internal/captain"
+	"github.com/thatsnotmynameio/crew/internal/config"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 	"github.com/thatsnotmynameio/crew/internal/registry"
@@ -58,15 +67,23 @@ func main() {
 // code.
 func run(args []string) int {
 	stdout, stderr := os.Stdout, os.Stderr
-	// The subcommand comes before crew's own flags, so every other argument
+	// SIGPIPE is ignored on every path, so a closed stdout fails the write
+	// instead of killing crew: the renderer's failed write stops crew
+	// cleanly, and each subcommand handles its own write errors.
+	signal.Ignore(syscall.SIGPIPE)
+	// The subcommands come before crew's own flags, so every other argument
 	// list is parsed as it always was.
 	if len(args) > 0 && args[0] == "bots" {
 		return runBots(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "sessions" {
+		return runSessions(args[1:], stdout, stderr, captain.Dumb{})
+	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew bots create <name>\n\nFlags:\n")
+		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew bots create <name>\n"+
+			"  crew sessions <session-id> tasks next|current\n\nFlags:\n")
 		flags.PrintDefaults()
 	}
 	plain := flags.Bool("plain", false, "print timestamped event lines instead of the TUI")
@@ -110,11 +127,9 @@ func start(plain bool, stdout, stderr *os.File) int {
 	// Signals are caught from here on: none may kill crew before the
 	// engine's stop sequence, or a forced exit, has ended its children.
 	// SIGHUP, from a closing terminal, stops crew as SIGINT and SIGTERM do.
-	// SIGPIPE is ignored, so a closed stdout fails the renderer's write,
-	// which stops crew cleanly too.
+	// run already ignores SIGPIPE.
 	signals := make(chan os.Signal, signalBuffer)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	signal.Ignore(syscall.SIGPIPE)
 
 	ctx := context.Background()
 	var group proc.Group
@@ -126,18 +141,19 @@ func start(plain bool, stdout, stderr *os.File) int {
 	home, _ := os.UserHomeDir() // without one, nothing is shortened to ~
 
 	return app.Run(ctx, app.Options{
-		Registry:  registry.Default(&group),
-		Workspace: func(root string) port.Workspace { return git.New(&group, root) },
-		Checker:   shell.New(&group),
-		Root:      root,
-		Home:      home,
-		Stdout:    stdout,
-		Stderr:    stderr,
-		Terminal:  term.IsTerminal(int(stdout.Fd())),
-		Plain:     plain,
-		Group:     &group,
-		Signals:   signals,
-		Bots:      actingBots(group.Run, root),
+		Registry:     registry.Default(&group),
+		Workspace:    func(root string) port.Workspace { return git.New(&group, root) },
+		Checker:      shell.New(&group),
+		Root:         root,
+		GlobalConfig: config.GlobalFile(os.Getenv("XDG_CONFIG_HOME"), home),
+		Home:         home,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		Terminal:     term.IsTerminal(int(stdout.Fd())),
+		Plain:        plain,
+		Group:        &group,
+		Signals:      signals,
+		Bots:         actingBots(group.Run, root),
 	})
 }
 

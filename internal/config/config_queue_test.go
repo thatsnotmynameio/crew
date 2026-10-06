@@ -128,7 +128,7 @@ func TestLoadReportsAQueueMistakeOnce(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.Load(writeRoot(t, tt.body))
+			_, err := config.Load(writeRoot(t, tt.body), "")
 			if err == nil {
 				t.Fatal("Load succeeded, want an error")
 			}

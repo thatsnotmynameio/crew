@@ -24,7 +24,7 @@ func load(t *testing.T, body string) *config.Config {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root)
+	cfg, err := config.Load(root, "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

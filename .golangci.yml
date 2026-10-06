@@ -175,6 +175,28 @@ linters:
               desc: bots import only the standard library and proc
             - pkg: github.com/thatsnotmynameio/crew/internal/ui
               desc: bots import only the standard library and proc
+        captain:
+          files:
+            - "**/internal/captain/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/registry
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/app
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/proc
+              desc: the captain imports only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/bots
+              desc: the captain imports only the domain and the ports
         bots-users:
           files:
             - "!**/cmd/crew/**"

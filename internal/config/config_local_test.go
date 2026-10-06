@@ -43,7 +43,7 @@ const noFile = "\x00"
 
 func loadFiles(t *testing.T, shared, local string) *config.Config {
 	t.Helper()
-	cfg, err := config.Load(writeFiles(t, shared, local))
+	cfg, err := config.Load(writeFiles(t, shared, local), "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -53,7 +53,7 @@ func loadFiles(t *testing.T, shared, local string) *config.Config {
 // loadFilesErr loads the two files, expects an error, and returns its lines.
 func loadFilesErr(t *testing.T, shared, local string) []string {
 	t.Helper()
-	cfg, err := config.Load(writeFiles(t, shared, local))
+	cfg, err := config.Load(writeFiles(t, shared, local), "")
 	if err == nil {
 		t.Fatalf("Load succeeded with %+v, want an error", cfg)
 	}

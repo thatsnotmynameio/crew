@@ -30,9 +30,10 @@ const (
 	configPath = ".crew/config.yaml"
 )
 
-// newHome makes the scenario's empty HOME and XDG_CONFIG_HOME and its global
-// git config, under base.
-func newHome(tb testing.TB, base string) home {
+// newHome makes the scenario's empty HOME, its XDG_CONFIG_HOME, holding
+// crew/config.yaml with globalConfig unless it is "", and its global git
+// config, under base.
+func newHome(tb testing.TB, base, globalConfig string) home {
 	tb.Helper()
 	h := home{dir: filepath.Join(base, "home"), config: filepath.Join(base, "config"),
 		gitConfig: filepath.Join(base, "gitconfig")}
@@ -43,6 +44,11 @@ func newHome(tb testing.TB, base string) home {
 	}
 	if err := os.WriteFile(h.gitConfig, []byte(gitIdentity), filePerm); err != nil {
 		tb.Fatalf("write the scenario's git config: %v", err)
+	}
+	if globalConfig != "" {
+		if err := writeFile(filepath.Join(h.config, "crew", "config.yaml"), globalConfig); err != nil {
+			tb.Fatalf("write crew's global config: %v", err)
+		}
 	}
 	return h
 }

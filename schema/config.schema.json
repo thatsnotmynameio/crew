@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json",
-  "title": "crew's .crew/config.yaml and .crew/config.local.yaml",
-  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. Each top-level key of .crew/config.local.yaml replaces that key of .crew/config.yaml, so either file may hold any of the keys; together they need rules. See .crew/config.example.yaml in the crew repository, which lists every key.",
+  "title": "crew's global config file, .crew/config.yaml and .crew/config.local.yaml",
+  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. crew reads the global config file (~/.config/crew/config.yaml, or $XDG_CONFIG_HOME/crew/config.yaml), then .crew/config.yaml, then .crew/config.local.yaml; each top-level key of a later file replaces that key of the earlier ones, so any file may hold any of the keys; together they need rules. See .crew/config.example.yaml in the crew repository, which lists every key.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
