@@ -45,6 +45,14 @@ from typesafe_judge.asking import UnknownQuestionError, ask, effective_stage, pr
 from typesafe_judge.bank import BankFile
 from typesafe_judge.keys import StateError, canonical_identifiers
 from typesafe_judge.ledger import DIRECTORY, Ledger
+from typesafe_judge.recheck import recheck
+from typesafe_judge.records import (
+    InvalidRequestError,
+    decide,
+    parse_decision,
+    parse_outcome,
+    record_outcome,
+)
 
 if TYPE_CHECKING:
     import socket
@@ -216,6 +224,29 @@ def _ask_record(record: AskRecord, current: Question | None) -> JSON:
     }
 
 
+def _decisions(call: Call) -> dict[str, JSON]:
+    body = _fields(call.body, required={"ask_id", "decision"}, optional=set())
+    return decide(call.ledger, *parse_decision(body)).to_json()
+
+
+def _outcomes(call: Call) -> dict[str, JSON]:
+    body = _fields(
+        call.body,
+        required={"value", "source", "strength"},
+        optional={"ask_id", "question", "identifiers"},
+    )
+    return record_outcome(call.ledger, parse_outcome(body)).to_json()
+
+
+def _rechecks(call: Call) -> dict[str, JSON]:
+    body = _fields(call.body, required={"question"}, optional={"from_version"})
+    name, earlier = body["question"], body.get("from_version")
+    if not isinstance(name, str) or not isinstance(earlier, str | None):
+        msg = "question and from_version: must be text"
+        raise bad_request(msg)
+    return {"recheck": recheck(call.bank, call.ledger, call.client, name, earlier).to_json()}
+
+
 def _fields(body: object, *, required: set[str], optional: set[str]) -> dict[str, object]:
     if not isinstance(body, dict):
         msg = "the body must be a JSON object"
@@ -242,9 +273,12 @@ ROUTES: dict[tuple[str, str], Route] = {
     ("GET", "/v1/questions"): Route(Scope.ASK, _questions),
     ("POST", "/v1/ask"): Route(Scope.ASK, _ask),
     ("GET", "/v1/asks"): Route(Scope.ASK, _asks),
+    ("POST", "/v1/decisions"): Route(Scope.ASK, _decisions),
+    ("POST", "/v1/outcomes"): Route(Scope.ADMIN, _outcomes),
+    ("POST", "/v1/rechecks"): Route(Scope.ADMIN, _rechecks),
 }
-"""The endpoints by method and path (KTD18). Decisions, outcomes, rechecks, calibrations
-and the stage report join here, each with its scope."""
+"""The endpoints by method and path (KTD18). Calibrations and the stage report join here,
+each with its scope."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,6 +343,8 @@ class _Handler(BaseHTTPRequestHandler):
             raise bad_request(str(error), "unknown_question") from error
         except StateError as error:
             raise bad_request(str(error), "invalid_state") from error
+        except InvalidRequestError as error:
+            raise bad_request(str(error), error.code) from error
         error_text = None if bank_error is None else str(bank_error)
         return {"instance": judge.instance, "bank_error": error_text, **result}
 

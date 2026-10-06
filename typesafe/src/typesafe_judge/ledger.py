@@ -122,6 +122,62 @@ class AskRecord:
     answer: dict[str, JSON] | None
 
 
+@dataclass(frozen=True, slots=True)
+class AskOrigin:
+    """What a recorded ask was asked under: its question, version, state and effective stage."""
+
+    id: int
+    question: str
+    version: str
+    state_hash: str
+    effective_stage: StageName
+
+
+@dataclass(frozen=True, slots=True)
+class VersionRecord:
+    """A recorded question version: its content key, primitive and full definition."""
+
+    content_key: str
+    primitive: Literal["noul", "choice", "score"]
+    definition: dict[str, JSON]
+
+
+@dataclass(frozen=True, slots=True)
+class AnsweredAsk:
+    """An ask an answer served, with its state and the latest decision on it, if any."""
+
+    id: int
+    state_hash: str
+    decision: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class NewOutcome:
+    """A real outcome to record on an ask; matched_by holds the identifiers it was matched by."""
+
+    ask_id: int
+    value: JSON
+    source: str
+    strength: Literal["strong", "weak"]
+    matched_by: Mapping[str, str | int] | None
+
+
+@dataclass(frozen=True, slots=True)
+class NewRecheck:
+    """A recheck's result, counts, the bar it was judged by and its report, to record."""
+
+    question: str
+    from_version: str
+    to_version: str
+    stage: StageName
+    result: Literal["passed", "failed", "insufficient", "incomplete"]
+    compared: int
+    flipped: int
+    cannot_judge: int
+    bar: Mapping[str, JSON]
+    report: Mapping[str, JSON]
+
+
 class Reads:
     """Queries over one connection; they never write."""
 
@@ -205,6 +261,49 @@ class Reads:
                     )
                 )
         return records
+
+    def ask_origin(self, ask_id: int) -> AskOrigin | None:
+        """Return what the ask with ask_id was asked under, or None when there is none."""
+        row = self._con.execute(
+            "SELECT id, question, version, state_hash, effective_stage FROM asks WHERE id = ?",
+            (ask_id,),
+        ).fetchone()
+        return None if row is None else AskOrigin(*row)
+
+    def version(self, name: str, version: str) -> VersionRecord | None:
+        """Return a recorded version of the question named name."""
+        row = self._con.execute(
+            "SELECT content_key, primitive, definition FROM question_versions"
+            " WHERE name = ? AND version_id = ?",
+            (name, version),
+        ).fetchone()
+        return None if row is None else VersionRecord(row[0], row[1], _object(row[2]))
+
+    def answered_asks(self, name: str, content_key: str) -> list[AnsweredAsk]:
+        """Return a question's asks served an answer to content_key, oldest first."""
+        rows = self._con.execute(
+            "SELECT k.id, k.state_hash, (SELECT d.decision FROM decisions d"
+            "  WHERE d.ask_id = k.id ORDER BY d.id DESC LIMIT 1)"
+            " FROM asks k JOIN answers a ON a.id = k.answer_id"
+            " WHERE k.question = ? AND a.content_key = ? ORDER BY k.id",
+            (name, content_key),
+        )
+        return [AnsweredAsk(*row) for row in rows]
+
+    def state(self, digest: str) -> JSON:
+        """Return the recorded state whose hash is digest."""
+        row = self._con.execute("SELECT canonical FROM states WHERE hash = ?", (digest,))
+        return cast("JSON", json.loads(row.fetchone()[0]))
+
+    def latest_outcome(self, question: str, digest: str, source: str) -> tuple[str, str] | None:
+        """Return the canonical value and strength of the latest outcome for a question's state."""
+        row = self._con.execute(
+            "SELECT o.value, o.strength FROM outcomes o JOIN asks k ON k.id = o.ask_id"
+            " WHERE k.question = ? AND k.state_hash = ? AND o.source = ?"
+            " ORDER BY o.id DESC LIMIT 1",
+            (question, digest, source),
+        ).fetchone()
+        return None if row is None else (row[0], row[1])
 
     def bank_changes(self, bank: Bank) -> list[tuple[Question, bool]]:
         """Return the questions whose version, or declared stage, the ledger lacks.
@@ -309,6 +408,47 @@ class Writes(Reads):
                 ask.answer_id,
                 ask.reason,
                 ask.attempts,
+            ),
+        )
+
+    def insert_decision(self, ask_id: int, decision: str) -> int:
+        """Record what a caller did with an ask's answer and return its id."""
+        return self._insert(
+            "INSERT INTO decisions (ask_id, decision) VALUES (?, ?)", (ask_id, decision)
+        )
+
+    def insert_outcome(self, outcome: NewOutcome) -> int:
+        """Record an outcome and return its id."""
+        matched_by = outcome.matched_by
+        return self._insert(
+            "INSERT INTO outcomes (ask_id, value, source, strength, matched_by)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (
+                outcome.ask_id,
+                _json(outcome.value),
+                outcome.source,
+                outcome.strength,
+                None if matched_by is None else canonical_identifiers(dict(matched_by)).decode(),
+            ),
+        )
+
+    def insert_recheck(self, recheck: NewRecheck) -> int:
+        """Record a recheck and return its id."""
+        return self._insert(
+            "INSERT INTO rechecks (question, from_version, to_version, stage, result,"
+            " compared, flipped, cannot_judge, bar, report)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                recheck.question,
+                recheck.from_version,
+                recheck.to_version,
+                recheck.stage,
+                recheck.result,
+                recheck.compared,
+                recheck.flipped,
+                recheck.cannot_judge,
+                _json(dict(recheck.bar)),
+                _json(dict(recheck.report)),
             ),
         )
 
