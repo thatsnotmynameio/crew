@@ -390,8 +390,9 @@ A diferença é que cada passo precisaria da pessoa em tempo real, e o crew hoje
 
 ## Esboço do arquivo de fluxo
 
-[`ce-brainstorm.flow.yaml`](ce-brainstorm.flow.yaml) é um esboço de como seria o arquivo de fluxo do `ce-brainstorm` inteiro, da chamada ao menu do handoff.
-É um rascunho para discussão: nenhum motor o lê ainda.
+[`flow-structure.yaml`](flow-structure.yaml) mostra só a estrutura do formato, com um exemplo de cada peça e nenhum conteúdo.
+[`ce-brainstorm.flow.yaml`](ce-brainstorm.flow.yaml) é a mesma estrutura aplicada ao `ce-brainstorm` inteiro, da chamada ao menu do handoff, para referência.
+Os dois são rascunhos para discussão: nenhum motor os lê ainda.
 
 Ele tem cinco partes:
 

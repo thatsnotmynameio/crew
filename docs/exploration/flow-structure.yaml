@@ -1,0 +1,65 @@
+# Estrutura de um arquivo de fluxo, sem o conteúdo de nenhum fluxo.
+# Exemplo completo, aplicado ao ce-brainstorm: ce-brainstorm.flow.yaml.
+
+flow: <nome>
+version: <versão>
+start: <nó inicial>
+
+defaults:
+  confidence: <0..1>            # abaixo disso, a resposta de uma pergunta conta como incerta
+  on_uncertain: <human | nó>    # o que fazer com uma resposta incerta
+  human_gate:                   # roda antes de todo passo human
+    q: "Preciso de um humano pra decidir?"
+    type: yes_no
+    no: <passo que resolve sem a pessoa>
+  pipeline_human: <block | default>   # o que um passo human vira numa run sem pessoa
+
+vars:                           # o estado que o motor guarda; as condições leem daqui
+  <nome>: {type: <text | bool | int | list | set | map | path>, default: <valor>}
+  <nome>: {enum: [<a>, <b>], default: <a>}
+
+states:
+
+  <nó>:
+    checkpoint: <true | false>  # true: é um ESTADO; o motor grava e dá para retomar daqui
+    on_enter:                   # passos que rodam ao entrar, antes de steps
+      - <passo>
+    steps:                      # em ordem; cada um pode ter when: "<condição>"
+      - run: <função Python>    # código determinístico
+        sets: [<var>]
+      - ask:                    # função de perguntas: um lote sobre o mesmo estado
+          - {id: <id>, q: "<pergunta atômica>", type: yes_no}
+          - {id: <id>, q: "<pergunta atômica>", type: choice, options: [<a>, <b>]}
+          - {id: <id>, q: "<pergunta atômica>", type: score}
+      - ask:                    # o mesmo lote, uma vez por item de uma lista
+          for_each: <lista> as <item>
+          questions:
+            - {id: <id>, q: "<pergunta sobre o item>", type: yes_no}
+      - llm: <tarefa>           # a LLM gera algo
+        in: [<var>]
+        out: <schema.json>      # o motor valida a saída contra o schema
+      - human: {text: "<pergunta>", options: [<a>, <b>], sets: <var>}   # o motor devolve waiting_human
+      - spawn: {agent: <subagente>, out: <arquivo>}   # segundo plano, não espera
+      - await: <subagente>      # espera um spawn anterior
+    checks:                     # opcional: o que precisa passar antes de sair do nó
+      run: <função Python>
+      ask:
+        - {id: <id>, q: "<pergunta>", type: yes_no, pass: <true | false>}
+      on_fail:
+        then: {llm: <correção>, retry_checks: true, max: <n>}
+    routes:                     # decisões: a primeira condição verdadeira vence
+      - {when: "<condição sobre vars e ans.<id>>", goto: <nó>}
+      - {when: "<condição>", goto: skill.<skill>, return_to: <nó>}
+      - {when: "<condição>", goto: end.<fim>}
+    else: <nó>                  # quando nenhuma rota vale; num nó sem routes, use next
+
+catalogs:                       # listas de perguntas reaproveitadas por ask: {from_catalog: ...}
+  <catálogo>:
+    <chave>:
+      - {id: <id>, q: "<pergunta>"}
+
+skills:                         # outras skills que o fluxo chama
+  <skill>: {then: <return | end>}   # return: volta ao return_to; end: a skill assume
+
+ends:                           # os fins possíveis e o que se entrega em cada um
+  <fim>: {say: <passo llm> , return: [<campo>]}
