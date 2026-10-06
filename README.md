@@ -38,7 +38,7 @@ On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your 
 
 With Go 1.27 or later, `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z` builds a release instead, where `vX.Y.Z` is its tag from the [releases page](https://github.com/thatsnotmynameio/crew/releases).
 
-Commit a `.crew/config.yaml` that declares your agents and rules ([`.crew/config.example.yaml`](.crew/config.example.yaml) is a complete example, and [`schema/config.schema.json`](schema/config.schema.json) gives your editor completion for every key), then run `crew` in the repository's main checkout:
+Commit a `.crew/config.yaml` that declares your agents and rules ([`.crew/config.example.yaml`](.crew/config.example.yaml) lists every key, commented out and explained: copy it and uncomment what you need, and [`schema/config.schema.json`](schema/config.schema.json) gives your editor completion for every key), then run `crew` in the repository's main checkout:
 
 ```sh
 crew
@@ -48,13 +48,11 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 
 ## Checks
 
-A check is a shell script you declare under `checks:` and name in an action's `check:`. It runs in the action's worktree after the session succeeded, and decides whether the action succeeded. `check:` takes one name or a list, such as `check: [session-finished, pr-closes-issue]`. The checks run in that order, each with its own ten minutes. The first that fails, cannot start, runs out of time or is stopped fails the action, and the rest do not run.
+A check is a shell script you declare under `checks:` and name in an action's `check:`. It runs in the action's worktree after the session succeeded, and decides whether the action succeeded. `check:` takes one name or a list, such as `check: [tests, pr-opened]`. The checks run in that order, each with its own ten minutes. The first that fails, cannot start, runs out of time or is stopped fails the action, and the rest do not run.
 
 A check reads the issue from `CREW_ISSUE_REF`, `CREW_ISSUE_KEY`, `CREW_ISSUE_URL` and `CREW_BRANCH`, the logins from `CREW_CODE_OWNERS` and `CREW_BOTS`, and the action's name from `CREW_ACTION`. `CREW_PROMPT_FILE` names a file with the prompt the session started with, resume note included. `CREW_LAST_MESSAGE_FILE` names a file with the session's last message as it wrote it, which is empty when it ended without one. crew removes both files once the check ended.
 
-The issue's status comment shows each check that ran, with crew's words and the last line the check printed, such as `the check session-finished passed: done (0.97)`. Make that last line your reason: crew never shows what the session itself said.
-
-In this repository's example config, the lfg actions first run `session-finished`, which asks TypeSafe's Jev whether the session's last message says it is still waiting on work it started or stopped without doing it. It sends the session's prompt and last message to TypeSafe, whose zero data retention is offered only on its enterprise plan. It needs `TYPESAFE_API_KEY` in crew's environment, and `jq` and `curl` on the `PATH`; without the key it fails the action. When the last message is empty or TypeSafe cannot answer, it passes and says it did not judge.
+The issue's status comment shows each check that ran, with crew's words and the last line the check printed, such as `the check pr-opened failed: no open pull request from <branch>`. Make that last line your reason: crew never shows what the session itself said.
 
 ## What's inside
 
@@ -63,7 +61,7 @@ In this repository's example config, the lfg actions first run `session-finished
 | `cmd/crew` | The `crew` binary. |
 | `internal/` | crew's engine, its adapters (`github`, `claude`, `codex`, `git`), its TUI, and `bots` for `crew bots create`. See `AGENTS.md`. |
 | `acceptance/` | The acceptance suite, a Go module of its own: it runs the `crew` binary that the release config builds against doubles for `gh` and `claude` on its `PATH`, and checks what crew does on GitHub and on the screen. `go -C acceptance run ./cmd/acceptance`, from the repository root, builds crew and runs the suite. See [`acceptance/README.md`](acceptance/README.md). |
-| `.crew/config.example.yaml` | crew's own rules: crew runs on this repository too, with rules for features, bugs, refinement of brainstormed features (splitting a large plan into sub-issues, then finding their dependencies, reading in full only the open issues Jev's shortlist names, or every open issue when the shortlist is unavailable) and the hand-offs between them, and labels that start with `crew:`. A split plan's issue stays open as the parts' parent and leaves crew, so crew reports its move to done as given up; that is how a split ends. Copy it to `.crew/config.yaml`, which git ignores, to run crew here. |
+| `.crew/config.example.yaml` | The reference of `.crew/config.yaml`: every key crew reads, commented out, each with what it does. |
 | `schema/config.schema.json` | The JSON Schema of `.crew/config.yaml`, for editors that complete and explain its keys. |
 | `docs/` | Plans (`docs/plans/`), ideation and documented solutions (`docs/solutions/`). |
 | `STRATEGY.md` | What crew is for, who it serves, and its boundaries. |
