@@ -216,7 +216,7 @@ func TestCLIInterruptGivesSessionsTime(t *testing.T) {
 	sc := harness.New(t, harness.Options{Config: sessionRules, Args: []string{"--plain"}})
 	ss := newSessions(t)
 	issues := addIssues(sc, firstTitle)
-	sc.Claude.Script(prompt(firstTitle), ss.stubborn(firstTitle))
+	sc.Claude.Script(prompt(firstTitle), ss.slow(firstTitle))
 	sc.Start()
 	ss.waitHeld(sc, issues)
 	sc.Stop()
@@ -230,6 +230,87 @@ func TestCLIInterruptGivesSessionsTime(t *testing.T) {
 	exited := sc.Exit(stopGrace)
 	if exited.Code != exitClean {
 		t.Errorf("crew stopped with SIGINT exited %d, want %d; stderr: %q", exited.Code, exitClean, exited.Stderr)
+	}
+}
+
+// TestCLIInterruptEndsSlowSession checks the end of the time a first Ctrl+C
+// gives a session that does not stop.
+//
+// README: on a stop, crew "asks each running session to stop, giving it up to
+// ten seconds. An action whose session crew stopped fails, so its issue moves
+// to the rule's failure label like any failed action. crew exits once it has
+// judged every issue it held", exiting "0 after a stop". crew holds one issue
+// whose session ignores the request to stop and never ends by itself. After a
+// SIGINT, crew waits no more than the ten seconds: it exits 0 within five
+// seconds of them, the issue carries the failure label, and no forcing second
+// stop was needed.
+//
+// Edge case: the session's process is gone within five seconds of crew's exit.
+// "Up to ten seconds" means crew stops waiting then; a session it left running
+// would go on working in the repository after crew exited, unseen.
+func TestCLIInterruptEndsSlowSession(t *testing.T) {
+	t.Parallel()
+	sc := harness.New(t, harness.Options{Config: sessionRules, Args: []string{"--plain"}})
+	ss := newSessions(t)
+	issues := addIssues(sc, firstTitle)
+	sc.Claude.Script(prompt(firstTitle), ss.slow(firstTitle))
+	sc.Start()
+	ss.waitHeld(sc, issues)
+	sc.Stop()
+	exited := sc.Exit(stopGrace + forceWithin)
+	if exited.Code != exitClean {
+		t.Errorf("crew stopped with SIGINT while a session would not stop exited %d, want %d; stderr: %q",
+			exited.Code, exitClean, exited.Stderr)
+	}
+	wantOnly(t, sc, issues[firstTitle], sessionFailed, "the issue whose session would not stop")
+	if !ended(ss.killed, goneWithin) {
+		t.Errorf("the session of %q, which would not stop, still ran %s after crew exited", firstTitle, goneWithin)
+	}
+}
+
+// TestCLISecondInterruptKillsSession checks what a second Ctrl+C does to a
+// session that does not stop.
+//
+// README: "A second Ctrl+C, `q` or signal does not wait: it kills every
+// process crew started and exits at once", and crew exits "1 when ... a
+// second stop forced its exit". crew holds one issue whose session, a process
+// crew started, ignores the request to stop. Two seconds after the first
+// SIGINT, inside its ten seconds, the issue still carries the running label. A
+// second SIGINT then makes crew exit 1 within five seconds, before the first
+// stop's ten seconds end, and the session's process is gone.
+func TestCLISecondInterruptKillsSession(t *testing.T) {
+	t.Parallel()
+	sc := harness.New(t, harness.Options{Config: sessionRules, Args: []string{"--plain"}})
+	ss := newSessions(t)
+	issues := addIssues(sc, firstTitle)
+	sc.Claude.Script(prompt(firstTitle), ss.slow(firstTitle))
+	sc.Start()
+	ss.waitHeld(sc, issues)
+	sc.Stop()
+	time.Sleep(pressGap)
+	if !isRunning(sc, issues[firstTitle]) {
+		t.Fatalf("%s after the first Ctrl+C, the issue whose session still worked left %s: "+
+			"the first stop did not wait for it, so a second has nothing to force", pressGap, sessionRunning)
+	}
+	sc.Stop()
+	exited := sc.Exit(forceWithin)
+	if exited.Code != exitFailed {
+		t.Errorf("crew forced to exit by a second Ctrl+C exited %d, want %d; stderr: %q",
+			exited.Code, exitFailed, exited.Stderr)
+	}
+	if !ended(ss.killed, goneWithin) {
+		t.Errorf("the session of %q still ran %s after a second Ctrl+C forced crew's exit", firstTitle, goneWithin)
+	}
+}
+
+// ended waits up to within for a title on killed, and reports whether one
+// came.
+func ended(killed <-chan string, within time.Duration) bool {
+	select {
+	case <-killed:
+		return true
+	case <-time.After(within):
+		return false
 	}
 }
 
@@ -299,6 +380,8 @@ type sessions struct {
 	started chan string
 	// stopped receives the title of each session crew asked to stop.
 	stopped chan string
+	// killed receives the title of each slow session crew killed.
+	killed chan string
 	// release, once closed, lets every held session succeed.
 	release chan struct{}
 	// done closes at the end of the test, ending every session still running.
@@ -312,6 +395,7 @@ func newSessions(t *testing.T) *sessions {
 	ss := &sessions{
 		started: make(chan string, 2),
 		stopped: make(chan string, 2),
+		killed:  make(chan string, 2),
 		release: make(chan struct{}),
 		done:    make(chan struct{}),
 	}
@@ -338,16 +422,22 @@ func (ss *sessions) held(title string) fakeclaude.ScriptFunc {
 	}
 }
 
-// stubborn is the session of the issue title that keeps working when crew
-// asks it to stop: it says it works, then succeeds only when release closes.
-func (ss *sessions) stubborn(title string) fakeclaude.ScriptFunc {
-	return func(_ context.Context, s *fakeclaude.Session) int {
+// slow is the session of the issue title that is slow to stop: it ignores
+// crew's request to stop, says it works, then succeeds only when release
+// closes. Only a kill ends it before that, and it then reports itself on
+// killed.
+func (ss *sessions) slow(title string) fakeclaude.ScriptFunc {
+	return func(ctx context.Context, s *fakeclaude.Session) int {
+		s.IgnoreStop()
 		_ = s.Emit(s.Init(), s.Said("Writing it."))
 		ss.started <- title
 		select {
 		case <-ss.release:
 			_ = s.Emit(s.Success("Done."))
 			return claudeSucceeded
+		case <-ctx.Done():
+			ss.killed <- title
+			return claudeFailed
 		case <-ss.done:
 			return claudeFailed
 		}
