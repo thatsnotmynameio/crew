@@ -107,6 +107,21 @@ class Answer:
     answer: dict[str, JSON]
 
 
+@dataclass(frozen=True, slots=True)
+class AskRecord:
+    """A recorded ask, with the answer that served it, if any."""
+
+    id: int
+    version: str
+    state_hash: str
+    identifiers: dict[str, str | int]
+    replayed: bool
+    effective_stage: StageName
+    reason: str | None
+    content_key: str | None
+    answer: dict[str, JSON] | None
+
+
 class Reads:
     """Queries over one connection; they never write."""
 
@@ -159,6 +174,37 @@ class Reads:
             (name, version),
         )
         return [stage for (stage,) in rows]
+
+    def asks(self, question: str, identifiers: Mapping[str, str | int]) -> list[AskRecord]:
+        """Return a question's asks whose identifiers hold every one given, oldest first.
+
+        Types are significant, so ``5`` does not match ``"5"`` (KTD13).
+        """
+        rows = self._con.execute(
+            "SELECT k.id, k.version, k.state_hash, k.identifiers, k.replayed, k.effective_stage,"
+            " k.reason, a.content_key, a.answer"
+            " FROM asks k LEFT JOIN answers a ON a.id = k.answer_id"
+            " WHERE k.question = ? ORDER BY k.id",
+            (question,),
+        )
+        records: list[AskRecord] = []
+        for ask_id, version, digest, held, replayed, stage, reason, key, answer in rows:
+            held_identifiers = cast("dict[str, str | int]", json.loads(held))
+            if all(_same(held_identifiers.get(k), v) for k, v in identifiers.items()):
+                records.append(
+                    AskRecord(
+                        id=ask_id,
+                        version=version,
+                        state_hash=digest,
+                        identifiers=held_identifiers,
+                        replayed=bool(replayed),
+                        effective_stage=stage,
+                        reason=reason,
+                        content_key=key,
+                        answer=None if answer is None else _object(answer),
+                    )
+                )
+        return records
 
     def bank_changes(self, bank: Bank) -> list[tuple[Question, bool]]:
         """Return the questions whose version, or declared stage, the ledger lacks.
@@ -436,6 +482,10 @@ def _use_wal(con: sqlite3.Connection) -> None:
             time.sleep(0.01)
         else:
             return
+
+
+def _same(held: str | int | None, wanted: str | int) -> bool:
+    return type(held) is type(wanted) and held == wanted
 
 
 def _json(value: JSON) -> str:

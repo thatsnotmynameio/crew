@@ -123,6 +123,11 @@ class TypeSafe:
         """Close the client."""
         self.close()
 
+    @property
+    def has_key(self) -> bool:
+        """Tell whether the client has a key, and so can send."""
+        return self._client is not None
+
     def close(self) -> None:
         """Close the HTTP connections."""
         if self._client is not None:
