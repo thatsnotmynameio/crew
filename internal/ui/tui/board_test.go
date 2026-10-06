@@ -188,8 +188,8 @@ func schedulesSlideTick(cmd tea.Cmd) bool {
 }
 
 // Covers AE5 of #134: the default board of promote triage, triage and
-// development has two columns, triage then development, and an issue the rule without actions holds has no card, not
-// even in Not on board.
+// development has two columns, triage then development, and an issue the
+// rule without actions holds has no card, not even in Not on board.
 func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard[:2])
 	u := held(twelve, "promote triage", "promote", core.ClaimRunning)
