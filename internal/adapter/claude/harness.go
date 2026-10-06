@@ -33,7 +33,7 @@ var (
 
 // settings is the claude adapter's config section: the keys of an agent's
 // harness but its name, which are model alone. Without a model, Claude Code
-// runs the model the user's own settings or its default name.
+// picks it: the one set in the user's own settings, or its default.
 type settings struct {
 	Model string `yaml:"model"`
 }
