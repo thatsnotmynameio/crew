@@ -6,6 +6,7 @@
 //
 //	crew [--plain] [--version]
 //	crew bots create <name>
+//	crew sessions <session-id> tasks next|current
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a
 // TUI; otherwise, or with --plain, it prints timestamped event lines. The
@@ -18,6 +19,11 @@
 // for the GitHub repository of the git repository it runs in, and installs
 // it there. It exits 0 once the bot is ready, 2 when nothing was asked of
 // GitHub yet, and 1 on any later failure.
+//
+// crew sessions <session-id> tasks next|current asks the captain for the
+// task of a coding-agent session crew runs and prints it as one JSON line.
+// It needs no repository or config. It exits 0 once the task is printed, 2
+// on a malformed command line, and 1 when the captain or the output fails.
 package main
 
 import (
@@ -36,6 +42,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/adapter/git"
 	"github.com/thatsnotmynameio/crew/internal/adapter/shell"
 	"github.com/thatsnotmynameio/crew/internal/app"
+	"github.com/thatsnotmynameio/crew/internal/captain"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 	"github.com/thatsnotmynameio/crew/internal/registry"
@@ -58,15 +65,19 @@ func main() {
 // code.
 func run(args []string) int {
 	stdout, stderr := os.Stdout, os.Stderr
-	// The subcommand comes before crew's own flags, so every other argument
+	// The subcommands come before crew's own flags, so every other argument
 	// list is parsed as it always was.
 	if len(args) > 0 && args[0] == "bots" {
 		return runBots(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "sessions" {
+		return runSessions(args[1:], stdout, stderr, captain.Dumb{})
+	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
-		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew bots create <name>\n\nFlags:\n")
+		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew bots create <name>\n"+
+			"  crew sessions <session-id> tasks next|current\n\nFlags:\n")
 		flags.PrintDefaults()
 	}
 	plain := flags.Bool("plain", false, "print timestamped event lines instead of the TUI")
