@@ -1,6 +1,7 @@
-// Package config loads a repository's .crew/config.yaml and
-// .crew/config.local.yaml, whose top-level keys replace those of
-// config.yaml: it decodes them strictly, applies the engine-owned defaults,
+// Package config loads the user's global crew/config.yaml, then a
+// repository's .crew/config.yaml and .crew/config.local.yaml, each file's
+// top-level keys replacing those of the files before it: it decodes them
+// strictly, applies the engine-owned defaults,
 // validates the rules, and hands each adapter its own section as a strict
 // Decode. It does not resolve
 // adapter names; the registry does, so config holds no adapter knowledge.
@@ -25,8 +26,9 @@ const (
 	defaultTracker           = "github"
 )
 
-// Config is a loaded and validated config: .crew/config.yaml with the
-// top-level keys of .crew/config.local.yaml in place of its own.
+// Config is a loaded and validated config: the global file's top-level
+// keys, replaced by those of .crew/config.yaml, then by those of
+// .crew/config.local.yaml.
 type Config struct {
 	// PollInterval is poll_interval_seconds, 300 seconds by default.
 	PollInterval time.Duration
@@ -104,15 +106,16 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 	return n.Decode(&l.value) //nolint:wrapcheck // yaml merges a *yaml.TypeError only when returned as is
 }
 
-// Load reads root/.crew/config.yaml and root/.crew/config.local.yaml,
-// where root is the repository's root, and returns them combined, decoded,
-// defaulted and validated. Either file may be missing, but not both. Each
-// top-level key of the local file replaces that key of config.yaml whole.
-// Every error names the file it is about, and every error about a file's
-// content names the key path and its line; all the rules' errors are
-// reported together.
-func Load(root string) (*Config, error) {
-	sources, err := readSources(root)
+// Load reads the user's global config file at global, unless it is "",
+// then root/.crew/config.yaml and root/.crew/config.local.yaml, where root
+// is the repository's root, and returns them combined, decoded, defaulted
+// and validated. Any of the files may be missing, but not all. Each
+// top-level key of a later file replaces that key of the earlier ones
+// whole. Every error names the file it is about, and every error about a
+// file's content names the key path and its line; all the rules' errors
+// are reported together.
+func Load(root, global string) (*Config, error) {
+	sources, err := readSources(root, global)
 	if err != nil {
 		return nil, err
 	}

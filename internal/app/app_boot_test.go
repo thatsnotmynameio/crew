@@ -102,6 +102,47 @@ func TestTheLocalConfigAloneRuns(t *testing.T) {
 	})
 }
 
+// Covers AE4 of #214: with no .crew/ files, crew runs from the global
+// file alone, and the boot line names no file.
+func TestTheGlobalConfigAloneRuns(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := fake.NewHarness()
+		r := options(t, oneAction, fake.NewTracker(issue("1", ready)), h)
+		r.opts.GlobalConfig = filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.Rename(filepath.Join(r.opts.Root, ".crew", "config.yaml"), r.opts.GlobalConfig); err != nil {
+			t.Fatal(err)
+		}
+
+		got := runOneIssue(t, r, h)
+
+		want := []string{"loading config", "reading the run journal"}
+		if len(got) <= len(want) || !slices.Equal(got[:len(want)], want) {
+			t.Fatalf("stdout starts with %q, want %q then the event lines", got, want)
+		}
+	})
+}
+
+// The repository's config.yaml replaces the global file's keys: a global
+// agent with a harness no adapter has stops nothing when config.yaml sets
+// agents too.
+func TestTheRepositorysConfigReplacesTheGlobalKeys(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := fake.NewHarness()
+		r := options(t, oneAction, fake.NewTracker(issue("1", ready)), h)
+		r.opts.GlobalConfig = filepath.Join(t.TempDir(), "config.yaml")
+		global := "agents:\n  developer:\n    harness:\n      name: nosuch\n"
+		if err := os.WriteFile(r.opts.GlobalConfig, []byte(global), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		got := runOneIssue(t, r, h)
+
+		if len(got) < 3 || !strings.HasPrefix(got[2], "implement took #1") {
+			t.Fatalf("stdout = %q, want the run to get past the config and take #1", got)
+		}
+	})
+}
+
 // Covers AE2: without bots, no bot step runs, so none prints.
 func TestWithoutBotsTheBootLogHasNoBotLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

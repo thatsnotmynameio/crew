@@ -31,7 +31,7 @@ func loadOwn(t *testing.T) *config.Config {
 	if err := os.Symlink(own, filepath.Join(root, ".crew", "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root)
+	cfg, err := config.Load(root, "")
 	if err != nil {
 		t.Fatalf("Load(%s) = %v", ownConfig, err)
 	}

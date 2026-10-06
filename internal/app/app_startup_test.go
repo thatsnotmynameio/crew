@@ -40,14 +40,15 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 	}
 }
 
-// Covers AE4 of #135: with neither config file, crew exits 2 naming both
-// and the example, before anything polls.
-func TestNeitherConfigFileExitsTwoNamingBoth(t *testing.T) {
+// Covers AE5 of #214 and AE4 of #135: with none of the three config files,
+// crew exits 2 naming them all and the example, before anything polls.
+func TestNoConfigFileExitsTwoNamingAllThree(t *testing.T) {
 	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
 	r := options(t, oneAction, tr, fake.NewHarness())
 	if err := os.Remove(filepath.Join(r.opts.Root, ".crew", "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
+	r.opts.GlobalConfig = filepath.Join(t.TempDir(), "crew", "config.yaml")
 
 	if code := app.Run(context.Background(), r.opts); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -56,7 +57,8 @@ func TestNeitherConfigFileExitsTwoNamingBoth(t *testing.T) {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
 	stderr := r.stderr.String()
-	for _, want := range []string{".crew/config.yaml", ".crew/config.local.yaml", ".crew/config.example.yaml"} {
+	for _, want := range []string{".crew/config.yaml", ".crew/config.local.yaml", r.opts.GlobalConfig,
+		".crew/config.example.yaml"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr %q does not name %s", stderr, want)
 		}
