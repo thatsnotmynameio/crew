@@ -140,29 +140,30 @@ A bot acts when crew could make it act at startup. One that cannot act then stay
 
 ### Judge
 
-An optional local service, configured by the `judge` section of `.crew/config.yaml` like the tracker, that answers named questions about a state with typed verdicts. crew starts it before polling, gives every session its address, and stops it with crew; TypeSafe is its first adapter.
+An optional local service that answers named questions about a state with typed verdicts, from the question bank, and records them in its ledger. TypeSafe is its first adapter. Today a person starts it by hand (`typesafe-judge serve`); crew starting it from a `judge` section of `.crew/config.yaml`, like the tracker, and giving every session its address comes with #204.
 
-crew never depends on it: without the section, or when its service cannot start, crew runs as it would without it.
+crew never depends on it: without it, or when its service cannot start, crew runs as it would without it.
 
 ### Question bank
 
-The repository's own file of named TypeSafe questions in `.crew/`, each with its primitive, pinned model, verdict bands, conservative default, question stage and evidence bar, which the judge answers by name.
+The repository's own file of named TypeSafe questions, `.crew/typesafe.yaml`, separate from `.crew/config.yaml`. Each question declares its primitive (noul, choice or score) with its instructions and criteria, its pinned model, its verdict bands, its conservative default, its question stage and its evidence bar. The judge answers them by name and never writes the bank.
 
-A new use of TypeSafe is a new question in the bank. Any change to a question's content, pinned model or bands makes a new version of it.
+A new use of TypeSafe is a new question in the bank. A change to a question's content, pinned model, bands, default or bar makes a new version of it; a change to its stage alone does not.
 
 ### Ledger
 
-The judge's local, append-only record, one per repository and written only by its service, of every question asked, every answer, what the caller did with it and what really happened.
+The judge's local, append-only SQLite record, `.crew/typesafe/ledger.sqlite`, one per repository and written only by its service: every version of every question it saw, every live answer, every ask (replays and "cannot judge" included), what the caller did with it and what really happened, and the rechecks and calibrations recorded on them.
 
-It replays the first recorded answer when the same question version and state are asked again. Unlike the run journal, it records judgments, not action runs.
+It replays the first recorded answer when the same question content, model and state are asked again. Unlike the run journal, it records judgments, not action runs. It lives in one checkout and is not shared: a fresh clone starts with none, so each question's first version there keeps its declared stage.
 
 ### Question stage
 
-How far a question is trusted: shadow (answers are recorded and change nothing), confirm (a person approves), or act.
+How far a question is trusted: shadow (answers are recorded and change nothing), confirm (a person approves), or act. The bank declares it; the effective stage is what the question's current version has earned.
 
-A question moves up only by a person's edit to the question bank, once its evidence passes the question's bar. A later version of a question is treated as shadow until a recheck against the last version that held its declared stage passes, or a calibration of the version itself passes its bar.
+A question moves up only by a person's edit to the question bank, once its evidence passes the question's bar. A later version of a question is treated as shadow until a passing recheck from the last version that held its declared stage, or a passing calibration of the version itself, is recorded for that stage. The judge records what a caller did with an answer, even against its stage, but never changes a stage.
 
 ## Flagged ambiguities
 
 - "Run" alone is ambiguous: a *rule run* is one pass through a rule, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
 - "Stage" alone is ambiguous: the run journal's `stage` key is a rule's name, kept from earlier versions, while a *question stage* is how far a TypeSafe question is trusted.
+- "Judge" has two meanings. Inside crew, a harness *judges* a session when it ends, deciding its outcome from the agent's exit and output, and the core is *judging* an issue once every action has ended and the calls that move its labels are in flight. The *judge* (the TypeSafe judge) is a separate local service that answers named questions from the question bank; crew does not start or call it yet.

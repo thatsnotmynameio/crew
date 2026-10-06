@@ -11,6 +11,8 @@ deepened: 2026-10-05
 
 # TypeSafe Ledger - Plan
 
+Part 1 of this plan, the judge service started by hand (#203), is planned and built from `docs/plans/2026-10-05-2229-feat-typesafe-judge-service-plan.md`, which refines KTD1 and KTD5 to KTD15 for it and adds KTD17 to KTD20. Parts 2 and 3 (#204, #205) still follow this plan.
+
 ## Goal Capsule
 
 - **Objective:** every TypeSafe judgment crew asks can be replayed, audited and checked against what really happened, and a judgment gains autonomy only on held-out evidence. This plan delivers crew's judge (a local TypeSafe service with its decision ledger) that crew starts when a repository enables it, proven by `cw-rank-blockers`. crew's engine asking questions itself, rules consuming answers, and packaging the service for other repositories are not active scope.

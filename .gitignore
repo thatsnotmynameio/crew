@@ -27,6 +27,17 @@ node_modules/
 
 # Coverage profile (go test -coverprofile), uploaded to Codacy by CI
 coverage.out
+
+# The TypeSafe judge's Python project (typesafe/): its environment, the tools'
+# caches, and coverage's data and report, written at the repository root
+typesafe/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+coverage.xml
 .context/compound-engineering/
 
 # Local settings, such as a boss's own .crew/config.local.yaml
