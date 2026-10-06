@@ -34,6 +34,12 @@ A named harness, with its model and its optional bot, that runs the sessions of 
 
 Actions on different agents can run at once on different harnesses. An agent no action names is checked but never started.
 
+### Harness
+
+The coding-agent program a session runs on, such as Claude Code or Codex, which crew starts headless in the action's workspace.
+
+A session's identity reaches the harness through its environment only, never its command line, which any process on the machine can read. The harness must pass that identity on to every command the session runs, so that the session never acts as you when its agent has a bot.
+
 ### Check
 
 A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded. An action points to one check or a list of checks, which run one after another in the listed order.
