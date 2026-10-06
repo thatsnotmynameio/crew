@@ -12,15 +12,15 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// exampleConfig is the repository's committed example of .crew/config.yaml;
-// your own copy is ignored by git.
-var exampleConfig = filepath.Join("..", "..", ".crew", "config.example.yaml")
+// ownConfig is crew's own config, committed as this repository's
+// .crew/config.yaml.
+var ownConfig = filepath.Join("..", "..", ".crew", "config.yaml")
 
-// loadExample loads exampleConfig as a repository's .crew/config.yaml, linked
-// into a new repository root.
-func loadExample(t *testing.T) *config.Config {
+// loadOwn loads ownConfig alone, linked into a new repository root, so a
+// developer's .crew/config.local.yaml never reaches it.
+func loadOwn(t *testing.T) *config.Config {
 	t.Helper()
-	example, err := filepath.Abs(exampleConfig)
+	own, err := filepath.Abs(ownConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,20 +28,20 @@ func loadExample(t *testing.T) *config.Config {
 	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(example, filepath.Join(root, ".crew", "config.yaml")); err != nil {
+	if err := os.Symlink(own, filepath.Join(root, ".crew", "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(root)
 	if err != nil {
-		t.Fatalf("Load(%s) = %v", exampleConfig, err)
+		t.Fatalf("Load(%s) = %v", ownConfig, err)
 	}
 	return cfg
 }
 
-// exampleRule is how a rule of the example config loads, its actions
+// ownRule is how a rule of crew's own config loads, its actions
 // summed up as "action: agent A, bot B, check C", where C is whether it has
 // one.
-type exampleRule struct {
+type ownRule struct {
 	name    string
 	labels  crew.Labels
 	queue   crew.Queue
@@ -49,13 +49,13 @@ type exampleRule struct {
 	actions []string
 }
 
-// crew runs on its own repository, so its example config must stay valid,
+// crew runs on its own repository, so its own config must stay valid,
 // and keep the rules, actions, queues, bots and labels it had in the old
 // keys (KTD8): the same names, so failed runs still resume. refinement
 // replaced triage in #160, while no issue was in a triage state.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
-	cfg := loadExample(t)
-	if got, want := exampleRules(cfg.Rules), wantExampleRules(); !reflect.DeepEqual(got, want) {
+	cfg := loadOwn(t)
+	if got, want := ownRules(cfg.Rules), wantOwnRules(); !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
 	wantBots := []string{"clerk", "product-manager", "developer"}
@@ -90,7 +90,7 @@ const (
 // the split by labelling the parts and taking the parent out of crew, and
 // its check fails a split that stopped before that (#160).
 func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
-	refine := loadExample(t).Rules[1].Actions[0]
+	refine := loadOwn(t).Rules[1].Actions[0]
 	prompt := refine.Prompt
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	if split < 0 || split > strings.Index(prompt, "dependencies/blocked_by") {
@@ -119,7 +119,7 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := loadExample(t).Rules[1].Actions[0].Prompt
+	prompt := loadOwn(t).Rules[1].Actions[0].Prompt
 	for _, want := range splitOutcomes {
 		if !strings.Contains(string(skill), want) || !strings.Contains(prompt, want) {
 			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
@@ -144,7 +144,7 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
 		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
 	}
-	prompt := loadExample(t).Rules[1].Actions[0].Prompt
+	prompt := loadOwn(t).Rules[1].Actions[0].Prompt
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	rank := strings.Index(prompt, "/cw-rank-blockers")
 	record := strings.Index(prompt, "dependencies/blocked_by -F")
@@ -158,9 +158,9 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	}
 }
 
-// wantExampleRules are the example config's rules, as in the old keys: the
+// wantOwnRules are crew's own config's rules, as in the old keys: the
 // promote rules, now without actions, notify nothing and need no failure.
-func wantExampleRules() []exampleRule {
+func wantOwnRules() []ownRule {
 	clerk, developer := crew.Queue{Name: "clerk", Slots: 1}, crew.Queue{Name: "developer", Slots: 2}
 	productManager := crew.Queue{Name: "product-manager", Slots: 1}
 	labels := func(rule, success string) crew.Labels {
@@ -169,7 +169,7 @@ func wantExampleRules() []exampleRule {
 			Success: crew.State(success), Failure: crew.State("crew:" + rule + ":failed"),
 		}
 	}
-	want := []exampleRule{
+	want := []ownRule{
 		{
 			name: "promote brainstorm", queue: clerk,
 			labels: crew.Labels{
@@ -219,11 +219,11 @@ func checkNames(checks []crew.Check) string {
 	return fmt.Sprint(names)
 }
 
-// exampleRules sums rules up as exampleRule.
-func exampleRules(rules []crew.Rule) []exampleRule {
-	out := make([]exampleRule, len(rules))
+// ownRules sums rules up as ownRule.
+func ownRules(rules []crew.Rule) []ownRule {
+	out := make([]ownRule, len(rules))
 	for i, r := range rules {
-		out[i] = exampleRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
+		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
 		for _, a := range r.Actions {
 			out[i].actions = append(out[i].actions,
 				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent, a.Bot, checkNames(a.Checks)))

@@ -15,7 +15,7 @@ import (
 )
 
 // The JSON Schema of .crew/config.yaml, and the URL it is published at,
-// which the example config's modeline names.
+// which crew's own config names in its modeline.
 var configSchema = filepath.Join("..", "..", "schema", "config.schema.json")
 
 const schemaURL = "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json"
@@ -163,11 +163,11 @@ func TestKeyDiffNamesAKeyMissingOnEitherSide(t *testing.T) {
 	}
 }
 
-func TestExampleConfigNamesThePublishedSchema(t *testing.T) {
+func TestOwnConfigNamesThePublishedSchema(t *testing.T) {
 	if id := readSchema(t)["$id"]; id != schemaURL {
 		t.Errorf("%s: $id = %v, want %s", configSchema, id, schemaURL)
 	}
-	f, err := os.Open(exampleConfig)
+	f, err := os.Open(ownConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,6 +175,6 @@ func TestExampleConfigNamesThePublishedSchema(t *testing.T) {
 	lines := bufio.NewScanner(f)
 	lines.Scan()
 	if want := "# yaml-language-server: $schema=" + schemaURL; lines.Text() != want {
-		t.Errorf("%s: first line = %q, want %q", exampleConfig, lines.Text(), want)
+		t.Errorf("%s: first line = %q, want %q", ownConfig, lines.Text(), want)
 	}
 }
