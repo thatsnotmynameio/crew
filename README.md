@@ -48,7 +48,7 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 
 ## Stopping crew
 
-Ctrl+C, or `q` in the live view, stops crew, as SIGINT, SIGTERM and SIGHUP do. crew takes nothing new and asks each running session to stop, giving it up to ten seconds. An action whose session crew stopped fails, so its issue moves to the rule's failure label like any failed action. crew exits once it has judged every issue it held. A second Ctrl+C, `q` or signal does not wait: it kills every process crew started and exits at once. `run_time_limit_seconds` ends a run another way: crew winds down, taking nothing new while its running sessions end on their own.
+Ctrl+C, or `q` in the live view, stops crew, as SIGINT, SIGTERM and SIGHUP do. crew takes nothing new and asks each running session to stop, giving it up to ten seconds before it kills the session. An action whose session crew stopped fails, so its issue moves to the rule's failure label like any failed action. crew exits once it has judged every issue it held. A second Ctrl+C, `q` or signal does not wait: it kills every process crew started and exits at once. `run_time_limit_seconds` ends a run another way: crew winds down, taking nothing new while its running sessions end on their own.
 
 crew exits 0 after a stop or at its run time limit, 1 when it failed while running or a second stop forced its exit, and 2 on a command line it cannot use or a config or environment error, such as a repository without `.crew/config.yaml`.
 
