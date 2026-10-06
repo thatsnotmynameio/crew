@@ -1,0 +1,464 @@
+# Esboço de um arquivo de fluxo para o ce-brainstorm.
+#
+# É um rascunho para discussão, não um formato que algo já leia.
+# Um motor genérico (flow next / flow submit) leria este arquivo, guardaria
+# o estado em disco e faria as transições. A LLM só executa o passo atual.
+#
+# Tipos de passo:
+#   run    código determinístico (Python). Não pergunta nada a ninguém.
+#   ask    a função de perguntas: um lote de perguntas atômicas sobre o
+#          estado, cada uma yes_no, choice ou score, com confiança.
+#   llm    a LLM gera algo. A saída tem schema; o motor valida antes de seguir.
+#   human  mostra algo à pessoa e espera. O motor devolve waiting_human, e o
+#          hook Stop deixa o turno terminar.
+#   spawn  dispara um subagente em segundo plano. await espera o resultado.
+#   skill  passa para outra skill; volta (return) ou encerra (end).
+#
+# Nós:
+#   checkpoint: true  é um ESTADO do diagrama: o motor grava e a sessão pode
+#                     ser retomada dali. Os outros nós são passos entre estados.
+#   routes            decisões: a primeira condição verdadeira vence.
+#   else / next       para onde ir quando nenhuma rota vale.
+
+flow: ce-brainstorm
+version: 0.1
+start: chamada
+
+defaults:
+  confidence: 0.8               # abaixo disso, a resposta conta como incerta
+  on_uncertain: human           # resposta incerta: pergunta à pessoa
+  human_gate:                   # roda antes de todo passo human
+    q: "Preciso de um humano pra decidir?"
+    type: yes_no
+    no: llm.resolve_from_repo   # não: a LLM resolve com o repositório ou o padrão
+  pipeline_human: block         # run sem pessoa: human vira pendência devolvida
+
+vars:
+  request:          {type: text}
+  return_to_caller: {type: bool, default: false}
+  format:           {enum: [md, html], default: md}
+  tier:             {enum: [lightweight, standard, deep_feature, deep_product]}
+  fast_path:        {type: bool, default: false}
+  split:            {type: bool, default: false}
+  blocking_asked:   {type: int, default: 0}    # o motor soma a cada passo human
+  gaps:             {type: list}               # lacunas abertas do pressure test
+  offered:          {type: set}                # ofertas já feitas: mapa, visual, prototipo, pov
+  revisions:        {type: map}                # item da síntese -> vezes revisado
+  plan_path:        {type: path}
+  open_items:       {type: list}               # Resolve Before Planning
+
+states:
+
+  # Etapa 1: entrada e rota
+
+  chamada:
+    steps:
+      - run: parse_tokens                      # mode:, output:, brainstorm_model:
+        sets: [request, return_to_caller, format_token, model_token]
+      - when: "request == ''"
+        human: {text: "O que você quer explorar?", sets: request}
+      - run: load_rules                        # interaction-rules.md e settled-decisions.md
+      - llm: extract_carried_decisions
+        out: schemas/decisions.json            # [{decision, alternative?}]
+      - ask:
+          for_each: decisions as d
+          questions:
+            - {id: saw_option, q: "A pessoa escolheu isto depois de ver outra opção?", type: yes_no}
+            - {id: just_agreed, q: "A pessoa só concordou com uma proposta?", type: yes_no}
+      - run: label_decisions                   # user-directed, user-approved, directive
+    next: pedido_recebido
+
+  pedido_recebido:
+    checkpoint: true
+    steps:
+      - ask:
+          - {id: fmt, q: "Em que formato o pedido quer o documento?", type: choice, options: [md, html, nao_diz]}
+      - run: resolve_format                    # token > ans.fmt > preferência > config > md
+        sets: format
+      - run: find_plans                        # plans/ com artifact_contract: ce-unified-plan/v1
+        sets: candidates
+      - when: "candidates"
+        ask:
+          for_each: candidates as plan
+          questions:
+            - {id: same_topic, q: "Este plano fala do mesmo assunto do pedido?", type: score}
+      - when: "max(ans.same_topic) >= 0.8"
+        human: {text: "Continuar deste plano ou começar do zero?", options: [continuar, do_zero], sets: resume}
+      - ask:
+          - {id: software, q: "O pedido é sobre construir ou mudar software?", type: yes_no}
+          - {id: quick, q: "O pedido é uma dúvida rápida que se responde direto?", type: yes_no}
+          - {id: verdict, q: "O pedido pergunta se vale adotar algo de fora?", type: yes_no}
+    routes:
+      - {when: "ans.quick", goto: end.respondido_direto}
+      - {when: "not ans.software", goto: end.rota_nao_software}
+      - {when: "ans.verdict", goto: oferta_pov}
+    else: pedido_de_software
+
+  oferta_pov:
+    steps:
+      - llm: pov_offer                         # por que é um veredito e o que o ce-pov entrega
+        out: schemas/question.json
+      - human: {text_from: last, options: [sim, nao], sets: wants_pov}
+      - run: mark_offered                      # offered += pov
+    routes:
+      - {when: "wants_pov == 'sim'", goto: skill.ce-pov}
+    else: pedido_de_software
+
+  # Etapa 2: escopo
+
+  pedido_de_software:
+    checkpoint: true
+    steps:
+      - ask:
+          - {id: clear, q: "O pedido já diz como deve funcionar?", type: yes_no}
+          - {id: size, q: "Qual é o tamanho do trabalho?", type: choice, options: [pequeno, medio, grande]}
+          - {id: product, q: "O produto em volta já existe?", type: yes_no}
+          - {id: parts, q: "Dá para entregar uma parte sem as outras?", type: yes_no}
+          - {id: visual, q: "O assunto é visual?", type: yes_no}
+          - {id: unfamiliar, q: "A pessoa disse que não conhece o assunto?", type: yes_no}
+        on_uncertain:
+          size: {human: llm.scope_question, still_uncertain: heavier}   # 0.3: uma pergunta, depois o mais pesado
+      - run: set_tier                          # pequeno, médio, grande e ans.product -> tier
+        sets: [tier, fast_path]
+    routes:
+      - {when: "ans.parts", goto: divisao}
+    else: escopo_classificado
+
+  divisao:
+    steps:
+      - llm: propose_split
+        out: schemas/split.json                # {areas: [...], relations: [...]}
+      - human: {text_from: last, options_from: last.areas, sets: chosen_area}
+      - run: keep_others_as_context
+        sets: split
+    next: escopo_classificado
+
+  escopo_classificado:
+    checkpoint: true
+    on_enter:
+      - when: "tier != 'lightweight'"
+        run: create_tasks                      # as 5 tarefas
+    steps:
+      - run: packs_resolve                     # scripts/packs-resolve.py
+        sets: packs
+      - when: "fast_path"
+        ask:
+          - {id: needs_person, q: "Falta alguma decisão que só a pessoa pode tomar?", type: yes_no}
+    routes:
+      - {when: "fast_path and ans.needs_person", goto: em_dialogo}
+      - {when: "fast_path", goto: ideia_entendida}
+    else: contexto
+
+  # Etapa 3: contexto
+
+  contexto:
+    steps:
+      - when: "tier == 'lightweight'"
+        run: search_topic
+      - when: "tier != 'lightweight'"
+        run: [read_strategy_and_concepts, make_scratch_dir]
+      - when: "tier != 'lightweight'"
+        spawn: {agent: grounding_scout, tier: extraction, out: "{scratch}/grounding.md"}
+      - when: "tier != 'lightweight' and slack_requested"
+        spawn: {agent: slack_researcher}
+      - ask:                                   # 1.2: uma pergunta por lacuna do catálogo
+          from_catalog: "pressure_test[tier]"
+        sets: gaps                             # resposta "não" vira lacuna aberta
+    next: em_dialogo
+
+  # Etapa 4: diálogo
+
+  em_dialogo:
+    checkpoint: true
+    steps:
+      - ask:
+          - {id: contradicts_code, q: "A última resposta contradiz o código?", type: yes_no}
+          - {id: other_meaning, q: "A última resposta usa um termo com outro sentido no glossário?", type: yes_no}
+          - {id: can_evaluate, q: "A pessoa sabe avaliar a próxima pergunta?", type: yes_no}
+          - {id: looks, q: "A próxima decisão é sobre aparência?", type: yes_no}
+          - {id: costly, q: "Errar a próxima decisão sai caro?", type: yes_no}
+          - {id: talkable, q: "Conversar resolve a próxima decisão?", type: yes_no}
+          - {id: verdict, q: "A conversa virou uma pergunta sobre adotar algo de fora?", type: yes_no}
+          - {id: unknown_system, q: "A próxima decisão depende de algo que não sabemos sobre o sistema?", type: yes_no}
+    routes:
+      - {when: "ans.contradicts_code or ans.other_meaning", goto: conflito}
+      - {when: "(ans.unfamiliar or not ans.can_evaluate) and 'mapa' not in offered", goto: oferta_mapa}
+      - {when: "ans.costly and not ans.talkable and 'prototipo' not in offered", goto: oferta_prototipo}
+      - {when: "ans.looks and 'visual' not in offered", goto: oferta_visual}
+      - {when: "ans.verdict and 'pov' not in offered", goto: oferta_pov}
+      - {when: "ans.unknown_system", goto: skill.ce-explain, return_to: saida_dialogo}
+    else: pergunta
+
+  pergunta:
+    steps:
+      - llm: next_question                     # uma pergunta só: lacuna aberta ou estreitamento
+        in: [request, gaps, answers, grounding_gist]
+        out: schemas/question.json             # {texto, opcoes?, lacuna?}
+      - human: {text_from: last, sets: answer}
+    next: saida_dialogo
+
+  conflito:
+    steps:
+      - llm: conflict_question
+        out: schemas/question.json
+      - human: {text_from: last, sets: answer}
+    next: saida_dialogo
+
+  oferta_mapa:
+    steps:
+      - human: {text: "Mapear o território primeiro?", options: [mapear, seguir], sets: map}
+      - run: mark_offered
+      - when: "map == 'mapear'"
+        llm: blindspot_map                     # 3 a 7 decisões e riscos
+        out: schemas/map.json
+      - when: "map == 'mapear'"
+        human: {text: "Quais quer percorrer?", options_from: last.items, multi: true, sets: walk}
+    next: saida_dialogo
+
+  oferta_visual:
+    steps:
+      - human: {text: "Rascunho visual ou texto?", options: [visual, texto], sets: medium}
+      - run: mark_offered
+      - when: "medium == 'visual'"
+        run: start_light_webserver
+      - when: "medium == 'visual'"
+        llm: sketch_screen                     # grava screens/001-<decisao>.html
+    next: saida_dialogo
+
+  oferta_prototipo:
+    steps:
+      - human: {text: "Prototipar com ce-prototype?", options: [sim, nao], sets: proto}
+      - run: mark_offered
+    routes:
+      - {when: "proto == 'sim'", goto: skill.ce-prototype, return_to: saida_dialogo}
+    else: saida_dialogo
+
+  saida_dialogo:
+    steps:
+      - run: update_gaps                       # fecha a lacuna que a pergunta sondou
+      - ask:
+          - {id: who, q: "Sabemos quem vai usar?", type: yes_no}
+          - {id: outcome, q: "Sabemos o resultado esperado?", type: yes_no}
+          - {id: limits, q: "Sabemos o que fica de fora?", type: yes_no}
+          - {id: success, q: "Sabemos como medir o sucesso?", type: yes_no}
+          - {id: move_on, q: "A pessoa pediu para seguir adiante?", type: yes_no}
+      - when: "(ans.who and ans.outcome and ans.limits and ans.success and not gaps) or ans.move_on"
+        llm: integration_check
+        out: schemas/consequence.json          # {existe: bool, pergunta?: text}
+    routes:
+      - {when: "last.existe", goto: pergunta, with: {question: last.pergunta}}
+      - {when: "ans.move_on", goto: ideia_entendida}
+      - {when: "ans.who and ans.outcome and ans.limits and ans.success and not gaps", goto: ideia_entendida}
+    else: em_dialogo
+
+  # Etapa 5: abordagens
+
+  ideia_entendida:
+    checkpoint: true
+    steps:
+      - ask:
+          - {id: bakeoff, q: "A pessoa pediu um bake-off?", type: yes_no}
+    routes:
+      - {when: "tier == 'lightweight' or fast_path", goto: sintese}
+      - {when: "ans.bakeoff", goto: skill.ce-bakeoff, return_to: apresentar_abordagens}
+    else: abordagens
+
+  abordagens:
+    steps:
+      - run: resolve_elevation_model           # token > config
+        sets: model
+      - llm: generate_approaches               # 2 ou 3, uma com ângulo não óbvio
+        model: "{model}"
+        out: schemas/approaches.json
+    next: apresentar_abordagens
+
+  apresentar_abordagens:
+    steps:
+      - ask:
+          for_each: approaches as a
+          questions:
+            - {id: solves, q: "Esta abordagem resolve o problema?", type: score}
+            - {id: extra, q: "Quanto esta abordagem acrescenta além do pedido?", type: score}
+      - run: recommend                         # menor 'extra' entre as com solves >= 0.8
+        sets: [recommended, viable]
+      - llm: present_approaches                # todas primeiro, a recomendação depois
+      - when: "len(viable) > 1"
+        human: {text_from: last, options_from: viable, sets: chosen}
+    next: abordagem_escolhida
+
+  abordagem_escolhida:
+    checkpoint: true
+    next: sintese
+
+  # Etapa 6: síntese
+
+  sintese:
+    steps:
+      - llm: synthesis_draft                   # Stated, Inferred, Out of scope; não é mostrado
+        out: schemas/draft.json
+      - run: choose_path                       # A: tier lightweight e blocking_asked == 0
+        sets: path
+    routes:
+      - {when: "path == 'A'", goto: escopo_confirmado, say: llm.proposing_line}
+    else: mostrar_sintese
+
+  mostrar_sintese:
+    steps:
+      - llm: synthesis                         # problema, o que construir, call outs
+        skills: [ce-noslop]
+        out: schemas/synthesis.json            # {problema, construir, call_outs[], claims[]}
+      - when: "last.claims"
+        spawn: {agent: claim_verifier, tier: generation, in: last.claims}
+      - human: {text_from: synthesis, open: true, sets: reply}   # pergunta aberta, sem menu
+    next: aguardando_confirmacao
+
+  aguardando_confirmacao:
+    checkpoint: true
+    steps:
+      - ask:
+          - {id: kind, q: "O que a pessoa respondeu?", type: choice, options: [confirmou, pediu_mudanca, quer_outra_skill]}
+      - when: "ans.kind == 'pediu_mudanca'"
+        ask:
+          - {id: item, q: "Que item a mudança toca?", type: choice, options_from: synthesis.items}
+      - when: "ans.kind == 'pediu_mudanca'"
+        run: count_revision                    # revisions[ans.item] += 1
+    routes:
+      - {when: "ans.kind == 'confirmou'", goto: escopo_confirmado}
+      - {when: "ans.kind == 'quer_outra_skill'", goto: end.redirecionado}
+      - {when: "revisions[ans.item] >= 2", goto: proceed_ou_hold}
+    else: mostrar_sintese
+
+  proceed_ou_hold:
+    steps:
+      - human: {text: "Proceed ou Hold off?", options: [proceed, hold_off], sets: ph}
+    routes:
+      - {when: "ph == 'proceed'", goto: escopo_confirmado}
+    else: em_dialogo
+
+  # Etapa 7: escrita
+
+  escopo_confirmado:
+    checkpoint: true
+    steps:
+      - ask:
+          - {id: asked_file, q: "A pessoa pediu um arquivo?", type: yes_no}
+          - {id: cited_later, q: "Alguém vai precisar citar estas decisões depois?", type: yes_no}
+    routes:
+      - {when: "ans.asked_file or ans.cited_later", goto: escrita}
+    else: sem_arquivo
+
+  sem_arquivo:
+    steps:
+      - run: skip_task_5                       # "Skipped: no doc warranted"
+    next: resultado_no_chat
+
+  escrita:
+    steps:
+      - await: claim_verifier
+      - llm: fix_refuted_claims
+      - run: [load_rendering_reference, reserve_plan_path]   # O_EXCL; colisão -> -2, -3
+        sets: plan_path
+      - llm: write_contract
+        skills: [ce-noslop]
+        out: schemas/contract.json             # o contrato da Etapa 7
+      - run: render_plan                       # frontmatter, R1..Rn, Governs, session-settled
+    checks:
+      run: check_complete                      # sem TBD, seções, IDs, perguntas classificadas
+      ask:
+        - {id: contradicts, q: "Uma seção contradiz outra?", type: yes_no, pass: false}
+        - {id: one_unit, q: "O plano cobre um trabalho só?", type: yes_no, pass: true}
+        - {id: plannable, q: "Dá para planejar sem inventar comportamento?", type: yes_no, pass: true}
+        - for_each: requirements as r
+          questions:
+            - {id: two_things, q: "Este requisito pede duas coisas?", type: yes_no, pass: false}
+      on_fail:
+        ask:
+          - {id: changes_scope, q: "Esta correção muda o que vai ser construído?", type: yes_no}
+        if_yes: {human: llm.fix_question}
+        then: {llm: fix_plan, retry_checks: true, max: 3}
+    next: plano_escrito
+
+  plano_escrito:
+    checkpoint: true
+    next: vocabulario
+
+  resultado_no_chat:
+    checkpoint: true
+    next: vocabulario
+
+  vocabulario:
+    steps:
+      - when: "exists('CONCEPTS.md')"
+        llm: update_concepts
+      - when: "exists('CONCEPTS.md')"
+        run: check_no_entry_removed            # só o ce-compound-refresh apaga
+    next: handoff
+
+  # Etapa 8: handoff
+
+  handoff:
+    routes:
+      - {when: "return_to_caller", goto: end.devolvido_ao_chamador}
+      - {when: "open_items", goto: pendencias}
+    else: menu
+
+  pendencias:
+    steps:
+      - human: {text_from: llm.open_item_question, options: [resolver, pausar, seguir], sets: pend}
+    routes:
+      - {when: "pend == 'resolver'", goto: pendencias}
+      - {when: "pend == 'pausar'", goto: pausado}
+    else: menu                                 # seguir: itens viram suposições
+
+  pausado:
+    checkpoint: true
+    next: menu
+
+  menu:
+    checkpoint: true
+    steps:
+      - run: visible_options                   # esconde o que não se aplica
+        sets: options
+      - human: {text: "O que fazer agora?", options_from: options, sets: choice}
+    routes:
+      - {when: "choice == 'criar_plano'", goto: skill.ce-plan}
+      - {when: "choice == 'lfg'", goto: skill.lfg}
+      - {when: "choice == 'pressure_test'", goto: skill.ce-doc-review, return_to: menu}
+      - {when: "choice == 'prototipar'", goto: skill.ce-prototype}
+      - {when: "choice == 'abrir_no_navegador'", goto: menu}
+      - {when: "choice == 'mais_perguntas'", goto: em_dialogo}
+    else: end.encerrado
+
+catalogs:
+  pressure_test:
+    lightweight:
+      - {gap: problema_real, q: "O pedido resolve o problema real da pessoa?"}
+      - {gap: duplicado, q: "Nada no repositório já faz isso?"}
+    standard: &standard
+      - {gap: evidencia, q: "O pedido mostra algo que alguém já fez para resolver isso?"}
+      - {gap: especificidade, q: "O pedido diz quem ganha com isso?"}
+      - {gap: contrafactual, q: "O pedido diz o que se faz hoje sem isso?"}
+      - {gap: apego, q: "O pedido deixa a solução em aberto?"}
+    deep_feature: *standard
+    deep_product:
+      - {gap: evidencia, q: "O pedido mostra algo que alguém já fez para resolver isso?"}
+      - {gap: especificidade, q: "O pedido diz quem ganha com isso?"}
+      - {gap: contrafactual, q: "O pedido diz o que se faz hoje sem isso?"}
+      - {gap: apego, q: "O pedido deixa a solução em aberto?"}
+      - {gap: durabilidade, q: "O valor do pedido continua se o mercado mudar?"}
+
+skills:
+  ce-pov:        {then: end}
+  ce-explain:    {then: return}
+  ce-prototype:  {then: return}                # do menu, return_to ausente: encerra
+  ce-bakeoff:    {then: return}
+  ce-doc-review: {then: return}
+  ce-plan:       {then: end}
+  lfg:           {then: end}
+
+ends:
+  respondido_direto:     {}
+  rota_nao_software:     {handoff_file: references/universal-brainstorming.md}
+  redirecionado:         {say: llm.suggest_other_skill}
+  devolvido_ao_chamador: {return: [status, result_kind, artifact_path, brief, resolve_before_planning, key_decisions, grounding_path]}
+  encerrado:             {say: llm.closing_summary}

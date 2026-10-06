@@ -387,3 +387,32 @@ O **nível 4** é o desenho que o crew já usa um nível acima.
 Uma label é um estado, cada ação roda uma sessão própria, e os `checks` do `.crew/config.yaml` validam o resultado antes de a issue mudar de label.
 O fluxo do brainstorm seria a mesma ideia aplicada dentro de uma ação.
 A diferença é que cada passo precisaria da pessoa em tempo real, e o crew hoje roda sessões sem ninguém olhando.
+
+## Esboço do arquivo de fluxo
+
+[`ce-brainstorm.flow.yaml`](ce-brainstorm.flow.yaml) é um esboço de como seria o arquivo de fluxo do `ce-brainstorm` inteiro, da chamada ao menu do handoff.
+É um rascunho para discussão: nenhum motor o lê ainda.
+
+Ele tem cinco partes:
+
+- **`defaults`:** o limite de confiança (0,8), o que fazer com uma resposta incerta (perguntar à pessoa), a pergunta "Preciso de um humano pra decidir?" que roda antes de todo passo `human`, e o que acontece numa run sem pessoa.
+- **`vars`:** o estado que o motor guarda, como `tier`, `fast_path`, `gaps`, `blocking_asked` e `revisions`. O Python lê essas variáveis para decidir; a LLM não precisa lembrar delas.
+- **`states`:** os nós do fluxo. Os que têm `checkpoint: true` são os estados do diagrama (12 ao todo), onde o motor grava e de onde a sessão pode ser retomada. Os outros são passos entre estados. Cada nó tem `steps` em ordem e `routes` (a primeira condição verdadeira vence), com `else` ou `next` para o resto.
+- **`catalogs`:** as perguntas do pressure test por tier, que viram o lote de `ask` da Etapa 3.
+- **`skills` e `ends`:** as saídas. Uma skill volta para o fluxo (`return`) ou o encerra (`end`); cada fim diz o que a LLM entrega.
+
+Os passos são de seis tipos:
+
+| Tipo | Quem faz | Exemplo no arquivo |
+|---|---|---|
+| `run` | Python | `reserve_plan_path`, `choose_path`, `visible_options` |
+| `ask` | A função de perguntas | "O pedido é sobre construir ou mudar software?" |
+| `llm` | A LLM, com schema na saída | `next_question`, `write_contract` |
+| `human` | A pessoa | "Continuar deste plano ou começar do zero?" |
+| `spawn` / `await` | Um subagente em segundo plano | `grounding_scout`, `claim_verifier` |
+| `skill` | Outra skill | `ce-pov`, `ce-prototype`, `ce-plan` |
+
+Na Etapa 7, o nó `escrita` mostra as checagens: um bloco `checks` com uma regra em Python (`check_complete`) e perguntas com a resposta que passa (`pass`).
+Se uma checagem falha, o motor pergunta "Esta correção muda o que vai ser construído?". Se sim, pergunta à pessoa; se não, a LLM corrige e as checagens rodam de novo, no máximo 3 vezes.
+
+O arquivo foi conferido com um script: é YAML válido, toda rota aponta para um nó, uma skill ou um fim que existe, e todo nó é alcançável a partir de `chamada`.
