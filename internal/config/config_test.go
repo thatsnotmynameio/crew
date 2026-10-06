@@ -3,8 +3,6 @@ package config_test
 import (
 	"errors"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,14 +16,7 @@ import (
 // returns that root.
 func writeRoot(t *testing.T, body string) string {
 	t.Helper()
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return root
+	return writeFiles(t, body, noFile)
 }
 
 func load(t *testing.T, body string) *config.Config {

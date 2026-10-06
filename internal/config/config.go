@@ -1,7 +1,8 @@
 // Package config loads a repository's .crew/config.yaml and
 // .crew/config.local.yaml, whose top-level keys replace those of
-// config.yaml: it decodes them strictly, applies the engine-owned defaults, validates the rules, and
-// hands each adapter its own section as a strict Decode. It does not resolve
+// config.yaml: it decodes them strictly, applies the engine-owned defaults,
+// validates the rules, and hands each adapter its own section as a strict
+// Decode. It does not resolve
 // adapter names; the registry does, so config holds no adapter knowledge.
 package config
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -187,11 +188,7 @@ func TestErrorsOfBothFilesEachNameTheirFile(t *testing.T) {
 		localName + ": poll_interval_seconds (line 1): must be a positive number of seconds",
 	}
 	for _, w := range want {
-		found := false
-		for _, l := range lines {
-			found = found || l == w
-		}
-		if !found {
+		if !slices.Contains(lines, w) {
 			t.Errorf("error lines %q lack %q", lines, w)
 		}
 	}

@@ -71,7 +71,8 @@ func topMapping(doc *yaml.Node) (*yaml.Node, error) {
 	return top, nil
 }
 
-// refuseOldKeys reports the old keys of every source, each with its file.
+// refuseOldKeys reports the old keys of every source, each with its file:
+// an origin of no keys names every error by all, the one file.
 func refuseOldKeys(sources []source) error {
 	errs := make([]error, 0, len(sources))
 	for _, s := range sources {
@@ -85,33 +86,24 @@ func refuseOldKeys(sources []source) error {
 // out, in file order, then the local file's keys. It returns the mapping
 // and where each of its keys came from.
 func merge(sources []source) (*yaml.Node, origin) {
-	top := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	o := origin{files: map[string]string{}}
 	names := make([]string, len(sources))
 	for i, s := range sources {
 		names[i] = s.name
 		for _, e := range entries(s.top, "") {
-			if setLater(sources[i+1:], e.key.Value) {
-				continue
-			}
-			top.Content = append(top.Content, e.key, e.value)
 			o.files[e.key.Value] = s.name
 		}
 	}
 	o.all = strings.Join(names, " and ")
-	return top, o
-}
-
-// setLater tells whether one of sources sets the top-level key.
-func setLater(sources []source, key string) bool {
+	top := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	for _, s := range sources {
 		for _, e := range entries(s.top, "") {
-			if e.key.Value == key {
-				return true
+			if o.files[e.key.Value] == s.name {
+				top.Content = append(top.Content, e.key, e.value)
 			}
 		}
 	}
-	return false
+	return top, o
 }
 
 // origin tells which file each top-level key of the merged config came
