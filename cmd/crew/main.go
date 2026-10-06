@@ -1,5 +1,6 @@
 // Command crew polls the issue tracker and runs each rule's actions in
-// coding-agent sessions, as configured in the repository's .crew/config.yaml.
+// coding-agent sessions, as configured in the repository's .crew/config.yaml
+// and .crew/config.local.yaml.
 //
 // Usage:
 //

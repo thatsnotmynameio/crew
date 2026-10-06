@@ -130,6 +130,33 @@ You can have many bots, and a bot is only an identity: it carries no model, prom
 
 A bot acts when crew could make it act at startup. One that cannot act then stays that way until crew restarts, and its actions act as you. A bot that acts can stop acting while crew runs: when crew's own writes as `tracker.bot` go back to you, which lasts until restart, or when its token fails to renew, which lasts until a renewal succeeds. An action's cost counts on the identity it acted as.
 
+## TypeSafe
+
+### Judge
+
+An optional local service, configured by the `judge` section of `.crew/config.yaml` like the tracker, that answers named questions about a state with typed verdicts. crew starts it before polling, gives every session its address, and stops it with crew; TypeSafe is its first adapter.
+
+crew never depends on it: without the section, or when its service cannot start, crew runs as it would without it.
+
+### Question bank
+
+The repository's own file of named TypeSafe questions in `.crew/`, each with its primitive, pinned model, verdict bands, conservative default, question stage and evidence bar, which the judge answers by name.
+
+A new use of TypeSafe is a new question in the bank. Any change to a question's content, pinned model or bands makes a new version of it.
+
+### Ledger
+
+The judge's local, append-only record, one per repository and written only by its service, of every question asked, every answer, what the caller did with it and what really happened.
+
+It replays the first recorded answer when the same question version and state are asked again. Unlike the run journal, it records judgments, not action runs.
+
+### Question stage
+
+How far a question is trusted: shadow (answers are recorded and change nothing), confirm (a person approves), or act.
+
+A question moves up only by a person's edit to the question bank, once its evidence passes the question's bar. A later version of a question is treated as shadow until a recheck against the last version that held its declared stage passes, or a calibration of the version itself passes its bar.
+
 ## Flagged ambiguities
 
 - "Run" alone is ambiguous: a *rule run* is one pass through a rule, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
+- "Stage" alone is ambiguous: the run journal's `stage` key is a rule's name, kept from earlier versions, while a *question stage* is how far a TypeSafe question is trusted.

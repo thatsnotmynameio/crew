@@ -13,17 +13,22 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/config"
 )
 
-// errLines returns the lines of err, without the file name Load puts first.
+// errLines returns the lines of err, each without the file name Load puts
+// first.
 func errLines(t *testing.T, err error) []string {
 	t.Helper()
 	if err == nil {
 		t.Fatal("Load succeeded, want an error")
 	}
-	_, msg, ok := strings.Cut(err.Error(), filepath.Join(".crew", "config.yaml")+": ")
-	if !ok {
-		t.Fatalf("error %q does not name the file", err)
+	lines := strings.Split(err.Error(), "\n")
+	for i, line := range lines {
+		msg, ok := strings.CutPrefix(line, sharedName+": ")
+		if !ok {
+			t.Fatalf("error line %q does not name the file", line)
+		}
+		lines[i] = msg
 	}
-	return strings.Split(msg, "\n")
+	return lines
 }
 
 // oldKeyLines loads body and returns the lines of the error it must fail

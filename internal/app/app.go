@@ -136,7 +136,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 			code = ExitFailure
 		}
 	}()
-	o.boot("loading .crew/config.yaml")
+	o.boot("loading config")
 	b, err := build(o)
 	if err != nil {
 		o.errorf("%v", err)

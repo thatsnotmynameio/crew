@@ -3,8 +3,6 @@ package config_test
 import (
 	"errors"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,14 +16,7 @@ import (
 // returns that root.
 func writeRoot(t *testing.T, body string) string {
 	t.Helper()
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return root
+	return writeFiles(t, body, noFile)
 }
 
 func load(t *testing.T, body string) *config.Config {
@@ -232,14 +223,18 @@ func TestLoadRendersPromptForIssue(t *testing.T) {
 	}
 }
 
+// Covers AE4 at the config level: with neither file, the error names both
+// and points to the example.
 func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	root := t.TempDir()
 	_, err := config.Load(root)
 	if err == nil {
 		t.Fatal("Load succeeded without a config file")
 	}
-	if want := filepath.Join(root, ".crew", "config.yaml"); !strings.Contains(err.Error(), want) {
-		t.Errorf("error %q does not name %s", err, want)
+	for _, want := range []string{root, sharedName, localName} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %s", err, want)
+		}
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("error %v is not fs.ErrNotExist", err)

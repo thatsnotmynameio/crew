@@ -1,11 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json",
-  "title": "crew's .crew/config.yaml",
-  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. See .crew/config.example.yaml in the crew repository.",
+  "title": "crew's .crew/config.yaml and .crew/config.local.yaml",
+  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. Each top-level key of .crew/config.local.yaml replaces that key of .crew/config.yaml, so either file may hold any of the keys; together they need rules. See .crew/config.example.yaml in the crew repository, which lists every key.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["rules"],
   "properties": {
     "poll_interval_seconds": {
       "description": "Seconds between polls of the tracker. Must be positive. 300 by default.",
@@ -113,7 +112,7 @@
       }
     },
     "rules": {
-      "description": "Rules by name. Each rule takes the items of its kind that carry its ready label, moves each to running, runs its actions, and moves it to success when every action succeeded or to failure when any failed. Rules form no sequence: the order of work comes only from how their labels chain. Among rules of equal priority, a later rule in the file takes first.",
+      "description": "Rules by name; required in one of the two files. Each rule takes the items of its kind that carry its ready label, moves each to running, runs its actions, and moves it to success when every action succeeded or to failure when any failed. Rules form no sequence: the order of work comes only from how their labels chain. Among rules of equal priority, a later rule in the file takes first.",
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {
