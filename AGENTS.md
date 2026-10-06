@@ -6,7 +6,7 @@ crew is a Go program that polls a tracker (GitHub) and moves each issue through 
 
 ## Commands
 
-Run every command from the repository root. Go 1.27 (`go.mod`).
+Run every command from the repository root. Go 1.27 (`go.mod`); the TypeSafe judge in `typesafe/` is Python 3.14 through uv, which installs its own CPython.
 
 ```sh
 go build ./cmd/crew   # the binary, at the root (ignored by git)
@@ -23,8 +23,24 @@ pnpm install          # once: the Codacy CLIs
 pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Opengrep, Trivy, Checkov
 ```
 
+The `python` job's steps, for `typesafe/`:
+
+```sh
+uv sync --project typesafe --locked
+uv run --project typesafe --locked ruff check typesafe
+uv run --project typesafe --locked ruff format --check typesafe
+uv run --project typesafe --locked mypy --config-file typesafe/pyproject.toml typesafe/src typesafe/tests
+uv run --project typesafe --locked coverage run --rcfile=typesafe/pyproject.toml -m pytest typesafe/tests   # one test: add -k name
+uv run --project typesafe --locked coverage report --rcfile=typesafe/pyproject.toml   # total >= 90%
+uv run --project typesafe --locked coverage xml --rcfile=typesafe/pyproject.toml --fail-under=0   # coverage.xml, for diff-cover
+uv run --project typesafe --locked diff-cover coverage.xml --compare-branch=origin/main --fail-under=90   # changed lines >= 90%
+uv run --project typesafe --locked lizard -C 15 -a 8 -T nloc=50 -w typesafe/src typesafe/tests   # Codacy's limits; CI also fails a file above 500 NLOC
+uv export --project typesafe --locked --format requirements.txt --no-emit-project --all-groups --quiet -o /tmp/requirements.txt
+uv run --project typesafe --locked pip-audit -r /tmp/requirements.txt --disable-pip --strict
+```
+
 - **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
-- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `acceptance` job builds crew with GoReleaser (a Linux amd64 snapshot), runs vet, golangci-lint and govulncheck in `acceptance/`, then the suite with `CREW_BIN` set; on failure it uploads the tests' artifacts. Its `codacy` job uploads the coverage to Codacy, which analyses the code on its own servers.
+- **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `acceptance` job builds crew with GoReleaser (a Linux amd64 snapshot), runs vet, golangci-lint and govulncheck in `acceptance/`, then the suite with `CREW_BIN` set; on failure it uploads the tests' artifacts. Its `python` job runs the `typesafe/` steps above, with diff-cover on pull requests only. Its `codacy` job uploads Go's and Python's coverage to Codacy, as one partial report each, and Codacy analyses the code on its own servers.
 - **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`.
 
 ## Architecture
@@ -45,6 +61,7 @@ Ports and adapters with a pure core.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
 - **Layering:** imports point inward, and `depguard` in `.golangci.yml` fails the build otherwise. `crew` imports nothing of crew's; `core` imports only `crew`; `port` imports no `core`, `engine`, `config`, adapter or UI; `engine` imports no adapter or UI; adapters import no `core`, `engine`, `config`, UI or other adapter (their tests may import `config`); only `ui/tui` imports Bubble Tea, Lip Gloss and Bubbles; only tests import `fake`; `bots` imports only the standard library and `proc`, and only `cmd/crew` imports it.
+- `typesafe/`: the TypeSafe judge, a uv project in Python outside Go's layering, run by hand: crew does not start it yet. `src/typesafe_judge/`: `cli` (`serve`, signals, exit codes), `service` (HTTP API, tokens, instance files), `bank` (`.crew/typesafe.yaml`), `keys` (canonical hashes), `client` (the SDK, retries, failure reasons), `asking` (replay, verdicts, effective stages), `ledger`, `schema` and `evidence` (the SQLite ledger), `records` (decisions, outcomes), `recheck`, `calibrate`, `stages`.
 - `acceptance/`: the black-box acceptance suite, a nested Go module outside the layering. It reaches crew only through the built binary and never imports crew's packages (a `depguard` rule denies `internal` and `cmd` there). The root `go test ./...`, lint, coverage floors and `tools/diffcover` stop at its `go.mod`: run its vet, golangci-lint and govulncheck with `go -C acceptance` (`acceptance/README.md`, which documents the doubles without crew's internals).
 - **New adapter:** one package under `internal/adapter/` with a `Factory(group)`, plus one entry in `internal/registry/default.go`. Optional capabilities are separate interfaces found by type assertion: never wrap an adapter value, never add "not implemented" stubs.
 
@@ -56,6 +73,7 @@ Ports and adapters with a pure core.
 - **Adapters:** scripted `gh` and `git` runners, and recorded `stream-json` fixtures in `internal/adapter/claude/testdata/`.
 - **Real git:** only in temporary repositories (`t.TempDir()`, a local bare `origin`), with `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM` set so the user's config cannot leak in.
 - **Golden files:** the TUI's views in `internal/ui/tui/testdata/`, with escape codes stripped; rewrite with `go test ./internal/ui/tui -update` and review the diff.
+- **Python:** `typesafe/tests/` with pytest. TypeSafe is faked behind `httpx2.MockTransport` (`conftest.py`'s `typesafe` fixture), and an autouse fixture keeps the person's `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` and `TYPESAFE_DEFAULT_MODEL` out, so no test reaches the network. Every root is a `tmp_path`. `serve` is tested as a real child process (`test_cli.py`), signals included.
 - **Acceptance:** `acceptance/` runs the binary in `CREW_BIN` (unset fails, never skips) against `gh` and `claude` doubles on `PATH`: the test binary itself, through `harness.Main`, answering from a stateful fake GitHub and scripted sessions. Screen scenarios run crew in a pseudo-terminal and compare masked screens with snapshots. Always `-count=1`: a rebuilt binary keeps its mtime. The pull request that changes how crew calls `gh` or `claude` teaches `acceptance/fakegithub` or `acceptance/fakeclaude` the call. Scenarios (`acceptance/scenarios/`) and their snapshots are the tester's: only the tester rewrites snapshots (`-accept-snapshots`).
 
 ## Docs
@@ -68,8 +86,8 @@ Ports and adapters with a pure core.
 
 - **Releases:** the version is `VERSION`, starting at `0.1.0`. A pull request that changes it is a release. After it merges to `main`, the Release workflow runs GoReleaser (`.goreleaser.yaml`), which publishes `vX.Y.Z` as a GitHub release with crew's binaries for macOS and Linux and `checksums.txt`, and publishes nothing unless every one built. Unlike the other workflows, it publishes without the shared release action and uses only its `check` mode. The version must be `MAJOR.MINOR.PATCH` and not below the latest release (CI's `version` check).
 - **Shared workflows:** CI, Claude Code and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
-- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). Use pnpm, never npm: `package.json` pins pnpm itself (`packageManager`). The `checks` ruleset requires `version`, `actionlint / actionlint` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`); `acceptance` joins it that way once it is on `main`.
-- **Codacy:** its jobs are off until the repository variable `CODACY_ENABLED` is `true`. Fix a finding; suppress only a genuine false positive, at the finding, naming the rule and the reason (`//nolint:<linter> // <reason>`). Never exclude crew's own source from analysis. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files. The gates live in Codacy's UI.
+- **CI:** GitHub Actions are pinned by SHA, pnpm packages by hash (`pnpm-lock.yaml`). Use pnpm, never npm: `package.json` pins pnpm itself (`packageManager`). The `checks` ruleset requires `version`, `actionlint / actionlint`, `go`, `codacy` and `codacy gate`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`); `acceptance` and `python` join it that way once they are on `main`.
+- **Codacy:** its jobs are off until the repository variable `CODACY_ENABLED` is `true`. Fix a finding; suppress only a genuine false positive, at the finding, naming the rule and the reason (`//nolint:<linter> // <reason>`, or `# noqa: <rule> - <reason>` in Python). Never exclude crew's own source from analysis. The `python` job owns Python's linting (ruff, with its bandit rules, and mypy), so Codacy runs no Python linter; its Lizard, Semgrep and Trivy still cover `typesafe/`. After editing `.codacy.yaml`, run `pnpm exec codacy-analysis update-config` and commit both files. The gates live in Codacy's UI.
 
 ## Agents
 
