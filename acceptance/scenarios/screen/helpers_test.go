@@ -67,12 +67,19 @@ rules:
 // prompt is the implement action's prompt for the scenarios' issue.
 const prompt = `Implement "` + title + `".`
 
-// newScenario builds a screen scenario whose repository has owner as its code
-// owner, the rule's labels, and one issue titled title with the ready label.
-// It returns the scenario and the issue's number.
+// newScenario builds a screen scenario with config, the board crew draws
+// without a board key.
 func newScenario(t *testing.T) (*harness.Scenario, int) {
 	t.Helper()
-	sc := harness.New(t, harness.Options{Config: config, Screen: true, Size: harness.Size{Cols: cols, Rows: rows}})
+	return newScenarioWith(t, config)
+}
+
+// newScenarioWith builds a screen scenario whose repository holds cfg as its
+// config, owner as its code owner, the rule's labels, and one issue titled
+// title with the ready label. It returns the scenario and the issue's number.
+func newScenarioWith(t *testing.T, cfg string) (*harness.Scenario, int) {
+	t.Helper()
+	sc := harness.New(t, harness.Options{Config: cfg, Screen: true, Size: harness.Size{Cols: cols, Rows: rows}})
 	sc.GitHub.SetFile(".github/CODEOWNERS", "* @"+owner+"\n")
 	sc.GitHub.AddLabel(ready, running, success, failure)
 	n := sc.GitHub.AddIssue(fakegithub.Issue{Title: title, Author: owner, Labels: []string{ready}})
@@ -126,14 +133,14 @@ func wantText(t *testing.T, text string, wants ...string) {
 	}
 }
 
-// inColumn reports whether the cards of the board's column header hold text,
-// ignoring case. It reads only the board: the rows between the column headers
+// inColumn reports whether the cards of the board's column header hold the
+// scenarios' issue title, ignoring case. It reads only the board: the rows between the column headers
 // and the Queues and Events sections, which the README puts under the board,
 // and in those rows only the cells from the header's first cell to the next
 // column's, so neither an event line nor a card of another column counts.
-func inColumn(screen, header, text string) bool {
+func inColumn(screen, header string) bool {
 	cards, found := columnCards(screen, header)
-	return found && strings.Contains(strings.ToLower(cards), strings.ToLower(text))
+	return found && strings.Contains(strings.ToLower(cards), strings.ToLower(title))
 }
 
 // columnCards returns the text of the cards in the board's column header, one
@@ -192,7 +199,7 @@ func nextColumn(line string, from int) int {
 }
 
 // columnGap is the fewest spaces between two column headers. One space
-// separates the words of a single header, such as "Handled 1 · $0.25".
+// separates the words of a single header, such as "Not on board".
 const columnGap = 2
 
 // cells is the text of line from the cell start up to, not including, the
@@ -210,4 +217,77 @@ func cell(line, text string) int {
 		return -1
 	}
 	return len([]rune(before))
+}
+
+// hasColumn reports whether the board draws a column titled header.
+func hasColumn(screen, header string) bool {
+	_, found := columnCards(screen, header)
+	return found
+}
+
+// headerBefore reports whether the board's header row draws the column first
+// left of the column second.
+func headerBefore(screen, first, second string) bool {
+	lines := strings.Split(screen, "\n")
+	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
+	if board < 0 {
+		return false
+	}
+	for _, line := range lines[board+1:] {
+		if isSection(line, "Queues") || isSection(line, "Events") {
+			return false
+		}
+		if a, b := cell(line, first), cell(line, second); a >= 0 && b >= 0 {
+			return a < b
+		}
+	}
+	return false
+}
+
+// eventsTitle matches the row that opens the Events section, which may share
+// its row with the Queues section on its left.
+var eventsTitle = regexp.MustCompile(`(^|[\s▸])Events(\s|$)`)
+
+// inEvents reports whether one row of the Events section holds every one of
+// wants, ignoring case. It reads only the rows under the Events title that
+// follows the board, and in them only the cells from the title's first cell
+// on, so neither a card nor the Queues section beside Events counts.
+func inEvents(screen string, wants ...string) bool {
+	lines := strings.Split(screen, "\n")
+	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
+	if board < 0 {
+		return false
+	}
+	title := slices.IndexFunc(lines[board:], eventsTitle.MatchString)
+	if title < 0 {
+		return false
+	}
+	title += board
+	start := cell(lines[title], "Events")
+	for _, line := range lines[title+1:] {
+		row := strings.ToLower(cells(line, start, math.MaxInt))
+		if !slices.ContainsFunc(wants, func(want string) bool { return !strings.Contains(row, strings.ToLower(want)) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// wantOneFrame fails the test unless the screen draws the view's header and
+// its Bots section once each: rows a previous frame left behind, such as a
+// second header above the view, are not part of the live view.
+func wantOneFrame(t *testing.T, text string) {
+	t.Helper()
+	headers, bots := 0, 0
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.HasPrefix(line, "crew ") && strings.Contains(line, harness.RepositoryName) {
+			headers++
+		}
+		if isSection(line, "Bots") {
+			bots++
+		}
+	}
+	if headers != 1 || bots != 1 {
+		t.Errorf("the screen draws %d headers and %d Bots sections, not one of each:\n%s", headers, bots, text)
+	}
 }

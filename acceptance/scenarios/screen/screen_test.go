@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thatsnotmynameio/crew/acceptance/fakeclaude"
 	"github.com/thatsnotmynameio/crew/acceptance/harness"
 )
 
@@ -24,12 +23,12 @@ const (
 // README: "Under the header, Bots shows a card for each bot crew acts as, then
 // one for you", "the board has a card for each issue in each of its columns:
 // the issue's reference and title, then `run` (its actions and how long each
-// has run ...), `bots` (...) and `via` (the queue its actions run in). Its last
-// column, Handled", and "Queues and Events sit under the board". Without a
-// board key, `.crew/config.example.yaml` says "the board has one column per
-// rule that has actions". So the screen shows Bots, a development column whose
-// card holds the issue's reference, its title, its action implement and its
-// queue default, the Handled column, Queues and Events.
+// has run ...), `bots` (...) and `via` (the queue its actions run in)", and
+// "Queues and Events sit under the board". Without a board key,
+// `.crew/config.example.yaml` says "the board has one column per rule that has
+// actions". So the screen shows Bots, a development column whose card holds
+// the issue's reference, its title, its action implement and its queue
+// default, then Queues and Events.
 func TestScreenBoardRunningIssue(t *testing.T) {
 	sc, n := newScenario(t)
 	release := make(chan struct{})
@@ -38,11 +37,12 @@ func TestScreenBoardRunningIssue(t *testing.T) {
 	waitForLabel(sc, n, running)
 	sc.Screen().WaitForText(t, title, timeout)
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
-	wantText(t, text, "Bots", "development", "Handled", "Queues", "Events",
+	wantText(t, text, "Bots", "development", "Queues", "Events",
 		"#1", title, "run", "implement", "bots", "via", "default")
-	if !inColumn(text, "development", title) {
+	if !inColumn(text, "development") {
 		t.Errorf("the development column has no card for %q:\n%s", title, text)
 	}
+	wantOneFrame(t, text)
 	harness.MatchSnapshot(t, "board-running-issue", text)
 	close(release)
 	waitForLabel(sc, n, success)
@@ -70,34 +70,12 @@ func TestScreenIssueBox(t *testing.T) {
 	sc.Screen().WaitForText(t, issueURL, timeout)
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
 	wantText(t, text, title, "development", running, issueURL, "implement", "default", said)
+	wantOneFrame(t, text)
 	harness.MatchSnapshot(t, "issue-box", text)
 	sc.Screen().Send(t, esc)
 	sc.Screen().WaitFor(t, func(text string) bool { return !strings.Contains(text, issueURL) }, timeout)
 	close(release)
 	waitForLabel(sc, n, success)
-	stop(sc)
-}
-
-// TestScreenHandledFailedIssue checks the Handled column after a rule failed.
-//
-// README: "Its last column, Handled, holds a card for each issue crew stopped
-// handling, those needing you first, with why its rule ended." After the
-// issue's session failed and it moved to the failure label, the Handled
-// column holds a card with the issue's title that says it failed.
-func TestScreenHandledFailedIssue(t *testing.T) {
-	sc, n := newScenario(t)
-	sc.Claude.Script(prompt, fakeclaude.Fail("The build is broken."))
-	sc.Start()
-	waitForLabel(sc, n, failure)
-	sc.Screen().WaitFor(t, func(text string) bool { return inColumn(text, "Handled", title) }, timeout)
-	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
-	if !inColumn(text, "Handled", title) {
-		t.Errorf("the Handled column has no card for %q:\n%s", title, text)
-	}
-	if !inColumn(text, "Handled", "fail") {
-		t.Errorf("the Handled column does not say the rule failed:\n%s", text)
-	}
-	harness.MatchSnapshot(t, "handled-failed-issue", text)
 	stop(sc)
 }
 

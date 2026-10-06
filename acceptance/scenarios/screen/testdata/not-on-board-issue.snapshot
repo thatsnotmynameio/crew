@@ -6,33 +6,33 @@ HH:MM:SS crew: looking for claude on PATH
 HH:MM:SS crew: checking the git checkout and its origin
 HH:MM:SS crew: resolving origin's default branch
 HH:MM:SS crew: reading the run journal
-crew ╱╱ widgets • up ## • $#.## • 7.3K tokens  ? help
+crew ╱╱ widgets • up ##  ? help
 
 Bots ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── only you
  ╭────────────────────────────────╮
  │ ▄ █ ▄ you                      │
  │ ▄█ █▄ @boss                    │
- │ ▄███▄ 1 action · $#.##         │
+ │ ▄███▄ no actions yet           │
  │ crew's writes +1               │
- │ idle                           │
+ │ ⠿ #1 development/implement     │
  ╰────────────────────────────────╯
 
 ▸ Board ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 0 issues
- development                         Handled 1 · $#.##
+ to do                               Not on board
  ──────────────────────────────────  ──────────────────────────────────
                                      ╭────────────────────────────────╮
                                      │ ▸ #1 Add a search box          │
-                                     │ ▲ needs attention              │
-                                     │ × implement failed: The build… │
-                                     │ development ##              │
+                                     │ run  ⠿ implement ##            │
+                                     │ bots ■ you                     │
+                                     │ via  default                   │
                                      ╰────────────────────────────────╯
 
-Queues ─── 0 of 2 busy   Events ─────────────────────────────────────────────────────────────────────────────────────────────────────────── 7 events · ↑↓ scroll
- default  □□  0/2         HH:MM:SS #1 moved from dev:ready to dev:running
+Queues ─── 1 of 2 busy   Events ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 4 events
+ default  ■□  1/2         HH:MM:SS development took #1 "Add a search box" (dev:ready -> dev:running)
+                          HH:MM:SS poll: listed 1 issue, took 1
+                          HH:MM:SS #1 moved from dev:ready to dev:running
                           HH:MM:SS #1 development/implement started on branch crew/issue-1-implement, log .crew/logs/issue-1-implement.log
-                          HH:MM:SS #1 development/implement failed: The build is broken.
-                          HH:MM:SS reported the failure on #1
-                          HH:MM:SS #1 moved from dev:running to dev:failed
+
 
 q stop · tab focus · ←→↑↓ move · enter open · ? help
 
