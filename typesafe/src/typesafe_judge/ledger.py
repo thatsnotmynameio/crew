@@ -127,6 +127,39 @@ class Reads:
         answer_id, call_id, question, version, model_asked, model, answer = row
         return Answer(answer_id, call_id, question, version, model_asked, model, _object(answer))
 
+    def versions(self, name: str) -> list[str]:
+        """Return the versions of the question named name, in the order they were first recorded."""
+        rows = self._con.execute(
+            "SELECT version_id FROM question_versions WHERE name = ? ORDER BY id", (name,)
+        )
+        return [version for (version,) in rows]
+
+    def observed_stages(self, name: str, version: str) -> list[StageName]:
+        """Return the declared stages recorded for a version, oldest first."""
+        rows = self._con.execute(
+            "SELECT stage FROM stage_observations WHERE question = ? AND version = ? ORDER BY id",
+            (name, version),
+        )
+        return [stage for (stage,) in rows]
+
+    def passed_rechecks(self, name: str, version: str) -> list[tuple[str, StageName]]:
+        """Return the earlier version and the stage of each passing recheck to a version."""
+        rows = self._con.execute(
+            "SELECT from_version, stage FROM rechecks"
+            " WHERE question = ? AND to_version = ? AND result = 'passed' ORDER BY id",
+            (name, version),
+        )
+        return [(earlier, stage) for earlier, stage in rows]
+
+    def passed_calibrations(self, name: str, version: str) -> list[StageName]:
+        """Return the stage of each passing calibration of a version."""
+        rows = self._con.execute(
+            "SELECT stage FROM calibrations"
+            " WHERE question = ? AND version = ? AND result = 'passed' ORDER BY id",
+            (name, version),
+        )
+        return [stage for (stage,) in rows]
+
     def bank_changes(self, bank: Bank) -> list[tuple[Question, bool]]:
         """Return the questions whose version, or declared stage, the ledger lacks.
 
