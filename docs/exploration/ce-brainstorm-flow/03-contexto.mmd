@@ -1,0 +1,29 @@
+%% ce-brainstorm: 03-contexto
+flowchart TD
+  classDef state fill:#dbeafe,stroke:#1d4ed8,stroke-width:3px,color:#0b1f4d,font-weight:bold
+  classDef decision fill:#fef9c3,stroke:#a16207,color:#422006
+  classDef ask fill:#ffedd5,stroke:#c2410c,color:#431407
+  classDef ext fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#2e1065
+  classDef stop fill:#e5e7eb,stroke:#374151,color:#111827
+  classDef go fill:#f1f5f9,stroke:#64748b,stroke-dasharray:4 3,color:#0f172a
+
+  S_TIER(["ESTADO: escopo classificado"]) --> A_PACKS["1.1 Descobre packs<br/>packs-resolve.py"]
+  A_PACKS --> D_FASTP{"Caminho rápido?"}
+  D_FASTP -- "sim, tudo já foi dito" --> S_READY(["ESTADO: ideia entendida"])
+  S_READY --> GO5>"Etapa 5: abordagens"]
+  D_FASTP -- "sim, ainda falta algo" --> S_DIALOG
+  D_FASTP -- não --> D_DEPTH{"Tier?"}
+  D_DEPTH -- Lightweight --> A_LSEARCH["Procura o tema no código"]
+  A_LSEARCH --> A_PRESS
+  D_DEPTH -- "Standard ou Deep" --> A_CONSTR["Lê STRATEGY.md e CONCEPTS.md"]
+  A_CONSTR --> A_SCRATCH["Cria pasta temporária"]
+  A_SCRATCH -.-> A_SCOUT["Grounding scout<br/>grava grounding.md"]
+  A_SCRATCH --> D_SLACK{"Você pediu Slack<br/>e há ferramentas?"}
+  D_SLACK -.->|sim| A_SLACK["Subagente slack-researcher"]
+  D_SLACK -- "segue sem esperar" --> A_PRESS["1.2 Pressure test interno:<br/>anota as lacunas do pedido"]
+  A_PRESS --> S_DIALOG(["ESTADO: em diálogo"])
+  S_DIALOG --> GO4>"Etapa 4: diálogo"]
+
+  class S_TIER,S_READY,S_DIALOG state
+  class D_FASTP,D_DEPTH,D_SLACK decision
+  class GO4,GO5 go

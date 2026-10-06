@@ -1,0 +1,49 @@
+%% ce-brainstorm: 04-dialogo
+flowchart TD
+  classDef state fill:#dbeafe,stroke:#1d4ed8,stroke-width:3px,color:#0b1f4d,font-weight:bold
+  classDef decision fill:#fef9c3,stroke:#a16207,color:#422006
+  classDef ask fill:#ffedd5,stroke:#c2410c,color:#431407
+  classDef ext fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#2e1065
+  classDef stop fill:#e5e7eb,stroke:#374151,color:#111827
+  classDef go fill:#f1f5f9,stroke:#64748b,stroke-dasharray:4 3,color:#0f172a
+
+  S_DIALOG(["ESTADO: em diálogo"]) --> D_GATE{"1.3 Antes da próxima pergunta:<br/>algum gatilho vale?"}
+  D_GATE -- conflito --> Q_CONFLICT[/"Aponta conflito com<br/>CONCEPTS.md ou código"/]
+  D_GATE -- "território desconhecido" --> Q_BLIND[/"Mapear o território primeiro?"/]
+  Q_BLIND -- sim --> A_MAP["Mapa de 3 a 7<br/>decisões e riscos"]
+  A_MAP --> Q_WALK[/"Quais quer percorrer?"/]
+  D_GATE -- "decisão visual" --> Q_VISUAL[/"Rascunho visual ou texto?"/]
+  Q_VISUAL -- visual --> A_SKETCH["Sobe light-webserver.js<br/>e mostra o rascunho"]
+  D_GATE -- "cara de desfazer" --> Q_PROTO[/"Prototipar com ce-prototype?"/]
+  Q_PROTO -- sim --> PROTO[["ce-prototype"]]
+  D_GATE -- "dúvida sobre o sistema" --> EXPLAIN[["ce-explain"]]
+  D_GATE -- "virou veredito" --> Q_POV[/"Quer um veredito do ce-pov?"/]
+  Q_POV -- sim --> POV[["ce-pov"]]
+  POV --> END_POV(("ce-pov assume<br/>a sessão"))
+  D_GATE -- nenhum --> Q_NEXT[/"Próxima pergunta, uma por turno:<br/>lacuna da 1.2 ou estreitamento"/]
+
+  Q_CONFLICT --> D_EXIT
+  Q_BLIND -- não --> D_EXIT
+  Q_WALK --> D_EXIT
+  Q_VISUAL -- texto --> D_EXIT
+  A_SKETCH --> D_EXIT
+  Q_PROTO -- não --> D_EXIT
+  PROTO --> D_EXIT
+  EXPLAIN --> D_EXIT
+  Q_POV -- não --> D_EXIT
+  Q_NEXT --> D_EXIT
+
+  D_EXIT{"Condição de saída?<br/>ator, resultado, limites,<br/>sucesso, lacunas tratadas"}
+  D_EXIT -- não --> S_DIALOG
+  D_EXIT -- sim --> D_INTEG{"Combinação de respostas<br/>com consequência não óbvia?"}
+  D_INTEG -- sim --> Q_INTEG[/"Pergunta sobre a consequência"/]
+  Q_INTEG --> S_DIALOG
+  D_INTEG -- não --> S_READY(["ESTADO: ideia entendida"])
+  S_READY --> GO>"Etapa 5: abordagens"]
+
+  class S_DIALOG,S_READY state
+  class D_GATE,D_EXIT,D_INTEG decision
+  class Q_CONFLICT,Q_BLIND,Q_WALK,Q_VISUAL,Q_PROTO,Q_POV,Q_NEXT,Q_INTEG ask
+  class PROTO,EXPLAIN,POV ext
+  class END_POV stop
+  class GO go

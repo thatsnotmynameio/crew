@@ -1,0 +1,32 @@
+%% ce-brainstorm: 02-escopo
+flowchart TD
+  classDef state fill:#dbeafe,stroke:#1d4ed8,stroke-width:3px,color:#0b1f4d,font-weight:bold
+  classDef decision fill:#fef9c3,stroke:#a16207,color:#422006
+  classDef ask fill:#ffedd5,stroke:#c2410c,color:#431407
+  classDef ext fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#2e1065
+  classDef stop fill:#e5e7eb,stroke:#374151,color:#111827
+  classDef go fill:#f1f5f9,stroke:#64748b,stroke-dasharray:4 3,color:#0f172a
+
+  S_SW(["ESTADO: pedido de software"]) --> D_CLEAR{"0.2 Requisitos<br/>já claros?"}
+  D_CLEAR -- sim --> A_FAST["Marca caminho rápido:<br/>sem scan, scout e pressure test"]
+  A_FAST --> A_TIER
+  D_CLEAR -- não --> A_TIER["0.3 Classifica o tier:<br/>Lightweight, Standard ou Deep"]
+  A_TIER --> D_TIER{"Tier claro?"}
+  D_TIER -- não --> Q_TIER[/"Uma pergunta de escopo"/]
+  Q_TIER --> A_HEAVY["Se continua incerto,<br/>escolhe o tier mais pesado"]
+  A_HEAVY --> D_SPLIT
+  D_TIER -- sim --> D_SPLIT{"Mais de um resultado<br/>independente?"}
+  D_SPLIT -- sim --> Q_SPLIT[/"Propõe divisão:<br/>qual área este brainstorm cobre?"/]
+  Q_SPLIT --> A_CTX["As outras áreas viram contexto"]
+  A_CTX --> A_TRIP
+  D_SPLIT -- não --> A_TRIP["Arma os gatilhos:<br/>visual, território desconhecido"]
+  A_TRIP --> S_TIER(["ESTADO: escopo classificado"])
+  S_TIER --> D_TASKS{"Standard<br/>ou Deep?"}
+  D_TASKS -- sim --> A_TASKS["0.4 Cria as 5 tarefas"]
+  A_TASKS --> GO
+  D_TASKS -- não --> GO>"Etapa 3: contexto"]
+
+  class S_SW,S_TIER state
+  class D_CLEAR,D_TIER,D_SPLIT,D_TASKS decision
+  class Q_TIER,Q_SPLIT ask
+  class GO go

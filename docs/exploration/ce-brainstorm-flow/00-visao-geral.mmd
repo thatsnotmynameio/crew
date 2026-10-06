@@ -1,0 +1,34 @@
+%% ce-brainstorm: 00-visao-geral
+flowchart TD
+  classDef state fill:#dbeafe,stroke:#1d4ed8,stroke-width:3px,color:#0b1f4d,font-weight:bold
+  classDef decision fill:#fef9c3,stroke:#a16207,color:#422006
+  classDef ask fill:#ffedd5,stroke:#c2410c,color:#431407
+  classDef ext fill:#ede9fe,stroke:#6d28d9,stroke-width:2px,color:#2e1065
+  classDef stop fill:#e5e7eb,stroke:#374151,color:#111827
+  classDef go fill:#f1f5f9,stroke:#64748b,stroke-dasharray:4 3,color:#0f172a
+
+  START(("Chamada")) --> S_IN(["ESTADO: pedido recebido"])
+  S_IN -->|"Etapa 1"| S_SW(["ESTADO: pedido de software"])
+  S_IN -->|"Etapa 1"| END_DIRECT(("Responde direto"))
+  S_IN -->|"Etapa 1"| END_UNIV(("Rota não-software"))
+  S_IN -->|"Etapa 1"| POV[["ce-pov"]]
+  S_SW -->|"Etapa 2"| S_TIER(["ESTADO: escopo classificado"])
+  S_TIER -->|"Etapa 3"| S_DIALOG(["ESTADO: em diálogo"])
+  S_TIER -->|"Etapa 3, caminho rápido<br/>sem diálogo"| S_READY
+  S_DIALOG -->|"Etapa 4, em laço"| S_READY(["ESTADO: ideia entendida"])
+  S_READY -->|"Etapa 5"| S_APPROACH(["ESTADO: abordagem escolhida"])
+  S_READY -->|"Lightweight ou caminho rápido:<br/>pula a Etapa 5"| S_WAIT
+  S_APPROACH -->|"Etapa 6"| S_WAIT(["ESTADO: aguardando confirmação"])
+  S_WAIT -->|"Etapa 6: confirma"| S_CONFIRMED(["ESTADO: escopo confirmado"])
+  S_WAIT -->|"Etapa 6: hold off"| S_DIALOG
+  S_CONFIRMED -->|"Etapa 7"| S_PLAN(["ESTADO: plano escrito e validado"])
+  S_CONFIRMED -->|"Etapa 7"| S_CHAT(["ESTADO: resultado no chat"])
+  S_PLAN -->|"Etapa 8"| S_MENU(["ESTADO: handoff, menu apresentado"])
+  S_CHAT -->|"Etapa 8"| S_MENU
+  S_MENU -->|"mais perguntas"| S_DIALOG
+  S_MENU --> NEXT[["ce-plan, lfg, ce-doc-review<br/>ou ce-prototype"]]
+  S_MENU --> END_SUMMARY(("Resumo final"))
+
+  class S_IN,S_SW,S_TIER,S_DIALOG,S_READY,S_APPROACH,S_WAIT,S_CONFIRMED,S_PLAN,S_CHAT,S_MENU state
+  class POV,NEXT ext
+  class START,END_DIRECT,END_UNIV,END_SUMMARY stop
