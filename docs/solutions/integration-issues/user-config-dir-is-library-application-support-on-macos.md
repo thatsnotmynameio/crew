@@ -47,11 +47,14 @@ func configDir(getenv func(string) string) (string, error) {
 	if home == "" {
 		return "", errors.New("neither $XDG_CONFIG_HOME nor $HOME is set")
 	}
+	if !filepath.IsAbs(home) {
+		return "", errors.New("$HOME is a relative path")
+	}
 	return filepath.Join(home, ".config"), nil
 }
 ```
 
-Linux behaves exactly as before: a relative `XDG_CONFIG_HOME`, or neither variable set, is still an error, which `DefaultStore` wraps as an `EnvError`. Nothing is migrated. A bot saved under `~/Library/Application Support/crew` stays there, and crew no longer reads it, as #215 asked. No released binary is affected, because v0.1.0 predates bots.
+Linux behaves as before: a relative `XDG_CONFIG_HOME`, or neither variable set, is still an error, which `DefaultStore` wraps as an `EnvError`. The one addition is that a relative `HOME` is an error too, where Go would have used it: the store would otherwise land relative to crew's working directory, which is usually inside the repository (raised in review on #216). Nothing is migrated. A bot saved under `~/Library/Application Support/crew` stays there, and crew no longer reads it, as #215 asked. No released binary is affected, because v0.1.0 predates bots.
 
 ## Why This Works
 

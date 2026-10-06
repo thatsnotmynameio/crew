@@ -75,7 +75,7 @@ func DefaultStore() (*Store, error) {
 }
 
 // configDir returns your user config directory, the same on every OS:
-// $XDG_CONFIG_HOME, which must be absolute, else $HOME/.config. Not
+// $XDG_CONFIG_HOME, else $HOME/.config, either of which must be absolute. Not
 // os.UserConfigDir: on macOS it returns ~/Library/Application Support.
 func configDir(getenv func(string) string) (string, error) {
 	if dir := getenv("XDG_CONFIG_HOME"); dir != "" {
@@ -87,6 +87,9 @@ func configDir(getenv func(string) string) (string, error) {
 	home := getenv("HOME")
 	if home == "" {
 		return "", errors.New("neither $XDG_CONFIG_HOME nor $HOME is set")
+	}
+	if !filepath.IsAbs(home) {
+		return "", errors.New("$HOME is a relative path")
 	}
 	return filepath.Join(home, ".config"), nil
 }

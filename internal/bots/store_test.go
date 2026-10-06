@@ -186,6 +186,7 @@ func TestConfigDirIsXDGConfigHomeElseDotConfig(t *testing.T) {
 		{env: map[string]string{"XDG_CONFIG_HOME": "/xdg", "HOME": "/home/b"}, want: "/xdg"},
 		{env: map[string]string{"HOME": "/home/b"}, want: "/home/b/.config"},
 		{env: map[string]string{"XDG_CONFIG_HOME": "xdg", "HOME": "/home/b"}, wantErr: true},
+		{env: map[string]string{"HOME": "home/b"}, wantErr: true},
 		{env: map[string]string{}, wantErr: true},
 	} {
 		got, err := configDir(func(k string) string { return tc.env[k] })
