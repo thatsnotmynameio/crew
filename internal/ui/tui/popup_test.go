@@ -244,6 +244,36 @@ func TestABlockedIssueWithNoLabelsShowsTheBlockedChipAlone(t *testing.T) {
 	}
 }
 
+// Covers R3 and R5 of #229: a blocked issue that also carries a label named
+// blocked shows blocked once, as the blocked chip; an issue nothing blocks
+// keeps that label as a plain chip.
+func TestALabelNamedBlockedGivesWayToTheBlockedChip(t *testing.T) {
+	h := newHarness(t, 120)
+	h.send(updateMsg(onBoard(held(headerIssue, "implement", "code", core.ClaimRunning),
+		labeled(headerIssue, "blocked", "bug"))))
+	h.send(enterKey)
+
+	got := strings.Fields(field(t, popupRows(t, h), "labels"))
+	if !slices.Equal(got, []string{"in", "progress", "bug", "blocked"}) {
+		t.Errorf("labels = %q, want in progress, bug, then blocked once", got)
+	}
+	if !strings.Contains(h.raw(), blockedChip(darkPalette())) {
+		t.Error("the one blocked is not the blocked chip")
+	}
+
+	free := headerIssue
+	free.Blocked = false
+	h.send(updateMsg(onBoard(held(free, "implement", "code", core.ClaimRunning),
+		labeled(free, "blocked", "bug"))))
+	got = strings.Fields(field(t, popupRows(t, h), "labels"))
+	if !slices.Equal(got, []string{"in", "progress", "blocked", "bug"}) {
+		t.Errorf("labels = %q, want the label blocked in its place", got)
+	}
+	if strings.Contains(h.raw(), blockedChip(darkPalette())) {
+		t.Error("an issue nothing blocks shows the blocked chip")
+	}
+}
+
 // Covers AE5, R3 and KTD3 of #229: a held issue's view keeps the issue as
 // core took it, unblocked, while its board item is blocked; its popup
 // shows the blocked chip.

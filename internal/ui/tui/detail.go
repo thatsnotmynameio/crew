@@ -79,17 +79,19 @@ func (m Model) chips(c card) string {
 	if i >= 0 {
 		labels = append(labels, m.snap.Board[i].Labels...)
 	}
-	out := make([]string, 0, len(labels))
-	seen := map[string]bool{}
+	blocked := c.issue.Blocked
+	if i >= 0 {
+		blocked = m.snap.Board[i].Issue.Blocked
+	}
+	out := make([]string, 0, len(labels)+1)
+	// A label named blocked on a blocked issue gives way to the blocked
+	// chip, so the popup does not show blocked twice.
+	seen := map[string]bool{"blocked": blocked}
 	for _, l := range labels {
 		if l = clean(l); l != "" && !seen[l] {
 			seen[l] = true
 			out = append(out, m.styles.chip.Render(l))
 		}
-	}
-	blocked := c.issue.Blocked
-	if i >= 0 {
-		blocked = m.snap.Board[i].Issue.Blocked
 	}
 	if blocked {
 		out = append(out, m.styles.blockedChip.Render("blocked"))
