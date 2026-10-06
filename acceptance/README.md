@@ -300,6 +300,8 @@ harness.MatchSnapshot(t, "board-with-one-issue", text)
 go -C acceptance run ./cmd/acceptance -run TestBoard -accept-snapshots
 ```
 
+A test that has already failed when it reaches `MatchSnapshot` does not write its snapshot, even with the flag: it fails again, saying the snapshot was not written. So make the content assertions on a screen before matching its snapshot, and a screen that breaks one is never accepted.
+
 ### Violations
 
 A violation is a call the doubles do not know: a `gh` subcommand, endpoint, flag, header or GraphQL field the fake GitHub does not emulate, or a `claude` invocation that no script matches. The double exits 1 and the server journals the call. The scenario fails, naming the call as a shell-quoted command line with the reason:
