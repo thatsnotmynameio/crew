@@ -1,0 +1,96 @@
+# typesafe-judge: crew's local TypeSafe judge. It asks a repository's named
+# questions, and keeps every ask, decision and outcome in a SQLite ledger.
+# Run every tool from the repository root through uv, for example
+# `uv run --project typesafe --locked ruff check typesafe` (AGENTS.md).
+[project]
+name = "typesafe-judge"
+version = "0.1.0"
+description = "crew's local TypeSafe judge: named questions, recorded answers, and a decision ledger"
+requires-python = ">=3.14"
+license = "MIT"
+dependencies = [
+    "pydantic==2.13.5",
+    "pyyaml==6.0.3",
+    "rfc8785==0.1.4",
+    "typesafe-sdk==0.7.2",
+]
+
+[project.scripts]
+typesafe-judge = "typesafe_judge.cli:main"
+
+[dependency-groups]
+dev = [
+    "coverage==7.16.2",
+    "diff-cover==10.6.0",
+    "hypothesis==6.168.5",
+    "lizard==1.24.1",
+    "mypy==2.4.0",
+    "pip-audit==2.10.1",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+    "types-PyYAML==6.0.12.20260906",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv]
+# A range, not an exact version: Dependabot's uv fails on an exact mismatch.
+required-version = ">=0.12.10,<0.13"
+# Only uv's own CPython builds: the python.org 3.14 installers for macOS link
+# an SQLite older than the ledger needs.
+python-preference = "only-managed"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812", # conflicts with the formatter
+    "CPY001", # LICENSE covers every file; crew's sources carry no header
+    "D203",   # conflicts with D211 (no blank line before a class docstring)
+    "D213",   # conflicts with D212 (the summary on the docstring's first line)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "D1",      # test names say what each test checks
+    "INP001",  # pytest imports the tests in importlib mode, not as a package
+    "PLR2004", # tests compare with literal expected values
+    "S101",    # pytest's assert
+]
+
+[tool.ruff.lint.mccabe]
+# Lizard's CCN limit (.codacy/codacy.config.json). Ruff does not count boolean
+# operators or comprehensions, so CI's lizard step stays the owner.
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+# Lizard's limit is 8 parameters counting self; ruff does not count self.
+max-args = 7
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
+strict = true
+
+# Paths are relative to the repository root, where CI runs coverage with
+# --rcfile=typesafe/pyproject.toml, so coverage.xml names typesafe/src/...
+[tool.coverage.run]
+source = ["typesafe/src"]
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true

@@ -7,13 +7,14 @@
     "repositoryId": null,
     "repositoryName": null,
     "createdAt": "2026-10-03T01:12:04.280Z",
-    "updatedAt": "2026-10-05T23:24:40.131Z",
+    "updatedAt": "2026-10-06T01:43:02.639Z",
     "languages": [
       "Go",
       "HTML",
       "JSON",
       "Javascript",
       "Markdown",
+      "Python",
       "Shell",
       "TypeScript",
       "YAML"
@@ -312,6 +313,174 @@
         },
         {
           "patternId": "Semgrep_bash.curl.security.curl-eval.curl-eval"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.empty-aes-key.empty-aes-key"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-algorithms-arc4.insecure-cipher-algorithm-arc4"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-algorithms-blowfish.insecure-cipher-algorithm-blowfish"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-algorithms.insecure-cipher-algorithm-idea"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-mode-ecb.insecure-cipher-mode-ecb"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insufficient-dsa-key-size.insufficient-dsa-key-size"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insufficient-ec-key-size.insufficient-ec-key-size"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insufficient-rsa-key-size.insufficient-rsa-key-size"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.mode-without-authentication.crypto-mode-without-authentication"
+        },
+        {
+          "patternId": "Semgrep_python_crypto_rule-HTTPConnectionPool"
+        },
+        {
+          "patternId": "Semgrep_python.distributed.security.require-encryption"
+        },
+        {
+          "patternId": "Semgrep_python_flask_rule-path-traversal-open"
+        },
+        {
+          "patternId": "Semgrep_python_jwt_rule-jwt-none-alg"
+        },
+        {
+          "patternId": "Semgrep_python.jwt.security.jwt-hardcode.jwt-python-hardcoded-secret"
+        },
+        {
+          "patternId": "Semgrep_python.jwt.security.jwt-none-alg.jwt-python-none-alg"
+        },
+        {
+          "patternId": "Semgrep_python.jwt.security.unverified-jwt-decode.unverified-jwt-decode"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-asyncio-exec-tainted-env-args.dangerous-asyncio-exec-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-asyncio-shell-tainted-env-args.dangerous-asyncio-shell-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-code-run-tainted-env-args.dangerous-interactive-code-run-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-spawn-process-tainted-env-args.dangerous-spawn-process-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-subinterpreters-run-string-tainted-env-args.dangerous-subinterpreters-run-string-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-system-call-tainted-env-args.dangerous-system-call-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-testcapi-run-in-subinterp-tainted-env-args.dangerous-testcapi-run-in-subinterp-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-file-permissions.insecure-file-permissions"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-transport.requests.request-session-http-in-with-context.request-session-http-in-with-context"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-transport.requests.request-session-with-http.request-session-with-http"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-transport.requests.request-with-http.request-with-http"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.md5-used-as-password.md5-used-as-password"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.network.bind.avoid-bind-to-all-interfaces"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.network.disabled-cert-validation.disabled-cert-validation"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.network.http-not-https-connection.http-not-https-connection"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.ssl-wrap-socket-is-deprecated.ssl-wrap-socket-is-deprecated"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.subprocess-shell-true.subprocess-shell-true"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.weak-ssl-version.weak-ssl-version"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-code-run.dangerous-interactive-code-run"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-os-exec.dangerous-os-exec"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-spawn-process.dangerous-spawn-process"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-subinterpreters-run-string.dangerous-subinterpreters-run-string"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-subprocess-use.dangerous-subprocess-use"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-system-call.dangerous-system-call"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-testcapi-run-in-subinterp.dangerous-testcapi-run-in-subinterp"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.deserialization.avoid-pyyaml-load.avoid-pyyaml-load"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.deserialization.avoid-unsafe-ruamel.avoid-unsafe-ruamel"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.deserialization.pickle.avoid-shelve"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-hash-function.insecure-hash-function"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-uuid-version.insecure-uuid-version"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.unverified-ssl-context.unverified-ssl-context"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.use-defused-xml-parse.use-defused-xml-parse"
+        },
+        {
+          "patternId": "Semgrep_python_pyramid_rule-pyramid-csrf-origin-check"
         }
       ]
     },
@@ -659,6 +828,7 @@
     }
   ],
   "exclude": [
-    "node_modules/**"
+    "node_modules/**",
+    "typesafe/.venv/**"
   ]
 }

@@ -6,14 +6,15 @@
     "organization": null,
     "repositoryId": null,
     "repositoryName": null,
-    "createdAt": "2026-10-05T23:24:40.058Z",
-    "updatedAt": "2026-10-05T23:24:40.058Z",
+    "createdAt": "2026-10-06T01:43:02.637Z",
+    "updatedAt": "2026-10-06T01:43:02.637Z",
     "languages": [
       "Go",
       "HTML",
       "JSON",
       "Javascript",
       "Markdown",
+      "Python",
       "Shell",
       "TypeScript",
       "YAML"
@@ -233,6 +234,548 @@
         },
         {
           "patternId": "shellcheck_SC2148"
+        }
+      ]
+    },
+    {
+      "toolId": "Ruff",
+      "patterns": [
+        {
+          "patternId": "Ruff_B002_unary-prefix-increment-decrement"
+        },
+        {
+          "patternId": "Ruff_B003_assignment-to-os-environ"
+        },
+        {
+          "patternId": "Ruff_B004_unreliable-callable-check"
+        },
+        {
+          "patternId": "Ruff_B005_strip-with-multi-characters"
+        },
+        {
+          "patternId": "Ruff_B006_mutable-argument-default"
+        },
+        {
+          "patternId": "Ruff_B007_unused-loop-control-variable"
+        },
+        {
+          "patternId": "Ruff_B008_function-call-in-default-argument"
+        },
+        {
+          "patternId": "Ruff_B009_get-attr-with-constant"
+        },
+        {
+          "patternId": "Ruff_B010_set-attr-with-constant"
+        },
+        {
+          "patternId": "Ruff_B011_assert-false"
+        },
+        {
+          "patternId": "Ruff_B012_jump-statement-in-finally"
+        },
+        {
+          "patternId": "Ruff_B013_redundant-tuple-in-exception-handler"
+        },
+        {
+          "patternId": "Ruff_B014_duplicate-handler-exception"
+        },
+        {
+          "patternId": "Ruff_B015_useless-comparison"
+        },
+        {
+          "patternId": "Ruff_B016_raise-literal"
+        },
+        {
+          "patternId": "Ruff_B017_assert-raises-exception"
+        },
+        {
+          "patternId": "Ruff_B018_useless-expression"
+        },
+        {
+          "patternId": "Ruff_B019_cached-instance-method"
+        },
+        {
+          "patternId": "Ruff_B020_loop-variable-overrides-iterator"
+        },
+        {
+          "patternId": "Ruff_B021_f-string-docstring"
+        },
+        {
+          "patternId": "Ruff_B022_useless-contextlib-suppress"
+        },
+        {
+          "patternId": "Ruff_B023_function-uses-loop-variable"
+        },
+        {
+          "patternId": "Ruff_B024_abstract-base-class-without-abstract-method"
+        },
+        {
+          "patternId": "Ruff_B025_duplicate-try-block-exception"
+        },
+        {
+          "patternId": "Ruff_B026_star-arg-unpacking-after-keyword-arg"
+        },
+        {
+          "patternId": "Ruff_B027_empty-method-without-abstract-decorator"
+        },
+        {
+          "patternId": "Ruff_B028_no-explicit-stacklevel"
+        },
+        {
+          "patternId": "Ruff_B029_except-with-empty-tuple"
+        },
+        {
+          "patternId": "Ruff_B030_except-with-non-exception-classes"
+        },
+        {
+          "patternId": "Ruff_B031_reuse-of-groupby-generator"
+        },
+        {
+          "patternId": "Ruff_B032_unintentional-type-annotation"
+        },
+        {
+          "patternId": "Ruff_B033_duplicate-value"
+        },
+        {
+          "patternId": "Ruff_B034_re-sub-positional-args"
+        },
+        {
+          "patternId": "Ruff_B035_static-key-dict-comprehension"
+        },
+        {
+          "patternId": "Ruff_B039_mutable-contextvar-default"
+        },
+        {
+          "patternId": "Ruff_B901_return-in-generator"
+        },
+        {
+          "patternId": "Ruff_B903_class-as-data-structure"
+        },
+        {
+          "patternId": "Ruff_B904_raise-without-from-inside-except"
+        },
+        {
+          "patternId": "Ruff_B905_zip-without-explicit-strict"
+        },
+        {
+          "patternId": "Ruff_B909_loop-iterator-mutation"
+        },
+        {
+          "patternId": "Ruff_B911_batched-without-explicit-strict"
+        },
+        {
+          "patternId": "Ruff_C901_complex-structure"
+        },
+        {
+          "patternId": "Ruff_E101_mixed-spaces-and-tabs"
+        },
+        {
+          "patternId": "Ruff_E111_indentation-with-invalid-multiple"
+        },
+        {
+          "patternId": "Ruff_E112_no-indented-block"
+        },
+        {
+          "patternId": "Ruff_E113_unexpected-indentation"
+        },
+        {
+          "patternId": "Ruff_E114_indentation-with-invalid-multiple-comment"
+        },
+        {
+          "patternId": "Ruff_E115_no-indented-block-comment"
+        },
+        {
+          "patternId": "Ruff_E116_unexpected-indentation-comment"
+        },
+        {
+          "patternId": "Ruff_E117_over-indented"
+        },
+        {
+          "patternId": "Ruff_E201_whitespace-after-open-bracket"
+        },
+        {
+          "patternId": "Ruff_E202_whitespace-before-close-bracket"
+        },
+        {
+          "patternId": "Ruff_E203_whitespace-before-punctuation"
+        },
+        {
+          "patternId": "Ruff_E204_whitespace-after-decorator"
+        },
+        {
+          "patternId": "Ruff_E211_whitespace-before-parameters"
+        },
+        {
+          "patternId": "Ruff_E221_multiple-spaces-before-operator"
+        },
+        {
+          "patternId": "Ruff_E222_multiple-spaces-after-operator"
+        },
+        {
+          "patternId": "Ruff_E223_tab-before-operator"
+        },
+        {
+          "patternId": "Ruff_E224_tab-after-operator"
+        },
+        {
+          "patternId": "Ruff_E225_missing-whitespace-around-operator"
+        },
+        {
+          "patternId": "Ruff_E226_missing-whitespace-around-arithmetic-operator"
+        },
+        {
+          "patternId": "Ruff_E227_missing-whitespace-around-bitwise-or-shift-operator"
+        },
+        {
+          "patternId": "Ruff_E228_missing-whitespace-around-modulo-operator"
+        },
+        {
+          "patternId": "Ruff_E231_missing-whitespace"
+        },
+        {
+          "patternId": "Ruff_E241_multiple-spaces-after-comma"
+        },
+        {
+          "patternId": "Ruff_E242_tab-after-comma"
+        },
+        {
+          "patternId": "Ruff_E251_unexpected-spaces-around-keyword-parameter-equals"
+        },
+        {
+          "patternId": "Ruff_E252_missing-whitespace-around-parameter-equals"
+        },
+        {
+          "patternId": "Ruff_E261_too-few-spaces-before-inline-comment"
+        },
+        {
+          "patternId": "Ruff_E262_no-space-after-inline-comment"
+        },
+        {
+          "patternId": "Ruff_E265_no-space-after-block-comment"
+        },
+        {
+          "patternId": "Ruff_E266_multiple-leading-hashes-for-block-comment"
+        },
+        {
+          "patternId": "Ruff_E271_multiple-spaces-after-keyword"
+        },
+        {
+          "patternId": "Ruff_E272_multiple-spaces-before-keyword"
+        },
+        {
+          "patternId": "Ruff_E273_tab-after-keyword"
+        },
+        {
+          "patternId": "Ruff_E274_tab-before-keyword"
+        },
+        {
+          "patternId": "Ruff_E275_missing-whitespace-after-keyword"
+        },
+        {
+          "patternId": "Ruff_E301_blank-line-between-methods"
+        },
+        {
+          "patternId": "Ruff_E302_blank-lines-top-level"
+        },
+        {
+          "patternId": "Ruff_E303_too-many-blank-lines"
+        },
+        {
+          "patternId": "Ruff_E304_blank-line-after-decorator"
+        },
+        {
+          "patternId": "Ruff_E305_blank-lines-after-function-or-class"
+        },
+        {
+          "patternId": "Ruff_E306_blank-lines-before-nested-definition"
+        },
+        {
+          "patternId": "Ruff_E401_multiple-imports-on-one-line"
+        },
+        {
+          "patternId": "Ruff_E402_module-import-not-at-top-of-file"
+        },
+        {
+          "patternId": "Ruff_E501_line-too-long"
+        },
+        {
+          "patternId": "Ruff_E502_redundant-backslash"
+        },
+        {
+          "patternId": "Ruff_E701_multiple-statements-on-one-line-colon"
+        },
+        {
+          "patternId": "Ruff_E702_multiple-statements-on-one-line-semicolon"
+        },
+        {
+          "patternId": "Ruff_E703_useless-semicolon"
+        },
+        {
+          "patternId": "Ruff_E711_none-comparison"
+        },
+        {
+          "patternId": "Ruff_E712_true-false-comparison"
+        },
+        {
+          "patternId": "Ruff_E713_not-in-test"
+        },
+        {
+          "patternId": "Ruff_E714_not-is-test"
+        },
+        {
+          "patternId": "Ruff_E721_type-comparison"
+        },
+        {
+          "patternId": "Ruff_E722_bare-except"
+        },
+        {
+          "patternId": "Ruff_E731_lambda-assignment"
+        },
+        {
+          "patternId": "Ruff_E741_ambiguous-variable-name"
+        },
+        {
+          "patternId": "Ruff_E742_ambiguous-class-name"
+        },
+        {
+          "patternId": "Ruff_E743_ambiguous-function-name"
+        },
+        {
+          "patternId": "Ruff_E902_io-error"
+        },
+        {
+          "patternId": "Ruff_FA100_future-rewritable-type-annotation"
+        },
+        {
+          "patternId": "Ruff_FA102_future-required-type-annotation"
+        },
+        {
+          "patternId": "Ruff_S101_assert"
+        },
+        {
+          "patternId": "Ruff_S102_exec-builtin"
+        },
+        {
+          "patternId": "Ruff_S103_bad-file-permissions"
+        },
+        {
+          "patternId": "Ruff_S104_hardcoded-bind-all-interfaces"
+        },
+        {
+          "patternId": "Ruff_S105_hardcoded-password-string"
+        },
+        {
+          "patternId": "Ruff_S106_hardcoded-password-func-arg"
+        },
+        {
+          "patternId": "Ruff_S107_hardcoded-password-default"
+        },
+        {
+          "patternId": "Ruff_S108_hardcoded-temp-file"
+        },
+        {
+          "patternId": "Ruff_S110_try-except-pass"
+        },
+        {
+          "patternId": "Ruff_S112_try-except-continue"
+        },
+        {
+          "patternId": "Ruff_S113_request-without-timeout"
+        },
+        {
+          "patternId": "Ruff_S201_flask-debug-true"
+        },
+        {
+          "patternId": "Ruff_S202_tarfile-unsafe-members"
+        },
+        {
+          "patternId": "Ruff_S301_suspicious-pickle-usage"
+        },
+        {
+          "patternId": "Ruff_S302_suspicious-marshal-usage"
+        },
+        {
+          "patternId": "Ruff_S303_suspicious-insecure-hash-usage"
+        },
+        {
+          "patternId": "Ruff_S304_suspicious-insecure-cipher-usage"
+        },
+        {
+          "patternId": "Ruff_S305_suspicious-insecure-cipher-mode-usage"
+        },
+        {
+          "patternId": "Ruff_S306_suspicious-mktemp-usage"
+        },
+        {
+          "patternId": "Ruff_S307_suspicious-eval-usage"
+        },
+        {
+          "patternId": "Ruff_S308_suspicious-mark-safe-usage"
+        },
+        {
+          "patternId": "Ruff_S310_suspicious-url-open-usage"
+        },
+        {
+          "patternId": "Ruff_S311_suspicious-non-cryptographic-random-usage"
+        },
+        {
+          "patternId": "Ruff_S312_suspicious-telnet-usage"
+        },
+        {
+          "patternId": "Ruff_S313_suspicious-xmlc-element-tree-usage"
+        },
+        {
+          "patternId": "Ruff_S314_suspicious-xml-element-tree-usage"
+        },
+        {
+          "patternId": "Ruff_S315_suspicious-xml-expat-reader-usage"
+        },
+        {
+          "patternId": "Ruff_S316_suspicious-xml-expat-builder-usage"
+        },
+        {
+          "patternId": "Ruff_S317_suspicious-xml-sax-usage"
+        },
+        {
+          "patternId": "Ruff_S318_suspicious-xml-mini-dom-usage"
+        },
+        {
+          "patternId": "Ruff_S319_suspicious-xml-pull-dom-usage"
+        },
+        {
+          "patternId": "Ruff_S321_suspicious-ftp-lib-usage"
+        },
+        {
+          "patternId": "Ruff_S323_suspicious-unverified-context-usage"
+        },
+        {
+          "patternId": "Ruff_S324_hashlib-insecure-hash-function"
+        },
+        {
+          "patternId": "Ruff_S401_suspicious-telnetlib-import"
+        },
+        {
+          "patternId": "Ruff_S402_suspicious-ftplib-import"
+        },
+        {
+          "patternId": "Ruff_S403_suspicious-pickle-import"
+        },
+        {
+          "patternId": "Ruff_S404_suspicious-subprocess-import"
+        },
+        {
+          "patternId": "Ruff_S405_suspicious-xml-etree-import"
+        },
+        {
+          "patternId": "Ruff_S406_suspicious-xml-sax-import"
+        },
+        {
+          "patternId": "Ruff_S407_suspicious-xml-expat-import"
+        },
+        {
+          "patternId": "Ruff_S408_suspicious-xml-minidom-import"
+        },
+        {
+          "patternId": "Ruff_S409_suspicious-xml-pulldom-import"
+        },
+        {
+          "patternId": "Ruff_S411_suspicious-xmlrpc-import"
+        },
+        {
+          "patternId": "Ruff_S412_suspicious-httpoxy-import"
+        },
+        {
+          "patternId": "Ruff_S413_suspicious-pycrypto-import"
+        },
+        {
+          "patternId": "Ruff_S415_suspicious-pyghmi-import"
+        },
+        {
+          "patternId": "Ruff_S501_request-with-no-cert-validation"
+        },
+        {
+          "patternId": "Ruff_S502_ssl-insecure-version"
+        },
+        {
+          "patternId": "Ruff_S503_ssl-with-bad-defaults"
+        },
+        {
+          "patternId": "Ruff_S504_ssl-with-no-version"
+        },
+        {
+          "patternId": "Ruff_S505_weak-cryptographic-key"
+        },
+        {
+          "patternId": "Ruff_S506_unsafe-yaml-load"
+        },
+        {
+          "patternId": "Ruff_S507_ssh-no-host-key-verification"
+        },
+        {
+          "patternId": "Ruff_S508_snmp-insecure-version"
+        },
+        {
+          "patternId": "Ruff_S509_snmp-weak-cryptography"
+        },
+        {
+          "patternId": "Ruff_S601_paramiko-call"
+        },
+        {
+          "patternId": "Ruff_S602_subprocess-popen-with-shell-equals-true"
+        },
+        {
+          "patternId": "Ruff_S603_subprocess-without-shell-equals-true"
+        },
+        {
+          "patternId": "Ruff_S604_call-with-shell-equals-true"
+        },
+        {
+          "patternId": "Ruff_S605_start-process-with-a-shell"
+        },
+        {
+          "patternId": "Ruff_S606_start-process-with-no-shell"
+        },
+        {
+          "patternId": "Ruff_S607_start-process-with-partial-path"
+        },
+        {
+          "patternId": "Ruff_S608_hardcoded-sql-expression"
+        },
+        {
+          "patternId": "Ruff_S609_unix-command-wildcard-injection"
+        },
+        {
+          "patternId": "Ruff_S610_django-extra"
+        },
+        {
+          "patternId": "Ruff_S611_django-raw-sql"
+        },
+        {
+          "patternId": "Ruff_S612_logging-config-insecure-listen"
+        },
+        {
+          "patternId": "Ruff_S701_jinja2-autoescape-false"
+        },
+        {
+          "patternId": "Ruff_S702_mako-templates"
+        },
+        {
+          "patternId": "Ruff_W191_tab-indentation"
+        },
+        {
+          "patternId": "Ruff_W292_missing-newline-at-end-of-file"
+        },
+        {
+          "patternId": "Ruff_W293_blank-line-with-whitespace"
+        },
+        {
+          "patternId": "Ruff_W391_too-many-newlines-at-end-of-file"
+        },
+        {
+          "patternId": "Ruff_W505_doc-line-too-long"
+        },
+        {
+          "patternId": "Ruff_W605_invalid-escape-sequence"
         }
       ]
     },
@@ -486,6 +1029,174 @@
         },
         {
           "patternId": "Semgrep_problem-based-packs.insecure-transport.js-node.telnet-request.telnet-request"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.empty-aes-key.empty-aes-key"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-algorithms-arc4.insecure-cipher-algorithm-arc4"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-algorithms-blowfish.insecure-cipher-algorithm-blowfish"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-algorithms.insecure-cipher-algorithm-idea"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-cipher-mode-ecb.insecure-cipher-mode-ecb"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insufficient-dsa-key-size.insufficient-dsa-key-size"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insufficient-ec-key-size.insufficient-ec-key-size"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.insufficient-rsa-key-size.insufficient-rsa-key-size"
+        },
+        {
+          "patternId": "Semgrep_python.cryptography.security.mode-without-authentication.crypto-mode-without-authentication"
+        },
+        {
+          "patternId": "Semgrep_python_crypto_rule-HTTPConnectionPool"
+        },
+        {
+          "patternId": "Semgrep_python.distributed.security.require-encryption"
+        },
+        {
+          "patternId": "Semgrep_python_flask_rule-path-traversal-open"
+        },
+        {
+          "patternId": "Semgrep_python_jwt_rule-jwt-none-alg"
+        },
+        {
+          "patternId": "Semgrep_python.jwt.security.jwt-hardcode.jwt-python-hardcoded-secret"
+        },
+        {
+          "patternId": "Semgrep_python.jwt.security.jwt-none-alg.jwt-python-none-alg"
+        },
+        {
+          "patternId": "Semgrep_python.jwt.security.unverified-jwt-decode.unverified-jwt-decode"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-asyncio-exec-tainted-env-args.dangerous-asyncio-exec-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-asyncio-shell-tainted-env-args.dangerous-asyncio-shell-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-code-run-tainted-env-args.dangerous-interactive-code-run-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-os-exec-tainted-env-args.dangerous-os-exec-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-spawn-process-tainted-env-args.dangerous-spawn-process-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-subinterpreters-run-string-tainted-env-args.dangerous-subinterpreters-run-string-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-system-call-tainted-env-args.dangerous-system-call-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.dangerous-testcapi-run-in-subinterp-tainted-env-args.dangerous-testcapi-run-in-subinterp-tainted-env-args"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-file-permissions.insecure-file-permissions"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-transport.requests.request-session-http-in-with-context.request-session-http-in-with-context"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-transport.requests.request-session-with-http.request-session-with-http"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.insecure-transport.requests.request-with-http.request-with-http"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.md5-used-as-password.md5-used-as-password"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.network.bind.avoid-bind-to-all-interfaces"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.network.disabled-cert-validation.disabled-cert-validation"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.network.http-not-https-connection.http-not-https-connection"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.ssl-wrap-socket-is-deprecated.ssl-wrap-socket-is-deprecated"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.subprocess-shell-true.subprocess-shell-true"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.audit.weak-ssl-version.weak-ssl-version"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-code-run.dangerous-interactive-code-run"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-os-exec.dangerous-os-exec"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-spawn-process.dangerous-spawn-process"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-subinterpreters-run-string.dangerous-subinterpreters-run-string"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-subprocess-use.dangerous-subprocess-use"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-system-call.dangerous-system-call"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.dangerous-testcapi-run-in-subinterp.dangerous-testcapi-run-in-subinterp"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.deserialization.avoid-pyyaml-load.avoid-pyyaml-load"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.deserialization.avoid-unsafe-ruamel.avoid-unsafe-ruamel"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.deserialization.pickle.avoid-shelve"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-hash-function.insecure-hash-function"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.insecure-uuid-version.insecure-uuid-version"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.unverified-ssl-context.unverified-ssl-context"
+        },
+        {
+          "patternId": "Semgrep_python.lang.security.use-defused-xml-parse.use-defused-xml-parse"
+        },
+        {
+          "patternId": "Semgrep_python_pyramid_rule-pyramid-csrf-origin-check"
         },
         {
           "patternId": "Semgrep_yaml.argo.security.argo-workflow-parameter-command-injection.argo-workflow-parameter-command-injection"
@@ -1541,6 +2252,490 @@
       ]
     },
     {
+      "toolId": "Bandit",
+      "patterns": [
+        {
+          "patternId": "Bandit_B101"
+        },
+        {
+          "patternId": "Bandit_B102"
+        },
+        {
+          "patternId": "Bandit_B103"
+        },
+        {
+          "patternId": "Bandit_B104"
+        },
+        {
+          "patternId": "Bandit_B105"
+        },
+        {
+          "patternId": "Bandit_B106"
+        },
+        {
+          "patternId": "Bandit_B107"
+        },
+        {
+          "patternId": "Bandit_B108"
+        },
+        {
+          "patternId": "Bandit_B110"
+        },
+        {
+          "patternId": "Bandit_B112"
+        },
+        {
+          "patternId": "Bandit_B202"
+        },
+        {
+          "patternId": "Bandit_B301"
+        },
+        {
+          "patternId": "Bandit_B302"
+        },
+        {
+          "patternId": "Bandit_B303"
+        },
+        {
+          "patternId": "Bandit_B304"
+        },
+        {
+          "patternId": "Bandit_B305"
+        },
+        {
+          "patternId": "Bandit_B306"
+        },
+        {
+          "patternId": "Bandit_B307"
+        },
+        {
+          "patternId": "Bandit_B309"
+        },
+        {
+          "patternId": "Bandit_B310"
+        },
+        {
+          "patternId": "Bandit_B311"
+        },
+        {
+          "patternId": "Bandit_B312"
+        },
+        {
+          "patternId": "Bandit_B313"
+        },
+        {
+          "patternId": "Bandit_B314"
+        },
+        {
+          "patternId": "Bandit_B315"
+        },
+        {
+          "patternId": "Bandit_B316"
+        },
+        {
+          "patternId": "Bandit_B317"
+        },
+        {
+          "patternId": "Bandit_B318"
+        },
+        {
+          "patternId": "Bandit_B319"
+        },
+        {
+          "patternId": "Bandit_B321"
+        },
+        {
+          "patternId": "Bandit_B322"
+        },
+        {
+          "patternId": "Bandit_B323"
+        },
+        {
+          "patternId": "Bandit_B324"
+        },
+        {
+          "patternId": "Bandit_B325"
+        },
+        {
+          "patternId": "Bandit_B401"
+        },
+        {
+          "patternId": "Bandit_B402"
+        },
+        {
+          "patternId": "Bandit_B403"
+        },
+        {
+          "patternId": "Bandit_B404"
+        },
+        {
+          "patternId": "Bandit_B405"
+        },
+        {
+          "patternId": "Bandit_B406"
+        },
+        {
+          "patternId": "Bandit_B407"
+        },
+        {
+          "patternId": "Bandit_B408"
+        },
+        {
+          "patternId": "Bandit_B409"
+        },
+        {
+          "patternId": "Bandit_B411"
+        },
+        {
+          "patternId": "Bandit_B412"
+        },
+        {
+          "patternId": "Bandit_B415"
+        },
+        {
+          "patternId": "Bandit_B502"
+        },
+        {
+          "patternId": "Bandit_B503"
+        },
+        {
+          "patternId": "Bandit_B504"
+        },
+        {
+          "patternId": "Bandit_B505"
+        },
+        {
+          "patternId": "Bandit_B506"
+        },
+        {
+          "patternId": "Bandit_B602"
+        },
+        {
+          "patternId": "Bandit_B603"
+        },
+        {
+          "patternId": "Bandit_B604"
+        },
+        {
+          "patternId": "Bandit_B605"
+        },
+        {
+          "patternId": "Bandit_B606"
+        },
+        {
+          "patternId": "Bandit_B607"
+        },
+        {
+          "patternId": "Bandit_B608"
+        },
+        {
+          "patternId": "Bandit_B609"
+        },
+        {
+          "patternId": "Bandit_B612"
+        },
+        {
+          "patternId": "Bandit_B613"
+        },
+        {
+          "patternId": "Bandit_B614"
+        },
+        {
+          "patternId": "Bandit_B615"
+        },
+        {
+          "patternId": "Bandit_B704"
+        }
+      ]
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patterns": [
+        {
+          "patternId": "PyLintPython3_C0123"
+        },
+        {
+          "patternId": "PyLintPython3_C0200"
+        },
+        {
+          "patternId": "PyLintPython3_E0100"
+        },
+        {
+          "patternId": "PyLintPython3_E0101"
+        },
+        {
+          "patternId": "PyLintPython3_E0102"
+        },
+        {
+          "patternId": "PyLintPython3_E0103"
+        },
+        {
+          "patternId": "PyLintPython3_E0104"
+        },
+        {
+          "patternId": "PyLintPython3_E0105"
+        },
+        {
+          "patternId": "PyLintPython3_E0106"
+        },
+        {
+          "patternId": "PyLintPython3_E0107"
+        },
+        {
+          "patternId": "PyLintPython3_E0108"
+        },
+        {
+          "patternId": "PyLintPython3_E0110"
+        },
+        {
+          "patternId": "PyLintPython3_E0112"
+        },
+        {
+          "patternId": "PyLintPython3_E0113"
+        },
+        {
+          "patternId": "PyLintPython3_E0114"
+        },
+        {
+          "patternId": "PyLintPython3_E0115"
+        },
+        {
+          "patternId": "PyLintPython3_E0117"
+        },
+        {
+          "patternId": "PyLintPython3_E0202"
+        },
+        {
+          "patternId": "PyLintPython3_E0203"
+        },
+        {
+          "patternId": "PyLintPython3_E0211"
+        },
+        {
+          "patternId": "PyLintPython3_E0236"
+        },
+        {
+          "patternId": "PyLintPython3_E0238"
+        },
+        {
+          "patternId": "PyLintPython3_E0239"
+        },
+        {
+          "patternId": "PyLintPython3_E0240"
+        },
+        {
+          "patternId": "PyLintPython3_E0241"
+        },
+        {
+          "patternId": "PyLintPython3_E0301"
+        },
+        {
+          "patternId": "PyLintPython3_E0302"
+        },
+        {
+          "patternId": "PyLintPython3_E0601"
+        },
+        {
+          "patternId": "PyLintPython3_E0603"
+        },
+        {
+          "patternId": "PyLintPython3_E0604"
+        },
+        {
+          "patternId": "PyLintPython3_E0701"
+        },
+        {
+          "patternId": "PyLintPython3_E0702"
+        },
+        {
+          "patternId": "PyLintPython3_E0704"
+        },
+        {
+          "patternId": "PyLintPython3_E0710"
+        },
+        {
+          "patternId": "PyLintPython3_E0711"
+        },
+        {
+          "patternId": "PyLintPython3_E0712"
+        },
+        {
+          "patternId": "PyLintPython3_E1003"
+        },
+        {
+          "patternId": "PyLintPython3_E1102"
+        },
+        {
+          "patternId": "PyLintPython3_E1111"
+        },
+        {
+          "patternId": "PyLintPython3_E1120"
+        },
+        {
+          "patternId": "PyLintPython3_E1121"
+        },
+        {
+          "patternId": "PyLintPython3_E1123"
+        },
+        {
+          "patternId": "PyLintPython3_E1124"
+        },
+        {
+          "patternId": "PyLintPython3_E1125"
+        },
+        {
+          "patternId": "PyLintPython3_E1126"
+        },
+        {
+          "patternId": "PyLintPython3_E1127"
+        },
+        {
+          "patternId": "PyLintPython3_E1132"
+        },
+        {
+          "patternId": "PyLintPython3_E1200"
+        },
+        {
+          "patternId": "PyLintPython3_E1201"
+        },
+        {
+          "patternId": "PyLintPython3_E1205"
+        },
+        {
+          "patternId": "PyLintPython3_E1206"
+        },
+        {
+          "patternId": "PyLintPython3_E1300"
+        },
+        {
+          "patternId": "PyLintPython3_E1301"
+        },
+        {
+          "patternId": "PyLintPython3_E1302"
+        },
+        {
+          "patternId": "PyLintPython3_E1303"
+        },
+        {
+          "patternId": "PyLintPython3_E1304"
+        },
+        {
+          "patternId": "PyLintPython3_E1305"
+        },
+        {
+          "patternId": "PyLintPython3_E1306"
+        },
+        {
+          "patternId": "PyLintPython3_R0202"
+        },
+        {
+          "patternId": "PyLintPython3_R0203"
+        },
+        {
+          "patternId": "PyLintPython3_W0101"
+        },
+        {
+          "patternId": "PyLintPython3_W0102"
+        },
+        {
+          "patternId": "PyLintPython3_W0104"
+        },
+        {
+          "patternId": "PyLintPython3_W0105"
+        },
+        {
+          "patternId": "PyLintPython3_W0106"
+        },
+        {
+          "patternId": "PyLintPython3_W0107"
+        },
+        {
+          "patternId": "PyLintPython3_W0108"
+        },
+        {
+          "patternId": "PyLintPython3_W0109"
+        },
+        {
+          "patternId": "PyLintPython3_W0120"
+        },
+        {
+          "patternId": "PyLintPython3_W0122"
+        },
+        {
+          "patternId": "PyLintPython3_W0124"
+        },
+        {
+          "patternId": "PyLintPython3_W0150"
+        },
+        {
+          "patternId": "PyLintPython3_W0199"
+        },
+        {
+          "patternId": "PyLintPython3_W0221"
+        },
+        {
+          "patternId": "PyLintPython3_W0222"
+        },
+        {
+          "patternId": "PyLintPython3_W0233"
+        },
+        {
+          "patternId": "PyLintPython3_W0404"
+        },
+        {
+          "patternId": "PyLintPython3_W0410"
+        },
+        {
+          "patternId": "PyLintPython3_W0601"
+        },
+        {
+          "patternId": "PyLintPython3_W0602"
+        },
+        {
+          "patternId": "PyLintPython3_W0604"
+        },
+        {
+          "patternId": "PyLintPython3_W0611"
+        },
+        {
+          "patternId": "PyLintPython3_W0612"
+        },
+        {
+          "patternId": "PyLintPython3_W0622"
+        },
+        {
+          "patternId": "PyLintPython3_W0702"
+        },
+        {
+          "patternId": "PyLintPython3_W0705"
+        },
+        {
+          "patternId": "PyLintPython3_W0711"
+        },
+        {
+          "patternId": "PyLintPython3_W1300"
+        },
+        {
+          "patternId": "PyLintPython3_W1301"
+        },
+        {
+          "patternId": "PyLintPython3_W1302"
+        },
+        {
+          "patternId": "PyLintPython3_W1303"
+        },
+        {
+          "patternId": "PyLintPython3_W1305"
+        },
+        {
+          "patternId": "PyLintPython3_W1306"
+        },
+        {
+          "patternId": "PyLintPython3_W1307"
+        }
+      ]
+    },
+    {
       "toolId": "Checkov",
       "patterns": [
         {
@@ -2183,9 +3378,33 @@
           "patternId": "Agentlinter_token-budget_under-150-tokens"
         }
       ]
+    },
+    {
+      "toolId": "Prospector",
+      "patterns": [
+        {
+          "patternId": "Prospector_dodgy"
+        },
+        {
+          "patternId": "Prospector_mccabe"
+        },
+        {
+          "patternId": "Prospector_profile-validator"
+        },
+        {
+          "patternId": "Prospector_pycodestyle"
+        },
+        {
+          "patternId": "Prospector_pydocstyle"
+        },
+        {
+          "patternId": "Prospector_pyflakes"
+        }
+      ]
     }
   ],
   "exclude": [
-    "node_modules/**"
+    "node_modules/**",
+    "typesafe/.venv/**"
   ]
 }

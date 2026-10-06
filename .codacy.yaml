@@ -8,8 +8,9 @@
 # Exclude only material that is not crew's source. Never exclude first-party
 # code to hide a finding: fix it, or suppress that one finding with a reason.
 exclude_paths:
-  # Installed packages: the Codacy CLIs.
+  # Installed packages: the Codacy CLIs, and the TypeSafe judge's environment.
   - "node_modules/**"
+  - "typesafe/.venv/**"
 engines:
   duplication:
     # Codacy owns duplication (golangci-lint's dupl is off). 100 tokens is the
