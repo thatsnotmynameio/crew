@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -33,7 +35,33 @@ func TestAnUnregisteredHarnessExitsTwoBeforeAnyListingNamingTheRegisteredOnes(t 
 			t.Errorf("stderr %q does not name %s", stderr, want)
 		}
 	}
-	if got, want := unstamped(t, r.stdout.String()), []string{"loading .crew/config.yaml"}; !slices.Equal(got, want) {
+	if got, want := unstamped(t, r.stdout.String()), []string{"loading config"}; !slices.Equal(got, want) {
+		t.Errorf("stdout = %q, want only the config's boot line", got)
+	}
+}
+
+// Covers AE4 of #135: with neither config file, crew exits 2 naming both
+// and the example, before anything polls.
+func TestNeitherConfigFileExitsTwoNamingBoth(t *testing.T) {
+	tr := &listCounter{Tracker: fake.NewTracker(issue("1", ready))}
+	r := options(t, oneAction, tr, fake.NewHarness())
+	if err := os.Remove(filepath.Join(r.opts.Root, ".crew", "config.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := app.Run(context.Background(), r.opts); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if n := tr.listed(); n != 0 {
+		t.Errorf("the tracker listed %d times, want none", n)
+	}
+	stderr := r.stderr.String()
+	for _, want := range []string{".crew/config.yaml", ".crew/config.local.yaml", ".crew/config.example.yaml"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr %q does not name %s", stderr, want)
+		}
+	}
+	if got, want := unstamped(t, r.stdout.String()), []string{"loading config"}; !slices.Equal(got, want) {
 		t.Errorf("stdout = %q, want only the config's boot line", got)
 	}
 }
@@ -94,7 +122,7 @@ func TestAFailingEnvironmentCheckExitsTwoBeforeAnyListing(t *testing.T) {
 		t.Errorf("stderr = %q, want the tracker's failed check", stderr)
 	}
 	// Covers AE3 of #113: the boot log ends with the step that failed.
-	want := []string{"loading .crew/config.yaml", "checking the gh login"}
+	want := []string{"loading config", "checking the gh login"}
 	if got := unstamped(t, r.stdout.String()); !slices.Equal(got, want) {
 		t.Errorf("stdout = %q, want the boot log %q", got, want)
 	}
@@ -147,7 +175,7 @@ func TestASignalDuringTheEnvironmentChecksKillsEveryProcessAndExitsTwo(t *testin
 	if n := tr.listed(); n != 0 {
 		t.Errorf("the tracker listed %d times, want none", n)
 	}
-	if got, want := unstamped(t, r.stdout.String()), []string{"loading .crew/config.yaml"}; !slices.Equal(got, want) {
+	if got, want := unstamped(t, r.stdout.String()), []string{"loading config"}; !slices.Equal(got, want) {
 		t.Errorf("stdout = %q, want only the boot log before the stop", got)
 	}
 }
