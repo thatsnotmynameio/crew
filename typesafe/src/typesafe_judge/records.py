@@ -25,7 +25,7 @@ suit, is refused and records nothing.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, cast, get_args
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast, get_args
 
 import rfc8785
 
@@ -39,11 +39,11 @@ if TYPE_CHECKING:
     from typesafe_judge.keys import JSON
     from typesafe_judge.ledger import Ledger, VersionRecord, Writes
 
-type DecisionName = Literal["acted", "sent_to_person", "ignored_in_shadow"]
-type Strength = Literal["strong", "weak"]
+DecisionName: TypeAlias = Literal["acted", "sent_to_person", "ignored_in_shadow"]
+Strength: TypeAlias = Literal["strong", "weak"]
 
-DECISIONS: tuple[str, ...] = get_args(DecisionName.__value__)
-STRENGTHS: tuple[str, ...] = get_args(Strength.__value__)
+DECISIONS: tuple[str, ...] = get_args(DecisionName)
+STRENGTHS: tuple[str, ...] = get_args(Strength)
 
 
 class InvalidRequestError(ValueError):

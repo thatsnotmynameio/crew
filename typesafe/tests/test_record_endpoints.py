@@ -2,7 +2,7 @@ import http.client
 import json
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 from urllib.parse import urlsplit
 
 import pytest
@@ -30,7 +30,7 @@ questions:
 Q1 = "issue_needs_candidate"
 STATE = {"issue": "Add a ledger", "candidate": "Add a bank"}
 
-type Body = dict[str, object]
+Body: TypeAlias = dict[str, object]
 
 
 def write_bank(root: Path, yes_at: float) -> None:

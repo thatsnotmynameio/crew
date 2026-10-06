@@ -8,7 +8,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 from urllib.parse import quote, urlsplit
 
 import pytest
@@ -41,7 +41,7 @@ SECOND = QUESTION.format(name=Q2, instructions="Does `candidate` build on `issue
 STATE = {"issue": "Add a ledger", "candidate": "Add a bank"}
 READY_KEYS = {"instance", "pid", "url", "ask_token_file", "admin_token_file"}
 
-type Body = dict[str, object]
+Body: TypeAlias = dict[str, object]
 
 
 def write_bank(root: Path, text: str) -> None:

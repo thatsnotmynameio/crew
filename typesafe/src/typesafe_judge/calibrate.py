@@ -51,7 +51,7 @@ import hmac
 import math
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import rfc8785
 
@@ -81,9 +81,9 @@ _BISECTIONS = 50
 
 _BAND = {"yes": "yes_at", "no": "no_at", "floor": "floor"}
 
-type Side = Literal["dev", "held_out"]
-type Result = Literal["passed", "failed", "insufficient"]
-type Group = str | int
+Side: TypeAlias = Literal["dev", "held_out"]
+Result: TypeAlias = Literal["passed", "failed", "insufficient"]
+Group: TypeAlias = str | int
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,7 +10,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self, cast
+from typing import TYPE_CHECKING, Self, TypeAlias, cast
 
 import httpx2
 from typesafe_sdk import (
@@ -52,7 +52,7 @@ TIMEOUT = "timeout"
 UNREACHABLE = "unreachable"
 INVALID_RESPONSE = "invalid response"
 
-type SDKQuestion = Noul | Choice | Score
+SDKQuestion: TypeAlias = Noul | Choice | Score
 
 _ANSWER_TYPES: dict[type[SDKQuestion], type[NoulAnswer | ChoiceAnswer | ScoreAnswer]] = {
     Noul: NoulAnswer,

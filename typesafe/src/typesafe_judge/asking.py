@@ -17,7 +17,7 @@ ledger holds (KTD11).
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 from typesafe_judge.bank import UNCERTAIN, ChoiceSpec, NoulSpec, Question, ScoreSpec, Stage
 from typesafe_judge.client import Failure
@@ -34,10 +34,10 @@ if TYPE_CHECKING:
     from typesafe_judge.keys import JSON
     from typesafe_judge.ledger import Ledger, Reads, Writes
 
-type Verdict = str | int
+Verdict: TypeAlias = str | int
 """A noul's yes, no or uncertain; a choice's option; a score's level; or uncertain."""
 
-type Probabilities = float | dict[str, float]
+Probabilities: TypeAlias = float | dict[str, float]
 """A noul's probability of yes, or a choice's or a score's probability per option or level."""
 
 

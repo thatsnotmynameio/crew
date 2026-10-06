@@ -20,7 +20,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self, cast
+from typing import TYPE_CHECKING, Literal, Self, TypeAlias, cast
 
 import rfc8785
 
@@ -45,7 +45,7 @@ DIRECTORY_MODE = 0o700
 FILE_MODE = 0o600
 BUSY_TIMEOUT = 30.0
 
-type StageName = Literal["shadow", "confirm", "act"]
+StageName: TypeAlias = Literal["shadow", "confirm", "act"]
 """A stage as the ledger stores it: ``Stage.value``."""
 
 

@@ -38,7 +38,7 @@ from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 from urllib.parse import parse_qs, urlsplit
 
 from typesafe_judge.asking import UnknownQuestionError, ask, effective_stage, probabilities, verdict
@@ -123,7 +123,7 @@ class Call:
     query: dict[str, list[str]]
 
 
-type Handler = Callable[[Call], dict[str, JSON]]
+Handler: TypeAlias = "Callable[[Call], dict[str, JSON]]"
 
 
 @dataclass(frozen=True, slots=True)

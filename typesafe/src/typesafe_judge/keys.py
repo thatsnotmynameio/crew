@@ -14,14 +14,14 @@ text can change on the way, so a state holding one would not hash stably.
 """
 
 import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 import rfc8785
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-type JSON = bool | int | float | str | list[JSON] | dict[str, JSON] | None
+JSON: TypeAlias = "bool | int | float | str | list[JSON] | dict[str, JSON] | None"
 
 MAX_SAFE_INTEGER = 2**53 - 1
 """The largest integer RFC 8785 carries exactly; its negation is the smallest."""

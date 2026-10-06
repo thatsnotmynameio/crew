@@ -7,7 +7,7 @@ they take the fixtures by name and import the types only for annotations.
 import json
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 import httpx2
 import pytest
@@ -17,7 +17,7 @@ from typesafe_judge.client import TypeSafe
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-type Fault = int | httpx2.Response | type[httpx2.TransportError]
+Fault: TypeAlias = int | httpx2.Response | type[httpx2.TransportError]
 """What one attempt gets instead of an answer: a status, a whole response, or an error."""
 
 MODEL = "jev-1.13.0"

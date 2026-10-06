@@ -7,7 +7,7 @@ the write that holds them.
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import rfc8785
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from typesafe_judge.keys import JSON
 
-type StageName = Literal["shadow", "confirm", "act"]
+StageName: TypeAlias = Literal["shadow", "confirm", "act"]
 
 
 @dataclass(frozen=True, slots=True)

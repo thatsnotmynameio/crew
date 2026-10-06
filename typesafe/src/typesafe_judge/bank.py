@@ -39,7 +39,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import total_ordering
-from typing import TYPE_CHECKING, Annotated, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Literal, Self, TypeAlias
 
 import rfc8785
 import yaml
@@ -118,10 +118,10 @@ def _optional_content(value: object) -> JSONContent | None:
     return None if value is None else _content(value)
 
 
-type Content = Annotated[JSONContent, PlainValidator(_content)]
-type OptionalContent = Annotated[JSONContent | None, PlainValidator(_optional_content)]
-type Probability = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
-type Rate = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
+Content: TypeAlias = Annotated[JSONContent, PlainValidator(_content)]
+OptionalContent: TypeAlias = Annotated[JSONContent | None, PlainValidator(_optional_content)]
+Probability: TypeAlias = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
+Rate: TypeAlias = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
 
 
 class _Strict(BaseModel):
@@ -255,7 +255,7 @@ class ScoreSpec(_Spec):
         return default
 
 
-type Spec = NoulSpec | ChoiceSpec | ScoreSpec
+Spec: TypeAlias = NoulSpec | ChoiceSpec | ScoreSpec
 
 
 class _BankFile(_Strict):

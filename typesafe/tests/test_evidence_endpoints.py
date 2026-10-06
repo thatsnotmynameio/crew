@@ -1,7 +1,7 @@
 import http.client
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 from urllib.parse import urlsplit
 
 import pytest
@@ -28,7 +28,7 @@ questions:
 """
 Q = "issue_needs_candidate"
 
-type Body = dict[str, JSON]
+Body: TypeAlias = "dict[str, JSON]"
 
 
 class Running:

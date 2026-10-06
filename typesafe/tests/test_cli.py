@@ -10,7 +10,7 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, cast
+from typing import IO, TYPE_CHECKING, TypeAlias, cast
 
 import pytest
 
@@ -35,7 +35,7 @@ STATE = {"issue": "Add a ledger", "candidate": "Add a bank"}
 READY_KEYS = {"instance", "pid", "url", "ask_token_file", "admin_token_file"}
 WAIT = 30.0
 
-type Record = dict[str, object]
+Record: TypeAlias = dict[str, object]
 
 
 @pytest.fixture
@@ -258,7 +258,7 @@ def slow_typesafe() -> Iterator[_SlowServer]:
     server.server_close()
 
 
-type Outcome = tuple[int, Record] | OSError
+Outcome: TypeAlias = tuple[int, Record] | OSError
 
 
 def ask_into(child: Child, result: queue.Queue[Outcome]) -> None:

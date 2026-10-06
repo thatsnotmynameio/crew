@@ -31,7 +31,7 @@ current version declares, and ``effective_stage`` is the current version's stage
 
 from collections import Counter
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 from typesafe_judge.asking import (
     UnknownQuestionError,
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 RECHECK_MARKER = "recheck_from"
 """The identifier key of the asks a recheck records; its value is the earlier version id."""
 
-type Result = Literal["passed", "failed", "insufficient", "incomplete"]
+Result: TypeAlias = Literal["passed", "failed", "insufficient", "incomplete"]
 
 _SPECS: dict[str, type[NoulSpec | ChoiceSpec | ScoreSpec]] = {
     "noul": NoulSpec,

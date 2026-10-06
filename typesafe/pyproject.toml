@@ -52,6 +52,7 @@ ignore = [
     "CPY001", # LICENSE covers every file; crew's sources carry no header
     "D203",   # conflicts with D211 (no blank line before a class docstring)
     "D213",   # conflicts with D212 (the summary on the docstring's first line)
+    "UP040",  # Opengrep, Codacy's Semgrep, cannot parse `type` statements and would skip the file
 ]
 
 [tool.ruff.lint.per-file-ignores]
