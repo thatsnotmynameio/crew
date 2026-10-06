@@ -232,14 +232,18 @@ func TestLoadRendersPromptForIssue(t *testing.T) {
 	}
 }
 
+// Covers AE4 at the config level: with neither file, the error names both
+// and points to the example.
 func TestLoadMissingFileSaysWhereItLooked(t *testing.T) {
 	root := t.TempDir()
 	_, err := config.Load(root)
 	if err == nil {
 		t.Fatal("Load succeeded without a config file")
 	}
-	if want := filepath.Join(root, ".crew", "config.yaml"); !strings.Contains(err.Error(), want) {
-		t.Errorf("error %q does not name %s", err, want)
+	for _, want := range []string{root, sharedName, localName} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %s", err, want)
+		}
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("error %v is not fs.ErrNotExist", err)

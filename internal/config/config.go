@@ -1,15 +1,12 @@
-// Package config loads a repository's .crew/config.yaml: it decodes the file
-// strictly, applies the engine-owned defaults, validates the rules, and
+// Package config loads a repository's .crew/config.yaml and
+// .crew/config.local.yaml, whose top-level keys replace those of
+// config.yaml: it decodes them strictly, applies the engine-owned defaults, validates the rules, and
 // hands each adapter its own section as a strict Decode. It does not resolve
 // adapter names; the registry does, so config holds no adapter knowledge.
 package config
 
 import (
 	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"time"
@@ -27,7 +24,8 @@ const (
 	defaultTracker           = "github"
 )
 
-// Config is a loaded and validated .crew/config.yaml.
+// Config is a loaded and validated config: .crew/config.yaml with the
+// top-level keys of .crew/config.local.yaml in place of its own.
 type Config struct {
 	// PollInterval is poll_interval_seconds, 300 seconds by default.
 	PollInterval time.Duration
@@ -105,39 +103,38 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 	return n.Decode(&l.value) //nolint:wrapcheck // yaml merges a *yaml.TypeError only when returned as is
 }
 
-// Load reads root/.crew/config.yaml, where root is the repository's root,
-// and returns it decoded, defaulted and validated. Every error names the file,
-// and every error about the file's content names the key path and its line;
-// all the rules' errors are reported together.
+// Load reads root/.crew/config.yaml and root/.crew/config.local.yaml,
+// where root is the repository's root, and returns them combined, decoded,
+// defaulted and validated. Either file may be missing, but not both. Each
+// top-level key of the local file replaces that key of config.yaml whole.
+// Every error names the file it is about, and every error about a file's
+// content names the key path and its line; all the rules' errors are
+// reported together.
 func Load(root string) (*Config, error) {
-	path := filepath.Join(root, ".crew", "config.yaml")
-	data, err := os.ReadFile(path) //nolint:gosec // the path is the repository's own .crew/config.yaml
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("read crew config: %w (create it: see .crew/config.example.yaml in the crew repository)", err)
-	}
+	sources, err := readSources(root)
 	if err != nil {
-		return nil, fmt.Errorf("read crew config: %w", err)
+		return nil, err
 	}
-	var node yaml.Node
-	if err := yaml.Unmarshal(data, &node); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	if err := refuseOldKeys(sources); err != nil {
+		return nil, err
 	}
-	cfg, err := parse(&node)
+	top, o := merge(sources)
+	cfg, err := parse(top)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, o.name(err)
+	}
+	cfg.TrackerSection = o.decode(cfg.TrackerSection)
+	for i := range cfg.Agents {
+		cfg.Agents[i].HarnessSection = o.decode(cfg.Agents[i].HarnessSection)
 	}
 	return cfg, nil
 }
 
-// parse turns the file's YAML document into a Config, reporting every error
-// it finds after the top level decodes. A file with old keys is refused with
-// all of them before anything is decoded.
-func parse(root *yaml.Node) (*Config, error) {
-	if err := oldKeys(root); err != nil {
-		return nil, err
-	}
+// parse turns the config's top-level mapping into a Config, reporting every
+// error it finds after the top level decodes.
+func parse(top *yaml.Node) (*Config, error) {
 	var doc document
-	if err := decodeDocument(root, &doc); err != nil {
+	if err := decodeFields(entries(top, ""), reflect.ValueOf(&doc).Elem()); err != nil {
 		return nil, err
 	}
 	cfg := &Config{
@@ -164,20 +161,6 @@ func parse(root *yaml.Node) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
-}
-
-// decodeDocument decodes the file's top level into doc. An empty file has no
-// content and leaves doc empty.
-func decodeDocument(root *yaml.Node, doc *document) error {
-	if len(root.Content) == 0 {
-		return nil
-	}
-	top := root.Content[0]
-	if top.Kind != yaml.MappingNode {
-		return fmt.Errorf("line %d: the config must be a mapping of crew's keys, such as "+
-			"tracker, agents, checks, board and rules", top.Line)
-	}
-	return decodeFields(entries(top, ""), reflect.ValueOf(doc).Elem())
 }
 
 // engineSettings reads the engine's top-level keys into cfg, which holds
