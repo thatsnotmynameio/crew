@@ -206,6 +206,12 @@ func (r *recorder) Errorf(format string, args ...any) {
 	r.msgs = append(r.msgs, fmt.Sprintf(format, args...))
 }
 
+func (r *recorder) Failed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failed
+}
+
 func (r *recorder) Fatalf(format string, args ...any) {
 	r.Errorf(format, args...)
 	runtime.Goexit()

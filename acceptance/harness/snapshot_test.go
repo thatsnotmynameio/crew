@@ -1,7 +1,9 @@
 package harness
 
 import (
+	"errors"
 	"flag"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -60,4 +62,24 @@ func TestAcceptSnapshotsWritesTheSnapshot(t *testing.T) {
 	}
 	accept(t, "false")
 	MatchSnapshot(t, "probe", "a screen\n\nlast row")
+}
+
+// Covers U1 (KTD3): with -accept-snapshots, a test that already failed, such
+// as on a content assertion, fails again instead of writing its snapshot.
+func TestAcceptSnapshotsRefusesAfterAFailure(t *testing.T) {
+	t.Chdir(t.TempDir())
+	accept(t, "true")
+
+	failed, msg := capture(func(tb testing.TB) {
+		tb.Helper()
+		tb.Errorf("the board shows no Handled card")
+		MatchSnapshot(tb, "probe", "a screen")
+	})
+
+	if !failed || !strings.Contains(msg, "not written") {
+		t.Fatalf("failed = %v, message:\n%s", failed, msg)
+	}
+	if _, err := os.Stat("testdata/probe.snapshot"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("snapshot written after a failure: stat error = %v", err)
+	}
 }

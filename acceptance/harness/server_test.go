@@ -283,6 +283,49 @@ func TestSIGTERMEndsABlockedClaudeAndCancelsItsScript(t *testing.T) {
 	}
 }
 
+// Covers #176's U5: once IgnoreStop returns, the claude double ignores
+// SIGTERM and keeps running, as a session slow to stop does; SIGKILL then
+// ends it and cancels the script's context.
+func TestIgnoreStopKeepsTheClaudeDoubleRunningAfterSIGTERM(t *testing.T) {
+	ignoring, cancelled := make(chan struct{}), make(chan struct{})
+	c := fakeclaude.New(nil)
+	c.Script("slow to stop", func(ctx context.Context, s *fakeclaude.Session) int {
+		s.IgnoreStop()
+		close(ignoring)
+		<-ctx.Done()
+		close(cancelled)
+		return 1
+	})
+	s := Serve(t, nil, c)
+	cmd := double(t, s, "claude", claudeArgs("slow to stop")...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	<-ignoring
+
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-exited:
+		t.Fatalf("the double exited on SIGTERM after IgnoreStop returned: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	<-exited
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("the script's context was not cancelled a second after SIGKILL")
+	}
+}
+
 // Covers U3 (KTD3): a pull request a script opens through its GitHub handle
 // is visible to a later gh pr list --head.
 func TestAPullRequestAScriptOpensIsVisibleToGH(t *testing.T) {

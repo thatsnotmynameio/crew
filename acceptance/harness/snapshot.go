@@ -21,11 +21,17 @@ const (
 // MatchSnapshot compares text, a masked screen, with the snapshot name in
 // the testdata directory of the test's package. A missing snapshot fails
 // and names -accept-snapshots; with that flag, MatchSnapshot writes the
-// snapshot instead and passes. A mismatch fails with the lines that differ.
+// snapshot instead and passes, unless the test has already failed: a screen
+// that broke an earlier assertion is never accepted. A mismatch fails with the
+// lines that differ.
 func MatchSnapshot(tb testing.TB, name, text string) {
 	tb.Helper()
 	path := filepath.Join("testdata", name+".snapshot")
 	if accepting() {
+		if tb.Failed() {
+			tb.Fatalf("snapshot %s not written: the test failed before it", path)
+			return
+		}
 		if err := os.MkdirAll(filepath.Dir(path), snapshotDirPerm); err != nil {
 			tb.Fatalf("write snapshot %s: %v", path, err)
 			return

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -35,7 +36,8 @@ func client(name string) func() int {
 // runClient sends the server this process's invocation of name, copies the
 // frames it answers to stdout and stderr in the order they come, and
 // returns the exit code of the last frame. On SIGTERM it closes the
-// connection, which cancels the invocation in the server, and returns 143.
+// connection, which cancels the invocation in the server, and returns 143,
+// unless a frame told it to ignore SIGTERM.
 func runClient(name string, stdin *os.File, stdout, stderr io.Writer) int {
 	terms := make(chan os.Signal, 1)
 	signal.Notify(terms, syscall.SIGTERM)
@@ -57,29 +59,40 @@ func runClient(name string, stdin *os.File, stdout, stderr io.Writer) int {
 		return doubleFailed(stderr, name, fmt.Sprintf("send the invocation to the test process: %v", err))
 	}
 	codes := make(chan int, 1)
-	go func() { codes <- copyFrames(c, name, stdout, stderr) }()
+	var ignoreTerm atomic.Bool
+	go func() { codes <- copyFrames(c, name, stdout, stderr, &ignoreTerm) }()
 	timeout := time.NewTimer(clientTimeout)
 	defer timeout.Stop()
-	select {
-	case code := <-codes:
-		return code
-	case <-terms:
-		_ = c.Close()
-		return exitTerminated
-	case <-timeout.C:
-		return doubleFailed(stderr, name, fmt.Sprintf("no exit code from the test process within %v", clientTimeout))
+	for {
+		select {
+		case code := <-codes:
+			return code
+		case <-terms:
+			if ignoreTerm.Load() {
+				continue
+			}
+			_ = c.Close()
+			return exitTerminated
+		case <-timeout.C:
+			return doubleFailed(stderr, name, fmt.Sprintf("no exit code from the test process within %v", clientTimeout))
+		}
 	}
 }
 
 // copyFrames copies the frames on c to stdout and stderr until the exit
-// frame, and returns its code.
-func copyFrames(c io.Reader, name string, stdout, stderr io.Writer) int {
+// frame, and returns its code. A frame that orders it sets ignoreTerm, which
+// it then acknowledges on c with one byte.
+func copyFrames(c io.ReadWriter, name string, stdout, stderr io.Writer, ignoreTerm *atomic.Bool) int {
 	dec := json.NewDecoder(c)
 	for {
 		var fr frame
 		if err := dec.Decode(&fr); err != nil {
 			return doubleFailed(stderr, name,
 				fmt.Sprintf("the test process closed the connection before the exit code: %v", err))
+		}
+		if fr.IgnoreTerm {
+			ignoreTerm.Store(true)
+			_, _ = c.Write([]byte{'\n'})
 		}
 		_, _ = stdout.Write(fr.Stdout)
 		_, _ = stderr.Write(fr.Stderr)

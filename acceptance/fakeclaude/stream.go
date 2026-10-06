@@ -45,6 +45,17 @@ func (s *Session) Emit(events ...Event) error {
 	return nil
 }
 
+// IgnoreStop makes the claude double ignore SIGTERM from now on, as a session
+// slow to stop does: it then ends only when the script returns or SIGKILL
+// kills it, and ctx is cancelled only then. It returns once the double
+// ignores SIGTERM, or has already ended. It does nothing when the session
+// does not run in a double.
+func (s *Session) IgnoreStop() {
+	if s.ignoreStop != nil {
+		s.ignoreStop()
+	}
+}
+
 // Init returns the system init event that opens every session: its working
 // directory, model and permission mode.
 func (s *Session) Init() Event {

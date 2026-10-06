@@ -13,7 +13,7 @@ The module is its own Go module (`github.com/thatsnotmynameio/crew/acceptance`).
 | `smoke/` | The developer's smoke runs. |
 | `scenarios/<area>/` | The tester's scenarios, one package per area of crew. |
 
-Two roles work here. The tester writes the scenarios and their snapshots from crew's README, never from crew's code. The developer builds and maintains the doubles and the harness. The first part of this file is the tester's; [For the developer](#for-the-developer) is the developer's.
+Two roles work here. The tester, a session running the `/cw-tester` skill (`.agents/skills/cw-tester/SKILL.md`), writes the scenarios and their snapshots from crew's README, never from crew's code. The developer builds and maintains the doubles and the harness. The first part of this file is the tester's; [For the developer](#for-the-developer) is the developer's.
 
 ## Running the suite
 
@@ -243,7 +243,7 @@ sc.Claude.Script("a phrase from your config's prompt", func(ctx context.Context,
 })
 ```
 
-`ctx` is cancelled when crew stops the session, for example with SIGTERM: a script that blocks must give up then. Scripts of parallel sessions run at the same time, in the test process. A script that runs `git` gets the test process's environment, not crew's: give its command an environment of its own (such as `GIT_CONFIG_NOSYSTEM=1` and a `GIT_CONFIG_GLOBAL` with an identity) so your own git config does not leak in.
+`ctx` is cancelled when crew stops the session, for example with SIGTERM: a script that blocks must give up then. A script that calls `s.IgnoreStop()` plays a session slow to stop: from then on its double ignores SIGTERM, and ends only when the script returns or crew kills it with SIGKILL, which is when `ctx` is cancelled. It returns once the double ignores SIGTERM. Scripts of parallel sessions run at the same time, in the test process. A script that runs `git` gets the test process's environment, not crew's: give its command an environment of its own (such as `GIT_CONFIG_NOSYSTEM=1` and a `GIT_CONFIG_GLOBAL` with an identity) so your own git config does not leak in.
 
 ### Waiting and reading the end state
 
@@ -299,6 +299,8 @@ harness.MatchSnapshot(t, "board-with-one-issue", text)
 ```sh
 go -C acceptance run ./cmd/acceptance -run TestBoard -accept-snapshots
 ```
+
+A test that has already failed when it reaches `MatchSnapshot` does not write its snapshot, even with the flag: it fails again, saying the snapshot was not written. So make the content assertions on a screen before matching its snapshot, and a screen that breaks one is never accepted.
 
 ### Violations
 
