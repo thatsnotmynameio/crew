@@ -66,10 +66,10 @@ const stubKeyValue = "ts-test-key-4c1d"
 const judgePrompt = "/compound-engineering:lfg #9\n\nThe pull request body must contain the line `Closes #9`."
 
 // judgeScript returns the script of session-finished, as development's lfg
-// action names it in the example config.
+// action names it in crew's own config.
 func judgeScript(t *testing.T) string {
 	t.Helper()
-	script := checkScript(loadExample(t).Rules[3].Actions[0], "session-finished")
+	script := checkScript(loadOwn(t).Rules[3].Actions[0], "session-finished")
 	if script == "" {
 		t.Fatal("development's lfg action names no session-finished check")
 	}

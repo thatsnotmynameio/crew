@@ -189,6 +189,14 @@ linters:
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal/fake
               desc: the fakes are for tests only
+        acceptance:
+          files:
+            - "**/acceptance/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal
+              desc: the acceptance suite reaches crew only through its binary (R16)
+            - pkg: github.com/thatsnotmynameio/crew/cmd
+              desc: the acceptance suite reaches crew only through its binary (R16)
         charm:
           files:
             - "!**/internal/ui/tui/**"

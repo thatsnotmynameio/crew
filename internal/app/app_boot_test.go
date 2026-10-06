@@ -2,6 +2,8 @@ package app_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -64,7 +66,7 @@ func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T)
 		got := runOneIssue(t, r, h.Harness)
 
 		want := []string{
-			"loading .crew/config.yaml",
+			"loading config",
 			"making bot ops act",
 			"checking the gh login",
 			"looking for claude on PATH",
@@ -76,6 +78,26 @@ func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T)
 		}
 		if first := got[len(want)]; !strings.HasPrefix(first, "implement took #1") {
 			t.Errorf("the line after the boot log is %q, want the first event line", first)
+		}
+	})
+}
+
+// Covers AE3 of #135: with only .crew/config.local.yaml, crew runs from
+// it, and the boot line names no file.
+func TestTheLocalConfigAloneRuns(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := fake.NewHarness()
+		r := options(t, oneAction, fake.NewTracker(issue("1", ready)), h)
+		crewDir := filepath.Join(r.opts.Root, ".crew")
+		if err := os.Rename(filepath.Join(crewDir, "config.yaml"), filepath.Join(crewDir, "config.local.yaml")); err != nil {
+			t.Fatal(err)
+		}
+
+		got := runOneIssue(t, r, h)
+
+		want := []string{"loading config", "reading the run journal"}
+		if len(got) <= len(want) || !slices.Equal(got[:len(want)], want) {
+			t.Fatalf("stdout starts with %q, want %q then the event lines", got, want)
 		}
 	})
 }
@@ -92,7 +114,7 @@ func TestWithoutBotsTheBootLogHasNoBotLine(t *testing.T) {
 
 		got := runOneIssue(t, r, h)
 
-		want := []string{"loading .crew/config.yaml", "reading the run journal"}
+		want := []string{"loading config", "reading the run journal"}
 		if len(got) <= len(want) || !slices.Equal(got[:len(want)], want) {
 			t.Fatalf("stdout starts with %q, want %q then the event lines", got, want)
 		}

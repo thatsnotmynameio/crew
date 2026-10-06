@@ -63,18 +63,15 @@ func oldActionKeys() map[string]string {
 // settings, so it is still named.
 const oldSettingsGone = "gone; its keys are now at the top level"
 
-// oldKeys reports every old key of the file's YAML document root, in file
+// oldKeys reports every old key of a file's top-level mapping, in file
 // order, each with its line and replacement: the old top-level keys, the
 // old stages and actions under workflow, and old stage or action keys
 // written in a rule or an action under rules. It runs before the strict
 // decode, which would stop at the first, so a config in the old keys is
 // refused with all of them at once.
-func oldKeys(root *yaml.Node) error {
-	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
-		return nil
-	}
+func oldKeys(top *yaml.Node) error {
 	var errs []error
-	for _, e := range entries(root.Content[0], "") {
+	for _, e := range entries(top, "") {
 		switch e.key.Value {
 		case "config":
 			found := oldKeysOf(e, oldSettings())

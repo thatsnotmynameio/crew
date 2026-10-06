@@ -169,7 +169,7 @@ func decodeLeaf(n *yaml.Node, path string, v reflect.Value) error {
 	}
 	var typeErr *yaml.TypeError
 	if !errors.As(err, &typeErr) {
-		return fmt.Errorf("%s (line %d): %w", path, n.Line, err)
+		return keyError(path, n.Line, err.Error())
 	}
 	// The library prefixes each message with its own line; keep it only when
 	// it points somewhere other than n.
@@ -184,7 +184,19 @@ func decodeLeaf(n *yaml.Node, path string, v reflect.Value) error {
 // keyError is the one shape of every config error: the key path, its line,
 // and what is wrong.
 func keyError(path string, line int, msg string) error {
-	return fmt.Errorf("%s (line %d): %s", path, line, msg)
+	return &keyPathError{path: path, line: line, msg: msg}
+}
+
+// keyPathError is an error about the key at path, which Load names by the file
+// the key came from.
+type keyPathError struct {
+	path string
+	line int
+	msg  string
+}
+
+func (e *keyPathError) Error() string {
+	return fmt.Sprintf("%s (line %d): %s", e.path, e.line, e.msg)
 }
 
 // named returns the entries of the optional mapping n at path, whose keys
