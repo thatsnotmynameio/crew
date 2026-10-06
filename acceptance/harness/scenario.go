@@ -20,6 +20,10 @@ type Options struct {
 	// Config is the text of the repository's .crew/config.yaml, committed
 	// in its first commit. "" leaves the repository without one.
 	Config string
+	// GlobalConfig is the text of crew's global config file,
+	// crew/config.yaml in the scenario's own XDG_CONFIG_HOME. "" leaves
+	// that directory empty.
+	GlobalConfig string
 	// Args are crew's command-line arguments, such as --plain.
 	Args []string
 	// Screen runs crew in a pseudo-terminal, as a user runs it in a
@@ -78,8 +82,9 @@ type Exited struct {
 
 // New builds a scenario for tb: an empty fake GitHub repository, a fake
 // Claude Code without scripts, the doubles that crew finds on its PATH in
-// place of gh and claude, and a repository holding opts.Config, cloned from
-// a bare origin in a temporary directory. crew does not run until Start.
+// place of gh and claude, a home holding opts.GlobalConfig, and a
+// repository holding opts.Config, cloned from a bare origin in a temporary
+// directory. crew does not run until Start.
 //
 // At the end of the test, in this order, the scenario stops crew if it
 // still runs, fails the test for each call the doubles did not know that no
@@ -107,7 +112,7 @@ func New(tb testing.TB, opts Options) *Scenario {
 	}
 	s := &Scenario{GitHub: gh, Claude: claude, tb: tb, opts: opts, server: server}
 	tb.Cleanup(s.teardown)
-	s.env = environment(server, newHome(tb, base), tools)
+	s.env = environment(server, newHome(tb, base, opts.GlobalConfig), tools)
 	s.Repo = newRepo(tb, git, s.env, base, opts.Config)
 	return s
 }

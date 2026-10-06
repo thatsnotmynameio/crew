@@ -36,7 +36,8 @@ func toolDirs() ([]string, string, error) {
 // home is the scenario's own home: the directories and file that stand in
 // for the user's, so nothing of the developer's configuration reaches crew.
 type home struct {
-	// dir is HOME and config is XDG_CONFIG_HOME, both empty.
+	// dir is HOME, empty, and config is XDG_CONFIG_HOME, empty but for
+	// crew/config.yaml when the scenario sets Options.GlobalConfig.
 	dir, config string
 	// gitConfig is GIT_CONFIG_GLOBAL, with a test identity.
 	gitConfig string
@@ -44,8 +45,9 @@ type home struct {
 
 // environment is crew's whole environment, an allowlist: PATH holds the
 // doubles' bin directory, then tools, the directories of git and sh. HOME
-// and XDG_CONFIG_HOME are empty directories, so crew finds no bots and no
-// gh login. TZ=UTC and LANG=C.UTF-8 make times and text the same on every
+// and XDG_CONFIG_HOME are the scenario's own directories, so crew finds no
+// bots and no gh login, and only the global config the scenario sets.
+// TZ=UTC and LANG=C.UTF-8 make times and text the same on every
 // machine. Git reads no system config and a global config with a test
 // identity. GORACE=atexit_sleep_ms=0 removes the second the race detector
 // waits at every successful exit of a -race test binary, which the doubles
