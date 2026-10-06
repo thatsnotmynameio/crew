@@ -71,6 +71,9 @@ func run(args []string) int {
 		return runBots(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "sessions" {
+		// A closed stdout then fails the write, which exits 1, instead of
+		// killing crew by SIGPIPE.
+		signal.Ignore(syscall.SIGPIPE)
 		return runSessions(args[1:], stdout, stderr, captain.Dumb{})
 	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)

@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"os/signal"
 	"strings"
 	"testing"
 	"uuid"
@@ -221,5 +224,31 @@ func TestHelpListsSessions(t *testing.T) {
 	}
 	if !strings.Contains(got.stderr, "crew sessions <session-id> tasks next|current") {
 		t.Errorf("help = %q, want crew sessions listed", got.stderr)
+	}
+}
+
+func TestSessionsExitsOneWhenStdoutIsClosed(t *testing.T) {
+	if os.Getenv("CREW_TEST_CLOSED_STDOUT") == "1" {
+		os.Exit(run([]string{"sessions", sessionID, "tasks", "next"}))
+	}
+	t.Cleanup(func() { signal.Reset() })
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close()
+	defer func() { _ = w.Close() }()
+	var stderr bytes.Buffer
+	//nolint:gosec // G702: os.Args[0] is this test binary, re-run as crew with a closed stdout
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestSessionsExitsOneWhenStdoutIsClosed$")
+	cmd.Env = append(os.Environ(), "CREW_TEST_CLOSED_STDOUT=1")
+	cmd.Stdout, cmd.Stderr = w, &stderr
+	err = cmd.Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != app.ExitFailure {
+		t.Fatalf("crew sessions with a closed stdout: %v, want exit %d (stderr %q)", err, app.ExitFailure, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "broken pipe") {
+		t.Errorf("stderr = %q, want the write error", stderr.String())
 	}
 }
