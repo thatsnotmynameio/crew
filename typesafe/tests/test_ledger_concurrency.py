@@ -94,8 +94,8 @@ def test_two_processes_migrating_a_fresh_ledger_migrate_it_once(
 def test_ae5_twelve_processes_asking_one_replay_key_all_record_and_serve_the_first_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Imported here: the children import this module, and need no bank (nor pydantic).
-    from typesafe_judge.bank import parse_bank  # noqa: PLC0415
+    # The spawned children import this module and must not pay for pydantic.
+    from typesafe_judge.bank import parse_bank  # noqa: PLC0415 - see above
 
     importable(monkeypatch)
     (tmp_path / ".crew").mkdir()
