@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,10 +14,13 @@ import (
 )
 
 // The JSON Schema of .crew/config.yaml, and the URL it is published at,
-// which the example config's modeline names.
+// which crew's own config names in its modeline.
 var configSchema = filepath.Join("..", "..", "schema", "config.schema.json")
 
 const schemaURL = "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json"
+
+// modeline is the first line of crew's own config and of the example.
+const modeline = "# yaml-language-server: $schema=" + schemaURL
 
 func readSchema(t *testing.T) map[string]any {
 	t.Helper()
@@ -163,18 +165,19 @@ func TestKeyDiffNamesAKeyMissingOnEitherSide(t *testing.T) {
 	}
 }
 
-func TestExampleConfigNamesThePublishedSchema(t *testing.T) {
+// crew's own config and the example both name the published schema on
+// their first line, as editors read it.
+func TestTheConfigsNameThePublishedSchema(t *testing.T) {
 	if id := readSchema(t)["$id"]; id != schemaURL {
 		t.Errorf("%s: $id = %v, want %s", configSchema, id, schemaURL)
 	}
-	f, err := os.Open(exampleConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = f.Close() }()
-	lines := bufio.NewScanner(f)
-	lines.Scan()
-	if want := "# yaml-language-server: $schema=" + schemaURL; lines.Text() != want {
-		t.Errorf("%s: first line = %q, want %q", exampleConfig, lines.Text(), want)
+	for _, path := range []string{ownConfig, exampleConfig} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first, _, _ := strings.Cut(string(data), "\n"); first != modeline {
+			t.Errorf("%s: first line = %q, want %q", path, first, modeline)
+		}
 	}
 }

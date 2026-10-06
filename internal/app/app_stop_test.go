@@ -154,7 +154,7 @@ func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
 	// renderer.
 	out := r.stdout.String()
 	boot, tui, ok := strings.Cut(out, "\x1b[")
-	want := []string{"loading .crew/config.yaml", "reading the run journal"}
+	want := []string{"loading config", "reading the run journal"}
 	if got := unstamped(t, boot); !ok || !slices.Equal(got, want) || strings.Contains(tui, " crew: ") {
 		t.Errorf("stdout is not the boot log %q then the TUI's alone:\n%q", want, out)
 	}

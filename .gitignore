@@ -29,5 +29,5 @@ node_modules/
 coverage.out
 .context/compound-engineering/
 
-.crew/config.yaml
+# Local settings, such as a boss's own .crew/config.local.yaml
 *.local*
