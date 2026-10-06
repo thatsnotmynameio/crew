@@ -19,7 +19,7 @@ A scenario is only worth something if its expectation comes from what crew promi
 1. `README.md`, and the two files it links as the reference of `.crew/config.yaml`: `.crew/config.example.yaml` and `schema/config.schema.json`.
 2. The output of `crew --help`, from a binary it builds in step 2.
 3. `acceptance/README.md`, and the documentation of the suite's packages through `go doc`: `go -C acceptance doc -all ./harness`, `./fakegithub` and `./fakeclaude`.
-4. When it works on an issue, that issue's Product Contract: its body from `gh issue view N --json body`, without its `Sources / Research` section, which can cite crew's code.
+4. When it works on an issue, that issue's Product Contract, without its `Sources / Research` section, which can cite crew's code. Read it only through `gh issue view N --json body --jq .body | sed '/^#* *Sources/,$d'`, which drops that section and everything after it, so it never reaches you.
 5. Its own scenarios, under `acceptance/scenarios/`.
 
 It never opens anything else: not `cmd/`, `internal/`, `tools/`, `docs/plans/` or `docs/solutions/`, not the `.go` files of `acceptance/harness`, `acceptance/fakegithub`, `acceptance/fakeclaude` or `acceptance/cmd`, not `acceptance/smoke/`, and not the history of crew's code. If it opens one by mistake, it closes it and does not use what it saw. `AGENTS.md` loads into every session in this repository: it is guidance for working here, not a description of crew's behaviour, and a scenario never cites it.
