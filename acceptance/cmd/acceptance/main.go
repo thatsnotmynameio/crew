@@ -23,7 +23,8 @@ import (
 )
 
 // goreleaser is the pinned GoReleaser the release workflow runs, so the
-// binary under test is built the way a release builds it.
+// binary under test is built the way a release builds it. Dependabot does
+// not bump it: keep it at the version release.yml and ci.yml pin.
 const goreleaser = "github.com/goreleaser/goreleaser/v2@v2.18.2"
 
 // artifactsPerm is the mode of the directory the tests save artifacts in.

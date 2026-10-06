@@ -120,14 +120,14 @@ func checkAPI(g *GitHub, c *call) string {
 // checkRoute finds a's route and returns what it does not accept in c.
 func checkRoute(a *apiCall, c *call) string {
 	i := slices.IndexFunc(routes(), func(r route) bool {
-		params, ok := match(r.pattern, a.path)
-		a.params = params
+		_, ok := match(r.pattern, a.path)
 		return ok && r.method == a.method
 	})
 	if i < 0 {
 		return "unknown endpoint " + a.method + " " + a.path
 	}
 	a.route = routes()[i]
+	a.params, _ = match(a.route.pattern, a.path)
 	for k := range a.query {
 		if !slices.Contains(a.route.query, k) {
 			return "unknown query parameter " + k

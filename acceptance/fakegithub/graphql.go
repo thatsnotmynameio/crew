@@ -97,14 +97,7 @@ func (g *GitHub) graphql(c *call) Reply {
 
 // selectNode returns the fields set selects of n.
 func (r *gqlRun) selectNode(n gqlNode, set ast.SelectionSet, path []any) (object, error) {
-	out := object{}
-	for _, sel := range set {
-		var err error
-		if out, err = r.selectOne(n, sel, out, path); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return r.merge(n, set, object{}, path)
 }
 
 // selectOne adds to out what sel, a field or a fragment, selects of n.

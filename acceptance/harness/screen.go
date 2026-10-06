@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"math"
@@ -67,7 +68,7 @@ type Screen struct {
 // kills the program's process group if it still runs.
 func StartScreen(tb testing.TB, cmd *exec.Cmd, size Size) *Screen {
 	tb.Helper()
-	cols, rows := orDefault(size.Cols, defaultCols), orDefault(size.Rows, defaultRows)
+	cols, rows := cmp.Or(size.Cols, defaultCols), cmp.Or(size.Rows, defaultRows)
 	if cols > math.MaxUint16 || rows > math.MaxUint16 || cols < 0 || rows < 0 {
 		tb.Fatalf("screen size %dx%d is out of range", cols, rows)
 		return nil
@@ -261,14 +262,6 @@ func (s *Screen) check(tb testing.TB) {
 	if err := s.Check(); err != nil {
 		tb.Fatalf("%v\nlast screen:\n%s", err, framed(s.Text()))
 	}
-}
-
-// orDefault is n, or def when n is zero.
-func orDefault(n, def int) int {
-	if n == 0 {
-		return def
-	}
-	return n
 }
 
 // screenEnv is env with TERM=xterm-256color when env sets no TERM. A nil
