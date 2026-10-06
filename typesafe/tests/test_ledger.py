@@ -314,6 +314,30 @@ def test_a_stage_only_change_records_one_observation_and_no_version(
     assert rows(root, "SELECT stage FROM stage_observations ORDER BY id") == [("shadow",), ("act",)]
 
 
+def test_the_bank_object_last_recorded_is_not_read_again(root: Path, ledger: Ledger) -> None:
+    loaded = bank(stage="act")
+    version = loaded["issue_needs_candidate"].version_id
+    ledger.record_bank(loaded)
+    con = raw(root)
+    try:
+        con.execute(
+            "INSERT INTO stage_observations (question, version, stage) VALUES (?, ?, 'shadow')",
+            ("issue_needs_candidate", version),
+        )
+    finally:
+        con.close()
+
+    again = ledger.record_bank(loaded)
+    reloaded = ledger.record_bank(bank(stage="act"))
+
+    assert (again, reloaded) == (False, True)
+    assert rows(root, "SELECT stage FROM stage_observations ORDER BY id") == [
+        ("act",),
+        ("shadow",),
+        ("act",),
+    ]
+
+
 def test_an_edited_question_records_a_new_version_after_the_first(
     root: Path, ledger: Ledger
 ) -> None:

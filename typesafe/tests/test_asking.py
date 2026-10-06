@@ -2,14 +2,15 @@ import json
 import logging
 import sqlite3
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 
 from typesafe_judge.asking import AskResult, UnknownQuestionError, ask
 from typesafe_judge.bank import Bank, Stage, load_bank, parse_bank
+from typesafe_judge.evidence import NewCalibration
 from typesafe_judge.keys import StateError
-from typesafe_judge.ledger import Ledger
+from typesafe_judge.ledger import Ledger, NewRecheck
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from conftest import FakeTypeSafe
 
     from typesafe_judge.client import TypeSafe
+    from typesafe_judge.evidence import StageName
 
 BANK = """\
 questions:
@@ -105,33 +107,49 @@ def rows(root: Path, sql: str, parameters: tuple[object, ...] = ()) -> list[tupl
         con.close()
 
 
-def insert(root: Path, sql: str, parameters: tuple[object, ...]) -> None:
-    """Record evidence the way the recheck and calibration units will."""
-    con = sqlite3.connect(root / ".crew/typesafe/ledger.sqlite", autocommit=True)
-    try:
-        con.execute("PRAGMA foreign_keys = ON")
-        con.execute(sql, parameters)
-    finally:
-        con.close()
+def recheck(
+    ledger: Ledger,
+    from_bank: Bank,
+    to_bank: Bank,
+    stage: StageName,
+    result: Literal["passed", "failed"] = "passed",
+) -> None:
+    """Record a recheck of Q1 from one bank's version to another's, for stage."""
+    with ledger.write() as writes:
+        writes.insert_recheck(
+            NewRecheck(
+                question=Q1,
+                from_version=from_bank[Q1].version_id,
+                to_version=to_bank[Q1].version_id,
+                stage=stage,
+                result=result,
+                compared=30,
+                flipped=0,
+                cannot_judge=0,
+                bar={},
+                report={},
+            )
+        )
 
 
-def recheck(root: Path, from_bank: Bank, to_bank: Bank, stage: str, result: str = "passed") -> None:
-    insert(
-        root,
-        "INSERT INTO rechecks (question, from_version, to_version, stage, result,"
-        " compared, flipped, cannot_judge, bar, report)"
-        " VALUES (?, ?, ?, ?, ?, 30, 0, 0, '{}', '{}')",
-        (Q1, from_bank[Q1].version_id, to_bank[Q1].version_id, stage, result),
-    )
-
-
-def calibration(root: Path, of: Bank, stage: str, result: str = "passed") -> None:
-    insert(
-        root,
-        "INSERT INTO calibrations (question, version, stage, seed, strong_only, result, report)"
-        " VALUES (?, ?, ?, 'seed', 0, ?, '{}')",
-        (Q1, of[Q1].version_id, stage, result),
-    )
+def calibration(
+    ledger: Ledger, of: Bank, stage: StageName, result: Literal["passed", "failed"] = "passed"
+) -> None:
+    """Record a calibration of Q1's version in a bank, for stage."""
+    with ledger.write() as writes:
+        writes.insert_calibration(
+            NewCalibration(
+                question=Q1,
+                version=of[Q1].version_id,
+                stage=stage,
+                seed="seed",
+                split_key=None,
+                strong_only=False,
+                result=result,
+                proposed_bands=None,
+                report={},
+            )
+        )
 
 
 def test_ae1_a_repeated_ask_replays_the_first_answer_without_a_request(
@@ -338,7 +356,7 @@ def test_ae4_an_edited_question_is_shadow_until_a_recheck_passes(
     edited = load_bank(path)
 
     before = ask(edited, ledger, client, [Q1], STATE)[Q1]
-    recheck(root, first, edited, "act")
+    recheck(ledger, first, edited, "act")
     after = ask(edited, ledger, client, [Q1], STATE)[Q1]
 
     assert (before.effective_stage, before.declared_stage) == (Stage.SHADOW, Stage.ACT)
@@ -360,55 +378,55 @@ def test_a_question_edited_before_any_ask_is_shadow(ledger: Ledger, client: Type
 
 
 def test_a_failed_recheck_or_one_for_a_lower_stage_earns_nothing(
-    root: Path, ledger: Ledger, client: TypeSafe
+    ledger: Ledger, client: TypeSafe
 ) -> None:
     first, edited = bank(stage="act"), bank(stage="act", instructions="Edited?")
     ledger.record_bank(first)
     ledger.record_bank(edited)
-    recheck(root, first, edited, "act", result="failed")
-    recheck(root, first, edited, "confirm")
+    recheck(ledger, first, edited, "act", result="failed")
+    recheck(ledger, first, edited, "confirm")
 
     assert ask(edited, ledger, client, [Q1], STATE)[Q1].effective_stage is Stage.SHADOW
 
 
 def test_a_recheck_from_a_shadow_version_cannot_lift_an_edit_to_act(
-    root: Path, ledger: Ledger, client: TypeSafe
+    ledger: Ledger, client: TypeSafe
 ) -> None:
     first, edited = bank(stage="shadow"), bank(stage="act", instructions="Edited?")
     ledger.record_bank(first)
     ledger.record_bank(edited)
-    recheck(root, first, edited, "act")
+    recheck(ledger, first, edited, "act")
 
     assert ask(edited, ledger, client, [Q1], STATE)[Q1].effective_stage is Stage.SHADOW
 
 
 def test_a_recheck_counts_only_from_the_latest_trusted_version(
-    root: Path, ledger: Ledger, client: TypeSafe
+    ledger: Ledger, client: TypeSafe
 ) -> None:
     v1, v2, v3 = (bank(stage="act", instructions=f"Version {n}?") for n in (1, 2, 3))
     for each in (v1, v2, v3):
         ledger.record_bank(each)
-    recheck(root, v1, v2, "act")
-    recheck(root, v1, v3, "act")
+    recheck(ledger, v1, v2, "act")
+    recheck(ledger, v1, v3, "act")
 
     skipped = ask(v3, ledger, client, [Q1], STATE)[Q1].effective_stage
-    recheck(root, v2, v3, "act")
+    recheck(ledger, v2, v3, "act")
     trusted = ask(v3, ledger, client, [Q1], STATE)[Q1].effective_stage
 
     assert (skipped, trusted) == (Stage.SHADOW, Stage.ACT)
 
 
 def test_the_first_version_keeps_its_declared_stage_until_a_stage_only_raise(
-    root: Path, ledger: Ledger, client: TypeSafe
+    ledger: Ledger, client: TypeSafe
 ) -> None:
     confirm = ask(bank(stage="confirm"), ledger, client, [Q1], STATE)[Q1]
     lowered = ask(bank(stage="shadow"), ledger, client, [Q1], STATE)[Q1]
 
     raised = ask(bank(stage="act"), ledger, client, [Q1], STATE)[Q1]
-    calibration(root, bank(stage="act"), "confirm")
-    calibration(root, bank(stage="act"), "act", result="failed")
+    calibration(ledger, bank(stage="act"), "confirm")
+    calibration(ledger, bank(stage="act"), "act", result="failed")
     still = ask(bank(stage="act"), ledger, client, [Q1], STATE)[Q1]
-    calibration(root, bank(stage="act"), "act")
+    calibration(ledger, bank(stage="act"), "act")
     calibrated = ask(bank(stage="act"), ledger, client, [Q1], STATE)[Q1]
 
     assert confirm.effective_stage is Stage.CONFIRM

@@ -59,6 +59,11 @@ def canonical_identifiers(identifiers: object) -> bytes:
     return rfc8785.dumps(_checked(identifiers, "identifiers"))
 
 
+def canonical_text(value: JSON) -> str:
+    """Return the RFC 8785 text of a JSON value, the form the ledger stores JSON in."""
+    return rfc8785.dumps(value).decode()
+
+
 def content_key(model: str, wire: Mapping[str, JSON]) -> str:
     """Return the key of what is sent: the model and the question's wire form."""
     return _digest("content", rfc8785.dumps({"model": model, "question": dict(wire)}))

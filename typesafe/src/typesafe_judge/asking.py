@@ -308,10 +308,13 @@ def verdict(question: Question, answer: Mapping[str, JSON]) -> Verdict:
         case ScoreSpec(bands=bands):
             if cast("float", answer["confidence"]) < bands.floor:
                 return UNCERTAIN
-            levels = cast("dict[str, float]", answer["probabilities"])
-            # The most likely level, the one TypeSafe's confidence is measured around;
-            # the lowest wins a tie.
-            return min((-p, int(level)) for level, p in levels.items())[1]
+            # The most likely level, the one TypeSafe's confidence is measured around.
+            return top_level(cast("dict[str, float]", answer["probabilities"]))
+
+
+def top_level(levels: Mapping[str, float]) -> int:
+    """Return a score's most likely level, from its probability per level; the lowest wins a tie."""
+    return min((-p, int(level)) for level, p in levels.items())[1]
 
 
 def probabilities(answer: Mapping[str, JSON]) -> Probabilities:

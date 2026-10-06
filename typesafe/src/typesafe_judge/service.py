@@ -45,7 +45,7 @@ from typesafe_judge.asking import UnknownQuestionError, ask, effective_stage, pr
 from typesafe_judge.bank import BankFile
 from typesafe_judge.calibrate import calibrate, parse_calibration
 from typesafe_judge.keys import StateError, canonical_identifiers
-from typesafe_judge.ledger import DIRECTORY, Ledger
+from typesafe_judge.ledger import DIRECTORY, DIRECTORY_MODE, FILE_MODE, Ledger
 from typesafe_judge.recheck import recheck
 from typesafe_judge.records import (
     InvalidRequestError,
@@ -530,7 +530,7 @@ class _Instances:
             "admin_token_file": str(directory / "admin.token"),
         }
         try:
-            self._run.mkdir(mode=0o700, exist_ok=True)
+            self._run.mkdir(mode=DIRECTORY_MODE, exist_ok=True)
             with self._locked():
                 self._remove_stale()
                 # Filled under a dot name, then renamed, so no one sees it half written.
@@ -561,7 +561,7 @@ class _Instances:
     @contextmanager
     def _locked(self) -> Iterator[None]:
         """Hold the run directory's lock, so starts and stops update ``service.json`` in turn."""
-        fd = os.open(self._run / LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+        fd = os.open(self._run / LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, FILE_MODE)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             yield
@@ -606,7 +606,7 @@ def _alive(pid: object) -> bool:
 
 def _write(path: Path, text: str) -> None:
     """Create path at 0600 and write text to it."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, FILE_MODE)
     with os.fdopen(fd, "w", encoding="utf-8") as file:
         file.write(text)
 

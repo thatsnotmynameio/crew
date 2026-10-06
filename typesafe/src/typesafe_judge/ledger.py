@@ -20,18 +20,17 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self, TypeAlias, cast
+from typing import TYPE_CHECKING, Literal, Self, cast
 
-import rfc8785
-
-from typesafe_judge.evidence import EvidenceReads, EvidenceWrites
-from typesafe_judge.keys import JSON, canonical_identifiers, canonical_state, state_hash
+from typesafe_judge.evidence import EvidenceReads, EvidenceWrites, StageName
+from typesafe_judge.keys import canonical_identifiers, canonical_state, canonical_text, state_hash
 from typesafe_judge.schema import MIGRATIONS, SCHEMA_VERSION
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
     from typesafe_judge.bank import Bank, Question
+    from typesafe_judge.keys import JSON
 
 DIRECTORY = Path(".crew/typesafe")
 """The judge's directory, relative to the repository root."""
@@ -44,9 +43,6 @@ MIN_SQLITE = (3, 51, 3)
 DIRECTORY_MODE = 0o700
 FILE_MODE = 0o600
 BUSY_TIMEOUT = 30.0
-
-StageName: TypeAlias = Literal["shadow", "confirm", "act"]
-"""A stage as the ledger stores it: ``Stage.value``."""
 
 
 class LedgerError(Exception):
@@ -341,7 +337,7 @@ class Writes(Reads, EvidenceWrites):
                         question.content_key,
                         question.model,
                         question.primitive,
-                        _json(question.spec.model_dump(mode="json")),
+                        canonical_text(question.spec.model_dump(mode="json")),
                     ),
                 )
             self._con.execute(
@@ -370,7 +366,7 @@ class Writes(Reads, EvidenceWrites):
                 call.model_asked,
                 call.model,
                 call.response,
-                _json(dict(call.usage)),
+                canonical_text(dict(call.usage)),
                 call.request_id,
                 call.attempts,
             ),
@@ -387,7 +383,7 @@ class Writes(Reads, EvidenceWrites):
                 answer.version,
                 answer.content_key,
                 answer.replay_key,
-                _json(dict(answer.answer)),
+                canonical_text(dict(answer.answer)),
             ),
         )
 
@@ -426,7 +422,7 @@ class Writes(Reads, EvidenceWrites):
             " VALUES (?, ?, ?, ?, ?)",
             (
                 outcome.ask_id,
-                _json(outcome.value),
+                canonical_text(outcome.value),
                 outcome.source,
                 outcome.strength,
                 None if matched_by is None else canonical_identifiers(dict(matched_by)).decode(),
@@ -448,8 +444,8 @@ class Writes(Reads, EvidenceWrites):
                 recheck.compared,
                 recheck.flipped,
                 recheck.cannot_judge,
-                _json(dict(recheck.bar)),
-                _json(dict(recheck.report)),
+                canonical_text(dict(recheck.bar)),
+                canonical_text(dict(recheck.report)),
             ),
         )
 
@@ -466,6 +462,7 @@ class Ledger:
         self._lock = threading.Lock()
         self._idle: list[sqlite3.Connection] = []
         self._closed = False
+        self._recorded: Bank | None = None
 
     @classmethod
     def open(
@@ -531,12 +528,19 @@ class Ledger:
 
         That is each version the first time a load holds it, with its full definition,
         and each version's declared stage when it differs from the last one recorded.
+        The bank object last recorded, which a bank file keeps until it changes, is not read again.
         """
-        with self.read() as reads:
-            if not reads.bank_changes(bank):
+        with self._lock:
+            if bank is self._recorded:
                 return False
-        with self.write() as writes:
-            return writes.record_bank(bank)
+        with self.read() as reads:
+            changed = bool(reads.bank_changes(bank))
+        if changed:
+            with self.write() as writes:
+                changed = writes.record_bank(bank)
+        with self._lock:
+            self._recorded = bank
+        return changed
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -627,10 +631,6 @@ def _use_wal(con: sqlite3.Connection) -> None:
 
 def _same(held: str | int | None, wanted: str | int) -> bool:
     return type(held) is type(wanted) and held == wanted
-
-
-def _json(value: JSON) -> str:
-    return rfc8785.dumps(value).decode()
 
 
 def _object(text: str) -> dict[str, JSON]:

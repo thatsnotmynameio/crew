@@ -55,7 +55,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import rfc8785
 
-from typesafe_judge.asking import UnknownQuestionError
+from typesafe_judge.asking import UnknownQuestionError, top_level
 from typesafe_judge.bank import NoulSpec
 from typesafe_judge.evidence import NewCalibration
 from typesafe_judge.keys import replay_key
@@ -318,8 +318,7 @@ def _chosen(answer: Mapping[str, JSON]) -> JSON:
     """Return a choice's option, or a score's most likely level, the lowest winning a tie."""
     if answer["type"] == "choice":
         return answer["choice"]
-    levels = cast("dict[str, float]", answer["probabilities"])
-    return min((-p, int(level)) for level, p in levels.items())[1]
+    return top_level(cast("dict[str, float]", answer["probabilities"]))
 
 
 def _scan(side: _Points) -> dict[str, JSON]:

@@ -317,7 +317,7 @@ def test_admin_token_reaches_the_ask_routes(running: Running) -> None:
 
 
 def recorded(call: Call) -> dict[str, JSON]:
-    """Stand in for an admin endpoint a later unit adds; it writes a ledger row."""
+    """Write a ledger row, so a scope check that let the call through would add one."""
     with call.ledger.write() as writes:
         writes.store_state(STATE)
     return {"done": True}

@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
-import rfc8785
+from typesafe_judge.keys import canonical_text
 
 if TYPE_CHECKING:
     import sqlite3
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from typesafe_judge.keys import JSON
 
 StageName: TypeAlias = Literal["shadow", "confirm", "act"]
+"""A stage as the ledger stores it: ``Stage.value``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,12 +122,8 @@ class EvidenceWrites:
                 calibration.split_key,
                 calibration.strong_only,
                 calibration.result,
-                None if bands is None else _json(dict(bands)),
-                _json(dict(calibration.report)),
+                None if bands is None else canonical_text(dict(bands)),
+                canonical_text(dict(calibration.report)),
             ),
         )
         return cast("int", cursor.lastrowid)
-
-
-def _json(value: JSON) -> str:
-    return rfc8785.dumps(value).decode()

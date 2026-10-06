@@ -6,6 +6,7 @@ import pytest
 
 from typesafe_judge.asking import UnknownQuestionError, ask
 from typesafe_judge.bank import Bank, Stage, parse_bank
+from typesafe_judge.evidence import NewCalibration
 from typesafe_judge.ledger import Ledger
 from typesafe_judge.recheck import RECHECK_MARKER, recheck
 from typesafe_judge.records import InvalidRequestError, decide
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from conftest import FakeTypeSafe
 
     from typesafe_judge.client import TypeSafe
+    from typesafe_judge.evidence import StageName
     from typesafe_judge.recheck import Recheck
 
 BANK = """\
@@ -120,17 +122,22 @@ def stage_of(of: Bank, ledger: Ledger, client: TypeSafe) -> Stage:
     return ask(of, ledger, client, [Q1], state(0))[Q1].effective_stage
 
 
-def calibration(root: Path, of: Bank, stage: str) -> None:
-    """Record a passing calibration as the calibration unit does; it is not built yet."""
-    con = sqlite3.connect(root / ".crew/typesafe/ledger.sqlite", autocommit=True)
-    try:
-        con.execute(
-            "INSERT INTO calibrations (question, version, stage, seed, strong_only, result, report)"
-            " VALUES (?, ?, ?, 'seed', 0, 'passed', '{}')",
-            (Q1, of[Q1].version_id, stage),
+def calibration(ledger: Ledger, of: Bank, stage: StageName) -> None:
+    """Record a passing calibration of Q1's version in a bank, for stage."""
+    with ledger.write() as writes:
+        writes.insert_calibration(
+            NewCalibration(
+                question=Q1,
+                version=of[Q1].version_id,
+                stage=stage,
+                seed="seed",
+                split_key=None,
+                strong_only=False,
+                result="passed",
+                proposed_bands=None,
+                report={},
+            )
         )
-    finally:
-        con.close()
 
 
 def flips(result: Recheck) -> list[tuple[str, object, object]]:
@@ -348,7 +355,7 @@ def test_a_recheck_from_a_shadow_version_cannot_make_an_edit_act(
 
 
 def test_a_stage_only_raise_of_the_first_version_needs_evidence_before_it_can_be_trusted(
-    root: Path, ledger: Ledger, client: TypeSafe
+    ledger: Ledger, client: TypeSafe
 ) -> None:
     seed(bank(stage="shadow"), ledger, client, 5)
     raised = bank(stage="confirm")
@@ -357,7 +364,7 @@ def test_a_stage_only_raise_of_the_first_version_needs_evidence_before_it_can_be
 
     with pytest.raises(InvalidRequestError, match="no earlier version"):
         recheck(v2, ledger, client, Q1)
-    calibration(root, raised, "confirm")
+    calibration(ledger, raised, "confirm")
     result = recheck(v2, ledger, client, Q1)
 
     assert raised_stage is Stage.SHADOW
