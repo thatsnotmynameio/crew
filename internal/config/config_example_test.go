@@ -1,233 +1,111 @@
 package config_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/thatsnotmynameio/crew/internal/config"
-	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// exampleConfig is the repository's committed example of .crew/config.yaml;
-// your own copy is ignored by git.
+// exampleConfig is the committed reference of .crew/config.yaml: every key,
+// commented out. A code owner's own copy is ignored by git.
 var exampleConfig = filepath.Join("..", "..", ".crew", "config.example.yaml")
 
-// loadExample loads exampleConfig as a repository's .crew/config.yaml, linked
-// into a new repository root.
-func loadExample(t *testing.T) *config.Config {
+// uncommented returns the example with its settings uncommented: "# " and a
+// lone "#" are taken off each line but the schema modeline, so its "## "
+// explanations stay comments.
+func uncommented(t *testing.T) string {
 	t.Helper()
-	example, err := filepath.Abs(exampleConfig)
+	data, err := os.ReadFile(exampleConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "# yaml-language-server:") {
+			continue
+		}
+		if line == "#" {
+			lines[i] = ""
+		} else if rest, ok := strings.CutPrefix(line, "# "); ok {
+			lines[i] = rest
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// The example sets nothing as it is: every line is a comment, so a copy
+// does only what its code owner uncomments.
+func TestTheExampleIsAllComments(t *testing.T) {
+	data, err := os.ReadFile(exampleConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		if line != "" && !strings.HasPrefix(line, "#") {
+			t.Errorf("%s:%d: %q is not a comment", exampleConfig, i+1, line)
+		}
+	}
+}
+
+// Uncommented whole, the example is a valid config.
+func TestTheExampleLoadsUncommented(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".crew"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(example, filepath.Join(root, ".crew", "config.yaml")); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(uncommented(t)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(root)
 	if err != nil {
-		t.Fatalf("Load(%s) = %v", exampleConfig, err)
+		t.Fatalf("Load(uncommented %s) = %v", exampleConfig, err)
 	}
-	return cfg
-}
-
-// exampleRule is how a rule of the example config loads, its actions
-// summed up as "action: agent A, bot B, check C", where C is whether it has
-// one.
-type exampleRule struct {
-	name    string
-	labels  crew.Labels
-	queue   crew.Queue
-	notify  bool
-	actions []string
-}
-
-// crew runs on its own repository, so its example config must stay valid,
-// and keep the rules, actions, queues, bots and labels it had in the old
-// keys (KTD8): the same names, so failed runs still resume. refinement
-// replaced triage in #160, while no issue was in a triage state.
-func TestTheRepositorysOwnConfigLoads(t *testing.T) {
-	cfg := loadExample(t)
-	if got, want := exampleRules(cfg.Rules), wantExampleRules(); !reflect.DeepEqual(got, want) {
-		t.Errorf("rules = %+v\nwant %+v", got, want)
+	names := make([]string, 0, len(cfg.Rules))
+	for _, r := range cfg.Rules {
+		names = append(names, r.Name)
 	}
-	wantBots := []string{"clerk", "product-manager", "developer"}
-	if cfg.Bot != "clerk" || !reflect.DeepEqual(cfg.Bots, wantBots) {
-		t.Errorf("Bot = %q, Bots = %q; want clerk, %q", cfg.Bot, cfg.Bots, wantBots)
-	}
-	columns := make([]string, 0, len(cfg.Board))
-	for _, c := range cfg.Board {
-		columns = append(columns, c.Name)
-	}
-	if want := []string{"refinement", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
-		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
-	}
-	script := checkScript(cfg.Rules[3].Actions[0], "pr-closes-issue")
-	if !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
-		t.Errorf("development's check = %q, want the script of pr-closes-issue", script)
+	if want := []string{"development", "review", "approve"}; !slices.Equal(names, want) {
+		t.Errorf("rules = %q, want %q", names, want)
 	}
 }
 
-// splitOutcomes are the outcomes /cw-split-plan reports and the refine
-// prompt acts on (#160).
-var splitOutcomes = []string{"`not split`", "`kept whole`", "`split`", "`earlier split did not finish`"}
-
-// The markers /cw-split-plan writes: partMarker, followed by the parent's
-// reference and " -->", on each part, and recordMarker on the split record.
-const (
-	partMarker   = "<!-- cw-split-plan: part of "
-	recordMarker = "<!-- cw-split-plan: split record -->"
-)
-
-// The refine action splits a large plan before it finds blockers, finishes
-// the split by labelling the parts and taking the parent out of crew, and
-// its check fails a split that stopped before that (#160).
-func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
-	refine := loadExample(t).Rules[1].Actions[0]
-	prompt := refine.Prompt
-	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
-	if split < 0 || split > strings.Index(prompt, "dependencies/blocked_by") {
-		t.Errorf("the prompt does not run /cw-split-plan before it reads dependencies:\n%s", prompt)
-	}
-	for _, want := range []string{
-		`--add-label "crew:refinement:done"`,
-		`--remove-label "crew:refinement:in progress"`,
-		recordMarker,
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the prompt lacks %q", want)
-		}
-	}
-	for _, want := range []string{`"crew:refinement:in progress"`, partMarker + "$CREW_ISSUE_REF -->", "/sub_issues"} {
-		if script := checkScript(refine, "split-finished"); !strings.Contains(script, want) {
-			t.Errorf("refine's check = %q, want the script of split-finished, with %q", script, want)
-		}
-	}
-}
-
-// The refine prompt branches on the outcomes /cw-split-plan reports, so both
-// name the same outcomes and markers.
-func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
-	skill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "cw-split-plan", "SKILL.md"))
-	if err != nil {
+// The example is the reference of every key: it sets each key the schema
+// describes at least once.
+func TestTheExampleSetsEveryKey(t *testing.T) {
+	var w schemaWalk
+	w.object(readSchema(t), "")
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(uncommented(t)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	prompt := loadExample(t).Rules[1].Actions[0].Prompt
-	for _, want := range splitOutcomes {
-		if !strings.Contains(string(skill), want) || !strings.Contains(prompt, want) {
-			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
-		}
-	}
-	for _, want := range []string{partMarker + "#", recordMarker} {
-		if !strings.Contains(string(skill), want) {
-			t.Errorf("the skill does not write the marker %s", want)
+	var set []string
+	exampleKeys(doc.Content[0], "", w.keys, &set)
+	for _, k := range w.keys {
+		if !slices.Contains(set, k) {
+			t.Errorf("%s does not set %s", exampleConfig, k)
 		}
 	}
 }
 
-// The refine prompt reads in full only the candidates /cw-rank-blockers
-// shortlists for each issue it refines, after the split and before it
-// records a dependency, and falls back to reading every candidate when the
-// script fails (#166).
-func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
-	skill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "cw-rank-blockers", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
+// exampleKeys adds to set the key path of each key below the mapping n,
+// whose own path is path, as schemaWalk names it: config.AnyName for a name
+// the code owner chooses.
+func exampleKeys(n *yaml.Node, path string, schema []string, set *[]string) {
+	if n.Kind != yaml.MappingNode {
+		return
 	}
-	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
-		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
-	}
-	prompt := loadExample(t).Rules[1].Actions[0].Prompt
-	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
-	rank := strings.Index(prompt, "/cw-rank-blockers")
-	record := strings.Index(prompt, "dependencies/blocked_by -F")
-	if split < 0 || rank < split || record < rank {
-		t.Errorf("the prompt does not run /cw-rank-blockers between /cw-split-plan and recording:\n%s", prompt)
-	}
-	for _, want := range []string{"--json number,title,body,labels", "unavailable"} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the prompt lacks the full read when the shortlist is unavailable: %q", want)
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key := schemaKey(path, n.Content[i].Value)
+		if !slices.Contains(schema, key) {
+			key = schemaKey(path, config.AnyName)
 		}
+		*set = append(*set, key)
+		exampleKeys(n.Content[i+1], key, schema, set)
 	}
-}
-
-// wantExampleRules are the example config's rules, as in the old keys: the
-// promote rules, now without actions, notify nothing and need no failure.
-func wantExampleRules() []exampleRule {
-	clerk, developer := crew.Queue{Name: "clerk", Slots: 1}, crew.Queue{Name: "developer", Slots: 2}
-	productManager := crew.Queue{Name: "product-manager", Slots: 1}
-	labels := func(rule, success string) crew.Labels {
-		return crew.Labels{
-			Ready: crew.State("crew:" + rule + ":ready"), Running: crew.State("crew:" + rule + ":in progress"),
-			Success: crew.State(success), Failure: crew.State("crew:" + rule + ":failed"),
-		}
-	}
-	want := []exampleRule{
-		{
-			name: "promote brainstorm", queue: clerk,
-			labels: crew.Labels{
-				Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting", Success: "crew:refinement:ready",
-			},
-		},
-		{
-			name: "refinement", queue: productManager, notify: true, labels: labels("refinement", "crew:refinement:done"),
-			actions: []string{"refine: agent product-manager, bot product-manager, checks [split-finished]"},
-		},
-		{
-			name: "promote refinement", queue: clerk,
-			labels: crew.Labels{
-				Ready: "crew:refinement:done", Running: "crew:refinement:promoting", Success: "crew:development:ready",
-			},
-		},
-		{
-			name: "development", queue: developer, notify: true,
-			labels:  labels("development", "crew:development:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
-		},
-		{
-			name: "fix", queue: developer, notify: true, labels: labels("fix", "crew:fix:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
-		},
-	}
-	return want
-}
-
-// checkScript returns the script of a's check called name, or "" when a
-// names no such check.
-func checkScript(a crew.Action, name string) string {
-	for _, c := range a.Checks {
-		if c.Name == name {
-			return c.Script
-		}
-	}
-	return ""
-}
-
-// checkNames returns the names of checks, in order, as [a b].
-func checkNames(checks []crew.Check) string {
-	names := make([]string, len(checks))
-	for i, c := range checks {
-		names[i] = c.Name
-	}
-	return fmt.Sprint(names)
-}
-
-// exampleRules sums rules up as exampleRule.
-func exampleRules(rules []crew.Rule) []exampleRule {
-	out := make([]exampleRule, len(rules))
-	for i, r := range rules {
-		out[i] = exampleRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
-		for _, a := range r.Actions {
-			out[i].actions = append(out[i].actions,
-				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent, a.Bot, checkNames(a.Checks)))
-		}
-	}
-	return out
 }
