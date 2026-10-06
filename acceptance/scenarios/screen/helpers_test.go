@@ -254,16 +254,10 @@ var eventsTitle = regexp.MustCompile(`(^|[\s▸])Events(\s|$)`)
 // on, so neither a card nor the Queues section beside Events counts.
 func inEvents(screen string, wants ...string) bool {
 	lines := strings.Split(screen, "\n")
-	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
-	if board < 0 {
-		return false
-	}
-	title := slices.IndexFunc(lines[board:], eventsTitle.MatchString)
+	title, start := eventsTitleCell(lines)
 	if title < 0 {
 		return false
 	}
-	title += board
-	start := cell(lines[title], "Events")
 	for _, line := range lines[title+1:] {
 		row := strings.ToLower(cells(line, start, math.MaxInt))
 		if !slices.ContainsFunc(wants, func(want string) bool { return !strings.Contains(row, strings.ToLower(want)) }) {
@@ -271,6 +265,54 @@ func inEvents(screen string, wants ...string) bool {
 		}
 	}
 	return false
+}
+
+// eventsTitleCell returns the row of the Events title that follows the board
+// in lines, and the cell where that title starts; the row is -1 when there is
+// none.
+func eventsTitleCell(lines []string) (int, int) {
+	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
+	if board < 0 {
+		return -1, 0
+	}
+	title := slices.IndexFunc(lines[board:], eventsTitle.MatchString)
+	if title < 0 {
+		return -1, 0
+	}
+	return board + title, cell(lines[board+title], "Events")
+}
+
+// reportedEvent and movedEvent are the two events a failed rule records for
+// the scenarios' issue: crew reports the failure and moves the issue to the
+// failure label at once, and Events lists each when it is done, so they come
+// in either order.
+const (
+	reportedEvent = "reported the failure on #1"
+	movedEvent    = "#1 moved from " + running + " to " + failure
+)
+
+// failureEventsInOrder is screen with the Events rows of reportedEvent and
+// movedEvent, when movedEvent comes right before reportedEvent, swapped into
+// the order reportedEvent, movedEvent, so a snapshot does not pin an order
+// the README leaves open. Only the Events cells of the two rows swap: the
+// Queues section beside them stays as it is.
+func failureEventsInOrder(screen string) string {
+	lines := strings.Split(screen, "\n")
+	title, start := eventsTitleCell(lines)
+	if title < 0 {
+		return screen
+	}
+	for row := title + 1; row+1 < len(lines); row++ {
+		moved, reported := []rune(lines[row]), []rune(lines[row+1])
+		if !strings.Contains(lines[row], movedEvent) || !strings.Contains(lines[row+1], reportedEvent) ||
+			len(moved) < start || len(reported) < start {
+			continue
+		}
+		lines[row] = string(moved[:start]) + string(reported[start:])
+		lines[row+1] = string(reported[:start]) + string(moved[start:])
+		row++
+	}
+	return strings.Join(lines, "\n")
 }
 
 // wantOneFrame fails the test unless the screen draws the view's header and

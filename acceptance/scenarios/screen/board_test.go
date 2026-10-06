@@ -53,6 +53,10 @@ const readyOnlyConfig = config + `board:
 // in place. README: "Under the header, Bots shows a card for each bot crew
 // acts as, then one for you". So the screen draws one header and one Bots
 // section, with no rows a taller frame left behind.
+//
+// crew reports the failure and moves the issue to dev:failed at once, and the
+// README gives no order for their two Events rows, so the snapshot holds them
+// in one order whichever came first (failureEventsInOrder).
 func TestScreenFailedRuleIssue(t *testing.T) {
 	sc, n := newScenario(t)
 	sc.Claude.Script(prompt, fakeclaude.Fail(broken))
@@ -76,7 +80,7 @@ func TestScreenFailedRuleIssue(t *testing.T) {
 		t.Errorf("Events does not say the rule of #1 failed:\n%s", text)
 	}
 	wantOneFrame(t, text)
-	harness.MatchSnapshot(t, "failed-rule-issue", text)
+	harness.MatchSnapshot(t, "failed-rule-issue", failureEventsInOrder(text))
 	stop(sc)
 }
 
@@ -89,6 +93,10 @@ func TestScreenFailedRuleIssue(t *testing.T) {
 // After the session failed and the issue moved to dev:failed, the failed
 // column holds its card, to do and doing do not, the board draws no Handled
 // column, and a row of Events names #1 and says it failed.
+//
+// crew reports the failure and moves the issue to dev:failed at once, and the
+// README gives no order for their two Events rows, so the snapshot holds them
+// in one order whichever came first (failureEventsInOrder).
 func TestScreenFailedColumnIssue(t *testing.T) {
 	sc, n := newScenarioWith(t, boardConfig)
 	sc.Claude.Script(prompt, fakeclaude.Fail(broken))
@@ -114,7 +122,7 @@ func TestScreenFailedColumnIssue(t *testing.T) {
 		t.Errorf("Events does not say the rule of #1 failed:\n%s", text)
 	}
 	wantOneFrame(t, text)
-	harness.MatchSnapshot(t, "failed-column-issue", text)
+	harness.MatchSnapshot(t, "failed-column-issue", failureEventsInOrder(text))
 	stop(sc)
 }
 
