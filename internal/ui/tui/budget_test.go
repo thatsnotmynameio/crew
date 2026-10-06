@@ -14,7 +14,7 @@ import (
 
 // eventfulRows is the whole of eventful's view at 80 columns: the header,
 // Bots' blank row, rule and 7 card rows, the board's blank row, rule,
-// names, underline, 5 cards of 6 rows and "+5 more", the band's blank row,
+// names, underline, 5 cards of 6 rows and "+6 more", the band's blank row,
 // Events' rule and 5 rows, then the blank row and the key help.
 const eventfulRows = 1 + (1 + 1 + botCardRows) + (1 + 1 + 2 + maxCards*cardRows + 1) + (1 + 1 + scrollRows) + 2
 
@@ -32,13 +32,13 @@ func TestATallWindowShowsFiveCardsAColumnAndFiveEventsRows(t *testing.T) {
 	if rows := botsOf(t, view); len(rows) != botCardRows {
 		t.Errorf("Bots has %d rows, want its cards' %d:\n%s", len(rows), botCardRows, view)
 	}
-	contains(t, boardOf(t, view), "+5 more")
+	contains(t, boardOf(t, view), "+6 more")
 }
 
 // Covers KTD10 of #151: shrinking the window takes Events from 5 rows to 2,
 // then the board's cards one at a time down to 1 a column, then collapses
 // Bots to its strip, then cuts the view, each step at the height where the
-// one before no longer fits. Handled holds eventful's ten issues, so its
+// one before no longer fits. Review holds eventful's eleven issues, so its
 // "+N more" says how many cards a column shows.
 func TestAShrinkingWindowGivesRowsUpInOrder(t *testing.T) {
 	for _, tt := range []struct {
@@ -46,15 +46,15 @@ func TestAShrinkingWindowGivesRowsUpInOrder(t *testing.T) {
 		more          string
 		strip, cut    bool
 	}{
-		{short: 0, events: scrollRows, more: "+5 more"},
-		{short: 1, events: scrollRows - 1, more: "+5 more"},
-		{short: 3, events: minScroll, more: "+5 more"},
-		{short: 4, events: minScroll, more: "+6 more"},
-		{short: 3 + cardRows, events: minScroll, more: "+6 more"},
-		{short: 4 + cardRows, events: minScroll, more: "+7 more"},
-		{short: 3 + 4*cardRows, events: minScroll, more: "+9 more"},
-		{short: 4 + 4*cardRows, events: minScroll, more: "+9 more", strip: true},
-		{short: 3 + 4*cardRows + botCardRows - 1, events: minScroll, more: "+9 more", strip: true},
+		{short: 0, events: scrollRows, more: "+6 more"},
+		{short: 1, events: scrollRows - 1, more: "+6 more"},
+		{short: 3, events: minScroll, more: "+6 more"},
+		{short: 4, events: minScroll, more: "+7 more"},
+		{short: 3 + cardRows, events: minScroll, more: "+7 more"},
+		{short: 4 + cardRows, events: minScroll, more: "+8 more"},
+		{short: 3 + 4*cardRows, events: minScroll, more: "+10 more"},
+		{short: 4 + 4*cardRows, events: minScroll, more: "+10 more", strip: true},
+		{short: 3 + 4*cardRows + botCardRows - 1, events: minScroll, more: "+10 more", strip: true},
 		{short: 4 + 4*cardRows + botCardRows - 1, cut: true},
 	} {
 		height := eventfulRows - tt.short
@@ -111,14 +111,14 @@ func TestAColumnOfSevenWithRoomForThreeShowsThreeAndFourMore(t *testing.T) {
 	h.send(downKey)
 	h.send(downKey)
 	board = boardOf(t, checkFits(t, h, 80, height))
-	wantLit(t, h, "#4", 0)
+	wantLit(t, h, "#4", 1)
 	contains(t, board, "│ #2 Bug", "│ #3 Bug", "+4 more")
 	if strings.Contains(board, "#1 ") || strings.Contains(board, "#5 ") {
 		t.Errorf("the column does not show cards two to four:\n%s", board)
 	}
 
 	h.send(upKey)
-	wantLit(t, h, "#3", 0)
+	wantLit(t, h, "#3", 1)
 	if got := boardOf(t, h.view()); strings.Contains(got, "#1 ") || !strings.Contains(got, "│ #4 Bug") {
 		t.Errorf("↑ to a card already shown scrolled the column:\n%s", got)
 	}

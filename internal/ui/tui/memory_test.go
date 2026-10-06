@@ -63,12 +63,15 @@ func gone(handled ...core.HandledView) engine.Update {
 }
 
 // Covers R18 and KTD9 of #151: the memory forgets an issue that has no
-// card left, and keeps one whose card moved to Handled.
+// card left, and keeps one whose rule ended while it still has a card.
 func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "running the tests now"})))
 
-	h.send(updateMsg(gone(entry("1", "Add login form", "implement", "ready to review", 7, 0))))
+	u := gone(entry("1", "Add login form", "implement", "ready to review", 7, 0))
+	u.Snapshot.Board = append(u.Snapshot.Board,
+		crew.BoardIssue{Issue: u.Snapshot.Handled[0].Issue, Labels: []string{"ready to review"}})
+	h.send(updateMsg(u))
 	wantCode(t, h, "1", "running the tests now", "crew/1-code")
 
 	h.send(updateMsg(gone()))

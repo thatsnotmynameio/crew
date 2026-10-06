@@ -73,9 +73,9 @@ func handledSnapshot() engine.Update {
 	return u
 }
 
-// manySnapshot is runningSnapshot with ten issues handled: #11 and #12
-// failed, and the successes #13 to #20 in crew:waiting review, the higher
-// the number the more recent, every action as you.
+// manySnapshot is runningSnapshot with ten issues handled, each now in
+// review's column after #2: #11 and #12 failed, and the successes #13 to
+// #20, the higher the number the more recent, every action as you.
 func manySnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
@@ -86,13 +86,14 @@ func manySnapshot() engine.Update {
 	}
 	for n := 13; n <= 20; n++ {
 		u.Snapshot.Handled = append(u.Snapshot.Handled,
-			acted(entry(strconv.Itoa(n), fmt.Sprintf("Success number %d", n), "development", "crew:waiting review", 60, 40-n),
+			acted(entry(strconv.Itoa(n), fmt.Sprintf("Success number %d", n), "development", "ready to review", 60, 40-n),
 				core.HandledAction{
 					Name: "lfg", Spend: spent(float64(n)/2, int64(n)*1_000_000), PullRequest: found("#" + strconv.Itoa(n+30)),
 				}))
 	}
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
+		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: e.Issue, Labels: []string{"ready to review"}})
 	}
 	u.Snapshot.Bots[0].Spend = u.Snapshot.Spent
 	return u
@@ -165,15 +166,11 @@ func contains(t *testing.T, view string, wants ...string) {
 
 // nextCard returns the byte index in l of the left border of the first
 // card whose first row starts with prefix, after the highlight's marker
-// when it has one, and its reference; -1 when l has none.
-func nextCard(l, prefix string) (int, string) {
-	i, rest := strings.Index(l, "│ "+prefix), "│ "
+// when it has one; -1 when l has none.
+func nextCard(l, prefix string) int {
+	i := strings.Index(l, "│ "+prefix)
 	if j := strings.Index(l, "│ "+focusMark+prefix); j >= 0 && (i < 0 || j < i) {
-		i, rest = j, "│ "+focusMark
+		i = j
 	}
-	if i < 0 {
-		return -1, ""
-	}
-	ref, _, _ := strings.Cut(l[i+len(rest):], " ")
-	return i, ref
+	return i
 }

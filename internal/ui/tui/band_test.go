@@ -15,16 +15,6 @@ func TestHandledIssuesRenderTheGoldenView(t *testing.T) {
 	golden(t, "handled", h.view())
 }
 
-// A reason that spans lines reads on one row of its Handled card.
-func TestAReasonWithNewlinesTakesOneRow(t *testing.T) {
-	h := newHarness(t, 120)
-	h.send(updateMsg(handling(failedEntry("5", "Parse", 40, 30, "tests", "exit 1:\n  fail\n"))))
-
-	if got := faceOf(t, boardOf(t, h.view()), "#5")[2]; got != "× tests failed: exit 1: fail" {
-		t.Errorf("#5's reason row = %q, want the reason on one row", got)
-	}
-}
-
 // Covers R16: each queue's busy and free slots.
 func TestTheQueuesSectionShowsEachQueuesBusyAndFreeSlots(t *testing.T) {
 	view := fitted(t, 80, 0, runningSnapshot())

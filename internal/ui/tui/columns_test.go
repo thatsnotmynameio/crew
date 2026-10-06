@@ -6,202 +6,85 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
-	"github.com/thatsnotmynameio/crew/internal/engine"
 )
-
-// handling is a snapshot that handled entries and holds nothing.
-func handling(entries ...core.HandledView) engine.Update {
-	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Handled: entries}}}
-}
-
-// besideIdle is u with an idle issue in the board's first column, which
-// takes the highlight, so the other cards show their own borders.
-func besideIdle(u engine.Update) engine.Update {
-	return onBoard(u, labeled(twenty, "ready"))
-}
 
 // topBorder is the top row of a card width cells wide.
 func topBorder(width int) string { return "╭" + strings.Repeat("─", width-2) + "╮" }
 
-// columnRefs returns the references of the cards in drawn column col of
-// board, top to bottom.
-func columnRefs(board string, col int) []string {
-	var out []string
-	step := columnWidth(board) + columnGap
-	for l := range strings.SplitSeq(board, "\n") {
-		rest, x := l, 0
-		for {
-			i, ref := nextCard(rest, "#")
-			if i < 0 {
-				break
-			}
-			x += len([]rune(rest[:i]))
-			if x/step == col {
-				out = append(out, ref)
-			}
-			rest, x = rest[i+1:], x+1
-		}
-	}
-	return out
-}
-
-// Covers AE7 of #151: an issue that needs attention because two actions
-// failed reads so in the error colour, then its first reason and how many
-// more, then its rule and time, in an error border.
-func TestAE7AHandledCardReadsItsGroupAndFirstReason(t *testing.T) {
-	h := newHarness(t, 120)
-	h.send(updateMsg(besideIdle(handling(
-		failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1", "code", "prompt did not render")))))
-	board := boardOf(t, h.view())
-
-	want := []string{"#5 Parse the config once", "▲ needs attention", "× tests failed: exited 1 +1", "implement 10m00s"}
-	if got := faceOf(t, board, "#5"); !slices.Equal(got, want) {
-		t.Errorf("#5's card = %q, want %q:\n%s", got, want, board)
-	}
-	if col := cardColumn(t, board, "#5"); col != 2 {
-		t.Errorf("#5's card is in column %d, want Handled's 2:\n%s", col, board)
-	}
-	s := h.current().styles
-	for _, span := range []string{s.error.Render("▲ needs attention"), s.error.Render(topBorder(maxColumn))} {
-		if !strings.Contains(h.raw(), span) {
-			t.Errorf("the view lacks %q in the error colour", ansi.Strip(span))
-		}
-	}
-}
-
-// The colours a Handled card's status line and border take.
-func mutedStyle(s styles) lipgloss.Style   { return s.muted }
-func successStyle(s styles) lipgloss.Style { return s.success }
-func errorStyle(s styles) lipgloss.Style   { return s.error }
-
-// Covers R8 and KTD3 of #151: each group of Handled reads its own status
-// line, in its colour, in a border of the group's colour.
-func TestEachHandledGroupReadsItsStatusInItsColour(t *testing.T) {
-	heldAgain := failedEntry("9", "Retry the poll", 8, 5, "tests", "exited 1")
-	heldAgain.HeldBy = "fix"
-	for _, tt := range []struct {
-		name           string
-		entry          core.HandledView
-		face           []string
-		status, border func(styles) lipgloss.Style
-	}{
-		{
-			"given up", givenUpEntry(entry("6", "Drop the old flag", "implement", "done", 25, 20), "gone"),
-			[]string{"#6 Drop the old flag", "■ given up", "× move to done given up: gone", "implement 5m00s"},
-			mutedStyle, mutedStyle,
-		},
-		{
-			"success", entry("8", "Trim the README", "review", "crew:review:done", 9, 3),
-			[]string{"#8 Trim the README", "✓ done", "", "review 6m00s"},
-			successStyle, successStyle,
-		},
-		{
-			"held again", heldAgain,
-			[]string{"#9 Retry the poll", "× needs attention", "× tests failed: exited 1", "implement 3m00s · now in fix"},
-			errorStyle, mutedStyle,
-		},
-	} {
-		h := newHarness(t, 120)
-		h.send(updateMsg(besideIdle(handling(tt.entry))))
-		board := boardOf(t, h.view())
-
-		if got := faceOf(t, board, tt.entry.Issue.Ref); !slices.Equal(got, tt.face) {
-			t.Errorf("%s: card = %q, want %q:\n%s", tt.name, got, tt.face, board)
-		}
-		s := h.current().styles
-		if border := tt.border(s).Render(topBorder(maxColumn)); !strings.Contains(h.raw(), border) {
-			t.Errorf("%s: the card's border is not in the group's colour", tt.name)
-		}
-		if status := tt.status(s).Render(tt.face[1]); !strings.Contains(h.raw(), status) {
-			t.Errorf("%s: %q is not in the group's colour", tt.name, tt.face[1])
-		}
-	}
-}
-
-// Covers R8 of #151: a failure a rule holds again reads its state as an
-// error, and sorts among the rest by when it ended (#109).
-func TestAFailureHeldAgainReadsAsAnErrorAndSortsByWhenItEnded(t *testing.T) {
-	heldAgain := failedEntry("9", "Retry the poll", 8, 5, "tests", "exited 1")
-	heldAgain.HeldBy = "fix"
-	h := newHarness(t, 120)
-	h.send(updateMsg(handling(
-		entry("8", "Trim the README", "review", "done", 9, 3),
-		heldAgain,
-		failedEntry("5", "Parse the config once", 40, 30, "tests", "exited 1"))))
-
-	if want := h.current().styles.error.Render("× needs attention"); !strings.Contains(h.raw(), want) {
-		t.Error("the held-again failure's state is not in the error colour")
-	}
-	board := boardOf(t, h.view())
-	if got := columnRefs(board, 2); !slices.Equal(got, []string{"#5", "#8", "#9"}) {
-		t.Errorf("Handled holds %v, want #5 then #8 then #9:\n%s", got, board)
-	}
-}
-
-// Covers R8 of #151: the Handled column comes last, named with its count
-// and the run's cost, holds the handled issues needing attention first,
-// then the most recently ended, and the board's summary counts only the
-// issues in the configured columns.
-func TestTheHandledColumnHoldsTheHandledIssuesInTodaysOrder(t *testing.T) {
-	board := boardOf(t, fitted(t, 120, 0, handledSnapshot()))
-
-	if got := columnNamesOf(t, board); got != "implement review Handled 4 · $19.86" {
-		t.Errorf("columns = %q, want implement review Handled 4 · $19.86:\n%s", got, board)
-	}
-	if got := columnRefs(board, 2); !slices.Equal(got, []string{"#6", "#5", "#8", "#7"}) {
-		t.Errorf("Handled holds %v, want #6, #5, #8, #7:\n%s", got, board)
-	}
-	if got := cardColumns(board, "#7"); !slices.Equal(got, []int{1, 2}) {
-		t.Errorf("#7's cards are in columns %v, want review (1) and Handled (2):\n%s", got, board)
-	}
-	if rule, _, _ := strings.Cut(board, "\n"); !strings.HasSuffix(rule, " 3 issues") {
-		t.Errorf("summary = %q, want the three issues in implement and review", rule)
-	}
-}
-
-// Covers R8 of #151: with nothing handled and room for every column, the
-// Handled column shows empty.
-func TestAnEmptyHandledColumnShowsWhenEveryColumnFits(t *testing.T) {
-	h := newHarness(t, 120)
-	h.send(updateMsg(runningSnapshot()))
-	board := boardOf(t, h.view())
-
-	if got := columnNamesOf(t, board); got != "implement review Handled 0" {
-		t.Errorf("columns = %q, want implement review Handled 0:\n%s", got, board)
-	}
-	if got := columnRefs(board, 2); len(got) != 0 {
-		t.Errorf("the empty Handled column holds %v:\n%s", got, board)
-	}
-}
-
-// Covers KTD3 of #151: a card moving into the Handled column slides there.
-func TestACardMovingIntoHandledSlides(t *testing.T) {
+// Covers AE6 and R7 of #230: a rule that ended on an issue and moved it to
+// a label a column shows leaves the issue one card, in that column, which
+// slides there, and the board draws no Handled column.
+func TestAE6AnIssueWhoseRuleEndedHasOneCardWhereItsLabelsPutIt(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(updateMsg(inTriage()))
-	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:failed")))
+	h.send(updateMsg(onBoard(handledBy(twelve, "triage", "crew:development:ready"),
+		labeled(twelve, "crew:development:ready"))))
+	board := boardOf(t, h.view())
 
-	want := []slide{{key: "12", ref: "#12", from: 0, to: len(crewBoard) + 1}}
+	if got := cardColumns(board, "#12"); !slices.Equal(got, []int{1}) {
+		t.Errorf("#12's cards are in columns %v, want one in development (1):\n%s", got, board)
+	}
+	if got := columnNamesOf(t, board); got != "triage development fix" {
+		t.Errorf("columns = %q, want triage development fix:\n%s", got, board)
+	}
+	want := []slide{{key: "12", ref: "#12", from: 0, to: 1}}
 	if got := h.current().memory.slides; !slices.Equal(got, want) {
 		t.Errorf("slides = %v, want %v", got, want)
 	}
-	contains(t, underlineOf(t, h), "#12 ▸")
+}
+
+// Covers AE7, R7 and R8 of #230: a rule that failed on an issue moved to
+// a label no column shows sends its notification and writes its event, and
+// the issue gets no card.
+func TestAE7AFailedRuleNotifiesAndLeavesNoHandledCard(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h.send(updateMsg(inTriage()))
+	h.send(tea.BlurMsg{})
+
+	u := onBoard(handledBy(twelve, "triage", "crew:triage:failed"), labeled(twelve, "crew:triage:failed"))
+	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "triage", Reason: "exited 1"}}
+	u.Snapshot.Recent = []core.Event{core.IssueMoved{
+		At: start, IssueKey: "12", IssueRef: "#12", From: "crew:triage:in progress", To: "crew:triage:failed",
+	}}
+	notes := raws(h.send(updateMsg(u)))
+	if len(notes) != 1 || !strings.Contains(notes[0], "triage failed on #12 Rule labels") {
+		t.Errorf("notifications = %q, want one for triage failing on #12", notes)
+	}
+	view := h.view()
+	if board := boardOf(t, view); strings.Contains(board, "#12") || strings.Contains(board, "Handled") {
+		t.Errorf("the board shows #12 or a Handled column:\n%s", board)
+	}
+	contains(t, view, "#12 moved from crew:triage:in progress to crew:triage:failed")
+}
+
+// Covers AE8 and R9 of #230: a run that handled issues and spent money
+// shows its cost in the header, and no handled count anywhere.
+func TestAE8TheHeaderShowsTheRunsCostAndNoHandledCount(t *testing.T) {
+	view := fitted(t, 120, 0, handledSnapshot())
+
+	contains(t, firstLine(view), "$19.86")
+	if strings.Contains(view, "Handled") || strings.Contains(view, "4 · $") {
+		t.Errorf("the view shows a handled count:\n%s", view)
+	}
+	if got := columnNamesOf(t, boardOf(t, view)); got != "implement review" {
+		t.Errorf("columns = %q, want implement review", got)
+	}
 }
 
 // Covers KTD13 of #151: on a written board none of whose columns names the
 // running label, a held issue shows as a live card in Not on board,
-// before Handled.
+// after the configured columns.
 func TestAHeldIssueNoColumnShowsIsInNotOnBoard(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
 	board := boardOf(t, h.view())
 
-	if got := columnNamesOf(t, board); got != "ideas bugs done Not on board Handled 0" {
-		t.Errorf("columns = %q, want ideas bugs done Not on board Handled 0:\n%s", got, board)
+	if got := columnNamesOf(t, board); got != "ideas bugs done Not on board" {
+		t.Errorf("columns = %q, want ideas bugs done Not on board:\n%s", got, board)
 	}
 	if got := cardColumns(board, "#12"); !slices.Equal(got, []int{3}) {
 		t.Errorf("#12's cards are in columns %v, want one in Not on board (3):\n%s", got, board)
@@ -231,8 +114,8 @@ func TestNotOnBoardIsNotDrawnWhileEveryHeldIssueHasACard(t *testing.T) {
 	h.send(updateMsg(inTriage()))
 	board := boardOf(t, h.view())
 
-	if got := columnNamesOf(t, board); got != "triage development fix Handled 0" {
-		t.Errorf("columns = %q, want triage development fix Handled 0:\n%s", got, board)
+	if got := columnNamesOf(t, board); got != "triage development fix" {
+		t.Errorf("columns = %q, want triage development fix:\n%s", got, board)
 	}
 }
 

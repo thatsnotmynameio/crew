@@ -60,8 +60,8 @@ type place struct{ column, row int }
 
 // walk returns m with the highlight, and the popup with it, moved delta
 // cards in board order: down each column, then on to the next column
-// holding cards, the Handled column last. Past the first or last card it
-// does nothing (KTD12 of #151).
+// holding cards. Past the first or last card it does nothing (KTD12 of
+// #151).
 func (m Model) walk(delta int) Model {
 	cards := m.cards()
 	columns := byColumn(cards)

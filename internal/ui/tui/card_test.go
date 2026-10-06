@@ -18,7 +18,7 @@ func cardOf(t *testing.T, board, ref string) []string {
 	t.Helper()
 	rows := strings.Split(board, "\n")
 	for i, l := range rows {
-		at, _ := nextCard(l, ref+" ")
+		at := nextCard(l, ref+" ")
 		if at < 0 || i == 0 || i+cardRows-1 > len(rows) {
 			continue
 		}
@@ -110,7 +110,7 @@ func TestARunRowReadsAStartingActionAndAnOwedClaim(t *testing.T) {
 // items that fit and counts the rest, and every row keeps the card's
 // width.
 func TestANarrowCardKeepsWholeItemsAndItsWidth(t *testing.T) {
-	h := newBoardHarness(t, 95, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 71, crewRules, ideasBugsDone)
 	u := held(twenty, "fix", "code", core.ClaimRunning)
 	iv := &u.Snapshot.Issues[0]
 	iv.Actions[0].Started = start.Add(-5 * time.Minute)

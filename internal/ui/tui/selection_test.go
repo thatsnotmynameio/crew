@@ -209,8 +209,8 @@ func TestTheHighlightStaysWhileBotsOrEventsScroll(t *testing.T) {
 	wantLit(t, h, "#1", 0)
 }
 
-// Covers R6, R10 and KTD5, KTD11 of #151: the highlighted card, live or
-// Handled, has its border in the highlight colour and ▸ before its
+// Covers R6, R10 and KTD5, KTD11 of #151: the highlighted card has its
+// border in the highlight colour and ▸ before its
 // reference, and no other card has either.
 func TestTheHighlightedCardIsDrawnInTheHighlightColourWithAMarker(t *testing.T) {
 	h := newHarness(t, 120)
@@ -220,7 +220,7 @@ func TestTheHighlightedCardIsDrawnInTheHighlightColourWithAMarker(t *testing.T) 
 	for _, want := range []struct {
 		ref string
 		col int
-	}{{"#1", 0}, {"#6", 2}} {
+	}{{"#1", 0}, {"#2", 1}} {
 		board := boardOf(t, h.view())
 		wantLit(t, h, want.ref, want.col)
 		if card := cardOf(t, board, want.ref); !strings.HasPrefix(card[1], "│ "+focusMark+want.ref+" ") {
@@ -229,7 +229,6 @@ func TestTheHighlightedCardIsDrawnInTheHighlightColourWithAMarker(t *testing.T) 
 		if n := strings.Count(h.raw(), border); n != 1 {
 			t.Errorf("with %s highlighted, %d borders are in the highlight colour, want 1", want.ref, n)
 		}
-		h.send(rightKey)
 		h.send(rightKey)
 	}
 }
@@ -244,19 +243,6 @@ func TestAnIssueMovingColumnsKeepsItsHighlight(t *testing.T) {
 	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("22", "crew:triage:done"))))
 
 	wantLit(t, h, "#22", 2)
-}
-
-// Covers R21 and KTD5 of #151: an issue with cards in a configured column
-// and in Handled takes the highlight to its Handled card.
-func TestAnIssueMovingIntoHandledHighlightsItsHandledCard(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
-	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("22", "bug"))))
-	h.send(downKey)
-
-	u := handledBy(crew.Issue{Key: "22", Ref: "#22", Title: "Bug"}, "fix", "crew:triage:done")
-	h.send(updateMsg(onBoard(u, item("20", "bug"), item("22", "crew:triage:done"))))
-
-	wantLit(t, h, "#22", 3)
 }
 
 // Covers R21 and KTD5 of #151: when the highlighted issue leaves the

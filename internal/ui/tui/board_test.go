@@ -143,7 +143,7 @@ func cardColumns(board, ref string) []int {
 	for l := range strings.SplitSeq(board, "\n") {
 		rest, x := l, 0
 		for {
-			i, _ := nextCard(rest, ref+" ")
+			i := nextCard(rest, ref+" ")
 			if i < 0 {
 				break
 			}
@@ -188,8 +188,7 @@ func schedulesSlideTick(cmd tea.Cmd) bool {
 }
 
 // Covers AE5 of #134: the default board of promote triage, triage and
-// development has two columns, triage then development, then Handled
-// (#151), and an issue the rule without actions holds has no card, not
+// development has two columns, triage then development, and an issue the rule without actions holds has no card, not
 // even in Not on board.
 func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard[:2])
@@ -199,8 +198,8 @@ func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T)
 	h.send(updateMsg(onBoard(u, labeled(twenty, "crew:development:ready"))))
 	board := boardOf(t, h.view())
 
-	if got := columnNamesOf(t, board); got != "triage development Handled 0" {
-		t.Errorf("columns = %q, want triage development Handled 0:\n%s", got, board)
+	if got := columnNamesOf(t, board); got != "triage development" {
+		t.Errorf("columns = %q, want triage development:\n%s", got, board)
 	}
 	if got := cardColumns(board, "#20"); len(got) != 1 || got[0] != 1 {
 		t.Errorf("#20's cards are in columns %v, want one in development (1):\n%s", got, board)
@@ -224,9 +223,9 @@ func TestAnItemInARunningLabelCrewDoesNotHoldHasAnIdleCard(t *testing.T) {
 	contains(t, board, "run  ○ idle")
 }
 
-// Covers R23 and R28: an issue whose rule ended in a label no column names
-// has only its Handled card (#151), and no card waits for the next rule.
-func TestAnIssueMovedToALabelNoColumnNamesHasOnlyItsHandledCard(t *testing.T) {
+// Covers R23 and R28, and R7 of #230: an issue whose rule ended in a label
+// no column names has no card, and no card waits for the next rule.
+func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, crewBoard)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
 		labeled(twelve, "crew:triage:in progress"))))
@@ -234,8 +233,8 @@ func TestAnIssueMovedToALabelNoColumnNamesHasOnlyItsHandledCard(t *testing.T) {
 	h.send(updateMsg(handledBy(twelve, "triage", "crew:triage:done")))
 	board := boardOf(t, h.view())
 
-	if got := cardColumns(board, "#12"); !slices.Equal(got, []int{len(crewBoard)}) || strings.Contains(board, "→") {
-		t.Errorf("#12's cards are in columns %v, want Handled's alone, or a card waits:\n%s", got, board)
+	if got := cardColumns(board, "#12"); len(got) != 0 || strings.Contains(board, "→") {
+		t.Errorf("#12's cards are in columns %v, want none, or a card waits:\n%s", got, board)
 	}
 	contains(t, board, " 0 issues")
 }
@@ -268,8 +267,8 @@ func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning), labeled(twenty, "bug"))))
 	board := boardOf(t, h.view())
 
-	if got := columnNamesOf(t, board); got != "ideas bugs done Handled 0" {
-		t.Errorf("columns = %q, want ideas bugs done Handled 0:\n%s", got, board)
+	if got := columnNamesOf(t, board); got != "ideas bugs done" {
+		t.Errorf("columns = %q, want ideas bugs done:\n%s", got, board)
 	}
 	if got := cardColumns(board, "#20"); len(got) != 1 || got[0] != 1 {
 		t.Errorf("#20's cards are in columns %v, want one in bugs (1):\n%s", got, board)
@@ -301,8 +300,8 @@ func TestTheColumnsShowInBoardOrder(t *testing.T) {
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "bug"))))
 
 	got := boardOf(t, h.view())
-	if names := columnNamesOf(t, got); names != "done ideas bugs Handled 0" {
-		t.Errorf("columns = %q, want done ideas bugs Handled 0:\n%s", names, got)
+	if names := columnNamesOf(t, got); names != "done ideas bugs" {
+		t.Errorf("columns = %q, want done ideas bugs:\n%s", names, got)
 	}
 }
 
@@ -389,7 +388,7 @@ func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, eightColumns())
 	h.send(updateMsg(u))
 	board := boardOf(t, h.view())
-	contains(t, board, "7 empty columns not shown")
+	contains(t, board, "6 empty columns not shown")
 	if got := columnNamesOf(t, board); got != "c2 c6" {
 		t.Errorf("columns = %q, want c2 c6:\n%s", got, board)
 	}

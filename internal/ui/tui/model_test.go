@@ -292,7 +292,7 @@ func TestAnActionRunningItsCheckStillRunsOnItsCard(t *testing.T) {
 
 	h.send(updateMsg(u))
 
-	if got := faceOf(t, boardOf(t, h.view()), "#1")[1]; got != "run  ⠋ code 5m +1" {
+	if got := faceOf(t, boardOf(t, h.view()), "#1")[1]; got != "run  ⠋ code 5m · ⠋ tests 7m" {
 		t.Errorf("#1's run row = %q, want the checking action running with its elapsed time", got)
 	}
 }

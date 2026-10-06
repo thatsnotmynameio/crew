@@ -25,16 +25,12 @@ const (
 
 // popupHeader is the popup's header rows, each value after its muted
 // label: the rule, the labels as chips, the kind, the priority, whether
-// the issue is blocked, its URL, and a Handled card's cost (R15, R20,
-// KTD8 of #151).
+// the issue is blocked and its URL (R15, KTD8 of #151).
 func (m Model) popupHeader(c card) []string {
 	s := m.styles
 	none := s.muted.Render("none")
 	rule := none
-	switch {
-	case c.entry != nil:
-		rule = s.text.Render(clean(c.entry.Rule))
-	case c.held:
+	if c.held {
 		rule = s.text.Render(clean(c.view.Rule))
 	}
 	priority := none
@@ -51,9 +47,6 @@ func (m Model) popupHeader(c card) []string {
 	}
 	labels := []string{"rule", "labels", "kind", "priority", "blocked", "url"}
 	values := []string{rule, m.chips(c), s.text.Render(c.issue.Kind.String()), priority, s.text.Render(blocked), url}
-	if c.entry != nil {
-		labels, values = append(labels, "cost"), append(values, m.issueCost(*c.entry))
-	}
 	width := widest(labels)
 	out := make([]string, 0, len(labels))
 	for i, l := range labels {
@@ -63,14 +56,11 @@ func (m Model) popupHeader(c card) []string {
 }
 
 // chips are c's labels as chips: its issue's crew states, then the board
-// labels its board item carries, each once; or, for a Handled card whose
-// issue is off the board, the state it moved to (R15, KTD8 of #151).
+// labels its board item carries, each once (R15, KTD8 of #151).
 func (m Model) chips(c card) string {
 	i := slices.IndexFunc(m.snap.Board, func(b crew.BoardIssue) bool { return b.Issue.Key == c.issue.Key })
 	var labels []string
 	switch {
-	case c.entry != nil && i < 0:
-		labels = []string{string(c.entry.To)}
 	case c.held:
 		labels = states(c.view.Issue)
 	case i >= 0:
@@ -102,16 +92,6 @@ func states(issue crew.Issue) []string {
 	return out
 }
 
-// issueCost is what e's issue cost this run: its rule's spend and that of
-// the rules that ended on it before (R20, KTD14 of #151).
-func (m Model) issueCost(e core.HandledView) string {
-	parts := spendParts(e.Spend().Add(e.Earlier))
-	if len(parts) == 0 {
-		return m.styles.muted.Render("none")
-	}
-	return m.styles.text.Render(strings.Join(parts, " · "))
-}
-
 // actionRow is a row of the popup's actions table, and what shows under
 // it: the action's last message, or why it failed.
 type actionRow struct {
@@ -121,19 +101,11 @@ type actionRow struct {
 }
 
 // popupActions is the popup's actions table, inner cells wide, each
-// action's note under its row: a Handled card's actions with their pull
-// requests, a held issue's, or a muted no actions (R16, R17, KTD8 of
-// #151).
+// action's note under its row: a held issue's actions, or a muted no
+// actions (R16, R17, KTD8 of #151).
 func (m Model) popupActions(c card, inner int) []string {
-	header := []string{"action", "bot", "queue", "state", "branch"}
 	var rows []actionRow
-	switch {
-	case c.entry != nil:
-		header = append(header, "pull request")
-		for _, a := range c.entry.Actions {
-			rows = append(rows, m.handledActionRow(*c.entry, a))
-		}
-	case c.held:
+	if c.held {
 		for _, a := range c.view.Actions {
 			rows = append(rows, m.liveActionRow(c, a))
 		}
@@ -141,7 +113,7 @@ func (m Model) popupActions(c card, inner int) []string {
 	if len(rows) == 0 {
 		return []string{m.styles.muted.Render("no actions")}
 	}
-	return m.table(header, rows, inner)
+	return m.table([]string{"action", "bot", "queue", "state", "branch"}, rows, inner)
 }
 
 // liveActionRow is held action a's row: its bot, queue, state and branch,
@@ -162,33 +134,6 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 	row.cells = []string{
 		m.styles.text.Render(clean(a.Name)), m.actionBot(c.issue.Ref, c.view.Rule, a.Name),
 		m.styles.text.Render(clean(c.view.Queue)), m.styles.text.Render(state), m.styles.text.Render(branch),
-	}
-	return row
-}
-
-// handledActionRow is the row of e's action a: its bot, its rule's queue,
-// whether it failed, had no session or was done, the branch the memory
-// holds and its pull request, then why it failed or what it last said.
-func (m Model) handledActionRow(e core.HandledView, a core.HandledAction) actionRow {
-	// While a rule holds the issue again, the memory holds that run's
-	// words and branch, not this one's (R20 of #151).
-	var message, branch string
-	if e.HeldBy == "" {
-		message, branch = m.messages.last(e.Issue.Key, a.Name)
-	}
-	row := actionRow{note: message}
-	state, pr := doneState, ""
-	if a.Spend.Sessions == 0 {
-		state = "no session"
-	} else {
-		pr = m.pullRequest(a.PullRequest)
-	}
-	if i := slices.IndexFunc(e.Failures, func(f crew.ActionFailure) bool { return f.Action == a.Name }); i >= 0 {
-		state, row.note, row.failed = failedState, clean(e.Failures[i].Reason), true
-	}
-	row.cells = []string{
-		m.styles.text.Render(clean(a.Name)), m.actionBot(e.Issue.Ref, e.Rule, a.Name),
-		m.styles.text.Render(m.ruleQueue(e.Rule)), m.styles.text.Render(state), m.styles.text.Render(branch), pr,
 	}
 	return row
 }
@@ -227,24 +172,6 @@ func (m Model) actionBot(ref, rule, action string) string {
 	}
 	e := m.snap.Bots[i]
 	return m.styles.botName(e)
-}
-
-// ruleQueue is the name of the queue rule runs in, the default queue for
-// a rule in none.
-func (m Model) ruleQueue(rule string) string {
-	i := slices.IndexFunc(m.cfg.Rules, func(r crew.Rule) bool { return r.Name == rule })
-	if i < 0 || m.cfg.Rules[i].Queue.Name == "" {
-		return crew.DefaultQueue
-	}
-	return m.cfg.Rules[i].Queue.Name
-}
-
-// pullRequest is pr as a link when it was found, or what its lookup said.
-func (m Model) pullRequest(pr crew.PullRequest) string {
-	if pr.Lookup == crew.PullRequestFound {
-		return m.styles.link(pr.Ref, pr.URL)
-	}
-	return m.styles.muted.Render(pr.String())
 }
 
 // table lays rows out under a muted header row, inner cells wide, its
