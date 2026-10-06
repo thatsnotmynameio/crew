@@ -255,7 +255,8 @@ func TestAE5AHeldIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
 		labeled(headerIssue, "in progress"))))
 	h.send(enterKey)
 
-	if got := strings.Fields(field(t, popupRows(t, h), "labels")); !slices.Equal(got, []string{"in", "progress", "blocked"}) {
+	got := strings.Fields(field(t, popupRows(t, h), "labels"))
+	if !slices.Equal(got, []string{"in", "progress", "blocked"}) {
 		t.Errorf("labels = %q, want in progress, then blocked", got)
 	}
 }
