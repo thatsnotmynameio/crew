@@ -40,6 +40,9 @@ type Invocation struct {
 	// Env holds GH_CONFIG_DIR and the CREW_* variables the invocation
 	// carried; the double forwards no other variable.
 	Env map[string]string
+	// IgnoreStop, when set, makes the double that runs the invocation ignore
+	// SIGTERM from then on. Session.IgnoreStop calls it.
+	IgnoreStop func()
 }
 
 // Outcome is how a claude invocation ended.
@@ -80,7 +83,8 @@ type Session struct {
 	// without one.
 	GitHub *fakegithub.GitHub
 
-	out io.Writer
+	out        io.Writer
+	ignoreStop func()
 }
 
 // script is a registered ScriptFunc.
@@ -122,7 +126,7 @@ func (c *Claude) Run(ctx context.Context, inv Invocation, stdout, stderr io.Writ
 	if reason == "" {
 		var fn ScriptFunc
 		if fn = c.take(s.Prompt); fn != nil {
-			s.Dir, s.Env, s.GitHub, s.out = inv.Dir, inv.Env, c.github, stdout
+			s.Dir, s.Env, s.GitHub, s.out, s.ignoreStop = inv.Dir, inv.Env, c.github, stdout, inv.IgnoreStop
 			return Outcome{Code: fn(ctx, s)}
 		}
 		reason = "no script matches the prompt"

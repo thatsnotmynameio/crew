@@ -52,11 +52,13 @@ type request struct {
 }
 
 // frame is one line the server sends a double: a chunk of standard output,
-// a chunk of standard error, or the exit code, which is the last frame.
+// a chunk of standard error, the order to ignore SIGTERM from then on, or the
+// exit code, which is the last frame.
 type frame struct {
-	Stdout []byte `json:"stdout,omitempty"`
-	Stderr []byte `json:"stderr,omitempty"`
-	Exit   *int   `json:"exit,omitempty"`
+	Stdout     []byte `json:"stdout,omitempty"`
+	Stderr     []byte `json:"stderr,omitempty"`
+	IgnoreTerm bool   `json:"ignore_term,omitempty"`
+	Exit       *int   `json:"exit,omitempty"`
 }
 
 // Server is the test process's end of the doubles: it listens on a Unix
@@ -284,7 +286,10 @@ func (s *Server) answer(ctx context.Context, req request, out *frames) int {
 		_ = out.send(frame{Stdout: r.Stdout, Stderr: r.Stderr})
 		code, violation = r.Code, r.Violation
 	case req.Name == claudeName && s.claude != nil:
-		inv := fakeclaude.Invocation{Args: req.Args, Dir: req.Dir, Env: req.Env}
+		inv := fakeclaude.Invocation{
+			Args: req.Args, Dir: req.Dir, Env: req.Env,
+			IgnoreStop: func() { _ = out.send(frame{IgnoreTerm: true}) },
+		}
 		o := s.claude.Run(ctx, inv, out.writer(false), out.writer(true))
 		code, violation = o.Code, o.Violation
 	default:
@@ -308,7 +313,7 @@ type frames struct {
 
 // send writes f as one line.
 func (f *frames) send(fr frame) error {
-	if len(fr.Stdout) == 0 && len(fr.Stderr) == 0 && fr.Exit == nil {
+	if len(fr.Stdout) == 0 && len(fr.Stderr) == 0 && !fr.IgnoreTerm && fr.Exit == nil {
 		return nil
 	}
 	f.mu.Lock()
