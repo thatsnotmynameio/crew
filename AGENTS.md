@@ -41,7 +41,7 @@ Ports and adapters with a pure core.
 - `internal/engine`: the one loop that owns the core, runs commands through the ports, owns `.crew/logs/`, publishes updates.
 - `internal/proc`: the only way to start a child process (own process group, stop with deadline, kill all; `StartDetached` for the browser opener).
 - `internal/captain`: the captain, which answers a coding-agent session's next task (`port.Captain`); its only one, `Dumb`, hands every session a new task with a placeholder prompt.
-- `internal/bots`: `crew bots create`, crew's own GitHub identities (private GitHub Apps): names, manifest, loopback page, GitHub API signed as the bot, the bots' files under the user config dir (`crew/bots`, and the older `crew/mates` read as a fallback); `Act`, which makes the configured bots act: repository tokens renewed in private gh config directories, and the git environment of the co-author hook.
+- `internal/bots`: `crew bots create`, crew's own GitHub identities (private GitHub Apps): names, manifest, loopback page, GitHub API signed as the bot, the bots' files under `$XDG_CONFIG_HOME`, else `~/.config`, on macOS too (`crew/bots`, and the older `crew/mates` read as a fallback); `Act`, which makes the configured bots act: repository tokens renewed in private gh config directories, and the git environment of the co-author hook.
 - `internal/adapter/{github,claude,codex,git,shell}`: the adapters.
 - `internal/ui/lines`, `internal/ui/tui`: the renderers; they only read engine updates.
 - `internal/fake`: in-memory tracker, scripted harness, temp-dir workspace, scripted checker.
