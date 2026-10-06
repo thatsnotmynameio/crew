@@ -1,5 +1,4 @@
-# crew's local files when it runs on this repository (the root .gitignore
-# keeps config.yaml out too)
+# crew's local files when it runs on this repository (config.yaml stays committed)
 logs/
 worktrees/
 # The TypeSafe judge's ledger and running instances. The pattern matches only
