@@ -43,6 +43,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from typesafe_judge.asking import UnknownQuestionError, ask, effective_stage, probabilities, verdict
 from typesafe_judge.bank import BankFile
+from typesafe_judge.calibrate import calibrate, parse_calibration
 from typesafe_judge.keys import StateError, canonical_identifiers
 from typesafe_judge.ledger import DIRECTORY, Ledger
 from typesafe_judge.recheck import recheck
@@ -53,6 +54,7 @@ from typesafe_judge.records import (
     parse_outcome,
     record_outcome,
 )
+from typesafe_judge.stages import stage_report
 
 if TYPE_CHECKING:
     import socket
@@ -247,6 +249,17 @@ def _rechecks(call: Call) -> dict[str, JSON]:
     return {"recheck": recheck(call.bank, call.ledger, call.client, name, earlier).to_json()}
 
 
+def _calibrations(call: Call) -> dict[str, JSON]:
+    body = _fields(call.body, required={"question"}, optional={"split_key", "strong_only"})
+    name, split_key, strong_only = parse_calibration(body)
+    result = calibrate(call.bank, call.ledger, name, split_key, strong_only=strong_only)
+    return {"calibration": result.to_json()}
+
+
+def _stages(call: Call) -> dict[str, JSON]:
+    return {"questions": stage_report(call.bank, call.ledger)}
+
+
 def _fields(body: object, *, required: set[str], optional: set[str]) -> dict[str, object]:
     if not isinstance(body, dict):
         msg = "the body must be a JSON object"
@@ -276,9 +289,10 @@ ROUTES: dict[tuple[str, str], Route] = {
     ("POST", "/v1/decisions"): Route(Scope.ASK, _decisions),
     ("POST", "/v1/outcomes"): Route(Scope.ADMIN, _outcomes),
     ("POST", "/v1/rechecks"): Route(Scope.ADMIN, _rechecks),
+    ("POST", "/v1/calibrations"): Route(Scope.ADMIN, _calibrations),
+    ("GET", "/v1/stages"): Route(Scope.ADMIN, _stages),
 }
-"""The endpoints by method and path (KTD18). Calibrations and the stage report join here,
-each with its scope."""
+"""The endpoints by method and path, each with the scope it needs (KTD18)."""
 
 
 @dataclass(frozen=True, slots=True)

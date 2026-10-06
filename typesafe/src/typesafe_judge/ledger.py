@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Literal, Self, cast
 
 import rfc8785
 
+from typesafe_judge.evidence import EvidenceReads, EvidenceWrites
 from typesafe_judge.keys import JSON, canonical_identifiers, canonical_state, state_hash
 from typesafe_judge.schema import MIGRATIONS, SCHEMA_VERSION
 
@@ -178,7 +179,7 @@ class NewRecheck:
     report: Mapping[str, JSON]
 
 
-class Reads:
+class Reads(EvidenceReads):
     """Queries over one connection; they never write."""
 
     def __init__(self, con: sqlite3.Connection) -> None:
@@ -322,7 +323,7 @@ class Reads:
         return changes
 
 
-class Writes(Reads):
+class Writes(Reads, EvidenceWrites):
     """Inserts within one write transaction."""
 
     def record_bank(self, bank: Bank) -> bool:
