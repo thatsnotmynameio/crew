@@ -45,7 +45,7 @@ Each list holds the 5 candidates with the highest probability for its direction,
 
 When the script cannot judge every candidate it prints no list, writes one line starting with `rank.sh:` on standard error, and exits 1. The line names the cause: `TYPESAFE_API_KEY is not set`, both login lists empty, a missing command, a `gh` command that failed with its error, or `Jev failed for #N` with `HTTP <status>`, `timeout`, `connection failed` or `invalid response` and the number of attempts. It retries a busy or failing API up to 3 attempts. A wrong argument prints its usage and exits 2.
 
-Report that line as it is. Do not retry the script, and do not rank the candidates yourself in its place: say the shortlist is unavailable and why. Whoever asked then reads every candidate itself, as crew's refine prompt does.
+Report that line as it is. Do not retry the script, and do not rank the candidates yourself in its place: say the shortlist is unavailable and why. Whoever asked then reads every candidate itself, as the refine prompt in `.crew/config.yaml` does.
 
 ## Measure it
 
