@@ -1,12 +1,10 @@
 package harness
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -285,16 +283,15 @@ func TestSIGTERMEndsABlockedClaudeAndCancelsItsScript(t *testing.T) {
 	}
 }
 
-// Covers #176's U5: a script that calls IgnoreStop keeps the claude double
-// running after SIGTERM, as a session slow to stop does; SIGKILL then ends it
-// and cancels the script's context.
+// Covers #176's U5: once IgnoreStop returns, the claude double ignores
+// SIGTERM and keeps running, as a session slow to stop does; SIGKILL then
+// ends it and cancels the script's context.
 func TestIgnoreStopKeepsTheClaudeDoubleRunningAfterSIGTERM(t *testing.T) {
-	started, cancelled := make(chan struct{}), make(chan struct{})
+	ignoring, cancelled := make(chan struct{}), make(chan struct{})
 	c := fakeclaude.New(nil)
 	c.Script("slow to stop", func(ctx context.Context, s *fakeclaude.Session) int {
 		s.IgnoreStop()
-		_ = s.Emit(s.Init())
-		close(started)
+		close(ignoring)
 		<-ctx.Done()
 		close(cancelled)
 		return 1
@@ -302,32 +299,19 @@ func TestIgnoreStopKeepsTheClaudeDoubleRunningAfterSIGTERM(t *testing.T) {
 	s := Serve(t, nil, c)
 	cmd := double(t, s, "claude", claudeArgs("slow to stop")...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	<-started
-	// The init event comes after IgnoreStop's frame, so once the double
-	// printed it, it ignores SIGTERM.
-	lines := bufio.NewReader(stdout)
-	if _, err := lines.ReadString('\n'); err != nil {
-		t.Fatalf("read the init event: %v", err)
-	}
 	exited := make(chan error, 1)
-	go func() {
-		_, _ = io.Copy(io.Discard, lines)
-		exited <- cmd.Wait()
-	}()
+	go func() { exited <- cmd.Wait() }()
+	<-ignoring
 
 	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case err := <-exited:
-		t.Fatalf("the double exited on SIGTERM after IgnoreStop: %v", err)
+		t.Fatalf("the double exited on SIGTERM after IgnoreStop returned: %v", err)
 	case <-time.After(500 * time.Millisecond):
 	}
 

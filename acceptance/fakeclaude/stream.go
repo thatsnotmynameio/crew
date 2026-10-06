@@ -47,9 +47,9 @@ func (s *Session) Emit(events ...Event) error {
 
 // IgnoreStop makes the claude double ignore SIGTERM from now on, as a session
 // slow to stop does: it then ends only when the script returns or SIGKILL
-// kills it, and ctx is cancelled only then. Call it before emitting the
-// events the program under test acts on, so the double has it by then. It
-// does nothing when the session does not run in a double.
+// kills it, and ctx is cancelled only then. It returns once the double
+// ignores SIGTERM, or has already ended. It does nothing when the session
+// does not run in a double.
 func (s *Session) IgnoreStop() {
 	if s.ignoreStop != nil {
 		s.ignoreStop()

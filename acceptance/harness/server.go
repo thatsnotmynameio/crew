@@ -249,14 +249,18 @@ func (s *Server) serve(c net.Conn) {
 	defer s.track(req.Pid, -1)
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
-	// The double sends nothing after its request: the end of its input
-	// means it closed the connection, after a SIGTERM or when it died.
+	// After its request the double sends only acknowledgements, one byte
+	// each: the end of its input means it closed the connection, after a
+	// SIGTERM or when it died.
+	acks := make(chan struct{}, 1)
 	s.wg.Go(func() {
+		// What the decoder buffered is the rest of the request, such as its
+		// newline, never an acknowledgement.
 		_, _ = io.Copy(io.Discard, dec.Buffered())
-		_, _ = io.Copy(io.Discard, c)
+		watch(c, acks)
 		cancel()
 	})
-	out := &frames{enc: json.NewEncoder(c)}
+	out := &frames{enc: json.NewEncoder(c), ctx: ctx, acks: acks}
 	code := s.answer(ctx, req, out)
 	_ = out.send(frame{Exit: &code})
 }
@@ -288,7 +292,7 @@ func (s *Server) answer(ctx context.Context, req request, out *frames) int {
 	case req.Name == claudeName && s.claude != nil:
 		inv := fakeclaude.Invocation{
 			Args: req.Args, Dir: req.Dir, Env: req.Env,
-			IgnoreStop: func() { _ = out.send(frame{IgnoreTerm: true}) },
+			IgnoreStop: out.ignoreTerm,
 		}
 		o := s.claude.Run(ctx, inv, out.writer(false), out.writer(true))
 		code, violation = o.Code, o.Violation
@@ -305,10 +309,40 @@ func (s *Server) answer(ctx context.Context, req request, out *frames) int {
 	return code
 }
 
-// frames sends frames on one connection, one at a time.
+// watch reads the double's acknowledgements from r, passing each to acks,
+// until r ends.
+func watch(r io.Reader, acks chan<- struct{}) {
+	b := make([]byte, 1)
+	for {
+		if _, err := r.Read(b); err != nil {
+			return
+		}
+		select {
+		case acks <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// frames sends frames on one connection, one at a time. ctx ends when the
+// double closed the connection, and acks carries its acknowledgements.
 type frames struct {
-	mu  sync.Mutex
-	enc *json.Encoder
+	mu   sync.Mutex
+	enc  *json.Encoder
+	ctx  context.Context //nolint:containedctx // the connection's lifetime, which ignoreTerm waits within
+	acks <-chan struct{}
+}
+
+// ignoreTerm tells the double to ignore SIGTERM, and returns once it
+// acknowledged that, or closed the connection.
+func (f *frames) ignoreTerm() {
+	if err := f.send(frame{IgnoreTerm: true}); err != nil {
+		return
+	}
+	select {
+	case <-f.acks:
+	case <-f.ctx.Done():
+	}
 }
 
 // send writes f as one line.

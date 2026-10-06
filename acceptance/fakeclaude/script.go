@@ -41,7 +41,8 @@ type Invocation struct {
 	// carried; the double forwards no other variable.
 	Env map[string]string
 	// IgnoreStop, when set, makes the double that runs the invocation ignore
-	// SIGTERM from then on. Session.IgnoreStop calls it.
+	// SIGTERM from then on, and returns once it does. Session.IgnoreStop
+	// calls it.
 	IgnoreStop func()
 }
 

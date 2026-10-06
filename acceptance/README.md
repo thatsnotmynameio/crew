@@ -243,7 +243,7 @@ sc.Claude.Script("a phrase from your config's prompt", func(ctx context.Context,
 })
 ```
 
-`ctx` is cancelled when crew stops the session, for example with SIGTERM: a script that blocks must give up then. A script that calls `s.IgnoreStop()` plays a session slow to stop: from then on its double ignores SIGTERM, and ends only when the script returns or crew kills it with SIGKILL, which is when `ctx` is cancelled. Call it before emitting the events crew acts on, so the double has it by then. Scripts of parallel sessions run at the same time, in the test process. A script that runs `git` gets the test process's environment, not crew's: give its command an environment of its own (such as `GIT_CONFIG_NOSYSTEM=1` and a `GIT_CONFIG_GLOBAL` with an identity) so your own git config does not leak in.
+`ctx` is cancelled when crew stops the session, for example with SIGTERM: a script that blocks must give up then. A script that calls `s.IgnoreStop()` plays a session slow to stop: from then on its double ignores SIGTERM, and ends only when the script returns or crew kills it with SIGKILL, which is when `ctx` is cancelled. It returns once the double ignores SIGTERM. Scripts of parallel sessions run at the same time, in the test process. A script that runs `git` gets the test process's environment, not crew's: give its command an environment of its own (such as `GIT_CONFIG_NOSYSTEM=1` and a `GIT_CONFIG_GLOBAL` with an identity) so your own git config does not leak in.
 
 ### Waiting and reading the end state
 

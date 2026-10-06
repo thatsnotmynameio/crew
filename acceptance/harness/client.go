@@ -80,8 +80,9 @@ func runClient(name string, stdin *os.File, stdout, stderr io.Writer) int {
 }
 
 // copyFrames copies the frames on c to stdout and stderr until the exit
-// frame, and returns its code. A frame that orders it sets ignoreTerm.
-func copyFrames(c io.Reader, name string, stdout, stderr io.Writer, ignoreTerm *atomic.Bool) int {
+// frame, and returns its code. A frame that orders it sets ignoreTerm, which
+// it then acknowledges on c with one byte.
+func copyFrames(c io.ReadWriter, name string, stdout, stderr io.Writer, ignoreTerm *atomic.Bool) int {
 	dec := json.NewDecoder(c)
 	for {
 		var fr frame
@@ -91,6 +92,7 @@ func copyFrames(c io.Reader, name string, stdout, stderr io.Writer, ignoreTerm *
 		}
 		if fr.IgnoreTerm {
 			ignoreTerm.Store(true)
+			_, _ = c.Write([]byte{'\n'})
 		}
 		_, _ = stdout.Write(fr.Stdout)
 		_, _ = stderr.Write(fr.Stderr)
