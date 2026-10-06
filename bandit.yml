@@ -1,0 +1,7 @@
+# Codacy's Bandit reads this file (.codacy/codacy.config.json). Every Bandit
+# test runs; a finding that is a genuine false positive is suppressed at the
+# line with `# nosec <test>` and the reason.
+assert_used:
+  # pytest's assert is how the judge's tests check; the code itself never
+  # asserts (ruff's S101 holds it to that).
+  skips: ["*typesafe/tests/*"]

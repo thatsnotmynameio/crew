@@ -20,6 +20,8 @@ A stop removes the directory and points ``service.json`` at the newest remaining
 instance, or removes it (KTD19).
 """
 
+from __future__ import annotations
+
 import fcntl
 import hmac
 import json
@@ -416,6 +418,7 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlsplit(getattr(self, "path", "")).path
         _log.info("%s %s %s", self.command or "-", path, int(code) if code != "-" else code)
 
+    # pylint: disable-next=redefined-builtin  # http.server's name for the parameter
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - http.server's name
         """Log http.server's own messages, such as a timed-out request."""
         _log.info(format, *args)
@@ -626,6 +629,6 @@ def _replace(path: Path, text: str) -> None:
 def _read_object(path: Path) -> dict[str, JSON] | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return None
     return cast("dict[str, JSON]", value) if isinstance(value, dict) else None

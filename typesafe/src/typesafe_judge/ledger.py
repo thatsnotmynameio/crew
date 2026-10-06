@@ -12,6 +12,8 @@ Migrations are literal SQL steps, each applied in its own ``BEGIN IMMEDIATE`` wi
 processes opening a fresh ledger migrate it once.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sqlite3

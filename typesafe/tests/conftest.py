@@ -4,6 +4,8 @@ Tests import nothing from here at run time (pytest imports them in importlib mod
 they take the fixtures by name and import the types only for annotations.
 """
 
+from __future__ import annotations
+
 import json
 import threading
 import time

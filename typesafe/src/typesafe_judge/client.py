@@ -6,6 +6,8 @@ or a ``Failure`` whose reason is one of a fixed vocabulary: ``no key``,
 ``HTTP <status>``, ``timeout``, ``unreachable`` or ``invalid response``.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import threading

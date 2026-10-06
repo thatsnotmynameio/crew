@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import sqlite3
@@ -175,11 +177,11 @@ def test_every_table_refuses_update_and_delete(root: Path, ledger: Ledger) -> No
     con = raw(root)
     try:
         for table in tables:
-            assert con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] > 0, table  # noqa: S608 - a table name from sqlite_schema
+            assert con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] > 0, table  # noqa: S608  # nosec B608  # a table name from sqlite_schema
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
-                con.execute(f"UPDATE {table} SET rowid = rowid")  # noqa: S608 - as above
+                con.execute(f"UPDATE {table} SET rowid = rowid")  # noqa: S608  # nosec B608  # as above
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
-                con.execute(f"DELETE FROM {table}")  # noqa: S608 - as above
+                con.execute(f"DELETE FROM {table}")  # noqa: S608  # nosec B608  # as above
     finally:
         con.close()
 

@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import http.client
 import json
 import logging
 import sqlite3
-import subprocess
+import subprocess  # nosec B404  # the tests start processes of their own
 import sys
 import threading
 import time
@@ -57,7 +59,7 @@ def rows(root: Path, table: str | None = None) -> int:
         tables = listed if table is None else [table]
         total = 0
         for name in tables:
-            total += con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608 - a known table
+            total += con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608  # nosec B608  # a known table
         return total
     finally:
         con.close()
@@ -453,7 +455,7 @@ def test_unexpected_error_gets_500_and_logs_only_its_type_and_route(
 
 
 def dead_pid() -> int:
-    process = subprocess.Popen([sys.executable, "-c", "pass"])
+    process = subprocess.Popen([sys.executable, "-c", "pass"])  # nosec B603  # fixed args
     process.wait()
     return process.pid
 

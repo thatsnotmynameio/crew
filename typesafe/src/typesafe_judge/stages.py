@@ -22,6 +22,8 @@
 The report never writes the bank.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from typesafe_judge.asking import effective_stage

@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import json
 import os
 import queue
 import signal
 import sqlite3
-import subprocess
+import subprocess  # nosec B404  # the tests start processes of their own
 import sys
 import threading
 import time
@@ -56,15 +58,15 @@ def call(record: Record, path: str, body: object = None) -> tuple[int, Record]:
     token = Path(cast("str", record["ask_token_file"])).read_text(encoding="utf-8")
     data = None if body is None else json.dumps(body).encode()
     url = cast("str", record["url"]) + path
-    sent = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {token}"})  # noqa: S310 - a loopback URL the test started
-    with urllib.request.urlopen(sent, timeout=WAIT) as response:  # noqa: S310 - as above
+    sent = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {token}"})  # noqa: S310  # nosec B310  # a loopback URL the test started
+    with urllib.request.urlopen(sent, timeout=WAIT) as response:  # noqa: S310  # nosec B310  # as above
         return response.status, cast("Record", json.loads(response.read()))
 
 
 def asks(root: Path, table: str = "asks") -> int:
     con = sqlite3.connect(root / ".crew/typesafe/ledger.sqlite")
     try:
-        return cast("int", con.execute(f"SELECT count(*) FROM {table}").fetchone()[0])  # noqa: S608 - the test's own table names
+        return cast("int", con.execute(f"SELECT count(*) FROM {table}").fetchone()[0])  # noqa: S608  # nosec B608  # the test's own table names
     finally:
         con.close()
 
@@ -78,7 +80,8 @@ class Child:
     """``typesafe-judge serve`` as a child process, its output read line by line."""
 
     def __init__(self, root: Path, env: dict[str, str] | None = None) -> None:
-        self.process = subprocess.Popen(  # noqa: S603 - this interpreter and the test's own root
+        """Start the judge on root, with env added to this process's environment."""
+        self.process = subprocess.Popen(  # noqa: S603  # nosec B603  # this interpreter and the test's own root
             [sys.executable, "-m", "typesafe_judge.cli", "serve", "--root", str(root)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -234,6 +237,7 @@ class _SlowTypeSafe(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # pylint: disable-next=redefined-builtin  # http.server's name for the parameter
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - http.server's name
         del format, args
 

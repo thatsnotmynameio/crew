@@ -5,6 +5,8 @@ the name pytest gives it, ``tests.test_ledger_concurrency``, so the tests put th
 directory above ``tests/`` on ``sys.path`` before spawning.
 """
 
+from __future__ import annotations
+
 import multiprocessing
 import sqlite3
 from pathlib import Path

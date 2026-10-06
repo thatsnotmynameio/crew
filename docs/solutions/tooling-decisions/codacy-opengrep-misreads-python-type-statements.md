@@ -36,7 +36,7 @@ The TypeSafe judge (#203) brought Python into crew, under `typesafe/`, targeting
 - **Drop `.__value__` when converting.** A `type` statement creates a `TypeAliasType`, so code read its target through `.__value__`. A `TypeAlias` is the target itself: `get_args(DecisionName.__value__)` became `get_args(DecisionName)` in `typesafe/src/typesafe_judge/records.py`.
 - **Read the error list, not only the issue count.** After `pnpm exec codacy-analysis analyze`, a `toolInvoke` error means a tool skipped a file. A run is clean only when the error list holds nothing new.
 
-The same change settled which Codacy tools cover Python. `update-config` proposed Ruff, Bandit, PyLintPython3 and Prospector for the new language. They were removed from `.codacy/codacy.config.json`: the `python` CI job's ruff, including its bandit (`S`) rules, and mypy own Python linting. Lizard, Semgrep and Trivy keep covering `typesafe/`, Lizard with the limits `docs/solutions/tooling-decisions/codacy-lizard-and-golangci-lint-limits.md` describes. This follows that learning's rule of one owner per metric.
+The same change first removed the Python linters `update-config` proposed (Ruff, Bandit, PyLintPython3 and Prospector) from `.codacy/codacy.config.json`, leaving Python's linting to the `python` CI job. That was reversed before merge: Codacy is the authority on quality, so it runs all four, held to the CI's rules, as `docs/solutions/tooling-decisions/codacy-python-linters-older-python.md` describes. Lizard, Semgrep and Trivy keep covering `typesafe/`, Lizard with the limits `docs/solutions/tooling-decisions/codacy-lizard-and-golangci-lint-limits.md` describes.
 
 ## Why This Matters
 

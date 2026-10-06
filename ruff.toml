@@ -1,0 +1,4 @@
+# Codacy's Ruff reads its configuration from the repository root, so this file
+# hands it the judge's own (typesafe/pyproject.toml): Codacy and the python job
+# then check the same rules. Paths in the extended file stay relative to it.
+extend = "typesafe/pyproject.toml"

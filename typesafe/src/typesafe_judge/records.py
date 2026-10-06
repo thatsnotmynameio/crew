@@ -24,6 +24,8 @@ an import can run again. An outcome matching nothing, or with a value that does 
 suit, is refused and records nothing.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast, get_args
 

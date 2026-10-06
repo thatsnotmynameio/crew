@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import math
 import sqlite3
@@ -100,6 +102,7 @@ class Judge:
     """Asks through the real asking path, the fake TypeSafe answering per state index."""
 
     def __init__(self, ledger: Ledger, client: TypeSafe, typesafe: FakeTypeSafe) -> None:
+        """Ask through ledger and client, with typesafe answering per state index."""
         self.ledger = ledger
         self.client = client
         self.typesafe = typesafe

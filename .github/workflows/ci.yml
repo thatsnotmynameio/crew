@@ -234,8 +234,8 @@ jobs:
           retention-days: 7
 
   # Sends the go and python jobs' coverage to Codacy. Codacy analyses the code
-  # itself, on its servers; golangci-lint's and ruff's findings stay in their
-  # jobs. This is the only job that sees the token, and it runs no code from
+  # itself, on its servers, with the tools .codacy/codacy.config.json names;
+  # golangci-lint's and ruff's findings here stay in their jobs. This is the only job that sees the token, and it runs no code from
   # the repository: it reads the reports and runs Codacy's pinned, checksummed
   # reporter. It runs when either job failed too, so the other's coverage still
   # goes out. Off until the repository variable CODACY_ENABLED is true.

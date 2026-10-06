@@ -13,6 +13,8 @@ or an integer outside ±(2^53-1): JSON reads ``1.0`` as a float, and a float's
 text can change on the way, so a state holding one would not hash stably.
 """
 
+from __future__ import annotations
+
 import hashlib
 from typing import TYPE_CHECKING, TypeAlias
 

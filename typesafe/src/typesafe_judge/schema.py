@@ -5,6 +5,8 @@ Step n creates or changes what version n of the schema holds, and ``Ledger.open`
 is a new step appended to ``MIGRATIONS``.
 """
 
+from __future__ import annotations
+
 # Version 1. Each table's comment says what one row is. JSON columns hold canonical JSON.
 _SCHEMA_1 = """
 -- A state a caller sent, once per hash, as its canonical JSON.

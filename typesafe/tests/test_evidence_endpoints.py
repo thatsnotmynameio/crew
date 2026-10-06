@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import http.client
 import json
 from pathlib import Path
@@ -33,6 +35,7 @@ Body: TypeAlias = "dict[str, JSON]"
 
 class Running:
     def __init__(self, ready: dict[str, JSON]) -> None:
+        """Read the judge's address and tokens from its ready line."""
         self.url = urlsplit(cast("str", ready["url"]))
         self.tokens = {
             scope: Path(cast("str", ready[f"{scope}_token_file"])).read_text(encoding="utf-8")

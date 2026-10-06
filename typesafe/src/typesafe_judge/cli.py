@@ -11,6 +11,8 @@ signal exits at once with 1, leaving the instance directory for the next start t
 remove.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -58,6 +60,7 @@ class _Signals:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return its exit code."""
+    # pylint: disable-next=unexpected-keyword-arg  # color is 3.14's, which the judge requires
     parser = argparse.ArgumentParser(
         prog=PROG, description="crew's local TypeSafe judge.", color=False
     )

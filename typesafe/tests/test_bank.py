@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import random  # noqa: TC003 - Hypothesis reads the tests' annotations at run time
 from typing import TYPE_CHECKING

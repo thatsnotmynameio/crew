@@ -33,6 +33,8 @@ A question's content key covers its model and its wire form; its version id adds
 bands, the default and the bar. Its stage and its name enter neither.
 """
 
+from __future__ import annotations
+
 import re
 import threading
 from collections.abc import Iterator, Mapping

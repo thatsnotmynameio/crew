@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import http.client
 import json
 import sqlite3
@@ -43,7 +45,7 @@ def rows(root: Path) -> int:
     try:
         tables = [n for (n,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
         return sum(
-            con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608 - a known table
+            con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608  # nosec B608  # a known table
             for name in tables
         )
     finally:
@@ -52,6 +54,7 @@ def rows(root: Path) -> int:
 
 class Running:
     def __init__(self, ready: dict[str, JSON], root: Path) -> None:
+        """Read the judge's address and tokens from its ready line."""
         self.url = urlsplit(cast("str", ready["url"]))
         self.tokens = {
             scope: Path(cast("str", ready[f"{scope}_token_file"])).read_text(encoding="utf-8")

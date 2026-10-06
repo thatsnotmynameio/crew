@@ -29,6 +29,8 @@ bar, so an edit cannot loosen its own gate: ``incomplete`` when any state was le
 current version declares, and ``effective_stage`` is the current version's stage after it.
 """
 
+from __future__ import annotations
+
 from collections import Counter
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast

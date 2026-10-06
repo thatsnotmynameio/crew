@@ -44,6 +44,10 @@ python-preference = "only-managed"
 
 [tool.ruff]
 line-length = 100
+# The judge runs on 3.14, but Codacy's Bandit, Pylint and Prospector parse it
+# with an older Python: 3.13 syntax keeps every file readable to them, and ruff
+# refuses newer syntax such as an unparenthesized `except A, B:`.
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -56,12 +60,17 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = [
+# `**/` and the isort section below hold whether ruff runs from typesafe/ or,
+# for Codacy, from the root ruff.toml that extends this file.
+"**/tests/**" = [
     "D1",      # test names say what each test checks
     "INP001",  # pytest imports the tests in importlib mode, not as a package
     "PLR2004", # tests compare with literal expected values
     "S101",    # pytest's assert
 ]
+
+[tool.ruff.lint.isort]
+known-first-party = ["typesafe_judge"]
 
 [tool.ruff.lint.mccabe]
 # Lizard's CCN limit (.codacy/codacy.config.json). Ruff does not count boolean

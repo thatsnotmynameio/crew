@@ -16,6 +16,8 @@ stages are read from the versions, stage observations, rechecks and calibrations
 ledger holds (KTD11).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 

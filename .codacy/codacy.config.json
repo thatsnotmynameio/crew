@@ -825,6 +825,311 @@
           "patternId": "shellcheck_SC2148"
         }
       ]
+    },
+    {
+      "toolId": "Ruff",
+      "useLocalConfigurationFile": true,
+      "localConfigurationFile": "ruff.toml",
+      "patterns": []
+    },
+    {
+      "toolId": "Bandit",
+      "useLocalConfigurationFile": true,
+      "localConfigurationFile": "bandit.yml",
+      "patterns": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patterns": [
+        {
+          "patternId": "PyLintPython3_C0123"
+        },
+        {
+          "patternId": "PyLintPython3_C0200"
+        },
+        {
+          "patternId": "PyLintPython3_E0100"
+        },
+        {
+          "patternId": "PyLintPython3_E0101"
+        },
+        {
+          "patternId": "PyLintPython3_E0102"
+        },
+        {
+          "patternId": "PyLintPython3_E0103"
+        },
+        {
+          "patternId": "PyLintPython3_E0104"
+        },
+        {
+          "patternId": "PyLintPython3_E0105"
+        },
+        {
+          "patternId": "PyLintPython3_E0106"
+        },
+        {
+          "patternId": "PyLintPython3_E0107"
+        },
+        {
+          "patternId": "PyLintPython3_E0108"
+        },
+        {
+          "patternId": "PyLintPython3_E0110"
+        },
+        {
+          "patternId": "PyLintPython3_E0112"
+        },
+        {
+          "patternId": "PyLintPython3_E0113"
+        },
+        {
+          "patternId": "PyLintPython3_E0114"
+        },
+        {
+          "patternId": "PyLintPython3_E0115"
+        },
+        {
+          "patternId": "PyLintPython3_E0117"
+        },
+        {
+          "patternId": "PyLintPython3_E0202"
+        },
+        {
+          "patternId": "PyLintPython3_E0203"
+        },
+        {
+          "patternId": "PyLintPython3_E0211"
+        },
+        {
+          "patternId": "PyLintPython3_E0236"
+        },
+        {
+          "patternId": "PyLintPython3_E0238"
+        },
+        {
+          "patternId": "PyLintPython3_E0239"
+        },
+        {
+          "patternId": "PyLintPython3_E0240"
+        },
+        {
+          "patternId": "PyLintPython3_E0241"
+        },
+        {
+          "patternId": "PyLintPython3_E0301"
+        },
+        {
+          "patternId": "PyLintPython3_E0302"
+        },
+        {
+          "patternId": "PyLintPython3_E0601"
+        },
+        {
+          "patternId": "PyLintPython3_E0603"
+        },
+        {
+          "patternId": "PyLintPython3_E0604"
+        },
+        {
+          "patternId": "PyLintPython3_E0701"
+        },
+        {
+          "patternId": "PyLintPython3_E0702"
+        },
+        {
+          "patternId": "PyLintPython3_E0704"
+        },
+        {
+          "patternId": "PyLintPython3_E0710"
+        },
+        {
+          "patternId": "PyLintPython3_E0711"
+        },
+        {
+          "patternId": "PyLintPython3_E0712"
+        },
+        {
+          "patternId": "PyLintPython3_E1003"
+        },
+        {
+          "patternId": "PyLintPython3_E1102"
+        },
+        {
+          "patternId": "PyLintPython3_E1111"
+        },
+        {
+          "patternId": "PyLintPython3_E1120"
+        },
+        {
+          "patternId": "PyLintPython3_E1121"
+        },
+        {
+          "patternId": "PyLintPython3_E1123"
+        },
+        {
+          "patternId": "PyLintPython3_E1124"
+        },
+        {
+          "patternId": "PyLintPython3_E1125"
+        },
+        {
+          "patternId": "PyLintPython3_E1126"
+        },
+        {
+          "patternId": "PyLintPython3_E1127"
+        },
+        {
+          "patternId": "PyLintPython3_E1132"
+        },
+        {
+          "patternId": "PyLintPython3_E1200"
+        },
+        {
+          "patternId": "PyLintPython3_E1201"
+        },
+        {
+          "patternId": "PyLintPython3_E1205"
+        },
+        {
+          "patternId": "PyLintPython3_E1206"
+        },
+        {
+          "patternId": "PyLintPython3_E1300"
+        },
+        {
+          "patternId": "PyLintPython3_E1301"
+        },
+        {
+          "patternId": "PyLintPython3_E1302"
+        },
+        {
+          "patternId": "PyLintPython3_E1303"
+        },
+        {
+          "patternId": "PyLintPython3_E1304"
+        },
+        {
+          "patternId": "PyLintPython3_E1305"
+        },
+        {
+          "patternId": "PyLintPython3_E1306"
+        },
+        {
+          "patternId": "PyLintPython3_R0202"
+        },
+        {
+          "patternId": "PyLintPython3_R0203"
+        },
+        {
+          "patternId": "PyLintPython3_W0101"
+        },
+        {
+          "patternId": "PyLintPython3_W0102"
+        },
+        {
+          "patternId": "PyLintPython3_W0104"
+        },
+        {
+          "patternId": "PyLintPython3_W0105"
+        },
+        {
+          "patternId": "PyLintPython3_W0106"
+        },
+        {
+          "patternId": "PyLintPython3_W0107"
+        },
+        {
+          "patternId": "PyLintPython3_W0108"
+        },
+        {
+          "patternId": "PyLintPython3_W0109"
+        },
+        {
+          "patternId": "PyLintPython3_W0120"
+        },
+        {
+          "patternId": "PyLintPython3_W0122"
+        },
+        {
+          "patternId": "PyLintPython3_W0124"
+        },
+        {
+          "patternId": "PyLintPython3_W0150"
+        },
+        {
+          "patternId": "PyLintPython3_W0199"
+        },
+        {
+          "patternId": "PyLintPython3_W0221"
+        },
+        {
+          "patternId": "PyLintPython3_W0222"
+        },
+        {
+          "patternId": "PyLintPython3_W0233"
+        },
+        {
+          "patternId": "PyLintPython3_W0404"
+        },
+        {
+          "patternId": "PyLintPython3_W0410"
+        },
+        {
+          "patternId": "PyLintPython3_W0601"
+        },
+        {
+          "patternId": "PyLintPython3_W0602"
+        },
+        {
+          "patternId": "PyLintPython3_W0604"
+        },
+        {
+          "patternId": "PyLintPython3_W0611"
+        },
+        {
+          "patternId": "PyLintPython3_W0612"
+        },
+        {
+          "patternId": "PyLintPython3_W0622"
+        },
+        {
+          "patternId": "PyLintPython3_W0702"
+        },
+        {
+          "patternId": "PyLintPython3_W0705"
+        },
+        {
+          "patternId": "PyLintPython3_W0711"
+        },
+        {
+          "patternId": "PyLintPython3_W1300"
+        },
+        {
+          "patternId": "PyLintPython3_W1301"
+        },
+        {
+          "patternId": "PyLintPython3_W1302"
+        },
+        {
+          "patternId": "PyLintPython3_W1303"
+        },
+        {
+          "patternId": "PyLintPython3_W1305"
+        },
+        {
+          "patternId": "PyLintPython3_W1306"
+        },
+        {
+          "patternId": "PyLintPython3_W1307"
+        }
+      ]
+    },
+    {
+      "toolId": "Prospector",
+      "useLocalConfigurationFile": true,
+      "localConfigurationFile": ".prospector.yaml",
+      "patterns": []
     }
   ],
   "exclude": [

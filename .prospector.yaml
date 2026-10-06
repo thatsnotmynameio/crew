@@ -1,0 +1,28 @@
+# Codacy's Prospector reads this profile (.codacy/codacy.config.json). It runs
+# the tools Codacy enables for Prospector, held to the rules ruff enforces in
+# typesafe/pyproject.toml, so the two never ask for opposite things.
+strictness: medium
+doc-warnings: true
+test-warnings: true
+max-line-length: 100
+
+pyflakes:
+  run: true
+mccabe:
+  run: true
+  options:
+    max-complexity: 15
+dodgy:
+  run: true
+pycodestyle:
+  run: true
+  options:
+    max-line-length: 100
+pydocstyle:
+  run: true
+  disable:
+    - D203 # ruff holds D211: no blank line before a class docstring
+    - D213 # ruff holds D212: the summary on the docstring's first line
+# Codacy runs Pylint as a tool of its own (PyLintPython3).
+pylint:
+  run: false

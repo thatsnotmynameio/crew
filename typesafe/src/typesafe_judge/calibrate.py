@@ -46,6 +46,8 @@ included, since they all score the same held-out groups. Calibration never write
 bank.
 """
 
+from __future__ import annotations
+
 import hashlib
 import hmac
 import math
