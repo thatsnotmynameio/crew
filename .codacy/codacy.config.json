@@ -7,7 +7,7 @@
     "repositoryId": null,
     "repositoryName": null,
     "createdAt": "2026-10-03T01:12:04.280Z",
-    "updatedAt": "2026-10-06T01:43:02.639Z",
+    "updatedAt": "2026-10-06T04:15:08.940Z",
     "languages": [
       "Go",
       "HTML",
@@ -829,6 +829,7 @@
   ],
   "exclude": [
     "node_modules/**",
-    "typesafe/.venv/**"
+    "typesafe/.venv/**",
+    "typesafe/uv.lock"
   ]
 }

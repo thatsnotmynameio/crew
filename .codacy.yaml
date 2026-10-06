@@ -11,6 +11,9 @@ exclude_paths:
   # Installed packages: the Codacy CLIs, and the TypeSafe judge's environment.
   - "node_modules/**"
   - "typesafe/.venv/**"
+  # The judge's generated lockfile, which Lizard would read as one file of
+  # code. The python job's pip-audit checks the packages it pins.
+  - "typesafe/uv.lock"
 engines:
   duplication:
     # Codacy owns duplication (golangci-lint's dupl is off). 100 tokens is the
@@ -26,3 +29,4 @@ engines:
       - "acceptance/**/testdata/**"
       # Table-driven tests repeat their case shape on purpose.
       - "**/*_test.go"
+      - "typesafe/tests/test_*.py"
