@@ -1,10 +1,10 @@
 // Package config loads the user's global crew/config.yaml, then a
 // repository's .crew/config.yaml and .crew/config.local.yaml, each file's
 // top-level keys replacing those of the files before it: it decodes them
-// strictly, applies the engine-owned defaults,
-// validates the rules, and hands each adapter its own section as a strict
-// Decode. It does not resolve
-// adapter names; the registry does, so config holds no adapter knowledge.
+// strictly, applies the engine-owned defaults, validates the rules, and
+// hands each adapter its own section as a strict Decode. It does not
+// resolve adapter names; the registry does, so config holds no adapter
+// knowledge.
 package config
 
 import (

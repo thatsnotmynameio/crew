@@ -116,12 +116,18 @@ func TestNoFileNamesAllThree(t *testing.T) {
 	}
 }
 
-// Without a global path, the missing-config error names where the global
-// file usually is.
-func TestNoFileAndNoGlobalPathNamesTheUsualPlace(t *testing.T) {
+// Without a global path, the missing-config error says crew reads no
+// global file and why, rather than naming a file it would not read.
+func TestNoFileAndNoGlobalPathSaysWhy(t *testing.T) {
 	_, err := config.Load(t.TempDir(), "")
-	if err == nil || !strings.Contains(err.Error(), "~/.config/crew/config.yaml") {
-		t.Errorf("error = %v, want it to name ~/.config/crew/config.yaml", err)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("error %v is not fs.ErrNotExist", err)
+	}
+	for _, want := range []string{"crew reads no global", "~/.config/crew/config.yaml",
+		"neither XDG_CONFIG_HOME nor the home directory is an absolute path"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not say %q", err, want)
+		}
 	}
 }
 

@@ -17,9 +17,6 @@ import (
 const (
 	sharedFile = ".crew/config.yaml"
 	localFile  = ".crew/config.local.yaml"
-	// usualGlobalFile names the global file in an error when Load was given
-	// no path for it.
-	usualGlobalFile = "~/.config/crew/config.yaml"
 )
 
 // GlobalFile returns the path of the user's global config file, whose
@@ -53,13 +50,13 @@ type source struct {
 // error wrapping fs.ErrNotExist.
 func readSources(root, global string) ([]source, error) {
 	type file struct{ name, path string }
-	files := []file{
-		{sharedFile, filepath.Join(root, sharedFile)},
-		{localFile, filepath.Join(root, localFile)},
-	}
+	var files []file
 	if global != "" {
-		files = append([]file{{global, global}}, files...)
+		files = append(files, file{global, global})
 	}
+	files = append(files,
+		file{sharedFile, filepath.Join(root, sharedFile)},
+		file{localFile, filepath.Join(root, localFile)})
 	var out []source
 	for _, f := range files {
 		s, err := readSource(f.name, f.path)
@@ -72,14 +69,23 @@ func readSources(root, global string) ([]source, error) {
 		out = append(out, s)
 	}
 	if len(out) == 0 {
-		if global == "" {
-			global = usualGlobalFile
-		}
-		return nil, fmt.Errorf("read crew config: %w: neither %s nor %s is in %s, and there is no %s "+
-			"(create one: see .crew/config.example.yaml in the crew repository)",
-			fs.ErrNotExist, sharedFile, localFile, root, global)
+		return nil, missingConfig(root, global)
 	}
 	return out, nil
+}
+
+// missingConfig is the error for none of the three files: it names them
+// all, and says why there is no global file when global is "", since crew
+// then looks for none and creating one would change nothing.
+func missingConfig(root, global string) error {
+	noGlobal := "there is no " + global
+	if global == "" {
+		noGlobal = "crew reads no global $XDG_CONFIG_HOME/crew/config.yaml or ~/.config/crew/config.yaml, " +
+			"since neither XDG_CONFIG_HOME nor the home directory is an absolute path"
+	}
+	return fmt.Errorf("read crew config: %w: neither %s nor %s is in %s, and %s "+
+		"(create one: see .crew/config.example.yaml in the crew repository)",
+		fs.ErrNotExist, sharedFile, localFile, root, noGlobal)
 }
 
 // readSource reads the file at path, named name in its errors. A missing
@@ -130,8 +136,8 @@ func refuseOldKeys(sources []source) error {
 
 // merge builds the mapping of the sources' top-level keys, each set by the
 // last source that sets it: each file's keys no later file sets, in file
-// order, file after file. It returns the mapping
-// and where each of its keys came from.
+// order, file after file. It returns the mapping and where each of its keys
+// came from.
 func merge(sources []source) (*yaml.Node, origin) {
 	o := origin{files: map[string]string{}}
 	names := make([]string, len(sources))
@@ -156,7 +162,7 @@ func merge(sources []source) (*yaml.Node, origin) {
 // joinNames lists names as "a", "a and b" or "a, b and c".
 func joinNames(names []string) string {
 	last := len(names) - 1
-	if last < 1 {
+	if last < 1 { // no name, or one: nothing to join
 		return strings.Join(names, "")
 	}
 	return strings.Join(names[:last], ", ") + " and " + names[last]
