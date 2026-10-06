@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, cast
 from urllib.parse import urlsplit
 
+import ledger_tables
 import pytest
 
 from typesafe_judge.service import Service
@@ -43,11 +44,7 @@ def rows(root: Path) -> int:
     """Count the rows of every ledger table."""
     con = sqlite3.connect(root / ".crew/typesafe/ledger.sqlite")
     try:
-        tables = [n for (n,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
-        return sum(
-            con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608  # nosec B608  # a known table
-            for name in tables
-        )
+        return ledger_tables.total(con)
     finally:
         con.close()
 

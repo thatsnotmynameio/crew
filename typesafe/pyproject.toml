@@ -93,6 +93,8 @@ warn_required_dynamic_aliases = true
 [tool.pytest]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
+# So the tests can import their shared helpers (tests/ledger_tables.py).
+pythonpath = ["tests"]
 strict = true
 
 # Paths are relative to the repository root, where CI runs coverage with

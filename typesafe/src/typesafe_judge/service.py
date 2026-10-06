@@ -418,10 +418,9 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlsplit(getattr(self, "path", "")).path
         _log.info("%s %s %s", self.command or "-", path, int(code) if code != "-" else code)
 
-    # pylint: disable-next=redefined-builtin  # http.server's name for the parameter
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - http.server's name
+    def log_message(self, fmt: str, /, *args: object) -> None:
         """Log http.server's own messages, such as a timed-out request."""
-        _log.info(format, *args)
+        _log.info(fmt, *args)
 
 
 class _Server(ThreadingHTTPServer):

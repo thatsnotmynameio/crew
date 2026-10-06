@@ -4,8 +4,6 @@ import http.client
 import json
 import logging
 import sqlite3
-import subprocess  # nosec B404  # the tests start processes of their own
-import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -13,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, cast
 from urllib.parse import quote, urlsplit
 
+import ledger_tables
 import pytest
 
 from typesafe_judge import service as judge_service
@@ -55,12 +54,7 @@ def rows(root: Path, table: str | None = None) -> int:
     """Count the ledger's rows, in one table or in all of them."""
     con = sqlite3.connect(root / ".crew/typesafe/ledger.sqlite")
     try:
-        listed = [n for (n,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
-        tables = listed if table is None else [table]
-        total = 0
-        for name in tables:
-            total += con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608  # nosec B608  # a known table
-        return total
+        return ledger_tables.total(con) if table is None else ledger_tables.count(con, table)
     finally:
         con.close()
 
@@ -455,9 +449,8 @@ def test_unexpected_error_gets_500_and_logs_only_its_type_and_route(
 
 
 def dead_pid() -> int:
-    process = subprocess.Popen([sys.executable, "-c", "pass"])  # nosec B603  # fixed args
-    process.wait()
-    return process.pid
+    # Above Linux's PID_MAX_LIMIT (2**22) and macOS's 99,999: no process has it.
+    return 2**22 + 1
 
 
 def test_stale_instance_directories_are_removed_on_start(

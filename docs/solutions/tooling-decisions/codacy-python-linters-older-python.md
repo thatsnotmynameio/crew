@@ -43,7 +43,7 @@ Two causes, reproduced with `pnpm exec codacy-analysis analyze --config-file .co
   - `.prospector.yaml` disables D203 and D213, sets line length 100 and complexity 15, and leaves Pylint to Codacy's own Pylint tool.
   - Pylint keeps Codacy's curated patterns: they are error checks that need no alignment.
 - **The judge is written in 3.13 syntax.** `target-version = "py313"` in `typesafe/pyproject.toml` makes ruff refuse newer syntax and stops the formatter from removing the parentheses in `except (A, B):`. Every module starts with `from __future__ import annotations`, so older tools read annotations as strings. The judge still requires and runs on 3.14.
-- **True false positives are suppressed at the line.** Bandit stops reading test ids at the next `#`, so the reason follows a second `#`: `# noqa: S608  # nosec B608  # a known table`. Writing `# nosec B608 - a known table` makes Bandit read each word as a test name. Bandit warns `nosec encountered ... but no failed test` on two B608 lines even though removing their `nosec` brings the finding back. Pylint takes `# pylint: disable-next=<message>  # <reason>` on the line above.
+- **Findings are fixed in code before anything is suppressed.** SQL the tests built from a table name now comes from `typesafe/tests/ledger_tables.py`, one literal statement per table, checked against `sqlite_schema`. A loopback request uses `http.client` instead of `urlopen`. A dead pid is a number above any system's pid limit, so no process is started for it. `http.server`'s `log_message` override takes a positional-only `fmt`. Three suppressions remain, each at its line with the reason: Bandit's B404 and B603 where `test_cli.py` starts the judge as a real process (a stop signal and a forced exit need one), and Pylint's `unexpected-keyword-arg` on `argparse`'s `color=`, which only an older Python lacks. Bandit stops reading test ids at the next `#`, so the reason follows a second `#`: `# nosec B603  # <reason>`; `# nosec B603 - <reason>` makes Bandit read each word as a test name. Pylint takes `# pylint: disable-next=<message>  # <reason>` on the line above.
 
 ## Why This Matters
 
@@ -57,4 +57,4 @@ Dropping a Codacy tool because CI runs the same linter removes those findings fr
 
 ## Examples
 
-Checking it: `pnpm exec codacy-analysis analyze . --tool Ruff --tool Bandit --tool PyLintPython3 --tool Prospector` reported 0 issues. The only item in its error list was Bandit's B608 warning. The baseline configuration had reported 2,199 findings and Bandit's parse error on `service.py`. The `python` job's ruff, ruff format, mypy and 340 tests still passed.
+Checking it: `pnpm exec codacy-analysis analyze . --tool Ruff --tool Bandit --tool PyLintPython3 --tool Prospector` reported 0 issues, with nothing in its error list. The baseline configuration had reported 2,199 findings and Bandit's parse error on `service.py`. The `python` job's ruff, ruff format, mypy and 340 tests still passed.

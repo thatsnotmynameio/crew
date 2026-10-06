@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import queue
@@ -9,11 +10,12 @@ import subprocess  # nosec B404  # the tests start processes of their own
 import sys
 import threading
 import time
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, TypeAlias, cast
+from urllib.parse import urlsplit
 
+import ledger_tables
 import pytest
 
 from typesafe_judge.cli import main
@@ -57,16 +59,21 @@ def service_json(root: Path) -> Record | None:
 def call(record: Record, path: str, body: object = None) -> tuple[int, Record]:
     token = Path(cast("str", record["ask_token_file"])).read_text(encoding="utf-8")
     data = None if body is None else json.dumps(body).encode()
-    url = cast("str", record["url"]) + path
-    sent = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {token}"})  # noqa: S310  # nosec B310  # a loopback URL the test started
-    with urllib.request.urlopen(sent, timeout=WAIT) as response:  # noqa: S310  # nosec B310  # as above
+    url = urlsplit(cast("str", record["url"]))
+    con = http.client.HTTPConnection(cast("str", url.hostname), url.port, timeout=WAIT)
+    try:
+        method = "GET" if data is None else "POST"
+        con.request(method, path, body=data, headers={"Authorization": f"Bearer {token}"})
+        response = con.getresponse()
         return response.status, cast("Record", json.loads(response.read()))
+    finally:
+        con.close()
 
 
 def asks(root: Path, table: str = "asks") -> int:
     con = sqlite3.connect(root / ".crew/typesafe/ledger.sqlite")
     try:
-        return cast("int", con.execute(f"SELECT count(*) FROM {table}").fetchone()[0])  # noqa: S608  # nosec B608  # the test's own table names
+        return ledger_tables.count(con, table)
     finally:
         con.close()
 
@@ -237,9 +244,8 @@ class _SlowTypeSafe(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    # pylint: disable-next=redefined-builtin  # http.server's name for the parameter
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - http.server's name
-        del format, args
+    def log_message(self, fmt: str, /, *args: object) -> None:
+        del fmt, args
 
 
 class _SlowServer(ThreadingHTTPServer):

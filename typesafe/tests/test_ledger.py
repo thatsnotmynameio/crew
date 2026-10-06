@@ -7,6 +7,7 @@ import stat
 import threading
 from typing import TYPE_CHECKING
 
+import ledger_tables
 import pytest
 
 from typesafe_judge.bank import Bank, Question, parse_bank
@@ -166,22 +167,15 @@ def fill_every_table(root: Path, ledger: Ledger) -> None:
 
 def test_every_table_refuses_update_and_delete(root: Path, ledger: Ledger) -> None:
     fill_every_table(root, ledger)
-    tables = [
-        name
-        for (name,) in rows(
-            root, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-        )
-    ]
-    assert len(tables) == 10
-
     con = raw(root)
     try:
-        for table in tables:
-            assert con.execute(f"SELECT count(*) FROM {table}").fetchone()[0] > 0, table  # noqa: S608  # nosec B608  # a table name from sqlite_schema
+        ledger_tables.assert_every_table(con)
+        for table in ledger_tables.COUNT:
+            assert ledger_tables.count(con, table) > 0, table
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
-                con.execute(f"UPDATE {table} SET rowid = rowid")  # noqa: S608  # nosec B608  # as above
+                con.execute(ledger_tables.UPDATE[table])
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
-                con.execute(f"DELETE FROM {table}")  # noqa: S608  # nosec B608  # as above
+                con.execute(ledger_tables.DELETE[table])
     finally:
         con.close()
 
