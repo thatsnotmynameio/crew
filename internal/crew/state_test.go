@@ -40,3 +40,53 @@ func TestRuleStates(t *testing.T) {
 		})
 	}
 }
+
+func TestRuleStatesListsRouteMoves(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules []Rule
+		want  []State
+	}{
+		{
+			name: "every route's move labels after ready and running, each once",
+			rules: []Rule{{
+				Labels: Labels{Ready: "ready", Running: "in progress"},
+				Routes: []Route{
+					{Name: PassedRoute, Steps: []Step{MoveStep{To: "in review"}}},
+					{Name: FailedRoute, Steps: []Step{ReportStep{}, MoveStep{To: "failed"}}},
+					{Name: "blocked", Steps: []Step{CommentStep{}, MoveStep{To: "failed"}}},
+				},
+			}},
+			want: []State{"ready", "in progress", "in review", "failed"},
+		},
+		{
+			name: "a route that only closes adds no state",
+			rules: []Rule{{
+				Labels: Labels{Ready: "ready", Running: "in progress"},
+				Routes: []Route{
+					{Name: PassedRoute, Steps: []Step{ShellStep{Name: "notify"}, CloseStep{}}},
+					{Name: FailedRoute, Steps: []Step{MoveStep{To: "failed"}}},
+				},
+			}},
+			want: []State{"ready", "in progress", "failed"},
+		},
+		{
+			name: "route moves come before the success and failure labels",
+			rules: []Rule{
+				{
+					Labels: Labels{Ready: "ready", Running: "in progress", Success: "done", Failure: "failed"},
+					Routes: []Route{{Name: "blocked", Steps: []Step{MoveStep{To: "blocked"}}}},
+				},
+				{Labels: Labels{Ready: "done", Running: "checking"}},
+			},
+			want: []State{"ready", "in progress", "blocked", "done", "failed", "checking"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RuleStates(tt.rules); !slices.Equal(got, tt.want) {
+				t.Errorf("RuleStates() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

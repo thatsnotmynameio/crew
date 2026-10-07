@@ -25,6 +25,11 @@ type promptIssue struct {
 	URL   string
 }
 
+// newPromptIssue returns the template data of issue.
+func newPromptIssue(issue Issue) promptIssue {
+	return promptIssue{Ref: issue.Ref(), Key: issue.ID().Key, Title: issue.Title(), URL: issue.URL()}
+}
+
 // sampleIssue is the issue every prompt is rendered for when it is parsed,
 // so a bad template stops crew before polling rather than when an issue is
 // taken.
@@ -55,9 +60,7 @@ func (p Prompt) Render(issue Issue) (string, error) {
 	if p.tmpl == nil {
 		return "", nil
 	}
-	data := struct{ Issue promptIssue }{
-		promptIssue{Ref: issue.Ref(), Key: issue.ID().Key, Title: issue.Title(), URL: issue.URL()},
-	}
+	data := struct{ Issue promptIssue }{newPromptIssue(issue)}
 	var out strings.Builder
 	if err := p.tmpl.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("render prompt of action %q: %w", p.action, err)

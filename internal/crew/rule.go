@@ -5,7 +5,9 @@ import "slices"
 // Rule is one of the config's rules. It takes an item of its Takes kind in
 // its Labels.Ready state, moves it to Labels.Running while its actions run,
 // and moves it to Labels.Success once every action has succeeded, or to
-// Labels.Failure when any failed.
+// Labels.Failure when any failed. Its Routes, and its actions' Kind and On,
+// describe the same rule as a sequence of actions whose verdicts lead to
+// the next action or to a route.
 type Rule struct {
 	// Name identifies the rule in events and the TUI.
 	Name RuleName
@@ -21,6 +23,10 @@ type Rule struct {
 	// Takes is the kind of item the rule takes: it takes only the items of
 	// that kind in its Labels.Ready state. The zero Kind takes issues.
 	Takes Kind
+	// Routes are the rule's ways to end a run, in the config's order. A
+	// rule with actions declares PassedRoute and FailedRoute; a rule
+	// without actions declares only PassedRoute.
+	Routes []Route
 }
 
 // Action returns the definition of r's action named name, or the zero
@@ -62,7 +68,8 @@ type Queue struct {
 	Slots int
 }
 
-// Action is one session a rule runs for an issue.
+// Action is one action a rule runs for an issue: a session, or a shell
+// script when its Kind says so.
 type Action struct {
 	// Name identifies the action within its rule, in workspace names, logs
 	// and failure reports.
@@ -79,6 +86,12 @@ type Action struct {
 	// tracker: its agent's, or the tracker's when the agent names none. The
 	// zero Bot is you.
 	Bot Bot
+	// Kind is what the action runs: a session, named after its agent
+	// unless the config names it, or one of the config's shell actions,
+	// named as the config's actions key it.
+	Kind ActionKind
+	// On maps the action's verdicts to their targets.
+	On On
 }
 
 // Check is one of an action's checks.
