@@ -108,7 +108,7 @@ An entry needs you when its run ended through any route other than `passed`, or 
 
 ### Resume
 
-What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action that judged a session before it, the new run starts at that session instead, unless the shell action's definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through.
+What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action that judged a session before it, the new run starts at that session instead, unless the shell action's definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through. When an earlier session at its action asked a question, it is told instead that a question was asked, and gets the answers that count.
 
 When the last run chose `passed` and its final move or close never landed, crew runs only the `passed` route again, in that run's workspace when it still exists. When the workspace to reopen is gone, the run starts over at the first action in a new one, since the actions before the resume point would not have run there. A run that started no action and opened no workspace, such as one stopped at its take, passes its own start on to the next run. A run that finished its `passed` route is never resumed.
 
@@ -152,6 +152,12 @@ The comment crew posts on each of an issue's open pull requests when a run of a 
 
 It is a new comment at every rule end, so its watchers are notified and a rerun leaves a trail. Like the failure report, it never quotes what a session or a tool said.
 
+### crew's marker
+
+The hidden HTML comment `<!-- crew:posted -->` that crew puts on every comment it posts or edits on an issue or a pull request: reports, route comments, status comments and stop comments. Shell actions get it as `CREW_COMMENT_MARKER`, to put on the comments they post.
+
+Every marker of crew's starts with `<!-- crew:`, which GitHub renders as nothing, and a comment that holds one anywhere is never an answer. A session's own marker, `<!-- crew:session run=<run id> action=<action> -->`, marks the comment that asks its question. A comment that holds crew's marker is never a question, even when it also holds a session's marker.
+
 ## Identity
 
 ### Repository
@@ -181,6 +187,24 @@ Its only captain today decides nothing: it hands every session the same placehol
 What a session is asked to do next, as its captain answers it: the task's own id, the id of the session it belongs to, and a prompt.
 
 `crew sessions <session-id> tasks next|current` asks the captain for one and prints it as JSON. Nothing stores a task or checks that its session exists.
+
+### Question
+
+A question a session asked on the issue, in one comment with its own marker, because it needs an answer to go on: the rule run it ran in, its action and the login it acted as, which crew finds the comment by. Only a session whose `on:` maps `waiting` may ask one, and it waits up to its `wait` before it ends with `waiting`.
+
+A question stays open from rule run to rule run, through the run journal, until a later session at its action succeeds, whatever verdict it gives; one that ends with `waiting` leaves its own new question open. A session that failed, was stopped or crashed with crew closes nothing. A run that finished its `passed` route passes no question on.
+
+### Answer
+
+A comment after a question that counts as its answer: written by a code owner whom GitHub does not mark as an App, or by an App on the answering list that asked none of the open questions, and holding none of crew's markers. Any other comment is ignored and reported nowhere.
+
+crew does not watch for answers: whoever answers moves the issue back to the rule's ready label. Before the next session at the question's action starts, crew reads the issue's comments and hands it the answers, newest first, capped at 32 KiB, with how many it left out. The answers reach only that session's prompt and the prompt file kept beside the run's log, never the run journal or a comment.
+
+### Answering list
+
+The App logins, each `<slug>[bot]`, whose comments may answer a question, besides the code owners: the top-level `answering_apps`, or crew's bots without it. `[]` lets no App answer, and `github-actions[bot]` is never on it, since any workflow can post anyone's text as it.
+
+A session never answers itself: its own login is left off the list it is told about, and an App that asked one of the open questions does not answer them.
 
 ## TypeSafe
 
@@ -212,4 +236,5 @@ A question moves up only by a person's edit to the question bank, once its evide
 
 - "Run" alone is ambiguous: a *rule run* is one pass through a rule, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
 - "Verdict" and "ending" are two things: a *verdict* is one action's result, which its `on:` sends on, while a rule run *ends* through a route, the way the whole run finished.
+- "Question" alone is ambiguous: a *question* is one a session asked on its issue, while a question of the *question bank* is a named TypeSafe question the judge answers.
 - "Stage" alone is ambiguous: the run journal's `stage` key is a rule's name, kept from earlier versions, while a *question stage* is how far a TypeSafe question is trusted.
