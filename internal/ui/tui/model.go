@@ -42,9 +42,9 @@ type Config struct {
 	// event times are shown.
 	Now      func() time.Time
 	Location *time.Location
-	// Rules are the configured rules, in config order, whose notify
-	// decides which rule ends notify (KTD6).
-	Rules []crew.Rule
+	// Notify tells, for each rule by name, whether its ends send a desktop
+	// notification (KTD6).
+	Notify map[crew.RuleName]bool
 	// Board is the board's columns, in board order: the ones the config
 	// writes, or its default ones (R21, R22, KTD10).
 	Board []crew.BoardColumn

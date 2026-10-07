@@ -62,6 +62,10 @@ type Config struct {
 	// queue, the one it names or default, with the queue's slots, and every
 	// action its agent, check script and bot.
 	Rules []crew.Rule
+	// Notify tells, for each rule by name, whether the live view sends a
+	// desktop notification when the rule ends for an item: the rule's
+	// notify, or by default whether it has actions.
+	Notify map[crew.RuleName]bool
 	// Board is the live view's board: board's columns in file order, which
 	// show issues, or without board one column per rule that has actions,
 	// in file order, with the rule's ready and running labels and its kind.
@@ -156,7 +160,8 @@ func parse(top *yaml.Node) (*Config, error) {
 	errs = append(errs, err)
 	cfg.Agents, err = agents(&doc.Agents)
 	errs = append(errs, err)
-	cfg.Rules, err = rules(&doc.Rules, ruleEnv{queues: table, agents: cfg.Agents, checks: scripts, bot: cfg.Bot})
+	env := ruleEnv{queues: table, agents: cfg.Agents, checks: scripts, bot: cfg.Bot}
+	cfg.Rules, cfg.Notify, err = rules(&doc.Rules, env)
 	errs = append(errs, err, agentsInUse(cfg.Agents, cfg.Rules))
 	cfg.Bots = namedBots(cfg.Bot, cfg.Rules)
 	cfg.Board, cfg.BoardWritten, err = board(&doc.Board, cfg.Rules)

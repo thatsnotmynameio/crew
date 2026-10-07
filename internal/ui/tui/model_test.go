@@ -33,19 +33,12 @@ const harnessRows = 48
 // start is the clock's time when a test begins.
 var start = time.Date(2026, 10, 1, 14, 30, 0, 0, zone)
 
-// testRules are the rules of the test snapshots: implement takes
-// "ready", review takes "ready to review".
-var testRules = []crew.Rule{
-	{Name: "implement", Labels: crew.Labels{
-		Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
-	}},
-	{Name: "review", Labels: crew.Labels{
-		Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
-	}},
-}
+// testNotify is which rules of the test snapshots notify: implement takes
+// "ready", review takes "ready to review", and neither notifies.
+var testNotify = map[crew.RuleName]bool{"implement": false, "review": false}
 
-// testBoard is the default board of testRules: each rule's ready and
-// running labels.
+// testBoard is the default board of the test snapshots' rules: each
+// rule's ready and running labels.
 var testBoard = []crew.BoardColumn{
 	{Name: "implement", Labels: []crew.State{"ready", "in progress"}},
 	{Name: "review", Labels: []crew.State{"ready to review", "in review"}},
@@ -62,24 +55,24 @@ type harness struct {
 	forces  int
 }
 
-// newHarness is newBoardHarness of testRules and testBoard.
+// newHarness is newBoardHarness of testNotify and testBoard.
 func newHarness(t *testing.T, width int, warnings ...string) *harness {
 	t.Helper()
-	return newBoardHarness(t, width, testRules, testBoard, warnings...)
+	return newBoardHarness(t, width, testNotify, testBoard, warnings...)
 }
 
-// newBoardHarness returns a harness of rules and board's columns, in a
-// window width wide and 48 rows high: room for every section of the
-// test snapshots, whose columns hold up to two cards.
+// newBoardHarness returns a harness of the rules' notify and board's
+// columns, in a window width wide and 48 rows high: room for every section
+// of the test snapshots, whose columns hold up to two cards.
 func newBoardHarness(
-	t *testing.T, width int, rules []crew.Rule, board []crew.BoardColumn, warnings ...string,
+	t *testing.T, width int, notify map[crew.RuleName]bool, board []crew.BoardColumn, warnings ...string,
 ) *harness {
 	t.Helper()
 	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
 	h.model = New(Config{
 		Updates: h.updates, Stop: func() { h.stops++ }, Force: func() { h.forces++ },
 		Now: func() time.Time { return h.clock }, Location: zone,
-		Rules: rules, Board: board, Repository: "crew", Warnings: warnings,
+		Notify: notify, Board: board, Repository: "crew", Warnings: warnings,
 	})
 	h.send(tea.WindowSizeMsg{Width: width, Height: harnessRows})
 	return h

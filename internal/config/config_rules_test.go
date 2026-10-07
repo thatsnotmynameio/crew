@@ -142,8 +142,9 @@ func TestLoadGivesEveryRuleWhetherItNotifies(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := load(t, tt.body).Rules[0].Notify; got != tt.want {
-				t.Errorf("Notify = %v, want %v", got, tt.want)
+			cfg := load(t, tt.body)
+			if got, ok := cfg.Notify[cfg.Rules[0].Name]; !ok || got != tt.want || len(cfg.Notify) != len(cfg.Rules) {
+				t.Errorf("Notify = %v, want %s %v and one entry per rule", cfg.Notify, cfg.Rules[0].Name, tt.want)
 			}
 		})
 	}

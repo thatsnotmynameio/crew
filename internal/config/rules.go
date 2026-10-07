@@ -49,6 +49,7 @@ type parsedRule struct {
 
 	path   string
 	labels labelsDoc
+	notify bool
 }
 
 // ruleEnv is what the rules' names resolve against: the queues, the agents,
@@ -61,17 +62,18 @@ type ruleEnv struct {
 }
 
 // rules decodes and validates rules:, resolving each rule's queue and each
-// action's agent, check and bot in env. It reports every error it finds.
-func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, error) {
+// action's agent, check and bot in env. It returns the rules, and whether
+// each notifies, by name. It reports every error it finds.
+func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, map[crew.RuleName]bool, error) {
 	if n.Kind == 0 {
-		return nil, errors.New("rules: missing; write at least one rule")
+		return nil, nil, errors.New("rules: missing; write at least one rule")
 	}
 	section, err := named(n, "rules")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(section) == 0 {
-		return nil, keyError("rules", n.Line, "write at least one rule")
+		return nil, nil, keyError("rules", n.Line, "write at least one rule")
 	}
 	var errs []error
 	parsed := make([]parsedRule, 0, len(section))
@@ -84,17 +86,18 @@ func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, error) {
 		parsed = append(parsed, rule)
 	}
 	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+		return nil, nil, errors.Join(errs...)
 	}
 	spellOnce(parsed)
 	if err := checkGraph(parsed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make([]crew.Rule, len(parsed))
+	notify := make(map[crew.RuleName]bool, len(parsed))
 	for i, p := range parsed {
-		out[i] = p.Rule
+		out[i], notify[p.Name] = p.Rule, p.notify
 	}
-	return out, nil
+	return out, notify, nil
 }
 
 // parseRule decodes and checks the rule e, reporting every error it finds.
@@ -111,9 +114,9 @@ func parseRule(e entry, env ruleEnv) (parsedRule, error) {
 	p.Queue, queueErr = ruleQueue(doc.Queue, e.path, env.queues)
 	p.Takes, takesErr = ruleTakes(doc.Takes, e.path)
 	p.Actions, actionsErr = actions(&doc.Actions, e.path+".actions", env)
-	p.Notify = hasActions
+	p.notify = hasActions
 	if doc.Notify.line != 0 {
-		p.Notify = doc.Notify.value
+		p.notify = doc.Notify.value
 	}
 	return p, errors.Join(labelsErr, queueErr, takesErr, actionsErr)
 }

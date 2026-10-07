@@ -300,7 +300,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 func run(
 	ctx context.Context, eng *engine.Engine, o Options, stopping bool, b built, warnings []string,
 ) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: b.cfg.Rules, board: b.cfg.Board}
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, notify: b.cfg.Notify, board: b.cfg.Board}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -343,8 +343,8 @@ type runner struct {
 	code int
 	// warnings are the startup warnings the renderer shows.
 	warnings []string
-	// rules are the configured rules, for the live view's notifications.
-	rules []crew.Rule
+	// notify tells which rules' ends the live view notifies.
+	notify map[crew.RuleName]bool
 	// board is the live view's board: the columns the config writes, or
 	// its default columns.
 	board []crew.BoardColumn
@@ -356,7 +356,7 @@ func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
 		model := tui.New(tui.Config{
 			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Now: time.Now, Location: time.Local,
-			Rules: r.rules, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
+			Notify: r.notify, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
 		})
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
 		r.quit = program.Quit

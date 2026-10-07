@@ -19,9 +19,6 @@ type Rule struct {
 	// Takes is the kind of item the rule takes: it takes only the items of
 	// that kind in its Labels.Ready state. The zero Kind takes issues.
 	Takes Kind
-	// Notify tells whether the live view sends a desktop notification when
-	// the rule ends for an item.
-	Notify bool
 }
 
 // Labels are a rule's states, one for each point of its run.

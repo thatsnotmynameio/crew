@@ -92,7 +92,7 @@ func draftRules(t *testing.T) []crew.Rule {
 	queue := crew.Queue{Name: "default", Slots: 2}
 	return []crew.Rule{
 		{
-			Name: "implement", Queue: queue, Notify: true,
+			Name: "implement", Queue: queue,
 			Labels: crew.Labels{
 				Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
 			},
@@ -108,7 +108,7 @@ func draftRules(t *testing.T) []crew.Rule {
 			},
 		},
 		{
-			Name: "review", Queue: queue, Notify: true,
+			Name: "review", Queue: queue,
 			Labels: crew.Labels{
 				Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
 			},
@@ -134,6 +134,9 @@ func TestLoadDraftConfig(t *testing.T) {
 	wantRules := draftRules(t)
 	if !reflect.DeepEqual(cfg.Rules, wantRules) {
 		t.Errorf("Rules = %+v\nwant %+v", cfg.Rules, wantRules)
+	}
+	if want := map[crew.RuleName]bool{"implement": true, "review": true}; !reflect.DeepEqual(cfg.Notify, want) {
+		t.Errorf("Notify = %v, want %v", cfg.Notify, want)
 	}
 	if len(cfg.Agents) != 1 || cfg.Agents[0].Name != "claude" || cfg.Agents[0].Harness != "claude" ||
 		!cfg.Agents[0].Used {

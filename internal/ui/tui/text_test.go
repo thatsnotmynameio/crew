@@ -101,7 +101,7 @@ func TestARuleFillsTheWidth(t *testing.T) {
 	}
 }
 
-// testModel is a model of testRules, before any update.
+// testModel is a model of the test snapshots' rules, before any update.
 func testModel() Model {
-	return New(Config{Now: func() time.Time { return start }, Location: zone, Rules: testRules})
+	return New(Config{Now: func() time.Time { return start }, Location: zone, Notify: testNotify})
 }

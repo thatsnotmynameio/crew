@@ -55,7 +55,7 @@ type ownRule struct {
 // replaced triage in #160, while no issue was in a triage state.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadOwn(t)
-	if got, want := ownRules(cfg.Rules), wantOwnRules(); !reflect.DeepEqual(got, want) {
+	if got, want := ownRules(cfg.Rules, cfg.Notify), wantOwnRules(); !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
 	wantBots := []crew.BotName{"clerk", "product-manager", "developer"}
@@ -219,11 +219,11 @@ func checkNames(checks []crew.Check) string {
 	return fmt.Sprint(names)
 }
 
-// ownRules sums rules up as ownRule.
-func ownRules(rules []crew.Rule) []ownRule {
+// ownRules sums rules up as ownRule, with each rule's notify.
+func ownRules(rules []crew.Rule, notify map[crew.RuleName]bool) []ownRule {
 	out := make([]ownRule, len(rules))
 	for i, r := range rules {
-		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
+		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: notify[r.Name]}
 		for _, a := range r.Actions {
 			out[i].actions = append(out[i].actions,
 				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent.Name, a.Bot.Name, checkNames(a.Checks)))

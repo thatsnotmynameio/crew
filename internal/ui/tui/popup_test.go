@@ -166,7 +166,7 @@ func TestThePopupWalksTheCardsInBoardOrderAndStopsAtTheEnds(t *testing.T) {
 // Covers R1 of #231: in the popup → walks a column in the order it shows
 // its cards, the held ones first.
 func TestThePopupWalksTheHeldCardsFirst(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), item("10", "bug"), item("12", "bug"))))
 	h.send(enterKey)
 	if got := popupRows(t, h)[0]; !strings.HasPrefix(got, "#12 ") {
@@ -310,7 +310,7 @@ func TestAE5AHeldIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
 // card stays in its label's column (#230) and its popup shows the blocked
 // chip.
 func TestAnIssueWhoseRuleEndedAndIsBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("22", "bug"))))
 	h.send(downKey)
 

@@ -97,7 +97,7 @@ func TestARunRowReadsAStartingActionAndAnOwedClaim(t *testing.T) {
 		{core.ClaimRunning, core.PhaseStarting, "run  ⠋ triage starting"},
 		{core.ClaimOwed, core.PhaseWaiting, "run  ! owed · ○ triage waiting"},
 	} {
-		h := newBoardHarness(t, 150, crewRules, crewBoard)
+		h := newBoardHarness(t, 150, crewNotify, crewBoard)
 		u := held(twelve, "triage", "triage", tt.claim)
 		u.Snapshot.Issues[0].Actions[0].Phase, u.Snapshot.Issues[0].Actions[0].Started = tt.phase, time.Time{}
 		h.send(updateMsg(onBoard(u, labeled(twelve, "crew:triage:in progress"))))
@@ -111,7 +111,7 @@ func TestARunRowReadsAStartingActionAndAnOwedClaim(t *testing.T) {
 // items that fit and counts the rest, and every row keeps the card's
 // width.
 func TestANarrowCardKeepsWholeItemsAndItsWidth(t *testing.T) {
-	h := newBoardHarness(t, 71, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 71, crewNotify, ideasBugsDone)
 	u := held(twenty, "fix", "code", core.ClaimRunning)
 	iv := &u.Snapshot.Issues[0]
 	iv.Actions[0].Started = start.Add(-5 * time.Minute)
@@ -196,7 +196,7 @@ func TestAE1AndAE2ABlockedIssuesCardReadsBlockedInsteadOfIdle(t *testing.T) {
 func TestAE5AHeldBlockedIssuesCardKeepsItsActions(t *testing.T) {
 	blocked := twelve
 	blocked.Blocked = true
-	h := newBoardHarness(t, 150, crewRules, crewBoard)
+	h := newBoardHarness(t, 150, crewNotify, crewBoard)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
 		labeled(blocked, "crew:triage:in progress"))))
 	if got := faceOf(t, boardOf(t, h.view()), "#12")[1]; got != "run  ⠋ triage 1m" {
