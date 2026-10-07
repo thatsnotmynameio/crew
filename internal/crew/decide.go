@@ -3,7 +3,6 @@ package crew
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 )
 
@@ -92,16 +91,6 @@ func is[T ActionRunState](s ActionRunState) bool {
 // awaitsWorkspace reports whether s waits for its workspace.
 func awaitsWorkspace(s ActionRunState) bool {
 	return is[CreatingWorkspace](s) || is[ReopeningWorkspace](s)
-}
-
-// definition returns the definition of the action named name in the rule,
-// or the zero Action.
-func (d *decider) definition(name ActionName) Action {
-	actions := d.def.Rule.Actions
-	if i := slices.IndexFunc(actions, func(a Action) bool { return a.Name == name }); i >= 0 {
-		return actions[i]
-	}
-	return Action{}
 }
 
 // end ends the action named name with end and judges the run once every

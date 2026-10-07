@@ -61,3 +61,24 @@ func TestAnIssueInAnotherRepositoryKeepsItsOtherFields(t *testing.T) {
 		t.Errorf("the original's ID() = %#v after WithRepository, want 7 without a repository", got)
 	}
 }
+
+func TestOnlyStateIsTheOneStateAnIssueIsIn(t *testing.T) {
+	cases := []struct {
+		name   string
+		states []State
+		want   State
+		alone  bool
+	}{
+		{"none", nil, "", false},
+		{"one", []State{"ready"}, "ready", true},
+		{"two", []State{"ready", "done"}, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, alone := NewIssue(IssueData{States: tc.states}).OnlyState()
+			if got != tc.want || alone != tc.alone {
+				t.Errorf("OnlyState() = %q, %v, want %q, %v", got, alone, tc.want, tc.alone)
+			}
+		})
+	}
+}

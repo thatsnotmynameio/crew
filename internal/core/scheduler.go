@@ -148,8 +148,8 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 	var candidates []candidate
 	for si, rule := range s.m.rules {
 		for _, issue := range issues {
-			inLabel := len(issue.States()) == 1 && issue.States()[0] == rule.Labels.Ready
-			if inLabel && issue.Kind() == rule.Takes && !issue.Blocked() {
+			state, alone := issue.OnlyState()
+			if alone && state == rule.Labels.Ready && issue.Kind() == rule.Takes && !issue.Blocked() {
 				candidates = append(candidates, candidate{si, issue})
 			}
 		}

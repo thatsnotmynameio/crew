@@ -62,9 +62,9 @@ func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullReques
 	}
 	var errs writeErrors
 	link := ""
+	end, ended := report.End().Get()
 	for _, pr := range prs {
 		errs.add(t.mirror(ctx, pr, report.State()))
-		end, ended := report.End().Get()
 		if !ended || t.commented(report.ID(), pr.number) {
 			continue
 		}

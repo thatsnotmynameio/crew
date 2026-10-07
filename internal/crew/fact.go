@@ -158,7 +158,7 @@ func (f TakeSettled) decide(d *decider) error {
 // does not render for the issue ends at once.
 func (d *decider) start() {
 	for _, a := range d.run.actions {
-		if _, err := d.definition(a.name).Prompt.Render(d.run.issue); err != nil {
+		if _, err := d.def.Rule.Action(a.name).Prompt.Render(d.run.issue); err != nil {
 			d.end(a.name, EndFailed{Reason: NewSessionText(err.Error()), Cause: CausePrompt})
 			continue
 		}
@@ -323,7 +323,7 @@ func (f SessionEnded) decide(d *decider) error {
 	if d.run.stopping {
 		cause = CauseStopped
 	}
-	checks := d.definition(f.Action).Checks
+	checks := d.def.Rule.Action(f.Action).Checks
 	switch {
 	case !f.Outcome.Succeeded || len(checks) == 0:
 		d.end(f.Action, endOf(f.Outcome, cause))
@@ -348,7 +348,7 @@ func (f CheckEnded) decide(d *decider) error {
 	d.emit(ActionCheckEnded{EventHead: d.head(), Action: f.Action, Result: CheckResult{
 		Name: running.Check, Passed: f.Passed, Reason: f.Reason,
 	}})
-	checks, ran := d.definition(f.Action).Checks, len(a.checks)+1
+	checks, ran := d.def.Rule.Action(f.Action).Checks, len(a.checks)+1
 	switch {
 	case running.StopSent:
 		d.end(f.Action, stoppedEnd())

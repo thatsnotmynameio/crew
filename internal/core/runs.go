@@ -106,15 +106,6 @@ func (m *Model) definition(h *heldRun) crew.RunDefinition {
 	return crew.RunDefinition{Rule: m.rules[h.rule], FindsPullRequests: m.finding}
 }
 
-// action returns the definition of the action named name in h's rule.
-func (m *Model) action(h *heldRun, name crew.ActionName) crew.Action {
-	actions := m.rules[h.rule].Actions
-	if i := slices.IndexFunc(actions, func(a crew.Action) bool { return a.Name == name }); i >= 0 {
-		return actions[i]
-	}
-	return crew.Action{}
-}
-
 // runInput hands an input about one action's workspace, session, check or
 // pull request to the held rule run it names, as the fact it tells
 // (KTD-P4, KTD7). An input naming a run the core does not hold, such as a
@@ -317,7 +308,7 @@ func (s *step) workspaceAsked(h *heldRun, e crew.ActionWorkspaceAsked) {
 // prompt rendered for the issue and, when the action resumed a failed
 // run's workspace, the resume paragraph after it (R5).
 func (s *step) startSession(h *heldRun, name crew.ActionName) {
-	def := s.m.action(h, name)
+	def := s.m.rules[h.rule].Action(name)
 	a, _ := h.run.Action(name)
 	w, _ := a.Workspace().Get()
 	p := h.plumb(name)
@@ -346,7 +337,7 @@ func (s *step) findPullRequest(h *heldRun, name crew.ActionName) {
 // runCheck runs the next check of h's action named name: the first of its
 // checks that has not ended.
 func (s *step) runCheck(h *heldRun, name crew.ActionName) {
-	def := s.m.action(h, name)
+	def := s.m.rules[h.rule].Action(name)
 	a, _ := h.run.Action(name)
 	w, _ := a.Workspace().Get()
 	c := def.Checks[len(a.Checks())]
@@ -365,7 +356,7 @@ func (s *step) actionEnded(h *heldRun, e crew.ActionEnded) {
 	m := s.m
 	a, _ := h.run.Action(e.Action)
 	m.spent = m.spent.Add(a.Spend())
-	m.bots.credit(m.bots.identity(m.action(h, e.Action).Bot.Name), a.Spend())
+	m.bots.credit(m.bots.identity(m.rules[h.rule].Action(e.Action).Bot.Name), a.Spend())
 	s.emit(e)
 }
 

@@ -14,8 +14,8 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 func (m *Model) gone(issues []crew.Issue) {
 	alone := map[crew.IssueID]crew.State{}
 	for _, issue := range issues {
-		if len(issue.States()) == 1 {
-			alone[issue.ID()] = issue.States()[0]
+		if state, ok := issue.OnlyState(); ok {
+			alone[issue.ID()] = state
 		}
 	}
 	for i := range m.handled {

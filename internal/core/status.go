@@ -93,6 +93,9 @@ func (*step) assignRun(sl *statusLane, st crew.Status) crew.Status {
 		sl.run, sl.runRule = st.Run(), st.Rule()
 	}
 	sl.runEnded = ended
+	if st.Run() == sl.run {
+		return st
+	}
 	d := st.Data()
 	d.Run = sl.run
 	return crew.NewStatus(d)

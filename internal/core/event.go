@@ -24,8 +24,7 @@ type Published interface {
 //
 //sumtype:decl
 type Event interface {
-	// Time returns when the event happened.
-	Time() time.Time
+	Published
 	event()
 }
 

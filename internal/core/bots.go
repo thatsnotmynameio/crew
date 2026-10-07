@@ -247,7 +247,7 @@ func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	var out []RunningAction
 	for _, h := range m.issues {
 		for _, a := range h.run.Actions() {
-			if spending(a.State()) && m.bots.identity(m.action(h, a.Name()).Bot.Name) == identity {
+			if spending(a.State()) && m.bots.identity(m.rules[h.rule].Action(a.Name()).Bot.Name) == identity {
 				out = append(out, RunningAction{IssueRef: h.run.Issue().Ref(), Rule: h.run.Rule(), Action: a.Name()})
 			}
 		}

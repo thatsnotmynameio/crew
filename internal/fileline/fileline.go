@@ -8,7 +8,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
+
+// The permissions of the files Open creates and of their directories: logs
+// hold what sessions printed, so only you read them.
+const (
+	dirPerm  = 0o700
+	filePerm = 0o600
+)
+
+// Open opens the file at path for reading and appending, creating it and
+// its directory as needed.
+func Open(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+		return nil, fmt.Errorf("create the log directory: %w", err)
+	}
+	//nolint:gosec // crew builds the path under .crew/logs
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, filePerm)
+	if err != nil {
+		return nil, fmt.Errorf("open for appending: %w", err)
+	}
+	return f, nil
+}
 
 // Append appends data to f, a file opened for reading and appending, as a
 // line of its own: when f ends in the middle of a line, as after a crash

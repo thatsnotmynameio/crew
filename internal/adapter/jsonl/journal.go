@@ -22,14 +22,6 @@ import (
 // Compile-time guard.
 var _ port.Journal = (*Journal)(nil)
 
-// The permissions of the journal's directory and file: the directory holds
-// the session logs, which hold what sessions printed, so only you read
-// them.
-const (
-	dirPerm  = 0o700
-	filePerm = 0o600
-)
-
 // Journal is the run journal in one file. Only one goroutine calls it at a
 // time, so its lines land in the order they were appended.
 type Journal struct {
@@ -67,28 +59,26 @@ func (j *Journal) Load(repository crew.RepositoryID) ([]crew.RunEvent, error) {
 		if err := json.Unmarshal(text, &l); err != nil {
 			continue
 		}
-		events = append(events, l.events(repository)...)
+		if e, ok := l.event(repository); ok {
+			events = append(events, e)
+		}
 	}
 	return events, nil
 }
 
-// events returns the events l holds, its issue in repository: none when l
+// event returns the event l holds, its issue in repository, or false when l
 // is not a line this crew understands.
-func (l line) events(repository crew.RepositoryID) []crew.RunEvent {
+func (l line) event(repository crew.RepositoryID) (crew.RunEvent, bool) {
 	if l.Issue == "" {
-		return nil
+		return nil, false
 	}
 	switch l.Version {
 	case version1:
-		if e, ok := l.v1Event(repository); ok {
-			return []crew.RunEvent{e}
-		}
+		return l.v1Event(repository)
 	case version:
-		if e, ok := l.decode(l.eventHead(repository)); ok {
-			return []crew.RunEvent{e}
-		}
+		return l.decode(l.eventHead(repository))
 	}
-	return nil
+	return nil, false
 }
 
 // Append implements port.Journal: it appends e as a line of its own,
@@ -120,14 +110,5 @@ func (j *Journal) file() string {
 // open opens the journal for reading and appending, creating it and its
 // directory as needed.
 func (j *Journal) open() (*os.File, error) {
-	path := j.file()
-	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
-		return nil, fmt.Errorf("create the log directory: %w", err)
-	}
-	//nolint:gosec // crew builds the path under .crew/logs
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, filePerm)
-	if err != nil {
-		return nil, fmt.Errorf("open for appending: %w", err)
-	}
-	return f, nil
+	return fileline.Open(j.file())
 }

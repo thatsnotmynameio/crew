@@ -93,6 +93,15 @@ func (i Issue) Priority() int { return i.data.Priority }
 // States returns a copy of the crew states the issue is in.
 func (i Issue) States() []State { return slices.Clone(i.data.States) }
 
+// OnlyState returns the one crew state the issue is in, or false when it
+// is in none or in more than one.
+func (i Issue) OnlyState() (State, bool) {
+	if len(i.data.States) != 1 {
+		return "", false
+	}
+	return i.data.States[0], true
+}
+
 // Blocked reports whether an open issue blocks this one.
 func (i Issue) Blocked() bool { return i.data.Blocked }
 
