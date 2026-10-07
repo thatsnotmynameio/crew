@@ -2,7 +2,9 @@
 # crew's own rules: crew runs on this repository too. Keep your own
 # settings, such as poll_interval_seconds or a board, in
 # .crew/config.local.yaml, which git ignores: each top-level key it sets
-# replaces that key here. .crew/config.example.yaml lists every key.
+# replaces that key here. .crew/config.example.yaml lists every key. After
+# changing this file, run `sh .crew/config_test.sh`: it tests the prompts
+# and checks below, which crew's own tests never read.
 # Every label crew uses is `crew:<rule>:<state>`, so it says which rule an
 # issue is in and where it stands there. Each rule takes `crew:<rule>:ready`,
 # moves the issue to `crew:<rule>:in progress` and ends in
