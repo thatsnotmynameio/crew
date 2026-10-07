@@ -246,8 +246,7 @@ const (
 	// waits for a retry. With an owed take, no action has started yet: they
 	// stay PhaseWaiting until the retried take is done. A held issue never
 	// stores it: the view shows it over any other claim from the first
-	// transient failure until every call of the issue's run lane settled
-	// (KTD-P4).
+	// transient failure until every call of the issue's run lane settled.
 	ClaimOwed
 )
 

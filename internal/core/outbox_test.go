@@ -244,7 +244,7 @@ func TestTwoRunsOfARuleWithoutActionsEditOneStatusEntry(t *testing.T) {
 	}
 }
 
-// After a stop, an issue's status lane gets one final try in all (KTD-P6):
+// After a stop, an issue's status lane gets one final try in all:
 // a later ended status of the issue that fails transiently is given up.
 func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)

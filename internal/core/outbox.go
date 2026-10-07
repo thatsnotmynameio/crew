@@ -34,7 +34,7 @@ type runLane struct {
 	deliveries []*delivery
 	// owing is set at the first transient failure of one of its deliveries.
 	// The lane is forgotten once its last delivery settles, so the issue
-	// shows owed until then, through every retry (KTD-P4).
+	// shows owed until then, through every retry.
 	owing bool
 }
 
@@ -92,7 +92,7 @@ func (s *step) deliver(h *heldIssue, d *delivery) {
 // attempt issues d's command.
 func (s *step) attempt(d *delivery) {
 	d.inFlight = true
-	if d.purpose == purposeReport {
+	if d.call.Kind == CallReport {
 		s.command(ReportFailure{ID: d.id, Report: cloneReport(d.report)})
 		return
 	}
@@ -100,7 +100,7 @@ func (s *step) attempt(d *delivery) {
 }
 
 // callResult settles, owes or retries the delivery r answers, and hands the
-// run of its issue the outcome of one that settled (KTD-P3). A take and a
+// run of its issue the outcome of one that settled. A take and a
 // verdict call are owed alike when they fail transiently: a take may have
 // landed although it failed, so releasing its issue could strand it in the
 // running label with no session, and the tracker makes the retry idempotent.

@@ -171,7 +171,7 @@ func (s *step) stop() {
 			s.stopActions(h)
 		case ClaimJudging, ClaimStopping, ClaimOwed:
 			// Judging goes on; only stop sets stopping, and it runs once;
-			// owed is never stored, the view derives it (KTD-P4).
+			// owed is never stored, the view derives it.
 		}
 		s.retryRun(h.issue.ID, true)
 	}
@@ -421,7 +421,7 @@ func (s *step) judge(h *heldIssue) {
 	s.ended(h, rule.Labels.Failure, crew.MovePending)
 }
 
-// received applies to h the outcome of one of its deliveries (KTD-P3): a
+// received applies to h the outcome of one of its deliveries: a
 // landed take starts its actions, a landed verdict move reports the move, a
 // landed failure report is reported, and a verdict move given up ends the
 // status with the move dropped. A take given up leaves nothing to do.
