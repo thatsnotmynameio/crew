@@ -85,11 +85,13 @@ func newScenarioWith(t *testing.T, cfg string) (*harness.Scenario, int) {
 }
 
 // newEmptyScenario builds a screen scenario that runs crew with cfg as its
-// .crew/config.yaml, whose repository has owner as its code owner, the rule's
-// labels and no issue yet.
-func newEmptyScenario(t *testing.T, cfg string) *harness.Scenario {
+// .crew/config.yaml and args as its command line, whose repository has owner
+// as its code owner, the rule's labels and no issue yet.
+func newEmptyScenario(t *testing.T, cfg string, args ...string) *harness.Scenario {
 	t.Helper()
-	sc := harness.New(t, harness.Options{Config: cfg, Screen: true, Size: harness.Size{Cols: cols, Rows: rows}})
+	sc := harness.New(t, harness.Options{
+		Config: cfg, Args: args, Screen: true, Size: harness.Size{Cols: cols, Rows: rows},
+	})
 	sc.GitHub.SetFile(".github/CODEOWNERS", "* @"+owner+"\n")
 	sc.GitHub.AddLabel(ready, running, success, failure)
 	return sc
