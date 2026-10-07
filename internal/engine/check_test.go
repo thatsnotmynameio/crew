@@ -210,6 +210,36 @@ func TestACheckThatCannotStartSaysWhyWithLocalPathsShortened(t *testing.T) {
 	})
 }
 
+func TestACheckWhoseLogCannotOpenSaysWhyWithLocalPathsShortened(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
+		cfg := checkedConfig(t, tr, checker)
+		r := start(t, cfg)
+		session := r.sessions(1)["issue-1-development"]
+		// A directory where the log was: the session keeps the file it
+		// opened, and the check cannot open the log again.
+		log := filepath.Join(cfg.Root, ".crew", "logs", "issue-1-development.log")
+		if err := os.Remove(log); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(log, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		session.End(port.Verdict{Succeeded: true, Reason: "done"})
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		want := "the check pr-closes-issue could not start: open the session log: " +
+			"open for appending: open ./.crew/logs/issue-1-development.log: is a directory"
+		if got := r.lastReason(); got != want {
+			t.Fatalf("reason = %q, want %q", got, want)
+		}
+	})
+}
+
 func TestAnEngineWithoutACheckerFailsAnActionWithACheck(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
