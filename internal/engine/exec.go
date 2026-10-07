@@ -29,7 +29,8 @@ type message struct {
 
 // sessionKey identifies the session of one action of an issue.
 type sessionKey struct {
-	issue, action string
+	issue  string
+	action crew.ActionName
 }
 
 // launch runs cmd in its own goroutine on the command context ctx (KTD7).
@@ -243,7 +244,7 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 }
 
 // ready is the WorkspaceReady of space for action on the issue keyed key.
-func (e *Engine) ready(key, action string, space port.Space, resumed bool) core.WorkspaceReady {
+func (e *Engine) ready(key string, action crew.ActionName, space port.Space, resumed bool) core.WorkspaceReady {
 	log := logPath(space.Name)
 	return core.WorkspaceReady{
 		IssueKey: key, Action: action,
@@ -353,7 +354,7 @@ func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core
 // check runs c, as its action's bot like its session, and returns its
 // verdict.
 func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
-	subject := "the check " + c.Name
+	subject := "the check " + string(c.Name)
 	if e.cfg.Checker == nil {
 		return crew.Outcome{Reason: subject + " could not start: crew has no check runner"}
 	}

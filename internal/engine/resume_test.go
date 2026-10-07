@@ -231,7 +231,7 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 // port.Reopener.
 type createOnly struct{ w *fake.Workspace }
 
-func (c createOnly) Create(ctx context.Context, issue crew.Issue, action string) (port.Space, error) {
+func (c createOnly) Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
 	return c.w.Create(ctx, issue, action)
 }
 

@@ -52,11 +52,11 @@ func resumeDriver(t *testing.T, past ...core.RunRecord) *driver {
 
 // startedRun is the start record of a run of action in rule on issue key,
 // in the workspace the engine would name issue-<key>-<workspace>.
-func startedRun(key, rule, action, workspace string) core.RunRecord {
+func startedRun(key string, rule crew.RuleName, action crew.ActionName, workspace string) core.RunRecord {
 	name := "issue-" + key + "-" + workspace
 	return core.RunRecord{
 		Event: core.RunStarted, At: t0, IssueKey: key, IssueRef: "#" + key, Rule: rule, Action: action,
-		Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
+		Workspace: crew.WorkspaceName(name), Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }
 
@@ -77,8 +77,8 @@ func (d *driver) takeIssue(iss crew.Issue) []core.Command {
 
 // reopened is the WorkspaceReady answering a ReopenWorkspace of the
 // workspace issue-<key>-<workspace>.
-func reopened(key, action, workspace string) core.WorkspaceReady {
-	r := space(key, workspace)
+func reopened(key string, action crew.ActionName, workspace string) core.WorkspaceReady {
+	r := space(key, crew.ActionName(workspace))
 	r.Action = action
 	r.Resumed = true
 	r.LogFromDir = "../../logs/issue-" + key + "-" + workspace + ".log"
@@ -87,8 +87,8 @@ func reopened(key, action, workspace string) core.WorkspaceReady {
 
 // created is the WorkspaceReady answering a CreateWorkspace of action with
 // the workspace issue-<key>-<workspace>.
-func created(key, action, workspace string) core.WorkspaceReady {
-	r := space(key, workspace)
+func created(key string, action crew.ActionName, workspace string) core.WorkspaceReady {
+	r := space(key, crew.ActionName(workspace))
 	r.Action = action
 	return r
 }

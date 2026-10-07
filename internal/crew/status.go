@@ -12,8 +12,8 @@ type Status struct {
 	// IssueKey and IssueRef identify the issue, as in Issue.
 	IssueKey string
 	IssueRef string
-	// Rule is the name of the rule that runs or ran on the issue.
-	Rule string
+	// Rule is the rule that runs or ran on the issue.
+	Rule RuleName
 	// Kind says which of the fields below apply.
 	Kind StatusKind
 	// Actions are the rule's actions, in its action order.
@@ -48,7 +48,7 @@ const (
 // ActionStatus is one action in a Status.
 type ActionStatus struct {
 	// Name is the action's name.
-	Name string
+	Name ActionName
 	// State is how the action stands.
 	State ActionState
 	// Started is when its session started; zero while its workspace is
@@ -69,9 +69,9 @@ type ActionStatus struct {
 	Checks []CheckResult
 	// Log is the repository-relative path of its log, once it has one.
 	Log string
-	// Workspace is the name of the workspace the action resumed in; empty
-	// when it did not resume.
-	Workspace string
+	// Workspace is the workspace the action resumed in; empty when it did
+	// not resume.
+	Workspace WorkspaceName
 	// Spend is what its session used, and PullRequest the pull request it
 	// opened; set only for an ended action whose session started, when crew
 	// is set to show them.

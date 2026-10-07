@@ -60,9 +60,10 @@ type cachedStatus struct {
 // marker line says. A comment written before entries is one entry without a
 // marker.
 type entry struct {
-	text            string
-	marked          bool
-	run, kind, rule string
+	text      string
+	marked    bool
+	run, kind string
+	rule      crew.RuleName
 }
 
 // ReportStatus implements port.StatusReporter. It keeps one entry per rule
@@ -259,7 +260,7 @@ func nextStatus(current string, status crew.Status, text string) (string, bool) 
 		if latest != nil && latest.kind == kindName(crew.StatusRunning) {
 			marker, _, _ := strings.Cut(latest.text, "\n")
 			latest.text = fmt.Sprintf("%s\ncrew stopped following %s on %s before it ended.",
-				marker, codeSpan(latest.rule), status.IssueRef)
+				marker, codeSpan(string(latest.rule)), status.IssueRef)
 		}
 		entries = append(entries, entry{text: text})
 	}
@@ -356,7 +357,7 @@ func parseMarker(s string) (entry, bool) {
 		case "kind":
 			e.kind = value
 		case "stage":
-			e.rule = value
+			e.rule = crew.RuleName(value)
 		default:
 			return entry{}, false
 		}
@@ -370,7 +371,7 @@ func parseMarker(s string) (entry, bool) {
 // of every comment already posted still parse.
 func markerLine(s crew.Status) string {
 	return fmt.Sprintf("%srun=%s kind=%s stage=%s -->",
-		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(s.Rule))
+		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(string(s.Rule)))
 }
 
 // legacyQueuedKind marks the entry of an issue an earlier crew version
@@ -463,7 +464,7 @@ func usage(a crew.ActionStatus) string {
 
 // writeHeadline writes the status entry's first line: what the rule does.
 func writeHeadline(b *strings.Builder, s crew.Status) {
-	rule := codeSpan(s.Rule)
+	rule := codeSpan(string(s.Rule))
 	switch s.Kind {
 	case crew.StatusRunning:
 		fmt.Fprintf(b, "crew: %s is running on %s.\n", rule, s.IssueRef)
@@ -501,9 +502,9 @@ func writeState(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 	// A resumed action's line names its worktree: "**`lfg`** resumed in
 	// worktree `issue-9-lfg` and failed." A fresh one reads "**`lfg`**
 	// failed."
-	name, and := "**"+codeSpan(a.Name)+"**", ""
+	name, and := "**"+codeSpan(string(a.Name))+"**", ""
 	if a.Workspace != "" {
-		name += " resumed in worktree " + codeSpan(a.Workspace)
+		name += " resumed in worktree " + codeSpan(string(a.Workspace))
 		and = " and"
 	}
 	switch {

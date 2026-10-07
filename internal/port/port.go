@@ -112,8 +112,8 @@ type Run struct {
 // zero Identity changes nothing. An Identity never holds a key or a token,
 // only where the child finds one.
 type Identity struct {
-	// Bot is the bot's name, as the config names it.
-	Bot string
+	// Bot is the bot, as the config names it.
+	Bot crew.BotName
 	// Login is the login the bot acts as, such as crew-ops[bot].
 	Login string
 	// Env holds KEY=value entries added to the child's environment.
@@ -144,7 +144,7 @@ type Session interface {
 type Workspace interface {
 	// Create creates a fresh workspace for action on issue. Each call gets
 	// its own workspace, even for an issue and action seen before.
-	Create(ctx context.Context, issue crew.Issue, action string) (Space, error)
+	Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (Space, error)
 }
 
 // Space is a created workspace.
@@ -153,7 +153,7 @@ type Space struct {
 	// name: the session's log is named after it, so a reopened workspace
 	// keeps its log, and a name reused once its workspace is gone reuses
 	// the log too.
-	Name string
+	Name crew.WorkspaceName
 	// Dir is the workspace's absolute directory.
 	Dir string
 	// Branch is the branch the action's work goes on.
@@ -263,7 +263,7 @@ type BoardLister interface {
 	// Each carries the labels of labels it carries, matched as the tracker
 	// matches labels, spelled as labels spells them and in its order. An error
 	// means the board could not be read; it is transient.
-	ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error)
+	ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error)
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace
@@ -342,10 +342,10 @@ type Check struct {
 	// Dir is the action's workspace directory, where the command runs.
 	Dir string
 	// Name is the check's name, and Command the shell command to run.
-	Name    string
+	Name    crew.CheckName
 	Command string
-	// Action is the name of the action the check follows.
-	Action string
+	// Action is the action the check follows.
+	Action crew.ActionName
 	// Prompt is the rendered prompt the action's session started with, and
 	// LastMessage what the session last said, as in LastMessageReporter;
 	// the command reads them from files, never as part of it.

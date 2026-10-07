@@ -15,7 +15,7 @@ import (
 )
 
 // bugs is a board of one column, for the engine's board tests.
-var bugs = []crew.BoardColumn{{Name: "bugs", Labels: []string{"bug"}}}
+var bugs = []crew.BoardColumn{{Name: "bugs", Labels: []crew.State{"bug"}}}
 
 // boardCounter is a board tracker that counts its board reads and fails
 // them with err when it is set.
@@ -26,7 +26,7 @@ type boardCounter struct {
 	err   error
 }
 
-func (b *boardCounter) ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error) {
+func (b *boardCounter) ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error) {
 	b.reads.Add(1)
 	if b.err != nil {
 		return nil, b.err
@@ -38,7 +38,11 @@ func (b *boardCounter) ListBoard(ctx context.Context, labels []string) ([]crew.B
 func boardKeys(board []crew.BoardIssue) []string {
 	out := make([]string, 0, len(board))
 	for _, b := range board {
-		out = append(out, b.Issue.Key+":"+strings.Join(b.Labels, ","))
+		labels := make([]string, len(b.Labels))
+		for i, l := range b.Labels {
+			labels[i] = string(l)
+		}
+		out = append(out, b.Issue.Key+":"+strings.Join(labels, ","))
 	}
 	return out
 }
@@ -127,7 +131,7 @@ func TestTheDefaultBoardComesFromTheListingsOfATrackerThatCannotListABoard(t *te
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready), issue(2, inProgress))
 		cfg := config(t, tr, develop)
-		cfg.Board = []crew.BoardColumn{{Name: "implement", Labels: []string{string(ready), string(inProgress)}}}
+		cfg.Board = []crew.BoardColumn{{Name: "implement", Labels: []crew.State{ready, inProgress}}}
 		r := start(t, cfg)
 
 		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true})

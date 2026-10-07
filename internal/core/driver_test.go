@@ -50,10 +50,10 @@ func issue(key string, minute int, states ...crew.State) crew.Issue {
 }
 
 // space is the workspace an engine would create for key and action.
-func space(key, action string) core.WorkspaceReady {
-	name := "issue-" + key + "-" + action
+func space(key string, action crew.ActionName) core.WorkspaceReady {
+	name := "issue-" + key + "-" + string(action)
 	return core.WorkspaceReady{
-		IssueKey: key, Action: action, Workspace: name, Dir: "/repo/.crew/worktrees/" + name,
+		IssueKey: key, Action: action, Workspace: crew.WorkspaceName(name), Dir: "/repo/.crew/worktrees/" + name,
 		Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }

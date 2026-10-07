@@ -306,7 +306,7 @@ func queuesOf(t *testing.T, m *core.Model, free ...int) []core.QueueView {
 }
 
 // queueOf returns the queue the view names for the held issue keyed key.
-func queueOf(t *testing.T, m *core.Model, key string) string {
+func queueOf(t *testing.T, m *core.Model, key string) crew.QueueName {
 	t.Helper()
 	for _, iv := range m.View().Issues {
 		if iv.Issue.Key == key {

@@ -156,7 +156,7 @@ func (m Model) botCard(e core.BotView, width int) []string {
 	text := max(inner-avatarWidth-1, 0)
 	av := s.avatar(avatarSeed(e), s.avatarColour(e))
 	content := []string{
-		av[0] + " " + fit(s.title.Render(clean(e.Name)), text),
+		av[0] + " " + fit(s.title.Render(clean(string(e.Name))), text),
 		av[1] + " " + fit(m.botState(e), text),
 		av[2] + " " + m.botTotals(e.Spend, text),
 		m.botMapping(e, inner),
@@ -240,7 +240,7 @@ func (m Model) botRunning(actions []core.RunningAction, width int) string {
 	items := make([]string, 0, len(actions))
 	for _, r := range actions {
 		items = append(items, m.spin()+" "+s.link(r.IssueRef, m.issueURL(r.IssueRef))+" "+
-			s.text.Render(clean(r.Rule+"/"+r.Action)))
+			s.text.Render(clean(string(r.Rule)+"/"+string(r.Action))))
 	}
 	return s.items(items, s.muted.Render(" · "), width)
 }
@@ -266,7 +266,7 @@ func (s styles) mark(e core.BotView) string {
 // botName is e's mark, then its name, as the strip, the board cards and
 // the popup show a bot (R3, KTD8 of #151).
 func (s styles) botName(e core.BotView) string {
-	return s.mark(e) + " " + s.text.Render(clean(e.Name))
+	return s.mark(e) + " " + s.text.Render(clean(string(e.Name)))
 }
 
 // stripGlyph is e's glyph in the strip, after a space: ▲ while a bot cannot

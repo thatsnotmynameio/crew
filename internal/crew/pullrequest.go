@@ -25,7 +25,7 @@ type PullRequestReport struct {
 // RuleEnd is how a rule ended on an issue, for a pull request report.
 type RuleEnd struct {
 	// Rule is the rule's name.
-	Rule string
+	Rule RuleName
 	// Actions are the rule's actions, in its action order, as an ended
 	// Status carries them: each succeeded or failed, with its checks'
 	// reasons, and a failed one with its cause and its log. The rule failed

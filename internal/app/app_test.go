@@ -399,7 +399,7 @@ func TestAE6LabelsNoRuleNamesAreNeverTouched(t *testing.T) {
 		if got := tr.Moves(); !reflect.DeepEqual(got, wantMoves) {
 			t.Errorf("moves = %v, want %v, and none of #2", got, wantMoves)
 		}
-		if want := []string{brainstormReady, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
+		if want := []crew.State{brainstormReady, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
 			t.Errorf("#1 has the labels %q, want %q", tr.Labels("1"), want)
 		}
 	})

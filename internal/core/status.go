@@ -36,7 +36,7 @@ type statusSlot struct {
 	// run is the id of the issue's current rule run, and runRule its
 	// rule; runEnded is set once an ended status of it was reported.
 	run      string
-	runRule  string
+	runRule  crew.RuleName
 	runEnded bool
 }
 

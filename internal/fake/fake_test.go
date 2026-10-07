@@ -248,7 +248,7 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 	ws := fake.NewWorkspace(t.TempDir())
 	var (
 		mu    sync.Mutex
-		names = map[string]bool{}
+		names = map[crew.WorkspaceName]bool{}
 		wg    sync.WaitGroup
 	)
 	for range 10 {

@@ -21,7 +21,7 @@ type Event interface {
 type IssueTaken struct {
 	At    time.Time
 	Issue crew.Issue
-	Rule  string
+	Rule  crew.RuleName
 	From  crew.State
 	To    crew.State
 }
@@ -32,9 +32,9 @@ type ActionStarted struct {
 	At        time.Time
 	IssueKey  string
 	IssueRef  string
-	Rule      string
-	Action    string
-	Workspace string
+	Rule      crew.RuleName
+	Action    crew.ActionName
+	Workspace crew.WorkspaceName
 	Branch    string
 	Log       string
 	Resumed   bool
@@ -47,9 +47,9 @@ type WorkspaceMissing struct {
 	At        time.Time
 	IssueKey  string
 	IssueRef  string
-	Rule      string
-	Action    string
-	Workspace string
+	Rule      crew.RuleName
+	Action    crew.ActionName
+	Workspace crew.WorkspaceName
 }
 
 // RunNotRecorded is a run record the engine could not write to the run
@@ -58,8 +58,8 @@ type RunNotRecorded struct {
 	At       time.Time
 	IssueKey string
 	IssueRef string
-	Rule     string
-	Action   string
+	Rule     crew.RuleName
+	Action   crew.ActionName
 	Reason   string
 }
 
@@ -71,10 +71,10 @@ type ActionEnded struct {
 	At        time.Time
 	IssueKey  string
 	IssueRef  string
-	Rule      string
-	Action    string
+	Rule      crew.RuleName
+	Action    crew.ActionName
 	Outcome   crew.Outcome
-	Workspace string
+	Workspace crew.WorkspaceName
 	Log       string
 }
 
@@ -115,7 +115,7 @@ type IssueOfOtherKind struct {
 	Kind crew.Kind
 	// Label is the crew state the item is in, Rule's label.
 	Label crew.State
-	Rule  string
+	Rule  crew.RuleName
 	// Takes is the kind Rule takes.
 	Takes crew.Kind
 }
@@ -201,7 +201,7 @@ type Stopped struct {
 // R11). It is emitted once per problem, when the bot gains it.
 type BotStopped struct {
 	At  time.Time
-	Bot string
+	Bot crew.BotName
 	// Reason is the short reason: "writes as you" or "token not renewed".
 	Reason string
 	// Warning is the full reason and its fix.
@@ -212,7 +212,7 @@ type BotStopped struct {
 // its token was renewed after a failure (R10).
 type BotActsAgain struct {
 	At  time.Time
-	Bot string
+	Bot crew.BotName
 }
 
 // CallKind tells a Move, a ReportFailure and a ReportPullRequests apart in a

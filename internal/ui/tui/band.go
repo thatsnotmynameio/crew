@@ -18,7 +18,7 @@ func (m Model) queuesSection() (string, []string) {
 	names, counts := make([]string, 0, len(m.snap.Queues)), make([]string, 0, len(m.snap.Queues))
 	for _, q := range m.snap.Queues {
 		busy, slots = busy+min(q.Busy, q.Slots), slots+q.Slots
-		names = append(names, q.Name)
+		names = append(names, string(q.Name))
 		counts = append(counts, fmt.Sprintf("%d/%d", q.Busy, q.Slots))
 	}
 	summary := fmt.Sprintf("%d of %d busy", busy, slots)

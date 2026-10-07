@@ -95,7 +95,7 @@ type Tracker struct {
 
 type trackedIssue struct {
 	issue  crew.Issue
-	labels []string // the labels that are not crew's
+	labels []crew.State // the labels that are not crew's
 	closed bool
 }
 
@@ -133,7 +133,7 @@ func (t *Tracker) SetStates(key string, states ...crew.State) {
 
 // SetLabels sets the labels of the issue with key that are not crew's, such
 // as bug, as a person editing it would. It does nothing for an unknown key.
-func (t *Tracker) SetLabels(key string, labels ...string) {
+func (t *Tracker) SetLabels(key string, labels ...crew.State) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
@@ -142,7 +142,7 @@ func (t *Tracker) SetLabels(key string, labels ...string) {
 }
 
 // Labels returns the labels that are not crew's the issue with key has now.
-func (t *Tracker) Labels(key string) []string {
+func (t *Tracker) Labels(key string) []crew.State {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
@@ -672,7 +672,7 @@ func NewBoardTracker(issues ...crew.Issue) BoardTracker {
 // GitHub compares them, oldest first and otherwise in the order they were
 // added. Each carries the labels of labels it matches, in labels' spelling
 // and order.
-func (b BoardTracker) ListBoard(_ context.Context, labels []string) ([]crew.BoardIssue, error) {
+func (b BoardTracker) ListBoard(_ context.Context, labels []crew.State) ([]crew.BoardIssue, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var out []crew.BoardIssue
@@ -680,13 +680,10 @@ func (b BoardTracker) ListBoard(_ context.Context, labels []string) ([]crew.Boar
 		if ti.closed || ti.issue.Kind != crew.KindIssue {
 			continue
 		}
-		carries := slices.Clone(ti.labels)
-		for _, s := range ti.issue.States {
-			carries = append(carries, string(s))
-		}
-		var matched []string
+		carries := slices.Concat(ti.labels, ti.issue.States)
+		var matched []crew.State
 		for _, l := range labels {
-			if slices.ContainsFunc(carries, func(c string) bool { return strings.EqualFold(c, l) }) {
+			if slices.ContainsFunc(carries, func(c crew.State) bool { return strings.EqualFold(string(c), string(l)) }) {
 				matched = append(matched, l)
 			}
 		}

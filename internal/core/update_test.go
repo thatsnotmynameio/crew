@@ -62,7 +62,7 @@ func (d *driver) workspacesReady(keys ...string) []core.Command {
 	d.t.Helper()
 	var sessions []core.Command
 	for _, key := range keys {
-		for _, action := range []string{"acceptance", "development"} {
+		for _, action := range []crew.ActionName{"acceptance", "development"} {
 			started, _ := d.send(space(key, action))
 			sessions = append(sessions, started...)
 		}
@@ -72,10 +72,10 @@ func (d *driver) workspacesReady(keys ...string) []core.Command {
 
 // session is the StartSession for prompt in the workspace space gives key
 // and action.
-func session(key, action, prompt string) core.StartSession {
+func session(key string, action crew.ActionName, prompt string) core.StartSession {
 	return core.StartSession{
-		IssueKey: key, Action: action, Dir: "/repo/.crew/worktrees/issue-" + key + "-" + action,
-		Prompt: prompt, Log: ".crew/logs/issue-" + key + "-" + action + ".log",
+		IssueKey: key, Action: action, Dir: "/repo/.crew/worktrees/issue-" + key + "-" + string(action),
+		Prompt: prompt, Log: ".crew/logs/issue-" + key + "-" + string(action) + ".log",
 	}
 }
 
@@ -227,7 +227,7 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 	tests := []struct {
 		name      string
 		fail      func(d *driver) []core.Command
-		workspace string
+		workspace crew.WorkspaceName
 		log       string
 	}{
 		{

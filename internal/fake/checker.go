@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -54,7 +55,7 @@ func (c *Checker) Script(branch string, s CheckScript) {
 
 // ScriptCheck makes the check called name, of the action whose branch is
 // branch, run as s, whatever Script set for the branch.
-func (c *Checker) ScriptCheck(branch, name string, s CheckScript) {
+func (c *Checker) ScriptCheck(branch string, name crew.CheckName, s CheckScript) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.scripts[scriptKey(branch, name)] = s
@@ -62,8 +63,8 @@ func (c *Checker) ScriptCheck(branch, name string, s CheckScript) {
 
 // scriptKey is the key of the script ScriptCheck sets for the check called
 // name, of the action whose branch is branch.
-func scriptKey(branch, name string) string {
-	return branch + "\x00" + name
+func scriptKey(branch string, name crew.CheckName) string {
+	return branch + "\x00" + string(name)
 }
 
 // Checks returns the checks run so far, in the order they started.

@@ -35,11 +35,11 @@ func TestLoadGivesEveryActionItsAgent(t *testing.T) {
 	if got := cfg.Rules[0].Actions[0].Agent; got != "codex" {
 		t.Errorf("the action's agent = %q, want codex", got)
 	}
-	used := map[string]bool{}
+	used := map[crew.AgentName]bool{}
 	for _, a := range cfg.Agents {
 		used[a.Name] = a.Used
 	}
-	if want := map[string]bool{"claude": false, "codex": true}; !reflect.DeepEqual(used, want) {
+	if want := map[crew.AgentName]bool{"claude": false, "codex": true}; !reflect.DeepEqual(used, want) {
 		t.Errorf("agents in use = %v, want %v", used, want)
 	}
 	if got := cfg.Agents[1].HarnessKey(); got != "agents.codex.harness.name" {
@@ -89,32 +89,35 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 	tests := []struct {
 		name     string
 		body     string
-		wantBot  string
-		wantBots []string
+		wantBot  crew.BotName
+		wantBots []crew.BotName
 		// want is each action's bot, in rule order.
-		want []string
+		want []crew.BotName
 	}{
 		{
 			name: "no bot anywhere", body: botAgents("", "", "", "idler"),
-			wantBot: "", wantBots: nil, want: []string{"", "", ""},
+			wantBot: "", wantBots: nil, want: []crew.BotName{"", "", ""},
 		},
 		{
 			name: "only tracker.bot", body: botAgents("clerk", "", "", "idler"),
-			wantBot: "clerk", wantBots: []string{"clerk"}, want: []string{"clerk", "clerk", "clerk"},
+			wantBot: "clerk", wantBots: []crew.BotName{"clerk"}, want: []crew.BotName{"clerk", "clerk", "clerk"},
 		},
 		{
 			// An agent's bot needs no tracker.bot; crew's own writes then go
 			// as the gh login.
 			name: "only the agents' bots", body: botAgents("", "developer", "reviewer", "idler"),
-			wantBot: "", wantBots: []string{"developer", "reviewer"}, want: []string{"developer", "reviewer", "developer"},
+			wantBot: "", wantBots: []crew.BotName{"developer", "reviewer"},
+			want: []crew.BotName{"developer", "reviewer", "developer"},
 		},
 		{
 			name: "an agent's bot, or tracker.bot", body: botAgents("clerk", "developer", "", "idler"),
-			wantBot: "clerk", wantBots: []string{"clerk", "developer"}, want: []string{"developer", "clerk", "developer"},
+			wantBot: "clerk", wantBots: []crew.BotName{"clerk", "developer"},
+			want: []crew.BotName{"developer", "clerk", "developer"},
 		},
 		{
 			name: "each bot listed once, tracker.bot first", body: botAgents("developer", "developer", "clerk", ""),
-			wantBot: "developer", wantBots: []string{"developer", "clerk"}, want: []string{"developer", "clerk", "developer"},
+			wantBot: "developer", wantBots: []crew.BotName{"developer", "clerk"},
+			want: []crew.BotName{"developer", "clerk", "developer"},
 		},
 	}
 	for _, tt := range tests {
@@ -134,8 +137,8 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 }
 
 // actionBots returns the bot of each of rules' actions, in rule order.
-func actionBots(rules []crew.Rule) []string {
-	var out []string
+func actionBots(rules []crew.Rule) []crew.BotName {
+	var out []crew.BotName
 	for _, r := range rules {
 		for _, a := range r.Actions {
 			out = append(out, a.Bot)

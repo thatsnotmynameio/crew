@@ -157,7 +157,7 @@ rules:
 	if want := (crew.Queue{Name: "default", Slots: 2}); rule.Queue != want {
 		t.Errorf("Queue = %+v, want %+v", rule.Queue, want)
 	}
-	wantBoard := []crew.BoardColumn{{Name: "development", Labels: []string{"todo", "doing"}}}
+	wantBoard := []crew.BoardColumn{{Name: "development", Labels: []crew.State{"todo", "doing"}}}
 	if !reflect.DeepEqual(cfg.Board, wantBoard) || cfg.BoardWritten {
 		t.Errorf("Board = %+v (written %v), want %+v, not written", cfg.Board, cfg.BoardWritten, wantBoard)
 	}

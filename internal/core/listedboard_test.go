@@ -16,9 +16,9 @@ var draftListing = []crew.State{ready, inProgress, readyToReview, inReview}
 // its kind (R22).
 func defaultColumns() []crew.BoardColumn {
 	return []crew.BoardColumn{
-		{Name: "implement", Labels: []string{string(ready), string(inProgress)}},
-		{Name: "review", Labels: []string{string(readyToReview), string(inReview)}},
-		{Name: "fix review", Labels: []string{string(fixReviewReady), string(fixing)}, Takes: crew.KindPullRequest},
+		{Name: "implement", Labels: []crew.State{ready, inProgress}},
+		{Name: "review", Labels: []crew.State{readyToReview, inReview}},
+		{Name: "fix review", Labels: []crew.State{fixReviewReady, fixing}, Takes: crew.KindPullRequest},
 	}
 }
 
@@ -32,9 +32,7 @@ func newListedDriver(t *testing.T) *driver {
 // on is item on the board with labels.
 func on(item crew.Issue, labels ...crew.State) crew.BoardIssue {
 	b := crew.BoardIssue{Issue: item}
-	for _, l := range labels {
-		b.Labels = append(b.Labels, string(l))
-	}
+	b.Labels = append(b.Labels, labels...)
 	return b
 }
 

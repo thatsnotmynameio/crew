@@ -542,7 +542,7 @@ func (m *Model) held(key string) *heldIssue {
 
 // action returns the named action of the held issue keyed key, when it is in
 // one of phases, or nils.
-func (m *Model) action(key, name string, phases ...Phase) (*heldIssue, *actionRun) {
+func (m *Model) action(key string, name crew.ActionName, phases ...Phase) (*heldIssue, *actionRun) {
 	h := m.held(key)
 	if h == nil {
 		return nil, nil

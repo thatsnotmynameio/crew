@@ -52,7 +52,7 @@ func wantLit(t *testing.T, h *harness, ref string, col int) {
 }
 
 // item is a board item for issue n, titled Bug, labeled lab.
-func item(n, lab string) crew.BoardIssue {
+func item(n string, lab crew.State) crew.BoardIssue {
 	return labeled(crew.Issue{Key: n, Ref: "#" + n, Title: "Bug"}, lab)
 }
 

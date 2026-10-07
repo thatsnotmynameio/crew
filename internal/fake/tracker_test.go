@@ -65,8 +65,8 @@ func TestTrackerMoveLeavesTheIssueInExactlyTheNewState(t *testing.T) {
 // carrying only such labels is not listed, and a move keeps them (AE6).
 func TestTrackerOtherLabelsAreNotListedAndAMoveKeepsThem(t *testing.T) {
 	tr := fake.NewTracker(issue("1", ready), issue("2"))
-	tr.SetLabels("1", string(waitingBrainstorm), "bug")
-	tr.SetLabels("2", string(waitingBrainstorm))
+	tr.SetLabels("1", waitingBrainstorm, "bug")
+	tr.SetLabels("2", waitingBrainstorm)
 	ctx := context.Background()
 
 	listed, err := tr.List(ctx, []crew.State{ready, waitingBrainstorm})
@@ -83,10 +83,10 @@ func TestTrackerOtherLabelsAreNotListedAndAMoveKeepsThem(t *testing.T) {
 	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
-	if want := []string{string(waitingBrainstorm), "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
+	if want := []crew.State{waitingBrainstorm, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
 		t.Errorf("issue 1 labels after the move = %q, want %q", tr.Labels("1"), want)
 	}
-	if want := []string{string(waitingBrainstorm)}; !reflect.DeepEqual(tr.Labels("2"), want) {
+	if want := []crew.State{waitingBrainstorm}; !reflect.DeepEqual(tr.Labels("2"), want) {
 		t.Errorf("issue 2 labels = %q, want %q", tr.Labels("2"), want)
 	}
 	if got := tr.Labels("9"); got != nil {
@@ -351,19 +351,19 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	tr := fake.NewBoardTracker(on(issue("1", ready), 2), on(issue("2"), 3), on(issue("3"), 1), pull,
 		on(issue("5"), 1), on(issue("6"), 1))
 	tr.SetLabels("1", "BUG")
-	tr.SetLabels("2", string(waitingBrainstorm))
+	tr.SetLabels("2", waitingBrainstorm)
 	tr.SetLabels("3", "Bug", "docs")
 	tr.SetLabels("4", "bug")
 	tr.SetLabels("5", "bug")
 	tr.Close("5")
 	tr.SetLabels("6", "docs")
 
-	got, err := tr.ListBoard(context.Background(), []string{"bug", "Ready", "Waiting Brainstorm"})
+	got, err := tr.ListBoard(context.Background(), []crew.State{"bug", "Ready", "Waiting Brainstorm"})
 	if err != nil {
 		t.Fatalf("ListBoard: %v", err)
 	}
 
-	want := map[string][]string{"3": {"bug"}, "1": {"bug", "Ready"}, "2": {"Waiting Brainstorm"}}
+	want := map[string][]crew.State{"3": {"bug"}, "1": {"bug", "Ready"}, "2": {"Waiting Brainstorm"}}
 	order := make([]string, 0, len(got))
 	for _, b := range got {
 		order = append(order, b.Issue.Key)
@@ -392,11 +392,11 @@ func TestAddingAKnownIssueReplacesItOpenWithoutLabels(t *testing.T) {
 	if labels := tr.Labels("1"); len(labels) != 0 {
 		t.Errorf("labels = %q, want none", labels)
 	}
-	board, err := tr.ListBoard(context.Background(), []string{"bug", string(readyToReview)})
+	board, err := tr.ListBoard(context.Background(), []crew.State{"bug", readyToReview})
 	if err != nil {
 		t.Fatalf("ListBoard: %v", err)
 	}
-	if len(board) != 1 || !reflect.DeepEqual(board[0].Labels, []string{string(readyToReview)}) {
+	if len(board) != 1 || !reflect.DeepEqual(board[0].Labels, []crew.State{readyToReview}) {
 		t.Errorf("board = %+v, want issue 1 open with only %q", board, readyToReview)
 	}
 }

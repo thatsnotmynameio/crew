@@ -189,7 +189,7 @@ func TestABotThatCannotActKeepsItsStartupWarning(t *testing.T) {
 // cannot act at startup.
 func TestTheShortStateDropsTheCoresCannotActPrefix(t *testing.T) {
 	v := core.New(nil, 1, core.WithBots(core.BotsConfig{
-		Names: []string{"reviewer"}, Unable: map[string]string{"reviewer": "no key"},
+		Names: []crew.BotName{"reviewer"}, Unable: map[crew.BotName]string{"reviewer": "no key"},
 	})).View()
 	m := newHarness(t, 80).current()
 
@@ -268,7 +268,7 @@ func TestTheTotalsTakeTheLongestFormThatFits(t *testing.T) {
 func TestANarrowCardCutsALongNameAndState(t *testing.T) {
 	m := newHarness(t, 80).current()
 	name := strings.Repeat("n", 30)
-	card := m.botCard(core.BotView{Name: name, State: "token not renewed"}, minCard)
+	card := m.botCard(core.BotView{Name: crew.BotName(name), State: "token not renewed"}, minCard)
 
 	for _, row := range card {
 		if w := lipgloss.Width(row); w != minCard {
@@ -340,7 +340,8 @@ func threeBotsOnABoard() engine.Update {
 	var issues []crew.BoardIssue
 	for col := 1; col <= 5; col++ {
 		key := strconv.Itoa(col)
-		issues = append(issues, labeled(crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, fmt.Sprintf("l%d", col)))
+		label := crew.State(fmt.Sprintf("l%d", col))
+		issues = append(issues, labeled(crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, label))
 	}
 	u := onBoard(engine.Update{}, issues...)
 	u.Snapshot.Bots = aeOneBots()
@@ -503,7 +504,7 @@ func shortWindow() engine.Update {
 	for _, key := range []string{"3", "4"} {
 		card := crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}
 		u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{Issue: card, Rule: "implement", Claim: core.ClaimTaking})
-		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: card, Labels: []string{"ready"}})
+		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: card, Labels: []crew.State{"ready"}})
 	}
 	return u
 }

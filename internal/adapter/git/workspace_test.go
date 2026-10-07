@@ -149,7 +149,7 @@ func TestCreateNames(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
-		action   string
+		action   crew.ActionName
 		branches []string
 		dirs     []string
 		want     string
@@ -178,7 +178,7 @@ func TestCreateNames(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			if space.Name != tt.want || space.Branch != "crew/"+tt.want ||
+			if string(space.Name) != tt.want || space.Branch != "crew/"+tt.want ||
 				space.Dir != filepath.Join(root, ".crew", "worktrees", tt.want) {
 				t.Errorf("space = %+v, want name %s", space, tt.want)
 			}
@@ -318,9 +318,9 @@ func TestConcurrentCreationsAfterOriginAdvanced(t *testing.T) {
 			t.Fatalf("creation %d: %v", i, err)
 		}
 	}
-	names := []string{spaces[0].Name, spaces[1].Name}
+	names := []crew.WorkspaceName{spaces[0].Name, spaces[1].Name}
 	slices.Sort(names)
-	if want := []string{"issue-7-development", "issue-7-development-2"}; !slices.Equal(names, want) {
+	if want := []crew.WorkspaceName{"issue-7-development", "issue-7-development-2"}; !slices.Equal(names, want) {
 		t.Errorf("names = %q, want %q", names, want)
 	}
 	for _, s := range spaces {
@@ -476,7 +476,7 @@ func TestReopenAfterTheRepositoryMovedSaysToRepairTheWorktree(t *testing.T) {
 	if !strings.Contains(err.Error(), "git worktree repair") {
 		t.Errorf("err = %v, want it to offer git worktree repair, which keeps the work", err)
 	}
-	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", space.Name, "notes.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", string(space.Name), "notes.txt")); err != nil {
 		t.Errorf("the worktree's uncommitted file: %v", err)
 	}
 }
@@ -519,7 +519,7 @@ func TestReopenThroughSymlinkedRoot(t *testing.T) {
 		t.Fatalf("Reopen: %v", err)
 	}
 	want := port.Space{Name: space.Name, Branch: space.Branch,
-		Dir: filepath.Join(link, ".crew", "worktrees", space.Name)}
+		Dir: filepath.Join(link, ".crew", "worktrees", string(space.Name))}
 	if got != want {
 		t.Errorf("space = %+v, want %+v", got, want)
 	}

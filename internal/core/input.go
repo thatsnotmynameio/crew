@@ -32,7 +32,7 @@ type Tick struct {
 // Said is what the running session of Action on an issue last said.
 type Said struct {
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	Text     string
 }
 
@@ -92,7 +92,7 @@ type BotsChecked struct {
 	WritesLost string
 	// NotRenewed holds, by bot, the warning of its last renewal, for each
 	// bot whose last renewal failed.
-	NotRenewed map[string]string
+	NotRenewed map[crew.BotName]string
 }
 
 // Result classifies how a tracker call (a Move, a ReportFailure or a
@@ -171,9 +171,9 @@ type WorkspaceReady struct {
 	At time.Time
 	// IssueKey and Action identify the CreateWorkspace this answers.
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	// Workspace is the workspace's unique name.
-	Workspace string
+	Workspace crew.WorkspaceName
 	// Dir is the workspace's absolute directory, where the session runs.
 	Dir string
 	// Branch is the branch the action's work goes on.
@@ -194,7 +194,7 @@ type WorkspaceReady struct {
 type WorkspaceGone struct {
 	At       time.Time
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 }
 
 // RecordFailed is a RecordRun the engine could not write. Record is the
@@ -210,7 +210,7 @@ type RecordFailed struct {
 type WorkspaceFailed struct {
 	At       time.Time
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	Reason   string
 }
 
@@ -219,7 +219,7 @@ type WorkspaceFailed struct {
 type SessionStarted struct {
 	At       time.Time
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 }
 
 // SessionFailedToStart is a StartSession that started no session. The action
@@ -227,7 +227,7 @@ type SessionStarted struct {
 type SessionFailedToStart struct {
 	At       time.Time
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	Reason   string
 }
 
@@ -237,7 +237,7 @@ type SessionFailedToStart struct {
 type SessionEnded struct {
 	At          time.Time
 	IssueKey    string
-	Action      string
+	Action      crew.ActionName
 	Outcome     crew.Outcome
 	Usage       crew.Usage
 	LastMessage string
@@ -248,7 +248,7 @@ type SessionEnded struct {
 type CheckEnded struct {
 	At       time.Time
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	Outcome  crew.Outcome
 }
 
@@ -257,7 +257,7 @@ type CheckEnded struct {
 type PullRequestFound struct {
 	At          time.Time
 	IssueKey    string
-	Action      string
+	Action      crew.ActionName
 	PullRequest crew.PullRequest
 }
 

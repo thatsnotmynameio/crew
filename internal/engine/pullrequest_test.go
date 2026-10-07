@@ -21,7 +21,7 @@ func prStates(tr fake.PullRequestTracker) []string {
 	for _, r := range reports {
 		s := string(r.State)
 		if r.End != nil {
-			s += " (end of " + r.End.Rule + ")"
+			s += " (end of " + string(r.End.Rule) + ")"
 		}
 		out = append(out, s)
 	}

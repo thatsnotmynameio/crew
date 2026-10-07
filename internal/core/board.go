@@ -14,7 +14,7 @@ type board struct {
 	columns []crew.BoardColumn
 	// labels are the board's labels, each spelled once, so they compare
 	// exactly.
-	labels []string
+	labels []crew.State
 	// crewLabels are the labels a move removes: the rules' states.
 	crewLabels []crew.State
 	// listed is set when the model fills the board from its own listings
@@ -114,9 +114,9 @@ func (m *Model) boardFromListing(issues []crew.Issue) {
 	}
 	var found []crew.BoardIssue
 	for _, issue := range issues {
-		var labels []string
+		var labels []crew.State
 		for _, l := range b.labels {
-			if slices.Contains(issue.States, crew.State(l)) && b.names(issue.Kind, l) {
+			if slices.Contains(issue.States, l) && b.names(issue.Kind, l) {
 				labels = append(labels, l)
 			}
 		}
@@ -155,7 +155,7 @@ func (m *Model) boardMoved(issue crew.Issue, to crew.State) {
 }
 
 // names reports whether a column showing items of kind names label.
-func (b *board) names(kind crew.Kind, label string) bool {
+func (b *board) names(kind crew.Kind, label crew.State) bool {
 	return slices.ContainsFunc(b.columns, func(c crew.BoardColumn) bool {
 		return c.Takes == kind && slices.Contains(c.Labels, label)
 	})
@@ -166,17 +166,17 @@ func (b *board) names(kind crew.Kind, label string) bool {
 // joins it from crew's copy when such a column names the target; an issue
 // left with no board label leaves it.
 func (b *board) apply(mv boardMove) {
-	to := string(mv.to)
+	to := mv.to
 	named := b.names(mv.issue.Kind, to)
 	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue.Key == mv.issue.Key })
 	if i < 0 {
 		if named {
-			b.issues = append(b.issues, crew.BoardIssue{Issue: mv.issue.Clone(), Labels: []string{to}})
+			b.issues = append(b.issues, crew.BoardIssue{Issue: mv.issue.Clone(), Labels: []crew.State{to}})
 		}
 		return
 	}
 	e := &b.issues[i]
-	e.Labels = slices.DeleteFunc(e.Labels, func(l string) bool { return slices.Contains(b.crewLabels, crew.State(l)) })
+	e.Labels = slices.DeleteFunc(e.Labels, func(l crew.State) bool { return slices.Contains(b.crewLabels, l) })
 	if named {
 		e.Labels = append(e.Labels, to)
 	}

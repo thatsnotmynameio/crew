@@ -33,11 +33,11 @@ type RunRecord struct {
 	At       time.Time
 	IssueKey string
 	IssueRef string
-	Rule     string
-	Action   string
+	Rule     crew.RuleName
+	Action   crew.ActionName
 	// Workspace, Branch and Log are the run's workspace name, branch and
 	// repository-relative log path.
-	Workspace string
+	Workspace crew.WorkspaceName
 	Branch    string
 	Log       string
 	// Succeeded and Reason are the action's outcome; set on RunEnded only.
@@ -55,7 +55,9 @@ type RunRecord struct {
 // runKey identifies the runs one record replaces: those of an action, in a
 // rule, on an issue (R3).
 type runKey struct {
-	issue, rule, action string
+	issue  string
+	rule   crew.RuleName
+	action crew.ActionName
 }
 
 func keyOf(r RunRecord) runKey { return runKey{r.IssueKey, r.Rule, r.Action} }

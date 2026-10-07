@@ -67,7 +67,7 @@ func (c *Checker) Check(ctx context.Context, check port.Check) error {
 		"CREW_BRANCH="+check.Branch,
 		"CREW_CODE_OWNERS="+strings.Join(check.CodeOwners, " "),
 		"CREW_BOTS="+strings.Join(check.Bots, " "),
-		"CREW_ACTION="+check.Action,
+		"CREW_ACTION="+string(check.Action),
 		"CREW_PROMPT_FILE="+prompt,
 		"CREW_LAST_MESSAGE_FILE="+last,
 	)

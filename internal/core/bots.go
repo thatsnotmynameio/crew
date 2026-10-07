@@ -23,12 +23,12 @@ const youName = "you"
 type BotsConfig struct {
 	// Default is the default bot, which acts for crew's own writes; empty
 	// when the config names none.
-	Default string
+	Default crew.BotName
 	// Names are the configured bots, the default first, in config order.
-	Names []string
+	Names []crew.BotName
 	// Unable holds, by name, the short reason of each bot that cannot act
 	// at startup, such as "no key".
-	Unable map[string]string
+	Unable map[crew.BotName]string
 	// Login is the gh login crew acts as when it acts as you; empty
 	// when unknown.
 	Login string
@@ -43,10 +43,10 @@ type bots struct {
 	// stays.
 	writesLost string
 	// notRenewed holds, by bot, the warning of its last failed renewal.
-	notRenewed map[string]string
+	notRenewed map[crew.BotName]string
 	// spent holds, by identity, what its ended actions spent this run; yours
 	// is under "" (KTD4).
-	spent map[string]crew.Spend
+	spent map[crew.BotName]crew.Spend
 }
 
 // WithBots gives the model the bots crew acts as (KTD3). Without it, you
@@ -60,7 +60,7 @@ func WithBots(c BotsConfig) Option {
 }
 
 // acts reports whether name is a configured bot that acts at startup.
-func (ms *bots) acts(name string) bool {
+func (ms *bots) acts(name crew.BotName) bool {
 	_, unable := ms.config.Unable[name]
 	return name != "" && !unable && slices.Contains(ms.config.Names, name)
 }
@@ -68,7 +68,7 @@ func (ms *bots) acts(name string) bool {
 // identity returns who an action of bot acts as: the bot when it acts at
 // startup, you ("") otherwise (KTD4). A problem mid-run changes
 // nothing: the action's session keeps the bot's identity.
-func (ms *bots) identity(bot string) string {
+func (ms *bots) identity(bot crew.BotName) crew.BotName {
 	if ms.acts(bot) {
 		return bot
 	}
@@ -78,7 +78,7 @@ func (ms *bots) identity(bot string) string {
 // writer returns who crew's own writes go as: the default bot while it acts
 // at startup and its writes have not fallen back, you ("") otherwise
 // (KTD7).
-func (ms *bots) writer() string {
+func (ms *bots) writer() crew.BotName {
 	if ms.writesLost == "" {
 		return ms.identity(ms.config.Default)
 	}
@@ -86,15 +86,15 @@ func (ms *bots) writer() string {
 }
 
 // credit adds spend to what identity's ended actions spent.
-func (ms *bots) credit(identity string, spend crew.Spend) {
+func (ms *bots) credit(identity crew.BotName, spend crew.Spend) {
 	if ms.spent == nil {
-		ms.spent = map[string]crew.Spend{}
+		ms.spent = map[crew.BotName]crew.Spend{}
 	}
 	ms.spent[identity] = ms.spent[identity].Add(spend)
 }
 
 // state returns the short state of bot name, the first that holds (KTD6).
-func (ms *bots) state(name string) string {
+func (ms *bots) state(name crew.BotName) string {
 	if reason, ok := ms.config.Unable[name]; ok {
 		return stateCannotAct + reason
 	}
@@ -109,7 +109,7 @@ func (ms *bots) state(name string) string {
 
 // warnings returns the live warnings of bot name, in the order they arose:
 // its writes', then its token's.
-func (ms *bots) warnings(name string) []string {
+func (ms *bots) warnings(name crew.BotName) []string {
 	var out []string
 	if name == ms.config.Default && ms.writesLost != "" {
 		out = append(out, ms.writesLost)
@@ -144,7 +144,7 @@ func (s *step) botsChecked(in BotsChecked) {
 
 // renewal records the last renewal of bot name from notRenewed, and emits
 // BotStopped when its token was renewed before and now is not.
-func (s *step) renewal(name string, notRenewed map[string]string) {
+func (s *step) renewal(name crew.BotName, notRenewed map[crew.BotName]string) {
 	ms := &s.m.bots
 	warning, failed := notRenewed[name]
 	_, had := ms.notRenewed[name]
@@ -154,7 +154,7 @@ func (s *step) renewal(name string, notRenewed map[string]string) {
 			s.emit(BotStopped{At: s.at, Bot: name, Reason: stateNotRenewed, Warning: warning})
 		}
 		if ms.notRenewed == nil {
-			ms.notRenewed = map[string]string{}
+			ms.notRenewed = map[crew.BotName]string{}
 		}
 		ms.notRenewed[name] = warning
 	case had:
@@ -165,7 +165,7 @@ func (s *step) renewal(name string, notRenewed map[string]string) {
 // BotView is one identity crew acts as: a configured bot, or you.
 type BotView struct {
 	// Name is the bot's name; "you" for the "you" entry.
-	Name string
+	Name crew.BotName
 	// You is set on the "you" entry.
 	You bool
 	// Login is the gh login crew acts as when it acts as you, on the
@@ -201,8 +201,8 @@ type BotView struct {
 // RunningAction is an action running as a bot or you.
 type RunningAction struct {
 	IssueRef string
-	Rule     string
-	Action   string
+	Rule     crew.RuleName
+	Action   crew.ActionName
 }
 
 // botsView returns the configured bots' entries, in config order, then the
@@ -216,25 +216,25 @@ func (m *Model) botsView() []BotView {
 		out = append(out, BotView{
 			Name: name, Acting: state == stateActing, State: state, ActsAsYou: unable,
 			Warnings: ms.warnings(name), Writes: ms.writer() == name,
-			Pairs: m.pairs(func(bot string) bool { return bot == name }), Running: m.runningAs(name),
+			Pairs: m.pairs(func(bot crew.BotName) bool { return bot == name }), Running: m.runningAs(name),
 			Spend: ms.spent[name],
 		})
 	}
 	return append(out, BotView{
 		Name: youName, You: true, Login: ms.config.Login, Writes: ms.writer() == "",
-		Pairs: m.pairs(func(bot string) bool { return ms.identity(bot) == "" }), Running: m.runningAs(""),
+		Pairs: m.pairs(func(bot crew.BotName) bool { return ms.identity(bot) == "" }), Running: m.runningAs(""),
 		Spend: ms.spent[""],
 	})
 }
 
 // pairs returns the "rule/action" pairs, in rule order, of the actions
 // whose bot is.
-func (m *Model) pairs(is func(bot string) bool) []string {
+func (m *Model) pairs(is func(bot crew.BotName) bool) []string {
 	var out []string
 	for _, rule := range m.rules {
 		for _, a := range rule.Actions {
 			if is(a.Bot) {
-				out = append(out, rule.Name+"/"+a.Name)
+				out = append(out, string(rule.Name)+"/"+string(a.Name))
 			}
 		}
 	}
@@ -243,7 +243,7 @@ func (m *Model) pairs(is func(bot string) bool) []string {
 
 // runningAs returns the actions running as identity now: from their
 // session's start until their spend lands (KTD5).
-func (m *Model) runningAs(identity string) []RunningAction {
+func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	var out []RunningAction
 	for _, h := range m.issues {
 		for _, a := range h.actions {

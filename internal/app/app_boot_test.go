@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 
 	"github.com/thatsnotmynameio/crew/internal/app"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
@@ -56,9 +57,9 @@ func TestTheBootLogPrintsEachStepBeforeTheWarningsAndTheEventLines(t *testing.T)
 		h.ReportStep("looking for claude on PATH")
 		r := options(t, withOps(), tr, h)
 		r.opts.Terminal, r.opts.Plain = true, true
-		r.opts.Bots = func(ctx context.Context, _ string, names []string) (app.Bots, error) {
+		r.opts.Bots = func(ctx context.Context, _ crew.BotName, names []crew.BotName) (app.Bots, error) {
 			for _, name := range names {
-				port.Step(ctx, "making bot "+name+" act")
+				port.Step(ctx, "making bot "+string(name)+" act")
 			}
 			return app.Bots{Warnings: []string{"bot ops is not installed on thatsnotmynameio/crew"}}, nil
 		}
@@ -148,7 +149,7 @@ func TestWithoutBotsTheBootLogHasNoBotLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := fake.NewHarness()
 		r := options(t, oneAction, fake.NewTracker(issue("1", ready)), h)
-		r.opts.Bots = func(context.Context, string, []string) (app.Bots, error) {
+		r.opts.Bots = func(context.Context, crew.BotName, []crew.BotName) (app.Bots, error) {
 			t.Error("the bots were made to act, with none in the config")
 			return app.Bots{}, nil
 		}

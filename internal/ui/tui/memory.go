@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
@@ -17,7 +18,10 @@ type messageMemory struct {
 }
 
 // actionKey is an action of an issue: its issue's key and its name.
-type actionKey struct{ issue, action string }
+type actionKey struct {
+	issue  string
+	action crew.ActionName
+}
 
 // remembered is an action's last message and branch, of its run that
 // started at started; zero before it started.
@@ -80,7 +84,7 @@ func (mm *messageMemory) forget(cards []card) {
 // last returns the last message and the branch the memory holds for
 // issue's action, in that order, or empty strings for what it does not
 // hold.
-func (mm *messageMemory) last(issue, action string) (string, string) {
+func (mm *messageMemory) last(issue string, action crew.ActionName) (string, string) {
 	r := mm.actions[actionKey{issue, action}]
 	return r.message, r.branch
 }

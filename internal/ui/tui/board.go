@@ -52,7 +52,7 @@ func (m Model) cards() []card {
 	for _, bi := range m.snap.Board {
 		view, isHeld := views[bi.Issue.Key]
 		for i, c := range m.cfg.Board {
-			carries := slices.ContainsFunc(c.Labels, func(l string) bool { return slices.Contains(bi.Labels, l) })
+			carries := slices.ContainsFunc(c.Labels, func(l crew.State) bool { return slices.Contains(bi.Labels, l) })
 			if !carries || c.Takes != bi.Issue.Kind {
 				continue
 			}

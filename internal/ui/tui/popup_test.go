@@ -539,7 +539,7 @@ func TestAE6ThePopupFollowsItsIssueAndClosesWhenItLeaves(t *testing.T) {
 
 	failed := runningSnapshot()
 	failed.Snapshot.Issues = failed.Snapshot.Issues[1:]
-	failed.Snapshot.Board[0].Labels = []string{"ready to review"}
+	failed.Snapshot.Board[0].Labels = []crew.State{"ready to review"}
 	failed.Snapshot.Handled = []core.HandledView{failedEntry("1", "Add login form", 10, 0, "code", "exited 1")}
 	h.send(updateMsg(failed))
 	if got := popupRows(t, h)[0]; got != "#1 Add login form" {

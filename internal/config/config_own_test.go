@@ -42,7 +42,7 @@ func loadOwn(t *testing.T) *config.Config {
 // summed up as "action: agent A, bot B, check C", where C is whether it has
 // one.
 type ownRule struct {
-	name    string
+	name    crew.RuleName
 	labels  crew.Labels
 	queue   crew.Queue
 	notify  bool
@@ -58,7 +58,7 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if got, want := ownRules(cfg.Rules), wantOwnRules(); !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
-	wantBots := []string{"clerk", "product-manager", "developer"}
+	wantBots := []crew.BotName{"clerk", "product-manager", "developer"}
 	if cfg.Bot != "clerk" || !reflect.DeepEqual(cfg.Bots, wantBots) {
 		t.Errorf("Bot = %q, Bots = %q; want clerk, %q", cfg.Bot, cfg.Bots, wantBots)
 	}
@@ -201,7 +201,7 @@ func wantOwnRules() []ownRule {
 
 // checkScript returns the script of a's check called name, or "" when a
 // names no such check.
-func checkScript(a crew.Action, name string) string {
+func checkScript(a crew.Action, name crew.CheckName) string {
 	for _, c := range a.Checks {
 		if c.Name == name {
 			return c.Script
@@ -212,7 +212,7 @@ func checkScript(a crew.Action, name string) string {
 
 // checkNames returns the names of checks, in order, as [a b].
 func checkNames(checks []crew.Check) string {
-	names := make([]string, len(checks))
+	names := make([]crew.CheckName, len(checks))
 	for i, c := range checks {
 		names[i] = c.Name
 	}

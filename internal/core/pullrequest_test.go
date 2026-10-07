@@ -371,13 +371,13 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 func TestAnOwedTakeReportLeavesTheIssueRunning(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
-	var created []string
+	var created []crew.ActionName
 	for _, c := range landed {
 		if w, ok := c.(core.CreateWorkspace); ok {
 			created = append(created, w.Action)
 		}
 	}
-	if want := []string{"acceptance", "development"}; !reflect.DeepEqual(created, want) {
+	if want := []crew.ActionName{"acceptance", "development"}; !reflect.DeepEqual(created, want) {
 		t.Fatalf("the landed take created workspaces for %v, want %v", created, want)
 	}
 

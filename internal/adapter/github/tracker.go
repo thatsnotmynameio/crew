@@ -240,12 +240,8 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	labels := make([]string, len(states))
-	for i, s := range states {
-		labels[i] = string(s)
-	}
 	var reply issuesReply
-	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, labels, true)...); err != nil {
+	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, states, true)...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	var items []crew.Issue
@@ -270,7 +266,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 // case, as GitHub compares them, in labels' spelling and order. An issue none
 // of whose labels matches, which GitHub's filter should not return, is left
 // out.
-func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error) {
+func (t *Tracker) ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error) {
 	authors, err := t.authors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list the board's issues: %w", err)
@@ -281,9 +277,9 @@ func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardI
 	}
 	var board []crew.BoardIssue
 	for _, n := range reply.issues(len(authors)) {
-		var carried []string
+		var carried []crew.State
 		for _, l := range labels {
-			if slices.ContainsFunc(n.Labels.Nodes, func(g ghLabel) bool { return strings.EqualFold(g.Name, l) }) {
+			if slices.ContainsFunc(n.Labels.Nodes, func(g ghLabel) bool { return strings.EqualFold(g.Name, string(l)) }) {
 				carried = append(carried, l)
 			}
 		}
@@ -336,10 +332,10 @@ const stateOpen = "OPEN"
 // issuesArgs returns the gh arguments of issuesQuery, for the issues of
 // authors carrying any of labels and, when pullRequests is set, the pull
 // requests carrying any of them.
-func issuesArgs(authors, labels []string, pullRequests bool) []string {
+func issuesArgs(authors []string, labels []crew.State, pullRequests bool) []string {
 	vars := make([]string, 0, fieldArgs*(len(labels)+len(authors)))
 	for _, l := range labels {
-		vars = append(vars, "-f", "labels[]="+l)
+		vars = append(vars, "-f", "labels[]="+string(l))
 	}
 	for i, a := range authors {
 		vars = append(vars, "-f", "author"+strconv.Itoa(i)+"="+a)

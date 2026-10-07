@@ -38,7 +38,7 @@ func lookups(cmds []core.Command) []core.FindPullRequest {
 }
 
 // phaseOf returns the phase of the named action of key, from the view.
-func phaseOf(t *testing.T, m *core.Model, key, action string) core.Phase {
+func phaseOf(t *testing.T, m *core.Model, key string, action crew.ActionName) core.Phase {
 	t.Helper()
 	for _, iv := range m.View().Issues {
 		for _, a := range iv.Actions {
@@ -233,7 +233,7 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("7", 1, ready))
-	for _, action := range []string{"acceptance", "development"} {
+	for _, action := range []crew.ActionName{"acceptance", "development"} {
 		d.send(core.SessionEnded{IssueKey: "7", Action: action, Outcome: succeeded, Usage: spent})
 		verdict, _ := d.send(core.PullRequestFound{IssueKey: "7", Action: action, PullRequest: noPR})
 		d.settle(verdict)
@@ -265,7 +265,7 @@ func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T)
 	cost := func(dollars float64, output int64) crew.Usage {
 		return crew.Usage{Cost: dollars, HasCost: true, Tokens: crew.Tokens{Output: output}, HasTokens: true}
 	}
-	end := func(action string, u crew.Usage) {
+	end := func(action crew.ActionName, u crew.Usage) {
 		d.send(core.SessionEnded{IssueKey: "8", Action: action, Outcome: succeeded, Usage: u})
 		verdict, _ := d.send(core.PullRequestFound{IssueKey: "8", Action: action, PullRequest: noPR})
 		d.settle(verdict)

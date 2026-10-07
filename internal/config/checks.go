@@ -3,12 +3,13 @@ package config
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"reflect"
 	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // checks decodes checks: a mapping from a check's name to its shell script,
@@ -16,14 +17,14 @@ import (
 // a template: it reads the issue from environment variables. It returns
 // every check by name, even one with an error, so an action that names it
 // is not reported again, and every error it finds.
-func checks(n *yaml.Node) (map[string]string, error) {
+func checks(n *yaml.Node) (map[crew.CheckName]string, error) {
 	section, err := named(n, "checks")
 	errs := []error{err}
-	out := make(map[string]string, len(section))
+	out := make(map[crew.CheckName]string, len(section))
 	for _, e := range section {
 		var script located[string]
 		err := decodeValue(e.value, e.path, reflect.ValueOf(&script).Elem())
-		out[e.key.Value] = script.value
+		out[crew.CheckName(e.key.Value)] = script.value
 		switch {
 		case err != nil:
 			errs = append(errs, err)
@@ -55,6 +56,11 @@ func retiredVariables(text, path string, line int) error {
 }
 
 // sortedKeys returns m's keys in order, for an error that lists them.
-func sortedKeys[V any](m map[string]V) []string {
-	return slices.Sorted(maps.Keys(m))
+func sortedKeys[K ~string, V any](m map[K]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, string(k))
+	}
+	slices.Sort(keys)
+	return keys
 }

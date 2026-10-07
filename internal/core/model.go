@@ -102,10 +102,10 @@ type handledEntry struct {
 
 // actionRun is one action of a held issue.
 type actionRun struct {
-	name      string
+	name      crew.ActionName
 	prompt    string
 	phase     Phase
-	workspace string
+	workspace crew.WorkspaceName
 	dir       string
 	branch    string
 	log       string // set once a session is asked to start
@@ -113,8 +113,8 @@ type actionRun struct {
 	said      string // what its running session last said
 	outcome   crew.Outcome
 	checks    []crew.Check      // its checks, in the order they run
-	agent     string            // the agent whose harness runs its session
-	bot       string            // the bot its session and check act as; empty for you
+	agent     crew.AgentName    // the agent whose harness runs its session
+	bot       crew.BotName      // the bot its session and check act as; empty for you
 	stopped   bool              // a StopCheck was sent for its check
 	cause     crew.FailureCause // what made it fail, once it ended failed
 	// prev is the key's run record from before this run, set when the run
@@ -188,7 +188,7 @@ func queues(rules []crew.Rule, maxParallelIssues int) ([]int, []crew.Queue, int)
 	queueOf := make([]int, len(rules))
 	var out []crew.Queue
 	usable := 0
-	index := map[string]int{}
+	index := map[crew.QueueName]int{}
 	for i, r := range rules {
 		queue := r.Queue
 		if queue == (crew.Queue{}) {
@@ -372,7 +372,7 @@ type View struct {
 // HandledView is an issue whose rule ended this run, as that rule left it.
 type HandledView struct {
 	Issue crew.Issue
-	Rule  string
+	Rule  crew.RuleName
 	// To is the state the rule's verdict moved the issue to, or meant to
 	// when Move is MoveDropped.
 	To crew.State
@@ -394,7 +394,7 @@ type HandledView struct {
 	Gone bool
 	// HeldBy names the rule that holds the issue again; empty while no
 	// rule does (#109).
-	HeldBy string
+	HeldBy crew.RuleName
 	// Taken is when the rule took the issue; Ended is when its last action
 	// ended.
 	Taken time.Time
@@ -406,7 +406,7 @@ type HandledView struct {
 
 // HandledAction is one action of a HandledView.
 type HandledAction struct {
-	Name string
+	Name crew.ActionName
 	// Spend is what its session used; it sums no session when the action
 	// never had one.
 	Spend crew.Spend
@@ -444,7 +444,7 @@ func (h HandledView) clone() HandledView {
 type QueueView struct {
 	// Name is the queue's name; empty for the queue the rules with the
 	// zero crew.Queue share.
-	Name string
+	Name crew.QueueName
 	// Slots is how many issues the queue may hold at once.
 	Slots int
 	// Busy is how many held issues, in any claim, run in the queue: the
@@ -458,18 +458,18 @@ func (q QueueView) Free() int { return max(q.Slots-q.Busy, 0) }
 // IssueView is one held issue.
 type IssueView struct {
 	Issue crew.Issue
-	Rule  string
+	Rule  crew.RuleName
 	// Queue is the name of the queue the issue's rule runs in.
-	Queue   string
+	Queue   crew.QueueName
 	Claim   Claim
 	Actions []ActionView
 }
 
 // ActionView is one action of a held issue.
 type ActionView struct {
-	Name      string
+	Name      crew.ActionName
 	Phase     Phase
-	Workspace string
+	Workspace crew.WorkspaceName
 	Branch    string
 	Log       string
 	// Started is when its session started; zero before PhaseRunning.

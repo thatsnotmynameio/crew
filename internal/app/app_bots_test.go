@@ -12,6 +12,7 @@ import (
 	"testing/synctest"
 
 	"github.com/thatsnotmynameio/crew/internal/app"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
@@ -56,13 +57,13 @@ type resolver struct {
 	entered chan struct{}
 
 	mu     sync.Mutex
-	calls  [][]string // the default, then the names
+	calls  [][]crew.BotName // the default, then the names
 	closes int
 }
 
-func (r *resolver) resolve(ctx context.Context, def string, names []string) (app.Bots, error) {
+func (r *resolver) resolve(ctx context.Context, def crew.BotName, names []crew.BotName) (app.Bots, error) {
 	r.mu.Lock()
-	r.calls = append(r.calls, append([]string{def}, names...))
+	r.calls = append(r.calls, append([]crew.BotName{def}, names...))
 	r.mu.Unlock()
 	if r.entered != nil {
 		close(r.entered)
@@ -82,7 +83,7 @@ func (r *resolver) resolve(ctx context.Context, def string, names []string) (app
 }
 
 // counts returns the resolver's calls and how many times Close ran.
-func (r *resolver) counts() ([][]string, int) {
+func (r *resolver) counts() ([][]crew.BotName, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.calls), r.closes
@@ -103,7 +104,7 @@ func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 		h := fake.NewHarness()
 		checker := fake.NewChecker()
 		res := &resolver{bots: app.Bots{Writer: opsWriter,
-			Identities: map[string]port.Identity{"ops": opsID, "developer": devID},
+			Identities: map[crew.BotName]port.Identity{"ops": opsID, "developer": devID},
 			Logins:     []string{"crew-ops[bot]", "crew-developer[bot]"}}}
 		r := options(t, botAction, tr, h)
 		r.opts.Plain, r.opts.Checker, r.opts.Bots = true, checker, res.resolve
@@ -133,7 +134,7 @@ func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 			t.Errorf("checks = %+v, want one as developer", checks)
 		}
 		resolved, closes := res.counts()
-		if !slices.EqualFunc(resolved, [][]string{{"ops", "ops", "developer"}}, slices.Equal) || closes != 1 {
+		if !slices.EqualFunc(resolved, [][]crew.BotName{{"ops", "ops", "developer"}}, slices.Equal) || closes != 1 {
 			t.Errorf("resolver calls = %q and %d closes, want ops then ops and developer, closed once",
 				resolved, closes)
 		}
@@ -289,7 +290,7 @@ func TestAForcedExitStillClosesTheBots(t *testing.T) {
 	tr := fake.NewActingTracker(issue("1", ready))
 	h := fake.NewHarness()
 	h.IgnoreStop(true) // the stop sequence would wait 10 seconds for it
-	res := &resolver{bots: app.Bots{Writer: opsWriter, Identities: map[string]port.Identity{"ops": opsID}}}
+	res := &resolver{bots: app.Bots{Writer: opsWriter, Identities: map[crew.BotName]port.Identity{"ops": opsID}}}
 	r := options(t, withOps(), tr, h)
 	r.opts.Bots = res.resolve
 	r.start()
@@ -330,10 +331,10 @@ func TestABotThatCannotActIsNeverSaidToStopAndOneThatActsIs(t *testing.T) {
 		h := fake.NewHarness()
 		devWarning := "bot developer could not renew its token: GitHub is down"
 		res := &resolver{bots: app.Bots{
-			Identities: map[string]port.Identity{"developer": devID},
-			Unable:     map[string]string{"ops": "no key"},
-			Failing: func() map[string]string {
-				return map[string]string{"ops": "bot ops could not renew its token", "developer": devWarning}
+			Identities: map[crew.BotName]port.Identity{"developer": devID},
+			Unable:     map[crew.BotName]string{"ops": "no key"},
+			Failing: func() map[crew.BotName]string {
+				return map[crew.BotName]string{"ops": "bot ops could not renew its token", "developer": devWarning}
 			},
 		}}
 		r := options(t, botAction, tr, h)
@@ -356,7 +357,7 @@ func TestTheDefaultBotsWritesGoingBackToYouIsSaid(t *testing.T) {
 		tr.SetWriterLost(warning)
 		h := fake.NewHarness()
 		res := &resolver{bots: app.Bots{Writer: opsWriter,
-			Identities: map[string]port.Identity{"ops": opsID, "developer": devID}}}
+			Identities: map[crew.BotName]port.Identity{"ops": opsID, "developer": devID}}}
 		r := options(t, botAction, tr, h)
 		r.opts.Plain, r.opts.Checker, r.opts.Bots = true, fake.NewChecker(), res.resolve
 

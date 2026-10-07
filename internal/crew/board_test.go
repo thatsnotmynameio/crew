@@ -9,20 +9,20 @@ func TestBoardLabels(t *testing.T) {
 	tests := []struct {
 		name  string
 		board []BoardColumn
-		want  []string
+		want  []State
 	}{
 		{
 			name: "every column's labels, in board order, each once",
 			board: []BoardColumn{
-				{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
-				{Name: "bugs", Labels: []string{"bug", "crew:brainstorm:ready"}},
-				{Name: "done", Labels: []string{"crew:brainstorm:done", "crew:triage:done"}},
+				{Name: "ideas", Labels: []State{"crew:brainstorm:ready"}},
+				{Name: "bugs", Labels: []State{"bug", "crew:brainstorm:ready"}},
+				{Name: "done", Labels: []State{"crew:brainstorm:done", "crew:triage:done"}},
 			},
-			want: []string{"crew:brainstorm:ready", "bug", "crew:brainstorm:done", "crew:triage:done"},
+			want: []State{"crew:brainstorm:ready", "bug", "crew:brainstorm:done", "crew:triage:done"},
 		},
 		{
 			name: "no board",
-			want: []string{},
+			want: []State{},
 		},
 	}
 	for _, tt := range tests {
@@ -35,7 +35,7 @@ func TestBoardLabels(t *testing.T) {
 }
 
 func TestBoardIssueClone(t *testing.T) {
-	b := BoardIssue{Issue: Issue{Key: "20", States: []State{"crew:fix:in progress"}}, Labels: []string{"bug"}}
+	b := BoardIssue{Issue: Issue{Key: "20", States: []State{"crew:fix:in progress"}}, Labels: []State{"bug"}}
 	c := b.Clone()
 	c.Labels[0] = "changed"
 	c.Issue.States[0] = "changed"

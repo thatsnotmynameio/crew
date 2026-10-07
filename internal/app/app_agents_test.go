@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 
 	"github.com/thatsnotmynameio/crew/internal/app"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/registry"
@@ -132,7 +133,7 @@ func TestAnAgentsBotActsWithoutATrackerBot(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
 		h := fake.NewHarness()
 		res := &resolver{bots: app.Bots{
-			Identities: map[string]port.Identity{"developer": devID}, Logins: []string{"crew-developer[bot]"},
+			Identities: map[crew.BotName]port.Identity{"developer": devID}, Logins: []string{"crew-developer[bot]"},
 		}}
 		body := strings.Replace(oneAction, "      name: fake\n", "      name: fake\n    bot: developer\n", 1)
 		r := options(t, body, tr, h)
@@ -146,7 +147,7 @@ func TestAnAgentsBotActsWithoutATrackerBot(t *testing.T) {
 		if code := <-r.code; code != 0 {
 			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 		}
-		if calls, _ := res.counts(); !slices.EqualFunc(calls, [][]string{{"", "developer"}}, slices.Equal) {
+		if calls, _ := res.counts(); !slices.EqualFunc(calls, [][]crew.BotName{{"", "developer"}}, slices.Equal) {
 			t.Errorf("resolver calls = %q, want no default and developer", calls)
 		}
 		calls := tr.ActAsCalls()

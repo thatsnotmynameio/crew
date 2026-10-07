@@ -70,7 +70,7 @@ func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 
 	u := gone(entry("1", "Add login form", "implement", "ready to review", 7, 0))
 	u.Snapshot.Board = append(u.Snapshot.Board,
-		crew.BoardIssue{Issue: u.Snapshot.Handled[0].Issue, Labels: []string{"ready to review"}})
+		crew.BoardIssue{Issue: u.Snapshot.Handled[0].Issue, Labels: []crew.State{"ready to review"}})
 	h.send(updateMsg(u))
 	wantCode(t, h, "1", "running the tests now", "crew/1-code")
 
@@ -103,7 +103,7 @@ func TestTwoIssuesKeepTheirMessagesApart(t *testing.T) {
 			{Name: "code", Phase: core.PhaseRunning, Branch: "crew/3-code", Started: start.Add(-time.Minute)},
 		},
 	})
-	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: three, Labels: []string{"in progress"}})
+	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: three, Labels: []crew.State{"in progress"}})
 
 	h.send(updateMsg(u))
 

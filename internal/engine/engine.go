@@ -85,24 +85,24 @@ type Config struct {
 	Writer port.Identity
 	// Identities are the identities of the bots that act, by name. An
 	// action whose bot is not among them runs as you.
-	Identities map[string]port.Identity
+	Identities map[crew.BotName]port.Identity
 	// BotLogins are the logins of the configured bots crew knows, whether
 	// or not they act: the tracker takes the items they opened, and every
 	// session and check gets them as CREW_BOTS.
 	BotLogins []string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
-	DefaultBot string
+	DefaultBot crew.BotName
 	// Bots are the configured bots, the default first, in config order,
 	// whether or not they act.
-	Bots []string
+	Bots []crew.BotName
 	// Unable holds, by name, the short reason of each configured bot that
 	// cannot act this run, such as "no key"; nil when every bot acts.
-	Unable map[string]string
+	Unable map[crew.BotName]string
 	// BotFailures returns, by name, the warning of each bot whose last
 	// token renewal failed. The loop reads it after Prepare and every
 	// saidInterval (KTD1); nil reads none.
-	BotFailures func() map[string]string
+	BotFailures func() map[crew.BotName]string
 	// Board is the live view's board: the columns the config writes, or
 	// its default columns; nil fills no board. The engine reads a written
 	// board's issues at each poll through the tracker's port.BoardLister,
@@ -116,15 +116,15 @@ type Config struct {
 // AgentHarness is the harness of one agent: every session of an action that
 // names the agent runs on it.
 type AgentHarness struct {
-	// Agent is the agent's name, as crew.Action.Agent names it.
-	Agent   string
+	// Agent is the agent, as crew.Action.Agent names it.
+	Agent   crew.AgentName
 	Harness port.Harness
 }
 
 // Engine runs the rules of a Config. Use New; Run it once.
 type Engine struct {
 	cfg       Config
-	harnesses map[string]port.Harness // Config.Harnesses by agent
+	harnesses map[crew.AgentName]port.Harness // Config.Harnesses by agent
 	stream    *stream
 	stop      chan struct{} // closed by Stop
 	stopOnce  sync.Once
@@ -205,7 +205,7 @@ func New(cfg Config) *Engine {
 	board, boardOpts := boardSource(cfg)
 	opts = append(opts, boardOpts...)
 	writes, _ := cfg.Tracker.(port.WriterReporter)
-	harnesses := make(map[string]port.Harness, len(cfg.Harnesses))
+	harnesses := make(map[crew.AgentName]port.Harness, len(cfg.Harnesses))
 	for _, h := range cfg.Harnesses {
 		harnesses[h.Agent] = h.Harness
 	}
@@ -369,7 +369,7 @@ func (e *Engine) prepare(ctx context.Context) error {
 	}
 	harnesses := make([]named, len(e.cfg.Harnesses))
 	for i, h := range e.cfg.Harnesses {
-		harnesses[i] = named{"harness of agent " + h.Agent, h.Harness}
+		harnesses[i] = named{"harness of agent " + string(h.Agent), h.Harness}
 	}
 	ports := slices.Concat([]named{{"tracker", e.cfg.Tracker}}, harnesses, []named{{"workspace", e.cfg.Workspace}})
 	for _, p := range ports {

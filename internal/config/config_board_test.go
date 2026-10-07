@@ -35,9 +35,9 @@ const boardRules = oneAgent + `rules:
 func TestAE5WithoutBoardEveryRuleWithActionsHasAColumn(t *testing.T) {
 	cfg := load(t, boardRules)
 	want := []crew.BoardColumn{
-		{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:in progress"}},
+		{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:in progress"}},
 		{
-			Name: "development", Labels: []string{"crew:development:ready", "crew:development:in progress"},
+			Name: "development", Labels: []crew.State{"crew:development:ready", "crew:development:in progress"},
 			Takes: crew.KindPullRequest,
 		},
 	}
@@ -56,29 +56,29 @@ func TestLoadBoard(t *testing.T) {
 			name:  "columns in file order, of one label or a list",
 			board: "board:\n  ideas: crew:brainstorm:ready\n  bugs: [bug]\n  done: [crew:brainstorm:done, crew:triage:done]\n",
 			want: []crew.BoardColumn{
-				{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
-				{Name: "bugs", Labels: []string{"bug"}},
-				{Name: "done", Labels: []string{"crew:brainstorm:done", "crew:triage:done"}},
+				{Name: "ideas", Labels: []crew.State{"crew:brainstorm:ready"}},
+				{Name: "bugs", Labels: []crew.State{"bug"}},
+				{Name: "done", Labels: []crew.State{"crew:brainstorm:done", "crew:triage:done"}},
 			},
 		},
 		{
 			name:  "a label no rule names and no issue carries",
 			board: "board:\n  bugs: bgu\n",
-			want:  []crew.BoardColumn{{Name: "bugs", Labels: []string{"bgu"}}},
+			want:  []crew.BoardColumn{{Name: "bugs", Labels: []crew.State{"bgu"}}},
 		},
 		{
 			name:  "labels take the rules' or their first spelling",
 			board: "board:\n  triage: [Crew:Triage:Ready, CREW:TRIAGE:DONE]\n  bugs: bug\n  more bugs: [BUG]\n",
 			want: []crew.BoardColumn{
-				{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:done"}},
-				{Name: "bugs", Labels: []string{"bug"}},
-				{Name: "more bugs", Labels: []string{"bug"}},
+				{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:done"}},
+				{Name: "bugs", Labels: []crew.State{"bug"}},
+				{Name: "more bugs", Labels: []crew.State{"bug"}},
 			},
 		},
 		{
 			name:  "a label written twice in one column counts once",
 			board: "board:\n  bugs: [bug, Bug, bug]\n",
-			want:  []crew.BoardColumn{{Name: "bugs", Labels: []string{"bug"}}},
+			want:  []crew.BoardColumn{{Name: "bugs", Labels: []crew.State{"bug"}}},
 		},
 	}
 	for _, tt := range tests {

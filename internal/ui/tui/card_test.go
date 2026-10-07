@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
@@ -114,7 +115,7 @@ func TestANarrowCardKeepsWholeItemsAndItsWidth(t *testing.T) {
 	u := held(twenty, "fix", "code", core.ClaimRunning)
 	iv := &u.Snapshot.Issues[0]
 	iv.Actions[0].Started = start.Add(-5 * time.Minute)
-	for _, name := range []string{"tests", "docs"} {
+	for _, name := range []crew.ActionName{"tests", "docs"} {
 		iv.Actions = append(iv.Actions, core.ActionView{Name: name, Phase: core.PhaseRunning, Started: start})
 	}
 	h.send(updateMsg(onBoard(u, labeled(twenty, "bug"))))

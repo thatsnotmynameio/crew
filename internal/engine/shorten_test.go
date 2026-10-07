@@ -23,8 +23,8 @@ type failingWorkspace struct {
 	root, home string
 }
 
-func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action string) (port.Space, error) {
-	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.Key+"-"+action)
+func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
+	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.Key+"-"+string(action))
 	config := filepath.Join(w.home, ".gitconfig")
 	return port.Space{}, fmt.Errorf("git worktree add: fatal: '%s' already exists (see %s)", dir, config)
 }

@@ -23,9 +23,11 @@ func onlyEntry(t *testing.T, d *driver) core.HandledView {
 }
 
 // failure is the failure of action on issue key, as its report carries it.
-func failure(key, action, reason string) crew.ActionFailure {
-	name := "issue-" + key + "-" + action
-	return crew.ActionFailure{Action: action, Reason: reason, Workspace: name, Log: ".crew/logs/" + name + ".log"}
+func failure(key string, action crew.ActionName, reason string) crew.ActionFailure {
+	name := "issue-" + key + "-" + string(action)
+	return crew.ActionFailure{
+		Action: action, Reason: reason, Workspace: crew.WorkspaceName(name), Log: ".crew/logs/" + name + ".log",
+	}
 }
 
 func TestASucceededRuleIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {

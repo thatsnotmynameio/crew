@@ -58,7 +58,7 @@ func (d *driver) wrote(key string) ([]core.Command, []core.Event) {
 
 // started returns when the named action of issue 74, the issue these tests
 // run, started, from the view.
-func started(t *testing.T, m *core.Model, action string) time.Time {
+func started(t *testing.T, m *core.Model, action crew.ActionName) time.Time {
 	t.Helper()
 	const key = "74"
 	for _, iv := range m.View().Issues {

@@ -47,8 +47,8 @@ var testRules = []crew.Rule{
 // testBoard is the default board of testRules: each rule's ready and
 // running labels.
 var testBoard = []crew.BoardColumn{
-	{Name: "implement", Labels: []string{"ready", "in progress"}},
-	{Name: "review", Labels: []string{"ready to review", "in review"}},
+	{Name: "implement", Labels: []crew.State{"ready", "in progress"}},
+	{Name: "review", Labels: []crew.State{"ready to review", "in review"}},
 }
 
 // harness drives a Model directly through Update and View, with a clock the
@@ -153,7 +153,7 @@ func runningSnapshot() engine.Update {
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"},
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})},
 			Board: []crew.BoardIssue{
-				{Issue: one, Labels: []string{"in progress"}}, {Issue: two, Labels: []string{"ready to review"}},
+				{Issue: one, Labels: []crew.State{"in progress"}}, {Issue: two, Labels: []crew.State{"ready to review"}},
 			}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
@@ -247,7 +247,7 @@ func windingDownSnapshot() engine.Update {
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code"},
 			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})},
-			Board: []crew.BoardIssue{{Issue: issue, Labels: []string{"in progress"}}}},
+			Board: []crew.BoardIssue{{Issue: issue, Labels: []crew.State{"in progress"}}}},
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},

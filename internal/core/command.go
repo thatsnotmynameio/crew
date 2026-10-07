@@ -35,7 +35,7 @@ type ListIssues struct {
 // (ListingBoard).
 type ListBoard struct {
 	// Labels are the board's labels, in board order.
-	Labels []string
+	Labels []crew.State
 }
 
 // Move asks the tracker to move an issue from one state to another. Its
@@ -58,7 +58,7 @@ type ReportFailure struct {
 // is WorkspaceReady or WorkspaceFailed, carrying Issue.Key and Action.
 type CreateWorkspace struct {
 	Issue  crew.Issue
-	Action string
+	Action crew.ActionName
 }
 
 // ReopenWorkspace asks to reopen the workspace a failed run of Action on
@@ -68,8 +68,8 @@ type CreateWorkspace struct {
 // can reopen (Reopening).
 type ReopenWorkspace struct {
 	IssueKey  string
-	Action    string
-	Workspace string
+	Action    crew.ActionName
+	Workspace crew.WorkspaceName
 	Branch    string
 }
 
@@ -91,20 +91,20 @@ type RecordRun struct {
 // session acts as on the tracker; empty means you.
 type StartSession struct {
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	Dir      string
 	Prompt   string
 	Log      string
 	Resumed  bool
-	Agent    string
-	Bot      string
+	Agent    crew.AgentName
+	Bot      crew.BotName
 }
 
 // StopSession asks the engine to stop the running session of Action on the
 // issue. The session's end still arrives as SessionEnded.
 type StopSession struct {
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 }
 
 // RunCheck asks the engine to run Command, the script of the action's
@@ -116,15 +116,15 @@ type StopSession struct {
 // tracker; empty means you. Its result is CheckEnded.
 type RunCheck struct {
 	IssueKey    string
-	Action      string
+	Action      crew.ActionName
 	Dir         string
-	Name        string
+	Name        crew.CheckName
 	Command     string
 	Log         string
 	IssueRef    string
 	IssueURL    string
 	Branch      string
-	Bot         string
+	Bot         crew.BotName
 	Prompt      string
 	LastMessage string
 }
@@ -136,7 +136,7 @@ type RunCheck struct {
 // the tracker can find pull requests (FindingPullRequests).
 type FindPullRequest struct {
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 	Branch   string
 	Since    time.Time
 }
@@ -145,7 +145,7 @@ type FindPullRequest struct {
 // issue. The check's end still arrives as CheckEnded.
 type StopCheck struct {
 	IssueKey string
-	Action   string
+	Action   crew.ActionName
 }
 
 // ReportStatus asks the tracker to show Status on its issue's status

@@ -38,17 +38,17 @@ const (
 // its field is a pointer. Rule keeps the name stage, from before rules
 // were called stages, so older journals still resume.
 type journalLine struct {
-	Version   int       `json:"v"`
-	Event     string    `json:"event"`
-	Time      time.Time `json:"time"`
-	Run       string    `json:"run,omitempty"`
-	Issue     string    `json:"issue"`
-	Ref       string    `json:"ref"`
-	Rule      string    `json:"stage"`
-	Action    string    `json:"action"`
-	Workspace string    `json:"workspace"`
-	Branch    string    `json:"branch"`
-	Log       string    `json:"log"`
+	Version   int                `json:"v"`
+	Event     string             `json:"event"`
+	Time      time.Time          `json:"time"`
+	Run       string             `json:"run,omitempty"`
+	Issue     string             `json:"issue"`
+	Ref       string             `json:"ref"`
+	Rule      crew.RuleName      `json:"stage"`
+	Action    crew.ActionName    `json:"action"`
+	Workspace crew.WorkspaceName `json:"workspace"`
+	Branch    string             `json:"branch"`
+	Log       string             `json:"log"`
 	// The fields below are set on ended lines only. DurationMS, from the
 	// session's start to the action's end, is left out when no session
 	// started, and so are the usage fields.

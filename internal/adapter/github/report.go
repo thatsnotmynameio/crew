@@ -21,10 +21,10 @@ func renderReport(r crew.FailureReport) string {
 	fmt.Fprintf(&b, "crew: %d %s failed on %s.\n", len(r.Failures), noun, r.IssueRef)
 	for _, f := range r.Failures {
 		if f.Log == "" {
-			fmt.Fprintf(&b, "\n**%s** failed before it had a log. crew's output says why.\n", codeSpan(f.Action))
+			fmt.Fprintf(&b, "\n**%s** failed before it had a log. crew's output says why.\n", codeSpan(string(f.Action)))
 			continue
 		}
-		fmt.Fprintf(&b, "\n**%s** failed. Its log is %s.\n", codeSpan(f.Action), codeSpan(f.Log))
+		fmt.Fprintf(&b, "\n**%s** failed. Its log is %s.\n", codeSpan(string(f.Action)), codeSpan(f.Log))
 	}
 	return b.String()
 }
@@ -66,10 +66,10 @@ func renderStop(r crew.PullRequestReport, link string) string {
 		outcome = "failed"
 	}
 	fmt.Fprintf(&b, "crew: %s %s on %s, which moved to %s, as did this pull request.\n",
-		codeSpan(r.End.Rule), outcome, r.IssueRef, codeSpan(string(r.State)))
+		codeSpan(string(r.End.Rule)), outcome, r.IssueRef, codeSpan(string(r.State)))
 	for _, a := range r.End.Actions {
 		if a.State == crew.ActionFailed {
-			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(a.Name)+"**", a))
+			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(string(a.Name))+"**", a))
 		}
 	}
 	b.WriteString("\nNobody watches this pull request any more: new review comments and CI failures need a person.\n")
