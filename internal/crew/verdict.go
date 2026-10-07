@@ -1,6 +1,9 @@
 package crew
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Verdict is how one action ended, in a name the config writes: Passed,
 // Failed, Waiting, or any other name an action's On or a shell action's
@@ -236,4 +239,39 @@ func judged(v Verdict, reason SessionText, cause FailureCause) Judged {
 // failedBy returns the Failed verdict, with reason and cause.
 func failedBy(reason SessionText, cause FailureCause) Judged {
 	return Judged{Verdict: Failed, End: EndFailed{Reason: reason, Cause: cause}}
+}
+
+// FunctionOutcome is how a function action or step ended, as the engine
+// called it.
+type FunctionOutcome struct {
+	// Verdict is the verdict the function returned; none when it returned
+	// an error, ran out of time, was stopped or did not start.
+	Verdict Optional[Verdict]
+	// Reason is crew's one line on how it ended.
+	Reason ShellReason
+}
+
+// judgeFunction returns the verdict of the function action spec, which
+// ended as outcome says, with on its action's targets. A stop, or a
+// function that returned no verdict, is Failed. Otherwise the verdict it
+// returned counts when it is Passed or Failed, or when spec declares it
+// and it is one any action may end with or one on names. Any other verdict
+// is Failed, in crew's words.
+func judgeFunction(spec FunctionSpec, on On, outcome FunctionOutcome, stopping bool) Judged {
+	reason := NewSessionText(outcome.Reason.String())
+	v, returned := outcome.Verdict.Get()
+	switch {
+	case stopping:
+		return failedBy(reason, CauseStopped)
+	case !returned:
+		return failedBy(reason, CauseFunction)
+	case v == Passed || v == Failed:
+	case !slices.Contains(spec.Verdicts, v):
+		return failedBy(NewSessionText(fmt.Sprintf(
+			"the function returned the verdict %q, which it does not declare", v)), CauseVerdict)
+	case !on.names(v):
+		return failedBy(NewSessionText(fmt.Sprintf(
+			"the function returned the verdict %q, which its on: does not name", v)), CauseVerdict)
+	}
+	return judged(v, reason, CauseFunction)
 }

@@ -18,6 +18,10 @@ const stoppedReason = "crew stopped"
 // time was up.
 const timeUpReason = "crew's run time was up"
 
+// noFunctionsReason is the reason of a function action or step, which this
+// crew cannot call.
+const noFunctionsReason = "crew cannot run functions yet"
+
 // RunDefinition is what a rule run decides by: its rule, and what crew can
 // do for it.
 type RunDefinition struct {
@@ -95,8 +99,9 @@ func is[T ActionRunState](s ActionRunState) bool {
 
 // start starts the action named name: asks for its session, after
 // rendering its prompt, or for its script, acting as the run's bot. A
-// session whose prompt does not render ends at once, and once a stop or
-// time-up reached the run the action ends without starting.
+// session whose prompt does not render, and a function, which this crew
+// cannot call, end at once, and once a stop or time-up reached the run the
+// action ends without starting.
 func (d *decider) start(name ActionName) {
 	if j, halted := d.halted(); halted {
 		d.end(name, j, ToRoute{Route: FailedRoute})
@@ -111,6 +116,8 @@ func (d *decider) start(name ActionName) {
 		d.emit(ActionSessionAsked{EventHead: d.head(), Action: name})
 	case ShellSpec:
 		d.emit(ActionShellAsked{EventHead: d.head(), Action: name, Bot: d.run.Bot()})
+	case FunctionSpec:
+		d.finish(name, failedBy(NewSessionText(noFunctionsReason), CauseFunction))
 	}
 }
 
@@ -219,8 +226,8 @@ func (d *decider) nextStep() {
 
 // unasked returns the outcome of the step at index i of route when it
 // settles without being asked, and whether it does: a shell step once a
-// stop reached the run is skipped, and a comment whose template does not
-// render for the run fails.
+// stop reached the run is skipped, a function step fails, and a comment
+// whose template does not render for the run fails.
 func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 	r, _ := d.def.Rule.Route(route)
 	switch s := r.Steps[i].(type) {
@@ -228,6 +235,11 @@ func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 		if d.run.stopping {
 			return StepSkipped{}, true
 		}
+	case FunctionStep:
+		if d.run.stopping {
+			return StepSkipped{}, true
+		}
+		return StepFailed{Reason: NewShellReason(noFunctionsReason)}, true
 	case CommentStep:
 		if _, err := s.Template.Render(d.run.CommentData()); err != nil {
 			return StepFailed{Reason: NewShellReason(err.Error())}, true

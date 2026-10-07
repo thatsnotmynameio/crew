@@ -23,8 +23,8 @@ type Route struct {
 	Steps []Step
 }
 
-// Step is one step of a route: MoveStep, CloseStep, CommentStep, ReportStep
-// or ShellStep. A session is never a step.
+// Step is one step of a route: MoveStep, CloseStep, CommentStep, ReportStep,
+// ShellStep or FunctionStep. A session is never a step.
 //
 //sumtype:decl
 type Step interface {
@@ -58,8 +58,18 @@ type ShellStep struct {
 	Shell ShellSpec
 }
 
-func (MoveStep) step()    {}
-func (CloseStep) step()   {}
-func (CommentStep) step() {}
-func (ReportStep) step()  {}
-func (ShellStep) step()   {}
+// FunctionStep calls one of crew's functions.
+type FunctionStep struct {
+	// Name is the step's name: the function's, or the config's action that
+	// presets it.
+	Name ActionName
+	// Function is the call the step makes.
+	Function FunctionSpec
+}
+
+func (MoveStep) step()     {}
+func (CloseStep) step()    {}
+func (CommentStep) step()  {}
+func (ReportStep) step()   {}
+func (ShellStep) step()    {}
+func (FunctionStep) step() {}

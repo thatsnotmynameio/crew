@@ -226,9 +226,10 @@ const (
 	// CauseShell: its shell action's script exited with a status that gives
 	// Failed, ran out of time or could not start.
 	CauseShell
-	// CauseVerdict: it reported, or its script's exit status gave, a
-	// verdict its on: does not name, or its session reported text with no
-	// verdict name.
+	// CauseVerdict: it reported, its script's exit status gave, or its
+	// function returned, a verdict its on: does not name, its function
+	// returned a verdict it does not declare, or its session reported text
+	// with no verdict name.
 	CauseVerdict
 	// CauseStoppedBeforeStart: crew stopped before the action started, so
 	// it never ran.
@@ -236,6 +237,10 @@ const (
 	// CauseTimeUp: crew's run time was up before the action started, so it
 	// never ran.
 	CauseTimeUp
+	// CauseFunction: its function returned Failed or an error, could not
+	// run or ran out of time, or one of its text parameters did not render
+	// for the issue.
+	CauseFunction
 )
 
 // MoveProgress is how the move or close that ends a rule stands.
