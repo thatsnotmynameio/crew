@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -129,17 +128,4 @@ func mappingKeys(e entry) []entry {
 		return nil
 	}
 	return entries(e.value, e.path)
-}
-
-// sequenceItems lists the items of e's value when it is a sequence, each
-// without a key and with its index in its path, and nothing otherwise.
-func sequenceItems(e entry) []entry {
-	if e.value.Kind != yaml.SequenceNode {
-		return nil
-	}
-	out := make([]entry, len(e.value.Content))
-	for i, item := range e.value.Content {
-		out[i] = entry{value: item, path: fmt.Sprintf("%s[%d]", e.path, i)}
-	}
-	return out
 }

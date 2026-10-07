@@ -31,13 +31,14 @@ func load(t *testing.T, body string) *config.Config {
 	return cfg
 }
 
-// rules is one rule of one action, which runs on the one agent that agent
+// rules is one rule of one session, which runs on the one agent that agent
 // declares.
 const rules = `rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      development: {prompt: "Implement {{.Issue.Ref}}"}
+      - {name: development, prompt: "Implement {{.Issue.Ref}}"}
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
 `
 
 // agent declares the agent developer, on the harness name.

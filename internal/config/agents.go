@@ -17,8 +17,8 @@ type Agent struct {
 	// HarnessSection decodes the harness adapter's settings: every key under
 	// agents.<name>.harness except name, model included.
 	HarnessSection Decode
-	// Used tells whether some action names the agent. crew builds, prepares
-	// and makes act only the agents in use.
+	// Used tells whether some session runs on the agent. crew builds,
+	// prepares and makes act only the agents in use.
 	Used bool
 }
 
@@ -47,8 +47,8 @@ const (
 )
 
 // agents decodes agents: a mapping from an agent's name to its harness and
-// bot. It returns every agent in file order, even one with an error, so an
-// action that names it is not reported again, and every error it finds.
+// bot. It returns every agent in file order, even one with an error, so a
+// session that names it is not reported again, and every error it finds.
 func agents(n *yaml.Node) ([]Agent, error) {
 	section, err := named(n, "agents")
 	errs := append(make([]error, 0, len(section)+1), err)
@@ -89,23 +89,27 @@ func parseAgent(e entry) (Agent, error) {
 	return agent, err
 }
 
-// agentsInUse marks each of agents that an action of rules names. It
-// reports agents missing when some rule has actions and no agent is
-// declared to run them.
+// agentsInUse marks each of agents that a session of rules runs on. It
+// reports agents missing when some rule has a session and no agent is
+// declared to run it; shell actions need none.
 func agentsInUse(agents []Agent, rules []crew.Rule) error {
-	actions := 0
+	sessions := 0
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			actions++
+			s, ok := a.Kind.(crew.SessionSpec)
+			if !ok {
+				continue
+			}
+			sessions++
 			for i := range agents {
-				if agents[i].Name == a.Agent.Name {
+				if agents[i].Name == s.Agent.Name {
 					agents[i].Used = true
 				}
 			}
 		}
 	}
-	if actions > 0 && len(agents) == 0 {
-		return errors.New("agents: missing; declare the agent that runs the rules' actions")
+	if sessions > 0 && len(agents) == 0 {
+		return errors.New("agents: missing; declare the agent that runs the rules' sessions")
 	}
 	return nil
 }

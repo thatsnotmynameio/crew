@@ -88,9 +88,9 @@ func TestAE1TheLocalFileReplacesItsTopLevelKeys(t *testing.T) {
 	}
 }
 
-// Covers AE2: the local agents replace every agent of config.yaml, so an
-// action of config.yaml naming one the local file left out is an error at
-// that action, in config.yaml.
+// Covers AE2: the local agents replace every agent of config.yaml, so a
+// session of config.yaml naming one the local file left out is an error at
+// that session, in config.yaml.
 func TestAE2TheLocalAgentsReplaceThemAll(t *testing.T) {
 	shared := `agents:
   developer:
@@ -99,18 +99,19 @@ func TestAE2TheLocalAgentsReplaceThemAll(t *testing.T) {
     harness: {name: claude}
 rules:
   refinement:
-    labels: {ready: a, running: b, success: c, failure: d}
+    labels: {ready: a, running: b}
     actions:
-      refine:
-        agent: product-manager
+      - agent: product-manager
+        name: refine
         prompt: Refine
+    routes: {passed: c, failed: d}
 `
 	local := `agents:
   developer:
     harness: {name: codex}
 `
 	lines := loadFilesErr(t, shared, local)
-	want := sharedName + ": rules.refinement.actions.refine.agent (line 11): "
+	want := sharedName + ": rules.refinement.actions[0].agent (line 10): "
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], want) {
 		t.Errorf("error = %q, want one line starting %q", lines, want)
 	}

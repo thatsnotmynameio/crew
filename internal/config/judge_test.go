@@ -65,15 +65,11 @@ const stubKeyValue = "ts-test-key-4c1d"
 // judgePrompt is the prompt the judged session started with.
 const judgePrompt = "/compound-engineering:lfg #9\n\nThe pull request body must contain the line `Closes #9`."
 
-// judgeScript returns the script of session-finished, as development's lfg
-// action names it in crew's own config.
+// judgeScript returns the script of session-finished, the shell action
+// crew's own config defines and development runs after its lfg session.
 func judgeScript(t *testing.T) string {
 	t.Helper()
-	script := checkScript(loadOwn(t).Rules[3].Actions[0], "session-finished")
-	if script == "" {
-		t.Fatal("development's lfg action names no session-finished check")
-	}
-	return script
+	return shellScript(t, ownRuleNamed(t, loadOwn(t), "development"), "session-finished")
 }
 
 // runJudge runs script as the shell adapter would, with stubs for curl and

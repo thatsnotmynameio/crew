@@ -38,21 +38,24 @@ func loadOwn(t *testing.T) *config.Config {
 	return cfg
 }
 
-// ownRule is how a rule of crew's own config loads, its actions
-// summed up as "action: agent A, bot B, check C", where C is whether it has
-// one.
+// ownRule is how a rule of crew's own config loads, its actions summed up
+// as "session S: agent A, bot B" or "shell S", and its routes as
+// "route: step, step".
 type ownRule struct {
 	name    crew.RuleName
 	labels  crew.Labels
 	queue   crew.Queue
 	notify  bool
 	actions []string
+	routes  []string
 }
 
 // crew runs on its own repository, so its own config must stay valid,
-// and keep the rules, actions, queues, bots and labels it had in the old
-// keys (KTD8): the same names, so failed runs still resume. refinement
-// replaced triage in #160, while no issue was in a triage state.
+// and keep the rules, sessions, queues, bots and labels it had in the old
+// format (KTD8, KTD-S3): the same names, each check a shell action after
+// its session, each success label the passed route and each failure label
+// a failed route that reports, then moves (N1). refinement replaced triage
+// in #160, while no issue was in a triage state.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadOwn(t)
 	if got, want := ownRules(cfg.Rules, cfg.Notify), wantOwnRules(); !reflect.DeepEqual(got, want) {
@@ -69,9 +72,9 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	if want := []string{"refinement", "development", "fix"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
-	script := checkScript(cfg.Rules[3].Actions[0], "pr-closes-issue")
+	script := shellScript(t, ownRuleNamed(t, cfg, "development"), "pr-closes-issue")
 	if !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
-		t.Errorf("development's check = %q, want the script of pr-closes-issue", script)
+		t.Errorf("development's pr-closes-issue = %q, want the script of pr-closes-issue", script)
 	}
 }
 
@@ -86,12 +89,13 @@ const (
 	recordMarker = "<!-- cw-split-plan: split record -->"
 )
 
-// The refine action splits a large plan before it finds blockers, finishes
-// the split by labelling the parts and taking the parent out of crew, and
-// its check fails a split that stopped before that (#160).
+// The refine session splits a large plan before it finds blockers,
+// finishes the split by labelling the parts and taking the parent out of
+// crew, and the shell action after it fails a split that stopped before
+// that (#160).
 func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
-	refine := loadOwn(t).Rules[1].Actions[0]
-	prompt := refine.Prompt.Text()
+	refinement := ownRuleNamed(t, loadOwn(t), "refinement")
+	prompt := ownSession(t, refinement, "refine").Prompt.Text()
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	if split < 0 || split > strings.Index(prompt, "dependencies/blocked_by") {
 		t.Errorf("the prompt does not run /cw-split-plan before it reads dependencies:\n%s", prompt)
@@ -106,8 +110,8 @@ func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
 		}
 	}
 	for _, want := range []string{`"crew:refinement:in progress"`, partMarker + "$CREW_ISSUE_REF -->", "/sub_issues"} {
-		if script := checkScript(refine, "split-finished"); !strings.Contains(script, want) {
-			t.Errorf("refine's check = %q, want the script of split-finished, with %q", script, want)
+		if script := shellScript(t, refinement, "split-finished"); !strings.Contains(script, want) {
+			t.Errorf("split-finished = %q, want its script, with %q", script, want)
 		}
 	}
 }
@@ -119,7 +123,7 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := loadOwn(t).Rules[1].Actions[0].Prompt.Text()
+	prompt := ownSession(t, ownRuleNamed(t, loadOwn(t), "refinement"), "refine").Prompt.Text()
 	for _, want := range splitOutcomes {
 		if !strings.Contains(string(skill), want) || !strings.Contains(prompt, want) {
 			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
@@ -144,7 +148,7 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
 		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
 	}
-	prompt := loadOwn(t).Rules[1].Actions[0].Prompt.Text()
+	prompt := ownSession(t, ownRuleNamed(t, loadOwn(t), "refinement"), "refine").Prompt.Text()
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	rank := strings.Index(prompt, "/cw-rank-blockers")
 	record := strings.Index(prompt, "dependencies/blocked_by -F")
@@ -158,65 +162,80 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	}
 }
 
-// wantOwnRules are crew's own config's rules, as in the old keys: the
-// promote rules, now without actions, notify nothing and need no failure.
+// wantOwnRules are crew's own config's rules, as in the old format: the
+// promote rules, without actions, notify nothing and end only through
+// passed.
 func wantOwnRules() []ownRule {
 	clerk, developer := crew.Queue{Name: "clerk", Slots: 1}, crew.Queue{Name: "developer", Slots: 2}
 	productManager := crew.Queue{Name: "product-manager", Slots: 1}
-	labels := func(rule, success string) crew.Labels {
-		return crew.Labels{
-			Ready: crew.State("crew:" + rule + ":ready"), Running: crew.State("crew:" + rule + ":in progress"),
-			Success: crew.State(success), Failure: crew.State("crew:" + rule + ":failed"),
-		}
+	labels := func(rule string) crew.Labels {
+		return crew.Labels{Ready: crew.State("crew:" + rule + ":ready"), Running: crew.State("crew:" + rule + ":in progress")}
 	}
-	want := []ownRule{
+	routes := func(rule, passed string) []string {
+		return []string{"passed: move " + passed, "failed: report, move crew:" + rule + ":failed"}
+	}
+	lfg := []string{"session lfg: agent developer, bot developer", "shell session-finished", "shell pr-closes-issue"}
+	return []ownRule{
 		{
 			name: "promote brainstorm", queue: clerk,
-			labels: crew.Labels{
-				Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting", Success: "crew:refinement:ready",
-			},
+			labels: crew.Labels{Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting"},
+			routes: []string{"passed: move crew:refinement:ready"},
 		},
 		{
-			name: "refinement", queue: productManager, notify: true, labels: labels("refinement", "crew:refinement:done"),
-			actions: []string{"refine: agent product-manager, bot product-manager, checks [split-finished]"},
+			name: "refinement", queue: productManager, notify: true, labels: labels("refinement"),
+			actions: []string{"session refine: agent product-manager, bot product-manager", "shell split-finished"},
+			routes:  routes("refinement", "crew:refinement:done"),
 		},
 		{
 			name: "promote refinement", queue: clerk,
-			labels: crew.Labels{
-				Ready: "crew:refinement:done", Running: "crew:refinement:promoting", Success: "crew:development:ready",
-			},
+			labels: crew.Labels{Ready: "crew:refinement:done", Running: "crew:refinement:promoting"},
+			routes: []string{"passed: move crew:development:ready"},
 		},
 		{
-			name: "development", queue: developer, notify: true,
-			labels:  labels("development", "crew:development:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
+			name: "development", queue: developer, notify: true, labels: labels("development"),
+			actions: lfg, routes: routes("development", "crew:development:waiting review"),
 		},
 		{
-			name: "fix", queue: developer, notify: true, labels: labels("fix", "crew:fix:waiting review"),
-			actions: []string{"lfg: agent developer, bot developer, checks [session-finished pr-closes-issue]"},
+			name: "fix", queue: developer, notify: true, labels: labels("fix"),
+			actions: lfg, routes: routes("fix", "crew:fix:waiting review"),
 		},
 	}
-	return want
 }
 
-// checkScript returns the script of a's check called name, or "" when a
-// names no such check.
-func checkScript(a crew.Action, name crew.CheckName) string {
-	for _, c := range a.Checks {
-		if c.Name == name {
-			return c.Script
+// ownRuleNamed returns the rule of cfg called name, and fails t without
+// one.
+func ownRuleNamed(t *testing.T, cfg *config.Config, name crew.RuleName) crew.Rule {
+	t.Helper()
+	for _, r := range cfg.Rules {
+		if r.Name == name {
+			return r
 		}
 	}
-	return ""
+	t.Fatalf("crew's own config has no rule %q", name)
+	return crew.Rule{}
 }
 
-// checkNames returns the names of checks, in order, as [a b].
-func checkNames(checks []crew.Check) string {
-	names := make([]crew.CheckName, len(checks))
-	for i, c := range checks {
-		names[i] = c.Name
+// ownSession returns the session r's action called name runs, and fails t
+// when r has no such session.
+func ownSession(t *testing.T, r crew.Rule, name crew.ActionName) crew.SessionSpec {
+	t.Helper()
+	s, ok := r.Action(name).Kind.(crew.SessionSpec)
+	if !ok {
+		t.Fatalf("rule %s has no session %s", r.Name, name)
 	}
-	return fmt.Sprint(names)
+	return s
+}
+
+// shellScript returns the script of r's shell action called name, which
+// the config's top-level actions define, and fails t when r has no such
+// shell action.
+func shellScript(t *testing.T, r crew.Rule, name crew.ActionName) string {
+	t.Helper()
+	s, ok := r.Action(name).Kind.(crew.ShellSpec)
+	if !ok {
+		t.Fatalf("rule %s has no shell action %s", r.Name, name)
+	}
+	return s.Script
 }
 
 // ownRules sums rules up as ownRule, with each rule's notify.
@@ -225,9 +244,37 @@ func ownRules(rules []crew.Rule, notify map[crew.RuleName]bool) []ownRule {
 	for i, r := range rules {
 		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: notify[r.Name]}
 		for _, a := range r.Actions {
-			out[i].actions = append(out[i].actions,
-				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent.Name, a.Bot.Name, checkNames(a.Checks)))
+			switch k := a.Kind.(type) {
+			case crew.SessionSpec:
+				out[i].actions = append(out[i].actions,
+					fmt.Sprintf("session %s: agent %s, bot %s", a.Name, k.Agent.Name, k.Bot.Name))
+			case crew.ShellSpec:
+				out[i].actions = append(out[i].actions, fmt.Sprintf("shell %s", a.Name))
+			}
+		}
+		for _, route := range r.Routes {
+			out[i].routes = append(out[i].routes, fmt.Sprintf("%s: %s", route.Name, stepNames(route.Steps)))
 		}
 	}
 	return out
+}
+
+// stepNames sums steps up, as "report, move L".
+func stepNames(steps []crew.Step) string {
+	names := make([]string, len(steps))
+	for i, step := range steps {
+		switch s := step.(type) {
+		case crew.MoveStep:
+			names[i] = "move " + string(s.To)
+		case crew.ReportStep:
+			names[i] = "report"
+		case crew.CloseStep:
+			names[i] = "close"
+		case crew.CommentStep:
+			names[i] = "comment " + s.Template.Text()
+		case crew.ShellStep:
+			names[i] = string(s.Name)
+		}
+	}
+	return strings.Join(names, ", ")
 }

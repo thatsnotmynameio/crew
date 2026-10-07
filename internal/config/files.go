@@ -119,7 +119,7 @@ func topMapping(doc *yaml.Node) (*yaml.Node, error) {
 	top := doc.Content[0]
 	if top.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("line %d: the config must be a mapping of crew's keys, such as "+
-			"tracker, agents, checks, board and rules", top.Line)
+			"tracker, agents, actions, board and rules", top.Line)
 	}
 	return top, nil
 }

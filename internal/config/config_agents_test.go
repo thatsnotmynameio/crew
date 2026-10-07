@@ -17,23 +17,24 @@ const twoAgents = `agents:
     harness: {name: codex}
 `
 
-// Covers AE3: an action may leave its agent out only when one agent is
+// Covers AE3: a session may leave its agent out only when one agent is
 // declared.
 func TestAE3AnActionWithoutAgentRunsOnTheOnlyAgent(t *testing.T) {
 	cfg := load(t, oneAgent+ruleOnly)
-	if got, want := cfg.Rules[0].Actions[0].Agent, (crew.Agent{Name: "claude", Harness: "claude"}); got != want {
-		t.Errorf("the action's agent = %+v, want %+v", got, want)
+	if got, want := sessionOf(t, cfg.Rules[0].Actions[0]).Agent, claudeAgent; got != want {
+		t.Errorf("the session's agent = %+v, want %+v", got, want)
 	}
 	loadErr(t, twoAgents+ruleOnly,
-		"rules.implement.actions.development.agent", "line 14", "required", "more than one agent: claude, codex")
+		"rules.implement.actions[0].agent", "line 12", "required", "more than one agent: claude, codex")
 }
 
-func TestLoadGivesEveryActionItsAgent(t *testing.T) {
+func TestLoadGivesEverySessionItsAgent(t *testing.T) {
 	body := twoAgents + strings.Replace(ruleOnly,
 		"        prompt:", "        agent: codex\n        prompt:", 1)
 	cfg := load(t, body)
-	if got, want := cfg.Rules[0].Actions[0].Agent, (crew.Agent{Name: "codex", Harness: "codex"}); got != want {
-		t.Errorf("the action's agent = %+v, want %+v", got, want)
+	codex := crew.Agent{Name: "codex", Harness: "codex"}
+	if got, want := sessionOf(t, cfg.Rules[0].Actions[0]).Agent, codex; got != want {
+		t.Errorf("the session's agent = %+v, want %+v", got, want)
 	}
 	used := map[crew.AgentName]bool{}
 	for _, a := range cfg.Agents {
@@ -49,8 +50,8 @@ func TestLoadGivesEveryActionItsAgent(t *testing.T) {
 
 // botAgents is a config whose tracker's bot, and whose agents developer,
 // reviewer and idle, have the bots given; "" names none. implement runs
-// development as developer and review as reviewer, fix runs fix as
-// developer, and no action runs as idle.
+// development as developer and then review as reviewer, fix runs fix as
+// developer, and no session runs as idle.
 func botAgents(tracker, developer, reviewer, idle string) string {
 	bot := func(name string) string {
 		if name == "" {
@@ -71,18 +72,20 @@ func botAgents(tracker, developer, reviewer, idle string) string {
     harness: {name: claude}` + bot(idle) + `
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to fix, failure: failed}
+    labels: {ready: ready, running: in progress}
     actions:
-      development: {agent: developer, prompt: "Implement {{.Issue.Ref}}"}
-      review: {agent: reviewer, prompt: "Review {{.Issue.Ref}}"}
+      - {agent: developer, name: development, prompt: "Implement {{.Issue.Ref}}"}
+      - {agent: reviewer, name: review, prompt: "Review {{.Issue.Ref}}"}
+    routes: {passed: ready to fix, failed: failed}
   fix:
-    labels: {ready: ready to fix, running: fixing, success: done, failure: failed}
+    labels: {ready: ready to fix, running: fixing}
     actions:
-      fix: {agent: developer, prompt: "Fix {{.Issue.Ref}}"}
+      - {agent: developer, name: fix, prompt: "Fix {{.Issue.Ref}}"}
+    routes: {passed: done, failed: failed}
 `
 }
 
-// An action acts as its agent's bot, else as tracker.bot, else as the gh
+// A session acts as its agent's bot, else as tracker.bot, else as the gh
 // login; crew makes tracker.bot act first, then the bots of the agents in
 // use, each once (KTD7).
 func TestLoadGivesEveryActionItsBot(t *testing.T) {
@@ -91,7 +94,7 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 		body     string
 		wantBot  crew.BotName
 		wantBots []crew.BotName
-		// want is each action's bot, in rule order.
+		// want is each session's bot, in rule order.
 		want []crew.BotName
 	}{
 		{
@@ -137,31 +140,33 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 	}
 }
 
-// actsAsItsAgentsBot fails t for each action of rules whose agent names a
-// bot the action does not act as.
+// actsAsItsAgentsBot fails t for each session of rules whose agent names a
+// bot the session does not act as.
 func actsAsItsAgentsBot(t *testing.T, rules []crew.Rule) {
 	t.Helper()
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			if a.Agent.Bot != "" && a.Bot.Name != a.Agent.Bot {
-				t.Errorf("action %s acts as %q, want its agent's bot %q", a.Name, a.Bot.Name, a.Agent.Bot)
+			if s := sessionOf(t, a); s.Agent.Bot != "" && s.Bot.Name != s.Agent.Bot {
+				t.Errorf("session %s acts as %q, want its agent's bot %q", a.Name, s.Bot.Name, s.Agent.Bot)
 			}
 		}
 	}
 }
 
-// actionBots returns the bot of each of rules' actions, in rule order.
+// actionBots returns the bot of each of rules' sessions, in rule order.
 func actionBots(rules []crew.Rule) []crew.BotName {
 	var out []crew.BotName
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			out = append(out, a.Bot.Name)
+			if s, ok := a.Kind.(crew.SessionSpec); ok {
+				out = append(out, s.Bot.Name)
+			}
 		}
 	}
 	return out
 }
 
-// An agent no action names is still read, so the registry can check its
+// An agent no session names is still read, so the registry can check its
 // harness's name.
 func TestLoadReadsAnAgentNoActionNames(t *testing.T) {
 	cfg := load(t, twoAgents+strings.Replace(ruleOnly,
@@ -179,10 +184,10 @@ func TestLoadRejectsInvalidAgents(t *testing.T) {
 	testRejects(t, invalidAgents)
 }
 
-// invalidAgents are errors in agents, and in how an action names its agent.
+// invalidAgents are errors in agents, and in how a session names its agent.
 var invalidAgents = []rejectCase{
 	{
-		name:  "rules with actions and no agents",
+		name:  "rules with sessions and no agents",
 		body:  ruleOnly,
 		wants: []string{"agents: missing"},
 	},
@@ -222,10 +227,10 @@ var invalidAgents = []rejectCase{
 		wants: []string{"agents.claude", "line 4", "duplicate key, first set on line 2"},
 	},
 	{
-		name: "an action names an agent that does not exist",
+		name: "a session names an agent that does not exist",
 		body: twoAgents + strings.Replace(ruleOnly, "        prompt:", "        agent: gemini\n        prompt:", 1),
 		wants: []string{
-			"rules.implement.actions.development.agent", "line 15", `agent "gemini" does not exist`,
+			"rules.implement.actions[0].agent", "line 13", `agent "gemini" does not exist`,
 			"the agents are claude, codex",
 		},
 	},

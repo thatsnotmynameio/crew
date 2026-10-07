@@ -17,8 +17,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// botAction is oneAction with tracker.bot ops, and the development action
-// acting as its agent's bot developer and running a check.
+// botAction is oneAction with tracker.bot ops, and the development session
+// acting as its agent's bot developer, followed by a shell action.
 const botAction = `
 tracker:
   name: fake
@@ -27,15 +27,16 @@ agents:
   developer:
     harness: {name: fake}
     bot: developer
-checks:
+actions:
   pull request: gh pr list
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      development:
+      - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
-        check: pull request
+      - pull request
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
 `
 
 // The identities the fake resolver hands out: ops for crew's own writes

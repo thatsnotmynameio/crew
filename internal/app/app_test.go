@@ -34,7 +34,7 @@ const (
 	readyToMerge   crew.State = "ready to merge"
 )
 
-// oneAction is a config with one rule of one action, run by the fakes.
+// oneAction is a config with one rule of one session, run by the fakes.
 // Its tracker name is on line 3 and its agent's harness name on line 7.
 const oneAction = `
 tracker:
@@ -48,11 +48,14 @@ rules:
     labels:
       ready: ready
       running: in progress
-      success: ready to review
-      failure: needs attention
     actions:
-      development:
+      - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
+    routes:
+      passed: ready to review
+      failed:
+        - report
+        - move: needs attention
 `
 
 // withOps is oneAction with tracker.bot ops.
@@ -72,17 +75,19 @@ agents:
     harness: {name: fake, model: claude-opus-5-5}
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      acceptance:
+      - name: acceptance
         prompt: "Implement test acceptance for issue {{.Issue.Ref}}"
-      development:
+      - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
   review:
-    labels: {ready: ready to review, running: in review, success: ready to merge, failure: needs attention}
+    labels: {ready: ready to review, running: in review}
     actions:
-      custom_review:
+      - name: custom_review
         prompt: "Review implementation for issue {{.Issue.Ref}}"
+    routes: {passed: ready to merge, failed: [report, move: needs attention]}
 `
 
 var success = port.SessionEnd{Succeeded: true, Reason: "opened a pull request"}
@@ -276,8 +281,8 @@ func TestAnActionsCheckRunsThroughTheOptionsShell(t *testing.T) {
 		h := fake.NewHarness()
 		sh := fake.NewShell()
 		sh.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: 1})
-		body := "checks:\n  pull request: gh pr list\n" +
-			strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n        check: pull request\n", 1)
+		body := "actions:\n  pull request: gh pr list\n" +
+			strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n      - pull request\n", 1)
 		r := options(t, body, tr, h)
 		r.opts.Plain = true
 		r.opts.Shell = sh

@@ -36,30 +36,49 @@ func readSchema(t *testing.T) map[string]any {
 }
 
 // schemaWalk gathers the key paths of a schema, with config.AnyName for
-// each name of a map keyed by name, and what is wrong with its keys.
+// each name of a map keyed by name or a key the code owner names, and
+// config.ListItem for any item of a list, and what is wrong with its keys.
 type schemaWalk struct {
 	keys, problems []string
 }
 
-// object adds the keys below the schema n, whose own path is path. An
-// object of named keys must refuse any other key and describe each one; a
-// map keyed by name has an additionalProperties schema for its items.
-func (w *schemaWalk) object(n map[string]any, path string) {
-	props, ok := n["properties"].(map[string]any)
-	if !ok {
-		if item, ok := n["additionalProperties"].(map[string]any); ok {
-			child := schemaKey(path, config.AnyName)
-			w.keys = append(w.keys, child)
-			w.object(item, child)
-		}
-		return
+// add adds key, once.
+func (w *schemaWalk) add(key string) {
+	if !slices.Contains(w.keys, key) {
+		w.keys = append(w.keys, key)
 	}
-	if n["additionalProperties"] != false {
-		w.problems = append(w.problems, fmt.Sprintf("%q: additionalProperties must be false", path))
+}
+
+// object adds the keys below the schema n, whose own path is path: those of
+// each of its alternatives, of its list's items, and of its own keys. An
+// object of named keys must refuse any other key, or describe it with an
+// additionalProperties schema, and describe each named one; a map keyed by
+// name has an additionalProperties schema for its items.
+func (w *schemaWalk) object(n map[string]any, path string) {
+	for _, key := range []string{"oneOf", "anyOf"} {
+		alternatives, _ := n[key].([]any)
+		for _, alt := range alternatives {
+			if alt, ok := alt.(map[string]any); ok {
+				w.object(alt, path)
+			}
+		}
+	}
+	if items, ok := n["items"].(map[string]any); ok {
+		w.object(items, path+config.ListItem)
+	}
+	props, named := n["properties"].(map[string]any)
+	item, free := n["additionalProperties"].(map[string]any)
+	if named && !free && n["additionalProperties"] != false {
+		w.problems = append(w.problems, fmt.Sprintf("%q: additionalProperties must be false or a schema", path))
+	}
+	if free {
+		child := schemaKey(path, config.AnyName)
+		w.add(child)
+		w.object(item, child)
 	}
 	for key, value := range props {
 		child := schemaKey(path, key)
-		w.keys = append(w.keys, child)
+		w.add(child)
 		prop, _ := value.(map[string]any)
 		if desc, _ := prop["description"].(string); desc == "" {
 			w.problems = append(w.problems, child+": no description")

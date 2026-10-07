@@ -68,22 +68,44 @@ const oneAgent = `agents:
     harness: {name: claude}
 `
 
-// oneRule is a minimal valid config, one agent and one rule of one action,
+// oneRule is a minimal valid config, one agent and one rule of one session,
 // for tests about other keys. Its rules key is on line 4.
 const oneRule = oneAgent + ruleOnly
 
-// ruleOnly is oneRule without its agent.
+// ruleOnly is oneRule without its agent. Its session is on line 10, its
+// prompt on line 11 and its routes on line 12.
 const ruleOnly = `rules:
   implement:
     labels:
       ready: ready
       running: in progress
-      success: ready to review
-      failure: needs attention
     actions:
-      development:
+      - name: development
         prompt: "Implement {{.Issue.Ref}}"
+    routes:
+      passed: ready to review
+      failed:
+        - report
+        - move: needs attention
 `
+
+// failedRoute is the failed route of a converted rule whose failure label
+// is label: it reports, then moves (N1).
+func failedRoute(label crew.State) crew.Route {
+	return crew.Route{Name: crew.FailedRoute, Steps: []crew.Step{crew.ReportStep{}, crew.MoveStep{To: label}}}
+}
+
+// passedRoute is a passed route that moves to label.
+func passedRoute(label crew.State) crew.Route {
+	return crew.Route{Name: crew.PassedRoute, Steps: []crew.Step{crew.MoveStep{To: label}}}
+}
+
+// session is the session action name runs on agent with text as its prompt,
+// acting as no bot.
+func session(t *testing.T, name crew.ActionName, agent crew.Agent, text string) crew.Action {
+	t.Helper()
+	return crew.Action{Name: name, Kind: crew.SessionSpec{Agent: agent, Prompt: parsedPrompt(t, name, text)}}
+}
 
 // draftRules are the rules testdata/draft's config loads into.
 func draftRules(t *testing.T) []crew.Rule {
@@ -92,32 +114,19 @@ func draftRules(t *testing.T) []crew.Rule {
 	queue := crew.Queue{Name: "default", Slots: 2}
 	return []crew.Rule{
 		{
-			Name: "implement", Queue: queue,
-			Labels: crew.Labels{
-				Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
-			},
+			Name: "implement", Queue: queue, Labels: crew.Labels{Ready: "ready", Running: "in progress"},
 			Actions: []crew.Action{
-				{
-					Name: "acceptance", Agent: claude,
-					Prompt: parsedPrompt(t, "acceptance", "Implement test acceptance for issue {{.Issue.Ref}}"),
-				},
-				{
-					Name: "development", Agent: claude,
-					Prompt: parsedPrompt(t, "development", "Implement development for issue {{.Issue.Ref}}"),
-				},
+				session(t, "acceptance", claude, "Implement test acceptance for issue {{.Issue.Ref}}"),
+				session(t, "development", claude, "Implement development for issue {{.Issue.Ref}}"),
 			},
+			Routes: []crew.Route{passedRoute("ready to review"), failedRoute("needs attention")},
 		},
 		{
-			Name: "review", Queue: queue,
-			Labels: crew.Labels{
-				Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
-			},
+			Name: "review", Queue: queue, Labels: crew.Labels{Ready: "ready to review", Running: "in review"},
 			Actions: []crew.Action{
-				{
-					Name: "custom_review", Agent: claude,
-					Prompt: parsedPrompt(t, "custom_review", "Review implementation for issue {{.Issue.Ref}}"),
-				},
+				session(t, "custom_review", claude, "Review implementation for issue {{.Issue.Ref}}"),
 			},
+			Routes: []crew.Route{passedRoute("ready to merge"), failedRoute("needs attention")},
 		},
 	}
 }
@@ -153,7 +162,7 @@ func TestLoadDraftConfig(t *testing.T) {
 	}
 }
 
-// Covers F1: a tracker, one agent and one rule of one action that names no
+// Covers F1: a tracker, one agent and one rule of one session that names no
 // agent is a whole config.
 func TestLoadAMinimalConfig(t *testing.T) {
 	cfg := load(t, `tracker:
@@ -164,14 +173,14 @@ agents:
       name: claude
 rules:
   development:
-    labels: {ready: todo, running: doing, success: review, failure: failed}
+    labels: {ready: todo, running: doing}
     actions:
-      lfg:
-        prompt: "/lfg {{.Issue.Ref}}"
+      - prompt: "/lfg {{.Issue.Ref}}"
+    routes: {passed: review, failed: failed}
 `)
 	rule := cfg.Rules[0]
-	if got, want := rule.Actions[0].Agent, (crew.Agent{Name: "developer", Harness: "claude"}); got != want {
-		t.Errorf("the action's agent = %+v, want %+v", got, want)
+	if got, want := sessionOf(t, rule.Actions[0]).Agent, (crew.Agent{Name: "developer", Harness: "claude"}); got != want {
+		t.Errorf("the session's agent = %+v, want %+v", got, want)
 	}
 	if want := (crew.Queue{Name: "default", Slots: 2}); rule.Queue != want {
 		t.Errorf("Queue = %+v, want %+v", rule.Queue, want)
@@ -230,6 +239,17 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 	}
 }
 
+// sessionOf returns the session a runs, and fails t when a is not a
+// session.
+func sessionOf(t *testing.T, a crew.Action) crew.SessionSpec {
+	t.Helper()
+	s, ok := a.Kind.(crew.SessionSpec)
+	if !ok {
+		t.Fatalf("action %s runs %T, want a session", a.Name, a.Kind)
+	}
+	return s
+}
+
 // parsedPrompt parses text as the prompt of the action named action, and
 // fails t when it does not parse.
 func parsedPrompt(t *testing.T, action crew.ActionName, text string) crew.Prompt {
@@ -244,7 +264,7 @@ func parsedPrompt(t *testing.T, action crew.ActionName, text string) crew.Prompt
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneRule)
 	issue := crew.NewIssue(crew.IssueData{ID: issueID("42"), Ref: "#42", Title: "Fix it", URL: "https://example.com/42"})
-	got, err := cfg.Rules[0].Actions[0].Prompt.Render(issue)
+	got, err := sessionOf(t, cfg.Rules[0].Actions[0]).Prompt.Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}

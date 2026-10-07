@@ -51,7 +51,7 @@ func board(n *yaml.Node, rules []crew.Rule) ([]crew.BoardColumn, bool, error) {
 // one or more, none empty.
 func columnLabels(e entry) ([]crew.State, error) {
 	var labels located[[]string]
-	if e.value.Kind == yaml.ScalarNode && e.value.ShortTag() != "!!null" {
+	if e.value.Kind == yaml.ScalarNode && e.value.ShortTag() != nullTag {
 		var label located[string]
 		if err := decodeValue(e.value, e.path, reflect.ValueOf(&label).Elem()); err != nil {
 			return nil, err

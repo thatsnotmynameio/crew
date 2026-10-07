@@ -117,13 +117,15 @@ const rules = `agents:
     harness: {name: claude}
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      development: {prompt: "Implement {{.Issue.Ref}}"}
+      - {name: development, prompt: "Implement {{.Issue.Ref}}"}
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
   review:
-    labels: {ready: ready to review, running: in review, success: ready to merge, failure: needs attention}
+    labels: {ready: ready to review, running: in review}
     actions:
-      custom_review: {prompt: "Review {{.Issue.Ref}}"}
+      - {name: custom_review, prompt: "Review {{.Issue.Ref}}"}
+    routes: {passed: ready to merge, failed: [report, move: needs attention]}
 `
 
 // section loads a .crew/config.yaml holding tracker, which is the tracker:

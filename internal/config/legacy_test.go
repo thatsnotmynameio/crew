@@ -133,13 +133,14 @@ func TestLoadRefusesEachOldKey(t *testing.T) {
 	}
 }
 
-// An old key written inside a new rule or action gets its replacement, not
-// a bare unknown key.
+// An old key written inside a rule, or inside an action of the old
+// actions mapping, gets its replacement, not a bare unknown key.
 func TestLoadRefusesOldKeysInsideARule(t *testing.T) {
-	body := strings.Replace(ruleWith("label: ready"), "        prompt:", "        mate: developer\n        prompt:", 1)
+	const oldActions = "    actions:\n      development:\n        mate: developer\n        prompt: go\n"
+	body := strings.Replace(ruleWith("label: ready"), "    actions:\n", oldActions+"    old:\n", 1)
 	want := []string{
 		"rules.implement.label (line 6): now labels.ready of the rule",
-		"rules.implement.actions.development.mate (line 14): " + actionMate,
+		"rules.implement.actions.development.mate (line 12): " + actionMate,
 	}
 	if got := oldKeyLines(t, body); !reflect.DeepEqual(got, want) {
 		t.Errorf("errors =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -149,14 +150,16 @@ func TestLoadRefusesOldKeysInsideARule(t *testing.T) {
 		old, _, _ := strings.Cut(key, ":")
 		loadErr(t, ruleWith(key), "rules.implement."+old+" (line 6): ")
 	}
-	loadErr(t, strings.Replace(oneRule, "        prompt:", "        name: lfg\n        prompt:", 1),
-		"rules.implement.actions.development.name (line 13): "+actionNameGone)
+	const oldName = "    actions:\n      development:\n        name: lfg\n    old:\n"
+	loadErr(t, strings.Replace(oneRule, "    actions:\n", oldName, 1),
+		"rules.implement.actions.development.name (line 11): "+actionNameGone)
 }
 
-// Keys of the new schema named like old ones, such as a check named config
-// or a board column named label, are left to the decoder.
+// Keys of the new schema named like old ones, such as a session's name, a
+// shell action named config or a board column named label, are left to the
+// decoder.
 func TestLoadLeavesNewKeysNamedLikeOldOnes(t *testing.T) {
-	body := oneRule + `checks:
+	body := oneRule + `actions:
   config: "true"
 board:
   label: [ready]

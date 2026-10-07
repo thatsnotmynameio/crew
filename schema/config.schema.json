@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json",
   "title": "crew's global config file, .crew/config.yaml and .crew/config.local.yaml",
-  "description": "What crew acts on in a repository: its rules, which react to labels, the agents and checks their actions name, the queues they run in, the tracker and the live view's board. crew reads the global config file (~/.config/crew/config.yaml, or $XDG_CONFIG_HOME/crew/config.yaml), then .crew/config.yaml, then .crew/config.local.yaml; each top-level key of a later file replaces that key of the earlier ones, so any file may hold any of the keys; together they need rules. See .crew/config.example.yaml in the crew repository, which lists every key.",
+  "description": "What crew acts on in a repository: its rules, which react to labels, the agents their sessions run on and the shell actions they name, the queues they run in, the tracker and the live view's board. crew reads the global config file (~/.config/crew/config.yaml, or $XDG_CONFIG_HOME/crew/config.yaml), then .crew/config.yaml, then .crew/config.local.yaml; each top-level key of a later file replaces that key of the earlier ones, so any file may hold any of the keys; together they need rules. See .crew/config.example.yaml in the crew repository, which lists every key.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -13,7 +13,7 @@
       "default": 300
     },
     "max_parallel_issues": {
-      "description": "How many issues crew works on at once, split into the queues. It counts issues, not sessions: an issue whose rule has two actions takes one slot. 2 by default.",
+      "description": "How many issues crew works on at once, split into the queues. It counts issues, not sessions: an issue whose rule runs several actions takes one slot. 2 by default.",
       "type": "integer",
       "minimum": 1,
       "default": 2
@@ -56,7 +56,7 @@
       }
     },
     "agents": {
-      "description": "Agents by name: each is the harness that runs an action's session, with its model, and the bot the session acts as. Required when a rule has actions. An action names its agent with agent.",
+      "description": "Agents by name: each is the harness that runs a session, with its model, and the bot the session acts as. Required when a rule has a session. A session names its agent with agent.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -83,20 +83,52 @@
             }
           },
           "bot": {
-            "description": "The bot the agent's sessions and checks act as. Without it, they act as tracker.bot, and as the gh login crew runs as when that is not set either.",
+            "description": "The bot the agent's sessions, and the shell actions after them, act as. Without it, they act as tracker.bot, and as the gh login crew runs as when that is not set either.",
             "type": "string",
             "minLength": 1
           }
         }
       }
     },
-    "checks": {
-      "description": "Checks by name, each a shell script that decides whether an action succeeded. An action names its check with check.",
+    "actions": {
+      "description": "Shell actions by name, each defined once and named in rules' actions and routes. A name cannot be a word of the rules' grammar: agent, prompt, name, on, wait, resume, script, verdicts, report, close, move, comment or next.",
       "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": ["agent", "prompt", "name", "on", "wait", "resume", "script", "verdicts", "report", "close", "move", "comment", "next"]
+        }
+      },
       "additionalProperties": {
-        "description": "The check's shell script, run in the action's worktree after its session ends. The action succeeds only when it exits 0, and its last line of output reaches the status comment. It is not a template: it reads the issue from CREW_ISSUE_REF, CREW_ISSUE_KEY, CREW_ISSUE_URL and CREW_BRANCH, and the logins from CREW_CODE_OWNERS and CREW_BOTS.",
-        "type": "string",
-        "minLength": 1
+        "description": "The shell action: its script, or a mapping with its script and how it ends.",
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["script"],
+            "properties": {
+              "script": {
+                "description": "The action's shell script, run in the rule run's worktree. It passes when it exits 0 and fails otherwise, unless verdicts names the verdict of its exit status, and its last line of output reaches the status comment. It is not a template: it reads the issue from CREW_ISSUE_REF, CREW_ISSUE_KEY, CREW_ISSUE_URL and CREW_BRANCH, the logins from CREW_CODE_OWNERS and CREW_BOTS, and the latest session's prompt and last message from the files CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name.",
+                "type": "string",
+                "minLength": 1
+              },
+              "verdicts": {
+                "description": "The verdict each exit status gives, by status from 0 to 255. A status it does not name passes for 0 and fails for any other.",
+                "type": "object",
+                "propertyNames": { "pattern": "^[0-9]+$" },
+                "additionalProperties": {
+                  "description": "A verdict's name: a lowercase letter, then lowercase letters, digits, - or _.",
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                }
+              },
+              "resume": {
+                "description": "self: a resume that restarts at this action starts at it, rather than at the latest session before it, for a script that checks something outside the worktree, such as CI.",
+                "enum": ["self"]
+              }
+            }
+          }
+        ]
       }
     },
     "board": {
@@ -112,13 +144,13 @@
       }
     },
     "rules": {
-      "description": "Rules by name; required in one of the two files. Each rule takes the items of its kind that carry its ready label, moves each to running, runs its actions, and moves it to success when every action succeeded or to failure when any failed. Rules form no sequence: the order of work comes only from how their labels chain. Among rules of equal priority, a later rule in the file takes first.",
+      "description": "Rules by name; required in one of the files. Each rule takes the items of its kind that carry its ready label, moves each to running, runs its actions one after another, and ends through one of its routes: passed after its last action, or the route an action's verdict leads to. Rules form no sequence: the order of work comes only from how their labels chain. Among rules of equal priority, a later rule in the file takes first.",
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["labels"],
+        "required": ["labels", "routes"],
         "properties": {
           "takes": {
             "description": "The kind of item the rule takes: issues, the default, or pull_requests.",
@@ -139,7 +171,7 @@
             "description": "The rule's labels, by state. Labels compare ignoring case, as GitHub compares them.",
             "type": "object",
             "additionalProperties": false,
-            "required": ["ready", "running", "success"],
+            "required": ["ready", "running"],
             "properties": {
               "ready": {
                 "description": "The label the rule takes items from. No two rules take the same label.",
@@ -150,65 +182,136 @@
                 "description": "The label an item moves to while the rule works on it. It cannot be any rule's ready label.",
                 "type": "string",
                 "minLength": 1
-              },
-              "success": {
-                "description": "The label an item moves to when every action succeeded, or at once for a rule without actions. It cannot be the rule's own ready label.",
-                "type": "string",
-                "minLength": 1
-              },
-              "failure": {
-                "description": "The label an item moves to when any action failed. Required when the rule has actions; a rule without actions never fails. It cannot be the rule's own ready label.",
-                "type": "string",
-                "minLength": 1
               }
             }
           },
           "actions": {
-            "description": "The rule's actions by name, each a session of its own, all started together. Without actions, crew moves the item to running and on to success itself, without a session, so the rule spends no tokens.",
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["prompt"],
-              "properties": {
-                "agent": {
-                  "description": "The agent that runs the action's session: one of agents. It can be left out only when agents declares exactly one agent.",
-                  "type": "string",
-                  "minLength": 1
-                },
-                "prompt": {
-                  "description": "The session's prompt: a Go template over the item the rule took, such as {{.Issue.Ref}}.",
-                  "type": "string",
-                  "minLength": 1
-                },
-                "check": {
-                  "description": "The check, or the list of checks, that decide whether the action succeeded, each one of checks. They run in the listed order after a successful session, and the first that does not pass fails the action. Without it, the session's own outcome decides.",
-                  "oneOf": [
-                    {
+            "description": "The rule's actions, run one after another in one worktree and branch: the name of one of actions, a session with its agent and prompt, or a mapping whose one key names one of actions, with its on and name beside it. Without actions, crew moves the item to running and on through its passed route itself, without a session, so the rule spends no tokens.",
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["prompt"],
+                  "properties": {
+                    "agent": {
+                      "description": "The agent that runs the session: one of agents. It can be left out only when agents declares exactly one agent.",
                       "type": "string",
                       "minLength": 1
                     },
-                    {
-                      "type": "array",
-                      "items": {
+                    "prompt": {
+                      "description": "The session's prompt: a Go template over the item the rule took, such as {{.Issue.Ref}}.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "description": "The action's name in the rule, unique there: in its log, its workspace and its reports. By default, a session's agent's name, or the name of the action it names.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "on": {
+                      "description": "The action's verdicts, each to next, which runs the next action, or to the name of one of the rule's routes, which ends the run there. Without an entry, passed goes to next and every other verdict to failed.",
+                      "type": "object",
+                      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+                      "additionalProperties": {
+                        "description": "next, or the name of one of the rule's routes.",
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "minProperties": 1,
+                  "properties": {
+                    "name": {
+                      "description": "The action's name in the rule, unique there: in its log, its workspace and its reports. By default, a session's agent's name, or the name of the action it names.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "on": {
+                      "description": "The action's verdicts, each to next, which runs the next action, or to the name of one of the rule's routes, which ends the run there. Without an entry, passed goes to next and every other verdict to failed.",
+                      "type": "object",
+                      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+                      "additionalProperties": {
+                        "description": "next, or the name of one of the rule's routes.",
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                      }
+                    }
+                  },
+                  "additionalProperties": {
+                    "description": "The name of one of actions, with an empty value: a shell action takes no parameters.",
+                    "type": "null"
+                  }
+                }
+              ]
+            }
+          },
+          "routes": {
+            "description": "The rule's routes by name, each a way to end a run. A rule with actions declares passed and failed, and any other route an action's on leads to; a rule without actions declares only passed. A route cannot be called next, and cannot move the item to the rule's own ready label or to any rule's running label.",
+            "type": "object",
+            "required": ["passed"],
+            "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,63}$", "not": { "const": "next" } },
+            "additionalProperties": {
+              "description": "The label the route moves the item to, or its steps, run in order, the last of which, and only the last, is move or close. A step that fails is recorded and the route goes on.",
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "report, which posts crew's report naming the action that ended the run and its log; close, which closes the issue; or the name of one of actions.",
                         "type": "string",
                         "minLength": 1
                       },
-                      "minItems": 1
-                    }
-                  ]
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["move"],
+                        "properties": {
+                          "move": {
+                            "description": "The label the step moves the item to.",
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["comment"],
+                        "properties": {
+                          "comment": {
+                            "description": "A comment crew posts on the issue: a Go template over {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}}, {{.Issue.URL}}, {{.Rule}}, {{.Action}}, {{.Verdict}}, {{.Route}} and {{.Log}}, never what a session or a script printed.",
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "minProperties": 1,
+                        "maxProperties": 1,
+                        "additionalProperties": {
+                          "description": "The name of one of actions, with an empty value.",
+                          "type": "null"
+                        }
+                      }
+                    ]
+                  }
                 }
-              }
+              ]
             }
           }
         },
-        "if": {
-          "required": ["actions"],
-          "properties": { "actions": { "minProperties": 1 } }
-        },
-        "then": {
-          "properties": { "labels": { "required": ["failure"] } }
-        }
+        "if": { "required": ["actions"], "properties": { "actions": { "minItems": 1 } } },
+        "then": { "properties": { "routes": { "required": ["failed"] } } }
       }
     }
   }

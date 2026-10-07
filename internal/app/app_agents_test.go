@@ -17,7 +17,7 @@ import (
 )
 
 // twoHarnesses is a config of the agents developer, on the harness fake,
-// and reviewer, on fake2, each running one rule's action.
+// and reviewer, on fake2, each running one rule's session.
 const twoHarnesses = `
 tracker:
   name: fake
@@ -28,13 +28,15 @@ agents:
     harness: {name: fake2}
 rules:
   development:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      lfg: {agent: developer, prompt: "Develop {{.Issue.Ref}}"}
+      - {agent: developer, name: lfg, prompt: "Develop {{.Issue.Ref}}"}
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
   review:
-    labels: {ready: ready to review, running: in review, success: ready to merge, failure: needs attention}
+    labels: {ready: ready to review, running: in review}
     actions:
-      review: {agent: reviewer, prompt: "Review {{.Issue.Ref}}"}
+      - {agent: reviewer, name: review, prompt: "Review {{.Issue.Ref}}"}
+    routes: {passed: ready to merge, failed: [report, move: needs attention]}
 `
 
 // withHarnesses registers each of harnesses under its name in r, beside
