@@ -106,7 +106,9 @@ func TestALookupThatAnswersFirstWaitsForTheCheck(t *testing.T) {
 
 	d.send(core.PullRequestFound{IssueKey: "74", Action: "development", PullRequest: pr45})
 	wantPhase(core.PhaseChecking)
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed("no pull request")})
+	cmds, _ = d.send(core.CheckEnded{
+		IssueKey: "74", Action: "development", Reason: crew.NewCheckReason("no pull request"),
+	})
 	wantPhase(core.PhaseEnded)
 	if end := records(cmds); len(end) != 1 || end[0].Succeeded || end[0].PullRequest != pr45 || !end[0].Usage.HasCost {
 		t.Fatalf("records = %#v, want a failed end keeping the session's usage and #45", end)
@@ -118,7 +120,7 @@ func TestACheckThatEndsFirstWaitsForTheLookup(t *testing.T) {
 	d.running(issue("74", 1, ready))
 	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
 	if len(records(cmds)) != 0 || phaseOf(t, d.m, "74", "development") != core.PhaseFinishing {
 		t.Fatalf("the action ended before its lookup: %#v", cmds)
 	}

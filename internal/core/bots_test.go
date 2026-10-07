@@ -257,12 +257,12 @@ func TestAnActionRunsOnItsEntryFromItsSessionUntilItsSpendLands(t *testing.T) {
 		{"finishing", func(d *driver) {
 			d.running(issue("74", 1, ready))
 			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
 		}, true},
 		{"ended", func(d *driver) {
 			d.running(issue("74", 1, ready))
 			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
 			d.send(core.PullRequestFound{IssueKey: "74", Action: "development", PullRequest: noPR})
 		}, false},
 	}

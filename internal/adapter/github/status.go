@@ -491,7 +491,7 @@ func writePassedChecks(b *strings.Builder, a crew.ActionStatus) {
 			b.WriteString("\n")
 			first = false
 		}
-		b.WriteString("- " + codeSpan(c.Reason) + "\n")
+		b.WriteString("- " + codeSpan(c.Reason.String()) + "\n")
 	}
 }
 
@@ -558,7 +558,7 @@ func failureCause(a crew.ActionStatus) string {
 	case crew.CauseCheck:
 		// The reason already says which check failed, ran out of time or
 		// could not start.
-		reason := a.FailedCheck()
+		reason := a.FailedCheck().String()
 		if reason == "" {
 			return ": its check failed"
 		}

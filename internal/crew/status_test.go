@@ -21,13 +21,13 @@ func TestStatusCloneSharesNoActions(t *testing.T) {
 
 func TestFailedCheckIsTheReasonOfTheLastCheckOfACheckFailure(t *testing.T) {
 	checks := []CheckResult{
-		{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"},
-		{Name: "pr-closes-issue", Reason: "the check pr-closes-issue failed: no open pull request"},
+		{Name: "judge", Passed: true, Reason: NewCheckReason("the check judge passed: done (0.97)")},
+		{Name: "pr-closes-issue", Reason: NewCheckReason("the check pr-closes-issue failed: no open pull request")},
 	}
 	tests := []struct {
 		name   string
 		action ActionStatus
-		want   string
+		want   CheckReason
 	}{
 		{name: "check", action: ActionStatus{Cause: CauseCheck, Checks: checks}, want: checks[1].Reason},
 		{name: "check without results", action: ActionStatus{Cause: CauseCheck}},
@@ -35,7 +35,7 @@ func TestFailedCheckIsTheReasonOfTheLastCheckOfACheckFailure(t *testing.T) {
 	}
 	for _, tt := range tests {
 		if got := tt.action.FailedCheck(); got != tt.want {
-			t.Errorf("%s: FailedCheck() = %q, want %q", tt.name, got, tt.want)
+			t.Errorf("%s: FailedCheck() = %q, want %q", tt.name, got.String(), tt.want.String())
 		}
 	}
 }

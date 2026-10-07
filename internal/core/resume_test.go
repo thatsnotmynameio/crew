@@ -424,7 +424,7 @@ func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 	d.send(core.SessionEnded{IssueKey: "9", Action: "lfg", Outcome: succeeded})
 
 	reason := "the check failed: no pull requests found for branch \"crew/issue-9-lfg\""
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "9", Action: "lfg", Outcome: failed(reason)})
+	cmds, _ := d.send(core.CheckEnded{IssueKey: "9", Action: "lfg", Reason: crew.NewCheckReason(reason)})
 	got := records(cmds)
 	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason.String() != reason {
 		t.Fatalf("records = %#v, want one failed end with the check's reason", got)

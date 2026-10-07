@@ -275,8 +275,8 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 			t.Errorf("#1 is in %v, want ready to review", got)
 		}
 		wantChecks := []crew.CheckResult{
-			{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"},
-			{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"},
+			{Name: "judge", Passed: true, Reason: crew.NewCheckReason("the check judge passed: done (0.97)")},
+			{Name: "pr-closes-issue", Passed: true, Reason: crew.NewCheckReason("the check pr-closes-issue passed")},
 		}
 		if got := lastStatus(t, tr).Actions[0].Checks; !reflect.DeepEqual(got, wantChecks) {
 			t.Errorf("status checks = %+v, want %+v", got, wantChecks)
@@ -310,6 +310,31 @@ func wantLog(t *testing.T, root, want string) {
 	if string(log) != want {
 		t.Errorf("log = %q, want %q", log, want)
 	}
+}
+
+// KTD10: the last message a check reads is the session's, byte for byte:
+// crew neither scrubs nor strips it, as it does the text it shows.
+func TestACheckReadsTheLastMessageAsTheSessionWroteIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr, checker, h := fake.NewTracker(issue(1, ready)), fake.NewChecker(), fake.NewMessagingHarness()
+		cfg := checkedConfig(t, tr, checker)
+		cfg.Harnesses = harnesses(h)
+		last := "a\x00b \x1b[31mred\x1b[0m 10%\r20% in " + cfg.Root + "/main.go"
+		r := start(t, cfg)
+		s := r.sessions(1)["issue-1-development"]
+		s.SetLastMessage(last)
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		checks := checker.Checks()
+		if len(checks) != 1 || checks[0].LastMessage != last {
+			t.Fatalf("checks = %+v, want one reading the last message %q", checks, last)
+		}
+	})
 }
 
 // R5: each check has its own ten minutes, not what the one before it left.

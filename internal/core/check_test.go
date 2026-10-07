@@ -77,11 +77,28 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 		t.Fatalf("claim while the check runs = %v, want running", got)
 	}
 
-	cmds, _ := d.send(core.CheckEnded{
+	cmds, events := d.send(core.CheckEnded{
 		IssueKey: "74", Action: "development",
-		Outcome: crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("the check passed")},
+		Passed: true, Reason: checkPassed,
 	})
 	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
+	// KTD7: the last check's passing reason is the action's.
+	want := crew.Outcome{Succeeded: true, Reason: crew.NewSessionText(checkPassed.String())}
+	if got := endOf(t, events, "development"); got != want {
+		t.Errorf("development ended with %#v, want %#v", got, want)
+	}
+}
+
+// endOf returns the outcome action ended with in events.
+func endOf(t *testing.T, events []core.Event, action string) crew.Outcome {
+	t.Helper()
+	for _, e := range events {
+		if ended, ok := e.(core.ActionEnded); ok && ended.Action == action {
+			return ended.Outcome
+		}
+	}
+	t.Fatalf("no end of %s in %#v", action, events)
+	return crew.Outcome{}
 }
 
 // Each action's session and check act as the action's own bot (KTD9).
@@ -114,7 +131,10 @@ func TestAE1CheckThatFailsFailsItsActionWithTheChecksReason(t *testing.T) {
 	checking(d, succeeded)
 
 	reason := "the check failed: no open pull request from crew/issue-74-development"
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed(reason)})
+	cmds, events := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Reason: crew.NewCheckReason(reason)})
+	if got, want := endOf(t, events, "development"), (crew.Outcome{Reason: crew.NewSessionText(reason)}); got != want {
+		t.Errorf("development ended with %#v, want %#v", got, want)
+	}
 	moveID(t, cmds, "74")
 	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueKey: "74", From: inProgress, To: needsAttention}) {
 		t.Fatalf("verdict = %#v, want the move to needs attention", got)
@@ -135,7 +155,7 @@ func TestAE9StopWhileCheckingStopsTheCheckAndFailsTheAction(t *testing.T) {
 	wantCommands(t, cmds, core.StopCheck{IssueKey: "74", Action: "development"})
 
 	// Even a check that passed just as it was stopped counts as stopped.
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
 	ws := space("74", "development")
 	want := []crew.ActionFailure{{Action: "development", Reason: "crew stopped", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
@@ -170,7 +190,7 @@ func TestTimeUpLetsARunningCheckFinishBeforeStopping(t *testing.T) {
 		t.Fatal("stopped while a check runs")
 	}
 
-	verdict, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	verdict, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	if !d.m.Stopped() || !containsStopped(events) {
 		t.Fatal("not stopped once the checked issue was judged")
@@ -233,13 +253,13 @@ var failedCauseCases = []struct {
 			d.runAll(landed)
 			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
 			cmds, _ := d.send(core.CheckEnded{
-				IssueKey: "74", Action: "development", Outcome: failed("the check failed: no pull request"),
+				IssueKey: "74", Action: "development", Reason: crew.NewCheckReason("the check failed: no pull request"),
 			})
 			return cmds
 		},
 		want: crew.ActionStatus{
 			Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: devSpace.Log,
-			Checks: []crew.CheckResult{{Name: "never", Reason: "the check failed: no pull request"}},
+			Checks: []crew.CheckResult{{Name: "never", Reason: crew.NewCheckReason("the check failed: no pull request")}},
 		},
 	},
 	{

@@ -99,7 +99,7 @@ type CheckResult struct {
 	Passed bool
 	// Reason is crew's one line on how it ended, naming the check, followed
 	// by the last line the check printed when it printed one.
-	Reason string
+	Reason CheckReason
 }
 
 // promptIssue is the only issue data a prompt template can reach. A struct,

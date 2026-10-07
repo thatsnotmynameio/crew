@@ -243,13 +243,15 @@ type SessionEnded struct {
 	LastMessage string
 }
 
-// CheckEnded is a RunCheck that ended, with the check's verdict: it passed,
-// or it failed, ran out of time or could not start, as its Reason says.
+// CheckEnded is a RunCheck that ended, with the check's verdict: Passed, or
+// it failed, ran out of time, was stopped or could not start, as its Reason
+// says.
 type CheckEnded struct {
 	At       time.Time
 	IssueKey string
 	Action   string
-	Outcome  crew.Outcome
+	Passed   bool
+	Reason   crew.CheckReason
 }
 
 // PullRequestFound is a FindPullRequest that ended: the pull request the

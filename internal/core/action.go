@@ -150,21 +150,23 @@ func (s *step) runCheck(h *heldIssue, a *actionRun) {
 
 // checkEnded keeps how the action's running check ended. A check that
 // passed starts the next, or ends the action as succeeded when it was the
-// last; one that did not pass ends it with the check's verdict (R4). A stop
-// ends it as stopped, whatever the check returned (R8).
+// last; one that did not pass ends it as failed (R4). Either way the
+// action's reason is the check's (KTD7). A stop ends it as stopped, whatever
+// the check returned (R8).
 func (s *step) checkEnded(in CheckEnded) {
 	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking)
 	if a == nil {
 		return
 	}
 	a.results = append(a.results, crew.CheckResult{
-		Name: a.checks[len(a.results)].Name, Passed: in.Outcome.Succeeded, Reason: in.Outcome.Reason.String(),
+		Name: a.checks[len(a.results)].Name, Passed: in.Passed, Reason: in.Reason,
 	})
 	switch {
 	case a.stopped:
 		s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}, crew.CauseStopped)
-	case !in.Outcome.Succeeded || len(a.results) == len(a.checks):
-		s.end(h, a, in.Outcome, crew.CauseCheck)
+	case !in.Passed || len(a.results) == len(a.checks):
+		outcome := crew.Outcome{Succeeded: in.Passed, Reason: crew.NewSessionText(in.Reason.String())}
+		s.end(h, a, outcome, crew.CauseCheck)
 	default:
 		s.runCheck(h, a)
 	}

@@ -357,19 +357,21 @@ func markResumed(log *os.File) error {
 // (R5, R6).
 func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
 	defer cancel()
-	e.post(core.CheckEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: e.check(ctx, c)})
+	passed, reason := e.check(ctx, c)
+	e.post(core.CheckEnded{IssueKey: c.IssueKey, Action: c.Action, Passed: passed, Reason: reason})
 }
 
-// check runs c, as its action's bot like its session, and returns its
-// verdict.
-func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
+// check runs c, as its action's bot like its session, and returns whether
+// it passed and its reason. The session's last message reaches the check as
+// the session wrote it (KTD10): crew does not show it.
+func (e *Engine) check(ctx context.Context, c core.RunCheck) (bool, crew.CheckReason) {
 	subject := "the check " + c.Name
 	if e.cfg.Checker == nil {
-		return crew.Outcome{Reason: crew.NewSessionText(subject + " could not start: crew has no check runner")}
+		return false, crew.NewCheckReason(subject + " could not start: crew has no check runner")
 	}
 	log, err := e.openLog(c.Log)
 	if err != nil {
-		return crew.Outcome{Reason: crew.NewSessionText(subject + " could not start: " + e.scrub(err.Error()))}
+		return false, crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))
 	}
 	// A failed write or close cannot change the check's verdict.
 	defer func() { _ = log.Close() }()
@@ -383,28 +385,29 @@ func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	})
 	switch {
 	case err == nil:
-		return crew.Outcome{Succeeded: true, Reason: crew.NewSessionText(e.saying(subject+" passed", last.String()))}
+		return true, e.saying(subject+" passed", last.String())
 	case errors.Is(err, port.ErrCheckFailed):
 		line := last.String()
 		if line == "" {
-			return crew.Outcome{Reason: crew.NewSessionText(subject + " failed and printed nothing")}
+			return false, crew.NewCheckReason(subject + " failed and printed nothing")
 		}
-		return crew.Outcome{Reason: crew.NewSessionText(e.saying(subject+" failed", line))}
+		return false, e.saying(subject+" failed", line)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return crew.Outcome{Reason: crew.NewSessionText(fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout))}
+		return false, crew.NewCheckReason(fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout))
 	case ctx.Err() != nil:
-		return crew.Outcome{Reason: crew.NewSessionText(subject + " was stopped")}
+		return false, crew.NewCheckReason(subject + " was stopped")
 	}
-	return crew.Outcome{Reason: crew.NewSessionText(subject + " could not start: " + e.scrub(err.Error()))}
+	return false, crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))
 }
 
 // saying returns verdict, followed by line, the last line a check printed,
-// scrubbed and cut, when the check printed one.
-func (e *Engine) saying(verdict, line string) string {
+// scrubbed, stripped, scrubbed again (scrubAndStrip) and cut, when the check
+// printed one.
+func (e *Engine) saying(verdict, line string) crew.CheckReason {
 	if line == "" {
-		return verdict
+		return crew.NewCheckReason(verdict)
 	}
-	return verdict + ": " + lastWords(e.scrub(line))
+	return crew.NewCheckReason(verdict + ": " + lastWords(e.scrubAndStrip(line)))
 }
 
 // maxLine bounds how much of a check's current line lastLine keeps: the end

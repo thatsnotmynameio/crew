@@ -429,7 +429,7 @@ func TestACheckReasonWithBackticksStaysInItsCodeSpan(t *testing.T) {
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
 	report := ended(crewFailed, crew.ActionStatus{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
-		Checks: []crew.CheckResult{{Name: "pr", Reason: "`gh` found no @someone **pull request**"}},
+		Checks: []crew.CheckResult{{Name: "pr", Reason: crew.NewCheckReason("`gh` found no @someone **pull request**")}},
 		Log:    ".crew/logs/issue-42-lfg.log"})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)

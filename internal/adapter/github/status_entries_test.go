@@ -93,7 +93,7 @@ func commentAfter(t *testing.T, statuses ...crew.Status) string {
 func developmentEnded() crew.Status {
 	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: "r1",
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
-			Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: "no open pull request closes #74"}},
+			Checks: []crew.CheckResult{checkResult("pr-closes-issue", false, "no open pull request closes #74")},
 			Log:    ".crew/logs/issue-74-lfg.log"}},
 		To: needsAttention, Move: crew.MoveDone, Updated: updated}
 }
