@@ -28,7 +28,7 @@ crew's GitHub failure comment put each failed action's `Reason` in a fenced code
 ## What Didn't Work
 
 - **Fencing the text.** The fence, sized longer than any backtick run in the text, stops it from rendering, linking or @-mentioning anyone. It does nothing about what the text says.
-- **Scrubbing paths.** `scrub` replaces two directory prefixes. Tokens, hostnames, file contents and command output pass through.
+- **Scrubbing paths.** At the time, `scrub` replaced two directory prefixes only. It now also redacts GitHub tokens and PEM private keys (`internal/engine/paths.go`), but hostnames, file contents, command output and any other secret still pass through.
 - Both were accepted on purpose when the comments were planned. The architecture plan settled that the failure comment carries the session's last message (`docs/plans/2026-10-01-2202-feat-crew-engine-architecture-plan.md:55`). The status-comment plan named the risk and accepted it: the fence "does not remove secrets a session prints, as is already true of the failure report" (`docs/plans/2026-10-02-0152-feat-status-comment-plan.md:178`). Those plans still read that way.
 
 ## Solution
@@ -41,7 +41,7 @@ crew: 1 action failed on #42.
 **`development`** failed. Its log is `.crew/logs/issue-42-development.log`.
 ```
 
-`renderReport` (`internal/adapter/github/report.go`) no longer reads `ActionFailure.Reason`. The reason still reaches crew's own output, where `ui/lines` prints it with the action's end, and, for a session that ran, the output in its log on the boss's machine. `TestReportFailurePointsToEachLogWithoutTheSessionsWords` asserts the exact body and that no reason string appears in it.
+`renderReport` (`internal/adapter/github/report.go`) no longer reads the reason. Since #240 it cannot: `crew.ActionFailure` has no reason field, and an outcome's reason is a `crew.SessionText` that neither the failure report nor a pull request's `RuleEnd` carries, so the compiler keeps it out. The reason still reaches crew's own output, where `ui/lines` prints it with the action's end, and, for a session that ran, the output in its log on the boss's machine. `TestReportFailurePointsToEachLogWithoutTheSessionsWords` asserts the exact body and that no reason string appears in it.
 
 ## Why This Works
 
@@ -49,7 +49,7 @@ The comment is public and the log is local. Pointing to the log gives the boss t
 
 ## Prevention
 
-- Treat harness-derived text as untrusted and possibly secret: `crew.Outcome.Reason`, `crew.ActionFailure.Reason`, and the status's `Said`. A public tracker comment points to the log instead of quoting it. This holds for every tracker adapter, not only `github`.
+- Treat harness-derived text as untrusted and possibly secret: `crew.Outcome.Reason` (a `crew.SessionText`) and the status's `Said` (a `crew.Said`). A public tracker comment points to the log instead of quoting it. This holds for every tracker adapter, not only `github`.
 - A fence or a scrub is a rendering control, not a disclosure control. Do not cite either as making session text safe to post.
 - Still open: the status comment's running line (`internal/adapter/github/status.go:215-216`, "It last said:") posts up to the last 200 characters of what the session said, with the same fence and scrub. GitHub keeps every edit of a comment in its history, so editing it later does not remove what was shown. #44 covered only the failure comment.
 - When planning new tracker output, check the plans above: they record the old acceptance and would lead a reader to copy it.
