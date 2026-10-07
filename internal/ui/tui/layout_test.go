@@ -69,7 +69,7 @@ func TestA51RowWindowShrinksEventsToTheirMinimum(t *testing.T) {
 	if rows := botsOf(t, view); len(rows) != botCardRows {
 		t.Errorf("Bots has %d rows, want its cards' %d:\n%s", len(rows), botCardRows, view)
 	}
-	contains(t, view, "listed 30 issues", "listed 29 issues", "↑↓ scroll", "+5 more")
+	contains(t, view, "listed 30 issues", "listed 29 issues", "↑↓ scroll", "+6 more")
 	if rows := eventsRows(t, view); len(rows) != minScroll {
 		t.Errorf("Events has %d rows, want %d:\n%s", len(rows), minScroll, view)
 	}
@@ -190,8 +190,7 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 
 	contains(t, view,
 		"Board ─", "Queues ─", "Events ─",
-		"⠋ code 5m", "○ check waiting",
-		"■ given up", "▲ needs attention", "✓ ready to merge", "×",
+		"⠋ code 5m", "○ check waiting", "○ idle",
 	)
 }
 
@@ -358,7 +357,7 @@ func TestOneRowShortEventsGiveUpOneRow(t *testing.T) {
 	if rows := eventsRows(t, view); len(rows) != scrollRows-1 {
 		t.Errorf("Events has %d rows, want %d:\n%s", len(rows), scrollRows-1, view)
 	}
-	contains(t, boardOf(t, view), "+5 more")
+	contains(t, boardOf(t, view), "+6 more")
 }
 
 // Covers R2 of #108: Events with fewer events than rows does not scroll.

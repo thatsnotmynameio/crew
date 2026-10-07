@@ -34,20 +34,16 @@ func rowOf(cs []card, key string) int {
 }
 
 // repaired returns s for cards (KTD5 of #151): the card of its key in its
-// column, at its row now; else the issue's Handled card, or its first
-// card in board order; else the nearest card to where it was. With no
-// selection, the first card of the first column holding cards.
+// column, at its row now; else the issue's first card in board order;
+// else the nearest card to where it was. With no selection, the first
+// card of the first column holding cards.
 func (s selection) repaired(cards []card) selection {
 	columns := byColumn(cards)
 	if row := rowOf(columns[s.column], s.key); row >= 0 {
 		s.row = row
 		return s
 	}
-	i := slices.IndexFunc(cards, func(c card) bool { return c.issue.Key == s.key && c.entry != nil })
-	if i < 0 {
-		i = slices.IndexFunc(cards, func(c card) bool { return c.issue.Key == s.key })
-	}
-	if i >= 0 {
+	if i := slices.IndexFunc(cards, func(c card) bool { return c.issue.Key == s.key }); i >= 0 {
 		c := cards[i]
 		return selection{key: s.key, column: c.column, row: rowOf(columns[c.column], s.key)}
 	}

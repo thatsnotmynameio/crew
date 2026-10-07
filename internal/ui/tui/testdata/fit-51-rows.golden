@@ -9,40 +9,40 @@ Bots ─────────────────────────
  │ ⠋ #1 implement/code +1         │
  ╰────────────────────────────────╯
 
-▸ Board ─────────────────────────────────────────────────────────────── 2 issues
- implement                  review                     Handled 10 · $70.05      
- ─────────────────────────  ─────────────────────────  ─────────────────────────
- ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
- │ ▸ #1 Add login form   │  │ #2 Fix the flaky str… │  │ #11 Parse the config… │
- │ run  ⠋ code 5m +1     │  │ run  ○ check waiting  │  │ ▲ needs attention     │
- │ bots ■ you            │  │ bots none             │  │ × lfg failed: exited… │
- │ via  default          │  │ via  clerk            │  │ implement 40m00s      │
- ╰───────────────────────╯  ╰───────────────────────╯  ╰───────────────────────╯
-                                                       ╭───────────────────────╮
-                                                       │ #12 Drop the old --d… │
-                                                       │ ▲ needs attention     │
-                                                       │ × lfg failed: prompt… │
-                                                       │ implement 1m00s       │
-                                                       ╰───────────────────────╯
-                                                       ╭───────────────────────╮
-                                                       │ #20 Success number 20 │
-                                                       │ ✓ waiting review      │
-                                                       │                       │
-                                                       │ development 40m00s    │
-                                                       ╰───────────────────────╯
-                                                       ╭───────────────────────╮
-                                                       │ #19 Success number 19 │
-                                                       │ ✓ waiting review      │
-                                                       │                       │
-                                                       │ development 39m00s    │
-                                                       ╰───────────────────────╯
-                                                       ╭───────────────────────╮
-                                                       │ #18 Success number 18 │
-                                                       │ ✓ waiting review      │
-                                                       │                       │
-                                                       │ development 38m00s    │
-                                                       ╰───────────────────────╯
-                                                       +5 more                  
+▸ Board ────────────────────────────────────────────────────────────── 12 issues
+ implement                           review                            
+ ──────────────────────────────────  ──────────────────────────────────
+ ╭────────────────────────────────╮  ╭────────────────────────────────╮
+ │ ▸ #1 Add login form            │  │ #2 Fix the flaky stream test   │
+ │ run  ⠋ code 5m · ⠋ tests 7m    │  │ run  ○ check waiting           │
+ │ bots ■ you                     │  │ bots none                      │
+ │ via  default                   │  │ via  clerk                     │
+ ╰────────────────────────────────╯  ╰────────────────────────────────╯
+                                     ╭────────────────────────────────╮
+                                     │ #11 Parse the config once      │
+                                     │ run  ○ idle                    │
+                                     │ bots none                      │
+                                     │ via  none                      │
+                                     ╰────────────────────────────────╯
+                                     ╭────────────────────────────────╮
+                                     │ #12 Drop the old --dry flag    │
+                                     │ run  ○ idle                    │
+                                     │ bots none                      │
+                                     │ via  none                      │
+                                     ╰────────────────────────────────╯
+                                     ╭────────────────────────────────╮
+                                     │ #13 Success number 13          │
+                                     │ run  ○ idle                    │
+                                     │ bots none                      │
+                                     │ via  none                      │
+                                     ╰────────────────────────────────╯
+                                     ╭────────────────────────────────╮
+                                     │ #14 Success number 14          │
+                                     │ run  ○ idle                    │
+                                     │ bots none                      │
+                                     │ via  none                      │
+                                     ╰────────────────────────────────╯
+                                     +6 more                           
 
 Queues ─── 2 of 3 busy   Events ────────────────────────── 30 events · ↑↓ scroll
  default  ■□  1/2         14:29:58 poll: listed 29 issues, took 0

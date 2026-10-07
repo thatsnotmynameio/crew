@@ -67,12 +67,19 @@ rules:
 // prompt is the implement action's prompt for the scenarios' issue.
 const prompt = `Implement "` + title + `".`
 
-// newScenario builds a screen scenario whose repository has owner as its code
-// owner, the rule's labels, and one issue titled title with the ready label.
-// It returns the scenario and the issue's number.
+// newScenario builds a screen scenario with config, the board crew draws
+// without a board key.
 func newScenario(t *testing.T) (*harness.Scenario, int) {
 	t.Helper()
-	sc := newEmptyScenario(t, config)
+	return newScenarioWith(t, config)
+}
+
+// newScenarioWith builds a screen scenario whose repository holds cfg as its
+// config, owner as its code owner, the rule's labels, and one issue titled
+// title with the ready label. It returns the scenario and the issue's number.
+func newScenarioWith(t *testing.T, cfg string) (*harness.Scenario, int) {
+	t.Helper()
+	sc := newEmptyScenario(t, cfg)
 	n := sc.GitHub.AddIssue(fakegithub.Issue{Title: title, Author: owner, Labels: []string{ready}})
 	return sc, n
 }
@@ -201,7 +208,7 @@ func nextColumn(line string, from int) int {
 }
 
 // columnGap is the fewest spaces between two column headers. One space
-// separates the words of a single header, such as "Handled 1 · $0.25".
+// separates the words of a single header, such as "Not on board".
 const columnGap = 2
 
 // cells is the text of line from the cell start up to, not including, the
@@ -219,4 +226,119 @@ func cell(line, text string) int {
 		return -1
 	}
 	return len([]rune(before))
+}
+
+// hasColumn reports whether the board draws a column titled header.
+func hasColumn(screen, header string) bool {
+	_, found := columnCards(screen, header)
+	return found
+}
+
+// headerBefore reports whether the board's header row draws the column first
+// left of the column second.
+func headerBefore(screen, first, second string) bool {
+	lines := strings.Split(screen, "\n")
+	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
+	if board < 0 {
+		return false
+	}
+	for _, line := range lines[board+1:] {
+		if isSection(line, "Queues") || isSection(line, "Events") {
+			return false
+		}
+		if a, b := cell(line, first), cell(line, second); a >= 0 && b >= 0 {
+			return a < b
+		}
+	}
+	return false
+}
+
+// eventsTitle matches the row that opens the Events section, which may share
+// its row with the Queues section on its left.
+var eventsTitle = regexp.MustCompile(`(^|[\s▸])Events(\s|$)`)
+
+// inEvents reports whether one row of the Events section holds every one of
+// wants, ignoring case. It reads only the rows under the Events title that
+// follows the board, and in them only the cells from the title's first cell
+// on, so neither a card nor the Queues section beside Events counts.
+func inEvents(screen string, wants ...string) bool {
+	lines := strings.Split(screen, "\n")
+	title, start := eventsTitleCell(lines)
+	if title < 0 {
+		return false
+	}
+	for _, line := range lines[title+1:] {
+		row := strings.ToLower(cells(line, start, math.MaxInt))
+		if !slices.ContainsFunc(wants, func(want string) bool { return !strings.Contains(row, strings.ToLower(want)) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// eventsTitleCell returns the row of the Events title that follows the board
+// in lines, and the cell where that title starts; the row is -1 when there is
+// none.
+func eventsTitleCell(lines []string) (int, int) {
+	board := slices.IndexFunc(lines, func(line string) bool { return isSection(line, "Board") })
+	if board < 0 {
+		return -1, 0
+	}
+	title := slices.IndexFunc(lines[board:], eventsTitle.MatchString)
+	if title < 0 {
+		return -1, 0
+	}
+	return board + title, cell(lines[board+title], "Events")
+}
+
+// reportedEvent and movedEvent are the two events a failed rule records for
+// the scenarios' issue: crew reports the failure and moves the issue to the
+// failure label at once, and Events lists each when it is done, so they come
+// in either order.
+const (
+	reportedEvent = "reported the failure on #1"
+	movedEvent    = "#1 moved from " + running + " to " + failure
+)
+
+// failureEventsInOrder is screen with the Events rows of reportedEvent and
+// movedEvent, when movedEvent comes right before reportedEvent, swapped into
+// the order reportedEvent, movedEvent, so a snapshot does not pin an order
+// the README leaves open. Only the Events cells of the two rows swap: the
+// Queues section beside them stays as it is.
+func failureEventsInOrder(screen string) string {
+	lines := strings.Split(screen, "\n")
+	title, start := eventsTitleCell(lines)
+	if title < 0 {
+		return screen
+	}
+	for row := title + 1; row+1 < len(lines); row++ {
+		moved, reported := []rune(lines[row]), []rune(lines[row+1])
+		if !strings.Contains(lines[row], movedEvent) || !strings.Contains(lines[row+1], reportedEvent) ||
+			len(moved) < start || len(reported) < start {
+			continue
+		}
+		lines[row] = string(moved[:start]) + string(reported[start:])
+		lines[row+1] = string(reported[:start]) + string(moved[start:])
+		row++
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wantOneFrame fails the test unless the screen draws the view's header and
+// its Bots section once each: rows a previous frame left behind, such as a
+// second header above the view, are not part of the live view.
+func wantOneFrame(t *testing.T, text string) {
+	t.Helper()
+	headers, bots := 0, 0
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.HasPrefix(line, "crew ") && strings.Contains(line, harness.RepositoryName) {
+			headers++
+		}
+		if isSection(line, "Bots") {
+			bots++
+		}
+	}
+	if headers != 1 || bots != 1 {
+		t.Errorf("the screen draws %d headers and %d Bots sections, not one of each:\n%s", headers, bots, text)
+	}
 }

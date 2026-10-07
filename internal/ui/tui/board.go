@@ -23,26 +23,24 @@ const (
 
 // card is an item on the board, in a column whose labels it carries and
 // that shows its kind, held by crew or not (KTD9, KTD10), or an issue in
-// the Not on board or Handled column (KTD3, KTD13 of #151).
+// the Not on board column (KTD13 of #151).
 type card struct {
 	issue crew.Issue
 	// column is the card's column: an index into the board's columns,
-	// then Not on board's, then Handled's.
+	// then Not on board's.
 	column int
 	// held is set while crew holds the item, with view its issue's view;
 	// the zero view's claim is ClaimTaking, so view alone cannot tell.
 	held bool
 	view core.IssueView
-	// entry is the Handled entry a card of the Handled column shows; nil
-	// on a live card.
-	entry *core.HandledView
 }
 
 // cards returns a card in each column whose labels an item of the board
 // carries and that shows its kind, item by item in the board's order,
-// oldest first (R7, KTD6, R23), then the Not on board and Handled cards
-// (KTD3, KTD13 of #151). A card of an item crew holds carries its issue's
-// view (R10, KTD9); no card waits for the next rule (R28).
+// oldest first (R7, KTD6, R23), then the Not on board cards (KTD13 of
+// #151). A card of an item crew holds carries its issue's view (R10,
+// KTD9); no card waits for the next rule (R28), and an issue whose rule
+// ended has only the cards its labels give it (R7 of #230).
 func (m Model) cards() []card {
 	views := map[string]core.IssueView{}
 	for _, iv := range m.snap.Issues {
@@ -58,14 +56,12 @@ func (m Model) cards() []card {
 			}
 		}
 	}
-	out = append(out, m.unboardedCards(out)...)
-	return append(out, m.handledCards()...)
+	return append(out, m.unboardedCards(out)...)
 }
 
-// notOnBoard and handledColumn are the indexes of the columns the TUI adds
-// after the configured ones (KTD3, KTD13 of #151).
-func (m Model) notOnBoard() int    { return len(m.cfg.Board) }
-func (m Model) handledColumn() int { return len(m.cfg.Board) + 1 }
+// notOnBoard is the index of the column the TUI adds after the configured
+// ones (KTD13 of #151).
+func (m Model) notOnBoard() int { return len(m.cfg.Board) }
 
 // unboardedCards are a live card in the Not on board column for each
 // issue crew holds that has none in boarded, the cards of the configured
@@ -81,17 +77,6 @@ func (m Model) unboardedCards(boarded []card) []card {
 		if !shown[iv.Issue.Key] && len(iv.Actions) > 0 {
 			out = append(out, card{issue: iv.Issue, column: m.notOnBoard(), held: true, view: iv})
 		}
-	}
-	return out
-}
-
-// handledCards are a card in the Handled column for each issue crew
-// stopped handling, those that need you first (R8, KTD3 of #151).
-func (m Model) handledCards() []card {
-	entries := byAttention(m.snap.Handled)
-	out := make([]card, 0, len(entries))
-	for i := range entries {
-		out = append(out, card{issue: entries[i].Issue, column: m.handledColumn(), entry: &entries[i]})
 	}
 	return out
 }
@@ -138,21 +123,20 @@ func layout(shown []int, held map[int]bool, avail, offset int) boardLayout {
 }
 
 // boardLayout lays out the board for the current snapshot and window: the
-// configured columns, Not on board while it holds cards, then Handled
-// (KTD3, KTD13 of #151).
+// configured columns, then Not on board while it holds cards (KTD13 of
+// #151).
 func (m Model) boardLayout(cards []card) boardLayout {
 	held := map[int]bool{}
 	for _, c := range cards {
 		held[c.column] = true
 	}
-	columns := make([]int, 0, m.handledColumn()+1)
+	columns := make([]int, 0, m.notOnBoard()+1)
 	for i := range m.cfg.Board {
 		columns = append(columns, i)
 	}
 	if held[m.notOnBoard()] {
 		columns = append(columns, m.notOnBoard())
 	}
-	columns = append(columns, m.handledColumn())
 	return layout(columns, held, m.width-1, m.boardOffset)
 }
 
@@ -264,15 +248,11 @@ func (m Model) columnNames(l boardLayout, byColumn [][]card) []string {
 	return names
 }
 
-// columnName is column c's name in st: a configured column's, Not on
-// board, or Handled with its count and the run's cost after it, muted
-// (R8, KTD3, KTD13 of #151).
+// columnName is column c's name in st: a configured column's, or Not on
+// board (KTD13 of #151).
 func (m Model) columnName(c int, st lipgloss.Style) string {
-	switch c {
-	case m.notOnBoard():
+	if c == m.notOnBoard() {
 		return st.Render("Not on board")
-	case m.handledColumn():
-		return st.Render("Handled") + " " + m.styles.muted.Render(m.handledSummary())
 	}
 	return st.Render(m.cfg.Board[c].Name)
 }

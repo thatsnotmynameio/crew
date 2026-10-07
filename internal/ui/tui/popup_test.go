@@ -139,26 +139,23 @@ func TestAE4EnterOpensTheHighlightedCardsPopupAndArrowsWalkTheCards(t *testing.T
 }
 
 // Covers KTD12 of #151: in the popup ←→ walk every card in board order,
-// down each column and on to the next, the Handled column last, and stop
-// at the first and last card.
+// down each column and on to the next, and stop at the first and last
+// card.
 func TestThePopupWalksTheCardsInBoardOrderAndStopsAtTheEnds(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(handledSnapshot()))
 	h.send(enterKey)
 
-	titles := make([]string, 0, 8)
-	for range 8 {
+	titles := make([]string, 0, 5)
+	for range 5 {
 		ref, _, _ := strings.Cut(popupRows(t, h)[0], " ")
 		titles = append(titles, ref)
 		h.send(rightKey)
 	}
-	if want := []string{"#1", "#2", "#7", "#6", "#5", "#8", "#7", "#7"}; !slices.Equal(titles, want) {
+	if want := []string{"#1", "#2", "#7", "#7", "#7"}; !slices.Equal(titles, want) {
 		t.Errorf("→ walked %q, want %q", titles, want)
 	}
-	if sel := h.current().sel; sel.column != h.current().handledColumn() {
-		t.Errorf("the last card walked to is in column %d, want Handled", sel.column)
-	}
-	for range 8 {
+	for range 5 {
 		h.send(leftKey)
 	}
 	if got := popupRows(t, h)[0]; got != "#1 Add login form" {
@@ -291,10 +288,11 @@ func TestAE5AHeldIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
 	}
 }
 
-// Covers R3 and KTD3 of #229: a Handled card keeps the issue as core took
-// it, unblocked, while the same issue on the board is blocked; its popup
-// shows the blocked chip.
-func TestAHandledCardOfAnIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
+// Covers R3 and KTD3 of #229: core keeps an issue whose rule ended as it
+// took it, unblocked, while the same issue on the board is blocked; its
+// card stays in its label's column (#230) and its popup shows the blocked
+// chip.
+func TestAnIssueWhoseRuleEndedAndIsBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("22", "bug"))))
 	h.send(downKey)
@@ -303,14 +301,10 @@ func TestAHandledCardOfAnIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T)
 	blocked.Issue.Blocked = true
 	u := handledBy(crew.Issue{Key: "22", Ref: "#22", Title: "Bug"}, "fix", "crew:triage:done")
 	h.send(updateMsg(onBoard(u, item("20", "bug"), blocked)))
-	wantLit(t, h, "#22", 3)
+	wantLit(t, h, "#22", 2)
 	h.send(enterKey)
 
-	rows := popupRows(t, h)
-	if got := field(t, rows, "rule"); got != "fix" {
-		t.Fatalf("rule = %q, want the Handled card's fix", got)
-	}
-	if got := strings.Fields(field(t, rows, "labels")); !slices.Contains(got, "blocked") {
+	if got := strings.Fields(field(t, popupRows(t, h), "labels")); !slices.Contains(got, "blocked") {
 		t.Errorf("labels = %q, want a blocked chip", got)
 	}
 }
@@ -460,50 +454,26 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 	}
 }
 
-// handledFive is #5 needing attention: tests failed, after a session that
-// opened #47, code failed with no session, and docs had no session. An
-// earlier rule spent $2.00 on it this run.
-func handledFive() core.HandledView {
-	e := acted(failedEntry("5", "Parse the config once", 40, 30,
-		"tests", "exited 1: tests fail", "code", "prompt did not render"),
-		core.HandledAction{Name: "tests", Spend: spent(0.84, 1_200_000), PullRequest: found("#47")},
-		core.HandledAction{Name: "code"},
-		core.HandledAction{Name: "docs"})
-	e.Earlier = spent(2, 300_000)
-	return e
-}
-
-// Covers AE7, R20 and KTD8, KTD14 of #151: a Handled card's popup lists
-// each failed action's reason, the issue's cost this run once, its
-// rules' together, and the pull request each action opened.
-func TestAE7AHandledPopupListsItsReasonsCostAndPullRequests(t *testing.T) {
+// Covers R10 of #230: the popup of an issue whose rule ended this run
+// shows no cost and no pull request, only what any card's popup shows.
+func TestThePopupOfAHandledIssueShowsNoCostNorPullRequests(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(handling(handledFive())))
+	h.send(updateMsg(handledSnapshot()))
+	h.send(rightKey)
+	h.send(downKey)
 	h.send(enterKey)
 
 	rows := popupRows(t, h)
-	if got := field(t, rows, "rule"); got != "implement" {
-		t.Errorf("rule = %q, want implement", got)
+	if rows[0] != "#7 Log the poll interval" {
+		t.Fatalf("the popup is %q's, want #7's", rows[0])
 	}
-	if got := field(t, rows, "labels"); got != "needs attention" {
-		t.Errorf("labels = %q, want the state it moved to", got)
+	text := strings.Join(rows, "\n")
+	if strings.Contains(text, "$") || strings.Contains(text, "pull request") || strings.Contains(text, "#45") {
+		t.Errorf("#7's popup shows a cost or a pull request:\n%s", text)
 	}
-	if got := field(t, rows, "cost"); !strings.HasPrefix(got, "$2.84") {
-		t.Errorf("cost = %q, want both rules' $2.84", got)
+	if i := slices.IndexFunc(words(rows), func(r string) bool { return strings.HasPrefix(r, "cost ") }); i >= 0 {
+		t.Errorf("#7's popup has a cost row %q", rows[i])
 	}
-	if n := strings.Count(strings.Join(rows, "\n"), "$"); n != 1 {
-		t.Errorf("the popup shows %d costs, want the issue's once", n)
-	}
-	hasRow(t, rows, "action bot queue state branch pull request")
-	for _, want := range []struct{ row, under string }{
-		{"tests default failed #47", "└ exited 1: tests fail"},
-		{"code default failed", "└ prompt did not render"},
-	} {
-		if i := hasRow(t, rows, want.row); i >= 0 && words(rows)[i+1] != want.under {
-			t.Errorf("under %q is %q, want %q", want.row, rows[i+1], want.under)
-		}
-	}
-	hasRow(t, rows, "docs default no session")
 }
 
 // Covers KTD8 of #151: a message longer than the popup's inner width
@@ -541,42 +511,38 @@ func TestALongMessageWrapsInsideThePopup(t *testing.T) {
 	}
 }
 
-// Covers AE6 and R21 of #151: an open popup follows its issue into the
-// Handled column when its rule fails, and closes when its issue leaves
-// the board, the highlight moving to the nearest card.
+// Covers AE6 and R21 of #151, and R7 of #230: an open popup follows its
+// issue into the column its labels put it in when its rule fails, and
+// closes when its issue leaves the board, the highlight moving to the
+// nearest card.
 func TestAE6ThePopupFollowsItsIssueAndClosesWhenItLeaves(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(runningSnapshot()))
 	h.send(enterKey)
 
 	failed := runningSnapshot()
-	failed.Snapshot.Issues, failed.Snapshot.Board = failed.Snapshot.Issues[1:], failed.Snapshot.Board[1:]
+	failed.Snapshot.Issues = failed.Snapshot.Issues[1:]
+	failed.Snapshot.Board[0].Labels = []string{"ready to review"}
 	failed.Snapshot.Handled = []core.HandledView{failedEntry("1", "Add login form", 10, 0, "code", "exited 1")}
 	h.send(updateMsg(failed))
 	if got := popupRows(t, h)[0]; got != "#1 Add login form" {
 		t.Fatalf("after #1 failed the popup shows %q, want #1's", got)
 	}
-	if sel := h.current().sel; sel.key != "1" || sel.column != h.current().handledColumn() {
-		t.Errorf("the highlight is on %q in column %d, want #1's Handled card", sel.key, sel.column)
-	}
-	if got := field(t, popupRows(t, h), "cost"); got != "none" {
-		t.Errorf("the popup now shows #1's Handled cost %q, want none", got)
-	}
 
 	h.send(escKey)
-	wantLit(t, h, "#1", 2)
-	h.send(leftKey)
+	wantLit(t, h, "#1", 1)
+	h.send(downKey)
 	h.send(enterKey)
 	if got := popupRows(t, h)[0]; got != "#2 Fix the flaky stream test" {
 		t.Fatalf("the popup shows %q, want #2's", got)
 	}
 	left := failed
-	left.Snapshot.Issues, left.Snapshot.Board = nil, nil
+	left.Snapshot.Issues, left.Snapshot.Board = nil, left.Snapshot.Board[:1]
 	h.send(updateMsg(left))
 	if popupShows(h) {
 		t.Errorf("#2 left the board and its popup stayed open:\n%s", h.view())
 	}
-	wantLit(t, h, "#1", 2)
+	wantLit(t, h, "#1", 1)
 }
 
 // Covers R13 and KTD7 of #151: the popup is centred over the view drawn
