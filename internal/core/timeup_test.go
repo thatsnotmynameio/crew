@@ -90,8 +90,8 @@ func TestATakeInFlightWhenTimeIsUpStartsItsActions(t *testing.T) {
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, take, "42"), Result: core.ResultDone})
 	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i42, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i42, Action: "development"},
+		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "acceptance"},
+		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "development"},
 	)
 }
 
@@ -112,8 +112,8 @@ func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenRuns(t *testing.T) {
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, retry, "42"), Result: core.ResultDone})
 	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i42, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i42, Action: "development"},
+		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "acceptance"},
+		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "development"},
 	)
 }
 
@@ -153,8 +153,8 @@ func TestAE4AStopWhileWindingDownStopsRunningSessionsAsUsual(t *testing.T) {
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds,
-		core.StopSession{IssueID: issueID("42"), Action: "acceptance"},
-		core.StopSession{IssueID: issueID("42"), Action: "development"},
+		core.StopSession{IssueID: issueID("42"), Run: d.run(issueID("42")), Action: "acceptance"},
+		core.StopSession{IssueID: issueID("42"), Run: d.run(issueID("42")), Action: "development"},
 	)
 	if !d.m.View().Stopping {
 		t.Fatal("the view does not say a stop was requested")

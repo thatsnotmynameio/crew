@@ -81,7 +81,8 @@ func parsedPrompt(action crew.ActionName, text string) crew.Prompt {
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
 
-// space is the workspace an engine would create for key and action.
+// space is the workspace an engine would create for key and action. It
+// names no run: the driver fills in the run that holds the issue.
 func space(key string, action crew.ActionName) core.WorkspaceReady {
 	name := "issue-" + key + "-" + string(action)
 	return core.WorkspaceReady{
@@ -117,7 +118,11 @@ func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 	return &driver{t: t, m: core.New(rules, maxParallel), now: t0}
 }
 
+// send stamps in and feeds it to the model. A run input, or a said of a
+// tick, that names no run is filled in with the last run that took its
+// issue, the run whose command an engine's answer would carry.
 func (d *driver) send(in core.Input) ([]core.Command, []core.Published) {
+	in = d.named(in)
 	d.now = d.now.Add(time.Second)
 	d.inputs++
 	stamp := seed(d.inputs)
@@ -127,6 +132,61 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Published) {
 	cmds, events := d.m.Update(in.Stamped(d.now, stamp))
 	d.events = append(d.events, events...)
 	return cmds, events
+}
+
+// run returns the id of the last run that took the issue identified by id,
+// as its published take named it; empty when no run took it.
+func (d *driver) run(id crew.IssueID) crew.RuleRunID {
+	for _, e := range slices.Backward(d.events) {
+		if taken, ok := e.(crew.RunTaken); ok && taken.IssueID == id {
+			return taken.Run
+		}
+	}
+	return ""
+}
+
+// named returns in with its run filled in, when it names none, as send
+// does.
+func (d *driver) named(in core.Input) core.Input {
+	fill := func(run *crew.RuleRunID, id crew.IssueID) {
+		if *run == "" {
+			*run = d.run(id)
+		}
+	}
+	switch in := in.(type) {
+	case core.WorkspaceReady:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.WorkspaceGone:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.WorkspaceFailed:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.SessionStarted:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.SessionFailedToStart:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.SessionEnded:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.CheckEnded:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.PullRequestFound:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.Tick:
+		in.Said = slices.Clone(in.Said)
+		for i := range in.Said {
+			fill(&in.Said[i].Run, in.Said[i].IssueID)
+		}
+		return in
+	case core.SchedulerInput:
+	}
+	return in
 }
 
 // wantReason fails the test unless the last ActionEnded of action on issue
@@ -158,9 +218,14 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ReportFailure:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
-				out, _ = d.send(space(c.Issue.ID().Key, c.Action))
+				ready := space(c.Issue.ID().Key, c.Action)
+				ready.Run = c.Run
+				out, _ = d.send(ready)
 			case core.StartSession:
-				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Action: c.Action})
+				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
+			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
+				core.RecordRun, core.StopSession, core.RunCheck, core.FindPullRequest, core.StopCheck:
+				// Left unanswered.
 			}
 			next = append(next, out...)
 		}
@@ -189,16 +254,18 @@ func (d *driver) running(issues ...crew.Issue) {
 func noIDs(cmds []core.Command) []core.Command {
 	out := make([]core.Command, 0, len(cmds))
 	for _, c := range cmds {
-		switch c := c.(type) {
+		switch call := c.(type) {
 		case core.Move:
-			c.ID = 0
-			out = append(out, c)
+			call.ID = 0
+			c = call
 		case core.ReportFailure:
-			c.ID = 0
-			out = append(out, c)
-		default:
-			out = append(out, c)
+			call.ID = 0
+			c = call
+		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
+			core.ReopenWorkspace, core.RecordRun, core.StartSession, core.StopSession, core.RunCheck,
+			core.FindPullRequest, core.StopCheck:
 		}
+		out = append(out, c)
 	}
 	return out
 }
@@ -348,6 +415,8 @@ func issueKey(c core.Command) string {
 		return c.IssueID.Key
 	case core.StopSession:
 		return c.IssueID.Key
+	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
+		core.RecordRun, core.RunCheck, core.FindPullRequest, core.StopCheck:
 	}
 	return ""
 }

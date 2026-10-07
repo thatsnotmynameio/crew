@@ -54,8 +54,8 @@ func TestAE2ATakeOwedTwiceStartsItsActionsOnceItLands(t *testing.T) {
 	cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	wantEvents(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
 	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i1, Action: "development"},
+		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "acceptance"},
+		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "development"},
 	)
 	wantClaim(t, d.m, "1", core.ClaimRunning)
 	wantOwed(t, d.m)
@@ -140,8 +140,8 @@ func TestAStopTriesOwedCallsAndStopsSessionsInTakenOrder(t *testing.T) {
 	cmds, _ = d.send(core.StopRequested{})
 	wantCommands(t, cmds,
 		core.Move{IssueID: issueID("1"), From: ready, To: inProgress},
-		core.StopSession{IssueID: issueID("2"), Action: "acceptance"},
-		core.StopSession{IssueID: issueID("2"), Action: "development"},
+		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "acceptance"},
+		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "development"},
 	)
 	wantClaim(t, d.m, "1", core.ClaimOwed)
 	wantClaim(t, d.m, "2", core.ClaimStopping)

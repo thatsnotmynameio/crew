@@ -19,12 +19,14 @@ func checked() []crew.Rule {
 	return w
 }
 
-// runCheck is the RunCheck the development action of issue 74 asks for.
-func runCheck() core.RunCheck {
+// runCheck is the RunCheck the development action of issue 74 asks for, in
+// its last run.
+func (d *driver) runCheck() core.RunCheck {
 	const key = "74"
 	ws := space(key, "development")
 	return core.RunCheck{
-		IssueID: issueID(key), Action: "development", Dir: ws.Dir, Name: "pr-closes-issue", Command: prCheck, Log: ws.Log,
+		IssueID: issueID(key), Run: d.run(issueID(key)), Action: "development", Dir: ws.Dir, Name: "pr-closes-issue",
+		Command: prCheck, Log: ws.Log,
 		IssueRef: "#" + key, IssueURL: "https://example.com/issues/" + key, Branch: ws.Branch,
 		Prompt: "Implement development for issue #" + key,
 	}
@@ -37,7 +39,7 @@ func checking(d *driver, acceptance crew.Outcome) {
 	d.running(issue("74", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: acceptance})
 	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	wantCommands(d.t, cmds, runCheck())
+	wantCommands(d.t, cmds, d.runCheck())
 }
 
 // failures returns the failure report in cmds.
@@ -111,18 +113,18 @@ func TestSessionAndCheckCarryTheActionsBot(t *testing.T) {
 	cmds, _ := d.poll(issue("74", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 
-	acceptance := session("74", "acceptance", "Implement test acceptance for issue #74")
+	acceptance := d.session("74", "acceptance", "Implement test acceptance for issue #74")
 	acceptance.Bot = "ops"
 	cmds, _ = d.send(space("74", "acceptance"))
 	wantCommands(t, cmds, acceptance)
-	development := session("74", "development", "Implement development for issue #74")
+	development := d.session("74", "development", "Implement development for issue #74")
 	development.Bot = "developer"
 	cmds, _ = d.send(space("74", "development"))
 	wantCommands(t, cmds, development)
 
 	d.send(core.SessionStarted{IssueID: issueID("74"), Action: "development"})
 	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	check := runCheck()
+	check := d.runCheck()
 	check.Bot = "developer"
 	wantCommands(t, cmds, check)
 }
@@ -156,7 +158,7 @@ func TestAE9StopWhileCheckingStopsTheCheckAndFailsTheAction(t *testing.T) {
 	checking(d, succeeded)
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Action: "development"})
+	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Run: d.run(issueID("74")), Action: "development"})
 
 	// Even a check that passed just as it was stopped counts as stopped.
 	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})

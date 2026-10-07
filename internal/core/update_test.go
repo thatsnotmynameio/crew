@@ -32,8 +32,8 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	for _, it := range []crew.Issue{i1, i2} {
 		created, events := d.send(core.CallResult{ID: moveID(t, cmds, it.ID().Key), Result: core.ResultDone})
 		wantCommands(t, created,
-			core.CreateWorkspace{Issue: it, Action: "acceptance"},
-			core.CreateWorkspace{Issue: it, Action: "development"},
+			core.CreateWorkspace{Issue: it, Run: d.run(it.ID()), Action: "acceptance"},
+			core.CreateWorkspace{Issue: it, Run: d.run(it.ID()), Action: "development"},
 		)
 		hasEvent(t, events, crew.TakeMoved{EventHead: d.runHead(it.ID().Key), From: ready, To: inProgress})
 		all = append(all, created...)
@@ -41,10 +41,10 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 
 	sessions := d.workspacesReady("1", "2")
 	wantCommands(t, sessions,
-		session("1", "acceptance", "Implement test acceptance for issue #1"),
-		session("1", "development", "Implement development for issue #1"),
-		session("2", "acceptance", "Implement test acceptance for issue #2"),
-		session("2", "development", "Implement development for issue #2"),
+		d.session("1", "acceptance", "Implement test acceptance for issue #1"),
+		d.session("1", "development", "Implement development for issue #1"),
+		d.session("2", "acceptance", "Implement test acceptance for issue #2"),
+		d.session("2", "development", "Implement development for issue #2"),
 	)
 
 	// #3 waits: no command concerns it and the core does not hold it.
@@ -71,11 +71,12 @@ func (d *driver) workspacesReady(keys ...string) []core.Command {
 }
 
 // session is the StartSession for prompt in the workspace space gives key
-// and action.
-func session(key string, action crew.ActionName, prompt string) core.StartSession {
+// and action, in the last run of key.
+func (d *driver) session(key string, action crew.ActionName, prompt string) core.StartSession {
 	return core.StartSession{
-		IssueID: issueID(key), Action: action, Dir: "/repo/.crew/worktrees/issue-" + key + "-" + string(action),
-		Prompt: prompt, Log: ".crew/logs/issue-" + key + "-" + string(action) + ".log",
+		IssueID: issueID(key), Run: d.run(issueID(key)), Action: action,
+		Dir: "/repo/.crew/worktrees/issue-" + key + "-" + string(action), Prompt: prompt,
+		Log: ".crew/logs/issue-" + key + "-" + string(action) + ".log",
 	}
 }
 
@@ -88,8 +89,8 @@ func TestEverySessionStartsOnItsActionsAgent(t *testing.T) {
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
 	d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 
-	acceptance, development := session("1", "acceptance", "Implement test acceptance for issue #1"),
-		session("1", "development", "Implement development for issue #1")
+	acceptance, development := d.session("1", "acceptance", "Implement test acceptance for issue #1"),
+		d.session("1", "development", "Implement development for issue #1")
 	acceptance.Agent, development.Agent = "tester", "developer"
 	wantCommands(t, d.workspacesReady("1"), acceptance, development)
 }
@@ -260,8 +261,9 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 			wantCommands(t, tt.fail(d))
 			cmds, _ = d.send(space("1", "development"))
 			wantCommands(t, cmds, core.StartSession{
-				IssueID: issueID("1"), Action: "development", Dir: "/repo/.crew/worktrees/issue-1-development",
-				Prompt: "Implement development for issue #1", Log: ".crew/logs/issue-1-development.log",
+				IssueID: issueID("1"), Run: d.run(issueID("1")), Action: "development",
+				Dir: "/repo/.crew/worktrees/issue-1-development", Prompt: "Implement development for issue #1",
+				Log: ".crew/logs/issue-1-development.log",
 			})
 			d.send(core.SessionStarted{IssueID: issueID("1"), Action: "development"})
 
@@ -285,7 +287,9 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	cmds, _ := d.poll(issue("1", 1, ready))
 
 	cmds, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
+	wantCommands(t, cmds, core.CreateWorkspace{
+		Issue: issue("1", 1, ready), Run: d.run(issueID("1")), Action: "development",
+	})
 	for _, e := range events {
 		if ended, ok := e.(crew.ActionEnded); ok && ended.Action == "acceptance" {
 			outcome := ended.End.Outcome()

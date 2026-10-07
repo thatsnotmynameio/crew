@@ -12,12 +12,15 @@ import (
 // Update applies in to the model and returns the commands to run and the
 // events to publish, in order. It is deterministic: the same model
 // and input always give the same result. Inputs that answer nothing the
-// core is waiting for, such as a result for a released issue, change
+// core is waiting for, such as a result for a released run, change
 // nothing.
 func (m *Model) Update(in Input) ([]Command, []Published) {
 	s := &step{m: m, at: in.arrival()}
-	if !s.runInput(in) {
-		s.actionInput(in)
+	switch in := in.(type) {
+	case RunInput:
+		s.runInput(in)
+	case SchedulerInput:
+		s.schedulerInput(in)
 	}
 	s.windDown()
 	if m.Stopped() && !m.stopped {
@@ -27,9 +30,10 @@ func (m *Model) Update(in Input) ([]Command, []Published) {
 	return s.cmds, s.events
 }
 
-// runInput applies an input about the run as a whole or its tracker calls,
-// and reports whether in was one.
-func (s *step) runInput(in Input) bool {
+// schedulerInput applies an input about what spans rule runs: a tick, a
+// stop, the run time, a listing, a board read, the bots, or a tracker
+// write's or a record's result.
+func (s *step) schedulerInput(in SchedulerInput) {
 	switch in := in.(type) {
 	case Tick:
 		s.tick(in.Said)
@@ -62,10 +66,7 @@ func (s *step) runInput(in Input) bool {
 		s.emit(RunNotRecorded{
 			At: s.at, IssueID: r.IssueID, IssueRef: r.IssueRef, Rule: r.Rule, Action: r.Action, Reason: in.Reason,
 		})
-	default:
-		return false
 	}
-	return true
 }
 
 // step is one Update in progress: the input's time and what it produced.
@@ -95,7 +96,7 @@ func (s *step) tick(said []Said) {
 		return
 	}
 	for _, x := range said {
-		if h := m.held(x.IssueID); h != nil {
+		if h := m.heldRun(x.Run); h != nil {
 			h.said(x.Action, x.Text)
 		}
 	}
@@ -343,6 +344,17 @@ func (m *Model) busy(q int) int {
 		}
 	}
 	return held
+}
+
+// heldRun returns the held issue whose rule run is identified by id, or
+// nil.
+func (m *Model) heldRun(id crew.RuleRunID) *heldIssue {
+	for _, h := range m.issues {
+		if h.run.ID() == id {
+			return h
+		}
+	}
+	return nil
 }
 
 // held returns the held issue identified by id, or nil.

@@ -8,9 +8,33 @@ import (
 
 // Command is a side effect the core asks the engine to run through a port.
 // The engine runs each command and feeds its result back as an Input. The
-// set of commands is closed: only this package's types implement Command.
+// set of commands is closed: only this package's types implement Command,
+// each either a TrackerCommand or a RunCommand.
+//
+//sumtype:decl
 type Command interface {
 	command()
+}
+
+// TrackerCommand is a command to the tracker that no one rule run's
+// session or checks own: a listing, a board read, or a write the outbox
+// delivers (KTD8). Its result finds what asked by its CallID or its issue.
+//
+//sumtype:decl
+type TrackerCommand interface {
+	Command
+	trackerCommand()
+}
+
+// RunCommand is a command about one rule run: its actions' workspaces,
+// sessions, checks and pull request lookups, which carry the run's id so
+// their results reach that run only (KTD7), and the record of its runs in
+// the journal.
+//
+//sumtype:decl
+type RunCommand interface {
+	Command
+	runCommand()
 }
 
 // CallID identifies one tracker call, a Move or a ReportFailure, so its
@@ -54,20 +78,24 @@ type ReportFailure struct {
 	Report crew.FailureReport
 }
 
-// CreateWorkspace asks for a new workspace for Action on Issue. Its result
-// is WorkspaceReady or WorkspaceFailed, carrying Issue.ID() and Action.
+// CreateWorkspace asks for a new workspace for Action of the rule run Run
+// on Issue. Its result is WorkspaceReady or WorkspaceFailed, carrying
+// Issue.ID(), Run and Action.
 type CreateWorkspace struct {
 	Issue  crew.Issue
+	Run    crew.RuleRunID
 	Action crew.ActionName
 }
 
-// ReopenWorkspace asks to reopen the workspace a failed run of Action on
-// the issue left, named Workspace, on Branch, as recorded. Its result is
+// ReopenWorkspace asks to reopen, for Action of the rule run Run, the
+// workspace a failed run of Action on the issue left, named Workspace, on
+// Branch, as recorded. Its result, carrying Run and Action, is
 // WorkspaceReady with Resumed set, WorkspaceGone when the workspace no
 // longer exists, or WorkspaceFailed. The core asks only when the workspace
 // can reopen (Reopening).
 type ReopenWorkspace struct {
 	IssueID   crew.IssueID
+	Run       crew.RuleRunID
 	Action    crew.ActionName
 	Workspace crew.WorkspaceName
 	Branch    string
@@ -81,16 +109,18 @@ type RecordRun struct {
 	Record RunRecord
 }
 
-// StartSession asks the harness to start a session in Dir with Prompt, its
-// output going to the log file at Log (repository-relative, as received in
-// WorkspaceReady). Its result is SessionStarted or SessionFailedToStart,
-// then SessionEnded once a started session ends. Resumed is set when the
+// StartSession asks the harness to start the session of Action of the rule
+// run Run in Dir with Prompt, its output going to the log file at Log
+// (repository-relative, as received in WorkspaceReady). Its result is
+// SessionStarted or SessionFailedToStart, then SessionEnded once a started
+// session ends, each carrying Run and Action. Resumed is set when the
 // session continues a failed run in its reopened workspace, so the engine
 // marks in the log where the new session starts. Agent is the action's
 // agent, whose harness runs the session. Bot is the action's bot, whom the
 // session acts as on the tracker; empty means you.
 type StartSession struct {
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	Dir     string
 	Prompt  string
@@ -100,10 +130,12 @@ type StartSession struct {
 	Bot     crew.BotName
 }
 
-// StopSession asks the engine to stop the running session of Action on the
-// issue. The session's end still arrives as SessionEnded.
+// StopSession asks the engine to stop the running session of Action of the
+// rule run Run on the issue. The session's end still arrives as
+// SessionEnded.
 type StopSession struct {
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 }
 
@@ -113,9 +145,11 @@ type StopSession struct {
 // action's Branch, the Prompt its session started with and the session's
 // LastMessage reach the command as environment variables and files, never
 // as part of it. Bot is the action's bot, whom the check acts as on the
-// tracker; empty means you. Its result is CheckEnded.
+// tracker; empty means you. Its result is CheckEnded, carrying Run, the
+// action's rule run, and Action.
 type RunCheck struct {
 	IssueID     crew.IssueID
+	Run         crew.RuleRunID
 	Action      crew.ActionName
 	Dir         string
 	Name        crew.CheckName
@@ -132,19 +166,22 @@ type RunCheck struct {
 // FindPullRequest asks the tracker for the pull request opened from Branch
 // once Action's session on the issue ended: an open one, or a closed or
 // merged one created at or after Since, which is zero for a resumed
-// workspace (KTD6). Its result is PullRequestFound. The core asks only when
-// the tracker can find pull requests (FindingPullRequests).
+// workspace (KTD6). Its result is PullRequestFound, carrying Run, the
+// action's rule run, and Action. The core asks only when the tracker can
+// find pull requests (FindingPullRequests).
 type FindPullRequest struct {
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	Branch  string
 	Since   time.Time
 }
 
-// StopCheck asks the engine to stop the running check of Action on the
-// issue. The check's end still arrives as CheckEnded.
+// StopCheck asks the engine to stop the running check of Action of the
+// rule run Run on the issue. The check's end still arrives as CheckEnded.
 type StopCheck struct {
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 }
 
@@ -167,6 +204,8 @@ func (ListIssues) command()         {}
 func (ListBoard) command()          {}
 func (Move) command()               {}
 func (ReportFailure) command()      {}
+func (ReportStatus) command()       {}
+func (ReportPullRequests) command() {}
 func (CreateWorkspace) command()    {}
 func (ReopenWorkspace) command()    {}
 func (RecordRun) command()          {}
@@ -175,5 +214,19 @@ func (StopSession) command()        {}
 func (RunCheck) command()           {}
 func (FindPullRequest) command()    {}
 func (StopCheck) command()          {}
-func (ReportStatus) command()       {}
-func (ReportPullRequests) command() {}
+
+func (ListIssues) trackerCommand()         {}
+func (ListBoard) trackerCommand()          {}
+func (Move) trackerCommand()               {}
+func (ReportFailure) trackerCommand()      {}
+func (ReportStatus) trackerCommand()       {}
+func (ReportPullRequests) trackerCommand() {}
+
+func (CreateWorkspace) runCommand() {}
+func (ReopenWorkspace) runCommand() {}
+func (RecordRun) runCommand()       {}
+func (StartSession) runCommand()    {}
+func (StopSession) runCommand()     {}
+func (RunCheck) runCommand()        {}
+func (FindPullRequest) runCommand() {}
+func (StopCheck) runCommand()       {}

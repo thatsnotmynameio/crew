@@ -121,8 +121,8 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 
 	cmds, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i1, Action: "development"},
+		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "acceptance"},
+		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "development"},
 	)
 	hasEvent(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
 	if c := claimOf(t, d.m, "1"); c != core.ClaimRunning {

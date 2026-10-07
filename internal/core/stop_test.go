@@ -16,8 +16,8 @@ func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds,
-		core.StopSession{IssueID: issueID("2"), Action: "acceptance"},
-		core.StopSession{IssueID: issueID("2"), Action: "development"},
+		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "acceptance"},
+		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "development"},
 	)
 	if d.m.Stopped() {
 		t.Fatal("stopped while issues are held")
@@ -154,7 +154,7 @@ func TestStopDuringSetupStartsNothingMoreAndStopsWhatStarted(t *testing.T) {
 	cmds, _ = d.send(space("1", "acceptance"))
 	wantCommands(t, cmds)
 	cmds, _ = d.send(core.SessionStarted{IssueID: issueID("1"), Action: "development"})
-	wantCommands(t, cmds, core.StopSession{IssueID: issueID("1"), Action: "development"})
+	wantCommands(t, cmds, core.StopSession{IssueID: issueID("1"), Run: d.run(issueID("1")), Action: "development"})
 
 	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: failed("stopped")})
 	wantCommands(t, cmds,

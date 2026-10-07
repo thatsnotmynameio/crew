@@ -255,7 +255,7 @@ func TestAE4StopWhileASessionRunsEndsWithTheMoveOnTheComment(t *testing.T) {
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.StopSession{IssueID: issueID("74"), Action: "development"})
+	wantCommands(t, cmds, core.StopSession{IssueID: issueID("74"), Run: d.run(issueID("74")), Action: "development"})
 	if cmds, _ := d.send(core.Tick{}); len(cmds) != 0 {
 		t.Fatalf("tick after stop issued %#v", cmds)
 	}

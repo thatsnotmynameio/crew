@@ -10,6 +10,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -164,7 +165,7 @@ type Engine struct {
 	inbox    chan message
 	inflight int // command goroutines whose final message is still due
 	wg       sync.WaitGroup
-	sessions map[sessionKey]port.Session
+	sessions map[sessionKey]liveSession
 	checks   map[sessionKey]context.CancelFunc // ends each running check
 	recent   []core.Published
 	lastSaid []core.Said      // what the sessions last said, as of the latest said refresh
@@ -224,7 +225,7 @@ func New(cfg Config) *Engine {
 		writes:       writes,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
-		sessions:     map[sessionKey]port.Session{},
+		sessions:     map[sessionKey]liveSession{},
 		checks:       map[sessionKey]context.CancelFunc{},
 	}
 }
@@ -424,16 +425,27 @@ func (e *Engine) withBots() core.Option {
 // reaching the tracker. Only the loop calls it, as it owns the sessions.
 func (e *Engine) said() []core.Said {
 	var out []core.Said
-	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), sessionKey.compare) {
-		n, ok := e.sessions[k].(port.Narrator)
+	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), e.compareSessions) {
+		s := e.sessions[k]
+		n, ok := s.session.(port.Narrator)
 		if !ok {
 			continue
 		}
 		if text := e.scrubAndStrip(n.Said()); text != "" {
-			out = append(out, core.Said{IssueID: k.issue, Action: k.action, Text: crew.NewSaid(lastWords(text))})
+			out = append(out, core.Said{
+				IssueID: s.issue, Run: k.run, Action: k.action, Text: crew.NewSaid(lastWords(text)),
+			})
 		}
 	}
 	return out
+}
+
+// compareSessions orders the running sessions of keys a and b by their
+// issue's repository and key, then by action, then by rule run.
+func (e *Engine) compareSessions(a, b sessionKey) int {
+	return cmp.Or(
+		e.sessions[a].issue.Compare(e.sessions[b].issue), cmp.Compare(a.action, b.action), cmp.Compare(a.run, b.run),
+	)
 }
 
 // receive handles a message from a command goroutine; ctx is the command
@@ -445,14 +457,26 @@ func (e *Engine) receive(ctx context.Context, m message) {
 	switch in := m.input.(type) {
 	case nil:
 		return
-	case core.SessionStarted:
-		e.sessions[sessionKey{in.IssueID, in.Action}] = m.session
-	case core.SessionEnded:
-		delete(e.sessions, sessionKey{in.IssueID, in.Action})
-	case core.CheckEnded:
-		delete(e.checks, sessionKey{in.IssueID, in.Action})
+	case core.RunInput:
+		e.ran(in, m.session)
+	case core.SchedulerInput:
 	}
 	e.step(ctx, m.input)
+}
+
+// ran keeps the session a SessionStarted started, s, by its rule run and
+// action, and forgets a session or a check once it ended.
+func (e *Engine) ran(in core.RunInput, s port.Session) {
+	switch in := in.(type) {
+	case core.SessionStarted:
+		e.sessions[sessionKey{in.Run, in.Action}] = liveSession{issue: in.IssueID, session: s}
+	case core.SessionEnded:
+		delete(e.sessions, sessionKey{in.Run, in.Action})
+	case core.CheckEnded:
+		delete(e.checks, sessionKey{in.Run, in.Action})
+	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
+		core.PullRequestFound:
+	}
 }
 
 // step feeds in to the core, stamped with the time now and a fresh seed,

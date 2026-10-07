@@ -210,13 +210,13 @@ func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
 	case crew.ActionSessionStarted:
 		s.emit(e)
 	case crew.ActionSessionStopAsked:
-		s.command(StopSession{IssueID: e.IssueID, Action: e.Action})
+		s.command(StopSession{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionLookupAsked:
 		s.findPullRequest(h, e.Action)
 	case crew.ActionCheckAsked:
 		s.runCheck(h, e.Action)
 	case crew.ActionCheckStopAsked:
-		s.command(StopCheck{IssueID: e.IssueID, Action: e.Action})
+		s.command(StopCheck{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.ActionSessionEnded, crew.ActionCheckEnded,
@@ -238,10 +238,12 @@ func (s *step) takeMoved(h *heldIssue, e crew.TakeMoved) {
 // reopened workspace of the failed run it resumes (R5).
 func (s *step) workspaceAsked(h *heldIssue, e crew.ActionWorkspaceAsked) {
 	if w, ok := e.Reopen.Get(); ok {
-		s.command(ReopenWorkspace{IssueID: e.IssueID, Action: e.Action, Workspace: w.Name, Branch: w.Branch})
+		s.command(ReopenWorkspace{
+			IssueID: e.IssueID, Run: e.Run, Action: e.Action, Workspace: w.Name, Branch: w.Branch,
+		})
 		return
 	}
-	s.command(CreateWorkspace{Issue: h.run.Issue(), Action: e.Action})
+	s.command(CreateWorkspace{Issue: h.run.Issue(), Run: e.Run, Action: e.Action})
 }
 
 // startSession starts the session of h's action named name, with its
@@ -259,7 +261,7 @@ func (s *step) startSession(h *heldIssue, name crew.ActionName) {
 		p.prompt += "\n\n" + resumeParagraph(resume.Reason, w.Workspace.Branch, w.Log, p.logFromDir)
 	}
 	s.command(StartSession{
-		IssueID: h.id(), Action: name, Dir: p.dir, Prompt: p.prompt, Log: w.Log, Resumed: w.Resumed,
+		IssueID: h.id(), Run: h.run.ID(), Action: name, Dir: p.dir, Prompt: p.prompt, Log: w.Log, Resumed: w.Resumed,
 		Agent: def.Agent.Name, Bot: def.Bot.Name,
 	})
 }
@@ -269,7 +271,9 @@ func (s *step) startSession(h *heldIssue, name crew.ActionName) {
 func (s *step) findPullRequest(h *heldIssue, name crew.ActionName) {
 	a, _ := h.run.Action(name)
 	w, _ := a.Workspace().Get()
-	s.command(FindPullRequest{IssueID: h.id(), Action: name, Branch: w.Workspace.Branch, Since: w.Since()})
+	s.command(FindPullRequest{
+		IssueID: h.id(), Run: h.run.ID(), Action: name, Branch: w.Workspace.Branch, Since: w.Since(),
+	})
 }
 
 // runCheck runs the next check of h's action named name: the first of its
@@ -282,7 +286,7 @@ func (s *step) runCheck(h *heldIssue, name crew.ActionName) {
 	p := h.plumb(name)
 	issue := h.run.Issue()
 	s.command(RunCheck{
-		IssueID: issue.ID(), Action: name, Dir: p.dir, Name: c.Name, Command: c.Script, Log: w.Log,
+		IssueID: issue.ID(), Run: h.run.ID(), Action: name, Dir: p.dir, Name: c.Name, Command: c.Script, Log: w.Log,
 		IssueRef: issue.Ref(), IssueURL: issue.URL(), Branch: w.Workspace.Branch, Bot: def.Bot.Name,
 		Prompt: p.prompt, LastMessage: p.lastMessage,
 	})

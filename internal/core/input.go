@@ -11,7 +11,10 @@ import (
 // end of the run time, or the result of a Command. Every input carries At,
 // the time it reached the engine's inbox, so start and elapsed times stay
 // pure in the core (KTD2).
-// The set of inputs is closed: only this package's types implement Input.
+// The set of inputs is closed: only this package's types implement Input,
+// each either a RunInput or a SchedulerInput.
+//
+//sumtype:decl
 type Input interface {
 	// Stamped returns a copy of the input whose At is at. The engine stamps
 	// each input with this as it takes it from its inbox, with a fresh seed
@@ -20,6 +23,30 @@ type Input interface {
 	// keeps the seed: only a listing takes issues.
 	Stamped(at time.Time, seed uuid.UUID) Input
 	arrival() time.Time
+}
+
+// RunInput is the result of a RunCommand about one action of a rule run:
+// its workspace, its session, its check or its pull request lookup. It
+// names the run that asked, and the core hands it to that run only, so an
+// answer for a run it no longer holds changes nothing, even while a newer
+// run of the same issue runs the same action (KTD7).
+//
+//sumtype:decl
+type RunInput interface {
+	Input
+	// ruleRun returns the id of the rule run the input answers.
+	ruleRun() crew.RuleRunID
+}
+
+// SchedulerInput is an input about what spans rule runs: a tick, a stop,
+// the end of the run time, a listing, a board read, the bots' state, or a
+// tracker write's or a journal record's result, which the core matches by
+// its call, its issue or its record, never by a run.
+//
+//sumtype:decl
+type SchedulerInput interface {
+	Input
+	schedulerInput()
 }
 
 // Tick is a poll: the core lists issues, unless a listing is outstanding or
@@ -33,9 +60,11 @@ type Tick struct {
 	Said []Said
 }
 
-// Said is what the running session of Action on an issue last said.
+// Said is what the running session of Action of the rule run Run on an
+// issue last said.
 type Said struct {
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	Text    crew.Said
 }
@@ -176,8 +205,10 @@ type PullRequestsResult struct {
 // WorkspaceReady is a CreateWorkspace or ReopenWorkspace that succeeded.
 type WorkspaceReady struct {
 	At time.Time
-	// IssueID and Action identify the CreateWorkspace this answers.
+	// IssueID, Run and Action identify the CreateWorkspace or
+	// ReopenWorkspace this answers.
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	// Workspace is the workspace's unique name.
 	Workspace crew.WorkspaceName
@@ -201,11 +232,13 @@ type WorkspaceReady struct {
 type WorkspaceGone struct {
 	At      time.Time
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 }
 
 // RecordFailed is a RecordRun the engine could not write. Record is the
-// record that was not written.
+// record that was not written. It is a SchedulerInput: it can arrive after
+// the record's run was released, so it never reaches a run.
 type RecordFailed struct {
 	At     time.Time
 	Record RunRecord
@@ -217,6 +250,7 @@ type RecordFailed struct {
 type WorkspaceFailed struct {
 	At      time.Time
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	Reason  crew.SessionText
 }
@@ -226,6 +260,7 @@ type WorkspaceFailed struct {
 type SessionStarted struct {
 	At      time.Time
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 }
 
@@ -234,6 +269,7 @@ type SessionStarted struct {
 type SessionFailedToStart struct {
 	At      time.Time
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	Reason  crew.SessionText
 }
@@ -244,6 +280,7 @@ type SessionFailedToStart struct {
 type SessionEnded struct {
 	At          time.Time
 	IssueID     crew.IssueID
+	Run         crew.RuleRunID
 	Action      crew.ActionName
 	Outcome     crew.Outcome
 	Usage       crew.Usage
@@ -256,6 +293,7 @@ type SessionEnded struct {
 type CheckEnded struct {
 	At      time.Time
 	IssueID crew.IssueID
+	Run     crew.RuleRunID
 	Action  crew.ActionName
 	Passed  bool
 	Reason  crew.CheckReason
@@ -266,6 +304,7 @@ type CheckEnded struct {
 type PullRequestFound struct {
 	At          time.Time
 	IssueID     crew.IssueID
+	Run         crew.RuleRunID
 	Action      crew.ActionName
 	PullRequest crew.PullRequest
 }
@@ -353,3 +392,25 @@ func (i SessionFailedToStart) arrival() time.Time { return i.At }
 func (i SessionEnded) arrival() time.Time         { return i.At }
 func (i CheckEnded) arrival() time.Time           { return i.At }
 func (i PullRequestFound) arrival() time.Time     { return i.At }
+
+func (i WorkspaceReady) ruleRun() crew.RuleRunID       { return i.Run }
+func (i WorkspaceGone) ruleRun() crew.RuleRunID        { return i.Run }
+func (i WorkspaceFailed) ruleRun() crew.RuleRunID      { return i.Run }
+func (i SessionStarted) ruleRun() crew.RuleRunID       { return i.Run }
+func (i SessionFailedToStart) ruleRun() crew.RuleRunID { return i.Run }
+func (i SessionEnded) ruleRun() crew.RuleRunID         { return i.Run }
+func (i CheckEnded) ruleRun() crew.RuleRunID           { return i.Run }
+func (i PullRequestFound) ruleRun() crew.RuleRunID     { return i.Run }
+
+func (Tick) schedulerInput()               {}
+func (StopRequested) schedulerInput()      {}
+func (TimeUp) schedulerInput()             {}
+func (IssuesListed) schedulerInput()       {}
+func (ListFailed) schedulerInput()         {}
+func (BoardListed) schedulerInput()        {}
+func (BoardListFailed) schedulerInput()    {}
+func (BotsChecked) schedulerInput()        {}
+func (CallResult) schedulerInput()         {}
+func (StatusResult) schedulerInput()       {}
+func (PullRequestsResult) schedulerInput() {}
+func (RecordFailed) schedulerInput()       {}

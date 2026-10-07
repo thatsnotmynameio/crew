@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,21 +27,30 @@ type message struct {
 	final bool
 }
 
-// sessionKey identifies the session of one action of an issue.
+// sessionKey identifies the session, or the check, of one action of a rule
+// run (KTD7).
 type sessionKey struct {
-	issue  crew.IssueID
+	run    crew.RuleRunID
 	action crew.ActionName
 }
 
-// compare orders session keys by repository, issue key and action.
-func (k sessionKey) compare(o sessionKey) int {
-	return cmp.Or(k.issue.Compare(o.issue), cmp.Compare(k.action, o.action))
+// liveSession is a running session, with the issue its rule run works on, by
+// which said orders it.
+type liveSession struct {
+	issue   crew.IssueID
+	session port.Session
 }
 
 // launch runs cmd in its own goroutine on the command context ctx (KTD7).
 // Each goroutine posts its results with blocking sends, the last one final.
 func (e *Engine) launch(ctx context.Context, cmd core.Command) {
-	job := e.job(ctx, cmd)
+	var job func()
+	switch c := cmd.(type) {
+	case core.TrackerCommand:
+		job = e.trackerJob(ctx, c)
+	case core.RunCommand:
+		job = e.runJob(ctx, c)
+	}
 	if job == nil {
 		return
 	}
@@ -50,22 +58,34 @@ func (e *Engine) launch(ctx context.Context, cmd core.Command) {
 	e.wg.Go(job)
 }
 
-// job returns the goroutine that runs cmd on the command context ctx, or nil
-// when nothing is left to run once the loop has done its part.
-func (e *Engine) job(ctx context.Context, cmd core.Command) func() {
+// trackerJob returns the goroutine that runs cmd, a command to the tracker,
+// on the command context ctx.
+func (e *Engine) trackerJob(ctx context.Context, cmd core.TrackerCommand) func() {
+	return func() {
+		switch c := cmd.(type) {
+		case core.ListIssues:
+			e.list(ctx, c)
+		case core.ListBoard:
+			e.listBoard(ctx, c)
+		case core.Move:
+			e.move(ctx, c)
+		case core.ReportFailure:
+			e.report(ctx, c)
+		case core.ReportStatus:
+			e.reportStatus(ctx, c)
+		case core.ReportPullRequests:
+			e.reportPullRequests(ctx, c)
+		}
+	}
+}
+
+// runJob returns the goroutine that runs cmd, a command about one rule run,
+// on the command context ctx, or nil when nothing is left to run once the
+// loop has done its part. The loop itself records runs, starts and stops
+// checks and stops sessions, as it owns the order of the journal, the
+// checks and the sessions.
+func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 	switch c := cmd.(type) {
-	case core.ListIssues:
-		return func() { e.list(ctx, c) }
-	case core.ListBoard:
-		return func() { e.listBoard(ctx, c) }
-	case core.Move:
-		return func() { e.move(ctx, c) }
-	case core.ReportFailure:
-		return func() { e.report(ctx, c) }
-	case core.ReportStatus:
-		return func() { e.reportStatus(ctx, c) }
-	case core.ReportPullRequests:
-		return func() { e.reportPullRequests(ctx, c) }
 	case core.CreateWorkspace:
 		return func() { e.createWorkspace(ctx, c) }
 	case core.ReopenWorkspace:
@@ -74,15 +94,6 @@ func (e *Engine) job(ctx context.Context, cmd core.Command) func() {
 		return func() { e.startSession(ctx, c) }
 	case core.FindPullRequest:
 		return func() { e.findPullRequest(ctx, c) }
-	}
-	return e.loopJob(ctx, cmd)
-}
-
-// loopJob does the part of cmd that the loop itself must do, as it owns the
-// sessions, the checks and the order of the journal, and returns the
-// goroutine that runs the rest, or nil when nothing is left.
-func (e *Engine) loopJob(ctx context.Context, cmd core.Command) func() {
-	switch c := cmd.(type) {
 	case core.RecordRun:
 		// Written here, in the loop, so records land in the order the core
 		// asked for them: a run's end never before its start (KTD3).
@@ -93,28 +104,27 @@ func (e *Engine) loopJob(ctx context.Context, cmd core.Command) func() {
 		failure := core.RecordFailed{Record: c.Record, Reason: e.scrub(err.Error())}
 		return func() { e.post(failure) }
 	case core.StopSession:
-		s, ok := e.sessions[sessionKey{c.IssueID, c.Action}]
+		s, ok := e.sessions[sessionKey{c.Run, c.Action}]
 		if !ok {
 			// The core asks to stop only sessions it saw start, so the
 			// session is known; nothing runs otherwise.
 			return nil
 		}
-		return func() { e.stopSession(ctx, s) }
+		return func() { e.stopSession(ctx, s.session) }
 	case core.RunCheck:
 		// The check's context is made here, in the loop, so a StopCheck
 		// that follows always finds it.
 		checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
-		e.checks[sessionKey{c.IssueID, c.Action}] = cancel
+		e.checks[sessionKey{c.Run, c.Action}] = cancel
 		return func() { e.runCheck(checkCtx, cancel, c) }
 	case core.StopCheck:
 		// The core asks to stop only checks it started; the check's end
 		// still arrives through its own goroutine, in runCheck.
-		if cancel, ok := e.checks[sessionKey{c.IssueID, c.Action}]; ok {
+		if cancel, ok := e.checks[sessionKey{c.Run, c.Action}]; ok {
 			cancel()
 		}
-		return nil
 	}
-	panic(fmt.Sprintf("engine: unknown core command %T", cmd))
+	return nil
 }
 
 // post sends in as the goroutine's final message.
@@ -238,10 +248,12 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	defer cancel()
 	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
 	if err != nil {
-		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID(), Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
+		e.post(core.WorkspaceFailed{
+			IssueID: c.Issue.ID(), Run: c.Run, Action: c.Action, Reason: e.sessionText(callError(ctx, err)),
+		})
 		return
 	}
-	e.post(e.ready(c.Issue.ID(), c.Action, space, false))
+	e.post(e.ready(c.Issue.ID(), c.Run, c.Action, space, false))
 }
 
 // reopenWorkspace reopens a failed run's workspace through the workspace's
@@ -249,7 +261,7 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	r, ok := e.cfg.Workspace.(port.Reopener)
 	if !ok {
-		e.post(core.WorkspaceGone{IssueID: c.IssueID, Action: c.Action})
+		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
 		return
 	}
 	ctx, cancel := callContext(ctx)
@@ -257,19 +269,24 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	space, err := r.Reopen(ctx, port.Space{Name: c.Workspace, Branch: c.Branch})
 	switch {
 	case errors.Is(err, port.ErrWorkspaceGone):
-		e.post(core.WorkspaceGone{IssueID: c.IssueID, Action: c.Action})
+		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
 	case err != nil:
-		e.post(core.WorkspaceFailed{IssueID: c.IssueID, Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
+		e.post(core.WorkspaceFailed{
+			IssueID: c.IssueID, Run: c.Run, Action: c.Action, Reason: e.sessionText(callError(ctx, err)),
+		})
 	default:
-		e.post(e.ready(c.IssueID, c.Action, space, true))
+		e.post(e.ready(c.IssueID, c.Run, c.Action, space, true))
 	}
 }
 
-// ready is the WorkspaceReady of space for action on the issue id.
-func (e *Engine) ready(id crew.IssueID, action crew.ActionName, space port.Space, resumed bool) core.WorkspaceReady {
+// ready is the WorkspaceReady of space for action on the issue id, which
+// answers the rule run identified by run.
+func (e *Engine) ready(
+	id crew.IssueID, run crew.RuleRunID, action crew.ActionName, space port.Space, resumed bool,
+) core.WorkspaceReady {
 	log := logPath(space.Name)
 	return core.WorkspaceReady{
-		IssueID: id, Action: action,
+		IssueID: id, Run: run, Action: action,
 		Workspace: space.Name, Dir: space.Dir, Branch: space.Branch, Log: log,
 		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed,
 	}
@@ -288,7 +305,9 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 		}
 	}
 	if err != nil {
-		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.sessionText(err.Error())})
+		e.post(core.SessionFailedToStart{
+			IssueID: c.IssueID, Run: c.Run, Action: c.Action, Reason: e.sessionText(err.Error()),
+		})
 		return
 	}
 	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
@@ -297,10 +316,12 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	})
 	if err != nil {
 		_ = log.Close() // nothing was written to it worth keeping
-		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.sessionText(err.Error())})
+		e.post(core.SessionFailedToStart{
+			IssueID: c.IssueID, Run: c.Run, Action: c.Action, Reason: e.sessionText(err.Error()),
+		})
 		return
 	}
-	e.inbox <- message{input: core.SessionStarted{IssueID: c.IssueID, Action: c.Action}, session: s}
+	e.inbox <- message{input: core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action}, session: s}
 	verdict := s.Wait()
 	// The harness stops writing once Wait returns. A failed close cannot
 	// change the session's verdict, which is what the core needs.
@@ -314,7 +335,9 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	if r, ok := s.(port.LastMessageReporter); ok {
 		last = r.LastMessage()
 	}
-	e.post(core.SessionEnded{IssueID: c.IssueID, Action: c.Action, Outcome: outcome, Usage: usage, LastMessage: last})
+	e.post(core.SessionEnded{
+		IssueID: c.IssueID, Run: c.Run, Action: c.Action, Outcome: outcome, Usage: usage, LastMessage: last,
+	})
 }
 
 // findPullRequest looks up the pull request c's action opened, within
@@ -327,7 +350,7 @@ func (e *Engine) findPullRequest(ctx context.Context, c core.FindPullRequest) {
 	if err != nil {
 		pr = crew.PullRequestNotLookedUp{}
 	}
-	e.post(core.PullRequestFound{IssueID: c.IssueID, Action: c.Action, PullRequest: pr})
+	e.post(core.PullRequestFound{IssueID: c.IssueID, Run: c.Run, Action: c.Action, PullRequest: pr})
 }
 
 // stopSession stops s within the stop deadline (KTD7). Its end reaches the
@@ -371,7 +394,7 @@ func markResumed(log *os.File) error {
 func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
 	defer cancel()
 	passed, reason := e.check(ctx, c)
-	e.post(core.CheckEnded{IssueID: c.IssueID, Action: c.Action, Passed: passed, Reason: reason})
+	e.post(core.CheckEnded{IssueID: c.IssueID, Run: c.Run, Action: c.Action, Passed: passed, Reason: reason})
 }
 
 // check runs c, as its action's bot like its session, and returns whether
