@@ -9,6 +9,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/ui/lines"
 )
 
 // The Bots cards' sizes, in cells (KTD1, KTD2).
@@ -189,7 +190,7 @@ func (m Model) botState(e core.BotView) string {
 // "no actions yet" before the first one ends (R3, KTD7).
 func (m Model) botTotals(sp crew.Spend, width int) string {
 	s := m.styles
-	parts := spendParts(sp)
+	parts := lines.SpendParts(sp)
 	if sp.Sessions == 0 || len(parts) == 0 {
 		return s.subtle.Render(fit("no actions yet", width))
 	}
