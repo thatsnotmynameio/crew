@@ -387,6 +387,7 @@ O **nível 4** é o desenho que o crew já usa um nível acima.
 Uma label é um estado, cada ação roda uma sessão própria, e os `checks` do `.crew/config.yaml` validam o resultado antes de a issue mudar de label.
 O fluxo do brainstorm seria a mesma ideia aplicada dentro de uma ação.
 A diferença é que cada passo precisaria da pessoa em tempo real, e o crew hoje roda sessões sem ninguém olhando.
+[`ce-brainstorm-crew-rules.md`](ce-brainstorm-crew-rules.md) esboça esse nível 4 como rules do crew.
 
 ## Esboço do arquivo de fluxo
 
