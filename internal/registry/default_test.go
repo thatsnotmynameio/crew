@@ -16,7 +16,7 @@ func TestDefaultBuildsGithubAndClaude(t *testing.T) {
 		t.Errorf("Tracker(%q): %v", cfg.Tracker, err)
 	}
 	a := cfg.Agents[0]
-	if _, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection); err != nil {
+	if _, err := r.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection); err != nil {
 		t.Errorf("Harness(%q): %v", a.Harness, err)
 	}
 }
@@ -44,7 +44,7 @@ rules:
 `)
 
 	for _, a := range cfg.Agents {
-		h, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+		h, err := r.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
 		if err != nil || h == nil {
 			t.Errorf("Harness(%q) for %s = %v, %v; want a harness", a.Harness, a.Name, h, err)
 		}

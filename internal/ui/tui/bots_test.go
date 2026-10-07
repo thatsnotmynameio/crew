@@ -353,7 +353,7 @@ func threeBotsOnABoard() engine.Update {
 // instead, and the board scrolls once it reaches a column off its edge
 // (KTD6 of #151).
 func TestAE3TheCardsScrollSidewaysWhileBotsHasFocus(t *testing.T) {
-	h := newBoardHarness(t, 80, crewRules, eightColumns())
+	h := newBoardHarness(t, 80, crewNotify, eightColumns())
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 0})
 	h.send(updateMsg(threeBotsOnABoard()))
 	view := h.view()

@@ -9,20 +9,14 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// Agent is one agent of agents: the harness that runs an action's session,
-// with its settings, and the bot it acts as.
+// Agent is one agent of agents: the domain's agent, with what only config
+// and the harness adapter read.
 type Agent struct {
-	// Name is the agent's key under agents.
-	Name crew.AgentName
-	// Harness is agents.<name>.harness.name, the harness adapter's name. It
-	// is not checked against the registered adapters.
-	Harness string
+	crew.Agent
+
 	// HarnessSection decodes the harness adapter's settings: every key under
 	// agents.<name>.harness except name, model included.
 	HarnessSection Decode
-	// Bot is agents.<name>.bot, the bot the agent's actions act as; empty
-	// when the agent names none, and its actions act as tracker.bot.
-	Bot crew.BotName
 	// Used tells whether some action names the agent. crew builds, prepares
 	// and makes act only the agents in use.
 	Used bool
@@ -90,8 +84,8 @@ func parseAgent(e entry) (Agent, error) {
 		return agent, err
 	}
 	agent.HarnessSection = bind(path, rest)
-	var err error
-	agent.Harness, err = required(harness.Name, path+".name", doc.Harness.Line)
+	name, err := required(harness.Name, path+".name", doc.Harness.Line)
+	agent.Harness = crew.HarnessName(name)
 	return agent, err
 }
 
@@ -104,7 +98,7 @@ func agentsInUse(agents []Agent, rules []crew.Rule) error {
 		for _, a := range r.Actions {
 			actions++
 			for i := range agents {
-				if agents[i].Name == a.Agent {
+				if agents[i].Name == a.Agent.Name {
 					agents[i].Used = true
 				}
 			}

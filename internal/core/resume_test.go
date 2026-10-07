@@ -26,18 +26,18 @@ func crewRules() []crew.Rule {
 		{
 			Name:    "development",
 			Labels:  crew.Labels{Ready: readyForDev, Running: crewRunning, Success: crewReview, Failure: crewFailed},
-			Actions: []crew.Action{{Name: "lfg", Prompt: "/lfg {{.Issue.Ref}}"}},
+			Actions: []crew.Action{{Name: "lfg", Prompt: parsedPrompt("lfg", "/lfg {{.Issue.Ref}}")}},
 		},
 		{
 			Name: "fix", Labels: crew.Labels{Ready: readyForFix, Running: crewRunning, Success: crewReview, Failure: crewFailed},
-			Actions: []crew.Action{{Name: "lfg", Prompt: "/lfg {{.Issue.Ref}} as a bug"}},
+			Actions: []crew.Action{{Name: "lfg", Prompt: parsedPrompt("lfg", "/lfg {{.Issue.Ref}} as a bug")}},
 		},
 		{
 			Name:   "implement",
 			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{
-				{Name: "acceptance", Prompt: "acceptance for {{.Issue.Ref}}"},
-				{Name: "development", Prompt: "development for {{.Issue.Ref}}"},
+				{Name: "acceptance", Prompt: parsedPrompt("acceptance", "acceptance for {{.Issue.Ref}}")},
+				{Name: "development", Prompt: parsedPrompt("development", "development for {{.Issue.Ref}}")},
 			},
 		},
 	}

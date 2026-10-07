@@ -62,7 +62,7 @@ func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
 	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())})
 	a := load(t, agent("nosuch")+rules).Agents[0]
 
-	h, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+	h, err := r.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
 	assertErr(t, err, "agents.developer.harness.name", `"nosuch"`, "the registered harness adapters are: claude")
 	if h != nil {
 		t.Errorf("Harness = %v, want none", h)
@@ -148,7 +148,7 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
 		t.Errorf("Tracker = %v, want the registered fake", gotTracker)
 	}
 	a := cfg.Agents[0]
-	gotHarness, err := r.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+	gotHarness, err := r.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
 	if err != nil {
 		t.Fatalf("Harness: %v", err)
 	}

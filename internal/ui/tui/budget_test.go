@@ -97,7 +97,7 @@ func sevenBugs() engine.Update {
 // (KTD6 of #151).
 func TestAColumnOfSevenWithRoomForThreeShowsThreeAndFourMore(t *testing.T) {
 	height := eventfulRows - (scrollRows - minScroll) - 2*cardRows
-	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 80, crewNotify, ideasBugsDone)
 	h.send(updateMsg(sevenBugs()))
 	h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 

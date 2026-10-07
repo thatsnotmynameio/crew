@@ -37,16 +37,29 @@ var implement = crew.Rule{
 	Name:   "implement",
 	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 	Actions: []crew.Action{
-		{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
-		{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
+		{Name: "acceptance", Prompt: parsedPrompt("acceptance", "Implement test acceptance for issue {{.Issue.Ref}}")},
+		{Name: "development", Prompt: parsedPrompt("development", "Implement development for issue {{.Issue.Ref}}")},
 	},
 }
 
 // develop is a rule with one action, for tests about one session per issue.
 var develop = crew.Rule{
-	Name:    "implement",
-	Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-	Actions: []crew.Action{{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"}},
+	Name:   "implement",
+	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+	Actions: []crew.Action{
+		{Name: "development", Prompt: parsedPrompt("development", "Implement development for issue {{.Issue.Ref}}")},
+	},
+}
+
+// parsedPrompt parses text as the prompt of the action named action, and
+// panics when it does not parse, since the rules above are built from known
+// prompts.
+func parsedPrompt(action crew.ActionName, text string) crew.Prompt {
+	p, err := crew.ParsePrompt(action, text)
+	if err != nil {
+		panic(err)
+	}
+	return p
 }
 
 // epoch dates the issues: issue n was created n minutes after it, so #1 is

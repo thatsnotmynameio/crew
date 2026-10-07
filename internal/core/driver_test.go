@@ -31,14 +31,16 @@ func draft() []crew.Rule {
 			Name:   "implement",
 			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{
-				{Name: "acceptance", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
-				{Name: "development", Prompt: "Implement development for issue {{.Issue.Ref}}"},
+				{Name: "acceptance", Prompt: parsedPrompt("acceptance", "Implement test acceptance for issue {{.Issue.Ref}}")},
+				{Name: "development", Prompt: parsedPrompt("development", "Implement development for issue {{.Issue.Ref}}")},
 			},
 		},
 		{
-			Name:    "review",
-			Labels:  crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "custom_review", Prompt: "Review implementation for issue {{.Issue.Ref}}"}},
+			Name:   "review",
+			Labels: crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
+			Actions: []crew.Action{
+				{Name: "custom_review", Prompt: parsedPrompt("custom_review", "Review implementation for issue {{.Issue.Ref}}")},
+			},
 		},
 	}
 }
@@ -49,6 +51,17 @@ func issue(key string, minute int, states ...crew.State) crew.Issue {
 		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
 		Created: t0.Add(time.Duration(minute) * time.Minute), States: states,
 	}
+}
+
+// parsedPrompt parses text as the prompt of the action named action, and
+// panics when it does not parse, since tests build their rules from known
+// prompts.
+func parsedPrompt(action crew.ActionName, text string) crew.Prompt {
+	p, err := crew.ParsePrompt(action, text)
+	if err != nil {
+		panic(err)
+	}
+	return p
 }
 
 // issueID returns the id of the issue keyed key, in no repository.

@@ -20,13 +20,13 @@ func queued(triage, development crew.Queue) []crew.Rule {
 	return []crew.Rule{
 		{
 			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "triage", Prompt: "Triage issue {{.Issue.Ref}}"}},
+			Actions: []crew.Action{{Name: "triage", Prompt: parsedPrompt("triage", "Triage issue {{.Issue.Ref}}")}},
 			Queue:   triage,
 		},
 		{
 			Name:    "development",
 			Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "development", Prompt: "Develop issue {{.Issue.Ref}}"}},
+			Actions: []crew.Action{{Name: "development", Prompt: parsedPrompt("development", "Develop issue {{.Issue.Ref}}")}},
 			Queue:   development,
 		},
 	}

@@ -82,7 +82,7 @@ func session(key string, action crew.ActionName, prompt string) core.StartSessio
 // Each action's session starts on its agent's harness (R13).
 func TestEverySessionStartsOnItsActionsAgent(t *testing.T) {
 	rules := draft()
-	rules[0].Actions[0].Agent, rules[0].Actions[1].Agent = "tester", "developer"
+	rules[0].Actions[0].Agent, rules[0].Actions[1].Agent = crew.Agent{Name: "tester"}, crew.Agent{Name: "developer"}
 	d := newDriver(t, rules, 2)
 	d.send(core.Tick{})
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
@@ -282,7 +282,8 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 
 func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	rules := draft()
-	rules[0].Actions[0].Prompt = "Fix {{.Issue.Number}}"
+	// Renders for the sample issue's title, and fails on the shorter "Issue 1".
+	rules[0].Actions[0].Prompt = parsedPrompt("acceptance", "Fix {{index .Issue.Title 11}}")
 	d := newDriver(t, rules, 2)
 	cmds, _ := d.poll(issue("1", 1, ready))
 
@@ -290,7 +291,8 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
 	for _, e := range events {
 		if ended, ok := e.(core.ActionEnded); ok && ended.Action == "acceptance" {
-			if ended.Outcome.Succeeded || !strings.Contains(ended.Outcome.Reason.String(), "Number") {
+			reason := ended.Outcome.Reason.String()
+			if ended.Outcome.Succeeded || !strings.Contains(reason, `render prompt of action "acceptance"`) {
 				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", ended.Outcome)
 			}
 			return

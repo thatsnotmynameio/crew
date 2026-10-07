@@ -267,7 +267,7 @@ func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T)
 	rules := append(draft(), crew.Rule{
 		Name:    "merge",
 		Labels:  crew.Labels{Ready: readyToMerge, Running: "merging", Success: "merged", Failure: needsAttention},
-		Actions: []crew.Action{{Name: "merge_it", Prompt: "Merge issue {{.Issue.Ref}}"}},
+		Actions: []crew.Action{{Name: "merge_it", Prompt: parsedPrompt("merge_it", "Merge issue {{.Issue.Ref}}")}},
 	})
 	d := usageDriver(t, rules)
 	cost := func(dollars float64, output int64) crew.Usage {
