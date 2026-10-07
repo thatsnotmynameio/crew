@@ -18,17 +18,19 @@ func botRules() []crew.Rule {
 	return []crew.Rule{
 		{
 			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "triage", Prompt: "Triage {{.Issue.Ref}}", Bot: "clerk"}},
+			Actions: []crew.Action{{Name: "triage", Prompt: parsedPrompt("triage", "Triage {{.Issue.Ref}}"), Bot: "clerk"}},
 		},
 		{
-			Name:    "implement",
-			Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "development", Prompt: "Develop {{.Issue.Ref}}", Bot: "developer"}},
+			Name:   "implement",
+			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+			Actions: []crew.Action{
+				{Name: "development", Prompt: parsedPrompt("development", "Develop {{.Issue.Ref}}"), Bot: "developer"},
+			},
 		},
 		{
 			Name:    "review",
 			Labels:  crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "review", Prompt: "Review {{.Issue.Ref}}", Bot: "reviewer"}},
+			Actions: []crew.Action{{Name: "review", Prompt: parsedPrompt("review", "Review {{.Issue.Ref}}"), Bot: "reviewer"}},
 		},
 	}
 }

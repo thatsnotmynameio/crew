@@ -85,6 +85,42 @@ const ruleOnly = `rules:
         prompt: "Implement {{.Issue.Ref}}"
 `
 
+// draftRules are the rules testdata/draft's config loads into.
+func draftRules(t *testing.T) []crew.Rule {
+	t.Helper()
+	queue := crew.Queue{Name: "default", Slots: 2}
+	return []crew.Rule{
+		{
+			Name: "implement", Queue: queue, Notify: true,
+			Labels: crew.Labels{
+				Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
+			},
+			Actions: []crew.Action{
+				{
+					Name: "acceptance", Agent: "claude",
+					Prompt: parsedPrompt(t, "acceptance", "Implement test acceptance for issue {{.Issue.Ref}}"),
+				},
+				{
+					Name: "development", Agent: "claude",
+					Prompt: parsedPrompt(t, "development", "Implement development for issue {{.Issue.Ref}}"),
+				},
+			},
+		},
+		{
+			Name: "review", Queue: queue, Notify: true,
+			Labels: crew.Labels{
+				Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
+			},
+			Actions: []crew.Action{
+				{
+					Name: "custom_review", Agent: "claude",
+					Prompt: parsedPrompt(t, "custom_review", "Review implementation for issue {{.Issue.Ref}}"),
+				},
+			},
+		},
+	}
+}
+
 func TestLoadDraftConfig(t *testing.T) {
 	cfg, err := config.Load("testdata/draft", "")
 	if err != nil {
@@ -94,28 +130,7 @@ func TestLoadDraftConfig(t *testing.T) {
 		t.Errorf("got poll %v, parallel %d, tracker %q; want 5m0s, 2, github",
 			cfg.PollInterval, cfg.MaxParallelIssues, cfg.Tracker)
 	}
-	queue := crew.Queue{Name: "default", Slots: 2}
-	wantRules := []crew.Rule{
-		{
-			Name: "implement", Queue: queue, Notify: true,
-			Labels: crew.Labels{
-				Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention",
-			},
-			Actions: []crew.Action{
-				{Name: "acceptance", Agent: "claude", Prompt: "Implement test acceptance for issue {{.Issue.Ref}}"},
-				{Name: "development", Agent: "claude", Prompt: "Implement development for issue {{.Issue.Ref}}"},
-			},
-		},
-		{
-			Name: "review", Queue: queue, Notify: true,
-			Labels: crew.Labels{
-				Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention",
-			},
-			Actions: []crew.Action{
-				{Name: "custom_review", Agent: "claude", Prompt: "Review implementation for issue {{.Issue.Ref}}"},
-			},
-		},
-	}
+	wantRules := draftRules(t)
 	if !reflect.DeepEqual(cfg.Rules, wantRules) {
 		t.Errorf("Rules = %+v\nwant %+v", cfg.Rules, wantRules)
 	}
@@ -211,10 +226,21 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 	}
 }
 
+// parsedPrompt parses text as the prompt of the action named action, and
+// fails t when it does not parse.
+func parsedPrompt(t *testing.T, action crew.ActionName, text string) crew.Prompt {
+	t.Helper()
+	p, err := crew.ParsePrompt(action, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneRule)
 	issue := crew.Issue{ID: issueID("42"), Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
-	got, err := cfg.Rules[0].Actions[0].Render(issue)
+	got, err := cfg.Rules[0].Actions[0].Prompt.Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}

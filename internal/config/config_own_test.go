@@ -91,7 +91,7 @@ const (
 // its check fails a split that stopped before that (#160).
 func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
 	refine := loadOwn(t).Rules[1].Actions[0]
-	prompt := refine.Prompt
+	prompt := refine.Prompt.Text()
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	if split < 0 || split > strings.Index(prompt, "dependencies/blocked_by") {
 		t.Errorf("the prompt does not run /cw-split-plan before it reads dependencies:\n%s", prompt)
@@ -119,7 +119,7 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := loadOwn(t).Rules[1].Actions[0].Prompt
+	prompt := loadOwn(t).Rules[1].Actions[0].Prompt.Text()
 	for _, want := range splitOutcomes {
 		if !strings.Contains(string(skill), want) || !strings.Contains(prompt, want) {
 			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
@@ -144,7 +144,7 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
 		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
 	}
-	prompt := loadOwn(t).Rules[1].Actions[0].Prompt
+	prompt := loadOwn(t).Rules[1].Actions[0].Prompt.Text()
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	rank := strings.Index(prompt, "/cw-rank-blockers")
 	record := strings.Index(prompt, "dependencies/blocked_by -F")

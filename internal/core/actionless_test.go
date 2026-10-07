@@ -25,7 +25,7 @@ func promoted() []crew.Rule {
 		{
 			Name:    "triage",
 			Labels:  crew.Labels{Ready: triageReady, Running: triageRunning, Success: triageDone, Failure: triageFailed},
-			Actions: []crew.Action{{Name: "triage", Prompt: "Triage {{.Issue.Ref}}"}},
+			Actions: []crew.Action{{Name: "triage", Prompt: parsedPrompt("triage", "Triage {{.Issue.Ref}}")}},
 		},
 		{
 			Name:   "promote triage",

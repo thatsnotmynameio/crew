@@ -188,14 +188,16 @@ var invalidActions = []rejectCase{
 		wants: []string{"rules.implement.actions.development", "line 14", "duplicate key, first set on line 12"},
 	},
 	{
-		name:  "prompt references an unknown issue field",
-		body:  strings.Replace(oneRule, "{{.Issue.Ref}}", "{{.Issue.Number}}", 1),
-		wants: []string{"rules.implement.actions.development.prompt", "line 13", "Number"},
+		name: "prompt references an unknown issue field",
+		body: strings.Replace(oneRule, "{{.Issue.Ref}}", "{{.Issue.Number}}", 1),
+		wants: []string{
+			"rules.implement.actions.development.prompt", "line 13", `render prompt of action "development"`, "Number",
+		},
 	},
 	{
 		name:  "prompt does not parse",
 		body:  strings.Replace(oneRule, "{{.Issue.Ref}}", "{{.Issue.Ref", 1),
-		wants: []string{"rules.implement.actions.development.prompt", "line 13", "development"},
+		wants: []string{"rules.implement.actions.development.prompt", "line 13", `parse prompt of action "development"`},
 	},
 	{
 		name:  "a prompt that reads CREW_BOSS",
