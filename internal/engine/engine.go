@@ -359,19 +359,6 @@ func (e *Engine) TogglePause() {
 	}
 }
 
-// pendingPauses steps the core with each toggle made before Run, so none
-// of them races the first listing's result in the loop (KTD5 of #282).
-func (e *Engine) pendingPauses(ctx context.Context) {
-	for {
-		select {
-		case <-e.pause:
-			e.step(ctx, core.PauseToggled{})
-		default:
-			return
-		}
-	}
-}
-
 // SubscribeLatest returns a latest-wins subscription, for the TUI: it holds
 // only the newest update not yet received, each publish replacing the
 // previous one, and every update carries the full snapshot, so nothing a
@@ -404,6 +391,19 @@ func (e *Engine) Prepare(ctx context.Context) error {
 		e.preparation = e.prepare(ctx)
 	}
 	return e.preparation
+}
+
+// pendingPauses steps the core with each toggle made before Run, so none
+// of them races the first listing's result in the loop (KTD5 of #282).
+func (e *Engine) pendingPauses(ctx context.Context) {
+	for {
+		select {
+		case <-e.pause:
+			e.step(ctx, core.PauseToggled{})
+		default:
+			return
+		}
+	}
 }
 
 // prepare hands the tracker its writer when the config names a bot, runs the

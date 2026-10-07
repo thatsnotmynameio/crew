@@ -47,7 +47,8 @@ func TestAE1CtrlPPausesAndTheHeaderCountsTheIssuesStillRunning(t *testing.T) {
 	if got := h.model.View().WindowTitle; got != "crew · paused" {
 		t.Errorf("title = %q, want crew · paused", got)
 	}
-	if got, want := h.footer(), stopKeys+" stop · ctrl+p resume · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
+	want := stopKeys + " stop · ctrl+p resume · tab focus · ←→↑↓ move · enter open · ? help"
+	if got := h.footer(); got != want {
 		t.Errorf("key help = %q, want %q", got, want)
 	}
 }
