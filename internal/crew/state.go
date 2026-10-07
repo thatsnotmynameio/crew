@@ -1,7 +1,9 @@
-// Package crew holds crew's domain vocabulary: the states a set of rules
-// moves an issue through, issues, rules and actions, and what an action run
-// produces. It imports nothing of crew's, so every other package can share
-// it.
+// Package crew holds crew's domain: the states a set of rules moves an issue
+// through, issues, rules and actions, and the rule run, which holds the
+// rules of its own lifecycle. A rule run decides each change, from what
+// happened to it, as events (Decide), and applies them (Apply); its status
+// and reports are computed from it. It imports nothing of crew's, so every
+// other package can share it.
 package crew
 
 import "slices"
