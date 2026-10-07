@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
+# A translation team's config, invented for the tests: a full config with
+# queues, bots, agents on both harnesses, checks, rules with and without
+# actions, notify set both ways and multi-line prompts.
+poll_interval_seconds: 120
+max_parallel_issues: 4
+queues:
+  desk: 1
+  translators: 2
+tracker:
+  name: github
+  bot: concierge
+agents:
+  translator:
+    harness:
+      name: claude
+      model: claude-sonnet-5-5
+    bot: linguist
+  proofreader:
+    harness:
+      name: codex
+      model: gpt-5.5
+checks:
+  glossary-kept: grep -rq glossary docs/
+  draft-pushed: |-
+    n=$(git rev-list --count "origin/$CREW_BRANCH" 2>/dev/null) || n=0
+    [ "$n" -gt 0 ] || { echo "nothing pushed to $CREW_BRANCH"; exit 1; }
+rules:
+  accept request:
+    queue: desk
+    labels:
+      ready: "request:new"
+      running: "request:accepting"
+      success: "translation:to do"
+  translation:
+    queue: translators
+    labels:
+      ready: "translation:to do"
+      running: "translation:drafting"
+      success: "translation:drafted"
+      failure: "translation:stuck"
+    actions:
+      draft:
+        agent: translator
+        check: [glossary-kept, draft-pushed]
+        prompt: |-
+          Translate the page {{.Issue.Ref}} names, "{{.Issue.Title}}", into Portuguese.
+
+          Keep every term the glossary lists, and push the draft to a branch.
+  proofreading:
+    notify: false
+    labels:
+      ready: "translation:drafted"
+      running: "translation:proofreading"
+      success: "translation:published"
+      failure: "translation:rejected"
+    actions:
+      proofread:
+        agent: proofreader
+        check: glossary-kept
+        prompt: Proofread the draft of {{.Issue.Ref}} ({{.Issue.URL}}).
+      typeset:
+        agent: translator
+        prompt: Typeset the draft of {{.Issue.Ref}} for print.
+  archive:
+    notify: true
+    labels:
+      ready: "translation:published"
+      running: "translation:archiving"
+      success: "translation:archived"
