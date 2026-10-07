@@ -72,11 +72,20 @@ const prompt = `Implement "` + title + `".`
 // It returns the scenario and the issue's number.
 func newScenario(t *testing.T) (*harness.Scenario, int) {
 	t.Helper()
-	sc := harness.New(t, harness.Options{Config: config, Screen: true, Size: harness.Size{Cols: cols, Rows: rows}})
-	sc.GitHub.SetFile(".github/CODEOWNERS", "* @"+owner+"\n")
-	sc.GitHub.AddLabel(ready, running, success, failure)
+	sc := newEmptyScenario(t, config)
 	n := sc.GitHub.AddIssue(fakegithub.Issue{Title: title, Author: owner, Labels: []string{ready}})
 	return sc, n
+}
+
+// newEmptyScenario builds a screen scenario that runs crew with cfg as its
+// .crew/config.yaml, whose repository has owner as its code owner, the rule's
+// labels and no issue yet.
+func newEmptyScenario(t *testing.T, cfg string) *harness.Scenario {
+	t.Helper()
+	sc := harness.New(t, harness.Options{Config: cfg, Screen: true, Size: harness.Size{Cols: cols, Rows: rows}})
+	sc.GitHub.SetFile(".github/CODEOWNERS", "* @"+owner+"\n")
+	sc.GitHub.AddLabel(ready, running, success, failure)
+	return sc
 }
 
 // heldSession is a session that says said and then works until release is
