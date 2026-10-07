@@ -136,7 +136,7 @@ func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
 	r.start()
 	session := next(t, h)
 
-	if _, err := io.WriteString(keys, "q"); err != nil {
+	if _, err := io.WriteString(keys, "qq"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func TestOnATerminalQuittingTheTUIStopsCrewWithExitZero(t *testing.T) {
 	}
 }
 
-func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T) {
+func TestOnATerminalPressingQOnceMoreWhileStoppingKillsEveryProcessAndExitsOne(t *testing.T) {
 	tr := fake.NewTracker(issue("1", ready))
 	h := fake.NewHarness()
 	h.IgnoreStop(true)
@@ -169,7 +169,7 @@ func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T
 	r.start()
 	session := next(t, h)
 
-	if _, err := io.WriteString(keys, "qq"); err != nil {
+	if _, err := io.WriteString(keys, "qqq"); err != nil {
 		t.Fatal(err)
 	}
 

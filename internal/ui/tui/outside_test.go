@@ -187,7 +187,11 @@ func TestTheWindowTitleSaysCrewsState(t *testing.T) {
 		t.Errorf("winding-down title = %q", got)
 	}
 
-	h.send(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	h.send(qKey)
+	if got := h.model.View().WindowTitle; got != "crew · winding down" {
+		t.Errorf("title after one q = %q, want it unchanged", got)
+	}
+	h.send(qKey)
 	if got := h.model.View().WindowTitle; got != "crew · stopping" {
 		t.Errorf("stopping title = %q", got)
 	}

@@ -14,12 +14,12 @@ import (
 )
 
 // The JSON Schema of .crew/config.yaml, and the URL it is published at,
-// which crew's own config names in its modeline.
+// which the example names in its modeline.
 var configSchema = filepath.Join("..", "..", "schema", "config.schema.json")
 
 const schemaURL = "https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json"
 
-// modeline is the first line of crew's own config and of the example.
+// modeline is the first line of the example.
 const modeline = "# yaml-language-server: $schema=" + schemaURL
 
 func readSchema(t *testing.T) map[string]any {
@@ -184,19 +184,17 @@ func TestKeyDiffNamesAKeyMissingOnEitherSide(t *testing.T) {
 	}
 }
 
-// crew's own config and the example both name the published schema on
-// their first line, as editors read it.
-func TestTheConfigsNameThePublishedSchema(t *testing.T) {
+// The example names the published schema on its first line, as editors
+// read it.
+func TestTheExampleNamesThePublishedSchema(t *testing.T) {
 	if id := readSchema(t)["$id"]; id != schemaURL {
 		t.Errorf("%s: $id = %v, want %s", configSchema, id, schemaURL)
 	}
-	for _, path := range []string{ownConfig, exampleConfig} {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if first, _, _ := strings.Cut(string(data), "\n"); first != modeline {
-			t.Errorf("%s: first line = %q, want %q", path, first, modeline)
-		}
+	data, err := os.ReadFile(exampleConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first, _, _ := strings.Cut(string(data), "\n"); first != modeline {
+		t.Errorf("%s: first line = %q, want %q", exampleConfig, first, modeline)
 	}
 }

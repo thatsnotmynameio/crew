@@ -1,12 +1,18 @@
 # crew
 
+[![CI](https://github.com/thatsnotmynameio/crew/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thatsnotmynameio/crew/actions/workflows/ci.yml)
+[![Release](https://github.com/thatsnotmynameio/crew/actions/workflows/release.yml/badge.svg)](https://github.com/thatsnotmynameio/crew/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Platforms: Linux and macOS](https://img.shields.io/badge/platforms-linux%20%7C%20macOS-lightgrey)](.goreleaser.yaml)
+
 crew moves your GitHub issues through rules you declare in the repository. Each rule reacts to one label: crew polls for the issues and pull requests that carry it, moves each to the rule's running label and runs the rule's actions one after another, in one git worktree and branch per run. An action is a headless Claude Code or Codex session, or a shell script. Each action ends with a verdict, which either runs the next action or ends the run through one of the rule's routes. A route may comment on the issue, post crew's report and run scripts, then moves the issue to another label or closes it. You name every label in the rules: crew has no fixed ones.
 
 crew only runs sessions and scripts, comments on issues, moves their labels and closes them. Opening pull requests, reviewing and merging are your prompts' job and yours.
 
 ## Quick start
 
-On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your `PATH` and logged in, install the latest release into `/usr/local/bin`. The command checks the download against the release's `checksums.txt`, and `sudo` asks for your password:
+On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your `PATH` and logged in, install the latest release into `~/.local/bin`, without `sudo` or a password. The command checks the download against the release's `checksums.txt` and creates `~/.local/bin` when it is missing. When `~/.local/bin` is not on your `PATH`, it prints the line to add to your shell's startup file; when another `crew` comes first on your `PATH`, such as one installed in `/usr/local/bin`, it names that file:
 
 ```sh
 (
@@ -30,9 +36,23 @@ On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your 
     grep " $archive\$" checksums.txt | shasum -a 256 -c -
   fi
   tar -xzf "$archive" crew
-  sudo install -d /usr/local/bin
-  sudo install -m 0755 crew /usr/local/bin/crew
-  crew --version
+  bin="$HOME/.local/bin"
+  install -d "$bin"
+  install -m 0755 crew "$bin/crew"
+  "$bin/crew" --version
+  case ":$PATH:" in
+    *":$bin:"*)
+      hash -r 2>/dev/null || true
+      found=$(command -v crew || true)
+      if [ -n "$found" ] && [ "$found" != "$bin/crew" ]; then
+        echo "warning: crew runs $found, not $bin/crew; remove $found to run the crew just installed" >&2
+      fi
+      ;;
+    *)
+      echo "warning: $bin is not on your PATH; add this line to your shell's startup file, such as ~/.profile, ~/.bashrc or ~/.zshrc:" >&2
+      echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" >&2
+      ;;
+  esac
 )
 ```
 
@@ -106,9 +126,9 @@ When an issue returns to a rule's `ready` label and that rule's last run on it e
 
 ## Stopping crew
 
-Ctrl+C, or `q` in the live view, stops crew, as SIGINT, SIGTERM and SIGHUP do. crew takes nothing new, starts no other action, and asks each running session and script to stop, giving it up to ten seconds before it kills it. An action crew stopped gives `failed`, and every run whose action ends while crew stops ends through its `failed` route. In the route of a stopping run, crew stops a running shell step, skips the shell steps that have not started and shows them as skipped, and gives each move, close, comment and report its final try. A rule without actions still ends through `passed`. crew exits once every run it held has ended. A second Ctrl+C, `q` or signal does not wait: it kills every process crew started and exits at once.
+In the live view, `q` or Ctrl+C stops crew only when pressed twice within 3 seconds, in any mix: the first press only says in the footer that another stops crew, so a stray press costs nothing. When 3 seconds pass without a second press, crew carries on and the next press asks again. With `--plain`, Ctrl+C stops crew at once, as SIGINT, SIGTERM and SIGHUP do. crew takes nothing new, starts no other action, and asks each running session and script to stop, giving it up to ten seconds before it kills it. An action crew stopped gives `failed`, and every run whose action ends while crew stops ends through its `failed` route. In the route of a stopping run, crew stops a running shell step, skips the shell steps that have not started and shows them as skipped, and gives each move, close, comment and report its final try. A rule without actions still ends through `passed`. crew exits once every run it held has ended. Once crew is stopping, whatever started the stop, one more `q` or Ctrl+C in the live view, or a second signal, does not wait: it kills every process crew started and exits at once.
 
-`run_time_limit_seconds` ends crew another way. crew takes nothing new, lets each running action finish and starts no other. A run whose action then leads to the next action ends through `failed` instead; one whose action leads to a route ends through that route. Every route runs all its steps, shell steps included, before crew exits. A tracker write that keeps failing does not keep crew past the limit: crew then stops as above.
+`run_time_limit_seconds` ends crew another way. crew takes nothing new, lets each running action finish and starts no other. A run whose action then leads to the next action ends through `failed` instead; one whose action leads to a route ends through that route. Every route runs all its steps, shell steps included, before crew exits. A tracker write that keeps failing does not keep crew past the limit: crew then stops as above. This wind-down is not a stop, so stopping it from the live view still takes two presses.
 
 crew exits 0 after a stop or at its run time limit, 1 when it failed while running or a second stop forced its exit, and 2 on a command line it cannot use or a config or environment error, such as a repository without `.crew/config.yaml`, `.crew/config.local.yaml` or a global config file.
 
