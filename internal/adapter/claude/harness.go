@@ -17,7 +17,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// stoppedReason is the Outcome.Reason of a session ended by Stop.
+// stoppedReason is the Verdict.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
 // Compile-time guards: the engine finds Preparer, Narrator, UsageReporter

@@ -15,7 +15,7 @@ import (
 // maxReason is how many characters of a reason a verdict keeps.
 const maxReason = 200
 
-// stoppedReason is the Outcome.Reason of a session ended by Stop.
+// stoppedReason is the Verdict.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
 // recorder keeps what judging a codex session needs from what it prints:

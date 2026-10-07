@@ -28,9 +28,9 @@ var (
 
 // The reasons of sessions the fake harness ends itself.
 const (
-	// StoppedReason is the Outcome.Reason of a session ended by Stop.
+	// StoppedReason is the Verdict.Reason of a session ended by Stop.
 	StoppedReason = "stopped"
-	// KilledReason is the Outcome.Reason of a session that ignored Stop and
+	// KilledReason is the Verdict.Reason of a session that ignored Stop and
 	// was ended when the stop deadline passed.
 	KilledReason = "killed at the stop deadline"
 )

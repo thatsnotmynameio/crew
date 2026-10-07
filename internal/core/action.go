@@ -44,7 +44,7 @@ func (s *step) workspaceGone(in WorkspaceGone) {
 		Action: a.name, Workspace: a.prev.Workspace,
 	})
 	if s.m.stopping {
-		s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}, crew.CauseStopped)
+		s.end(h, a, stopped(), crew.CauseStopped)
 		return
 	}
 	a.prev = nil
@@ -76,7 +76,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	}
 	s.record(h, a, RunStarted)
 	if m.stopping {
-		s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}, crew.CauseStopped)
+		s.end(h, a, stopped(), crew.CauseStopped)
 		return
 	}
 	if in.Resumed && a.prev != nil {
@@ -131,7 +131,7 @@ func (s *step) sessionEnded(in SessionEnded) {
 	case !in.Outcome.Succeeded || len(a.checks) == 0:
 		s.end(h, a, in.Outcome, cause)
 	case s.m.stopping:
-		s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}, crew.CauseStopped)
+		s.end(h, a, stopped(), crew.CauseStopped)
 	default:
 		a.phase = PhaseChecking
 		s.runCheck(h, a)
@@ -163,7 +163,7 @@ func (s *step) checkEnded(in CheckEnded) {
 	})
 	switch {
 	case a.stopped:
-		s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}, crew.CauseStopped)
+		s.end(h, a, stopped(), crew.CauseStopped)
 	case !in.Passed || len(a.results) == len(a.checks):
 		outcome := crew.Outcome{Succeeded: in.Passed, Reason: crew.NewSessionText(in.Reason.String())}
 		s.end(h, a, outcome, crew.CauseCheck)

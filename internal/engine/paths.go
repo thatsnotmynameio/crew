@@ -84,7 +84,15 @@ func (e *Engine) scrub(text string) string {
 // boundary. The second closes what the strip itself opens: removing an
 // escape sequence can join a token's parts, as gh\x1b[0mp_… becomes ghp_….
 func (e *Engine) scrubAndStrip(text string) string {
-	return e.scrub(crew.StripControls(e.scrub(text)))
+	scrubbed := e.scrub(text)
+	stripped := crew.StripControls(scrubbed)
+	if stripped == scrubbed {
+		// Nothing was stripped, so nothing was joined: a second scrub
+		// would find nothing more. This keeps a plain text, as most
+		// sessions' words are at every refresh, to one pass.
+		return scrubbed
+	}
+	return e.scrub(stripped)
 }
 
 // githubToken matches GitHub's tokens by their prefixes: personal, OAuth,
