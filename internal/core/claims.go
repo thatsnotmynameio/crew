@@ -10,29 +10,19 @@ import (
 
 // journal is what the model knows of the rule runs' past, when it journals
 // them (KTD12): their History, replayed from the run journal and folded
-// live, and which action last worked in each workspace (KTD9).
+// live, with each workspace's earlier action runs retired once another
+// action starts in it (KTD9).
 type journal struct {
 	history crew.History
-	// claims holds, by workspace name, the issue, rule and action whose
-	// action run last started or ended in it, across issues (KTD9).
-	claims map[crew.WorkspaceName]actionKey
-}
-
-// actionKey identifies the runs of an action, in a rule, on an issue.
-type actionKey struct {
-	issue  crew.IssueID
-	rule   crew.RuleName
-	action crew.ActionName
 }
 
 // Journaling has the model journal every run event through Record
 // commands, starting from past, the run journal's events in the order they
-// were written (KTD12). Replaying past folds the History and the
-// workspaces' claims only: it takes no slot and makes no command, event,
-// status, handled entry or spend.
+// were written (KTD12). Replaying past folds the History only: it takes no
+// slot and makes no command, event, status, handled entry or spend.
 func Journaling(past []crew.RunEvent) Option {
 	return func(m *Model) {
-		m.journal = &journal{claims: map[crew.WorkspaceName]actionKey{}}
+		m.journal = &journal{}
 		for _, e := range past {
 			m.journal.fold(e)
 		}
@@ -46,22 +36,12 @@ func Reopening() Option {
 	return func(m *Model) { m.reopening = true }
 }
 
-// fold adds e to the past. An action run's start in a workspace another
-// action last worked in retires that action's last action run, which the
-// workspace no longer holds (KTD5, KTD9); the start and an end in a
-// workspace claim it.
+// fold adds e to the past. An action run's start in a workspace retires
+// every other action whose last action run is in it, which the workspace no
+// longer holds (KTD5, KTD9).
 func (j *journal) fold(e crew.RunEvent) {
 	if opened, ok := e.(crew.ActionOpened); ok {
-		key := actionKey{opened.IssueID, opened.Rule, opened.Action}
-		if other, ok := j.claims[opened.Workspace.Name]; ok && other != key {
-			j.history.Forget(other.issue, other.rule, other.action)
-		}
-		j.claims[opened.Workspace.Name] = key
-	}
-	if ended, ok := e.(crew.ActionEnded); ok {
-		if w, ok := ended.Workspace.Get(); ok {
-			j.claims[w.Workspace.Name] = actionKey{ended.IssueID, ended.Rule, ended.Action}
-		}
+		j.history.Retire(opened.Workspace.Name, opened.IssueID, opened.Rule, opened.Action)
 	}
 	j.history.Fold(e)
 }

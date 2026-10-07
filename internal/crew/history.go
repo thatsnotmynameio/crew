@@ -7,9 +7,9 @@ const crashedReason = "crew stopped before the run ended: it crashed or was kill
 // History is the past of the rule runs, folded from their events in the
 // order they happened, replayed from a journal or live: for each issue and
 // rule its last run, rebuilt with Apply, and for each of their actions the
-// last action run that had a workspace. It retires nothing by itself:
-// which workspace another action has since started in is the core's to
-// know, and the core has it Forget the action run that workspace held.
+// last action run that had a workspace. It retires nothing by itself: the
+// core has it Retire the action runs a workspace held once another action
+// starts in it.
 //
 // The zero History holds no past. Fold changes it, so the one that holds it
 // is the one that folds every event; its accessors return copies.
@@ -87,12 +87,21 @@ func (h *History) ResumePoints(issue IssueID, rule RuleName) map[ActionName]Resu
 	return points
 }
 
-// Forget drops the last action run of action, in rule on issue: another
-// action has since started in its workspace, which no longer holds its
-// work. The action then has no resume point, and its next start carries no
-// reason from before.
-func (h *History) Forget(issue IssueID, rule RuleName, action ActionName) {
-	delete(h.actions[ruleKey{issue: issue, rule: rule}], action)
+// Retire drops the last action run of every action, in any rule on any
+// issue, whose last action run had the workspace named w, except action's
+// own in rule on issue: that action is starting in w, which no longer holds
+// their work, since names repeat once a workspace is gone. A retired action
+// then has no resume point, and its next start carries no reason from
+// before. An action whose last run moved to another workspace keeps it.
+func (h *History) Retire(w WorkspaceName, issue IssueID, rule RuleName, action ActionName) {
+	own := ruleKey{issue: issue, rule: rule}
+	for k, actions := range h.actions {
+		for name, p := range actions {
+			if p.workspace.Name == w && (k != own || name != action) {
+				delete(actions, name)
+			}
+		}
+	}
 }
 
 // opened makes e's action run its action's last one. It carries the reason

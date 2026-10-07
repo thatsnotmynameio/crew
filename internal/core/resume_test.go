@@ -341,6 +341,25 @@ func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
 	})
 }
 
+// An action whose last run moved to another workspace keeps its resume
+// point when another rule's action later starts in the workspace it left:
+// only the actions whose last run is in that workspace are retired.
+func TestAStartRetiresOnlyTheActionsWhoseLastRunIsInItsWorkspace(t *testing.T) {
+	fixFirst := startedRun("9", "fix", "lfg", "lfg")
+	fixAgain := startedRun("9", "fix", "lfg", "lfg-2")
+	devLater := startedRun("9", "development", "lfg", "lfg")
+	d := resumeDriver(t,
+		fixFirst, endedRun(fixFirst, succeeded),
+		fixAgain, endedRun(fixAgain, failed("broke")),
+		devLater, endedRun(devLater, succeeded),
+	)
+	cmds := d.takeIssue(issue("9", 1, readyForFix))
+	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
+		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg",
+		Workspace: "issue-9-lfg-2", Branch: "crew/issue-9-lfg-2",
+	})
+}
+
 func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("the session's reason"))
 

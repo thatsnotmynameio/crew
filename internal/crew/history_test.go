@@ -193,7 +193,7 @@ func TestEachIssueAndRuleKeepsItsOwnResumePoints(t *testing.T) {
 	inFix := opening("run-4", 3, "development")
 	inFix.Rule = "fix"
 	// fix's action starts in implement's workspace: History retires
-	// nothing, which the core's claims do.
+	// nothing by itself; the core has it Retire.
 	h := folded(
 		opening("run-1", 3, "development"), ending("run-1", 6, "development", failedEnd("tests fail"), true),
 		inOtherIssue, inFix,
@@ -231,9 +231,9 @@ func TestARunWithGapsFolds(t *testing.T) {
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
 }
 
-func TestAForgottenActionHasNoResumePointAndItsNextStartCarriesNoReason(t *testing.T) {
+func TestARetiredActionHasNoResumePointAndItsNextStartCarriesNoReason(t *testing.T) {
 	h := folded(afterFailure()...)
-	h.Forget(testID, "implement", "development")
+	h.Retire("issue-9-development", testID, "fix", "development")
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{})
 
 	h.Fold(opening("run-2", 3, "development"))
@@ -241,4 +241,18 @@ func TestAForgottenActionHasNoResumePointAndItsNextStartCarriesNoReason(t *testi
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{
 		"development": point("development", "start claude: not found"),
 	})
+}
+
+func TestRetireKeepsAnActionWhoseLastRunMovedToAnotherWorkspace(t *testing.T) {
+	first := opening("run-1", 3, "development")
+	moved := opening("run-2", 3, "development")
+	moved.Workspace = Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
+	movedEnd := ending("run-2", 6, "development", failedEnd("still broken"), true)
+	movedEnd.Workspace = Some(OpenedWorkspace{Workspace: moved.Workspace, Log: moved.Log, Opened: at(5)})
+	h := folded(first, ending("run-1", 4, "development", failedEnd("tests fail"), true), moved, movedEnd)
+	h.Retire("issue-9-development", testID, "fix", "development")
+	got := h.ResumePoints(testID, "implement")["development"]
+	if got.Workspace.Name != "issue-9-development-2" || got.Reason.String() != "still broken" {
+		t.Errorf("resume point = %#v, want the failed run in issue-9-development-2", got)
+	}
 }
