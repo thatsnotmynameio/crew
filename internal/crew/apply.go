@@ -25,21 +25,36 @@ func Apply(run RuleRun, e RunEvent) (RuleRun, error) {
 	return e.apply(run), nil
 }
 
-// apply starts the run with its cursor on its first action, or, when it
-// resumes, on the resume point's action, the actions before which were
-// done in an earlier run.
+// apply starts the run as its start says: with its cursor on its first
+// action; on the restart point's action, the actions before which were
+// done in an earlier run, an action the rule lost counting as the first;
+// or, for the passed route alone, with every action done in an earlier run
+// and its cursor on the last. A resumed run inherits the continued run's
+// latest session.
 func (e RunTaken) apply(RuleRun) RuleRun {
+	start := e.Start
+	if start == nil {
+		start = StartFresh{}
+	}
 	r := RuleRun{
 		id: e.Run, continues: e.Continues, issue: NewIssue(e.Issue), rule: e.Rule, taken: e.At,
-		phase: TakingPhase{}, workspace: NoWorkspace{}, resume: e.Resume, lookup: LookupNotAsked{},
+		phase: TakingPhase{}, workspace: NoWorkspace{}, start: start, session: inherited(start),
+		lookup: LookupNotAsked{},
 	}
 	for _, name := range e.Actions {
 		r.actions = append(r.actions, newActionRun(name))
 	}
-	if resume, ok := e.Resume.Get(); ok {
-		r.cursor = max(r.actionIndex(resume.Action), 0)
+	done := 0
+	switch s := start.(type) {
+	case StartAt:
+		r.cursor = max(r.actionIndex(s.Action), 0)
+		done = r.cursor
+	case StartPassedRoute:
+		r.cursor = max(len(r.actions)-1, 0)
+		done = len(r.actions)
+	case StartFresh, StartWithoutAction:
 	}
-	for i := range r.cursor {
+	for i := range done {
 		r.actions[i].state = DoneInEarlierRun{}
 	}
 	return r
@@ -66,11 +81,18 @@ func (e WorkspaceAsked) apply(r RuleRun) RuleRun {
 	return r
 }
 
-// apply moves the cursor back to the run's first action, which no earlier
-// run did in the new workspace.
+// apply drops the worktree from the run's start. A run that resumed at an
+// action starts fresh: its cursor moves back to its first action, which no
+// earlier run did in the new workspace, and it no longer inherits the
+// continued run's latest session. The passed route alone keeps its
+// actions as they were.
 func (WorkspaceMissing) apply(r RuleRun) RuleRun {
 	r = r.acting()
-	r.workspace, r.cursor = NoWorkspace{}, 0
+	r.workspace, r.start = NoWorkspace{}, withoutWorktree(r.Start())
+	if _, passedAlone := r.start.(StartPassedRoute); passedAlone {
+		return r
+	}
+	r.cursor, r.session = 0, Optional[LatestSession]{}
 	r.actions = slices.Clone(r.actions)
 	for i, a := range r.actions {
 		if is[DoneInEarlierRun](a.state) {
@@ -95,7 +117,7 @@ func (e ActionSessionAsked) apply(r RuleRun) RuleRun {
 }
 
 func (e ActionSessionStarted) apply(r RuleRun) RuleRun {
-	r.bot = e.Bot
+	r.session = Some(LatestSession{Action: e.Action, Bot: e.Bot})
 	return r.withAction(e.Action, func(a ActionRun) ActionRun {
 		a.state, a.session = InSession{}, Some(e.At)
 		return a

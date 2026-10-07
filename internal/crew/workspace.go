@@ -10,19 +10,6 @@ type Workspace struct {
 	Branch string
 }
 
-// ResumePoint is where a new rule run resumes the work of one that did not
-// end well: the workspace it ran in, the repository-relative path of its
-// log, why it failed, and the action the new run starts at.
-type ResumePoint struct {
-	Workspace Workspace
-	Log       string
-	Reason    SessionText
-	// Action is the action the new run starts at; the actions before it
-	// went on to the next action in the run it resumes. An action the rule
-	// no longer has starts the new run at its first action.
-	Action ActionName
-}
-
 // OpenedWorkspace is a rule run's workspace, once it is ready.
 type OpenedWorkspace struct {
 	Workspace Workspace

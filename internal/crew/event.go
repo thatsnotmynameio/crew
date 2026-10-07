@@ -47,10 +47,10 @@ type RunTaken struct {
 	From, To  State
 	// Actions are the rule's actions, in its action order.
 	Actions []ActionName
-	// Resume is where the run resumes the work of the run it continues:
-	// its workspace is reopened when the take lands, and it starts at the
-	// resume point's action.
-	Resume Optional[ResumePoint]
+	// Start is how the run starts, decided from the run it continues: at
+	// the first action, at a restart point in that run's reopened
+	// worktree, or with PassedRoute alone. Nil counts as StartFresh.
+	Start Start
 }
 
 // TakeMoved is the run's take move that landed: the issue moved from From
@@ -82,7 +82,8 @@ type WorkspaceAsked struct {
 }
 
 // WorkspaceMissing is the workspace the run asked to reopen, which no
-// longer exists. The run starts again at its first action.
+// longer exists. A run that resumed at an action starts fresh at its first
+// action, in a new worktree; the passed route alone runs without one.
 type WorkspaceMissing struct {
 	EventHead
 

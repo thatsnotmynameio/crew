@@ -31,9 +31,10 @@ func TestTheTakeStartsARun(t *testing.T) {
 
 func TestATakeThatResumesStartsAtTheResumePointsAction(t *testing.T) {
 	run := given(t, []RunEvent{resumedAt("judge")})
-	resume, _ := run.Resume().Get()
-	if a, _ := run.Cursor(); a.Name() != "judge" || resume != resumePoint("judge") {
-		t.Errorf("cursor %s, resume %#v, want judge resuming", a.Name(), resume)
+	if a, _ := run.Cursor(); a.Name() != "judge" || run.Start() != startAt("judge") ||
+		run.LatestSession() != Some(lfgLatest) {
+		t.Errorf("cursor %s, start %#v, latest session %v, want judge resuming after lfg's session",
+			a.Name(), run.Start(), run.LatestSession())
 	}
 	want := []ActionRunState{DoneInEarlierRun{}, DoneInEarlierRun{}, AwaitingTurn{}}
 	if got := states(run); !reflect.DeepEqual(got, want) {
@@ -44,8 +45,26 @@ func TestATakeThatResumesStartsAtTheResumePointsAction(t *testing.T) {
 		t.Errorf("a resume at an action the rule lost starts at %s, want install", a.Name())
 	}
 	missing := given(t, seq(reopening(), []RunEvent{WorkspaceMissing{EventHead: eh(2), Workspace: runWS()}}))
-	if a, _ := missing.Cursor(); a.Name() != "install" || !reflect.DeepEqual(states(missing)[0], AwaitingTurn{}) {
-		t.Errorf("after a missing workspace the cursor is on %s, want install, which runs again", a.Name())
+	if a, _ := missing.Cursor(); a.Name() != "install" || !reflect.DeepEqual(states(missing)[0], AwaitingTurn{}) ||
+		missing.Start() != (StartFresh{}) || missing.Bot() != (Bot{}) {
+		t.Errorf("after a missing workspace the cursor is on %s, start %#v, bot %v, want a fresh start at install",
+			a.Name(), missing.Start(), missing.Bot())
+	}
+}
+
+func TestATakeOfThePassedRouteAloneHasEveryActionDone(t *testing.T) {
+	e, _ := taken().(RunTaken)
+	e.Start = StartPassedRoute{Workspace: Some(runWS()), Log: runLog, Session: Some(lfgLatest)}
+	run := given(t, []RunEvent{e})
+	want := []ActionRunState{DoneInEarlierRun{}, DoneInEarlierRun{}, DoneInEarlierRun{}}
+	if a, _ := run.Cursor(); a.Name() != "judge" || !reflect.DeepEqual(states(run), want) || run.Bot() != developer {
+		t.Errorf("cursor %s, actions %#v, bot %v, want every action done, judge at the cursor, lfg's bot",
+			a.Name(), states(run), run.Bot())
+	}
+	gone := given(t, []RunEvent{e, takeMoved(), WorkspaceMissing{EventHead: eh(2), Workspace: runWS()}})
+	if !reflect.DeepEqual(states(gone), want) || gone.Start() != (StartPassedRoute{Session: Some(lfgLatest)}) {
+		t.Errorf("after a missing workspace: actions %#v, start %#v, want them kept and no worktree",
+			states(gone), gone.Start())
 	}
 }
 

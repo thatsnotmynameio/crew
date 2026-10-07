@@ -77,10 +77,12 @@ type PullRequestLookedUp struct {
 }
 
 // decide moves the issue on once the take landed: a rule without actions
-// chooses PassedRoute at once, after a stop or time-up too; after a stop or
-// time-up, the first action ends without starting; otherwise the run asks
-// for its workspace, the resumed run's when it inherited a resume point. A
-// take given up releases the run.
+// chooses PassedRoute at once, after a stop or time-up too, and so does
+// the passed route alone, unless it reopens the continued run's worktree
+// first while crew does not stop; after a stop or time-up, the first
+// action ends without starting; otherwise the run asks for its workspace,
+// the continued run's when its start reopens it. A take given up releases
+// the run.
 func (f TakeSettled) decide(d *decider) error {
 	if _, taking := d.run.phase.(TakingPhase); !taking {
 		return d.refused("its take")
@@ -91,17 +93,20 @@ func (f TakeSettled) decide(d *decider) error {
 	}
 	labels := d.def.Rule.Labels
 	d.emit(TakeMoved{EventHead: d.head(), From: labels.Ready, To: labels.Running})
-	if len(d.run.actions) == 0 {
-		d.choose(PassedRoute, "")
+	w, _, reopen := reopens(d.run.Start())
+	passedAlone := d.passedAlone()
+	_, halted := d.halted()
+	switch {
+	case len(d.run.actions) == 0, passedAlone && (d.run.stopping || !reopen):
+		d.choosePassed()
 		return nil
-	}
-	if _, halted := d.halted(); halted {
+	case halted && !passedAlone:
 		d.startAtCursor()
 		return nil
 	}
 	asked := WorkspaceAsked{EventHead: d.head()}
-	if resume, ok := d.run.resume.Get(); ok {
-		asked.Reopen = Some(resume.Workspace)
+	if reopen {
+		asked.Reopen = Some(w)
 	}
 	d.emit(asked)
 	return nil
@@ -163,43 +168,57 @@ func (d *decider) awaitsWorkspace(reopened bool) error {
 
 // decide records the run's workspace and starts the action at its cursor,
 // or, after a stop or time-up, ends that action without starting it: no
-// action writes the log, so the workspace names none.
+// action writes the log, so the workspace names none. The passed route
+// alone chooses its route in the workspace, with its log.
 func (f WorkspaceReady) decide(d *decider) error {
 	if err := d.awaitsWorkspace(false); err != nil {
 		return err
 	}
 	opened := WorkspaceOpened{EventHead: d.head(), Workspace: f.Workspace}
-	if _, halted := d.halted(); !halted {
-		_, resumes := d.run.resume.Get()
-		opened.Log, opened.Resumed = f.Log, f.Resumed && resumes
+	if _, halted := d.halted(); !halted || d.passedAlone() {
+		_, _, reopen := reopens(d.run.Start())
+		opened.Log, opened.Resumed = f.Log, f.Resumed && reopen
 	}
 	d.emit(opened)
+	if d.passedAlone() {
+		d.choosePassed()
+		return nil
+	}
 	d.startAtCursor()
 	return nil
 }
 
 // decide asks for a new workspace in place of the reopened one that is
 // gone, for a run that starts again at its first action, or, after a stop
-// or time-up, ends that action without a workspace.
+// or time-up, ends that action without a workspace. The passed route alone
+// chooses its route without a workspace.
 func (f WorkspaceGone) decide(d *decider) error {
 	if err := d.awaitsWorkspace(true); err != nil {
 		return err
 	}
 	reopening, _ := d.run.workspace.(ReopeningWorkspace)
 	d.emit(WorkspaceMissing{EventHead: d.head(), Workspace: reopening.Workspace})
-	if _, halted := d.halted(); halted {
+	_, halted := d.halted()
+	switch {
+	case d.passedAlone():
+		d.choosePassed()
+	case halted:
 		d.startAtCursor()
-		return nil
+	default:
+		d.emit(WorkspaceAsked{EventHead: d.head()})
 	}
-	d.emit(WorkspaceAsked{EventHead: d.head()})
 	return nil
 }
 
 // decide fails the action at the run's cursor by the workspace, after a
-// stop too.
+// stop too. The passed route alone chooses its route without a workspace.
 func (f WorkspaceFailed) decide(d *decider) error {
 	if err := d.awaitsWorkspace(false); err != nil {
 		return err
+	}
+	if d.passedAlone() {
+		d.choosePassed()
+		return nil
 	}
 	a, _ := d.run.Cursor()
 	d.finish(a.name, failedBy(f.Reason, CauseWorkspace))

@@ -27,9 +27,9 @@ type RuleRun struct {
 	phase     RunPhase
 	actions   []ActionRun
 	workspace WorkspaceState
-	resume    Optional[ResumePoint]
+	start     Start
 	cursor    int
-	bot       Bot
+	session   Optional[LatestSession]
 	lookup    Lookup
 }
 
@@ -94,14 +94,28 @@ func (r RuleRun) Workspace() Optional[OpenedWorkspace] {
 	return Optional[OpenedWorkspace]{}
 }
 
-// Resume returns where the run resumes the work of the run it continues,
-// when it inherited a resume point.
-func (r RuleRun) Resume() Optional[ResumePoint] { return r.resume }
+// Start returns how the run starts, as its take decided from the run it
+// continues, without the worktree it reopens once that proved gone
+// (WorkspaceMissing).
+func (r RuleRun) Start() Start {
+	if r.start == nil {
+		return StartFresh{}
+	}
+	return r.start
+}
+
+// LatestSession returns the run's latest session: the latest of its own
+// sessions that started, or, before any did, the one a resumed run
+// inherited from the run it continues.
+func (r RuleRun) LatestSession() Optional[LatestSession] { return r.session }
 
 // Bot returns the bot the run's actions that are not sessions act as: the
-// bot of its latest session that started, or the zero Bot, the tracker's
-// identity, before any did.
-func (r RuleRun) Bot() Bot { return r.bot }
+// bot of its latest session, or the zero Bot, the tracker's identity, when
+// it has none.
+func (r RuleRun) Bot() Bot {
+	s, _ := r.session.Get()
+	return s.Bot
+}
 
 // Lookup returns how the lookup of the run's pull requests stands.
 func (r RuleRun) Lookup() Lookup { return r.lookup }
@@ -130,8 +144,8 @@ func (r RuleRun) ActionsEnded() bool {
 func (r RuleRun) Snapshot() RuleRunSnapshot {
 	s := RuleRunSnapshot{
 		ID: r.id, Continues: r.continues, Issue: r.issue.Data(), Rule: r.rule, Taken: r.taken,
-		Stopping: r.stopping, TimeUp: r.timeUp, Phase: clonePhase(r.phase), Workspace: r.workspace, Resume: r.resume,
-		Cursor: r.cursor, Bot: r.bot, Lookup: r.lookup,
+		Stopping: r.stopping, TimeUp: r.timeUp, Phase: clonePhase(r.phase), Workspace: r.workspace, Start: r.Start(),
+		Cursor: r.cursor, Session: r.session, Lookup: r.lookup,
 	}
 	for _, a := range r.actions {
 		s.Actions = append(s.Actions, a.snapshot())
@@ -160,12 +174,13 @@ type RuleRunSnapshot struct {
 	// once.
 	Actions   []ActionRunSnapshot
 	Workspace WorkspaceState
-	Resume    Optional[ResumePoint]
+	// Start is how the run starts; nil counts as StartFresh.
+	Start Start
 	// Cursor is the index in Actions of the action run at the cursor; 0
 	// for a run without actions.
-	Cursor int
-	Bot    Bot
-	Lookup Lookup
+	Cursor  int
+	Session Optional[LatestSession]
+	Lookup  Lookup
 }
 
 // errBadSnapshot is the error of a snapshot RestoreRuleRun rejects.
@@ -182,8 +197,8 @@ func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 	}
 	r := RuleRun{
 		id: s.ID, continues: s.Continues, issue: NewIssue(s.Issue), rule: s.Rule, taken: s.Taken,
-		stopping: s.Stopping, timeUp: s.TimeUp, phase: clonePhase(s.Phase), workspace: s.Workspace, resume: s.Resume,
-		cursor: s.Cursor, bot: s.Bot, lookup: s.Lookup,
+		stopping: s.Stopping, timeUp: s.TimeUp, phase: clonePhase(s.Phase), workspace: s.Workspace, start: s.Start,
+		cursor: s.Cursor, session: s.Session, lookup: s.Lookup,
 	}
 	for _, a := range s.Actions {
 		r.actions = append(r.actions, restoreAction(a))

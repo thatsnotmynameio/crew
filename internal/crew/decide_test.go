@@ -166,6 +166,72 @@ var workspaceDecisions = []decision{
 	},
 }
 
+// passedAloneTaken is the take of a run that runs only the passed route,
+// in the continued run's worktree when workspace is set.
+func passedAloneTaken(workspace bool) []RunEvent {
+	e, _ := taken().(RunTaken)
+	start := StartPassedRoute{Session: Some(lfgLatest)}
+	if workspace {
+		start.Workspace, start.Log = Some(runWS()), runLog
+	}
+	e.Start = start
+	return []RunEvent{e}
+}
+
+// reopeningPassed is the passed route alone, whose take landed at minute
+// 1 and asked to reopen the continued run's worktree.
+func reopeningPassed() []RunEvent {
+	return append(passedAloneTaken(true), takeMoved(), WorkspaceAsked{EventHead: eh(1), Reopen: Some(runWS())})
+}
+
+// passedAloneDecisions decide the take of a run that runs only the passed
+// route (AE19, KTD-S10).
+var passedAloneDecisions = []decision{
+	{
+		name:  "take: the passed route alone reopens the continued run's worktree",
+		given: passedAloneTaken(true), fact: landed(),
+		want: []RunEvent{takeMoved(), WorkspaceAsked{EventHead: eh(1), Reopen: Some(runWS())}},
+	},
+	{
+		name:  "take: the passed route alone takes passed at its take while crew stops",
+		given: seq(passedAloneTaken(true), stopped(0)), fact: landed(),
+		want: []RunEvent{takeMoved(), chose(1, PassedRoute, "judge"), asked(1, 0)},
+	},
+	{
+		name:  "take: the passed route alone without a worktree takes passed at its take",
+		given: passedAloneTaken(false), fact: landed(), finds: true,
+		want: []RunEvent{takeMoved(), chose(1, PassedRoute, "judge"), asked(1, 0)},
+	},
+	{
+		name:  "ready: the passed route alone takes passed in the reopened worktree, and looks up its pull requests",
+		given: reopeningPassed(), fact: ready(true), finds: true,
+		want: []RunEvent{
+			WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog, Resumed: true},
+			chose(2, PassedRoute, "judge"), RunLookupAsked{EventHead: eh(2)},
+		},
+	},
+	{
+		name:  "ready: after time-up the passed route alone keeps its log",
+		given: seq(reopeningPassed(), outOfTime(1)), fact: ready(true),
+		want: []RunEvent{
+			WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog, Resumed: true},
+			chose(2, PassedRoute, "judge"), asked(2, 0),
+		},
+	},
+	{
+		name:  "gone: the passed route alone takes passed without a worktree",
+		given: reopeningPassed(), fact: WorkspaceGone{FactHead: fh(2)},
+		want: []RunEvent{
+			WorkspaceMissing{EventHead: eh(2), Workspace: runWS()}, chose(2, PassedRoute, "judge"), asked(2, 0),
+		},
+	},
+	{
+		name:  "failed: the passed route alone takes passed without a worktree",
+		given: reopeningPassed(), fact: WorkspaceFailed{FactHead: fh(2), Reason: NewSessionText("not listed")},
+		want: []RunEvent{chose(2, PassedRoute, "judge"), asked(2, 0)},
+	},
+}
+
 // stopDecisions decide a stop.
 var stopDecisions = []decision{
 	{
@@ -194,6 +260,7 @@ var stopDecisions = []decision{
 	},
 }
 
-func TestDecideTheTake(t *testing.T)      { decide(t, takeDecisions) }
-func TestDecideTheWorkspace(t *testing.T) { decide(t, workspaceDecisions) }
-func TestDecideTheStop(t *testing.T)      { decide(t, stopDecisions) }
+func TestDecideTheTake(t *testing.T)        { decide(t, takeDecisions) }
+func TestDecideThePassedAlone(t *testing.T) { decide(t, passedAloneDecisions) }
+func TestDecideTheWorkspace(t *testing.T)   { decide(t, workspaceDecisions) }
+func TestDecideTheStop(t *testing.T)        { decide(t, stopDecisions) }

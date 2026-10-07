@@ -110,7 +110,7 @@ func (d *decider) start(name ActionName) {
 		}
 		d.emit(ActionSessionAsked{EventHead: d.head(), Action: name})
 	case ShellSpec:
-		d.emit(ActionShellAsked{EventHead: d.head(), Action: name, Bot: d.run.bot})
+		d.emit(ActionShellAsked{EventHead: d.head(), Action: name, Bot: d.run.Bot()})
 	}
 }
 
@@ -177,6 +177,20 @@ func (d *decider) choose(route RouteName, action ActionName) {
 		return
 	}
 	d.nextStep()
+}
+
+// passedAlone reports whether the run runs only PassedRoute, which the run
+// it continues chose and never finished.
+func (d *decider) passedAlone() bool {
+	_, ok := d.run.Start().(StartPassedRoute)
+	return ok
+}
+
+// choosePassed ends the run's sequence through PassedRoute, with the
+// action at its cursor, or none for a rule without actions.
+func (d *decider) choosePassed() {
+	a, _ := d.run.Cursor()
+	d.choose(PassedRoute, a.name)
 }
 
 // nextStep asks the next step of the run's route, once it is routing, or

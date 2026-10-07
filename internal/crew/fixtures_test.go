@@ -22,10 +22,9 @@ const (
 )
 
 var (
-	t0      = time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	testID  = IssueID{Repository: "R_1", Key: "9"}
-	usage   = Usage{Cost: Some(0.5), Turns: Some(3)}
-	stopEnd = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStopped}
+	t0     = time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	testID = IssueID{Repository: "R_1", Key: "9"}
+	usage  = Usage{Cost: Some(0.5), Turns: Some(3)}
 	// unstarted is the end of an action a stop reached before it started.
 	unstarted = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStoppedBeforeStart}
 	foundPR   = PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
@@ -110,9 +109,16 @@ func runWS() Workspace { return Workspace{Name: "issue-9-implement", Branch: "cr
 // opened is the run's new workspace, ready at minute 2.
 func opened() OpenedWorkspace { return OpenedWorkspace{Workspace: runWS(), Log: runLog, Opened: at(2)} }
 
-// resumePoint is the point a run resumes at action from.
-func resumePoint(action ActionName) ResumePoint {
-	return ResumePoint{Workspace: runWS(), Log: runLog, Reason: NewSessionText("tests fail"), Action: action}
+// lfgLatest is lfg's session as the latest session of a run.
+var lfgLatest = LatestSession{Action: "lfg", Bot: developer}
+
+// startAt is the start of a run that resumes at action the work of a run
+// that failed, whose latest session was lfg's.
+func startAt(action ActionName) StartAt {
+	return StartAt{
+		Workspace: runWS(), Log: runLog, Action: action, Route: FailedRoute, Reason: NewSessionText("tests fail"),
+		Session: Some(lfgLatest),
+	}
 }
 
 // taken is the take of the test rule's three actions at minute 0.
@@ -131,7 +137,7 @@ func takenWithoutActions() RunEvent {
 // resumedAt is the take of a run that resumes at action.
 func resumedAt(action ActionName) RunEvent {
 	e, _ := taken().(RunTaken)
-	e.Resume = Some(resumePoint(action))
+	e.Start = startAt(action)
 	return e
 }
 

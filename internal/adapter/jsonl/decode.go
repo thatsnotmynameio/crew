@@ -1,48 +1,102 @@
 package jsonl
 
 import (
+	"maps"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// decode returns the run event l, a version 2 line, holds, with head h,
-// and false when its type is none crew knows. A line about one action goes
-// to decodeAction.
-func (l line) decode(h crew.EventHead) (crew.RunEvent, bool) {
-	switch l.Type {
-	case typeRunTaken:
-		return l.runTaken(h), true
-	case typeTakeMoved:
-		return crew.TakeMoved{EventHead: h, From: l.From, To: l.To}, true
-	case typeRunStopped:
-		return crew.RunStopped{EventHead: h}, true
-	case typeRunJudged:
-		ending := crew.RunEnding{To: l.To}
-		for _, f := range l.Failures {
-			ending.Failures = append(ending.Failures, crew.ActionFailure{
-				Action: f.Action, Workspace: f.Workspace, Log: f.Log,
-			})
-		}
-		return crew.RunEnded{EventHead: h, Ending: ending}, true
-	case typeVerdictMoved:
-		return crew.EndingMoved{EventHead: h, From: l.From, To: l.To}, true
-	case typeVerdictDropped:
-		return crew.EndingDropped{EventHead: h, To: l.To, Reason: l.Reason}, true
-	case typeFailureReported:
-		return crew.FailureReported{EventHead: h}, true
-	case typeFailureReportDropped:
-		return crew.FailureReportDropped{EventHead: h}, true
-	case typeRunReleased:
-		return crew.RunReleased{EventHead: h}, true
+// decoder returns the run event a line of one type holds, with head h.
+type decoder func(l line, h crew.EventHead) crew.RunEvent
+
+// decoders returns the decoders of the journal's line types: those of a
+// run's take, stop, worktree and release, and those of its actions and
+// route (actionDecoders).
+func decoders() map[string]decoder {
+	d := map[string]decoder{
+		typeRunTaken: line.runTaken,
+		typeTakeMoved: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.TakeMoved{EventHead: h, From: l.From, To: l.To}
+		},
+		typeRunStopped:   func(_ line, h crew.EventHead) crew.RunEvent { return crew.RunStopped{EventHead: h} },
+		typeRunOutOfTime: func(_ line, h crew.EventHead) crew.RunEvent { return crew.RunOutOfTime{EventHead: h} },
+		typeRunReleased:  func(_ line, h crew.EventHead) crew.RunEvent { return crew.RunReleased{EventHead: h} },
+		typeWorkspaceAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			e := crew.WorkspaceAsked{EventHead: h}
+			if l.Workspace != "" {
+				e.Reopen = crew.Some(l.workspace())
+			}
+			return e
+		},
+		typeWorkspaceMissing: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.WorkspaceMissing{EventHead: h, Workspace: l.workspace()}
+		},
+		typeWorkspaceOpened: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.WorkspaceOpened{EventHead: h, Workspace: l.workspace(), Log: l.Log, Resumed: l.Resumed}
+		},
+		typeRouteChosen: line.routeChosen,
+		typeLookupAsked: func(_ line, h crew.EventHead) crew.RunEvent { return crew.RunLookupAsked{EventHead: h} },
+		typeLookupDone: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.RunLookupDone{EventHead: h, PullRequest: l.found()}
+		},
+		typeStepAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.StepAsked{EventHead: h, Step: deref(l.Step)}
+		},
+		typeStepShellStop: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.StepShellStopAsked{EventHead: h, Step: deref(l.Step)}
+		},
+		typeStepEnded: line.stepEnded,
 	}
-	return l.decodeAction(h)
+	maps.Copy(d, actionDecoders())
+	return d
+}
+
+// actionDecoders returns the decoders of the line types of one action.
+func actionDecoders() map[string]decoder {
+	return map[string]decoder{
+		typeSessionAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionSessionAsked{EventHead: h, Action: l.Action}
+		},
+		typeSessionStarted: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionSessionStarted{EventHead: h, Action: l.Action, Bot: crew.Bot{Name: l.Bot}}
+		},
+		typeSessionStopAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionSessionStopAsked{EventHead: h, Action: l.Action}
+		},
+		typeSessionEnded: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionSessionEnded{EventHead: h, Action: l.Action, Outcome: l.end().Outcome(), Usage: l.reported()}
+		},
+		typeShellAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionShellAsked{EventHead: h, Action: l.Action, Bot: crew.Bot{Name: l.Bot}}
+		},
+		typeShellStopAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionShellStopAsked{EventHead: h, Action: l.Action}
+		},
+		typeShellEnded:  line.shellEnded,
+		typeActionEnded: line.ended,
+	}
+}
+
+// decode returns the run event l holds, with head h, by the decoder of its
+// type in decoders, and false when its type has none.
+func (l line) decode(decoders map[string]decoder, h crew.EventHead) (crew.RunEvent, bool) {
+	d, ok := decoders[l.Type]
+	if !ok {
+		return nil, false
+	}
+	return d(l, h), true
+}
+
+// workspace returns the worktree l names.
+func (l line) workspace() crew.Workspace {
+	return crew.Workspace{Name: l.Workspace, Branch: l.Branch}
 }
 
 // runTaken returns the RunTaken l holds, with head h.
-func (l line) runTaken(h crew.EventHead) crew.RunTaken {
+func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 	e := crew.RunTaken{
-		EventHead: h, From: l.From, To: l.To,
+		EventHead: h, From: l.From, To: l.To, Start: l.start(),
 		Issue: crew.IssueData{
 			ID: h.IssueID, Ref: h.IssueRef, Title: l.Title, URL: l.URL, Created: deref(l.Created),
 			Priority: l.Priority, States: l.States, Blocked: l.Blocked,
@@ -55,88 +109,92 @@ func (l line) runTaken(h crew.EventHead) crew.RunTaken {
 		e.Continues = crew.Some(l.Continues)
 	}
 	for _, a := range l.Actions {
-		t := crew.ActionTaken{Name: a.Name}
-		if a.Workspace != "" {
-			t.Resume = crew.Some(crew.ResumePoint{
-				Workspace: crew.Workspace{Name: a.Workspace, Branch: a.Branch}, Log: a.Log,
-				Reason: crew.NewSessionText(a.Reason),
-			})
-		}
-		e.Actions = append(e.Actions, t)
+		e.Actions = append(e.Actions, a.Name)
 	}
 	return e
 }
 
-// decodeAction returns the run event l, a version 2 line about one action,
-// holds, with head h, and false when its type is none crew knows. A line
-// of an action's check, lookup or end goes to decodeActionEnd.
-func (l line) decodeAction(h crew.EventHead) (crew.RunEvent, bool) {
-	workspace := crew.Workspace{Name: l.Workspace, Branch: l.Branch}
-	switch l.Type {
-	case typeWorkspaceAsked:
-		e := crew.ActionWorkspaceAsked{EventHead: h, Action: l.Action}
-		if l.Workspace != "" {
-			e.Reopen = crew.Some(workspace)
+// start returns the start l holds: StartFresh when it holds none, or one
+// of a kind crew does not know.
+func (l line) start() crew.Start {
+	s := l.Start
+	if s == nil {
+		return crew.StartFresh{}
+	}
+	var session crew.Optional[crew.LatestSession]
+	if s.Session != "" {
+		session = crew.Some(crew.LatestSession{Action: s.Session, Bot: crew.Bot{Name: s.Bot}})
+	}
+	switch s.Kind {
+	case startAt:
+		return crew.StartAt{
+			Workspace: crew.Workspace{Name: s.Workspace, Branch: s.Branch}, Log: s.Log, Action: s.Action,
+			Route: s.Route, Reason: crew.NewSessionText(s.Reason), Session: session,
 		}
-		return e, true
-	case typeWorkspaceMissing:
-		return crew.WorkspaceMissing{EventHead: h, Action: l.Action, Workspace: workspace}, true
-	case typeActionOpened:
-		return crew.ActionOpened{EventHead: h, Action: l.Action, Workspace: workspace, Log: l.Log, Resumed: l.Resumed}, true
-	case typeSessionAsked:
-		return crew.ActionSessionAsked{EventHead: h, Action: l.Action}, true
-	case typeSessionStarted:
-		return crew.ActionSessionStarted{
-			EventHead: h, Action: l.Action, Workspace: workspace, Log: l.Log, Resumed: l.Resumed,
-		}, true
-	case typeSessionStopAsked:
-		return crew.ActionSessionStopAsked{EventHead: h, Action: l.Action}, true
-	case typeSessionEnded:
-		return crew.ActionSessionEnded{
-			EventHead: h, Action: l.Action, Outcome: l.end().Outcome(), Usage: l.reported(),
-		}, true
+	case startPassedRoute:
+		out := crew.StartPassedRoute{Log: s.Log, Session: session}
+		if s.Workspace != "" {
+			out.Workspace = crew.Some(crew.Workspace{Name: s.Workspace, Branch: s.Branch})
+		}
+		return out
+	case startWithoutAction:
+		return crew.StartWithoutAction{Action: s.Action}
 	}
-	return l.decodeActionEnd(h)
+	return crew.StartFresh{}
 }
 
-// decodeActionEnd returns the run event l, a version 2 line of an action's
-// check, lookup or end, holds, with head h, and false when its type is
-// none crew knows.
-func (l line) decodeActionEnd(h crew.EventHead) (crew.RunEvent, bool) {
-	switch l.Type {
-	case typeLookupAsked:
-		return crew.ActionLookupAsked{EventHead: h, Action: l.Action}, true
-	case typeCheckAsked:
-		return crew.ActionCheckAsked{EventHead: h, Action: l.Action, Check: l.Check}, true
-	case typeCheckStopAsked:
-		return crew.ActionCheckStopAsked{EventHead: h, Action: l.Action}, true
-	case typeCheckEnded:
-		return crew.ActionCheckEnded{EventHead: h, Action: l.Action, Result: crew.CheckResult{
-			Name: l.Check, Passed: deref(l.Passed), Reason: crew.NewCheckReason(l.Reason),
-		}}, true
-	case typeLookupDone:
-		return crew.ActionLookupDone{EventHead: h, Action: l.Action, PullRequest: l.found()}, true
-	case typeActionFinishing:
-		return crew.ActionFinishing{EventHead: h, Action: l.Action, End: l.end()}, true
-	case typeActionEnded:
-		return l.ended(h), true
+// shellEnded returns the ActionShellEnded l holds, with head h.
+func (l line) shellEnded(h crew.EventHead) crew.RunEvent {
+	outcome := crew.ShellOutcome{Reason: crew.NewCheckReason(l.Reason)}
+	if l.ExitStatus != nil {
+		outcome.Status = crew.Some(*l.ExitStatus)
 	}
-	return nil, false
+	return crew.ActionShellEnded{EventHead: h, Action: l.Action, Outcome: outcome}
 }
 
-// ended returns the ActionEnded l holds, with head h.
-func (l line) ended(h crew.EventHead) crew.ActionEnded {
-	e := crew.ActionEnded{
-		EventHead: h, Action: l.Action, End: l.end(), Usage: l.reported(), PullRequest: l.found(),
-	}
-	if l.Workspace != "" {
-		e.Workspace = crew.Some(crew.OpenedWorkspace{
-			Workspace: crew.Workspace{Name: l.Workspace, Branch: l.Branch}, Log: l.Log, Resumed: l.Resumed,
-			Opened: deref(l.Opened),
-		})
+// ended returns the ActionEnded l holds, with head h. A target that names
+// neither the next action nor a route is left out.
+func (l line) ended(h crew.EventHead) crew.RunEvent {
+	e := crew.ActionEnded{EventHead: h, Action: l.Action, End: l.end(), Verdict: l.Verdict, Usage: l.reported()}
+	if target, err := crew.ParseTarget(l.Target); err == nil {
+		e.Target = target
 	}
 	if l.SessionStarted != nil {
 		e.SessionStarted = crew.Some[time.Time](*l.SessionStarted)
 	}
 	return e
+}
+
+// routeChosen returns the RouteChosen l holds, with head h. A step of a
+// kind crew does not know is a move.
+func (l line) routeChosen(h crew.EventHead) crew.RunEvent {
+	e := crew.RouteChosen{EventHead: h, Route: l.Route, Action: l.Action}
+	for _, s := range l.Steps {
+		kind, _ := named(stepKinds(), s.Kind)
+		e.Steps = append(e.Steps, crew.StepPlan{Kind: kind, To: s.To, Shell: s.Shell})
+	}
+	return e
+}
+
+// stepEnded returns the StepEnded l holds, with head h: a step given up
+// when its outcome is none crew knows, which leaves its route unfinished.
+func (l line) stepEnded(h crew.EventHead) crew.RunEvent {
+	var o crew.StepOutcome
+	switch l.Settled {
+	case settledLanded:
+		o = crew.StepLanded{}
+	case settledRan:
+		o = crew.StepRan{Reason: crew.NewCheckReason(l.Reason)}
+	case settledFailed:
+		o = crew.StepFailed{Reason: crew.NewCheckReason(l.Reason)}
+	case settledDropped:
+		o = crew.StepDropped{Reason: l.Reason}
+	case settledSkipped:
+		o = crew.StepSkipped{}
+	case settledStopped:
+		o = crew.StepStopped{Reason: crew.NewCheckReason(l.Reason)}
+	default:
+		o = crew.StepGivenUp{Reason: l.Reason}
+	}
+	return crew.StepEnded{EventHead: h, Step: deref(l.Step), Outcome: o}
 }
