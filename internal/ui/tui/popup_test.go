@@ -593,3 +593,21 @@ func TestThePopupIsCentredOverTheDimmedView(t *testing.T) {
 		t.Errorf("the header under the popup is not in the subtle colour: %q", header)
 	}
 }
+
+// Covers R16: a running action resumed in a failed run's workspace names
+// that workspace in its state on the popup's action row.
+func TestAResumedActionsRowNamesItsWorkspace(t *testing.T) {
+	h := newHarness(t, 120)
+	u := held(headerIssue, "implement", "code", core.ClaimRunning)
+	a := &u.Snapshot.Issues[0].Actions[0]
+	a.Resumed, a.Workspace = true, "issue-1-code"
+	h.send(updateMsg(onBoard(u, labeled(headerIssue, "in progress"))))
+	h.send(enterKey)
+
+	rows := words(popupRows(t, h))
+	if !slices.ContainsFunc(rows, func(r string) bool {
+		return strings.HasPrefix(r, "code ") && strings.Contains(r, "resumed in issue-1-code, running")
+	}) {
+		t.Errorf("no code row names its workspace:\n%s", strings.Join(rows, "\n"))
+	}
+}
