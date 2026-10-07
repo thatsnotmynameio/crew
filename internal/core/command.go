@@ -55,7 +55,7 @@ type ReportFailure struct {
 }
 
 // CreateWorkspace asks for a new workspace for Action on Issue. Its result
-// is WorkspaceReady or WorkspaceFailed, carrying Issue.ID and Action.
+// is WorkspaceReady or WorkspaceFailed, carrying Issue.ID() and Action.
 type CreateWorkspace struct {
 	Issue  crew.Issue
 	Action crew.ActionName

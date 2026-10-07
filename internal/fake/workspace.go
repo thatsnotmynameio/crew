@@ -47,7 +47,7 @@ func (w *Workspace) Create(_ context.Context, issue crew.Issue, action crew.Acti
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	base := fmt.Sprintf("issue-%s-%s", issue.ID.Key, action)
+	base := fmt.Sprintf("issue-%s-%s", issue.ID().Key, action)
 	for n := 1; ; n++ {
 		name := base
 		if n > 1 {

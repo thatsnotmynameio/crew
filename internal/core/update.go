@@ -119,7 +119,7 @@ func (s *step) tick(said []Said) {
 		}
 	}
 	for _, h := range m.issues {
-		s.retryRun(h.issue.ID, false)
+		s.retryRun(h.issue.ID(), false)
 		if h.claim == ClaimRunning {
 			s.running(h)
 		}
@@ -179,7 +179,7 @@ func (s *step) stop() {
 			// Judging goes on; only stop sets stopping, and it runs once;
 			// owed is never stored, the view derives it.
 		}
-		s.retryRun(h.issue.ID, true)
+		s.retryRun(h.issue.ID(), true)
 	}
 	s.retryStatuses()
 	s.retryPullRequests()
@@ -190,10 +190,10 @@ func (s *step) stopActions(h *heldIssue) {
 	for _, a := range h.actions {
 		switch a.phase {
 		case PhaseRunning:
-			s.command(StopSession{IssueID: h.issue.ID, Action: a.name})
+			s.command(StopSession{IssueID: h.issue.ID(), Action: a.name})
 		case PhaseChecking:
 			a.stopped = true
-			s.command(StopCheck{IssueID: h.issue.ID, Action: a.name})
+			s.command(StopCheck{IssueID: h.issue.ID(), Action: a.name})
 		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing, PhaseEnded:
 			// No session or check runs: its next input sees the stop.
 		}
@@ -254,8 +254,8 @@ func (s *step) listed(issues []crew.Issue) {
 // (R15).
 func (s *step) skipped(issues []crew.Issue) {
 	for _, issue := range issues {
-		if len(issue.States) > 1 && s.m.held(issue.ID) == nil {
-			s.emit(IssueSkipped{At: s.at, IssueID: issue.ID, IssueRef: issue.Ref, States: slices.Clone(issue.States)})
+		if len(issue.States()) > 1 && s.m.held(issue.ID()) == nil {
+			s.emit(IssueSkipped{At: s.at, IssueID: issue.ID(), IssueRef: issue.Ref(), States: issue.States()})
 		}
 	}
 }
@@ -272,20 +272,20 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 	var candidates []candidate
 	for si, rule := range s.m.rules {
 		for _, issue := range issues {
-			inLabel := len(issue.States) == 1 && issue.States[0] == rule.Labels.Ready
-			if inLabel && issue.Kind == rule.Takes && !issue.Blocked {
+			inLabel := len(issue.States()) == 1 && issue.States()[0] == rule.Labels.Ready
+			if inLabel && issue.Kind() == rule.Takes && !issue.Blocked() {
 				candidates = append(candidates, candidate{si, issue})
 			}
 		}
 	}
 	slices.SortStableFunc(candidates, func(a, b candidate) int {
-		if c := comparePriority(a.issue.Priority, b.issue.Priority); c != 0 {
+		if c := comparePriority(a.issue.Priority(), b.issue.Priority()); c != 0 {
 			return c
 		}
 		if c := cmp.Compare(b.rule, a.rule); c != 0 {
 			return c
 		}
-		return a.issue.Created.Compare(b.issue.Created)
+		return a.issue.Created().Compare(b.issue.Created())
 	})
 	return candidates
 }
@@ -300,7 +300,7 @@ func (s *step) takeWaiting(candidates []candidate) int {
 		if m.full() {
 			break
 		}
-		if m.held(c.issue.ID) != nil || m.queueFull(m.queueOf[c.rule]) {
+		if m.held(c.issue.ID()) != nil || m.queueFull(m.queueOf[c.rule]) {
 			continue
 		}
 		s.take(c.rule, c.issue)
@@ -329,7 +329,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	rule := m.rules[si]
 	s.runs++
 	h := &heldIssue{
-		issue: issue.Clone(), rule: si, run: crew.NewRuleRunID(s.seed, s.runs), claim: ClaimTaking, taken: s.at,
+		issue: issue, rule: si, run: crew.NewRuleRunID(s.seed, s.runs), claim: ClaimTaking, taken: s.at,
 	}
 	for _, a := range rule.Actions {
 		h.actions = append(h.actions, &actionRun{
@@ -337,13 +337,13 @@ func (s *step) take(si int, issue crew.Issue) {
 		})
 	}
 	m.issues = append(m.issues, h)
-	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
+	s.emit(IssueTaken{At: s.at, Issue: issue, Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
 	s.deliver(h, &delivery{purpose: purposeTake, call: h.move(rule.Labels.Ready, rule.Labels.Running)})
 }
 
 // move returns the move of h's issue from one state to another, as a Call.
 func (h *heldIssue) move(from, to crew.State) Call {
-	return Call{Kind: CallMove, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: from, To: to}
+	return Call{Kind: CallMove, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), From: from, To: to}
 }
 
 // taken applies the take to the board (KTD4), reports it on h's pull
@@ -353,7 +353,7 @@ func (h *heldIssue) move(from, to crew.State) Call {
 // issue moves on to its rule's success (R8, KTD5).
 func (s *step) taken(h *heldIssue, c Call) {
 	m := s.m
-	s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.From, To: c.To})
+	s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), From: c.From, To: c.To})
 	m.boardMoved(h.issue, c.To)
 	s.reportPullRequests(h, c.To, false)
 	switch {
@@ -383,11 +383,11 @@ func (s *step) start(h *heldIssue) {
 		if prev, ok := m.resumable(h, a); ok {
 			a.prev = &prev
 			a.phase = PhaseReopening
-			s.command(ReopenWorkspace{IssueID: h.issue.ID, Action: a.name, Workspace: prev.Workspace, Branch: prev.Branch})
+			s.command(ReopenWorkspace{IssueID: h.issue.ID(), Action: a.name, Workspace: prev.Workspace, Branch: prev.Branch})
 			continue
 		}
 		a.phase = PhaseCreating
-		s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
+		s.command(CreateWorkspace{Issue: h.issue, Action: a.name})
 	}
 	if h.claim == ClaimRunning {
 		s.running(h)
@@ -407,7 +407,7 @@ func (m *Model) prompt(h *heldIssue, a *actionRun) crew.Prompt {
 func (s *step) judge(h *heldIssue) {
 	rule := s.m.rules[h.rule]
 	h.claim = ClaimJudging
-	report := crew.FailureReport{IssueID: h.issue.ID, IssueRef: h.issue.Ref}
+	report := crew.FailureReport{IssueID: h.issue.ID(), IssueRef: h.issue.Ref()}
 	for _, a := range h.actions {
 		if !a.outcome.Succeeded {
 			report.Failures = append(report.Failures, crew.ActionFailure{
@@ -416,7 +416,7 @@ func (s *step) judge(h *heldIssue) {
 		}
 	}
 	h.verdict = &HandledView{
-		Issue: h.issue.Clone(), Rule: rule.Name, To: rule.Labels.Success, Taken: h.taken, Ended: s.at,
+		Issue: h.issue, Rule: rule.Name, To: rule.Labels.Success, Taken: h.taken, Ended: s.at,
 	}
 	for _, a := range h.actions {
 		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
@@ -430,7 +430,7 @@ func (s *step) judge(h *heldIssue) {
 	s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(rule.Labels.Running, rule.Labels.Failure)})
 	s.deliver(h, &delivery{
 		purpose: purposeReport, report: report,
-		call: Call{Kind: CallReport, IssueID: h.issue.ID, IssueRef: h.issue.Ref},
+		call: Call{Kind: CallReport, IssueID: h.issue.ID(), IssueRef: h.issue.Ref()},
 	})
 	s.ended(h, rule.Labels.Failure, crew.MovePending)
 }
@@ -444,7 +444,7 @@ func (s *step) received(h *heldIssue, o outcome) {
 	case o.purpose == purposeTake && o.landed:
 		s.taken(h, o.call)
 	case o.purpose == purposeVerdict && o.landed:
-		s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: o.call.From, To: o.call.To})
+		s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), From: o.call.From, To: o.call.To})
 		s.m.boardMoved(h.issue, o.call.To)
 		s.ended(h, o.call.To, crew.MoveDone)
 		s.reportPullRequests(h, o.call.To, true)
@@ -454,7 +454,7 @@ func (s *step) received(h *heldIssue, o outcome) {
 		h.verdict.Move, h.verdict.DropReason = crew.MoveDropped, o.reason
 		h.landed = s.m.listings
 	case o.purpose == purposeReport && o.landed:
-		s.emit(FailureReported{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref})
+		s.emit(FailureReported{At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref()})
 	}
 }
 
@@ -494,7 +494,7 @@ func (m *Model) busy(q int) int {
 // held returns the held issue identified by id, or nil.
 func (m *Model) held(id crew.IssueID) *heldIssue {
 	for _, h := range m.issues {
-		if h.issue.ID == id {
+		if h.issue.ID() == id {
 			return h
 		}
 	}
@@ -526,7 +526,7 @@ func (m *Model) release(h *heldIssue) {
 		return
 	}
 	view := *h.verdict
-	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.ID == h.issue.ID })
+	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.ID() == h.issue.ID() })
 	if i >= 0 {
 		old := m.handled[i].view
 		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !old.NeedsAttention() {

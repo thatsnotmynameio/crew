@@ -255,10 +255,12 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 	}
 
 	want := []crew.Issue{
-		{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
-			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}},
-		{ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
-			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{readyToReview}},
+		crew.NewIssue(crew.IssueData{
+			ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}}),
+		crew.NewIssue(crew.IssueData{
+			ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
+			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{readyToReview}}),
 	}
 	wantItems(t, got, want)
 }
@@ -294,7 +296,7 @@ func TestListReturnsEveryCrewStateOfAnIssueInTheRulesSpelling(t *testing.T) {
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
-			if len(got) != 1 || !slices.Equal(got[0].States, tc.want) {
+			if len(got) != 1 || !slices.Equal(got[0].States(), tc.want) {
 				t.Errorf("List = %+v, want #4 in %q", got, tc.want)
 			}
 		})
@@ -322,7 +324,7 @@ func TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt(t *testing.T) {
 	}
 	blocked := map[string]bool{}
 	for _, issue := range got {
-		blocked[issue.ID.Key] = issue.Blocked
+		blocked[issue.ID().Key] = issue.Blocked()
 	}
 	if want := map[string]bool{"4": true, "5": false, "6": false}; !maps.Equal(blocked, want) {
 		t.Errorf("blocked = %v, want %v", blocked, want)
@@ -386,7 +388,7 @@ func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
 	}
 	byKey := map[string]int{}
 	for _, issue := range got {
-		byKey[issue.ID.Key] = issue.Priority
+		byKey[issue.ID().Key] = issue.Priority()
 	}
 	want := map[string]int{"1": 1, "2": 4, "3": 3, "4": 1, "5": 0, "6": 0, "7": 0, "8": 0}
 	if !maps.Equal(byKey, want) {

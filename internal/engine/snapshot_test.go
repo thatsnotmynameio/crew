@@ -69,7 +69,7 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing
 			t.Fatalf("handled = %#v, want #1 alone", handled)
 		}
 		e := handled[0]
-		if e.Issue.Ref != "#1" || e.Rule != "implement" || e.To != needsAttention || !e.NeedsAttention() {
+		if e.Issue.Ref() != "#1" || e.Rule != "implement" || e.To != needsAttention || !e.NeedsAttention() {
 			t.Errorf("entry = %#v, want #1 in needs attention, needing attention", e)
 		}
 		actions := make([]string, 0, len(e.Failures))

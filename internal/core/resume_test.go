@@ -71,7 +71,7 @@ func endedRun(r core.RunRecord, outcome crew.Outcome) core.RunRecord {
 func (d *driver) takeIssue(iss crew.Issue) []core.Command {
 	d.t.Helper()
 	cmds, _ := d.poll(iss)
-	cmds, _ = d.send(core.CallResult{ID: moveID(d.t, cmds, iss.ID.Key), Result: core.ResultDone})
+	cmds, _ = d.send(core.CallResult{ID: moveID(d.t, cmds, iss.ID().Key), Result: core.ResultDone})
 	return cmds
 }
 

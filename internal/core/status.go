@@ -199,7 +199,7 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 // it spent and its pull request.
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
-		IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
 		Kind: kind, Updated: s.at, Run: h.run,
 	}
 	for _, a := range h.actions {

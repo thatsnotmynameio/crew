@@ -45,7 +45,7 @@ func phaseOf(t *testing.T, m *core.Model, key string, action crew.ActionName) co
 	t.Helper()
 	for _, iv := range m.View().Issues {
 		for _, a := range iv.Actions {
-			if iv.Issue.ID.Key == key && a.Name == action {
+			if iv.Issue.ID().Key == key && a.Name == action {
 				return a.Phase
 			}
 		}

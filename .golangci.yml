@@ -64,6 +64,13 @@ linters:
     exhaustive:
       # A switch with a default branch already handles every other value.
       default-signifies-exhaustive: true
+    gochecksumtype:
+      # A switch over a sealed interface (//sumtype:decl) names every case:
+      # a default branch does not cover the ones it leaves out.
+      default-signifies-exhaustive: false
+      # A case may name a sealed sub-family, such as the run inputs among
+      # the inputs, and covers every variant of it.
+      include-shared-interfaces: true
     wrapcheck:
       # crew's own packages already wrap with context where the error is made;
       # only errors from third-party packages need context added here.

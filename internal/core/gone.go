@@ -14,19 +14,19 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 func (m *Model) gone(issues []crew.Issue) {
 	alone := map[crew.IssueID]crew.State{}
 	for _, issue := range issues {
-		if len(issue.States) == 1 {
-			alone[issue.ID] = issue.States[0]
+		if len(issue.States()) == 1 {
+			alone[issue.ID()] = issue.States()[0]
 		}
 	}
 	for i := range m.handled {
 		e := &m.handled[i]
-		if e.landed >= m.listings || m.held(e.view.Issue.ID) != nil {
+		if e.landed >= m.listings || m.held(e.view.Issue.ID()) != nil {
 			continue
 		}
 		if _, ok := m.ruleLabeled(e.view.To); !ok {
 			continue
 		}
-		state, found := alone[e.view.Issue.ID]
+		state, found := alone[e.view.Issue.ID()]
 		e.view.Gone = !found || state != e.view.To
 	}
 }

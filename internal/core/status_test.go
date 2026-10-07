@@ -63,7 +63,7 @@ func started(t *testing.T, m *core.Model, action crew.ActionName) time.Time {
 	const key = "74"
 	for _, iv := range m.View().Issues {
 		for _, a := range iv.Actions {
-			if iv.Issue.ID.Key == key && a.Name == action {
+			if iv.Issue.ID().Key == key && a.Name == action {
 				return a.Started
 			}
 		}
@@ -92,8 +92,8 @@ func wantStatus(t *testing.T, got, want crew.Status) {
 func (d *driver) take(it crew.Issue) []core.Command {
 	d.t.Helper()
 	cmds, _ := d.poll(it)
-	landed, _ := d.send(core.CallResult{ID: moveID(d.t, cmds, it.ID.Key), Result: core.ResultDone})
-	d.wrote(it.ID.Key)
+	landed, _ := d.send(core.CallResult{ID: moveID(d.t, cmds, it.ID().Key), Result: core.ResultDone})
+	d.wrote(it.ID().Key)
 	return landed
 }
 
@@ -102,7 +102,7 @@ func (d *driver) runAll(landed []core.Command) {
 	d.t.Helper()
 	for _, c := range landed {
 		if w, ok := c.(core.CreateWorkspace); ok {
-			cmds, _ := d.send(space(w.Issue.ID.Key, w.Action))
+			cmds, _ := d.send(space(w.Issue.ID().Key, w.Action))
 			for _, s := range cmds {
 				if s, ok := s.(core.StartSession); ok {
 					d.send(core.SessionStarted{IssueID: s.IssueID, Action: s.Action})
@@ -117,8 +117,7 @@ func TestAE5AListingReportsNothingForTheIssuesItLeaves(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
 	d.runAll(d.take(issue("1", 1, ready)))
 	i2, i3, i4 := issue("2", 2, ready), issue("3", 3, ready), issue("4", 4, readyToReview)
-	blocked := issue("5", 5, ready)
-	blocked.Blocked = true
+	blocked := blockedIssue(issue("5", 5, ready))
 
 	cmds, events := d.poll(i2, i3, i4, blocked)
 	wantCommands(t, nonStatus(cmds), core.Move{IssueID: issueID("4"), From: readyToReview, To: inReview})
@@ -144,8 +143,8 @@ func nonStatus(cmds []core.Command) []core.Command {
 
 func TestPrioritizedIssuesTakeTheSlotsAndALaterRuleIssueLeftGetsNoStatus(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
-	urgent, review, high := issue("1", 3, ready), issue("2", 1, readyToReview), issue("3", 2, ready)
-	urgent.Priority, high.Priority = 1, 2
+	urgent, review := prioritized(issue("1", 3, ready), 1), issue("2", 1, readyToReview)
+	high := prioritized(issue("3", 2, ready), 2)
 
 	cmds, _ := d.poll(review, high, urgent)
 	wantHeld(t, d.m, "1", "3")

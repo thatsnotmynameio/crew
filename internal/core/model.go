@@ -418,7 +418,6 @@ func (h HandledView) Duration() time.Duration { return h.Ended.Sub(h.Taken) }
 
 // clone returns a copy of h that shares no memory with it.
 func (h HandledView) clone() HandledView {
-	h.Issue = h.Issue.Clone()
 	h.Failures = slices.Clone(h.Failures)
 	h.Actions = slices.Clone(h.Actions)
 	return h
@@ -473,10 +472,10 @@ func (m *Model) View() View {
 	}
 	for _, h := range m.issues {
 		iv := IssueView{
-			Issue: h.issue.Clone(), Rule: m.rules[h.rule].Name,
+			Issue: h.issue, Rule: m.rules[h.rule].Name,
 			Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim,
 		}
-		if m.outbox.owing(h.issue.ID) {
+		if m.outbox.owing(h.issue.ID()) {
 			iv.Claim = ClaimOwed
 		}
 		for _, a := range h.actions {
@@ -486,12 +485,12 @@ func (m *Model) View() View {
 			})
 		}
 		v.Issues = append(v.Issues, iv)
-		v.Owed = append(v.Owed, m.outbox.owedRun(h.issue.ID)...)
+		v.Owed = append(v.Owed, m.outbox.owedRun(h.issue.ID())...)
 	}
 	v.Owed = append(v.Owed, m.outbox.owedPullRequests()...)
 	for _, e := range m.handled {
 		hv := e.view.clone()
-		if h := m.held(hv.Issue.ID); h != nil {
+		if h := m.held(hv.Issue.ID()); h != nil {
 			hv.HeldBy = m.rules[h.rule].Name
 		}
 		v.Handled = append(v.Handled, hv)

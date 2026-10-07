@@ -30,12 +30,12 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 
 	var all []core.Command
 	for _, it := range []crew.Issue{i1, i2} {
-		created, events := d.send(core.CallResult{ID: moveID(t, cmds, it.ID.Key), Result: core.ResultDone})
+		created, events := d.send(core.CallResult{ID: moveID(t, cmds, it.ID().Key), Result: core.ResultDone})
 		wantCommands(t, created,
 			core.CreateWorkspace{Issue: it, Action: "acceptance"},
 			core.CreateWorkspace{Issue: it, Action: "development"},
 		)
-		hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: it.ID, IssueRef: it.Ref, From: ready, To: inProgress})
+		hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: it.ID(), IssueRef: it.Ref(), From: ready, To: inProgress})
 		all = append(all, created...)
 	}
 
@@ -208,8 +208,7 @@ func TestAE8IssueInTwoStatesIsSkippedUntilItIsInOne(t *testing.T) {
 
 func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
 	d := newDriver(t, draft(), 1)
-	blocked := issue("4", 1, ready)
-	blocked.Blocked = true
+	blocked := blockedIssue(issue("4", 1, ready))
 
 	cmds, _ := d.poll(blocked, issue("5", 2, ready))
 	wantCommands(t, cmds, core.Move{IssueID: issueID("5"), From: ready, To: inProgress})
@@ -303,8 +302,9 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 
 // prioritized returns i with priority p, 1 the highest.
 func prioritized(i crew.Issue, p int) crew.Issue {
-	i.Priority = p
-	return i
+	d := i.Data()
+	d.Priority = p
+	return crew.NewIssue(d)
 }
 
 func TestPicksTheHighestPriorityThenLaterRulesThenTheOldestIssue(t *testing.T) {
@@ -412,7 +412,7 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 		t.Fatalf("view:\n got %#v\nwant %#v", v, want)
 	}
 
-	v.Issues[0].Issue.States[0] = "done"
+	v.Issues[0].Issue.States()[0] = "done"
 	v.Issues[0].Actions[0].Name = "changed"
 	v.Queues[0].Busy = 9
 	v.Bots[0].Pairs[0] = "changed"

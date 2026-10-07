@@ -137,7 +137,7 @@ func (e *Engine) list(ctx context.Context, c core.ListIssues) {
 		return
 	}
 	for i := range issues {
-		issues[i].ID.Repository = e.repository.ID
+		issues[i] = issues[i].WithRepository(e.repository.ID)
 	}
 	e.post(core.IssuesListed{Issues: issues})
 }
@@ -153,7 +153,7 @@ func (e *Engine) listBoard(ctx context.Context, c core.ListBoard) {
 		return
 	}
 	for i := range issues {
-		issues[i].Issue.ID.Repository = e.repository.ID
+		issues[i] = crew.NewBoardIssue(issues[i].Issue().WithRepository(e.repository.ID), issues[i].Labels())
 	}
 	e.post(core.BoardListed{Issues: issues})
 }
@@ -238,10 +238,10 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	defer cancel()
 	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
 	if err != nil {
-		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID, Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
+		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID(), Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
 		return
 	}
-	e.post(e.ready(c.Issue.ID, c.Action, space, false))
+	e.post(e.ready(c.Issue.ID(), c.Action, space, false))
 }
 
 // reopenWorkspace reopens a failed run's workspace through the workspace's

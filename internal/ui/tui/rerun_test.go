@@ -17,7 +17,7 @@ func TestAnUpdateMovingTheHighlightOffTheBoardScrollsToIt(t *testing.T) {
 	h.send(updateMsg(onBoard(engine.Update{}, item("1", "l1"), item("2", "l2"), item("3", "l3"), item("4", "l4"))))
 	wantLit(t, h, "#1", 0)
 
-	u := handledBy(crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Bug"}, "fix", "l5")
+	u := handledBy(crew.NewIssue(crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "Bug"}), "fix", "l5")
 	h.send(updateMsg(onBoard(u, item("1", "l5"), item("2", "l2"), item("3", "l3"), item("4", "l4"))))
 
 	wantLit(t, h, "#1", 2)

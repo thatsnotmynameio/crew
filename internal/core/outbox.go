@@ -80,10 +80,10 @@ func (s *step) deliver(h *heldIssue, d *delivery) {
 	o := &s.m.outbox
 	o.lastID++
 	d.id = o.lastID
-	lane := o.runs[h.issue.ID]
+	lane := o.runs[h.issue.ID()]
 	if lane == nil {
 		lane = &runLane{}
-		o.runs[h.issue.ID] = lane
+		o.runs[h.issue.ID()] = lane
 	}
 	lane.deliveries = append(lane.deliveries, d)
 	s.attempt(d)

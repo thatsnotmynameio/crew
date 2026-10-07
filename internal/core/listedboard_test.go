@@ -31,9 +31,7 @@ func newListedDriver(t *testing.T) *driver {
 
 // on is item on the board with labels.
 func on(item crew.Issue, labels ...crew.State) crew.BoardIssue {
-	b := crew.BoardIssue{Issue: item}
-	b.Labels = append(b.Labels, labels...)
-	return b
+	return crew.NewBoardIssue(item, labels)
 }
 
 func TestTheListingAsksForEveryRulesReadyAndRunningLabelsAndNoBoardRead(t *testing.T) {
@@ -90,8 +88,7 @@ func TestAnItemMovedToALabelNoColumnNamesLeavesTheBoard(t *testing.T) {
 // and an issue in a pull request rule's label shows nowhere either.
 func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
 	d := newListedDriver(t)
-	mirrored := issue("91", 2, inProgress)
-	mirrored.Kind = crew.KindPullRequest
+	mirrored := pullRequest(issue("91", 2, inProgress))
 
 	take, _ := d.poll(pr90(1, fixReviewReady), mirrored, issue("42", 3, fixReviewReady))
 	wantBoard(t, d, on(pr90(1, fixReviewReady), fixReviewReady))

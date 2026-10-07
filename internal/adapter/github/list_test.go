@@ -36,10 +36,10 @@ func wantItems(t *testing.T, got, want []crew.Issue) {
 		t.Fatalf("List = %+v, want %+v", got, want)
 	}
 	for i := range want {
-		if got[i].ID != want[i].ID || got[i].Ref != want[i].Ref || got[i].Title != want[i].Title ||
-			got[i].URL != want[i].URL || !got[i].Created.Equal(want[i].Created) ||
-			!slices.Equal(got[i].States, want[i].States) || got[i].Priority != want[i].Priority ||
-			got[i].Blocked != want[i].Blocked || got[i].Kind != want[i].Kind {
+		if got[i].ID() != want[i].ID() || got[i].Ref() != want[i].Ref() || got[i].Title() != want[i].Title() ||
+			got[i].URL() != want[i].URL() || !got[i].Created().Equal(want[i].Created()) ||
+			!slices.Equal(got[i].States(), want[i].States()) || got[i].Priority() != want[i].Priority() ||
+			got[i].Blocked() != want[i].Blocked() || got[i].Kind() != want[i].Kind() {
 			t.Errorf("item %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
@@ -86,14 +86,17 @@ func TestListAlsoReturnsTheLoginsOpenPullRequests(t *testing.T) {
 	}
 
 	want := []crew.Issue{
-		{ID: issueID("90"), Ref: "#90", Title: "Pull request 90", URL: "https://github.com/o/r/pull/90",
+		crew.NewIssue(crew.IssueData{
+			ID: issueID("90"), Ref: "#90", Title: "Pull request 90", URL: "https://github.com/o/r/pull/90",
 			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{readyToReview},
-			Kind: crew.KindPullRequest},
-		{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
-			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}},
-		{ID: issueID("93"), Ref: "#93", Title: "Pull request 93", URL: "https://github.com/o/r/pull/93",
+			Kind: crew.KindPullRequest}),
+		crew.NewIssue(crew.IssueData{
+			ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}}),
+		crew.NewIssue(crew.IssueData{
+			ID: issueID("93"), Ref: "#93", Title: "Pull request 93", URL: "https://github.com/o/r/pull/93",
 			Created: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC), States: []crew.State{ready, needsAttention},
-			Kind: crew.KindPullRequest},
+			Kind: crew.KindPullRequest}),
 	}
 	wantItems(t, got, want)
 }

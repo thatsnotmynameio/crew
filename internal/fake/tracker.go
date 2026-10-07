@@ -99,6 +99,13 @@ type trackedIssue struct {
 	closed bool
 }
 
+// setStates puts the issue in states.
+func (ti *trackedIssue) setStates(states []crew.State) {
+	d := ti.issue.Data()
+	d.States = states
+	ti.issue = crew.NewIssue(d)
+}
+
 // NewTracker returns a tracker holding issues, all open.
 func NewTracker(issues ...crew.Issue) *Tracker {
 	t := &Tracker{}
@@ -113,8 +120,7 @@ func NewTracker(issues ...crew.Issue) *Tracker {
 func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	issue = issue.Clone()
-	if ti := t.find(issue.ID.Key); ti != nil {
+	if ti := t.find(issue.ID().Key); ti != nil {
 		ti.issue, ti.labels, ti.closed = issue, nil, false
 		return
 	}
@@ -127,7 +133,7 @@ func (t *Tracker) SetStates(key string, states ...crew.State) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
-		ti.issue.States = slices.Clone(states)
+		ti.setStates(states)
 	}
 }
 
@@ -169,7 +175,7 @@ func (t *Tracker) Issue(key string) (crew.Issue, bool) {
 	if ti == nil {
 		return crew.Issue{}, false
 	}
-	return ti.issue.Clone(), true
+	return ti.issue, true
 }
 
 // FailMoves makes the next moves of the issue with key fail, one error per
@@ -219,8 +225,8 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 		if ti.closed {
 			continue
 		}
-		if slices.ContainsFunc(ti.issue.States, func(s crew.State) bool { return slices.Contains(states, s) }) {
-			out = append(out, ti.issue.Clone())
+		if slices.ContainsFunc(ti.issue.States(), func(s crew.State) bool { return slices.Contains(states, s) }) {
+			out = append(out, ti.issue)
 		}
 	}
 	return out, nil
@@ -241,13 +247,13 @@ func (t *Tracker) Move(_ context.Context, id crew.IssueID, from, to crew.State) 
 	if ti == nil || ti.closed {
 		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, port.ErrMovedMeanwhile)
 	}
-	if !slices.Contains(ti.issue.States, from) {
-		if slices.Equal(ti.issue.States, []crew.State{to}) {
+	if !slices.Contains(ti.issue.States(), from) {
+		if slices.Equal(ti.issue.States(), []crew.State{to}) {
 			return nil
 		}
 		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, port.ErrMovedMeanwhile)
 	}
-	ti.issue.States = []crew.State{to}
+	ti.setStates([]crew.State{to})
 	t.moves = append(t.moves, Move{Key: id.Key, From: from, To: to})
 	return nil
 }
@@ -267,7 +273,7 @@ func (t *Tracker) ReportFailure(_ context.Context, report crew.FailureReport) er
 
 func (t *Tracker) find(key string) *trackedIssue {
 	for _, ti := range t.issues {
-		if ti.issue.ID.Key == key {
+		if ti.issue.ID().Key == key {
 			return ti
 		}
 	}
@@ -677,10 +683,10 @@ func (b BoardTracker) ListBoard(_ context.Context, labels []crew.State) ([]crew.
 	defer b.mu.Unlock()
 	var out []crew.BoardIssue
 	for _, ti := range b.issues {
-		if ti.closed || ti.issue.Kind != crew.KindIssue {
+		if ti.closed || ti.issue.Kind() != crew.KindIssue {
 			continue
 		}
-		carries := slices.Concat(ti.labels, ti.issue.States)
+		carries := slices.Concat(ti.labels, ti.issue.States())
 		var matched []crew.State
 		for _, l := range labels {
 			if slices.ContainsFunc(carries, func(c crew.State) bool { return strings.EqualFold(string(c), string(l)) }) {
@@ -688,9 +694,9 @@ func (b BoardTracker) ListBoard(_ context.Context, labels []crew.State) ([]crew.
 			}
 		}
 		if len(matched) > 0 {
-			out = append(out, crew.BoardIssue{Issue: ti.issue.Clone(), Labels: matched})
+			out = append(out, crew.NewBoardIssue(ti.issue, matched))
 		}
 	}
-	slices.SortStableFunc(out, func(x, y crew.BoardIssue) int { return x.Issue.Created.Compare(y.Issue.Created) })
+	slices.SortStableFunc(out, func(x, y crew.BoardIssue) int { return x.Issue().Created().Compare(y.Issue().Created()) })
 	return out, nil
 }

@@ -82,8 +82,8 @@ func TestAShrinkingWindowGivesRowsUpInOrder(t *testing.T) {
 func sevenBugs() engine.Update {
 	issues := make([]crew.BoardIssue, 0, 7)
 	for n := 1; n <= 7; n++ {
-		issues = append(issues, labeled(crew.Issue{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
-			Title: "Bug"}, "bug"))
+		issues = append(issues, labeled(crew.NewIssue(crew.IssueData{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
+			Title: "Bug"}), "bug"))
 	}
 	return onBoard(engine.Update{}, issues...)
 }

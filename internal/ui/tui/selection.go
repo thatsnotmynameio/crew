@@ -22,7 +22,7 @@ type selection struct {
 func (s selection) empty() bool { return s.id == crew.IssueID{} }
 
 // is reports whether c is the highlighted card.
-func (s selection) is(c card) bool { return c.issue.ID == s.id && c.column == s.column }
+func (s selection) is(c card) bool { return c.issue.ID() == s.id && c.column == s.column }
 
 // byColumn groups cards by their column, each in the order cards gives.
 func byColumn(cards []card) map[int][]card {
@@ -35,7 +35,7 @@ func byColumn(cards []card) map[int][]card {
 
 // rowOf is the row of the card of the issue id in cs, or -1.
 func rowOf(cs []card, id crew.IssueID) int {
-	return slices.IndexFunc(cs, func(c card) bool { return c.issue.ID == id })
+	return slices.IndexFunc(cs, func(c card) bool { return c.issue.ID() == id })
 }
 
 // repaired returns s for cards (KTD5 of #151): the card of its id in its
@@ -48,7 +48,7 @@ func (s selection) repaired(cards []card) selection {
 		s.row = row
 		return s
 	}
-	if i := slices.IndexFunc(cards, func(c card) bool { return c.issue.ID == s.id }); i >= 0 {
+	if i := slices.IndexFunc(cards, func(c card) bool { return c.issue.ID() == s.id }); i >= 0 {
 		c := cards[i]
 		return selection{id: s.id, column: c.column, row: rowOf(columns[c.column], s.id)}
 	}
@@ -75,7 +75,7 @@ func (s selection) nearest(columns map[int][]card) selection {
 	if best == s.column {
 		top = s.top
 	}
-	return selection{id: cs[row].issue.ID, column: best, row: row, top: top}
+	return selection{id: cs[row].issue.ID(), column: best, row: row, top: top}
 }
 
 // distance is how many columns apart a and b are.
@@ -158,7 +158,7 @@ func (m Model) moveRow(delta int) Model {
 		return m
 	}
 	row := min(max(m.sel.row+delta, 0), len(cs)-1)
-	m.sel.id, m.sel.row = cs[row].issue.ID, row
+	m.sel.id, m.sel.row = cs[row].issue.ID(), row
 	m.sel.top = shownFrom(m.sel.top, row, len(cs), m.budget().cards)
 	return m
 }
@@ -179,7 +179,7 @@ func (m Model) moveColumn(delta int) Model {
 	slot := m.sel.row - shownFrom(m.sel.top, m.sel.row, len(columns[m.sel.column]), m.budget().cards)
 	cs := columns[order[i]]
 	row := min(slot, len(cs)-1)
-	m.sel = selection{id: cs[row].issue.ID, column: order[i], row: row}
+	m.sel = selection{id: cs[row].issue.ID(), column: order[i], row: row}
 	return m.reveal(cards, order, i)
 }
 

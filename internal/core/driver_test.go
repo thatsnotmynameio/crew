@@ -47,10 +47,24 @@ func draft() []crew.Rule {
 
 // issue returns an issue keyed key, opened minute minutes after t0.
 func issue(key string, minute int, states ...crew.State) crew.Issue {
-	return crew.Issue{
+	return crew.NewIssue(crew.IssueData{
 		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
 		Created: t0.Add(time.Duration(minute) * time.Minute), States: states,
-	}
+	})
+}
+
+// blockedIssue returns i blocked by an open issue.
+func blockedIssue(i crew.Issue) crew.Issue {
+	d := i.Data()
+	d.Blocked = true
+	return crew.NewIssue(d)
+}
+
+// pullRequest returns i as a pull request.
+func pullRequest(i crew.Issue) crew.Issue {
+	d := i.Data()
+	d.Kind = crew.KindPullRequest
+	return crew.NewIssue(d)
 }
 
 // parsedPrompt parses text as the prompt of the action named action, and
@@ -144,7 +158,7 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ReportFailure:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
-				out, _ = d.send(space(c.Issue.ID.Key, c.Action))
+				out, _ = d.send(space(c.Issue.ID().Key, c.Action))
 			case core.StartSession:
 				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Action: c.Action})
 			}
@@ -236,7 +250,7 @@ func hasEvent(t *testing.T, events []core.Event, want core.Event) {
 func claimOf(t *testing.T, m *core.Model, key string) core.Claim {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.ID.Key == key {
+		if iv.Issue.ID().Key == key {
 			return iv.Claim
 		}
 	}
@@ -249,7 +263,7 @@ func wantHeld(t *testing.T, m *core.Model, keys ...string) {
 	issues := m.View().Issues
 	got := make([]string, 0, len(issues))
 	for _, iv := range issues {
-		got = append(got, iv.Issue.ID.Key)
+		got = append(got, iv.Issue.ID().Key)
 	}
 	if !slices.Equal(got, keys) {
 		t.Fatalf("held issues: got %v, want %v", got, keys)
@@ -270,7 +284,7 @@ func issueKey(c core.Command) string {
 	case core.ReportFailure:
 		return c.Report.IssueID.Key
 	case core.CreateWorkspace:
-		return c.Issue.ID.Key
+		return c.Issue.ID().Key
 	case core.StartSession:
 		return c.IssueID.Key
 	case core.StopSession:

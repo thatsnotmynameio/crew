@@ -128,8 +128,8 @@ func you(pairs []string, running ...core.RunningAction) core.BotView {
 // on the board in its rule's column, 12 minutes into a one-hour run, with
 // no bot configured.
 func runningSnapshot() engine.Update {
-	one := crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Add login form"}
-	two := crew.Issue{ID: issueID("2"), Ref: "#2", Title: "Fix the flaky stream test"}
+	one := crew.NewIssue(crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "Add login form"})
+	two := crew.NewIssue(crew.IssueData{ID: issueID("2"), Ref: "#2", Title: "Fix the flaky stream test"})
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
@@ -146,7 +146,7 @@ func runningSnapshot() engine.Update {
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"},
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})},
 			Board: []crew.BoardIssue{
-				{Issue: one, Labels: []crew.State{"in progress"}}, {Issue: two, Labels: []crew.State{"ready to review"}},
+				crew.NewBoardIssue(one, []crew.State{"in progress"}), crew.NewBoardIssue(two, []crew.State{"ready to review"}),
 			}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
@@ -194,7 +194,7 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 // workspace, one resumed in its reopened workspace 3 minutes before start,
 // and one fresh, started 2 minutes before start.
 func resumingSnapshot() engine.Update {
-	issue := crew.Issue{ID: issueID("9"), Ref: "#9", Title: "Add login form"}
+	issue := crew.NewIssue(crew.IssueData{ID: issueID("9"), Ref: "#9", Title: "Add login form"})
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{{Name: crew.DefaultQueue, Slots: 2, Busy: 1}}, Issues: []core.IssueView{
 			{Issue: issue, Rule: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
@@ -230,7 +230,7 @@ func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
 
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
-	issue := crew.Issue{ID: issueID("42"), Ref: "#42", Title: "Add login form"}
+	issue := crew.NewIssue(crew.IssueData{ID: issueID("42"), Ref: "#42", Title: "Add login form"})
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{TimeUp: true, Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
@@ -240,7 +240,7 @@ func windingDownSnapshot() engine.Update {
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code"},
 			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})},
-			Board: []crew.BoardIssue{{Issue: issue, Labels: []crew.State{"in progress"}}}},
+			Board: []crew.BoardIssue{crew.NewBoardIssue(issue, []crew.State{"in progress"})}},
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},
@@ -359,8 +359,9 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 		t.Run(fmt.Sprintf("width %d", width), func(t *testing.T) {
 			h := newHarness(t, width)
 			snap := runningSnapshot()
-			snap.Snapshot.Issues[0].Issue.Title = strings.Repeat("A very long issue title ", 8)
-			snap.Snapshot.Board[0].Issue.Title = snap.Snapshot.Issues[0].Issue.Title
+			title := strings.Repeat("A very long issue title ", 8)
+			snap.Snapshot.Issues[0].Issue = titled(snap.Snapshot.Issues[0].Issue, title)
+			snap.Snapshot.Board[0] = titledOnBoard(snap.Snapshot.Board[0], title)
 
 			h.send(updateMsg(snap))
 			view := h.view()
@@ -373,7 +374,7 @@ func TestANarrowWindowRendersWithoutPanickingAndTruncatesTitles(t *testing.T) {
 			if width >= 40 && !strings.Contains(view, "#1 A very long") {
 				t.Errorf("view at width %d lacks the start of #1's title:\n%s", width, view)
 			}
-			if strings.Contains(view, snap.Snapshot.Issues[0].Issue.Title) {
+			if strings.Contains(view, snap.Snapshot.Issues[0].Issue.Title()) {
 				t.Errorf("view at width %d shows the whole long title:\n%s", width, view)
 			}
 		})

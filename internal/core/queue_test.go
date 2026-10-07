@@ -50,7 +50,7 @@ func takenKeys(events []core.Event) []string {
 	var keys []string
 	for _, e := range events {
 		if taken, ok := e.(core.IssueTaken); ok {
-			keys = append(keys, taken.Issue.ID.Key)
+			keys = append(keys, taken.Issue.ID().Key)
 		}
 	}
 	return keys
@@ -60,7 +60,7 @@ func takenKeys(events []core.Event) []string {
 func keysOf(issues []crew.Issue) []string {
 	keys := make([]string, 0, len(issues))
 	for _, i := range issues {
-		keys = append(keys, i.ID.Key)
+		keys = append(keys, i.ID().Key)
 	}
 	return keys
 }
@@ -309,7 +309,7 @@ func queuesOf(t *testing.T, m *core.Model, free ...int) []core.QueueView {
 func queueOf(t *testing.T, m *core.Model, key string) crew.QueueName {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.ID.Key == key {
+		if iv.Issue.ID().Key == key {
 			return iv.Queue
 		}
 	}

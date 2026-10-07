@@ -86,9 +86,9 @@ rules:
 var success = port.Verdict{Succeeded: true, Reason: "opened a pull request"}
 
 func issue(key string, states ...crew.State) crew.Issue {
-	return crew.Issue{
+	return crew.NewIssue(crew.IssueData{
 		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key, States: states,
-	}
+	})
 }
 
 // listCounter is a fake tracker that counts its listings.
@@ -195,7 +195,7 @@ func states(t *testing.T, tr *fake.Tracker) []crew.State {
 	if !ok {
 		t.Fatal("issue 1 is gone")
 	}
-	return i.States
+	return i.States()
 }
 
 var stamped = regexp.MustCompile(`^\d\d:\d\d:\d\d crew: `)

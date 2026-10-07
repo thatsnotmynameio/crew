@@ -35,7 +35,7 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	if ended {
 		id = h.run.VerdictReport()
 	}
-	r := crew.PullRequestReport{ID: id, IssueID: h.issue.ID, IssueRef: h.issue.Ref, State: to}
+	r := crew.PullRequestReport{ID: id, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), State: to}
 	if ended && len(h.actions) > 0 {
 		r.End = s.ruleEnd(h)
 	}

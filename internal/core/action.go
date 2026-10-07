@@ -40,7 +40,7 @@ func (s *step) workspaceGone(in WorkspaceGone) {
 		return
 	}
 	s.emit(WorkspaceMissing{
-		At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Workspace: a.prev.Workspace,
 	})
 	if s.m.stopping {
@@ -49,7 +49,7 @@ func (s *step) workspaceGone(in WorkspaceGone) {
 	}
 	a.prev = nil
 	a.phase = PhaseCreating
-	s.command(CreateWorkspace{Issue: h.issue.Clone(), Action: a.name})
+	s.command(CreateWorkspace{Issue: h.issue, Action: a.name})
 }
 
 // workspaceReady records the run's start and starts the action's session,
@@ -85,7 +85,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	}
 	a.phase = PhaseStarting
 	s.command(StartSession{
-		IssueID: h.issue.ID, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
+		IssueID: h.issue.ID(), Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
 		Agent: a.agent, Bot: a.bot,
 	})
 }
@@ -100,11 +100,11 @@ func (s *step) sessionStarted(in SessionStarted) {
 	a.phase = PhaseRunning
 	a.started = s.at
 	s.emit(ActionStarted{
-		At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log, Resumed: a.resumed,
 	})
 	if s.m.stopping {
-		s.command(StopSession{IssueID: h.issue.ID, Action: a.name})
+		s.command(StopSession{IssueID: h.issue.ID(), Action: a.name})
 	}
 }
 
@@ -121,7 +121,7 @@ func (s *step) sessionEnded(in SessionEnded) {
 	a.usage, a.lastMessage = in.Usage, in.LastMessage
 	if s.m.finding {
 		a.finding = true
-		s.command(FindPullRequest{IssueID: h.issue.ID, Action: a.name, Branch: a.branch, Since: a.since})
+		s.command(FindPullRequest{IssueID: h.issue.ID(), Action: a.name, Branch: a.branch, Since: a.since})
 	}
 	cause := crew.CauseSession
 	if s.m.stopping {
@@ -142,8 +142,8 @@ func (s *step) sessionEnded(in SessionEnded) {
 func (s *step) runCheck(h *heldIssue, a *actionRun) {
 	c := a.checks[len(a.results)]
 	s.command(RunCheck{
-		IssueID: h.issue.ID, Action: a.name, Dir: a.dir, Name: c.Name, Command: c.Script, Log: a.log,
-		IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Bot: a.bot,
+		IssueID: h.issue.ID(), Action: a.name, Dir: a.dir, Name: c.Name, Command: c.Script, Log: a.log,
+		IssueRef: h.issue.Ref(), IssueURL: h.issue.URL(), Branch: a.branch, Bot: a.bot,
 		Prompt: a.prompt, LastMessage: a.lastMessage,
 	})
 }
@@ -203,7 +203,7 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.
 	s.m.bots.credit(s.m.bots.identity(a.bot), a.spend())
 	s.record(h, a, RunEnded)
 	s.emit(ActionEnded{
-		At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
 	})
 	if h.ended() {

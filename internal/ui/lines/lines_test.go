@@ -63,7 +63,7 @@ func equalLines(t *testing.T, got, want []string) {
 }
 
 func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing.T) {
-	issue := crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Add login form"}
+	issue := crew.NewIssue(crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "Add login form"})
 	src := newSource(0,
 		engine.Update{Events: []core.Event{
 			core.IssueTaken{At: at("09:00:01"), Issue: issue, Rule: "implement", From: "ready", To: "in progress"},

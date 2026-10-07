@@ -15,18 +15,24 @@ type BoardColumn struct {
 }
 
 // BoardIssue is an open issue as the board reads it: the issue, and the
-// board labels it carries, spelled as the board writes them.
+// board labels it carries, spelled as the board writes them. It cannot be
+// changed once built: NewBoardIssue copies the labels it is given, and
+// Labels returns a copy.
 type BoardIssue struct {
-	Issue  Issue
-	Labels []State
+	issue  Issue
+	labels []State
 }
 
-// Clone returns a copy of b that shares no memory with it.
-func (b BoardIssue) Clone() BoardIssue {
-	b.Issue = b.Issue.Clone()
-	b.Labels = slices.Clone(b.Labels)
-	return b
+// NewBoardIssue returns issue on the board with labels.
+func NewBoardIssue(issue Issue, labels []State) BoardIssue {
+	return BoardIssue{issue: issue, labels: slices.Clone(labels)}
 }
+
+// Issue returns the issue.
+func (b BoardIssue) Issue() Issue { return b.issue }
+
+// Labels returns a copy of the board labels the issue carries.
+func (b BoardIssue) Labels() []State { return slices.Clone(b.labels) }
 
 // BoardLabels returns every label the board's columns name, column by
 // column in board order, each once. The slice is new on every call.

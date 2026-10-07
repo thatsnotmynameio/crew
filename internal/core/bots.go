@@ -249,7 +249,7 @@ func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 		for _, a := range h.actions {
 			running := a.phase == PhaseRunning || a.phase == PhaseChecking || a.phase == PhaseFinishing
 			if running && m.bots.identity(a.bot) == identity {
-				out = append(out, RunningAction{IssueRef: h.issue.Ref, Rule: m.rules[h.rule].Name, Action: a.name})
+				out = append(out, RunningAction{IssueRef: h.issue.Ref(), Rule: m.rules[h.rule].Name, Action: a.name})
 			}
 		}
 	}

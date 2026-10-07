@@ -254,10 +254,10 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 		if login := n.authorLogin(); login != "" && containsFold(authors, login) {
 			pr := t.item(n.itemNode)
 			pr.Kind = crew.KindPullRequest
-			items = append(items, pr)
+			items = append(items, crew.NewIssue(pr))
 		}
 	}
-	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created.Compare(b.Created) })
+	slices.SortStableFunc(items, func(a, b crew.Issue) int { return a.Created().Compare(b.Created()) })
 	return items, nil
 }
 
@@ -286,10 +286,12 @@ func (t *Tracker) ListBoard(ctx context.Context, labels []crew.State) ([]crew.Bo
 			}
 		}
 		if len(carried) > 0 {
-			board = append(board, crew.BoardIssue{Issue: t.issue(n), Labels: carried})
+			board = append(board, crew.NewBoardIssue(t.issue(n), carried))
 		}
 	}
-	slices.SortStableFunc(board, func(a, b crew.BoardIssue) int { return a.Issue.Created.Compare(b.Issue.Created) })
+	slices.SortStableFunc(board, func(a, b crew.BoardIssue) int {
+		return a.Issue().Created().Compare(b.Issue().Created())
+	})
 	return board, nil
 }
 
@@ -495,11 +497,11 @@ func (t *Tracker) authors(ctx context.Context) ([]string, error) {
 	return appendFold(codeOwners, bots...), nil
 }
 
-// item returns the issue or pull request n as a crew.Issue in the states its
-// labels name, each once, in label order.
-func (t *Tracker) item(n itemNode) crew.Issue {
+// item returns the issue or pull request n as the data of a crew.Issue in
+// the states its labels name, each once, in label order.
+func (t *Tracker) item(n itemNode) crew.IssueData {
 	key := strconv.Itoa(n.Number)
-	issue := crew.Issue{ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
+	issue := crew.IssueData{ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
 	for _, l := range n.Labels.Nodes {
 		if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
 			issue.States = append(issue.States, s)
@@ -508,13 +510,13 @@ func (t *Tracker) item(n itemNode) crew.Issue {
 	return issue
 }
 
-// issue returns the issue n as a crew.Issue, as item returns it, blocked
+// issue returns the issue n as a crew.Issue, as item reads it, blocked
 // while an open issue blocks it and ranked by its Priority value.
 func (t *Tracker) issue(n listNode) crew.Issue {
 	issue := t.item(n.itemNode)
 	issue.Blocked = n.Dependencies.BlockedBy > 0
 	issue.Priority = priority(n.FieldValues.Nodes)
-	return issue
+	return crew.NewIssue(issue)
 }
 
 // editLabels runs one gh <kind> edit of number, an issue's or a pull

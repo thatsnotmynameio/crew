@@ -39,11 +39,11 @@ func (b *boardCounter) ListBoard(ctx context.Context, labels []crew.State) ([]cr
 func boardKeys(board []crew.BoardIssue) []string {
 	out := make([]string, 0, len(board))
 	for _, b := range board {
-		labels := make([]string, len(b.Labels))
-		for i, l := range b.Labels {
+		labels := make([]string, len(b.Labels()))
+		for i, l := range b.Labels() {
 			labels[i] = string(l)
 		}
-		out = append(out, b.Issue.ID.Key+":"+strings.Join(labels, ","))
+		out = append(out, b.Issue().ID().Key+":"+strings.Join(labels, ","))
 	}
 	return out
 }

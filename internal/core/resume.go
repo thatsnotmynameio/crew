@@ -113,7 +113,7 @@ func (m *Model) remember(r RunRecord) {
 // lastRun returns the last run record of a, in h's rule, on h's issue
 // (R3).
 func (m *Model) lastRun(h *heldIssue, a *actionRun) (RunRecord, bool) {
-	r, ok := m.lastRuns[runKey{h.issue.ID, m.rules[h.rule].Name, a.name}]
+	r, ok := m.lastRuns[runKey{h.issue.ID(), m.rules[h.rule].Name, a.name}]
 	return r, ok
 }
 
@@ -142,7 +142,7 @@ func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
 		return
 	}
 	r := RunRecord{
-		Event: event, At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref,
+		Event: event, At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(),
 		Rule: m.rules[h.rule].Name, Action: a.name,
 		Workspace: a.workspace, Branch: a.branch, Log: a.log,
 	}

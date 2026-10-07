@@ -50,15 +50,15 @@ func (b *boardMemory) moved(cards []card) tea.Cmd {
 	columns := map[crew.IssueID][]int{}
 	var order []card
 	for _, c := range cards {
-		if _, ok := columns[c.issue.ID]; !ok {
+		if _, ok := columns[c.issue.ID()]; !ok {
 			order = append(order, c)
 		}
-		columns[c.issue.ID] = append(columns[c.issue.ID], c.column)
+		columns[c.issue.ID()] = append(columns[c.issue.ID()], c.column)
 	}
 	for _, c := range order {
-		now := columns[c.issue.ID]
-		b.slide(c.issue.ID, c.issue.Ref, b.last[c.issue.ID], now)
-		b.last[c.issue.ID] = now
+		now := columns[c.issue.ID()]
+		b.slide(c.issue.ID(), c.issue.Ref(), b.last[c.issue.ID()], now)
+		b.last[c.issue.ID()] = now
 	}
 	return b.schedule()
 }

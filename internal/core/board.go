@@ -85,10 +85,7 @@ func (m *Model) boardListed(issues []crew.BoardIssue) {
 		return
 	}
 	b.reading, b.failure = false, ""
-	b.issues = make([]crew.BoardIssue, len(issues))
-	for i, issue := range issues {
-		b.issues[i] = issue.Clone()
-	}
+	b.issues = slices.Clone(issues)
 	b.moves = slices.DeleteFunc(b.moves, func(mv boardMove) bool { return mv.read < b.reads })
 	for _, mv := range b.moves {
 		b.apply(mv)
@@ -115,12 +112,12 @@ func (m *Model) boardFromListing(issues []crew.Issue) {
 	for _, issue := range issues {
 		var labels []crew.State
 		for _, l := range b.labels {
-			if slices.Contains(issue.States, l) && b.names(issue.Kind, l) {
+			if slices.Contains(issue.States(), l) && b.names(issue.Kind(), l) {
 				labels = append(labels, l)
 			}
 		}
 		if len(labels) > 0 {
-			found = append(found, crew.BoardIssue{Issue: issue, Labels: labels})
+			found = append(found, crew.NewBoardIssue(issue, labels))
 		}
 	}
 	m.boardListed(found)
@@ -148,7 +145,7 @@ func (m *Model) boardMoved(issue crew.Issue, to crew.State) {
 	if b == nil {
 		return
 	}
-	mv := boardMove{issue: issue.Clone(), to: to, read: b.reads}
+	mv := boardMove{issue: issue, to: to, read: b.reads}
 	b.moves = append(b.moves, mv)
 	b.apply(mv)
 }
@@ -166,22 +163,24 @@ func (b *board) names(kind crew.Kind, label crew.State) bool {
 // left with no board label leaves it.
 func (b *board) apply(mv boardMove) {
 	to := mv.to
-	named := b.names(mv.issue.Kind, to)
-	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue.ID == mv.issue.ID })
+	named := b.names(mv.issue.Kind(), to)
+	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue().ID() == mv.issue.ID() })
 	if i < 0 {
 		if named {
-			b.issues = append(b.issues, crew.BoardIssue{Issue: mv.issue.Clone(), Labels: []crew.State{to}})
+			b.issues = append(b.issues, crew.NewBoardIssue(mv.issue, []crew.State{to}))
 		}
 		return
 	}
-	e := &b.issues[i]
-	e.Labels = slices.DeleteFunc(e.Labels, func(l crew.State) bool { return slices.Contains(b.crewLabels, l) })
+	e := b.issues[i]
+	labels := slices.DeleteFunc(e.Labels(), func(l crew.State) bool { return slices.Contains(b.crewLabels, l) })
 	if named {
-		e.Labels = append(e.Labels, to)
+		labels = append(labels, to)
 	}
-	if len(e.Labels) == 0 {
+	if len(labels) == 0 {
 		b.issues = slices.Delete(b.issues, i, i+1)
+		return
 	}
+	b.issues[i] = crew.NewBoardIssue(e.Issue(), labels)
 }
 
 // view returns a copy of the board's issues, oldest first and then by id
@@ -190,15 +189,12 @@ func (b *board) view() []crew.BoardIssue {
 	if len(b.issues) == 0 {
 		return nil
 	}
-	out := make([]crew.BoardIssue, len(b.issues))
-	for i, e := range b.issues {
-		out[i] = e.Clone()
-	}
+	out := slices.Clone(b.issues)
 	slices.SortStableFunc(out, func(x, y crew.BoardIssue) int {
-		if c := x.Issue.Created.Compare(y.Issue.Created); c != 0 {
+		if c := x.Issue().Created().Compare(y.Issue().Created()); c != 0 {
 			return c
 		}
-		return x.Issue.ID.Compare(y.Issue.ID)
+		return x.Issue().ID().Compare(y.Issue().ID())
 	})
 	return out
 }

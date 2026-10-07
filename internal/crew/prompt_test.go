@@ -10,7 +10,9 @@ func TestPromptRendersTheIssuesFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePrompt: %v", err)
 	}
-	issue := Issue{ID: IssueID{Repository: "R_one", Key: "7"}, Ref: "#7", Title: "Fix it", URL: "https://example.com/7"}
+	issue := NewIssue(IssueData{
+		ID: IssueID{Repository: "R_one", Key: "7"}, Ref: "#7", Title: "Fix it", URL: "https://example.com/7",
+	})
 	got, err := p.Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -26,7 +28,7 @@ func TestPromptRendersEachIssueItIsGiven(t *testing.T) {
 		t.Fatalf("ParsePrompt: %v", err)
 	}
 	for _, ref := range []string{"#1", "#2"} {
-		got, err := p.Render(Issue{Ref: ref})
+		got, err := p.Render(NewIssue(IssueData{Ref: ref}))
 		if err != nil {
 			t.Fatalf("Render %s: %v", ref, err)
 		}
@@ -54,7 +56,7 @@ func TestParsePromptRefusesABadTemplate(t *testing.T) {
 }
 
 func TestZeroPromptRendersNothing(t *testing.T) {
-	got, err := Prompt{}.Render(Issue{Ref: "#1"})
+	got, err := Prompt{}.Render(NewIssue(IssueData{Ref: "#1"}))
 	if err != nil || got != "" {
 		t.Fatalf("Prompt{}.Render = %q, %v; want \"\", nil", got, err)
 	}
@@ -80,7 +82,7 @@ func TestPromptRenderErrorNamesTheAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePrompt: %v", err)
 	}
-	_, err = p.Render(Issue{Title: "short"})
+	_, err = p.Render(NewIssue(IssueData{Title: "short"}))
 	if err == nil || !strings.HasPrefix(err.Error(), `render prompt of action "implement": `) {
 		t.Fatalf("Render = %v, want an error naming the action", err)
 	}

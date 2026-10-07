@@ -59,7 +59,7 @@ func TestTheEngineQualifiesListedAndBoardIssuesWithTheTrackersRepository(t *test
 		}
 		board := make([]crew.IssueID, 0, len(final.Snapshot.Board))
 		for _, b := range final.Snapshot.Board {
-			board = append(board, b.Issue.ID)
+			board = append(board, b.Issue().ID())
 		}
 		if want := []crew.IssueID{two}; !reflect.DeepEqual(board, want) {
 			t.Errorf("board issues = %#v, want %#v", board, want)

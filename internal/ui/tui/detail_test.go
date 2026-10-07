@@ -12,7 +12,7 @@ import (
 func TestEachEventAboutAnIssueIsThatIssues(t *testing.T) {
 	id := issueID("1")
 	for _, e := range []core.Event{
-		core.IssueTaken{Issue: crew.Issue{ID: id}},
+		core.IssueTaken{Issue: crew.NewIssue(crew.IssueData{ID: id})},
 		core.ActionStarted{IssueID: id},
 		core.WorkspaceMissing{IssueID: id},
 		core.RunNotRecorded{IssueID: id},

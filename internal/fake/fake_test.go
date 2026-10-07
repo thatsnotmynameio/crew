@@ -27,13 +27,13 @@ const (
 )
 
 func issue(key string, states ...crew.State) crew.Issue {
-	return crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, States: states}
+	return crew.NewIssue(crew.IssueData{ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, States: states})
 }
 
 func keys(issues []crew.Issue) []string {
 	out := make([]string, 0, len(issues))
 	for _, i := range issues {
-		out = append(out, i.ID.Key)
+		out = append(out, i.ID().Key)
 	}
 	return out
 }

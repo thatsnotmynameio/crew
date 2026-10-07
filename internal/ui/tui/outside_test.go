@@ -134,7 +134,7 @@ func TestANotificationIsCleanedOfControlCharacters(t *testing.T) {
 	h := newBoardHarness(t, 120, crewNotify, crewBoard)
 	h.send(tea.BlurMsg{})
 	u := ended("triage", "crew:triage:done", 3)
-	u.Snapshot.Handled[0].Issue.Title = "Rule\x07 labels\x1b]0;evil\x07"
+	u.Snapshot.Handled[0].Issue = titled(u.Snapshot.Handled[0].Issue, "Rule\x07 labels\x1b]0;evil\x07")
 
 	notes := raws(h.send(updateMsg(u)))
 

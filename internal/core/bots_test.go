@@ -83,7 +83,7 @@ func names(d *driver) []crew.BotName {
 func endedAs(d *driver, i crew.Issue, action crew.ActionName, usage crew.Usage) {
 	d.t.Helper()
 	d.running(i)
-	verdict, _ := d.send(core.SessionEnded{IssueID: i.ID, Action: action, Outcome: succeeded, Usage: usage})
+	verdict, _ := d.send(core.SessionEnded{IssueID: i.ID(), Action: action, Outcome: succeeded, Usage: usage})
 	d.settle(verdict)
 }
 
@@ -254,7 +254,7 @@ func TestAnActionRunsOnItsEntryFromItsSessionUntilItsSpendLands(t *testing.T) {
 			take, _ := d.send(core.CallResult{ID: moveID(d.t, cmds, "74"), Result: core.ResultDone})
 			for _, c := range take {
 				if w, ok := c.(core.CreateWorkspace); ok {
-					d.send(space(w.Issue.ID.Key, w.Action))
+					d.send(space(w.Issue.ID().Key, w.Action))
 				}
 			}
 		}, false},

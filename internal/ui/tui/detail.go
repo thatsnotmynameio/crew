@@ -35,15 +35,15 @@ func (m Model) popupHeader(c card) []string {
 		rule = s.text.Render(clean(string(c.view.Rule)))
 	}
 	priority := none
-	if c.issue.Priority > 0 {
-		priority = s.text.Render(fmt.Sprintf("P%d", c.issue.Priority))
+	if c.issue.Priority() > 0 {
+		priority = s.text.Render(fmt.Sprintf("P%d", c.issue.Priority()))
 	}
 	url := none
-	if c.issue.URL != "" {
-		url = s.link(clean(c.issue.URL), c.issue.URL)
+	if c.issue.URL() != "" {
+		url = s.link(clean(c.issue.URL()), c.issue.URL())
 	}
 	labels := []string{"rule", "labels", "kind", "priority", "url"}
-	values := []string{rule, m.chips(c), s.text.Render(lines.KindName(c.issue.Kind)), priority, url}
+	values := []string{rule, m.chips(c), s.text.Render(lines.KindName(c.issue.Kind())), priority, url}
 	width := widest(labels)
 	out := make([]string, 0, len(labels))
 	for i, l := range labels {
@@ -58,22 +58,22 @@ func (m Model) popupHeader(c card) []string {
 // fresh on every poll, and from c's issue only off the board: core keeps a
 // held issue as it took it, unblocked (R3, KTD2, KTD3 of #229).
 func (m Model) chips(c card) string {
-	i := slices.IndexFunc(m.snap.Board, func(b crew.BoardIssue) bool { return b.Issue.ID == c.issue.ID })
+	i := slices.IndexFunc(m.snap.Board, func(b crew.BoardIssue) bool { return b.Issue().ID() == c.issue.ID() })
 	var labels []string
 	switch {
 	case c.held:
 		labels = states(c.view.Issue)
 	case i >= 0:
-		labels = states(m.snap.Board[i].Issue)
+		labels = states(m.snap.Board[i].Issue())
 	}
 	if i >= 0 {
-		for _, l := range m.snap.Board[i].Labels {
+		for _, l := range m.snap.Board[i].Labels() {
 			labels = append(labels, string(l))
 		}
 	}
-	blocked := c.issue.Blocked
+	blocked := c.issue.Blocked()
 	if i >= 0 {
-		blocked = m.snap.Board[i].Issue.Blocked
+		blocked = m.snap.Board[i].Issue().Blocked()
 	}
 	out := make([]string, 0, len(labels)+1)
 	// A label named blocked on a blocked issue gives way to the blocked
@@ -96,8 +96,8 @@ func (m Model) chips(c card) string {
 
 // states are issue's crew states as text.
 func states(issue crew.Issue) []string {
-	out := make([]string, 0, len(issue.States))
-	for _, st := range issue.States {
+	out := make([]string, 0, len(issue.States()))
+	for _, st := range issue.States() {
 		out = append(out, string(st))
 	}
 	return out
@@ -130,7 +130,7 @@ func (m Model) popupActions(c card, inner int) []string {
 // liveActionRow is held action a's row: its bot, queue, state and branch,
 // then why it failed or what it last said.
 func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
-	message, branch := m.messages.last(c.issue.ID, a.Name)
+	message, branch := m.messages.last(c.issue.ID(), a.Name)
 	if b := clean(a.Branch); b != "" {
 		branch = b
 	}
@@ -143,7 +143,7 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 		}
 	}
 	row.cells = []string{
-		m.styles.text.Render(clean(string(a.Name))), m.actionBot(c.issue.Ref, c.view.Rule, a.Name),
+		m.styles.text.Render(clean(string(a.Name))), m.actionBot(c.issue.Ref(), c.view.Rule, a.Name),
 		m.styles.text.Render(clean(string(c.view.Queue))), m.styles.text.Render(state), m.styles.text.Render(branch),
 	}
 	return row
@@ -258,7 +258,7 @@ func (m Model) note(r actionRow, inner int) []string {
 func (m Model) popupEvents(c card) []string {
 	var out []string
 	for _, e := range m.snap.Recent {
-		if eventIssue(e) == c.issue.ID {
+		if eventIssue(e) == c.issue.ID() {
 			out = append(out, m.styles.muted.Render(e.Time().In(m.cfg.Location).Format(time.TimeOnly))+" "+
 				m.styles.text.Render(clean(lines.Text(e))))
 		}
@@ -274,7 +274,7 @@ func (m Model) popupEvents(c card) []string {
 func eventIssue(e core.Event) crew.IssueID {
 	switch e := e.(type) {
 	case core.IssueTaken:
-		return e.Issue.ID
+		return e.Issue.ID()
 	case core.ActionStarted:
 		return e.IssueID
 	case core.WorkspaceMissing:

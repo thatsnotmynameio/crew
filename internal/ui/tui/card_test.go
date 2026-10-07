@@ -174,8 +174,7 @@ func TestACardsBorderIsStrongOnlyWhileItsIssueRuns(t *testing.T) {
 // does not hold reads blocked in the warning colour instead of idle, and
 // idle again once nothing blocks it.
 func TestAE1AndAE2ABlockedIssuesCardReadsBlockedInsteadOfIdle(t *testing.T) {
-	blocked := twenty
-	blocked.Blocked = true
+	blocked := edited(twenty, func(d *crew.IssueData) { d.Blocked = true })
 	h := newHarness(t, 120)
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(blocked, "ready"))))
 	if got := faceOf(t, boardOf(t, h.view()), "#20")[1]; got != "run  ⊘ blocked" {
@@ -194,8 +193,7 @@ func TestAE1AndAE2ABlockedIssuesCardReadsBlockedInsteadOfIdle(t *testing.T) {
 // Covers AE5 and R2 of #229: a held issue that becomes blocked mid-run
 // keeps showing its running action, with no blocked.
 func TestAE5AHeldBlockedIssuesCardKeepsItsActions(t *testing.T) {
-	blocked := twelve
-	blocked.Blocked = true
+	blocked := edited(twelve, func(d *crew.IssueData) { d.Blocked = true })
 	h := newBoardHarness(t, 150, crewNotify, crewBoard)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
 		labeled(blocked, "crew:triage:in progress"))))
@@ -210,7 +208,8 @@ func TestACardsTitleIsCleanAndCut(t *testing.T) {
 	h := newHarness(t, 120)
 	u := runningSnapshot()
 	title := "Fix \x1b[31mred\x1b[0m output in the parser of every config file"
-	u.Snapshot.Issues[0].Issue.Title, u.Snapshot.Board[0].Issue.Title = title, title
+	u.Snapshot.Issues[0].Issue = titled(u.Snapshot.Issues[0].Issue, title)
+	u.Snapshot.Board[0] = titledOnBoard(u.Snapshot.Board[0], title)
 	h.send(updateMsg(u))
 	h.send(rightKey)
 

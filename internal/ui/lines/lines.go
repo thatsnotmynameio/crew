@@ -110,7 +110,7 @@ func botText(e core.Event) (string, bool) {
 func issueText(e core.Event) (string, bool) {
 	switch e := e.(type) {
 	case core.IssueTaken:
-		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Rule, e.Issue.Ref, e.Issue.Title, e.From, e.To), true
+		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Rule, e.Issue.Ref(), e.Issue.Title(), e.From, e.To), true
 	case core.ActionStarted:
 		return actionStarted(e), true
 	case core.WorkspaceMissing:

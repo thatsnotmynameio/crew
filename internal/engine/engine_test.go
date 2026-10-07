@@ -69,10 +69,10 @@ var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // issue is the issue keyed n as a tracker lists it, without its repository.
 func issue(n int, states ...crew.State) crew.Issue {
 	key := strconv.Itoa(n)
-	return crew.Issue{
+	return crew.NewIssue(crew.IssueData{
 		ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key,
 		Created: epoch.Add(time.Duration(n) * time.Minute), States: states,
-	}
+	})
 }
 
 // rig is an engine running in its own goroutine, with fake adapters.
@@ -177,7 +177,7 @@ func states(t *testing.T, tr interface {
 	if !ok {
 		t.Fatalf("issue %s is gone", key)
 	}
-	return i.States
+	return i.States()
 }
 
 // fakeWorkspace returns cfg's workspace, the fake one config made.
