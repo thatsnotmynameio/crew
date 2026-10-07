@@ -192,7 +192,7 @@ What a session is asked to do next, as its captain answers it: the task's own id
 
 A question a session asked on the issue, in one comment with its own marker, because it needs an answer to go on: the rule run it ran in, its action and the login it acted as, which crew finds the comment by. Only a session whose `on:` maps `waiting` may ask one, and it waits up to its `wait` before it ends with `waiting`.
 
-A question stays open from rule run to rule run, through the run journal, until a later session at its action succeeds, whatever verdict it gives; one that ends with `waiting` leaves its own new question open. A session that failed, was stopped or crashed with crew closes nothing. A run that finished its `passed` route passes no question on.
+A question stays open from rule run to rule run, through the run journal, until a session at its action succeeds with a verdict other than `waiting`, which closes every question asked there; one that ends with `waiting` leaves them all open, and the latest question asked is the one crew finds. A session that failed, was stopped or crashed with crew closes nothing. A run that finished its `passed` route passes no question on.
 
 ### Answer
 

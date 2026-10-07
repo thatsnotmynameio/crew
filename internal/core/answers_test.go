@@ -185,6 +185,11 @@ func TestAE20AStopDuringTheWaitResumesWithTheAnswersNotTheFailure(t *testing.T) 
 	}
 	wantHolds(t, start.Prompt, "crew: this session may wait for an answer on the issue.")
 	wantLacks(t, start.Prompt, "That run", "crew stopped", "Too early", "Approved, merge it")
+	// The read command also finds the earlier session's question, so a
+	// session that waits again without asking anew still waits for its
+	// answers (KTD-W7).
+	wantHolds(t, start.Prompt, crew.SessionMarker(runsOf(journal)[0], "acceptance"),
+		"or that holds the marker of an earlier session at this action whose question may still be open")
 }
 
 // Covers AE5, R21, R22, R23: a run resumed after its session ended with

@@ -232,9 +232,11 @@ func resumedQuestions() []questionCase {
 			waited, then(asksAgain, endsWith(Passed), judgeExits(1)),
 		}},
 		{
-			name:  "a resumed session asks again and ends with waiting: the earlier dropped, its own kept",
+			// It may have waited for answers to the earlier question without
+			// asking a new one, so the earlier question stays too.
+			name:  "a resumed session that ends with waiting again: both stay and pass on",
 			lives: []life{waited, then(asksAgain, endsWith(Waiting))},
-			held:  []Question{q2}, passed: []Question{q2},
+			held:  []Question{q1, q2}, passed: []Question{q1, q2},
 		},
 		{
 			name:  "a resumed session stopped before it asks again: both stay and pass on",

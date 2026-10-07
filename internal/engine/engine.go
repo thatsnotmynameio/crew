@@ -438,11 +438,11 @@ func (e *Engine) findRepository() crew.Repository {
 // login the tracker acts as when it acts as you, as its
 // port.LoginFinder found it in Prepare; none without one (KTD8).
 func (e *Engine) withBots() core.Option {
-	c := core.BotsConfig{Default: e.cfg.DefaultBot, Names: e.cfg.Bots, Unable: e.cfg.Unable}
+	c := core.BotsConfig{
+		Default: e.cfg.DefaultBot, Names: e.cfg.Bots, Unable: e.cfg.Unable,
+		Logins: make(map[crew.BotName]string, len(e.cfg.Identities)),
+	}
 	for name, id := range e.cfg.Identities {
-		if c.Logins == nil {
-			c.Logins = map[crew.BotName]string{}
-		}
 		c.Logins[name] = id.Login
 	}
 	if l, ok := e.cfg.Tracker.(port.LoginFinder); ok {

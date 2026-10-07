@@ -33,11 +33,17 @@ func (r RuleRun) asked(action ActionName, login string) RuleRun {
 }
 
 // endedOn returns r once its session at the action named action ended
-// well with verdict: it ends on every question at that action, except its
-// own when it ended with Waiting, since it asked again (KTD-W7).
+// well with verdict: it ends on every question at that action, unless it
+// ended with Waiting. A session that waits again keeps them all, its own
+// and the earlier ones, since it may have waited for answers to an earlier
+// question without asking a new one; the latest question asked wins when
+// crew reads the answers (KTD-W7).
 func (r RuleRun) endedOn(action ActionName, verdict Verdict) RuleRun {
+	if verdict == Waiting {
+		return r
+	}
 	r.questions = slices.DeleteFunc(slices.Clone(r.questions), func(q Question) bool {
-		return q.Action == action && (q.Run != r.id || verdict != Waiting)
+		return q.Action == action
 	})
 	return r
 }

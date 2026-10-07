@@ -70,8 +70,9 @@ func Answers(comments []Comment, questions []Question, who Answerers) Answered {
 	}
 	var counted []Answer
 	for _, c := range comments[asked+1:] {
+		c.Body = StripControlsKeepingLines(c.Body)
 		if answers(c, questions, who) {
-			counted = append(counted, Answer{Author: c.Author, Body: StripControlsKeepingLines(c.Body)})
+			counted = append(counted, Answer{Author: c.Author, Body: c.Body})
 		}
 	}
 	slices.Reverse(counted)
@@ -98,10 +99,11 @@ func isQuestion(c Comment, questions []Question) bool {
 	})
 }
 
-// answers reports whether c, a comment after the question, counts as an
-// answer: it holds none of crew's markers, and a code owner who is not an
-// App, or an App on the answering list that asked none of questions, wrote
-// it.
+// answers reports whether c, a comment after the question whose body is
+// already stripped, counts as an answer: it holds none of crew's markers,
+// also none that stripping its control characters revealed, and a code
+// owner who is not an App, or an App on the answering list that asked none
+// of questions, wrote it.
 func answers(c Comment, questions []Question, who Answerers) bool {
 	if HoldsMarker(c.Body) || c.Author == "" {
 		return false

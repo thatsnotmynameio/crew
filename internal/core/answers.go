@@ -1,11 +1,6 @@
 package core
 
-import (
-	"slices"
-	"strings"
-
-	"github.com/thatsnotmynameio/crew/internal/crew"
-)
+import "github.com/thatsnotmynameio/crew/internal/crew"
 
 // answers is what crew read of the answers to the open questions at the
 // action whose session starts (KTD-W6). The held run keeps it, from the
@@ -47,9 +42,11 @@ func (s *step) answersRead(h *heldRun, in AnswersRead) {
 	if a == nil || a.read || a.action != in.Action {
 		return
 	}
-	if at, ok := h.run.Cursor(); !ok || at.Name() != in.Action {
+	at, ok := h.run.Cursor()
+	if !ok || at.Name() != in.Action {
 		return
-	} else if _, starting := at.State().(crew.StartingSession); !starting {
+	}
+	if _, starting := at.State().(crew.StartingSession); !starting {
 		return
 	}
 	a.read, a.failed, a.reason = true, in.Failed, in.Reason
@@ -91,13 +88,8 @@ func (m *Model) resumeParagraphs(h *heldRun, name crew.ActionName, start crew.St
 // could not read reads: the open questions of h's run at its action named
 // name, and who may answer them, the Apps that asked one left out (R48).
 func (m *Model) unread(h *heldRun, name crew.ActionName) reader {
-	questions := h.run.Questions(name)
-	asks := make([]asked, 0, len(questions))
-	for _, q := range questions {
-		asks = append(asks, asked{marker: crew.SessionMarker(q.Run, q.Action), login: q.Login})
+	asks, logins := askedAt(h.run.Questions(name))
+	return reader{
+		issue: h.run.Issue().ID().Key, questions: asks, owners: m.answerers.CodeOwners, apps: m.appsExcept(logins...),
 	}
-	apps := slices.DeleteFunc(slices.Clone(m.answerers.Apps), func(app string) bool {
-		return slices.ContainsFunc(questions, func(q crew.Question) bool { return strings.EqualFold(q.Login, app) })
-	})
-	return reader{issue: h.run.Issue().ID().Key, questions: asks, owners: m.answerers.CodeOwners, apps: apps}
 }

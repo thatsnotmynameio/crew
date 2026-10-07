@@ -97,7 +97,7 @@ The full plan's KTD1 to KTD23 apply, read through `docs/solutions/design-pattern
 - KTD-W6. **The core reads the answers as session plumbing, not as a phase of the run.** When the run asks for a session (`ActionSessionAsked`) at an action with open questions, the core sends `ReadAnswers` before `StartSession`, as it sends `FindPullRequest`. The engine lists the comments through `CommentLister` within the lookup timeout and posts `AnswersRead` with the comments or the failure. The core picks the answers (KTD-W9), keeps them on the held run and then starts the session. The answer text is in no run event, so it never reaches the journal, a comment or the status. This departs from KTD21's `AnswersAsked` event and `AnswersRead` fact: nothing the journal must keep depends on the read, and a crash before the session starts reads again at the next take. A stop while crew reads changes nothing here: the run's next fact, the session's start, asks it to stop.
 - KTD-W7. **The run keeps a list of open questions, carried from run to run.** A question is a session that may have asked one: its run, its action and the login it acted as.
   - `ActionSessionStarted` records the session's login and whether its action's `on:` has a `waiting` entry. Applied, it adds the session to the run's questions when it has one.
-  - A session ends on the questions at its action when it started in this run and ended well (`EndSucceeded`): `ActionEnded` then drops the questions of earlier sessions at that action. It keeps its own only when its verdict is `waiting`.
+  - A session ends on the questions at its action when it started in this run and ended well (`EndSucceeded`) with a verdict other than `waiting`: `ActionEnded` then drops every question at that action, its own included. One that ended well with `waiting` keeps them all, its own and the earlier ones, since it may have waited for the answers to an earlier question without asking a new one; the latest question asked wins when crew reads the answers, and the waiting paragraph's read command prints the earlier questions too.
   - A session that failed, crew stopped, crashed with crew, or never started ends on nothing: every question at its action stays, its own included, since it may have asked before it was cut short.
   - `RunTaken` carries the questions of the last run of the issue and rule, which `History` gives. A last run that ended through `passed` and finished its route passes none on.
   - `WorkspaceMissing` keeps them, and a retired run still passes them on. Like resume, they need the run journal: without one, no run inherits anything.
@@ -148,7 +148,7 @@ sequenceDiagram
   Engine->>Core: AnswersRead (comments, or failed)
   Core->>Core: crew.Answers: question by marker and login, keep who may answer, strip, cap
   Core->>S2: prompt + answers paragraph + waiting paragraph
-  S2-->>Run: ActionEnded (ended well) drops run 1's question, keeps its own only on waiting
+  S2-->>Run: ActionEnded (ended well) drops every question at the action, or keeps them all on waiting
 ```
 
 How the run's open questions change (KTD-W7):
@@ -161,7 +161,7 @@ flowchart TB
   A -->|no waiting entry| KEEP[unchanged]
   ADD --> E{that session's action ends}
   KEEP --> E
-  E -->|session ended well with waiting| DROPW[drop the earlier questions at A, keep its own]
+  E -->|session ended well with waiting| KEEPW[keep every question at A, its own added]
   E -->|session ended well with another verdict| DROPALL[drop every question at A]
   E -->|failed, stopped, crashed, or never started| SAME[keep every question at A]
 ```
@@ -291,7 +291,7 @@ U1 (config and startup checks) and U2 (markers) stand alone. U3 adds the waiting
   - Covers AE4. A session asks, gets its answer within its wait and ends `passed`; a later shell action fails: the run's question at that action is dropped, and the next run inherits none.
   - A session ends with `waiting`: its own question stays.
   - A resumed session at that action ends `passed`: every question at that action is dropped.
-  - A resumed session at that action asks again and ends with `waiting`: the earlier question is dropped and its own kept.
+  - A resumed session at that action ends with `waiting` again: both questions stay, and its read command prints the earlier question too.
   - A resumed session at that action is stopped before it asks again: both questions stay, and the next run inherits both.
   - A resumed session at that action fails (its harness failed) after it was given the answers: both questions stay.
   - A resume stopped before its session started passes the question on to the run after it.

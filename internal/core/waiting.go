@@ -35,24 +35,47 @@ type waiting struct {
 	marker string
 	// login is the login the session acts as; empty when unknown.
 	login string
+	// earlier are the open questions earlier sessions at the action asked,
+	// whose answers the session may still wait for (KTD-W7).
+	earlier []asked
 	// owners are the code owners' logins.
 	owners []string
-	// apps are the answering list's logins, without the session's own.
+	// apps are the answering list's logins, without the session's own and
+	// those that asked the earlier questions.
 	apps []string
 }
 
 // waitingOf returns what the waiting paragraph tells the session of h's
-// action named name, whose spec is spec: the answering list without the
-// login it acts as, compared ignoring case (R40, KTD-W8).
+// action named name, whose spec is spec: the open questions earlier
+// sessions at the action asked, and the answering list without the login
+// it acts as and theirs, compared ignoring case (R40, KTD-W7, KTD-W8).
 func (m *Model) waitingOf(h *heldRun, name crew.ActionName, spec crew.SessionSpec) waiting {
 	login := m.bots.login(spec.Bot.Name)
-	apps := slices.DeleteFunc(slices.Clone(m.answerers.Apps), func(app string) bool {
-		return strings.EqualFold(app, login)
-	})
+	earlier, asking := askedAt(h.run.Questions(name))
 	return waiting{
 		issue: h.run.Issue().ID().Key, wait: spec.Wait, marker: crew.SessionMarker(h.run.ID(), name), login: login,
-		owners: m.answerers.CodeOwners, apps: apps,
+		earlier: earlier, owners: m.answerers.CodeOwners, apps: m.appsExcept(append(asking, login)...),
 	}
+}
+
+// askedAt returns what a read command prints of questions, each by its
+// marker and login, and the logins that asked them.
+func askedAt(questions []crew.Question) ([]asked, []string) {
+	asks := make([]asked, 0, len(questions))
+	logins := make([]string, 0, len(questions))
+	for _, q := range questions {
+		asks = append(asks, asked{marker: crew.SessionMarker(q.Run, q.Action), login: q.Login})
+		logins = append(logins, q.Login)
+	}
+	return asks, logins
+}
+
+// appsExcept returns the answering list without the logins that asked,
+// compared ignoring case: an App never answers its own question (R37).
+func (m *Model) appsExcept(asking ...string) []string {
+	return slices.DeleteFunc(slices.Clone(m.answerers.Apps), func(app string) bool {
+		return slices.ContainsFunc(asking, func(login string) bool { return strings.EqualFold(login, app) })
+	})
 }
 
 // reader is what a read command reads on an issue: the questions it
@@ -77,10 +100,11 @@ type asked struct {
 	login  string
 }
 
-// reader returns what the read command of w reads: its session's question
-// and who may answer it.
+// reader returns what the read command of w reads: the earlier questions
+// at its action and its session's own, and who may answer them.
 func (w waiting) reader() reader {
-	return reader{issue: w.issue, questions: []asked{{marker: w.marker, login: w.login}}, owners: w.owners, apps: w.apps}
+	questions := append(slices.Clone(w.earlier), asked{marker: w.marker, login: w.login})
+	return reader{issue: w.issue, questions: questions, owners: w.owners, apps: w.apps}
 }
 
 // readCommand returns the one command a session reads the issue's

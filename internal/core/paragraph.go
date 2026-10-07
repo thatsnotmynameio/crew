@@ -86,16 +86,16 @@ func answersParagraph(issue string, a crew.Answered) string {
 // leftOut says that n answers were left out of the prompt, older than
 // those it carries when carried, and that they are on the issue (R47).
 func leftOut(n int, carried bool) string {
-	what, count := "answer", "counts was"
+	what, verb := "answer", "counts was"
 	if carried {
 		what = "older answer"
 	}
 	them := "it"
 	if n != 1 {
-		count, them = "count were", "them"
+		verb, them = "count were", "them"
 	}
 	return fmt.Sprintf("%s that %s left out, as the answers a prompt carries are capped; read %s on the issue.",
-		plural(n, what), count, them)
+		plural(n, what), verb, them)
 }
 
 // failedReadParagraph is what crew appends to the prompt of a session at
@@ -216,9 +216,13 @@ func readOutput(w waiting) string {
 			"answer. crew does not know the login you act as, so the command prints no line for your question: " +
 			"your question is your own latest comment with your marker, and the answers are the lines created after it."
 	}
+	asked := "comment of yours that holds your marker"
+	if len(w.earlier) > 0 {
+		asked += ", or that holds the marker of an earlier session at this action whose question may still be open"
+	}
 	return "It prints one JSON object per line: a line with `\"question\":true` and the `created_at` of each " +
-		"comment of yours that holds your marker, and the `created_at`, `login` and `body` of each comment that " +
-		"may answer. The answers are the lines without `question` created after your latest question line."
+		asked + ", and the `created_at`, `login` and `body` of each comment that may answer. The answers are the " +
+		"lines without `question` created after the latest question line."
 }
 
 // logins returns each of logins in backquotes, joined by commas.
