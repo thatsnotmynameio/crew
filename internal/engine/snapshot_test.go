@@ -1,12 +1,15 @@
 package engine_test
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
@@ -85,6 +88,50 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing
 	})
 }
 
+// Covers KTD-P6: a failed run publishes its take, its moves, its session's
+// start, its action's end and its failure report, and none of its silent
+// run events, in the updates or in the snapshot's recent events.
+func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready))
+		r := start(t, config(t, tr, develop))
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
+		synctest.Wait()
+
+		r.engine.Stop()
+		final, err := r.wait()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		worded := []string{
+			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.VerdictMoved",
+			"crew.FailureReported",
+		}
+		published := runEventKinds(slices.Concat(r.events(), final.Snapshot.Recent))
+		for _, kind := range published {
+			if !slices.Contains(worded, kind) {
+				t.Errorf("published %s, a run event no view words", kind)
+			}
+		}
+		for _, kind := range worded {
+			if !slices.Contains(published, kind) {
+				t.Errorf("published no %s; run events = %v", kind, published)
+			}
+		}
+	})
+}
+
+// runEventKinds returns the type of each run event in events, in order.
+func runEventKinds(events []core.Published) []string {
+	var kinds []string
+	for _, e := range events {
+		if _, ok := e.(crew.RunEvent); ok {
+			kinds = append(kinds, fmt.Sprintf("%T", e))
+		}
+	}
+	return kinds
+}
+
 func TestASnapshotKeepsTheLast100Events(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := start(t, config(t, fake.NewTracker(), develop))
@@ -95,7 +142,7 @@ func TestASnapshotKeepsTheLast100Events(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 
-		var all []core.Event
+		var all []core.Published
 		for u := range r.queue.Updates() {
 			all = append(all, u.Events...)
 		}

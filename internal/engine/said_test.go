@@ -153,7 +153,7 @@ func TestR18AStepAfterARefreshCarriesTheSameWords(t *testing.T) {
 			t.Fatal("the poll published no update to the ordered queue")
 		}
 		last := q[len(q)-1]
-		polled := slices.ContainsFunc(last.Events, func(e core.Event) bool {
+		polled := slices.ContainsFunc(last.Events, func(e core.Published) bool {
 			_, ok := e.(core.PollDone)
 			return ok
 		})

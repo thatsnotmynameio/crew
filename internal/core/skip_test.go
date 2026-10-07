@@ -19,8 +19,8 @@ func listings(cmds []core.Command) int {
 }
 
 // skips returns the skipped polls in events.
-func skips(events []core.Event) []core.Event {
-	var out []core.Event
+func skips(events []core.Published) []core.Published {
+	var out []core.Published
 	for _, e := range events {
 		if _, ok := e.(core.PollSkipped); ok {
 			out = append(out, e)
@@ -48,7 +48,7 @@ func (d *driver) endActions(key string) []core.Command {
 
 // release ends both actions of the running issue key successfully and lands
 // its verdict move, which releases it. It returns what the landing produced.
-func (d *driver) release(key string) ([]core.Command, []core.Event) {
+func (d *driver) release(key string) ([]core.Command, []core.Published) {
 	d.t.Helper()
 	verdict := d.endActions(key)
 	return d.send(core.CallResult{ID: moveID(d.t, verdict, key), Result: core.ResultDone})

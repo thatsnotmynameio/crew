@@ -51,7 +51,7 @@ func TestAE3TimeUpLetsARunningIssueFinishAndTakesNothingNew(t *testing.T) {
 
 	_, events = d.send(core.CallResult{ID: moveID(t, verdict, "42"), Result: core.ResultDone})
 	wantEvents(t, events,
-		core.IssueMoved{At: d.now, IssueID: issueID("42"), IssueRef: "#42", From: inProgress, To: readyToReview},
+		crew.VerdictMoved{EventHead: d.runHead("42"), From: inProgress, To: readyToReview},
 		core.Stopped{At: d.now},
 	)
 	if !d.m.Stopped() {

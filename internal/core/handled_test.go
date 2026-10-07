@@ -33,7 +33,7 @@ func TestASucceededRuleIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 	i1 := issue("1", 1, ready)
 	take, events := d.poll(i1)
 	taken := d.now
-	hasEvent(t, events, core.IssueTaken{At: taken, Issue: i1, Rule: "implement", From: ready, To: inProgress})
+	hasEvent(t, events, d.taken(1, i1, "implement", ready, inProgress, "acceptance", "development"))
 	d.settle(take)
 
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})

@@ -63,20 +63,22 @@ func equalLines(t *testing.T, got, want []string) {
 }
 
 func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing.T) {
-	issue := crew.NewIssue(crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "Add login form"})
+	issue := crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "Add login form"}
+	head := func(hms string) crew.EventHead {
+		return crew.EventHead{At: at(hms), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement"}
+	}
 	src := newSource(0,
-		engine.Update{Events: []core.Event{
-			core.IssueTaken{At: at("09:00:01"), Issue: issue, Rule: "implement", From: "ready", To: "in progress"},
+		engine.Update{Events: []core.Published{
+			crew.RunTaken{EventHead: head("09:00:01"), Issue: issue, From: "ready", To: "in progress"},
 		}},
-		engine.Update{Events: []core.Event{
-			core.ActionStarted{At: at("09:00:02"), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "code",
-				Workspace: "1-code", Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
+		engine.Update{Events: []core.Published{
+			crew.ActionSessionStarted{EventHead: head("09:00:02"), Action: "code",
+				Workspace: crew.Workspace{Name: "1-code", Branch: "crew/1-code"}, Log: ".crew/logs/1-code.log"},
 		}},
-		engine.Update{Events: []core.Event{
-			core.ActionEnded{At: at("09:12:30"), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "code",
-				Outcome: crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("Opened pull request #7")}},
-			core.IssueMoved{At: at("09:12:31"), IssueID: issueID("1"), IssueRef: "#1", From: "in progress",
-				To: "ready to review"},
+		engine.Update{Events: []core.Published{
+			crew.ActionEnded{EventHead: head("09:12:30"), Action: "code",
+				End: crew.EndSucceeded{Reason: crew.NewSessionText("Opened pull request #7")}},
+			crew.VerdictMoved{EventHead: head("09:12:31"), From: "in progress", To: "ready to review"},
 		}},
 	)
 
@@ -98,33 +100,47 @@ var (
 	prs    = core.Call{Kind: core.CallPullRequests, IssueID: two, IssueRef: "#2", To: "needs attention"}
 )
 
+// The run events below name these heads and workspace.
+var (
+	lfgHead      = crew.EventHead{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development"}
+	lfgWorkspace = crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"}
+)
+
+// twoHead is the head of an event of rule's run on #2.
+func twoHead(rule crew.RuleName) crew.EventHead {
+	return crew.EventHead{At: at("10:00:00"), IssueID: two, IssueRef: "#2", Rule: rule}
+}
+
 // sentences pairs each kind of event with the sentence Text gives it.
 var sentences = []struct {
-	event core.Event
+	event core.Published
 	want  string
 }{
-	{core.ActionStarted{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
-		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log"},
+	{crew.ActionSessionStarted{EventHead: lfgHead, Action: "lfg", Workspace: lfgWorkspace,
+		Log: ".crew/logs/issue-9-lfg.log"},
 		"#9 development/lfg started on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-	{core.ActionStarted{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
-		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
+	{crew.ActionSessionStarted{EventHead: lfgHead, Action: "lfg", Workspace: lfgWorkspace,
+		Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
 		"#9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-	{core.WorkspaceMissing{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
-		Workspace: "issue-9-lfg"},
+	{crew.WorkspaceMissing{EventHead: lfgHead, Action: "lfg", Workspace: lfgWorkspace},
 		"#9 development/lfg: worktree issue-9-lfg is gone, creating a new one"},
 	{core.RunNotRecorded{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		Reason: "disk full"},
 		"could not record #9 development/lfg's run, so a restart may not resume it: disk full"},
-	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "review", Action: "check",
-		Outcome: crew.Outcome{Reason: crew.NewSessionText("session exited with status 1")}},
+	{crew.ActionEnded{EventHead: twoHead("review"), Action: "check",
+		End: crew.EndFailed{Reason: crew.NewSessionText("session exited with status 1"), Cause: crew.CauseSession}},
 		"#2 review/check failed: session exited with status 1"},
-	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "review", Action: "check",
-		Outcome: crew.Outcome{Succeeded: true}},
+	{crew.ActionEnded{EventHead: twoHead("review"), Action: "check", End: crew.EndSucceeded{}},
 		"#2 review/check succeeded"},
-	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "implement", Action: "lfg",
-		Outcome: crew.Outcome{Reason: crew.NewSessionText("the check failed: no open pull request from crew/issue-2-lfg")}},
+	{crew.ActionEnded{EventHead: twoHead("implement"), Action: "lfg",
+		End: crew.EndFailed{
+			Reason: crew.NewSessionText("the check failed: no open pull request from crew/issue-2-lfg"),
+			Cause:  crew.CauseCheck,
+		}},
 		"#2 implement/lfg failed: the check failed: no open pull request from crew/issue-2-lfg"},
-	{core.FailureReported{At: at("10:00:00"), IssueRef: "#2"},
+	{crew.TakeMoved{EventHead: twoHead("review"), From: "ready to review", To: "in review"},
+		"#2 moved from ready to review to in review"},
+	{crew.FailureReported{EventHead: twoHead("review")},
 		"reported the failure on #2"},
 	{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
 		"skipped #3: it carries 2 crew labels (ready, in progress)"},
@@ -184,6 +200,20 @@ func TestEveryEventPrintsAnEnglishSentence(t *testing.T) {
 	}
 }
 
+// The core publishes only the run events the views word (KTD-P6); the rest,
+// such as a workspace asked for or a run released, have no sentence.
+func TestASilentRunEventHasNoSentence(t *testing.T) {
+	for _, e := range []core.Published{
+		crew.ActionWorkspaceAsked{EventHead: lfgHead, Action: "lfg"},
+		crew.ActionSessionEnded{EventHead: lfgHead, Action: "lfg"},
+		crew.RunReleased{EventHead: lfgHead},
+	} {
+		if got := lines.Text(e); got != "" {
+			t.Errorf("Text(%T) = %q, want none", e, got)
+		}
+	}
+}
+
 // Covers R17 (lines side): no sentence says boss, mate, stage or workflow.
 func TestNoSentenceSaysAnOldWord(t *testing.T) {
 	old := regexp.MustCompile(`(?i)\b(boss(es)?|mates?|stages?|workflows?)\b`)
@@ -196,7 +226,7 @@ func TestNoSentenceSaysAnOldWord(t *testing.T) {
 
 func TestADropCountPrintsOneLineSayingHowManyEventsWereDropped(t *testing.T) {
 	poll := func(hms string) engine.Update {
-		return engine.Update{Events: []core.Event{core.PollDone{At: at(hms), Listed: 0}}}
+		return engine.Update{Events: []core.Published{core.PollDone{At: at(hms), Listed: 0}}}
 	}
 	src := newSource(3, poll("11:00:00"), poll("11:00:30"))
 
@@ -210,7 +240,7 @@ func TestADropCountPrintsOneLineSayingHowManyEventsWereDropped(t *testing.T) {
 }
 
 func TestNoDropsPrintNoDropLine(t *testing.T) {
-	src := newSource(0, engine.Update{Events: []core.Event{core.Stopped{At: at("12:00:00")}}})
+	src := newSource(0, engine.Update{Events: []core.Published{core.Stopped{At: at("12:00:00")}}})
 
 	got := render(t, src, at("12:00:01"))
 
@@ -220,7 +250,7 @@ func TestNoDropsPrintNoDropLine(t *testing.T) {
 // Covers #92 (lines side): the notice for an item of the other kind is
 // stamped with the time of the poll that found it, not the time it prints.
 func TestANoticeOfAnItemOfTheOtherKindPrintsAtItsPollsTime(t *testing.T) {
-	src := newSource(0, engine.Update{Events: []core.Event{
+	src := newSource(0, engine.Update{Events: []core.Published{
 		core.IssueOfOtherKind{At: at("12:30:00"), IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 			Label: "ready", Rule: "implement", Takes: crew.KindIssue},
 	}})
@@ -236,8 +266,8 @@ func TestANoticeOfAnItemOfTheOtherKindPrintsAtItsPollsTime(t *testing.T) {
 // first event.
 func TestEachStartupWarningPrintsOnceBeforeTheFirstEvent(t *testing.T) {
 	src := newSource(0,
-		engine.Update{Events: []core.Event{core.PollDone{At: at("12:00:02"), Listed: 0}}},
-		engine.Update{Events: []core.Event{core.Stopped{At: at("12:00:03")}}},
+		engine.Update{Events: []core.Published{core.PollDone{At: at("12:00:02"), Listed: 0}}},
+		engine.Update{Events: []core.Published{core.Stopped{At: at("12:00:03")}}},
 	)
 	var out strings.Builder
 	warning := "bot ops has no key on this machine for thatsnotmynameio; " +

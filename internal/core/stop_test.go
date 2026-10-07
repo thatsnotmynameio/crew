@@ -24,8 +24,7 @@ func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 	}
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
-		To: readyToReview})
+	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 
 	d.send(core.SessionEnded{IssueID: issueID("2"), Action: "acceptance", Outcome: failed("stopped")})
 	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("2"), Action: "development", Outcome: failed("stopped")})

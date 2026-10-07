@@ -148,9 +148,9 @@ func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 		})
 
 	_, events := d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
-	hasEvent(t, events, core.ActionStarted{
-		At: d.now, IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
-		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
+	hasEvent(t, events, crew.ActionSessionStarted{
+		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
+		Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
 	})
 	if !d.m.View().Issues[0].Actions[0].Resumed {
 		t.Fatalf("the view does not show the action resumed")
@@ -173,8 +173,8 @@ func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
 	d.takeIssue(issue("9", 1, readyForDev))
 
 	cmds, events := d.send(core.WorkspaceGone{IssueID: issueID("9"), Action: "lfg"})
-	hasEvent(t, events, core.WorkspaceMissing{
-		At: d.now, IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg", Workspace: "issue-9-lfg",
+	hasEvent(t, events, crew.WorkspaceMissing{
+		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
 	})
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Action: "lfg"})
 

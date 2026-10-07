@@ -59,7 +59,7 @@ func wantReport(t *testing.T, got crew.PullRequestReport, d crew.PullRequestRepo
 }
 
 // answerPullRequests answers the report in flight for key with result.
-func (d *driver) answerPullRequests(key string, result core.Result) ([]core.Command, []core.Event) {
+func (d *driver) answerPullRequests(key string, result core.Result) ([]core.Command, []core.Published) {
 	return d.send(core.PullRequestsResult{IssueID: issueID(key), Result: result, Reason: result.String()})
 }
 

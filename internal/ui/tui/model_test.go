@@ -149,16 +149,18 @@ func runningSnapshot() engine.Update {
 				crew.NewBoardIssue(one, []crew.State{"in progress"}), crew.NewBoardIssue(two, []crew.State{"ready to review"}),
 			}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
-		Recent: []core.Event{
-			core.IssueTaken{At: start.Add(-7*time.Minute - 2*time.Second), Issue: one, Rule: "implement",
-				From: "ready", To: "in progress"},
-			core.ActionStarted{At: start.Add(-7 * time.Minute), IssueRef: "#1", Rule: "implement", Action: "tests",
-				Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
-			core.ActionStarted{At: start.Add(-5 * time.Minute), IssueRef: "#1", Rule: "implement", Action: "code",
-				Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
+		Recent: []core.Published{
+			taken(start.Add(-7*time.Minute-2*time.Second), one, "implement", "ready", "in progress"),
+			crew.ActionSessionStarted{
+				At: start.Add(-7 * time.Minute), IssueRef: "#1", Rule: "implement",
+				Action: "tests", Workspace: crew.Workspace{Branch: "crew/1-tests"}, Log: ".crew/logs/1-tests.log",
+			},
+			crew.ActionSessionStarted{
+				At: start.Add(-5 * time.Minute), IssueRef: "#1", Rule: "implement",
+				Action: "code", Workspace: crew.Workspace{Branch: "crew/1-code"}, Log: ".crew/logs/1-code.log",
+			},
 			core.PollDone{At: start.Add(-10 * time.Second), Listed: 2, Taken: 1},
-			core.IssueTaken{At: start.Add(-10 * time.Second), Issue: two, Rule: "review",
-				From: "ready to review", To: "in review"},
+			taken(start.Add(-10*time.Second), two, "review", "ready to review", "in review"),
 		},
 	}}
 }
@@ -208,11 +210,17 @@ func resumingSnapshot() engine.Update {
 			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "lfg"},
 			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "tests"})}},
 		Started: start.Add(-4 * time.Minute),
-		Recent: []core.Event{
-			core.ActionStarted{At: start.Add(-3 * time.Minute), IssueRef: "#9", Rule: "development", Action: "lfg",
-				Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
-			core.ActionStarted{At: start.Add(-2 * time.Minute), IssueRef: "#9", Rule: "development", Action: "tests",
-				Workspace: "issue-9-tests", Branch: "crew/issue-9-tests", Log: ".crew/logs/issue-9-tests.log"},
+		Recent: []core.Published{
+			crew.ActionSessionStarted{
+				At: start.Add(-3 * time.Minute), IssueRef: "#9", Rule: "development",
+				Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
+				Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
+			},
+			crew.ActionSessionStarted{
+				At: start.Add(-2 * time.Minute), IssueRef: "#9", Rule: "development",
+				Action: "tests", Workspace: crew.Workspace{Name: "issue-9-tests", Branch: "crew/issue-9-tests"},
+				Log: ".crew/logs/issue-9-tests.log",
+			},
 		},
 	}}
 }
@@ -241,7 +249,7 @@ func windingDownSnapshot() engine.Update {
 		}, Bots: []core.BotView{you([]string{"implement/code"},
 			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})},
 			Board: []crew.BoardIssue{crew.NewBoardIssue(issue, []crew.State{"in progress"})}},
-		Recent: []core.Event{
+		Recent: []core.Published{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},
 		Started: start.Add(-75 * time.Minute), RunTimeLimit: time.Hour,

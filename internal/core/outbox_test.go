@@ -52,7 +52,7 @@ func TestAE2ATakeOwedTwiceStartsItsActionsOnceItLands(t *testing.T) {
 
 	retry, _ = d.send(core.Tick{})
 	cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	wantEvents(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: ready, To: inProgress})
+	wantEvents(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
 	wantCommands(t, cmds,
 		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
 		core.CreateWorkspace{Issue: i1, Action: "development"},

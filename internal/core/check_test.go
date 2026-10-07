@@ -91,11 +91,11 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 }
 
 // endOf returns the outcome action ended with in events.
-func endOf(t *testing.T, events []core.Event, action crew.ActionName) crew.Outcome {
+func endOf(t *testing.T, events []core.Published, action crew.ActionName) crew.Outcome {
 	t.Helper()
 	for _, e := range events {
-		if ended, ok := e.(core.ActionEnded); ok && ended.Action == action {
-			return ended.Outcome
+		if ended, ok := e.(crew.ActionEnded); ok && ended.Action == action {
+			return ended.End.Outcome()
 		}
 	}
 	t.Fatalf("no end of %s in %#v", action, events)

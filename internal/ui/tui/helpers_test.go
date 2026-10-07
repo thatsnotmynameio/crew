@@ -195,3 +195,11 @@ func nextCard(l, prefix string) int {
 
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
+
+// taken is the event of rule taking issue at at, moving it from one state to
+// another.
+func taken(at time.Time, issue crew.Issue, rule crew.RuleName, from, to crew.State) crew.RunTaken {
+	return crew.RunTaken{
+		At: at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule, Issue: issue.Data(), From: from, To: to,
+	}
+}

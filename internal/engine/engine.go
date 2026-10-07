@@ -166,7 +166,7 @@ type Engine struct {
 	wg       sync.WaitGroup
 	sessions map[sessionKey]port.Session
 	checks   map[sessionKey]context.CancelFunc // ends each running check
-	recent   []core.Event
+	recent   []core.Published
 	lastSaid []core.Said      // what the sessions last said, as of the latest said refresh
 	lastBots core.BotsChecked // the bots' live state, as of the last reading that changed it
 	started  time.Time        // when the first poll ran

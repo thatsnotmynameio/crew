@@ -270,22 +270,23 @@ func (m Model) popupEvents(c card) []string {
 }
 
 // eventIssue is the id of the issue e is about, or the zero id for an
-// event about no one issue (KTD8 of #151).
-func eventIssue(e core.Event) crew.IssueID {
+// event about no one issue (KTD8 of #151). A run event is about its run's
+// issue.
+func eventIssue(e core.Published) crew.IssueID {
 	switch e := e.(type) {
-	case core.IssueTaken:
-		return e.Issue.ID()
-	case core.ActionStarted:
-		return e.IssueID
-	case core.WorkspaceMissing:
-		return e.IssueID
+	case crew.RunEvent:
+		return e.Head().IssueID
+	case core.Event:
+		return coreEventIssue(e)
+	}
+	return crew.IssueID{}
+}
+
+// coreEventIssue is the id of the issue the core's event e is about, or the
+// zero id for an event about no one issue.
+func coreEventIssue(e core.Event) crew.IssueID {
+	switch e := e.(type) {
 	case core.RunNotRecorded:
-		return e.IssueID
-	case core.ActionEnded:
-		return e.IssueID
-	case core.IssueMoved:
-		return e.IssueID
-	case core.FailureReported:
 		return e.IssueID
 	case core.IssueSkipped:
 		return e.IssueID
@@ -297,6 +298,8 @@ func eventIssue(e core.Event) crew.IssueID {
 		return e.Call.IssueID
 	case core.CallDropped:
 		return e.Call.IssueID
+	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Stopped, core.BotStopped,
+		core.BotActsAgain:
 	}
 	return crew.IssueID{}
 }

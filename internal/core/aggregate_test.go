@@ -18,9 +18,9 @@ func TestAE5AFailedReviewIsTheSameFailureInTheStatusTheHandledEntryAndTheEvents(
 	cmds, events := d.send(core.SessionEnded{IssueID: issueID("7"), Action: "review", Outcome: failed("found a bug")})
 
 	review := crew.ActionFailure{Action: "review", Workspace: "issue-7-review", Log: ".crew/logs/issue-7-review.log"}
-	hasEvent(t, events, core.ActionEnded{
-		At: d.now, IssueID: issueID("7"), IssueRef: "#7", Rule: "implement", Action: "review",
-		Outcome: failed("found a bug"), Workspace: review.Workspace, Log: review.Log,
+	hasEnd(t, events, end{
+		head: d.runHead("7"), action: "review", outcome: failed("found a bug"),
+		workspace: review.Workspace, log: review.Log,
 	})
 
 	status := statusOf(t, cmds, "7")

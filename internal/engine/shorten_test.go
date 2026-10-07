@@ -106,8 +106,8 @@ func endedReason(t *testing.T, cfg engine.Config, reason string) string {
 	}
 	var reasons []string
 	for _, e := range r.events() {
-		if ended, ok := e.(core.ActionEnded); ok {
-			reasons = append(reasons, ended.Outcome.Reason.String())
+		if ended, ok := e.(crew.ActionEnded); ok {
+			reasons = append(reasons, ended.End.Outcome().Reason.String())
 		}
 	}
 	if len(reasons) != 1 {
@@ -161,9 +161,9 @@ func TestAWorkspaceFailureWithSeveralLinesEndsTheActionOnOneLine(t *testing.T) {
 
 		want := "git worktree add: fatal: x hint: y"
 		events := r.events()
-		if !slices.ContainsFunc(events, func(e core.Event) bool {
-			ended, ok := e.(core.ActionEnded)
-			return ok && ended.Outcome.Reason.String() == want
+		if !slices.ContainsFunc(events, func(e core.Published) bool {
+			ended, ok := e.(crew.ActionEnded)
+			return ok && ended.End.Outcome().Reason.String() == want
 		}) {
 			t.Errorf("events = %#v, want an ActionEnded with reason %q", events, want)
 		}
@@ -237,7 +237,7 @@ func TestATrackerCallsReasonHasLocalPathsShortened(t *testing.T) {
 		}
 
 		want := "gh: no repository in . (config ~/.config/gh)"
-		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
+		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Published) bool {
 			f, ok := e.(core.ListingFailed)
 			return ok && f.Reason == want
 		})

@@ -148,7 +148,7 @@ func TestStopGivesAFailingVerdictMoveOneFinalTryAndReturns(t *testing.T) {
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{inProgress}) {
 			t.Errorf("issue 1 is in %v, want it still in progress", got)
 		}
-		dropped := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
+		dropped := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Published) bool {
 			d, ok := e.(core.CallDropped)
 			return ok && d.Call.Kind == core.CallMove && d.Call.To == needsAttention &&
 				d.Result == core.ResultFailed && strings.Contains(d.Reason, "tracker is down")

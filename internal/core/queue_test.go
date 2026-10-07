@@ -46,11 +46,11 @@ var clerk = crew.Queue{Name: "clerk", Slots: 1}
 func defaultQueue(slots int) crew.Queue { return crew.Queue{Name: crew.DefaultQueue, Slots: slots} }
 
 // takenKeys returns the keys of the issues events say were taken, in order.
-func takenKeys(events []core.Event) []string {
+func takenKeys(events []core.Published) []string {
 	var keys []string
 	for _, e := range events {
-		if taken, ok := e.(core.IssueTaken); ok {
-			keys = append(keys, taken.Issue.ID().Key)
+		if taken, ok := e.(crew.RunTaken); ok {
+			keys = append(keys, taken.IssueID.Key)
 		}
 	}
 	return keys

@@ -20,8 +20,8 @@ import (
 )
 
 // events returns every event r's engine published, once Run has returned.
-func (r *rig) events() []core.Event {
-	var out []core.Event
+func (r *rig) events() []core.Published {
+	var out []core.Published
 	for u := range r.queue.Updates() {
 		out = append(out, u.Events...)
 	}
@@ -34,8 +34,8 @@ func (r *rig) lastReason() string {
 	r.t.Helper()
 	reason, found := "", false
 	for _, e := range r.events() {
-		if ended, ok := e.(core.ActionEnded); ok {
-			reason, found = ended.Outcome.Reason.String(), true
+		if ended, ok := e.(crew.ActionEnded); ok {
+			reason, found = ended.End.Outcome().Reason.String(), true
 		}
 	}
 	if !found {
@@ -225,9 +225,9 @@ func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 		if n := len(fakeWorkspace(t, cfg).Spaces()); n != 2 {
 			t.Errorf("the workspace created %d spaces, want 2", n)
 		}
-		if !slices.ContainsFunc(r.events(), func(e core.Event) bool {
-			m, ok := e.(core.WorkspaceMissing)
-			return ok && m.Workspace == "issue-1-development"
+		if !slices.ContainsFunc(r.events(), func(e core.Published) bool {
+			m, ok := e.(crew.WorkspaceMissing)
+			return ok && m.Workspace.Name == "issue-1-development"
 		}) {
 			t.Errorf("no WorkspaceMissing event for issue-1-development")
 		}
@@ -319,8 +319,8 @@ func TestAWorkspaceThatFailsToReopenFailsTheRunWithItsReason(t *testing.T) {
 
 		var reasons []string
 		for _, e := range r.events() {
-			if a, ok := e.(core.ActionEnded); ok {
-				reasons = append(reasons, a.Outcome.Reason.String())
+			if a, ok := e.(crew.ActionEnded); ok {
+				reasons = append(reasons, a.End.Outcome().Reason.String())
 			}
 		}
 		if len(reasons) != 2 || !strings.Contains(reasons[1], "disk full") {

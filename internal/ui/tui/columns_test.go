@@ -47,8 +47,9 @@ func TestAE7AFailedRuleNotifiesAndLeavesNoHandledCard(t *testing.T) {
 
 	u := onBoard(handledBy(twelve, "triage", "crew:triage:failed"), labeled(twelve, "crew:triage:failed"))
 	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "triage"}}
-	u.Snapshot.Recent = []core.Event{core.IssueMoved{
-		At: start, IssueID: issueID("12"), IssueRef: "#12", From: "crew:triage:in progress", To: "crew:triage:failed",
+	u.Snapshot.Recent = []core.Published{crew.VerdictMoved{
+		At: start, IssueID: issueID("12"), IssueRef: "#12", Rule: "triage",
+		From: "crew:triage:in progress", To: "crew:triage:failed",
 	}}
 	notes := raws(h.send(updateMsg(u)))
 	if len(notes) != 1 || !strings.Contains(notes[0], "triage failed on #12 Rule labels") {

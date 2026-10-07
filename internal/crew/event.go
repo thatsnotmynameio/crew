@@ -11,6 +11,8 @@ import "time"
 type RunEvent interface {
 	// Head returns what every event of the run carries.
 	Head() EventHead
+	// Time returns when the event happened.
+	Time() time.Time
 	// apply returns the run with the event applied, as far as its own
 	// fields allow.
 	apply(r RuleRun) RuleRun
@@ -28,6 +30,9 @@ type EventHead struct {
 
 // Head implements RunEvent for every event that embeds h.
 func (h EventHead) Head() EventHead { return h }
+
+// Time implements RunEvent for every event that embeds h: it returns At.
+func (h EventHead) Time() time.Time { return h.At }
 
 // RunTaken is a rule taking an issue: a new run, whose take move from From
 // to To is delivered.

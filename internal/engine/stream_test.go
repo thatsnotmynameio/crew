@@ -8,7 +8,7 @@ import (
 )
 
 func polled(n int) Update {
-	return Update{Events: []core.Event{core.PollDone{Listed: n}}}
+	return Update{Events: []core.Published{core.PollDone{Listed: n}}}
 }
 
 func listed(t *testing.T, u Update) int {

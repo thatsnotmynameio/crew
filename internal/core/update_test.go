@@ -23,8 +23,8 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	)
 	at := d.now
 	wantEvents(t, events,
-		core.IssueTaken{At: at, Issue: i1, Rule: "implement", From: ready, To: inProgress},
-		core.IssueTaken{At: at, Issue: i2, Rule: "implement", From: ready, To: inProgress},
+		d.taken(1, i1, "implement", ready, inProgress, "acceptance", "development"),
+		d.taken(2, i2, "implement", ready, inProgress, "acceptance", "development"),
 		core.PollDone{At: at, Listed: 3, Taken: 2},
 	)
 
@@ -35,7 +35,7 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 			core.CreateWorkspace{Issue: it, Action: "acceptance"},
 			core.CreateWorkspace{Issue: it, Action: "development"},
 		)
-		hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: it.ID(), IssueRef: it.Ref(), From: ready, To: inProgress})
+		hasEvent(t, events, crew.TakeMoved{EventHead: d.runHead(it.ID().Key), From: ready, To: inProgress})
 		all = append(all, created...)
 	}
 
@@ -100,9 +100,9 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 
 	cmds, events := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
 	wantCommands(t, cmds)
-	hasEvent(t, events, core.ActionEnded{
-		At: d.now, IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "acceptance", Outcome: succeeded,
-		Workspace: "issue-1-acceptance", Log: ".crew/logs/issue-1-acceptance.log",
+	hasEnd(t, events, end{
+		head: d.runHead("1"), action: "acceptance", outcome: succeeded,
+		workspace: "issue-1-acceptance", log: ".crew/logs/issue-1-acceptance.log",
 	})
 
 	// A poll meanwhile leaves #1 in progress: only the listing is issued.
@@ -116,8 +116,7 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
-		To: readyToReview})
+	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 	wantHeld(t, d.m)
 }
 
@@ -148,11 +147,10 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 			d.wantReason("1", "development", tt.outcome.Reason.String())
 
 			_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-			hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
-				To: needsAttention})
+			hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: needsAttention})
 			wantHeld(t, d.m, "1") // its report is still in flight
 			_, events = d.send(core.CallResult{ID: reportID(t, cmds, "1"), Result: core.ResultDone})
-			hasEvent(t, events, core.FailureReported{At: d.now, IssueID: issueID("1"), IssueRef: "#1"})
+			hasEvent(t, events, crew.FailureReported{EventHead: d.runHead("1")})
 			wantHeld(t, d.m)
 		})
 	}
@@ -289,10 +287,10 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	cmds, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
 	for _, e := range events {
-		if ended, ok := e.(core.ActionEnded); ok && ended.Action == "acceptance" {
-			reason := ended.Outcome.Reason.String()
-			if ended.Outcome.Succeeded || !strings.Contains(reason, `render prompt of action "acceptance"`) {
-				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", ended.Outcome)
+		if ended, ok := e.(crew.ActionEnded); ok && ended.Action == "acceptance" {
+			outcome := ended.End.Outcome()
+			if outcome.Succeeded || !strings.Contains(outcome.Reason.String(), `render prompt of action "acceptance"`) {
+				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", outcome)
 			}
 			return
 		}

@@ -438,12 +438,13 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 	h := newHarness(t, 120)
 	u := runningSnapshot()
 	one, two := u.Snapshot.Issues[0].Issue, u.Snapshot.Issues[1].Issue
-	u.Snapshot.Recent = []core.Event{
-		core.IssueTaken{At: start.Add(-7 * time.Minute), Issue: one, Rule: "implement", From: "ready", To: "in progress"},
-		core.ActionStarted{At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
-			Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
-		core.IssueTaken{At: start.Add(-5 * time.Minute), Issue: two, Rule: "review",
-			From: "ready to review", To: "in review"},
+	u.Snapshot.Recent = []core.Published{
+		taken(start.Add(-7*time.Minute), one, "implement", "ready", "in progress"),
+		crew.ActionSessionStarted{
+			At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
+			Action: "tests", Workspace: crew.Workspace{Branch: "crew/1-tests"}, Log: ".crew/logs/1-tests.log",
+		},
+		taken(start.Add(-5*time.Minute), two, "review", "ready to review", "in review"),
 		core.CallOwed{At: start.Add(-4 * time.Minute), Call: core.Call{Kind: core.CallMove, IssueID: issueID("1"),
 			IssueRef: "#1", From: "ready", To: "done"}, Reason: "rate limited"},
 		core.PollDone{At: start.Add(-3 * time.Minute), Listed: 2},
@@ -457,7 +458,7 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 		t.Fatalf("the popup has no Events row:\n%s", strings.Join(rows, "\n"))
 	}
 	var want []string
-	for _, e := range []core.Event{u.Snapshot.Recent[0], u.Snapshot.Recent[1], u.Snapshot.Recent[3]} {
+	for _, e := range []core.Published{u.Snapshot.Recent[0], u.Snapshot.Recent[1], u.Snapshot.Recent[3]} {
 		want = append(want, e.Time().In(zone).Format(time.TimeOnly)+" "+lines.Text(e))
 	}
 	if got := rows[at+1:]; !slices.Equal(got, want) {

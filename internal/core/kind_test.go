@@ -30,8 +30,8 @@ func pr90(minute int, states ...crew.State) crew.Issue {
 }
 
 // otherKinds returns the IssueOfOtherKind events in events.
-func otherKinds(events []core.Event) []core.Event {
-	var out []core.Event
+func otherKinds(events []core.Published) []core.Published {
+	var out []core.Published
 	for _, e := range events {
 		if _, ok := e.(core.IssueOfOtherKind); ok {
 			out = append(out, e)
@@ -59,10 +59,7 @@ func TestARuleThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 
 	cmds, events := d.poll(pr90(1, fixReviewReady))
 	wantCommands(t, cmds, core.Move{IssueID: issueID("90"), From: fixReviewReady, To: fixing})
-	hasEvent(t, events, core.IssueTaken{
-		At: d.now, Issue: pr90(1, fixReviewReady), Rule: "fix review",
-		From: fixReviewReady, To: fixing,
-	})
+	hasEvent(t, events, d.taken(1, pr90(1, fixReviewReady), "fix review", fixReviewReady, fixing, "fix"))
 	if n := otherKinds(events); n != nil {
 		t.Fatalf("notices for a pull request of the rule's kind: %#v", n)
 	}

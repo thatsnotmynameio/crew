@@ -10,11 +10,11 @@ import (
 )
 
 // Update applies in to the model and returns the commands to run and the
-// domain events to publish, in order. It is deterministic: the same model
+// events to publish, in order. It is deterministic: the same model
 // and input always give the same result. Inputs that answer nothing the
 // core is waiting for, such as a result for a released issue, change
 // nothing.
-func (m *Model) Update(in Input) ([]Command, []Event) {
+func (m *Model) Update(in Input) ([]Command, []Published) {
 	s := &step{m: m, at: in.arrival()}
 	if !s.runInput(in) {
 		s.actionInput(in)
@@ -73,7 +73,7 @@ type step struct {
 	m      *Model
 	at     time.Time
 	cmds   []Command
-	events []Event
+	events []Published
 	// seed is the input's seed, from which the rule runs it takes get their
 	// ids, and runs counts those runs (KTD5).
 	seed uuid.UUID
@@ -81,7 +81,7 @@ type step struct {
 }
 
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
-func (s *step) emit(e Event)      { s.events = append(s.events, e) }
+func (s *step) emit(e Published)  { s.events = append(s.events, e) }
 
 // tick reads the board (KTD4), then lists issues, unless a listing is
 // outstanding or the run time is up; when every slot is busy it says it
@@ -308,7 +308,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	run, _ := crew.Apply(crew.RuleRun{}, taken)
 	h := &heldIssue{run: run, rule: si}
 	m.issues = append(m.issues, h)
-	s.emit(IssueTaken{At: s.at, Issue: issue, Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
+	s.emit(taken)
 	s.deliver(h, &delivery{purpose: purposeTake, call: h.move(rule.Labels.Ready, rule.Labels.Running)})
 }
 

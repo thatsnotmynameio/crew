@@ -2,7 +2,6 @@ package core_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -39,9 +38,10 @@ func promoteMove() core.Move {
 	return core.Move{IssueID: issueID("1"), From: triagePromoting, To: developmentReady}
 }
 
-// promoteMoved is the event of #1's move to promote triage's success at at.
-func promoteMoved(at time.Time) core.IssueMoved {
-	return core.IssueMoved{At: at, IssueID: issueID("1"), IssueRef: "#1", From: triagePromoting, To: developmentReady}
+// promoteMoved is the event of #1's move to promote triage's success, in
+// d's run of #1, at d.now.
+func promoteMoved(d *driver) crew.VerdictMoved {
+	return crew.VerdictMoved{EventHead: d.runHead("1"), From: triagePromoting, To: developmentReady}
 }
 
 // reportOf is #1's pull request report of its move to state, with no end.
@@ -74,7 +74,7 @@ func TestAE2ARuleWithoutActionsMovesTheLabelWithoutASessionAndKeepsTriagesEntry(
 	wantCommands(t, verdict, promoteMove())
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	hasEvent(t, events, promoteMoved(d.now))
+	hasEvent(t, events, promoteMoved(d))
 	wantHeld(t, d.m)
 	if got := onlyEntry(t, d); got.Rule != "triage" || got.To != triageDone || !got.Gone {
 		t.Fatalf("entry after promote triage: got %#v, want triage's, gone", got)
@@ -136,7 +136,7 @@ func TestTheRunTimeLimitWithOnlyARuleWithoutActionsHeldStopsAfterItsMove(t *test
 	}
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	wantEvents(t, events, promoteMoved(d.now), core.Stopped{At: d.now})
+	wantEvents(t, events, promoteMoved(d), core.Stopped{At: d.now})
 }
 
 func TestARuleWithoutActionsHoldsASlotOfItsQueue(t *testing.T) {

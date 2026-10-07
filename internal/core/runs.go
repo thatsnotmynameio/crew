@@ -148,7 +148,7 @@ func (s *step) decisions(h *heldIssue, fact crew.Fact) ([]crew.RunEvent, bool) {
 }
 
 // apply applies events to h's run, in order, and after each issues the
-// commands and emits the events it calls for.
+// commands it calls for and publishes it when the views word it (KTD-P6).
 func (s *step) apply(h *heldIssue, events []crew.RunEvent) {
 	for _, e := range events {
 		run, err := crew.Apply(h.run, e)
@@ -161,8 +161,9 @@ func (s *step) apply(h *heldIssue, events []crew.RunEvent) {
 	}
 }
 
-// on issues the commands and emits the events e calls for, once applied to
-// h's run. A run event about one action goes to onAction.
+// on issues the commands e calls for, once applied to h's run, and
+// publishes e when the views word it: a landed move or a posted failure
+// report. A run event about one action goes to onAction.
 func (s *step) on(h *heldIssue, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.TakeMoved:
@@ -170,7 +171,7 @@ func (s *step) on(h *heldIssue, e crew.RunEvent) {
 	case crew.RunJudged:
 		s.judged(h, e)
 	case crew.VerdictMoved:
-		s.emit(IssueMoved{At: s.at, IssueID: e.IssueID, IssueRef: e.IssueRef, From: e.From, To: e.To})
+		s.emit(e)
 		s.m.boardMoved(h.run.Issue(), e.To)
 		s.reportRun(h)
 		s.reportVerdict(h)
@@ -179,7 +180,7 @@ func (s *step) on(h *heldIssue, e crew.RunEvent) {
 		s.reportRun(h)
 		h.landed = s.m.listings
 	case crew.FailureReported:
-		s.emit(FailureReported{At: s.at, IssueID: e.IssueID, IssueRef: e.IssueRef})
+		s.emit(e)
 	case crew.RunReleased:
 		s.m.release(h)
 		s.freed()
@@ -193,26 +194,21 @@ func (s *step) on(h *heldIssue, e crew.RunEvent) {
 	}
 }
 
-// onAction issues the commands and emits the events e, an event about one
-// action of h's run, calls for.
+// onAction issues the commands e, an event about one action of h's run,
+// calls for, and publishes e when the views word it: a missing workspace, a
+// started session or an ended action.
 func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionWorkspaceAsked:
 		s.workspaceAsked(h, e)
 	case crew.WorkspaceMissing:
-		s.emit(WorkspaceMissing{
-			At: s.at, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
-			Workspace: e.Workspace.Name,
-		})
+		s.emit(e)
 	case crew.ActionOpened:
 		s.recordOpened(h, e)
 	case crew.ActionSessionAsked:
 		s.startSession(h, e.Action)
 	case crew.ActionSessionStarted:
-		s.emit(ActionStarted{
-			At: s.at, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
-			Workspace: e.Workspace.Name, Branch: e.Workspace.Branch, Log: e.Log, Resumed: e.Resumed,
-		})
+		s.emit(e)
 	case crew.ActionSessionStopAsked:
 		s.command(StopSession{IssueID: e.IssueID, Action: e.Action})
 	case crew.ActionLookupAsked:
@@ -230,10 +226,10 @@ func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
 	}
 }
 
-// takeMoved applies the take to the board (KTD4) and reports it on h's pull
-// requests.
+// takeMoved publishes the take, applies it to the board (KTD4) and reports
+// it on h's pull requests.
 func (s *step) takeMoved(h *heldIssue, e crew.TakeMoved) {
-	s.emit(IssueMoved{At: s.at, IssueID: e.IssueID, IssueRef: e.IssueRef, From: e.From, To: e.To})
+	s.emit(e)
 	s.m.boardMoved(h.run.Issue(), e.To)
 	s.reportPullRequests(h.run.TakeReport(e.To))
 }
@@ -293,19 +289,15 @@ func (s *step) runCheck(h *heldIssue, name crew.ActionName) {
 }
 
 // actionEnded credits what the action's session spent to the run's total
-// and its identity's (R14, KTD4), records the action run's end and reports
-// it.
+// and its identity's (R14, KTD4), records the action run's end and
+// publishes it.
 func (s *step) actionEnded(h *heldIssue, e crew.ActionEnded) {
 	m := s.m
 	a, _ := h.run.Action(e.Action)
 	m.spent = m.spent.Add(a.Spend())
 	m.bots.credit(m.bots.identity(m.action(h, e.Action).Bot.Name), a.Spend())
 	s.recordEnded(h, e)
-	w, _ := e.Workspace.Get()
-	s.emit(ActionEnded{
-		At: s.at, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
-		Outcome: e.End.Outcome(), Workspace: w.Workspace.Name, Log: w.Log,
-	})
+	s.emit(e)
 }
 
 // judged moves h to its verdict's state, with the failure report when an

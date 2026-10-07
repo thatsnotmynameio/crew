@@ -102,7 +102,7 @@ type driver struct {
 	// listed is the seed stamped on the last IssuesListed sent, from which
 	// the runs it took got their ids.
 	listed uuid.UUID
-	events []core.Event
+	events []core.Published
 }
 
 // seed returns the nth sequential seed: a UUID whose last bytes encode n.
@@ -117,7 +117,7 @@ func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 	return &driver{t: t, m: core.New(rules, maxParallel), now: t0}
 }
 
-func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
+func (d *driver) send(in core.Input) ([]core.Command, []core.Published) {
 	d.now = d.now.Add(time.Second)
 	d.inputs++
 	stamp := seed(d.inputs)
@@ -134,8 +134,8 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 func (d *driver) wantReason(key string, action crew.ActionName, reason string) {
 	d.t.Helper()
 	for _, e := range slices.Backward(d.events) {
-		if ended, ok := e.(core.ActionEnded); ok && ended.IssueID == issueID(key) && ended.Action == action {
-			if got := ended.Outcome.Reason.String(); got != reason {
+		if ended, ok := e.(crew.ActionEnded); ok && ended.IssueID == issueID(key) && ended.Action == action {
+			if got := ended.End.Outcome().Reason.String(); got != reason {
 				d.t.Errorf("%s of #%s ended with reason %q, want %q", action, key, got, reason)
 			}
 			return
@@ -169,7 +169,7 @@ func (d *driver) settle(cmds []core.Command) {
 }
 
 // poll ticks and answers the listing with issues.
-func (d *driver) poll(issues ...crew.Issue) ([]core.Command, []core.Event) {
+func (d *driver) poll(issues ...crew.Issue) ([]core.Command, []core.Published) {
 	d.t.Helper()
 	cmds, _ := d.send(core.Tick{})
 	if len(cmds) == 0 {
@@ -237,7 +237,66 @@ func wantCommands(t *testing.T, got []core.Command, want ...core.Command) {
 	}
 }
 
-func hasEvent(t *testing.T, events []core.Event, want core.Event) {
+// runHead returns the head of the events of issue key's last run at d.now:
+// its run, issue and rule, as its published take named them.
+func (d *driver) runHead(key string) crew.EventHead {
+	d.t.Helper()
+	for _, e := range slices.Backward(d.events) {
+		if taken, ok := e.(crew.RunTaken); ok && taken.IssueID == issueID(key) {
+			head := taken.EventHead
+			head.At = d.now
+			return head
+		}
+	}
+	d.t.Fatalf("no take of #%s in %#v", key, d.events)
+	return crew.EventHead{}
+}
+
+// taken is the event of rule taking it at d.now, as the nth run of d's last
+// listing, from one state to another; none of its actions resumes.
+func (d *driver) taken(n int, it crew.Issue, rule crew.RuleName, from, to crew.State,
+	actions ...crew.ActionName,
+) crew.RunTaken {
+	e := crew.RunTaken{
+		Run: crew.NewRuleRunID(d.listed, n), At: d.now, IssueID: it.ID(), IssueRef: it.Ref(), Rule: rule,
+		Issue: it.Data(), From: from, To: to,
+	}
+	for _, a := range actions {
+		e.Actions = append(e.Actions, crew.ActionTaken{Name: a})
+	}
+	return e
+}
+
+// end is an action's end as its line shows it: its head, its action, its
+// outcome, and the workspace and log it worked in.
+type end struct {
+	head      crew.EventHead
+	action    crew.ActionName
+	outcome   crew.Outcome
+	workspace crew.WorkspaceName
+	log       string
+}
+
+// hasEnd fails the test unless events hold the end of an action that shows
+// as want.
+func hasEnd(t *testing.T, events []core.Published, want end) {
+	t.Helper()
+	for _, e := range events {
+		if ended, ok := e.(crew.ActionEnded); ok {
+			w, _ := ended.Workspace.Get()
+			got := end{
+				head: ended.EventHead, action: ended.Action, outcome: ended.End.Outcome(),
+				workspace: w.Workspace.Name, log: w.Log,
+			}
+			if got == want {
+				return
+			}
+		}
+	}
+	t.Fatalf("no end %#v in %#v", want, events)
+}
+
+func hasEvent(t *testing.T, events []core.Published, want core.Published) {
 	t.Helper()
 	for _, e := range events {
 		if reflect.DeepEqual(e, want) {
@@ -302,7 +361,7 @@ func judgedNeedingAttention(d *driver) []core.Command {
 	return cmds
 }
 
-func wantEvents(t *testing.T, got []core.Event, want ...core.Event) {
+func wantEvents(t *testing.T, got []core.Published, want ...core.Published) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("events:\n got %#v\nwant %#v", got, want)

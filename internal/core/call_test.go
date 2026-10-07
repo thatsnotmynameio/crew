@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
@@ -36,8 +37,7 @@ func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing
 	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
-		To: readyToReview})
+	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 	wantHeld(t, d.m)
 	if got := d.m.View().Owed; got != nil {
 		t.Fatalf("owed after the retry succeeded: %#v", got)
@@ -124,7 +124,7 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
 		core.CreateWorkspace{Issue: i1, Action: "development"},
 	)
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: ready, To: inProgress})
+	hasEvent(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
 	if c := claimOf(t, d.m, "1"); c != core.ClaimRunning {
 		t.Fatalf("claim of #1: got %v, want running", c)
 	}

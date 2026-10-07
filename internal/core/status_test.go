@@ -52,7 +52,7 @@ func noStatusOf(t *testing.T, cmds []core.Command, key string) {
 }
 
 // wrote answers the status write of key as done.
-func (d *driver) wrote(key string) ([]core.Command, []core.Event) {
+func (d *driver) wrote(key string) ([]core.Command, []core.Published) {
 	return d.send(core.StatusResult{IssueID: issueID(key), Result: core.ResultDone, Reason: core.ResultDone.String()})
 }
 
@@ -131,7 +131,7 @@ func TestAE5AListingReportsNothingForTheIssuesItLeaves(t *testing.T) {
 		noStatusOf(t, cmds, key)
 	}
 	wantEvents(t, events,
-		core.IssueTaken{At: d.now, Issue: i4, Rule: "review", From: readyToReview, To: inReview},
+		d.taken(1, i4, "review", readyToReview, inReview, "custom_review"),
 		core.PollDone{At: d.now, Listed: 4, Taken: 1},
 	)
 }
@@ -288,7 +288,7 @@ func TestAE4StopWhileASessionRunsEndsWithTheMoveOnTheComment(t *testing.T) {
 	}
 }
 
-func containsStopped(events []core.Event) bool {
+func containsStopped(events []core.Published) bool {
 	for _, e := range events {
 		if _, ok := e.(core.Stopped); ok {
 			return true

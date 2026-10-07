@@ -328,7 +328,7 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 		if logs := reportedLogs(tr); !reflect.DeepEqual(logs, wantLogs) {
 			t.Errorf("failure reports name logs %v, want %v", logs, wantLogs)
 		}
-		if !slices.ContainsFunc(final.Events, func(e core.Event) bool { _, ok := e.(core.Stopped); return ok }) {
+		if !slices.ContainsFunc(final.Events, func(e core.Published) bool { _, ok := e.(core.Stopped); return ok }) {
 			t.Errorf("last update's events = %#v, want a Stopped event", final.Events)
 		}
 	})
@@ -406,7 +406,7 @@ func TestAListingThatNeverReturnsTimesOutAndALaterTickListsAgain(t *testing.T) {
 		if got := spans[1].start.Sub(t0); got != 14*time.Minute {
 			t.Errorf("second listing started at %v, want at the 14m tick", got)
 		}
-		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
+		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Published) bool {
 			f, ok := e.(core.ListingFailed)
 			return ok && f.At.Sub(t0) == 10*time.Minute
 		})
