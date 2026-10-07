@@ -59,7 +59,9 @@ func actionDecoders() map[string]decoder {
 			return crew.ActionSessionAsked{EventHead: h, Action: l.Action}
 		},
 		typeSessionStarted: func(l line, h crew.EventHead) crew.RunEvent {
-			return crew.ActionSessionStarted{EventHead: h, Action: l.Action, Bot: crew.Bot{Name: l.Bot}}
+			return crew.ActionSessionStarted{
+				EventHead: h, Action: l.Action, Bot: crew.Bot{Name: l.Bot}, Login: l.Login, Asks: l.Asks,
+			}
 		},
 		typeSessionStopAsked: func(l line, h crew.EventHead) crew.RunEvent {
 			return crew.ActionSessionStopAsked{EventHead: h, Action: l.Action}
@@ -93,7 +95,8 @@ func (l line) workspace() crew.Workspace {
 	return crew.Workspace{Name: l.Workspace, Branch: l.Branch}
 }
 
-// runTaken returns the RunTaken l holds, with head h.
+// runTaken returns the RunTaken l holds, with head h; without questions
+// when l, a line of an earlier crew, holds none.
 func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 	e := crew.RunTaken{
 		EventHead: h, From: l.From, To: l.To, Start: l.start(),
@@ -110,6 +113,9 @@ func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 	}
 	for _, a := range l.Actions {
 		e.Actions = append(e.Actions, a.Name)
+	}
+	for _, q := range l.Questions {
+		e.Questions = append(e.Questions, crew.Question{Run: q.RuleRun, Action: q.Action, Login: q.Login})
 	}
 	return e
 }

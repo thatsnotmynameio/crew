@@ -105,7 +105,8 @@ func (s *step) runInput(in RunInput) {
 	case WorkspaceGone:
 		s.decide(h, crew.WorkspaceGone{FactHead: head})
 	case SessionStarted:
-		s.decide(h, crew.SessionStarted{FactHead: head, Action: in.Action})
+		spec, _ := s.m.rules[h.rule].Action(in.Action).Kind.(crew.SessionSpec)
+		s.decide(h, crew.SessionStarted{FactHead: head, Action: in.Action, Login: s.m.bots.login(spec.Bot.Name)})
 	case SessionFailedToStart:
 		s.decide(h, crew.SessionFailedToStart{FactHead: head, Action: in.Action, Reason: in.Reason})
 	case SessionEnded:

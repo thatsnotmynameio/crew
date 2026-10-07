@@ -58,7 +58,7 @@ func encode(e crew.RunEvent, run string) line {
 }
 
 // takenLine returns the line of e: the issue as the rule took it, the run
-// it continues, its actions and how it starts.
+// it continues, its actions, how it starts and the questions it inherits.
 func takenLine(e crew.RunTaken, run string) line {
 	l := headLine(e.EventHead, typeRunTaken, run)
 	l.From, l.To = e.From, e.To
@@ -76,6 +76,9 @@ func takenLine(e crew.RunTaken, run string) line {
 		l.Actions = append(l.Actions, takenAction{Name: a})
 	}
 	l.Start = startOf(e.Start)
+	for _, q := range e.Questions {
+		l.Questions = append(l.Questions, question{RuleRun: q.Run, Action: q.Action, Login: q.Login})
+	}
 	return l
 }
 
@@ -148,7 +151,7 @@ func encodeAction(e crew.RunEvent, run string) line {
 		return l
 	case crew.ActionSessionStarted:
 		l := actionLine(e.EventHead, typeSessionStarted, run, e.Action)
-		l.Bot = e.Bot.Name
+		l.Bot, l.Login, l.Asks = e.Bot.Name, e.Login, e.Asks
 		return l
 	case crew.ActionSessionStopAsked:
 		return actionLine(e.EventHead, typeSessionStopAsked, run, e.Action)

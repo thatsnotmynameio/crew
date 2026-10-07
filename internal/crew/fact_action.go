@@ -5,6 +5,8 @@ type SessionStarted struct {
 	FactHead
 
 	Action ActionName
+	// Login is the login the session acts as; empty when unknown.
+	Login string
 }
 
 // SessionFailedToStart is an action's session that could not start.
@@ -37,14 +39,18 @@ type ShellEnded struct {
 	Outcome ShellOutcome
 }
 
-// decide records the session's start, as its action's bot, and asks it to
-// stop at once when a stop reached the run while it was starting.
+// decide records the session's start, as its action's bot and the login
+// the fact names, and whether it may ask a question, and asks it to stop
+// at once when a stop reached the run while it was starting.
 func (f SessionStarted) decide(d *decider) error {
 	if err := d.awaits(f.Action, is[StartingSession]); err != nil {
 		return err
 	}
-	spec, _ := d.def.Rule.Action(f.Action).Kind.(SessionSpec)
-	d.emit(ActionSessionStarted{EventHead: d.head(), Action: f.Action, Bot: spec.Bot})
+	action := d.def.Rule.Action(f.Action)
+	spec, _ := action.Kind.(SessionSpec)
+	d.emit(ActionSessionStarted{
+		EventHead: d.head(), Action: f.Action, Bot: spec.Bot, Login: f.Login, Asks: action.MayWait(),
+	})
 	if d.run.stopping {
 		d.emit(ActionSessionStopAsked{EventHead: d.head(), Action: f.Action})
 	}

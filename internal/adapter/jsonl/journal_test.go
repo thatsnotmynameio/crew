@@ -81,6 +81,7 @@ func takeEvents() []crew.RunEvent {
 				Kind: crew.KindPullRequest,
 			},
 			Actions: []crew.ActionName{"install", "lfg", "judge"}, Start: resumed,
+			Questions: []crew.Question{{Run: "development-0", Action: "lfg", Login: "crew-developer[bot]"}},
 		},
 		crew.TakeMoved{EventHead: head(1), From: "ready", To: "in progress"},
 		crew.RunStopped{EventHead: head(2)},
@@ -100,7 +101,9 @@ var failure = crew.EndFailed{Reason: crew.NewSessionText("judge: exit status 1")
 func actionEvents() []crew.RunEvent {
 	return []crew.RunEvent{
 		crew.ActionSessionAsked{EventHead: head(6), Action: "lfg"},
-		crew.ActionSessionStarted{EventHead: head(7), Action: "lfg", Bot: developer},
+		crew.ActionSessionStarted{
+			EventHead: head(7), Action: "lfg", Bot: developer, Login: "crew-developer[bot]", Asks: true,
+		},
 		crew.ActionSessionStopAsked{EventHead: head(8), Action: "lfg"},
 		crew.ActionSessionEnded{
 			EventHead: head(9), Action: "lfg", Usage: usage,

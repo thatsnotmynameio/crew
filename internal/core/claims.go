@@ -58,23 +58,26 @@ func (s *step) record(e crew.RunEvent) {
 	s.command(Record{Event: e})
 }
 
-// continued returns the id of the last run of rule on the issue identified
-// by id, which a new run of it continues, and how the new run starts from
-// it (R22, KTD19): fresh without a journal, and without the worktree to
-// reopen when the model cannot reopen worktrees.
-func (m *Model) continued(id crew.IssueID, rule crew.Rule) (crew.Optional[crew.RuleRunID], crew.Start) {
+// continued returns take, of a new run of rule, with what it gets from the
+// last run of rule on its issue, which it continues: that run's id, how
+// the new run starts from it (R22, KTD19), and the open questions it
+// inherits (KTD-W7). Without a journal it continues nothing and starts
+// fresh, and without reopening it starts without the worktree to reopen.
+func (m *Model) continued(take crew.RunTaken, rule crew.Rule) crew.RunTaken {
+	take.Start = crew.StartFresh{}
 	if m.journal == nil {
-		return crew.Optional[crew.RuleRunID]{}, crew.StartFresh{}
+		return take
 	}
-	var continues crew.Optional[crew.RuleRunID]
+	id := take.IssueID
 	if last, ok := m.journal.history.LastRun(id, rule.Name); ok {
-		continues = crew.Some(last.ID())
+		take.Continues = crew.Some(last.ID())
 	}
-	start := m.journal.history.Start(id, rule)
+	take.Start = m.journal.history.Start(id, rule)
 	if !m.reopening {
-		start = crew.WithoutWorktree(start)
+		take.Start = crew.WithoutWorktree(take.Start)
 	}
-	return continues, start
+	take.Questions = m.journal.history.Questions(id, rule.Name)
+	return take
 }
 
 // notRecorded returns the event that says e, a run event the engine could

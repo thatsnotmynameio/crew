@@ -446,3 +446,28 @@ func TestARetiredPassedRouteRunsAloneWithoutAWorktree(t *testing.T) {
 		t.Errorf("Start = %#v, want %#v", got, want)
 	}
 }
+
+// A run that ended through passed and finished its route passes no
+// question on, one whose move was given up passes its own on, and a run
+// whose worktree another run's name retired still passes them on (KTD-W7).
+func TestTheQuestionsANewRunInherits(t *testing.T) {
+	goesOn := waitingLeadsTo(Next{})
+	ended := func(o StepOutcome) life { return then(asks, endsWith(Waiting), judgeExits(0), settles(o)) }
+	q1 := []Question{question("run-1")}
+	for _, tc := range []questionCase{
+		{name: "passed, its route finished: none", def: goesOn, lives: []life{ended(StepLanded{})}, held: q1},
+		{name: "passed, its move given up: its own", def: goesOn, lives: []life{ended(StepGivenUp{})}, held: q1, passed: q1},
+	} {
+		t.Run(tc.name, tc.check)
+	}
+	h := lived(t, waits(sequence()), waited)
+	h.Retire(runWS().Name, IssueID{Repository: "R_1", Key: "10"}, "implement")
+	got := h.Questions(testID, "implement")
+	if h.Start(testID, sequence().Rule) != (StartFresh{}) || !slices.Equal(got, q1) {
+		t.Errorf("a retired run passes %#v on, want %#v", got, q1)
+	}
+	var none History
+	if got = none.Questions(testID, "implement"); got != nil {
+		t.Errorf("without a last run: %#v, want none", got)
+	}
+}
