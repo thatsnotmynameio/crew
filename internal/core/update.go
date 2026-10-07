@@ -30,7 +30,7 @@ func (m *Model) Update(in Input) ([]Command, []Published) {
 }
 
 // schedulerInput applies an input about what spans rule runs: a tick, a
-// stop, the run time, a listing, a board read, the bots, or a tracker
+// stop, the run time, a pause, a listing, a board read, the bots, or a tracker
 // write's or a record's result.
 func (s *step) schedulerInput(in SchedulerInput) {
 	switch in := in.(type) {
@@ -41,6 +41,8 @@ func (s *step) schedulerInput(in SchedulerInput) {
 		s.stop()
 	case TimeUp:
 		s.timeUp(in.Limit)
+	case PauseToggled:
+		s.togglePause()
 	case IssuesListed:
 		s.seed = in.Seed
 		s.listed(in.Issues)

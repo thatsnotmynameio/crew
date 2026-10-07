@@ -300,8 +300,8 @@ func coreEventIssue(e core.Event) crew.IssueID {
 		return e.Call.IssueID
 	case core.CallDropped:
 		return e.Call.IssueID
-	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Stopped, core.BotStopped,
-		core.BotActsAgain:
+	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Paused, core.Resumed,
+		core.Stopped, core.BotStopped, core.BotActsAgain:
 	}
 	return crew.IssueID{}
 }

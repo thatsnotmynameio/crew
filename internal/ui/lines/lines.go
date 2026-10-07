@@ -153,6 +153,10 @@ func coreText(e core.Event) string {
 		return withReason("could not update the status comment on "+e.IssueRef+": "+result(e.Result), e.Reason)
 	case core.WindingDown:
 		return fmt.Sprintf("run time of %v is up: taking no new issues, winding down", e.Limit)
+	case core.Paused:
+		return "paused: taking no new issues until resumed; held issues run to their end"
+	case core.Resumed:
+		return "resumed: taking new issues again"
 	case core.Stopped:
 		return "stopped"
 	}

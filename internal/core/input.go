@@ -90,6 +90,15 @@ type TimeUp struct {
 	Limit time.Duration
 }
 
+// PauseToggled pauses the taking of new issues, or resumes it when crew is
+// paused (R1, R4 of #282). While paused, the core lists at every tick and
+// takes nothing, and the issues it holds run on. A resume lists at once
+// when no listing is outstanding and a slot is free. It does nothing once a
+// stop was requested or the run time is up, which end a pause.
+type PauseToggled struct {
+	At time.Time
+}
+
 // IssuesListed is the result of ListIssues: the open issues in any of the
 // requested states, each carrying every crew state it is in.
 type IssuesListed struct {
@@ -327,6 +336,9 @@ func (i StopRequested) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; ret
 func (i TimeUp) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i PauseToggled) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i IssuesListed) Stamped(at time.Time, seed uuid.UUID) Input {
 	i.At, i.Seed = at, seed
 	return i
@@ -386,6 +398,7 @@ func (i PullRequestFound) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; 
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }
 func (i TimeUp) arrival() time.Time               { return i.At }
+func (i PauseToggled) arrival() time.Time         { return i.At }
 func (i IssuesListed) arrival() time.Time         { return i.At }
 func (i ListFailed) arrival() time.Time           { return i.At }
 func (i BoardListed) arrival() time.Time          { return i.At }
@@ -418,6 +431,7 @@ func (i PullRequestFound) ruleRun() crew.RuleRunID     { return i.Run }
 func (Tick) schedulerInput()               {}
 func (StopRequested) schedulerInput()      {}
 func (TimeUp) schedulerInput()             {}
+func (PauseToggled) schedulerInput()       {}
 func (IssuesListed) schedulerInput()       {}
 func (ListFailed) schedulerInput()         {}
 func (BoardListed) schedulerInput()        {}
