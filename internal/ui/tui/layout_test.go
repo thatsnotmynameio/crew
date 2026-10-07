@@ -39,7 +39,7 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 	view := fitted(t, 80, 0, handledSnapshot())
 
 	last := -1
-	for _, title := range []string{"crew ╱", "Bots ─", "Board ─", "Queues ─", "Events ─", "q stop"} {
+	for _, title := range []string{"crew ╱", "Bots ─", "Board ─", "Queues ─", "Events ─", stopKeys + " stop"} {
 		i := strings.Index(view, title)
 		if i <= last {
 			t.Fatalf("%q is out of order or missing:\n%s", title, view)
@@ -140,7 +140,8 @@ func TestANarrowShortWindowRendersWithoutPanicking(t *testing.T) {
 	}
 }
 
-// Covers R20, and R12 and KTD12 of #151: ? shows every key over the view,
+// Covers R20, and R12 and KTD12 of #151, and R9 of #266: ? shows every key
+// over the view, the stop's two presses and the press that forces,
 // and what a card's run, bots and via rows mean, within the window; ?
 // hides them again, and so does esc.
 func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
@@ -153,7 +154,10 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 		"run  the issue's actions and how long each has run",
 		"bots the bots its running actions act as",
 		"via  the queue its actions run in")
-	for _, binding := range []string{`enter +open card`, `esc +close or board`, `b +bots`, `e +events`} {
+	for _, binding := range []string{
+		`enter +open card`, `esc +close or board`, `b +bots`, `e +events`,
+		stopKeys + ` +stop, within 3s`, `q +force if stopping`,
+	} {
 		if !regexp.MustCompile(`\b` + binding + `\b`).MatchString(view) {
 			t.Errorf("the keys lack %q:\n%s", binding, view)
 		}
@@ -173,13 +177,13 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 	}
 }
 
-// Covers KTD12 of #151: the short key help names the keys of the board.
+// Covers KTD12 of #151: the short key help names the keys of the board,
+// and the stop's two presses (R9 of #266).
 func TestTheKeyHelpNamesTheBoardsKeys(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(runningSnapshot()))
 
-	rows := rowsOf(h.view())
-	if got, want := rows[len(rows)-1], "q stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
+	if got, want := h.footer(), stopKeys+" stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
 		t.Errorf("key help = %q, want %q", got, want)
 	}
 }

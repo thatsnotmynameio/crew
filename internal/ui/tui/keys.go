@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -27,7 +29,7 @@ type keyMap struct {
 // newKeyMap returns the view's key bindings.
 func newKeyMap() keyMap {
 	return keyMap{
-		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "stop")),
+		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", "stop")),
 		focus:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus")),
 		back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus back")),
 		bots:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bots")),
@@ -46,18 +48,13 @@ func newKeyMap() keyMap {
 	}
 }
 
-// key handles a key press: the stop keys as before (KTD7), the help
-// overlay, then the popup's keys while it is open, else Enter, focus, the
-// highlight and scrolling (KTD12 of #151).
+// key handles a key press: the stop keys (KTD7; KTD1, KTD2 of #266), the
+// help overlay, then the popup's keys while it is open, else Enter, focus,
+// the highlight and scrolling (KTD12 of #151).
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.stop):
-		if m.stopping {
-			m.cfg.Force()
-			return m, tea.Quit
-		}
-		m.stopping = true
-		m.cfg.Stop()
+		return m.stopKey()
 	case key.Matches(msg, m.keys.help):
 		m.help = !m.help
 	case key.Matches(msg, m.keys.esc):
@@ -70,6 +67,26 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m = m.navigated(msg)
 	}
 	return m, nil
+}
+
+// stopKey handles q or Ctrl-C: once crew is stopping it forces the exit;
+// within the window a first press armed it confirms the stop; otherwise it
+// arms the stop until the window ends (R1 to R7 of #266).
+func (m Model) stopKey() (tea.Model, tea.Cmd) {
+	now := m.cfg.Now()
+	switch {
+	case m.stopping || m.snap.Stopping:
+		m.cfg.Force()
+		return m, tea.Quit
+	case now.Before(m.armedUntil):
+		m.armedUntil = time.Time{}
+		m.stopping = true
+		m.cfg.Stop()
+		return m, nil
+	}
+	until := now.Add(armWindow)
+	m.armedUntil = until
+	return m, tea.Tick(armWindow, func(time.Time) tea.Msg { return armExpiredMsg{until: until} })
 }
 
 // scrollBots returns m with the Bots cards moved delta cards sideways, as
@@ -127,11 +144,14 @@ func (m Model) helper() help.Model {
 }
 
 // keyHelp is the key-help line (R21), the popup's while it is open
-// (KTD12 of #151), or, once you asked to stop, how to force the exit
-// (KTD16).
+// (KTD12 of #151), or, once crew is stopping, how to force the exit
+// (KTD16), else while the stop is armed, how to confirm it (KTD5 of #266).
 func (m Model) keyHelp() string {
-	if m.stopping {
-		return m.styles.warning.Render("q or ctrl+c again forces the exit")
+	switch {
+	case m.stopping || m.snap.Stopping:
+		return m.styles.warning.Render("q or ctrl+c forces the exit")
+	case !m.armedUntil.IsZero():
+		return m.styles.warning.Render(fmt.Sprintf("q or ctrl+c again within %s stops crew", armWindow))
 	}
 	h := m.helper()
 	h.SetWidth(m.width)
@@ -148,11 +168,14 @@ func (m Model) keyHelp() string {
 	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, move, open, m.keys.help})
 }
 
-// helpOverlay draws every key in a box over the middle of view (R20), and
-// what a card's labelled rows mean (R12, KTD12 of #151).
+// helpOverlay draws every key in a box over the middle of view (R20), with
+// the stop's two presses and the press that forces (R9 of #266), and what a
+// card's labelled rows mean (R12, KTD12 of #151).
 func (m Model) helpOverlay(view string) string {
+	stop := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", fmt.Sprintf("stop, within %s", armWindow)))
+	force := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "force if stopping"))
 	groups := [][]key.Binding{
-		{m.keys.stop, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
+		{stop, force, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
 		{m.keys.up, m.keys.down, m.keys.left, m.keys.right, m.keys.enter},
 		{m.keys.pageUp, m.keys.pageDown, m.keys.top, m.keys.bottom},
 	}
