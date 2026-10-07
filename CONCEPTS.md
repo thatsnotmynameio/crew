@@ -76,7 +76,7 @@ A queue never lends an idle slot to another queue, so a slot is guaranteed to a 
 
 The live view's columns of labels, each holding a card for each item that carries one of its labels, held by crew or idle.
 
-The config may write the columns, any labels, crew's or not, which show issues only. Without that, the board has one column per rule that has actions, with the rule's ready and running labels and its kind. An item sits in every column whose labels it carries and nowhere else; no card waits for the next rule.
+The config may write the columns, any labels, crew's or not, which show issues only. Without that, the board has one column per rule that has actions, with the rule's ready and running labels and its kind. An item sits in every column whose labels it carries and nowhere else; no card waits for the next rule. Within a column, the cards of the items crew holds, whatever their claim, come first, then the idle ones, each in the board's order, oldest first.
 
 After its columns, the board shows a Not on board column, only while it holds a card, for each held item with actions that no column shows. An issue whose rule ended has only the cards its labels give it.
 
