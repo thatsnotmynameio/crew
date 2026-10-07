@@ -3,8 +3,8 @@ package crew
 import "time"
 
 // Status returns the run's status as it stands at at: running while it
-// takes the issue or runs its actions, and ended once it was judged, with
-// its verdict's state and how the verdict move stands. said holds what each
+// takes the issue or runs its actions, and ended once it ended, with its
+// ending's state and how the ending move stands. said holds what each
 // running session last said, by action. With showUsage, each ended action
 // whose session started carries what it spent and its pull request.
 func (r RuleRun) Status(at time.Time, said map[ActionName]Said, showUsage bool) Status {
@@ -15,9 +15,9 @@ func (r RuleRun) Status(at time.Time, said map[ActionName]Said, showUsage bool) 
 }
 
 // FailureReport returns the report of the run's failed actions, once it
-// was judged a failure.
+// ended in failure.
 func (r RuleRun) FailureReport() (FailureReport, bool) {
-	v, ok := r.verdict()
+	v, ok := r.ending()
 	if !ok || !v.Failed() {
 		return FailureReport{}, false
 	}
@@ -32,58 +32,58 @@ func (r RuleRun) TakeReport(to State) PullRequestReport {
 	})
 }
 
-// VerdictReport returns the pull request report that follows the run's
-// verdict move, once it was judged. It carries how the rule ended, unless
+// EndingReport returns the pull request report that follows the run's
+// ending move, once it ended. It carries how the rule ended, unless
 // the rule has no actions: nobody watched anything, so there is nothing to
 // tell. With showUsage, its ended actions carry what they spent and their
 // pull requests, as the run's status does.
-func (r RuleRun) VerdictReport(showUsage bool) (PullRequestReport, bool) {
-	v, ok := r.verdict()
+func (r RuleRun) EndingReport(showUsage bool) (PullRequestReport, bool) {
+	v, ok := r.ending()
 	if !ok {
 		return PullRequestReport{}, false
 	}
-	d := PullRequestReportData{ID: r.id.VerdictReport(), IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), State: v.To}
+	d := PullRequestReportData{ID: r.id.EndingReport(), IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), State: v.To}
 	if len(r.actions) > 0 {
 		d.End = Some(NewRuleEnd(r.rule, r.actionStatuses(nil, showUsage)))
 	}
 	return NewPullRequestReport(d), true
 }
 
-// verdict returns the run's verdict, once it was judged.
-func (r RuleRun) verdict() (Verdict, bool) {
+// ending returns how the run ended, once it ended.
+func (r RuleRun) ending() (RunEnding, bool) {
 	switch p := r.phase.(type) {
-	case JudgingPhase:
-		return p.Verdict, true
+	case EndingPhase:
+		return p.Ending, true
 	case ReleasedPhase:
-		if v, ok := p.Verdict.Get(); ok {
-			return v.Verdict, true
+		if v, ok := p.Ending.Get(); ok {
+			return v.Ending, true
 		}
 	case TakingPhase, RunningPhase:
 	}
-	return Verdict{}, false
+	return RunEnding{}, false
 }
 
 // progress returns whether the run's status shows it running or ended.
 func (r RuleRun) progress() StatusProgress {
 	switch p := r.phase.(type) {
-	case JudgingPhase:
+	case EndingPhase:
 		move := MovePending
 		if m, ok := p.Move.Get(); ok {
 			move = moveProgress(m)
 		}
-		return StatusEnded{To: p.Verdict.To, Move: move}
+		return StatusEnded{To: p.Ending.To, Move: move}
 	case ReleasedPhase:
-		if v, ok := p.Verdict.Get(); ok {
-			return StatusEnded{To: v.Verdict.To, Move: moveProgress(v.Move)}
+		if v, ok := p.Ending.Get(); ok {
+			return StatusEnded{To: v.Ending.To, Move: moveProgress(v.Move)}
 		}
 	case TakingPhase, RunningPhase:
 	}
 	return StatusRunning{}
 }
 
-// moveProgress returns how a settled verdict move stands.
-func moveProgress(m VerdictMove) MoveProgress {
-	if _, givenUp := m.(VerdictGivenUp); givenUp {
+// moveProgress returns how a settled ending move stands.
+func moveProgress(m EndingMove) MoveProgress {
+	if _, givenUp := m.(EndingGivenUp); givenUp {
 		return MoveDropped
 	}
 	return MoveDone

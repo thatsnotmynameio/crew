@@ -112,7 +112,7 @@ var errBadSnapshot = errors.New("not a rule run")
 
 // RestoreRuleRun returns the run s describes, sharing no memory with it. It
 // rejects a snapshot without an id, phase, action state or lookup, one that
-// names an action twice, and one judging or released with a verdict while
+// names an action twice, and one ending or released with an ending while
 // an action has not ended.
 func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 	if err := validate(s); err != nil {
@@ -133,12 +133,12 @@ func validate(s RuleRunSnapshot) error {
 	if s.ID == "" || s.Phase == nil {
 		return fmt.Errorf("%w: it has no id or no phase", errBadSnapshot)
 	}
-	judged := false
+	ended := false
 	switch p := s.Phase.(type) {
-	case JudgingPhase:
-		judged = true
+	case EndingPhase:
+		ended = true
 	case ReleasedPhase:
-		_, judged = p.Verdict.Get()
+		_, ended = p.Ending.Get()
 	case TakingPhase, RunningPhase:
 	}
 	var names []ActionName
@@ -150,15 +150,15 @@ func validate(s RuleRunSnapshot) error {
 			return fmt.Errorf("%w: it names action %q twice", errBadSnapshot, a.Name)
 		}
 		names = append(names, a.Name)
-		if _, ended := a.State.(Finished); judged && !ended {
-			return fmt.Errorf("%w: it was judged while action %q had not ended", errBadSnapshot, a.Name)
+		if _, finished := a.State.(Finished); ended && !finished {
+			return fmt.Errorf("%w: it ended while action %q had not", errBadSnapshot, a.Name)
 		}
 	}
 	return nil
 }
 
 // RunPhase is where a rule run stands: TakingPhase, RunningPhase,
-// JudgingPhase or ReleasedPhase.
+// EndingPhase or ReleasedPhase.
 //
 //sumtype:decl
 type RunPhase interface {
@@ -171,36 +171,36 @@ type TakingPhase struct{}
 // RunningPhase is a run whose take landed and some of whose actions run.
 type RunningPhase struct{}
 
-// JudgingPhase is a run whose every action ended: its verdict move, and its
+// EndingPhase is a run whose every action ended: its ending move, and its
 // failure report when an action failed, are delivered.
-type JudgingPhase struct {
-	Verdict Verdict
-	// Judged is when the run's last action ended and its verdict was
+type EndingPhase struct {
+	Ending RunEnding
+	// Ended is when the run's last action ended and its ending was
 	// decided.
-	Judged time.Time
-	// Move is how the verdict move settled; none while it is in flight or
+	Ended time.Time
+	// Move is how the ending move settled; none while it is in flight or
 	// owed.
-	Move Optional[VerdictMove]
+	Move Optional[EndingMove]
 	// ReportSettled is set once the failure report landed or was given up,
-	// and from the start for a verdict without failures, which posts none.
+	// and from the start for an ending without failures, which posts none.
 	ReportSettled bool
 }
 
-// ReleasedPhase is a run crew let go: its verdict settled, or its take was
+// ReleasedPhase is a run crew let go: its ending settled, or its take was
 // given up.
 type ReleasedPhase struct {
-	// Verdict is the run's settled verdict; none when its take was given up.
-	Verdict Optional[SettledVerdict]
+	// Ending is the run's settled ending; none when its take was given up.
+	Ending Optional[SettledEnding]
 }
 
 func (TakingPhase) runPhase()   {}
 func (RunningPhase) runPhase()  {}
-func (JudgingPhase) runPhase()  {}
+func (EndingPhase) runPhase()   {}
 func (ReleasedPhase) runPhase() {}
 
-// Verdict is how a rule run ended: the state its issue moves to, and its
+// RunEnding is how a rule run ended: the state its issue moves to, and its
 // failed actions.
-type Verdict struct {
+type RunEnding struct {
 	// To is the rule's success state, or its failure state when an action
 	// failed.
 	To State
@@ -210,49 +210,49 @@ type Verdict struct {
 }
 
 // Failed reports whether an action failed.
-func (v Verdict) Failed() bool { return len(v.Failures) > 0 }
+func (v RunEnding) Failed() bool { return len(v.Failures) > 0 }
 
-// SettledVerdict is the verdict of a released run, with how its move
+// SettledEnding is the ending of a released run, with how its move
 // settled.
-type SettledVerdict struct {
-	Verdict Verdict
-	// Judged is when the run's last action ended.
-	Judged time.Time
-	Move   VerdictMove
+type SettledEnding struct {
+	Ending RunEnding
+	// Ended is when the run's last action ended.
+	Ended time.Time
+	Move  EndingMove
 }
 
-// VerdictMove is how a verdict move settled: VerdictLanded or
-// VerdictGivenUp.
+// EndingMove is how an ending move settled: EndingLanded or
+// EndingGivenUp.
 //
 //sumtype:decl
-type VerdictMove interface {
-	verdictMove()
+type EndingMove interface {
+	endingMove()
 }
 
-// VerdictLanded is a verdict move that landed: the issue is in the
-// verdict's state.
-type VerdictLanded struct{}
+// EndingLanded is an ending move that landed: the issue is in the
+// ending's state.
+type EndingLanded struct{}
 
-// VerdictGivenUp is a verdict move crew gave up, as the issue was closed or
+// EndingGivenUp is an ending move crew gave up, as the issue was closed or
 // moved meanwhile, the tracker refused it, or its last try after a stop
 // failed.
-type VerdictGivenUp struct {
+type EndingGivenUp struct {
 	Reason string
 }
 
-func (VerdictLanded) verdictMove()  {}
-func (VerdictGivenUp) verdictMove() {}
+func (EndingLanded) endingMove()  {}
+func (EndingGivenUp) endingMove() {}
 
 // clonePhase returns a copy of p that shares no failures with it.
 func clonePhase(p RunPhase) RunPhase {
 	switch p := p.(type) {
-	case JudgingPhase:
-		p.Verdict = p.Verdict.clone()
+	case EndingPhase:
+		p.Ending = p.Ending.clone()
 		return p
 	case ReleasedPhase:
-		if v, ok := p.Verdict.Get(); ok {
-			v.Verdict = v.Verdict.clone()
-			p.Verdict = Some(v)
+		if v, ok := p.Ending.Get(); ok {
+			v.Ending = v.Ending.clone()
+			p.Ending = Some(v)
 		}
 		return p
 	case TakingPhase, RunningPhase:
@@ -261,7 +261,7 @@ func clonePhase(p RunPhase) RunPhase {
 }
 
 // clone returns a copy of v with its own failures.
-func (v Verdict) clone() Verdict {
+func (v RunEnding) clone() RunEnding {
 	v.Failures = slices.Clone(v.Failures)
 	return v
 }

@@ -18,17 +18,17 @@ func (l line) decode(h crew.EventHead) (crew.RunEvent, bool) {
 	case typeRunStopped:
 		return crew.RunStopped{EventHead: h}, true
 	case typeRunJudged:
-		verdict := crew.Verdict{To: l.To}
+		ending := crew.RunEnding{To: l.To}
 		for _, f := range l.Failures {
-			verdict.Failures = append(verdict.Failures, crew.ActionFailure{
+			ending.Failures = append(ending.Failures, crew.ActionFailure{
 				Action: f.Action, Workspace: f.Workspace, Log: f.Log,
 			})
 		}
-		return crew.RunJudged{EventHead: h, Verdict: verdict}, true
+		return crew.RunEnded{EventHead: h, Ending: ending}, true
 	case typeVerdictMoved:
-		return crew.VerdictMoved{EventHead: h, From: l.From, To: l.To}, true
+		return crew.EndingMoved{EventHead: h, From: l.From, To: l.To}, true
 	case typeVerdictDropped:
-		return crew.VerdictDropped{EventHead: h, To: l.To, Reason: l.Reason}, true
+		return crew.EndingDropped{EventHead: h, To: l.To, Reason: l.Reason}, true
 	case typeFailureReported:
 		return crew.FailureReported{EventHead: h}, true
 	case typeFailureReportDropped:

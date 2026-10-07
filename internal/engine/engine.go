@@ -6,7 +6,7 @@
 // One goroutine, Run's loop, owns the core. Every result reaches it through
 // one inbox and is stamped with its arrival time there. Each command runs in
 // its own goroutine on a command context that only Run's return cancels, so
-// a stop request never cancels the verdict moves it is waiting for.
+// a stop request never cancels the ending moves it is waiting for.
 package engine
 
 import (
@@ -259,7 +259,7 @@ func boardSource(cfg Config) (port.BoardLister, []core.Option) {
 // them, and Run returns their error.
 //
 // Stop, or ctx ending, requests a stop: nothing new starts, running
-// sessions get stopTimeout to stop, issues are judged as their actions end,
+// sessions get stopTimeout to stop, runs end as their actions end,
 // and owed calls get one final try (R9). RunTimeLimit after the first poll,
 // the core winds down instead: nothing new is taken, and running sessions
 // end on their own. Run returns nil once the core holds no issue and no

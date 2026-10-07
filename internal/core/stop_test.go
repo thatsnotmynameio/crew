@@ -7,12 +7,12 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
+func TestAE9StopEndsTheRunsOfEndedIssuesAndStopsRunningOnes(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready), issue("2", 2, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
-	wantCommands(t, verdict, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	wantCommands(t, ending, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds,
@@ -23,8 +23,8 @@ func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 		t.Fatal("stopped while issues are held")
 	}
 
-	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
+	_, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
+	hasEvent(t, events, crew.EndingMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 
 	d.send(core.SessionEnded{IssueID: issueID("2"), Action: "acceptance", Outcome: failed("stopped")})
 	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("2"), Action: "development", Outcome: failed("stopped")})
@@ -44,7 +44,7 @@ func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 	}
 	_, events = d.send(core.CallResult{ID: reportID(t, cmds, "2"), Result: core.ResultDone})
 	if !d.m.Stopped() {
-		t.Fatal("not stopped once every verdict call settled")
+		t.Fatal("not stopped once every ending call settled")
 	}
 	hasEvent(t, events, core.Stopped{At: d.now})
 }
@@ -99,7 +99,7 @@ func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 			d.wantReason("1", "development", "crew stopped")
 			d.settle(cmds)
 			if !d.m.Stopped() {
-				t.Fatal("not stopped once the verdict calls settled")
+				t.Fatal("not stopped once the ending calls settled")
 			}
 		})
 		t.Run(tt.name+", final try failed", func(t *testing.T) {
@@ -170,14 +170,14 @@ func TestStopDuringSetupStartsNothingMoreAndStopsWhatStarted(t *testing.T) {
 
 func TestStopGivesEachOwedCallOneFinalTry(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	verdict := judgedNeedingAttention(d)
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	ending := endedNeedingAttention(d)
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention})
 
 	// The report, in flight at stop, fails transiently: it gets its final try.
-	retry, _ := d.send(core.CallResult{ID: reportID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	retry, _ := d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	if len(retry) != 1 {
 		t.Fatalf("report retry: got %#v, want one ReportFailure", retry)
 	}

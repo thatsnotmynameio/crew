@@ -81,7 +81,7 @@ func TestASessionsReasonEndsTheActionWithLocalPathsShortened(t *testing.T) {
 		cfg := config(t, tr, develop)
 
 		got := reportedReason(t, tr, cfg, func(r *rig) {
-			r.sessions(1)["issue-1-development"].End(port.Verdict{
+			r.sessions(1)["issue-1-development"].End(port.SessionEnd{
 				Reason: fmt.Sprintf("go test failed in %s/engine (cache %s/.cache), ran in %s.", cfg.Root, cfg.Home, cfg.Root),
 			})
 		})
@@ -98,7 +98,7 @@ func TestASessionsReasonEndsTheActionWithLocalPathsShortened(t *testing.T) {
 func endedReason(t *testing.T, cfg engine.Config, reason string) string {
 	t.Helper()
 	r := start(t, cfg)
-	r.session().End(port.Verdict{Reason: reason})
+	r.session().End(port.SessionEnd{Reason: reason})
 	synctest.Wait()
 	r.engine.Stop()
 	if _, err := r.wait(); err != nil {

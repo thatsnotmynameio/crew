@@ -489,13 +489,13 @@ func TestWhenTheRunTimeIsUpARunningSessionFinishesAndNothingNewIsTaken(t *testin
 		time.Sleep(time.Hour + time.Second)
 		tr.Add(issue(43, ready))
 		time.Sleep(90*time.Minute - time.Since(t0))
-		session.End(port.Verdict{Succeeded: true, Reason: "done"})
+		session.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 		if got, want := time.Since(t0), 90*time.Minute; got != want {
-			t.Errorf("Run returned after %v, want %v, once #42 was judged", got, want)
+			t.Errorf("Run returned after %v, want %v, once #42's run ended", got, want)
 		}
 		if session.Stopped() {
 			t.Error("#42's session was stopped; it should have run to its end")

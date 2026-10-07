@@ -40,8 +40,8 @@ func promoteMove() core.Move {
 
 // promoteMoved is the event of #1's move to promote triage's success, in
 // d's run of #1, at d.now.
-func promoteMoved(d *driver) crew.VerdictMoved {
-	return crew.VerdictMoved{EventHead: d.runHead("1"), From: triagePromoting, To: developmentReady}
+func promoteMoved(d *driver) crew.EndingMoved {
+	return crew.EndingMoved{EventHead: d.runHead("1"), From: triagePromoting, To: developmentReady}
 }
 
 // reportOf is #1's pull request report of its move to state, with no end.
@@ -52,8 +52,8 @@ func reportOf(state crew.State) crew.PullRequestReportData {
 // triaged runs #1 through triage with outcome and settles every call.
 func triaged(d *driver, outcome crew.Outcome) {
 	d.running(issue("1", 1, triageReady))
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: outcome})
-	d.settle(verdict)
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: outcome})
+	d.settle(ending)
 }
 
 // takePromoted polls #1 in triage's success and returns its take move.
@@ -70,10 +70,10 @@ func TestAE2ARuleWithoutActionsMovesTheLabelWithoutASessionAndKeepsTriagesEntry(
 	triaged(d, succeeded)
 
 	take := takePromoted(d)
-	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove())
+	ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+	wantCommands(t, ending, promoteMove())
 
-	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	_, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	hasEvent(t, events, promoteMoved(d))
 	wantHeld(t, d.m)
 	if got := onlyEntry(t, d); got.Rule != "triage" || got.To != triageDone || !got.Gone {
@@ -113,13 +113,13 @@ func TestARuleWithoutActionsTakenWhileCrewStopsMovesToSuccessAndStops(t *testing
 		t.Fatalf("stop issued %#v while the take is in flight", cmds)
 	}
 
-	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove())
+	ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+	wantCommands(t, ending, promoteMove())
 	if d.m.Stopped() {
-		t.Fatal("stopped while the verdict move is in flight")
+		t.Fatal("stopped while the ending move is in flight")
 	}
 
-	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	_, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	hasEvent(t, events, core.Stopped{At: d.now})
 	wantHeld(t, d.m)
 }
@@ -129,13 +129,13 @@ func TestTheRunTimeLimitWithOnlyARuleWithoutActionsHeldStopsAfterItsMove(t *test
 	take := takePromoted(d)
 	d.send(core.TimeUp{Limit: limit})
 
-	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove())
+	ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+	wantCommands(t, ending, promoteMove())
 	if d.m.Stopped() {
-		t.Fatal("stopped while the verdict move is in flight")
+		t.Fatal("stopped while the ending move is in flight")
 	}
 
-	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	_, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantEvents(t, events, promoteMoved(d), core.Stopped{At: d.now})
 }
 
@@ -146,14 +146,14 @@ func TestARuleWithoutActionsHoldsASlotOfItsQueue(t *testing.T) {
 
 	take, _ := d.poll(issue("1", 1, triageDone), issue("2", 2, triageDone))
 	wantCommands(t, take, core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
-	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+	ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
 	if _, events := d.send(core.Tick{}); len(events) != 1 {
 		t.Fatalf("tick while #1 holds the clerk slot: %#v, want the listing skipped", events)
 	} else if _, ok := events[0].(core.PollSkipped); !ok {
 		t.Fatalf("tick while #1 holds the clerk slot: %#v, want the listing skipped", events)
 	}
 
-	listing, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	listing, _ := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantCommands(t, listing, core.ListIssues{States: []crew.State{triageDone, triagePromoting}})
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("2", 2, triageDone)}})
 	wantCommands(t, cmds, core.Move{IssueID: issueID("2"), From: triageDone, To: triagePromoting})
@@ -187,8 +187,8 @@ func TestARuleWithoutActionsWritesItsStatusWithNoActionLines(t *testing.T) {
 func TestARuleWithoutActionsReportsNoRecordNotWritten(t *testing.T) {
 	d := &driver{t: t, m: core.New(promoted(), 2, core.Journaling(nil)), now: t0}
 	take := takePromoted(d)
-	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantHeld(t, d.m)
 
 	if len(d.recorded) == 0 {

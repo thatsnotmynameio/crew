@@ -1,7 +1,7 @@
 // Package codex is the harness adapter for OpenAI's Codex CLI. It runs
 // `codex exec --json` headless in an action's workspace, under Codex's
-// automatic approval review in its workspace-write sandbox, and judges the
-// session by the end of its turn and its exit code.
+// automatic approval review in its workspace-write sandbox, and tells how the
+// session ended from the end of its turn and its exit code.
 package codex
 
 import (
@@ -79,7 +79,7 @@ type harness struct {
 // Start implements port.Harness. It finds the git dirs of run.Dir, then runs
 // codex there with the harness's model, acting as run.Identity. Everything
 // codex prints goes to run.Output, and also to a recorder as it is printed,
-// so the verdict never re-reads the log.
+// so the session's end never re-reads the log.
 func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", binary, err)
@@ -95,15 +95,15 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 		return nil, err
 	}
 	s := &session{process: p, rec: rec, done: make(chan struct{})}
-	s.verdict = sync.OnceValue(func() port.Verdict {
+	s.end = sync.OnceValue(func() port.SessionEnd {
 		defer close(s.done)
 		exit := p.Wait() // codex's output is fully copied once it returns
 		rec.end()
 		stopped := s.stopped.Load()
 		s.usage = rec.usage(stopped)
-		return rec.judge(exit, stopped)
+		return rec.sessionEnd(exit, stopped)
 	})
-	go s.verdict() // judged as soon as codex ends, so a later Stop cannot change it
+	go s.end() // settled as soon as codex ends, so a later Stop cannot change it
 	return s, nil
 }
 
@@ -112,13 +112,13 @@ type session struct {
 	process process
 	rec     *recorder // codex's output, recorded as it is printed
 	stopped atomic.Bool
-	verdict func() port.Verdict // waits for the process once, then judges it
-	usage   crew.Usage          // set by verdict before it returns
-	done    chan struct{}       // closed once the verdict is settled
+	end     func() port.SessionEnd // waits for the process once, then settles how it ended
+	usage   crew.Usage             // set by end before it returns
+	done    chan struct{}          // closed once the session's end is settled
 }
 
 // Wait implements port.Session.
-func (s *session) Wait() port.Verdict { return s.verdict() }
+func (s *session) Wait() port.SessionEnd { return s.end() }
 
 // Said implements port.Narrator: the text of the session's last agent
 // message so far, on one line. Reasoning, commands and errors never count.
@@ -128,13 +128,13 @@ func (s *session) Said() string { return s.rec.lastSaid() }
 // session's completed turn, and never a cost, or nothing when crew stopped
 // it or its turn did not complete.
 func (s *session) Usage() crew.Usage {
-	s.verdict()
+	s.end()
 	return s.usage
 }
 
 // Stop implements port.Session. proc sends the terminate signal to the
 // session's process group, and the kill signal once ctx is done. The
-// session's verdict is then a failure saying crew stopped it. Stopping a
+// session's end is then a failure saying crew stopped it. Stopping a
 // session that already ended does nothing.
 func (s *session) Stop(ctx context.Context) error {
 	select {

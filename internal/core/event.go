@@ -94,7 +94,7 @@ type ListingFailed struct {
 	Reason string
 }
 
-// CallOwed is a take move, verdict move, failure report or pull request
+// CallOwed is a take move, ending move, failure report or pull request
 // report that failed transiently. The core owes it and retries it at the
 // next tick (KTD8), or once at stop.
 type CallOwed struct {
@@ -127,7 +127,7 @@ type StatusFailed struct {
 }
 
 // WindingDown means the run time limit has passed (R6): the core takes no
-// new issue and stops once the issues it holds are judged. It is emitted
+// new issue and stops once the runs of the issues it holds ended. It is emitted
 // once, unless a stop was requested first.
 type WindingDown struct {
 	At time.Time

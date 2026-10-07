@@ -25,7 +25,7 @@ type RunDefinition struct {
 
 // Decide returns the events fact produces on run, in the order to apply
 // them, or none when the fact changes nothing, such as a stop reaching a
-// run that is judging. It refuses, with an error wrapping ErrRefused, a
+// run that is ending. It refuses, with an error wrapping ErrRefused, a
 // fact of another run, any fact for a released run, and a fact for an
 // action or a delivery that does not wait for it. It never changes run:
 // the caller applies the events.
@@ -93,7 +93,7 @@ func awaitsWorkspace(s ActionRunState) bool {
 	return is[CreatingWorkspace](s) || is[ReopeningWorkspace](s)
 }
 
-// end ends the action named name with end and judges the run once every
+// end ends the action named name with end and ends the run once every
 // action ended. While its pull request is looked up, the action finishes
 // instead, and the lookup's answer ends it.
 func (d *decider) end(name ActionName, end ActionEnd) {
@@ -107,7 +107,7 @@ func (d *decider) end(name ActionName, end ActionEnd) {
 		Usage: cloneUsage(a.usage), PullRequest: a.PullRequest(),
 	})
 	if d.run.ActionsEnded() {
-		d.judge()
+		d.endRun()
 	}
 }
 
@@ -116,11 +116,11 @@ func stoppedEnd() ActionEnd {
 	return EndFailed{Reason: NewSessionText(stoppedReason), Cause: CauseStopped}
 }
 
-// judge decides the run's verdict: the rule's success state when every
+// endRun decides how the run ends: the rule's success state when every
 // action succeeded, and otherwise its failure state with each failed
 // action, in action order, and where to read why it failed.
-func (d *decider) judge() {
-	verdict := Verdict{To: d.def.Rule.Labels.Success}
+func (d *decider) endRun() {
+	ending := RunEnding{To: d.def.Rule.Labels.Success}
 	for _, a := range d.run.actions {
 		if a.Outcome().Succeeded {
 			continue
@@ -129,10 +129,10 @@ func (d *decider) judge() {
 		if w, ok := a.workspace.Get(); ok {
 			f.Workspace, f.Log = w.Workspace.Name, w.Log
 		}
-		verdict.Failures = append(verdict.Failures, f)
+		ending.Failures = append(ending.Failures, f)
 	}
-	if verdict.Failed() {
-		verdict.To = d.def.Rule.Labels.Failure
+	if ending.Failed() {
+		ending.To = d.def.Rule.Labels.Failure
 	}
-	d.emit(RunJudged{EventHead: d.head(), Verdict: verdict})
+	d.emit(RunEnded{EventHead: d.head(), Ending: ending})
 }

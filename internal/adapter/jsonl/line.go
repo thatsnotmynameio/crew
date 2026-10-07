@@ -33,7 +33,7 @@ type line struct {
 	usage
 	pullRequest
 	taken
-	verdict
+	ending
 }
 
 // head is what every line holds. Event is set on an action's start and end
@@ -74,8 +74,8 @@ type session struct {
 	DurationMS     *int64     `json:"duration_ms,omitempty"`
 }
 
-// verdict is the failed actions of a verdict.
-type verdict struct {
+// ending is the failed actions of a run's ending.
+type ending struct {
 	Failures []failure `json:"failures,omitempty"`
 }
 
@@ -142,7 +142,7 @@ type takenAction struct {
 	Reason    string             `json:"reason,omitempty"`
 }
 
-// failure is one failed action of a verdict.
+// failure is one failed action of a run's ending.
 type failure struct {
 	Action    crew.ActionName    `json:"action"`
 	Workspace crew.WorkspaceName `json:"workspace,omitempty"`

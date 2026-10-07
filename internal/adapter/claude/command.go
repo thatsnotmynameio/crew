@@ -25,12 +25,12 @@ const (
 // command builds the headless Claude Code run of run with model, or with the
 // model Claude Code picks when model is empty. It is pure,
 // and kept apart from the stream parser, so that building the command and
-// judging the session change independently. The stream-json output, which
-// needs --verbose with -p, is what the parser judges the session by; proc
-// closes stdin. The prompt goes last, after --, so one that starts with a dash
-// (a Markdown list, an issue title) is not read as an option. The session acts
-// as run's identity, with its environment added and the variables it unsets
-// removed, and gets the code owners' and the bots' logins as CREW_CODE_OWNERS
+// telling how the session ended change independently. The stream-json
+// output, which needs --verbose with -p, is what the parser reads the
+// session's end from; proc closes stdin. The prompt goes last, after --, so
+// one that starts with a dash (a Markdown list, an issue title) is not read
+// as an option. The session acts as run's identity, with its environment
+// added and the variables it unsets removed, and gets the code owners' and the bots' logins as CREW_CODE_OWNERS
 // and CREW_BOTS. A run with a verdict file gives it to the session as
 // CREW_VERDICT_FILE, in its environment only, and lets it write the file's
 // directory with --add-dir, which comes before another flag: it takes every

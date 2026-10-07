@@ -55,7 +55,7 @@ func failedEntry(key, title string, taken, ended int, actions ...string) core.Ha
 	return e
 }
 
-// givenUpEntry is entry whose verdict move crew gave up.
+// givenUpEntry is entry whose ending move crew gave up.
 func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 	e.Move, e.DropReason = crew.MoveDropped, reason
 	return e

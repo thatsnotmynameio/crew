@@ -125,19 +125,19 @@ func TestATickReadsTheBoardAfterTheRunTimeIsUpButNotWhileStopping(t *testing.T) 
 }
 
 // Covers AE3.
-func TestAVerdictMovePutsTheIssueOnTheBoardAtOnceAndAStaleReadKeepsIt(t *testing.T) {
+func TestAnEndingMovePutsTheIssueOnTheBoardAtOnceAndAStaleReadKeepsIt(t *testing.T) {
 	d := newBoardDriver(t, draft(), 2, bug, readyToReview)
 	held := issue("12", 12, ready)
 	d.running(held)
 	d.send(core.BoardListed{})
 	wantBoard(t, d)
 	d.send(core.SessionEnded{IssueID: issueID("12"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
 	if got := listBoard(d.tick()); got == nil {
 		t.Fatal("tick did not read the board")
 	}
 
-	d.settle(verdict)
+	d.settle(ending)
 	moved := crew.NewBoardIssue(held, []crew.State{readyToReview})
 	wantBoard(t, d, moved)
 
@@ -204,8 +204,8 @@ func TestAPullRequestsMoveNeverPutsItOnTheBoard(t *testing.T) {
 	d.settle(take)
 	wantBoard(t, d)
 
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("90"), Action: "fix", Outcome: succeeded})
-	d.settle(verdict)
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("90"), Action: "fix", Outcome: succeeded})
+	d.settle(ending)
 	wantBoard(t, d)
 }
 

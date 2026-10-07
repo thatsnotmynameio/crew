@@ -38,20 +38,20 @@ func wantListings(t *testing.T, cmds []core.Command, n int) {
 }
 
 // endActions ends both actions of the running issue key successfully and
-// returns the commands of its verdict.
+// returns the commands of its ending.
 func (d *driver) endActions(key string) []core.Command {
 	d.t.Helper()
 	d.send(core.SessionEnded{IssueID: issueID(key), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID(key), Action: "development", Outcome: succeeded})
-	return verdict
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID(key), Action: "development", Outcome: succeeded})
+	return ending
 }
 
 // release ends both actions of the running issue key successfully and lands
-// its verdict move, which releases it. It returns what the landing produced.
+// its ending move, which releases it. It returns what the landing produced.
 func (d *driver) release(key string) ([]core.Command, []core.Published) {
 	d.t.Helper()
-	verdict := d.endActions(key)
-	return d.send(core.CallResult{ID: moveID(d.t, verdict, key), Result: core.ResultDone})
+	ending := d.endActions(key)
+	return d.send(core.CallResult{ID: moveID(d.t, ending, key), Result: core.ResultDone})
 }
 
 // busy runs issues 1 and 2 on a crew of two slots.
@@ -139,8 +139,8 @@ func TestAE4ASecondReleaseAfterAnImmediateListingWaitsForTheNextTick(t *testing.
 // Covers AE6.
 func TestAE6AnIssueWithAnOwedMoveKeepsItsSlot(t *testing.T) {
 	d := busy(t)
-	verdict := d.endActions("1")
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	ending := d.endActions("1")
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	cmds, events := d.send(core.Tick{})
 	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
@@ -171,10 +171,10 @@ func TestAReleaseAfterASkippedTickListsNothingOnceTheRunTimeIsUp(t *testing.T) {
 
 func TestAReleaseAfterASkippedTickListsNothingWhileStopping(t *testing.T) {
 	d := busy(t)
-	verdict := d.endActions("1")
+	ending := d.endActions("1")
 	d.send(core.Tick{})
 	d.send(core.StopRequested{})
 
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantListings(t, cmds, 0)
 }

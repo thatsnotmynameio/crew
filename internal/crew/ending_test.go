@@ -7,7 +7,7 @@ import (
 )
 
 // The decision tables below mirror today's core handlers for checks, pull
-// request lookups and the verdict, and the inputs the core ignores; each
+// request lookups and the run's ending, and the inputs the core ignores; each
 // row names the handler in internal/core and the branch it follows.
 
 func checkEnded(passed bool, reason string) Fact {
@@ -111,15 +111,15 @@ var devEnd = []RunEvent{
 	developmentEnded(7, devFailed),
 }
 
-// judgedFailed is a run judged a failure at minute 7.
-var judgedFailed = seq(preparing(), inSession("development"), reviewEnded(EndFailed{Cause: CauseSession}), devEnd,
-	[]RunEvent{RunJudged{EventHead: eh(7), Verdict: Verdict{
+// endedFailed is a run that ended in failure at minute 7.
+var endedFailed = seq(preparing(), inSession("development"), reviewEnded(EndFailed{Cause: CauseSession}), devEnd,
+	[]RunEvent{RunEnded{EventHead: eh(7), Ending: RunEnding{
 		To: labelFailed, Failures: []ActionFailure{failure("development"), failure("review")},
 	}}})
 
-// judgedDone is a run judged a success at minute 7.
-var judgedDone = seq(preparing(), inSession("development"), reviewEnded(EndSucceeded{}), []RunEvent{
-	developmentEnded(7, EndSucceeded{}), RunJudged{EventHead: eh(7), Verdict: Verdict{To: labelDone}},
+// endedDone is a run that ended in success at minute 7.
+var endedDone = seq(preparing(), inSession("development"), reviewEnded(EndSucceeded{}), []RunEvent{
+	developmentEnded(7, EndSucceeded{}), RunEnded{EventHead: eh(7), Ending: RunEnding{To: labelDone}},
 })
 
 func withoutChecks(d RunDefinition) RunDefinition {
@@ -127,83 +127,83 @@ func withoutChecks(d RunDefinition) RunDefinition {
 	return d
 }
 
-// verdictDecisions mirror end, judge, received and callResult.
-var verdictDecisions = []decision{
+// endingDecisions mirror end, endRun, received and callResult.
+var endingDecisions = []decision{
 	{
-		name:  "end: the last action's end judges the run a success",
+		name:  "end: the last action's end ends the run in success",
 		given: seq(preparing(), inSession("development"), reviewEnded(EndSucceeded{})),
 		fact:  SessionEnded{FactHead: fh(7), Action: "development", Outcome: succeeded("done"), Usage: usage},
 		def:   withoutChecks,
 		want: []RunEvent{
 			ActionSessionEnded{EventHead: eh(7), Action: "development", Outcome: succeeded("done"), Usage: usage},
 			developmentEnded(7, EndSucceeded{Reason: NewSessionText("done")}),
-			RunJudged{EventHead: eh(7), Verdict: Verdict{To: labelDone}},
+			RunEnded{EventHead: eh(7), Ending: RunEnding{To: labelDone}},
 		},
 	},
 	{
-		name:  "judge: one failure per failed action, in action order, with its workspace and log",
+		name:  "endRun: one failure per failed action, in action order, with its workspace and log",
 		given: seq(preparing(), inSession("development"), reviewEnded(EndFailed{Cause: CauseSession})),
 		fact:  SessionEnded{FactHead: fh(7), Action: "development", Outcome: devFailed.Outcome(), Usage: usage},
-		want: seq(devEnd, []RunEvent{RunJudged{EventHead: eh(7), Verdict: Verdict{
+		want: seq(devEnd, []RunEvent{RunEnded{EventHead: eh(7), Ending: RunEnding{
 			To: labelFailed, Failures: []ActionFailure{failure("development"), failure("review")},
 		}}}),
 	},
 	{
-		name:  "received: a landed verdict without a report releases the run",
-		given: judgedDone, fact: VerdictSettled{FactHead: fh(8), Move: VerdictLanded{}},
+		name:  "received: a landed ending move without a report releases the run",
+		given: endedDone, fact: EndingMoveSettled{FactHead: fh(8), Move: EndingLanded{}},
 		want: []RunEvent{
-			VerdictMoved{EventHead: eh(8), From: labelRunning, To: labelDone},
+			EndingMoved{EventHead: eh(8), From: labelRunning, To: labelDone},
 			RunReleased{EventHead: eh(8)},
 		},
 	},
 	{
-		name:  "received: a landed verdict waits for the failure report",
-		given: judgedFailed, fact: VerdictSettled{FactHead: fh(8), Move: VerdictLanded{}},
-		want: []RunEvent{VerdictMoved{EventHead: eh(8), From: labelRunning, To: labelFailed}},
+		name:  "received: a landed ending move waits for the failure report",
+		given: endedFailed, fact: EndingMoveSettled{FactHead: fh(8), Move: EndingLanded{}},
+		want: []RunEvent{EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed}},
 	},
 	{
-		name:  "received: a landed failure report waits for the verdict",
-		given: judgedFailed, fact: FailureReportSettled{FactHead: fh(8), Landed: true},
+		name:  "received: a landed failure report waits for the ending move",
+		given: endedFailed, fact: FailureReportSettled{FactHead: fh(8), Landed: true},
 		want: []RunEvent{FailureReported{EventHead: eh(8)}},
 	},
 	{
-		name: "received: the failure report landing after the verdict releases the run",
-		given: seq(judgedFailed, []RunEvent{
-			VerdictMoved{EventHead: eh(8), From: labelRunning, To: labelFailed},
+		name: "received: the failure report landing after the ending move releases the run",
+		given: seq(endedFailed, []RunEvent{
+			EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed},
 		}),
 		fact: FailureReportSettled{FactHead: fh(9), Landed: true},
 		want: []RunEvent{FailureReported{EventHead: eh(9)}, RunReleased{EventHead: eh(9)}},
 	},
 	{
-		name:  "received: the verdict landing after the failure report releases the run",
-		given: seq(judgedFailed, []RunEvent{FailureReported{EventHead: eh(8)}}),
-		fact:  VerdictSettled{FactHead: fh(9), Move: VerdictLanded{}},
+		name:  "received: the ending move landing after the failure report releases the run",
+		given: seq(endedFailed, []RunEvent{FailureReported{EventHead: eh(8)}}),
+		fact:  EndingMoveSettled{FactHead: fh(9), Move: EndingLanded{}},
 		want: []RunEvent{
-			VerdictMoved{EventHead: eh(9), From: labelRunning, To: labelFailed},
+			EndingMoved{EventHead: eh(9), From: labelRunning, To: labelFailed},
 			RunReleased{EventHead: eh(9)},
 		},
 	},
 	{
-		name:  "received: a verdict given up keeps its reason",
-		given: judgedDone, fact: VerdictSettled{FactHead: fh(8), Move: VerdictGivenUp{Reason: "issue closed"}},
+		name:  "received: an ending move given up keeps its reason",
+		given: endedDone, fact: EndingMoveSettled{FactHead: fh(8), Move: EndingGivenUp{Reason: "issue closed"}},
 		want: []RunEvent{
-			VerdictDropped{EventHead: eh(8), To: labelDone, Reason: "issue closed"},
+			EndingDropped{EventHead: eh(8), To: labelDone, Reason: "issue closed"},
 			RunReleased{EventHead: eh(8)},
 		},
 	},
 	{
 		name: "callResult: a failure report given up still settles",
-		given: seq(judgedFailed, []RunEvent{
-			VerdictMoved{EventHead: eh(8), From: labelRunning, To: labelFailed},
+		given: seq(endedFailed, []RunEvent{
+			EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed},
 		}),
 		fact: FailureReportSettled{FactHead: fh(9)},
 		want: []RunEvent{FailureReportDropped{EventHead: eh(9)}, RunReleased{EventHead: eh(9)}},
 	},
 }
 
-// released is a run released at minute 8, after its verdict landed.
-var released = seq(judgedDone, []RunEvent{
-	VerdictMoved{EventHead: eh(8), From: labelRunning, To: labelDone}, RunReleased{EventHead: eh(8)},
+// released is a run released at minute 8, after its ending move landed.
+var released = seq(endedDone, []RunEvent{
+	EndingMoved{EventHead: eh(8), From: labelRunning, To: labelDone}, RunReleased{EventHead: eh(8)},
 })
 
 type refusal struct {
@@ -216,8 +216,8 @@ type refusal struct {
 // another phase, or for an issue no longer held.
 var refusals = []refusal{
 	{
-		name:  "AE1: a judging run refuses an action's end",
-		given: judgedDone, fact: SessionEnded{FactHead: fh(8), Action: "review", Outcome: succeeded("again")},
+		name:  "AE1: an ending run refuses an action's end",
+		given: endedDone, fact: SessionEnded{FactHead: fh(8), Action: "review", Outcome: succeeded("again")},
 	},
 	{
 		name:  "a fact for another run",
@@ -229,21 +229,21 @@ var refusals = []refusal{
 	{name: "a fact for no run", fact: StopReached{FactHead: fh(1)}},
 	{name: "a released run refuses a stop", given: released, fact: StopReached{FactHead: fh(9)}},
 	{
-		name: "a released run refuses a verdict", given: released,
-		fact: VerdictSettled{FactHead: fh(9), Move: VerdictLanded{}},
+		name: "a released run refuses an ending move", given: released,
+		fact: EndingMoveSettled{FactHead: fh(9), Move: EndingLanded{}},
 	},
 	{name: "a take that already landed", given: preparing(), fact: TakeSettled{FactHead: fh(3), Landed: true}},
 	{
-		name: "a verdict before the run was judged", given: preparing(),
-		fact: VerdictSettled{FactHead: fh(3), Move: VerdictLanded{}},
+		name: "an ending move before the run ended", given: preparing(),
+		fact: EndingMoveSettled{FactHead: fh(3), Move: EndingLanded{}},
 	},
 	{
-		name:  "a verdict that already settled",
-		given: seq(judgedDone, []RunEvent{VerdictDropped{EventHead: eh(8), To: labelDone}}),
-		fact:  VerdictSettled{FactHead: fh(9), Move: VerdictLanded{}},
+		name:  "an ending move that already settled",
+		given: seq(endedDone, []RunEvent{EndingDropped{EventHead: eh(8), To: labelDone}}),
+		fact:  EndingMoveSettled{FactHead: fh(9), Move: EndingLanded{}},
 	},
 	{
-		name: "a failure report the verdict does not post", given: judgedDone,
+		name: "a failure report the ending does not post", given: endedDone,
 		fact: FailureReportSettled{FactHead: fh(8), Landed: true},
 	},
 	{name: "an action the run does not have", given: preparing(), fact: WorkspaceGone{FactHead: fh(3), Action: "deploy"}},
@@ -295,5 +295,5 @@ func TestDecideRefusesWhatTheRunDoesNotWaitFor(t *testing.T) {
 	}
 }
 
-func TestDecideTheChecks(t *testing.T)  { decide(t, checkDecisions) }
-func TestDecideTheVerdict(t *testing.T) { decide(t, verdictDecisions) }
+func TestDecideTheChecks(t *testing.T) { decide(t, checkDecisions) }
+func TestDecideTheEnding(t *testing.T) { decide(t, endingDecisions) }

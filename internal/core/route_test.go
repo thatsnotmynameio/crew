@@ -23,7 +23,7 @@ func wantUnchanged(t *testing.T, d *driver, before core.View, cmds []core.Comman
 // the newer run of issue 1 that runs the same action.
 func TestALateSessionEndOfAReleasedRunChangesNothingInTheNewerRun(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	d.settle(judgedNeedingAttention(d))
+	d.settle(endedNeedingAttention(d))
 	wantHeld(t, d.m)
 	released := d.run(issueID("1"))
 

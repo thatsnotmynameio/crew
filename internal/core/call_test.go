@@ -8,13 +8,13 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
+func TestEndingMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 
-	cmds, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	cmds, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	wantCommands(t, cmds)
 	owed := core.Call{Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: inProgress, To: readyToReview}
 	hasEvent(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
@@ -37,24 +37,24 @@ func TestVerdictMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing
 	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
+	hasEvent(t, events, crew.EndingMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 	wantHeld(t, d.m)
 	if got := d.m.View().Owed; got != nil {
 		t.Fatalf("owed after the retry succeeded: %#v", got)
 	}
 }
 
-func TestVerdictCallMovedMeanwhileOrRefusedIsDroppedAndReported(t *testing.T) {
+func TestEndingCallMovedMeanwhileOrRefusedIsDroppedAndReported(t *testing.T) {
 	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
 		t.Run(result.String(), func(t *testing.T) {
 			d := newDriver(t, draft(), 2)
-			verdict := judgedNeedingAttention(d)
+			ending := endedNeedingAttention(d)
 
-			_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: result, Reason: "nope"})
+			_, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: result, Reason: "nope"})
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
 				Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: inProgress, To: needsAttention,
 			}})
-			_, events = d.send(core.CallResult{ID: reportID(t, verdict, "1"), Result: result, Reason: "nope"})
+			_, events = d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: result, Reason: "nope"})
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
 				Kind: core.CallReport, IssueID: issueID("1"), IssueRef: "#1",
 			}})

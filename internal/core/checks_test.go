@@ -59,7 +59,7 @@ func TestAPassingCheckStartsTheNextWhichDecidesTheAction(t *testing.T) {
 	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason(reason)})
 	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueID: issueID("74"), From: inProgress,
 		To: needsAttention}) {
-		t.Fatalf("verdict = %#v, want the move to needs attention", got)
+		t.Fatalf("ending = %#v, want the move to needs attention", got)
 	}
 	ws := space("74", "development")
 	want := []crew.ActionFailure{{Action: "development", Workspace: ws.Workspace, Log: ws.Log}}

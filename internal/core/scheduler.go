@@ -76,7 +76,7 @@ func (s *step) freed() {
 // stop starts nothing new from now on, hands every held run the stop, which
 // stops its running sessions and checks, and gives each owed call, status
 // and pull request report not in flight its final try (R9). Runs whose
-// actions have all ended are already being judged, so their verdicts go on.
+// actions have all ended are already ending, so their ending moves go on.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {
@@ -92,7 +92,7 @@ func (s *step) stop() {
 }
 
 // timeUp ends the run time (R2): from now on nothing new is taken, while the
-// held issues, a take in flight or owed included, run and are judged as
+// held issues, a take in flight or owed included, run and end as
 // usual (R4). windDown stops once they have all ended.
 func (s *step) timeUp(limit time.Duration) {
 	m := s.m

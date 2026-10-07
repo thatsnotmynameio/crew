@@ -61,12 +61,12 @@ func TestAE2ATakeOwedTwiceStartsItsActionsOnceItLands(t *testing.T) {
 	wantOwed(t, d.m)
 }
 
-// A verdict whose move was owed keeps showing owed until its failure report
+// An ending whose move was owed keeps showing owed until its failure report
 // lands too, and only then is the issue released.
-func TestAnOwedVerdictShowsOwedUntilEveryVerdictCallSettles(t *testing.T) {
+func TestAnOwedEndingShowsOwedUntilEveryEndingCallSettles(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	verdict := judgedNeedingAttention(d)
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	ending := endedNeedingAttention(d)
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	retry, _ := d.send(core.Tick{})
 
 	d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
@@ -74,18 +74,18 @@ func TestAnOwedVerdictShowsOwedUntilEveryVerdictCallSettles(t *testing.T) {
 	wantClaim(t, d.m, "1", core.ClaimOwed)
 	wantOwed(t, d.m)
 
-	d.send(core.CallResult{ID: reportID(t, verdict, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: core.ResultDone})
 	wantHeld(t, d.m)
 }
 
-// An owed verdict move holds its queue's slot, while the global limit has
+// An owed ending move holds its queue's slot, while the global limit has
 // room, and frees it once its retry lands.
-func TestAnOwedVerdictMoveHoldsItsQueuesSlot(t *testing.T) {
+func TestAnOwedEndingMoveHoldsItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, inQueues(draft(), clerk), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	retry, _ := d.send(core.Tick{})
 	_, events := d.send(core.IssuesListed{Issues: []crew.Issue{issue("2", 2, ready)}})
@@ -162,22 +162,22 @@ func TestOwedCallsListRunCallsInTakenOrderThenReports(t *testing.T) {
 	)
 }
 
-// A rule without actions whose owed take lands is judged at once and shows
-// judging while its verdict move is in flight.
+// A rule without actions whose owed take lands ends at once and shows
+// judging while its ending move is in flight.
 func TestARuleWithoutActionsWhoseOwedTakeLandsShowsJudging(t *testing.T) {
 	d := newDriver(t, promoted(), 2)
 	take := takePromoted(d)
 	d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	retry, _ := d.send(core.Tick{})
 
-	verdict, _ := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove())
+	ending, _ := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
+	wantCommands(t, ending, promoteMove())
 	wantClaim(t, d.m, "1", core.ClaimJudging)
 	wantOwed(t, d.m)
 }
 
 // An owed take whose final try lands after a stop ends its actions
-// unstarted and shows judging while its verdict calls are in flight.
+// unstarted and shows judging while its ending calls are in flight.
 func TestAnOwedTakeLandingOnItsFinalTryShowsJudging(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	take, _ := d.poll(issue("1", 1, ready))
@@ -229,10 +229,10 @@ func TestTwoRunsOfARuleWithoutActionsEditOneStatusEntry(t *testing.T) {
 	runOnce := func() crew.Status {
 		t.Helper()
 		take := takePromoted(d)
-		verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-		st := statusOf(t, verdict, "1")
+		ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+		st := statusOf(t, ending, "1")
 		d.wrote("1")
-		landed, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+		landed, _ := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 		d.settle(landed)
 		d.wrote("1")
 		return st
@@ -251,7 +251,7 @@ func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 	d.runAll(d.take(issue("74", 1, ready)))
 	d.send(core.StopRequested{})
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("stopped")})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("stopped")})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("stopped")})
 
 	cmds, _ := d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
 	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MovePending}) {
@@ -259,16 +259,16 @@ func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 	}
 	d.wrote("74")
 
-	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
+	cmds, _ = d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
 	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MoveDone}) {
 		t.Fatalf("after the move landed: got %#v, want the ended status with the move done", st)
 	}
 	cmds, _ = d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
 	noStatusOf(t, cmds, "74")
 
-	d.send(core.CallResult{ID: reportID(t, verdict, "74"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: reportID(t, ending, "74"), Result: core.ResultDone})
 	if !d.m.Stopped() {
-		t.Fatal("not stopped once the verdict calls settled")
+		t.Fatal("not stopped once the ending calls settled")
 	}
 }
 

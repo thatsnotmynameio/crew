@@ -33,11 +33,11 @@ type TakeSettled struct {
 	Landed bool
 }
 
-// VerdictSettled is the run's verdict move settling.
-type VerdictSettled struct {
+// EndingMoveSettled is the run's ending move settling.
+type EndingMoveSettled struct {
 	FactHead
 
-	Move VerdictMove
+	Move EndingMove
 }
 
 // FailureReportSettled is the run's failure report settling: it landed, or
@@ -99,8 +99,8 @@ type SessionFailedToStart struct {
 	Reason SessionText
 }
 
-// SessionEnded is an action's session that ended, with its harness's
-// verdict and what it reported the session used.
+// SessionEnded is an action's session that ended, with how its harness
+// says it ended and what it reported the session used.
 type SessionEnded struct {
 	FactHead
 
@@ -128,7 +128,7 @@ type PullRequestLookedUp struct {
 }
 
 // decide moves the issue on once the take landed: a rule without actions
-// is judged at once, after a stop too; after a stop, every action ends
+// ends at once, after a stop too; after a stop, every action ends
 // stopped; otherwise every action starts. A take given up releases the run.
 func (f TakeSettled) decide(d *decider) error {
 	if _, taking := d.run.phase.(TakingPhase); !taking {
@@ -142,7 +142,7 @@ func (f TakeSettled) decide(d *decider) error {
 	d.emit(TakeMoved{EventHead: d.head(), From: labels.Ready, To: labels.Running})
 	switch {
 	case len(d.run.actions) == 0:
-		d.judge()
+		d.endRun()
 	case d.run.stopping:
 		for _, a := range d.run.actions {
 			d.end(a.name, stoppedEnd())
@@ -170,27 +170,27 @@ func (d *decider) start() {
 	}
 }
 
-// decide releases the run once its verdict move settled and its failure
+// decide releases the run once its ending move settled and its failure
 // report, when it posts one, settled too.
-func (f VerdictSettled) decide(d *decider) error {
-	j, ok := d.run.phase.(JudgingPhase)
+func (f EndingMoveSettled) decide(d *decider) error {
+	j, ok := d.run.phase.(EndingPhase)
 	if _, settled := j.Move.Get(); !ok || settled || f.Move == nil {
-		return d.refused("a verdict")
+		return d.refused("an ending move")
 	}
 	switch m := f.Move.(type) {
-	case VerdictLanded:
-		d.emit(VerdictMoved{EventHead: d.head(), From: d.def.Rule.Labels.Running, To: j.Verdict.To})
-	case VerdictGivenUp:
-		d.emit(VerdictDropped{EventHead: d.head(), To: j.Verdict.To, Reason: m.Reason})
+	case EndingLanded:
+		d.emit(EndingMoved{EventHead: d.head(), From: d.def.Rule.Labels.Running, To: j.Ending.To})
+	case EndingGivenUp:
+		d.emit(EndingDropped{EventHead: d.head(), To: j.Ending.To, Reason: m.Reason})
 	}
 	d.releaseOnceSettled()
 	return nil
 }
 
 // decide settles the failure report, and releases the run once its
-// verdict move settled too.
+// ending move settled too.
 func (f FailureReportSettled) decide(d *decider) error {
-	if j, ok := d.run.phase.(JudgingPhase); !ok || j.ReportSettled {
+	if j, ok := d.run.phase.(EndingPhase); !ok || j.ReportSettled {
 		return d.refused("a failure report")
 	}
 	if f.Landed {
@@ -202,20 +202,20 @@ func (f FailureReportSettled) decide(d *decider) error {
 	return nil
 }
 
-// releaseOnceSettled releases the judging run once its verdict move and its
+// releaseOnceSettled releases the ending run once its ending move and its
 // failure report settled.
 func (d *decider) releaseOnceSettled() {
-	j, _ := d.run.phase.(JudgingPhase)
+	j, _ := d.run.phase.(EndingPhase)
 	if _, moved := j.Move.Get(); moved && j.ReportSettled {
 		d.emit(RunReleased{EventHead: d.head()})
 	}
 }
 
 // decide marks a run taking or running its actions as stopping, once, and
-// asks its running sessions and checks to stop. A judging run's verdict
-// goes on.
+// asks its running sessions and checks to stop. An ending run's ending
+// move goes on.
 func (StopReached) decide(d *decider) error {
-	if _, judging := d.run.phase.(JudgingPhase); judging || d.run.stopping {
+	if _, ending := d.run.phase.(EndingPhase); ending || d.run.stopping {
 		return nil
 	}
 	d.emit(RunStopped{EventHead: d.head()})

@@ -103,7 +103,7 @@ type CheckResult struct {
 	Reason CheckReason
 }
 
-// Outcome is how an action's session ended, as its harness judged it.
+// Outcome is how an action's session ended, as its harness reported it.
 type Outcome struct {
 	// Succeeded is true when the session ended cleanly.
 	Succeeded bool

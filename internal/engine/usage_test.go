@@ -47,7 +47,7 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 			Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40}),
 			Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
 		})
-		s.End(port.Verdict{Succeeded: true, Reason: "done"})
+		s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -84,7 +84,7 @@ func TestAE6AHarnessAndTrackerThatCannotTellLeaveTheValuesOut(t *testing.T) {
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
-		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
+		r.session().End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -105,7 +105,7 @@ func TestALookupThatHangsGivesUpAfterFifteenSecondsAndChangesNoOutcome(t *testin
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
-		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
+		r.session().End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{inProgress}) {
 			t.Fatalf("issue 1 is in %v while its lookup runs, want in progress", got)
@@ -132,7 +132,7 @@ func TestAStopDuringALookupWaitsForItAndWritesTheLine(t *testing.T) {
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
-		r.session().End(port.Verdict{Reason: "tests fail"})
+		r.session().End(port.SessionEnd{Reason: "tests fail"})
 		synctest.Wait()
 		stopped := time.Now()
 		r.engine.Stop()
@@ -163,7 +163,7 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 
 			s := r.session()
 			s.SetUsage(used)
-			s.End(port.Verdict{Succeeded: true, Reason: "done"})
+			s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 			synctest.Wait()
 			r.engine.Stop()
 			if _, err := r.wait(); err != nil {

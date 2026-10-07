@@ -12,13 +12,13 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// maxReason is how many characters of a reason a verdict keeps.
+// maxReason is how many characters of a reason a session's end keeps.
 const maxReason = 200
 
-// stoppedReason is the Verdict.Reason of a session ended by Stop.
+// stoppedReason is the SessionEnd.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
-// recorder keeps what judging a codex session needs from what it prints:
+// recorder keeps what tells how a codex session ended, from what it prints:
 // the JSONL events of `codex exec --json` on stdout, and the last line of
 // stderr. Its stdout and stderr writers are each written from one goroutine
 // and touch separate fields, which are read once both writers are done.
@@ -89,7 +89,7 @@ func (r *recorder) end() {
 }
 
 // event reads one stdout line. A line that is not a JSON object is skipped,
-// and so are the event and item types judging does not need.
+// and so are the event and item types that do not tell how it ended.
 func (r *recorder) event(line []byte) {
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 || line[0] != '{' {
@@ -133,23 +133,23 @@ func (r *recorder) stderrLine(line []byte) {
 	}
 }
 
-// judge is the verdict on a session that printed what r recorded and whose
+// sessionEnd is how a session ended that printed what r recorded and whose
 // process exited with exit (nil for status 0), stopped telling whether crew
 // stopped it. codex runs one turn and prints its end: the session succeeded
 // only when that turn completed and codex exited 0. An error event alone
 // never fails it, since codex prints one for each retry too.
-func (r *recorder) judge(exit error, stopped bool) port.Verdict {
+func (r *recorder) sessionEnd(exit error, stopped bool) port.SessionEnd {
 	switch {
 	case stopped:
-		return port.Verdict{Reason: stoppedReason}
+		return port.SessionEnd{Reason: stoppedReason}
 	case r.turn == nil:
-		return port.Verdict{Reason: oneLine(r.unended(exit))}
+		return port.SessionEnd{Reason: oneLine(r.unended(exit))}
 	case r.turn.failed:
-		return port.Verdict{Reason: oneLine(r.turn.message)}
+		return port.SessionEnd{Reason: oneLine(r.turn.message)}
 	case exit != nil:
-		return port.Verdict{Reason: oneLine(r.failedAfterTurn(exit))}
+		return port.SessionEnd{Reason: oneLine(r.failedAfterTurn(exit))}
 	}
-	return port.Verdict{Succeeded: true, Reason: oneLine(r.said)}
+	return port.SessionEnd{Succeeded: true, Reason: oneLine(r.said)}
 }
 
 // usage is what a session that printed what r recorded used, stopped

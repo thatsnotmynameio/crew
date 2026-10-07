@@ -70,15 +70,15 @@ type Said struct {
 }
 
 // StopRequested asks the core to stop (R9). The core starts nothing new,
-// stops the running sessions, gives each owed call one final try and judges
-// every issue as its actions end. A second request changes nothing.
+// stops the running sessions, gives each owed call one final try and ends
+// every issue's run as its actions end. A second request changes nothing.
 type StopRequested struct {
 	At time.Time
 }
 
 // TimeUp says the run time limit has passed since the first poll (R2). The
-// core takes no new issue from now on, lets the issues it holds run and be
-// judged as usual, and once no action is left to end gives each owed call
+// core takes no new issue from now on, lets the issues it holds run and
+// end as usual, and once no action is left to end gives each owed call
 // its final try and stops, as after StopRequested. It does nothing after a
 // stop request or a first TimeUp.
 type TimeUp struct {
@@ -274,8 +274,8 @@ type SessionFailedToStart struct {
 	Reason  crew.SessionText
 }
 
-// SessionEnded is a running session that ended, with its harness's
-// verdict, what the harness reported it used, and the session's last
+// SessionEnded is a running session that ended, with how its harness says
+// it ended, what the harness reported it used, and the session's last
 // message, which only the action's checks read.
 type SessionEnded struct {
 	At          time.Time

@@ -8,7 +8,7 @@
 // tracker's states: Taking, then Running (or Stopping), then Judging. The
 // core's outbox delivers the tracker writes a held issue's rule decides on,
 // and the view shows the issue Owed while one of them waits for a retry
-// (KTD8). An issue is released when its verdict calls are settled, or when
+// (KTD8). An issue is released when its ending calls are settled, or when
 // its take is given up.
 package core
 

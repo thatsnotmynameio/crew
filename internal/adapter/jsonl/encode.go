@@ -4,9 +4,12 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 
 // The types of version 2 lines, one per run event.
 const (
-	typeRunTaken             = "run_taken"
-	typeTakeMoved            = "take_moved"
-	typeRunStopped           = "run_stopped"
+	typeRunTaken   = "run_taken"
+	typeTakeMoved  = "take_moved"
+	typeRunStopped = "run_stopped"
+	// The lines of a run's ending keep their earlier names: a journal's
+	// lines do not change with the names of RunEnded, EndingMoved and
+	// EndingDropped.
 	typeRunJudged            = "run_judged"
 	typeVerdictMoved         = "verdict_moved"
 	typeVerdictDropped       = "verdict_dropped"
@@ -41,18 +44,18 @@ func encode(e crew.RunEvent, run string) line {
 		return l
 	case crew.RunStopped:
 		return headLine(e.EventHead, typeRunStopped, run)
-	case crew.RunJudged:
+	case crew.RunEnded:
 		l := headLine(e.EventHead, typeRunJudged, run)
-		l.To = e.Verdict.To
-		for _, f := range e.Verdict.Failures {
+		l.To = e.Ending.To
+		for _, f := range e.Ending.Failures {
 			l.Failures = append(l.Failures, failure{Action: f.Action, Workspace: f.Workspace, Log: f.Log})
 		}
 		return l
-	case crew.VerdictMoved:
+	case crew.EndingMoved:
 		l := headLine(e.EventHead, typeVerdictMoved, run)
 		l.From, l.To = e.From, e.To
 		return l
-	case crew.VerdictDropped:
+	case crew.EndingDropped:
 		l := headLine(e.EventHead, typeVerdictDropped, run)
 		l.To, l.Reason = e.To, e.Reason
 		return l
@@ -131,7 +134,7 @@ func encodeAction(e crew.RunEvent, run string) line {
 	case crew.ActionLookupAsked, crew.ActionCheckAsked, crew.ActionCheckStopAsked, crew.ActionCheckEnded,
 		crew.ActionLookupDone, crew.ActionFinishing, crew.ActionEnded:
 		return encodeActionEnd(e, run)
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunJudged, crew.VerdictMoved, crew.VerdictDropped,
+	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunEnded, crew.EndingMoved, crew.EndingDropped,
 		crew.FailureReported, crew.FailureReportDropped, crew.RunReleased:
 		// About no one action: encode words them.
 	}
@@ -164,7 +167,7 @@ func encodeActionEnd(e crew.RunEvent, run string) line {
 		return l
 	case crew.ActionEnded:
 		return endedLine(e, run)
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunJudged, crew.VerdictMoved, crew.VerdictDropped,
+	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunEnded, crew.EndingMoved, crew.EndingDropped,
 		crew.FailureReported, crew.FailureReportDropped, crew.RunReleased, crew.ActionWorkspaceAsked,
 		crew.WorkspaceMissing, crew.ActionOpened, crew.ActionSessionAsked, crew.ActionSessionStarted,
 		crew.ActionSessionStopAsked, crew.ActionSessionEnded:

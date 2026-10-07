@@ -72,27 +72,27 @@ func (d *driver) takeLanded() []core.Command {
 	return landed
 }
 
-// verdictLanded starts #74's actions from landed, ends them with acceptance
-// and development and lands the verdict move. It returns the commands the
-// landed verdict move issued.
-func (d *driver) verdictLanded(landed []core.Command, acceptance, development crew.Outcome) []core.Command {
+// endingLanded starts #74's actions from landed, ends them with acceptance
+// and development and lands the ending move. It returns the commands the
+// landed ending move issued.
+func (d *driver) endingLanded(landed []core.Command, acceptance, development crew.Outcome) []core.Command {
 	d.t.Helper()
 	d.runAll(landed)
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: acceptance})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: development})
-	noPullRequestReport(d.t, verdict)
-	cmds, _ := d.send(core.CallResult{ID: moveID(d.t, verdict, "74"), Result: core.ResultDone})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: development})
+	noPullRequestReport(d.t, ending)
+	cmds, _ := d.send(core.CallResult{ID: moveID(d.t, ending, "74"), Result: core.ResultDone})
 	return cmds
 }
 
 // succeededRule runs #74 through implement with every action succeeding and
-// its take report done. It returns the commands the landed verdict move
+// its take report done. It returns the commands the landed ending move
 // issued.
 func (d *driver) succeededRule() []core.Command {
 	d.t.Helper()
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
-	return d.verdictLanded(landed, succeeded, succeeded)
+	return d.endingLanded(landed, succeeded, succeeded)
 }
 
 // allSucceeded is the end of implement when both its actions succeeded.
@@ -108,10 +108,10 @@ func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
 	noPullRequestReport(t, landed)
 	d.runAll(landed)
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	moved, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	moved, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
 	noPullRequestReport(t, moved)
-	reported, _ := d.send(core.CallResult{ID: reportID(t, verdict, "74"), Result: core.ResultDone})
+	reported, _ := d.send(core.CallResult{ID: reportID(t, ending, "74"), Result: core.ResultDone})
 	noPullRequestReport(t, reported)
 	wantHeld(t, d.m)
 }
@@ -148,12 +148,12 @@ func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 	d.runAll(landed)
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	verdict, _ := d.send(core.CheckEnded{
+	ending, _ := d.send(core.CheckEnded{
 		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
 	})
-	noPullRequestReport(t, verdict)
+	noPullRequestReport(t, ending)
 
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
 		End: crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
@@ -171,10 +171,10 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	d.runAll(landed)
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 	d.send(core.StopRequested{})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("killed")})
-	d.send(core.CallResult{ID: reportID(t, verdict, "74"), Result: core.ResultDone})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("killed")})
+	d.send(core.CallResult{ID: reportID(t, ending, "74"), Result: core.ResultDone})
 
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
 		End: crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
@@ -184,7 +184,7 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	})
 }
 
-func TestADroppedVerdictMoveReportsNothing(t *testing.T) {
+func TestADroppedEndingMoveReportsNothing(t *testing.T) {
 	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
 		t.Run(result.String(), func(t *testing.T) {
 			d := newPullRequestDriver(t, draft())
@@ -192,31 +192,31 @@ func TestADroppedVerdictMoveReportsNothing(t *testing.T) {
 			d.answerPullRequests("74", core.ResultDone)
 			d.runAll(landed)
 			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
-			verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 
-			cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: result})
+			cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: result})
 			noPullRequestReport(t, cmds)
 			wantHeld(t, d.m)
 		})
 	}
 }
 
-func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
+func TestTheEndingReportWaitsForTheTakeReportInFlight(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	run := crew.NewRuleRunID(d.listed, 1)
 	take := pullRequestReportOf(t, landed)
 
-	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
+	noPullRequestReport(t, d.endingLanded(landed, succeeded, succeeded))
 
 	cmds, _ := d.answerPullRequests("74", core.ResultDone)
-	verdict := pullRequestReportOf(t, cmds)
-	wantReport(t, verdict, crew.PullRequestReportData{
+	ending := pullRequestReportOf(t, cmds)
+	wantReport(t, ending, crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
-	if take.ID() != run.TakeReport() || verdict.ID() != run.VerdictReport() {
-		t.Fatalf("report IDs: take %q and verdict %q, want %q and %q",
-			take.ID(), verdict.ID(), run.TakeReport(), run.VerdictReport())
+	if take.ID() != run.TakeReport() || ending.ID() != run.EndingReport() {
+		t.Fatalf("report IDs: take %q and ending %q, want %q and %q",
+			take.ID(), ending.ID(), run.TakeReport(), run.EndingReport())
 	}
 }
 
@@ -248,7 +248,7 @@ func TestAnOwedReportIsInTheViewAndHoldsBackTheIssuesLaterReports(t *testing.T) 
 		t.Fatalf("owed: got %#v, want %#v", got, []core.Call{owed})
 	}
 
-	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
+	noPullRequestReport(t, d.endingLanded(landed, succeeded, succeeded))
 
 	cmds, _ := d.send(core.Tick{})
 	if got := pullRequestReportOf(t, cmds); got.State() != inProgress {
@@ -270,7 +270,7 @@ func TestARefusedOrMovedMeanwhileReportIsDroppedAndTheNextOneSent(t *testing.T) 
 		t.Run(result.String(), func(t *testing.T) {
 			d := newPullRequestDriver(t, draft())
 			landed := d.takeLanded()
-			d.verdictLanded(landed, succeeded, succeeded)
+			d.endingLanded(landed, succeeded, succeeded)
 
 			cmds, events := d.answerPullRequests("74", result)
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: result.String(), Call: core.Call{
@@ -351,7 +351,7 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	take := pullRequestReportOf(t, landed)
-	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
+	noPullRequestReport(t, d.endingLanded(landed, succeeded, succeeded))
 	d.send(core.StopRequested{})
 
 	cmds, _ := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "down"})
@@ -360,17 +360,17 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 	}
 
 	cmds, _ = d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "still down"})
-	verdict := pullRequestReportOf(t, cmds)
-	wantReport(t, verdict, crew.PullRequestReportData{
+	ending := pullRequestReportOf(t, cmds)
+	wantReport(t, ending, crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
 	if d.m.Stopped() {
-		t.Fatal("stopped with the verdict report in flight")
+		t.Fatal("stopped with the ending report in flight")
 	}
 
 	_, events := d.answerPullRequests("74", core.ResultDone)
 	if !d.m.Stopped() || !containsStopped(events) {
-		t.Fatal("not stopped once the verdict report landed")
+		t.Fatal("not stopped once the ending report landed")
 	}
 }
 

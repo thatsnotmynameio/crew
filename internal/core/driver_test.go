@@ -425,9 +425,9 @@ func issueKey(c core.Command) string {
 	return ""
 }
 
-// judgedNeedingAttention runs #1 to a failed verdict and returns the verdict
+// endedNeedingAttention runs #1 to a failed ending and returns the ending
 // commands, both in flight.
-func judgedNeedingAttention(d *driver) []core.Command {
+func endedNeedingAttention(d *driver) []core.Command {
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: failed("broke")})
 	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})

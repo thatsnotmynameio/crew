@@ -47,20 +47,20 @@ func withoutActions(d RunDefinition) RunDefinition {
 	return d
 }
 
-// judgedAtOnce is the verdict of a rule without actions, whose take landed.
-var judgedAtOnce = RunJudged{EventHead: eh(1), Verdict: Verdict{To: labelDone}}
+// endedAtOnce is the ending of a rule without actions, whose take landed.
+var endedAtOnce = RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelDone}}
 
 // takeDecisions mirror taken, start and callResult.
 var takeDecisions = []decision{
 	{
-		name: "taken: a rule without actions is judged at once", def: withoutActions,
+		name: "taken: a rule without actions ends at once", def: withoutActions,
 		given: []RunEvent{taken()}, fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{takeMoved(), judgedAtOnce},
+		want: []RunEvent{takeMoved(), endedAtOnce},
 	},
 	{
-		name: "taken: a rule without actions is judged a success after a stop too", def: withoutActions,
+		name: "taken: a rule without actions ends in success after a stop too", def: withoutActions,
 		given: seq([]RunEvent{taken()}, stopped(0)), fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{takeMoved(), judgedAtOnce},
+		want: []RunEvent{takeMoved(), endedAtOnce},
 	},
 	{
 		name:  "taken: after a stop every action ends stopped without a workspace, and the run fails",
@@ -69,7 +69,7 @@ var takeDecisions = []decision{
 			takeMoved(),
 			ActionEnded{EventHead: eh(1), Action: "development", End: stopEnd},
 			ActionEnded{EventHead: eh(1), Action: "review", End: stopEnd},
-			RunJudged{EventHead: eh(1), Verdict: Verdict{To: labelFailed, Failures: []ActionFailure{
+			RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelFailed, Failures: []ActionFailure{
 				{Action: "development"}, {Action: "review"},
 			}}},
 		},
@@ -102,7 +102,7 @@ var takeDecisions = []decision{
 		},
 	},
 	{
-		name: "start: when no prompt renders, the last end judges the run",
+		name: "start: when no prompt renders, the last end ends the run",
 		def: func(d RunDefinition) RunDefinition {
 			d.Rule.Actions[0].Prompt = badPrompt("development")
 			d.Rule.Actions[1].Prompt = badPrompt("review")
@@ -117,13 +117,13 @@ var takeDecisions = []decision{
 			ActionEnded{EventHead: eh(1), Action: "review", End: EndFailed{
 				Reason: renderError("review"), Cause: CausePrompt,
 			}},
-			RunJudged{EventHead: eh(1), Verdict: Verdict{To: labelFailed, Failures: []ActionFailure{
+			RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelFailed, Failures: []ActionFailure{
 				{Action: "development"}, {Action: "review"},
 			}}},
 		},
 	},
 	{
-		name:  "callResult: a take given up releases the run without a verdict",
+		name:  "callResult: a take given up releases the run without an ending",
 		given: []RunEvent{taken(bothActions()...)}, fact: TakeSettled{FactHead: fh(1)},
 		want: []RunEvent{RunReleased{EventHead: eh(1)}},
 	},
@@ -151,10 +151,10 @@ var stopDecisions = []decision{
 		want: stopped(4),
 	},
 	{
-		name: "stop: a judging run's verdict goes on",
+		name: "stop: an ending run's ending move goes on",
 		given: seq(preparing(), reviewEnded(EndSucceeded{}), []RunEvent{
 			ActionEnded{EventHead: eh(7), Action: "development", End: EndFailed{Cause: CauseWorkspace}},
-			RunJudged{EventHead: eh(7), Verdict: Verdict{To: labelFailed}},
+			RunEnded{EventHead: eh(7), Ending: RunEnding{To: labelFailed}},
 		}),
 		fact: StopReached{FactHead: fh(8)},
 	},

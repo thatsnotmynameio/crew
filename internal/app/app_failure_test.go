@@ -111,7 +111,7 @@ func TestAFailingEngineKillsEveryProcessAndExitsOne(t *testing.T) {
 
 	code := r.exitCode(t)
 	// The engine's loop is gone, so nothing stops the session but the test.
-	session.End(port.Verdict{Reason: "released by the test"})
+	session.End(port.SessionEnd{Reason: "released by the test"})
 
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)

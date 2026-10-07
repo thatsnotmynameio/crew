@@ -40,7 +40,7 @@ func checkedConfig(t *testing.T, tr *fake.Tracker, sh *fake.Shell) engine.Config
 func checkedRun(t *testing.T, tr *fake.Tracker, cfg engine.Config) ([]crew.ActionFailure, string) {
 	t.Helper()
 	r := start(t, cfg)
-	r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
+	r.sessions(1)["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 	synctest.Wait()
 	r.engine.Stop()
 	if _, err := r.wait(); err != nil {
@@ -175,7 +175,7 @@ func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
 		sh.Script("crew/issue-1-development", fake.CheckScript{Block: true})
 		r := start(t, checkedConfig(t, tr, sh))
-		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
 
@@ -194,7 +194,7 @@ func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 			t.Errorf("reason = %q, want %q", got, want)
 		}
 		if took := time.Since(t0); took > 11*time.Minute {
-			t.Errorf("judged after %v", took)
+			t.Errorf("ended after %v", took)
 		}
 	})
 }
@@ -245,7 +245,7 @@ func TestACheckWhoseLogCannotOpenSaysWhyWithLocalPathsShortened(t *testing.T) {
 		if err := os.Mkdir(log, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		session.End(port.Verdict{Succeeded: true, Reason: "done"})
+		session.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -281,7 +281,7 @@ func TestWhenTheRunTimeIsUpARunningCheckFinishesBeforeTheEngineStops(t *testing.
 		cfg.RunTimeLimit = 5 * time.Minute
 		t0 := time.Now()
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -316,7 +316,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 		s.SetLastMessage("PR #2 is open.\nMerging is yours.")
-		s.End(port.Verdict{Succeeded: true, Reason: "PR #2 is open. Merging is yours."})
+		s.End(port.SessionEnd{Succeeded: true, Reason: "PR #2 is open. Merging is yours."})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -376,7 +376,7 @@ func TestACheckReadsTheLastMessageAsTheSessionWroteIt(t *testing.T) {
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 		s.SetLastMessage(last)
-		s.End(port.Verdict{Succeeded: true, Reason: "done"})
+		s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -399,7 +399,7 @@ func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 		cfg := config(t, tr, twoCheckedDevelop)
 		cfg.Shell = sh
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
 
@@ -419,7 +419,7 @@ func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 			t.Fatalf("reports = %+v, reason %q, want pr-closes-issue out of time", reports, got)
 		}
 		if took := time.Since(t0); took > 20*time.Minute {
-			t.Errorf("judged after %v", took)
+			t.Errorf("ended after %v", took)
 		}
 	})
 }
