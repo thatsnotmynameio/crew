@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/bots"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
@@ -50,8 +51,8 @@ func TestAppBotsCopiesTheShortReasonsAndTheRenewalFailures(t *testing.T) {
 
 	m := appBots(a)
 
-	if !maps.Equal(m.Unable, a.Unable) {
-		t.Errorf("Unable = %q, want a's %q", m.Unable, a.Unable)
+	if want := (map[crew.BotName]string{"qa": "no key", "reviewer": "not installed"}); !maps.Equal(m.Unable, want) {
+		t.Errorf("Unable = %q, want a's %q", m.Unable, want)
 	}
 	if m.Failing == nil {
 		t.Fatal("Failing = nil, want a's accessor")
@@ -67,7 +68,7 @@ func TestActingBotsRefusesAnInvalidName(t *testing.T) {
 	run := func(context.Context, proc.Command) (proc.Output, error) {
 		return proc.Output{}, errors.New("nothing may run")
 	}
-	_, err := actingBots(run, t.TempDir())(context.Background(), "Ops", []string{"Ops"})
+	_, err := actingBots(run, t.TempDir())(context.Background(), "Ops", []crew.BotName{"Ops"})
 	if _, ok := errors.AsType[*bots.EnvError](err); !ok {
 		t.Errorf("actingBots = %v, want an EnvError", err)
 	}
@@ -80,7 +81,7 @@ func TestActingBotsReportsItsStepsOnTheChecksContext(t *testing.T) {
 	}
 	var steps []string
 	ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
-	if _, err := actingBots(run, t.TempDir())(ctx, "ops", []string{"ops"}); err == nil {
+	if _, err := actingBots(run, t.TempDir())(ctx, "ops", []crew.BotName{"ops"}); err == nil {
 		t.Fatal("actingBots = nil, want gh's failure")
 	}
 	if want := []string{"resolving the repository for the bots"}; !slices.Equal(steps, want) {

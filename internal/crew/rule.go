@@ -12,7 +12,7 @@ import (
 // Labels.Failure when any failed.
 type Rule struct {
 	// Name identifies the rule in events and the TUI.
-	Name string
+	Name RuleName
 	// Labels are the states the rule takes an item from and moves it to.
 	Labels Labels
 	// Actions run in parallel, each in its own workspace and session. A
@@ -46,7 +46,7 @@ type Labels struct {
 
 // DefaultQueue gets the slots the other queues leave, and runs every rule
 // that names no queue.
-const DefaultQueue = "default"
+const DefaultQueue QueueName = "default"
 
 // Queue is a fixed share of the global limit on the issues crew holds at
 // once. Only the rules in a queue use its slots, and it never lends an idle
@@ -54,7 +54,7 @@ const DefaultQueue = "default"
 type Queue struct {
 	// Name identifies the queue: DefaultQueue or a queue the config
 	// declares.
-	Name string
+	Name QueueName
 	// Slots is how many issues the queue's rules may hold at once, possibly
 	// zero.
 	Slots int
@@ -64,26 +64,25 @@ type Queue struct {
 type Action struct {
 	// Name identifies the action within its rule, in workspace names, logs
 	// and failure reports.
-	Name string
+	Name ActionName
 	// Prompt is a text/template over the issue; see Render.
 	Prompt string
-	// Agent is the name of the agent whose harness runs the action's
-	// session.
-	Agent string
+	// Agent is the agent whose harness runs the action's session.
+	Agent AgentName
 	// Checks run in the action's workspace once its session succeeded, one
 	// after another in this order, until one does not pass; empty when the
 	// action has none. A check that does not pass fails the action.
 	Checks []Check
-	// Bot is the name of the bot that acts for the action's session and
+	// Bot is the bot that acts for the action's session and
 	// check on the tracker: its agent's, or the tracker's when the agent
 	// names none. Empty means you.
-	Bot string
+	Bot BotName
 }
 
 // Check is one of an action's checks.
 type Check struct {
 	// Name is the check's name in the config's checks.
-	Name string
+	Name CheckName
 	// Script is a shell command. It is never a template: it reads the
 	// issue, the session's prompt and its last message from environment
 	// variables and the files they name, so no issue or session text
@@ -94,7 +93,7 @@ type Check struct {
 // CheckResult is how one check of an action ended.
 type CheckResult struct {
 	// Name is the check's name.
-	Name string
+	Name CheckName
 	// Passed is true when the check exited 0.
 	Passed bool
 	// Reason is crew's one line on how it ended, naming the check, followed
@@ -116,11 +115,11 @@ type promptIssue struct {
 // .Issue with the fields Ref, Key, Title and URL; a reference to any other
 // field, or a template that does not parse, is an error naming the action.
 func (a Action) Render(issue Issue) (string, error) {
-	tmpl, err := template.New(a.Name).Parse(a.Prompt)
+	tmpl, err := template.New(string(a.Name)).Parse(a.Prompt)
 	if err != nil {
 		return "", fmt.Errorf("parse prompt of action %q: %w", a.Name, err)
 	}
-	data := struct{ Issue promptIssue }{promptIssue{Ref: issue.Ref, Key: issue.Key, Title: issue.Title, URL: issue.URL}}
+	data := struct{ Issue promptIssue }{promptIssue{Ref: issue.Ref, Key: issue.ID.Key, Title: issue.Title, URL: issue.URL}}
 	var out strings.Builder
 	if err := tmpl.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("render prompt of action %q: %w", a.Name, err)
@@ -139,8 +138,8 @@ type Outcome struct {
 // FailureReport is what the engine asks a tracker to post on an issue whose
 // rule had failed actions. The tracker adapter formats it in its own markup.
 type FailureReport struct {
-	// IssueKey and IssueRef identify the issue, as in Issue.
-	IssueKey string
+	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
+	IssueID  IssueID
 	IssueRef string
 	// Failures lists each failed action, in the rule's action order.
 	Failures []ActionFailure
@@ -149,11 +148,11 @@ type FailureReport struct {
 // ActionFailure is one failed action in a FailureReport.
 type ActionFailure struct {
 	// Action is the action's name.
-	Action string
+	Action ActionName
 	// Reason is the one-line reason from the action's Outcome.
 	Reason string
-	// Workspace is the name of the workspace the action ran in.
-	Workspace string
+	// Workspace is the workspace the action ran in.
+	Workspace WorkspaceName
 	// Log is the repository-relative path of the session's log file.
 	Log string
 }

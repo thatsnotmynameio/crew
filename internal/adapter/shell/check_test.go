@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/adapter/shell"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
@@ -42,7 +43,7 @@ func check(t *testing.T, command string, out *output) port.Check {
 	t.Helper()
 	return port.Check{
 		Dir: t.TempDir(), Command: command,
-		IssueRef: "#14", IssueKey: "14", IssueURL: "https://github.com/o/r/issues/14",
+		IssueRef: "#14", IssueID: crew.IssueID{Key: "14"}, IssueURL: "https://github.com/o/r/issues/14",
 		Branch: "crew/issue-14-lfg", Output: out,
 	}
 }

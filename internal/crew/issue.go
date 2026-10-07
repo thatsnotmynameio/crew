@@ -5,13 +5,15 @@ import (
 	"time"
 )
 
-// Issue is an issue as a tracker reports it. Its identity is the opaque Key
-// plus the display Ref, both set by the tracker adapter: Key "42" and Ref "#42"
-// on GitHub, Key and Ref "PROJ-123" on Jira. Nothing outside the adapter
-// assumes an integer issue number.
+// Issue is an issue as a tracker reports it. Its identity is ID, its
+// repository plus the opaque key its tracker knows it by; Ref is how it is
+// displayed. The tracker adapter sets ID.Key and Ref, such as key "42" and
+// Ref "#42" on GitHub, key and Ref "PROJ-123" on Jira, and the engine sets
+// ID.Repository. Nothing outside the adapter assumes an integer issue
+// number.
 type Issue struct {
-	// Key identifies the issue to its tracker. It is opaque to the engine.
-	Key string
+	// ID identifies the issue everywhere. Its key is opaque to the engine.
+	ID IssueID
 	// Ref is how humans write the issue, such as "#42" or "PROJ-123".
 	Ref string
 	// Title is the issue's title.

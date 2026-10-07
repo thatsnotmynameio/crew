@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // A slide's frames (KTD10).
@@ -21,7 +23,8 @@ type slideTickMsg struct{}
 // crosses the underline row while the card already shows in its new
 // column.
 type slide struct {
-	key, ref string
+	id  crew.IssueID
+	ref string
 	// from and to are column indexes, as a card's.
 	from, to int
 	frame    int
@@ -33,29 +36,29 @@ type slide struct {
 type boardMemory struct {
 	// last holds each issue's columns when it last had a card, in board
 	// order (KTD7).
-	last    map[string][]int
+	last    map[crew.IssueID][]int
 	slides  []slide
 	ticking bool
 }
 
-func newBoardMemory() *boardMemory { return &boardMemory{last: map[string][]int{}} }
+func newBoardMemory() *boardMemory { return &boardMemory{last: map[crew.IssueID][]int{}} }
 
 // moved starts the slides of each issue whose cards show in other columns
 // than the last ones it had this run, remembers each issue's columns, and
 // returns the frame tick when a slide needs one.
 func (b *boardMemory) moved(cards []card) tea.Cmd {
-	columns := map[string][]int{}
+	columns := map[crew.IssueID][]int{}
 	var order []card
 	for _, c := range cards {
-		if _, ok := columns[c.issue.Key]; !ok {
+		if _, ok := columns[c.issue.ID]; !ok {
 			order = append(order, c)
 		}
-		columns[c.issue.Key] = append(columns[c.issue.Key], c.column)
+		columns[c.issue.ID] = append(columns[c.issue.ID], c.column)
 	}
 	for _, c := range order {
-		now := columns[c.issue.Key]
-		b.slide(c.issue.Key, c.issue.Ref, b.last[c.issue.Key], now)
-		b.last[c.issue.Key] = now
+		now := columns[c.issue.ID]
+		b.slide(c.issue.ID, c.issue.Ref, b.last[c.issue.ID], now)
+		b.last[c.issue.ID] = now
 	}
 	return b.schedule()
 }
@@ -63,16 +66,16 @@ func (b *boardMemory) moved(cards []card) tea.Cmd {
 // slide pairs the columns an issue left with the columns it entered, k-th
 // with k-th in board order, and replaces the issue's running slides with a
 // slide for each pair; with no pair, it leaves them be (KTD7).
-func (b *boardMemory) slide(key, ref string, was, now []int) {
+func (b *boardMemory) slide(id crew.IssueID, ref string, was, now []int) {
 	left := slices.DeleteFunc(slices.Clone(was), func(c int) bool { return slices.Contains(now, c) })
 	entered := slices.DeleteFunc(slices.Clone(now), func(c int) bool { return slices.Contains(was, c) })
 	pairs := min(len(left), len(entered))
 	if pairs == 0 {
 		return
 	}
-	b.slides = slices.DeleteFunc(b.slides, func(s slide) bool { return s.key == key })
+	b.slides = slices.DeleteFunc(b.slides, func(s slide) bool { return s.id == id })
 	for k := range pairs {
-		b.slides = append(b.slides, slide{key: key, ref: ref, from: left[k], to: entered[k]})
+		b.slides = append(b.slides, slide{id: id, ref: ref, from: left[k], to: entered[k]})
 	}
 }
 

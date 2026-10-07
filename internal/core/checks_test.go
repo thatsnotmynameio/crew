@@ -30,9 +30,9 @@ func twoChecks() []crew.Rule {
 func judging(d *driver, lastMessage string) {
 	d.t.Helper()
 	d.running(issue("74", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 	cmds, _ := d.send(core.SessionEnded{
-		IssueKey: "74", Action: "development", Outcome: succeeded, LastMessage: lastMessage,
+		IssueID: issueID("74"), Action: "development", Outcome: succeeded, LastMessage: lastMessage,
 	})
 	wantCommands(d.t, cmds, judgeRun(lastMessage))
 }
@@ -51,15 +51,16 @@ func TestAPassingCheckStartsTheNextWhichDecidesTheAction(t *testing.T) {
 	d := newDriver(t, twoChecks(), 2)
 	judging(d, "PR #20 is open.\nMerging is yours.")
 
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development",
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development",
 		Outcome: passed("the check judge passed: done (0.97)")})
 	next := runCheck()
 	next.LastMessage = "PR #20 is open.\nMerging is yours."
 	wantCommands(t, cmds, next)
 
 	reason := "the check pr-closes-issue failed: no open pull request from crew/issue-74-development"
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed(reason)})
-	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueKey: "74", From: inProgress, To: needsAttention}) {
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: failed(reason)})
+	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueID: issueID("74"), From: inProgress,
+		To: needsAttention}) {
 		t.Fatalf("verdict = %#v, want the move to needs attention", got)
 	}
 	ws := space("74", "development")
@@ -76,7 +77,7 @@ func TestAFailingCheckEndsTheActionBeforeTheNext(t *testing.T) {
 	judging(d, "The suite is still running in the background.")
 
 	reason := "the check judge failed: unfinished (1.00)"
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed(reason)})
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: failed(reason)})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a check ran after one failed: %#v", cmds)
@@ -92,17 +93,17 @@ func TestAnActionSucceedsOnceEveryCheckPassed(t *testing.T) {
 	d := newDriver(t, twoChecks(), 2)
 	judging(d, "PR #20 is open.")
 
-	d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
+	d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("74"), From: inProgress, To: readyToReview})
 }
 
 // Covers AE9: a session that fails runs none of its checks.
 func TestAFailedSessionRunsNoneOfItsChecks(t *testing.T) {
 	d := newDriver(t, twoChecks(), 2)
 	d.running(issue("74", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("tests fail")})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("tests fail")})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a failed session ran a check: %#v", cmds)
@@ -117,8 +118,8 @@ func TestAStopWhileTheFirstCheckRunsEndsTheActionWithoutTheSecond(t *testing.T) 
 	judging(d, "")
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.StopCheck{IssueKey: "74", Action: "development"})
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Action: "development"})
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a check started after a stop: %#v", cmds)
@@ -135,10 +136,10 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	d := newStatusDriver(t, twoChecks(), 2)
 	d.runAll(d.take(issue("74", 1, ready)))
 	devStarted := started(t, d.m, "development")
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
-	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	judged := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"}
-	d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: passed(judged.Reason)})
+	d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: passed(judged.Reason)})
 
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
@@ -152,7 +153,7 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 
 	d.wrote("74")
 	closes := crew.CheckResult{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"}
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: passed(closes.Reason)})
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: passed(closes.Reason)})
 	ended := statusOf(t, cmds, "74")
 	dev := ended.Actions[1]
 	if dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {

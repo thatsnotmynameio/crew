@@ -13,7 +13,7 @@ import (
 // with its settings, and the bot it acts as.
 type Agent struct {
 	// Name is the agent's key under agents.
-	Name string
+	Name crew.AgentName
 	// Harness is agents.<name>.harness.name, the harness adapter's name. It
 	// is not checked against the registered adapters.
 	Harness string
@@ -22,7 +22,7 @@ type Agent struct {
 	HarnessSection Decode
 	// Bot is agents.<name>.bot, the bot the agent's actions act as; empty
 	// when the agent names none, and its actions act as tracker.bot.
-	Bot string
+	Bot crew.BotName
 	// Used tells whether some action names the agent. crew builds, prepares
 	// and makes act only the agents in use.
 	Used bool
@@ -31,7 +31,7 @@ type Agent struct {
 // HarnessKey is the key path of the agent's harness name, for an error about
 // the harness it names.
 func (a Agent) HarnessKey() string {
-	return "agents." + a.Name + ".harness.name"
+	return "agents." + string(a.Name) + ".harness.name"
 }
 
 // agentDoc is one agent of agents, keyed by its name.
@@ -70,12 +70,12 @@ func agents(n *yaml.Node) ([]Agent, error) {
 // parseAgent decodes the agent e. Its harness's name is crew's, and every
 // other key of its harness goes to the harness adapter.
 func parseAgent(e entry) (Agent, error) {
-	agent := Agent{Name: e.key.Value}
+	agent := Agent{Name: crew.AgentName(e.key.Value)}
 	var doc agentDoc
 	if err := decodeItem(e.value, e.path, agentShape, &doc); err != nil {
 		return agent, err
 	}
-	agent.Bot = doc.Bot.value
+	agent.Bot = crew.BotName(doc.Bot.value)
 	path := e.path + ".harness"
 	switch doc.Harness.Kind {
 	case 0:

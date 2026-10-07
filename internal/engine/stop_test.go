@@ -27,15 +27,15 @@ type gatedTracker struct {
 	release chan struct{}
 }
 
-func (g *gatedTracker) Move(ctx context.Context, key string, from, to crew.State) error {
+func (g *gatedTracker) Move(ctx context.Context, id crew.IssueID, from, to crew.State) error {
 	if to == g.gate {
 		g.entered <- struct{}{}
 		<-g.release
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("move issue %s: %w", key, err)
+			return fmt.Errorf("move issue %s: %w", id.Key, err)
 		}
 	}
-	return g.Tracker.Move(ctx, key, from, to)
+	return g.Tracker.Move(ctx, id, from, to)
 }
 
 // Covers AE9 through the loop.
@@ -115,13 +115,13 @@ type moveCounter struct {
 	moves int
 }
 
-func (m *moveCounter) Move(ctx context.Context, key string, from, to crew.State) error {
+func (m *moveCounter) Move(ctx context.Context, id crew.IssueID, from, to crew.State) error {
 	if to == m.to {
 		m.mu.Lock()
 		m.moves++
 		m.mu.Unlock()
 	}
-	return m.Tracker.Move(ctx, key, from, to)
+	return m.Tracker.Move(ctx, id, from, to)
 }
 
 func TestStopGivesAFailingVerdictMoveOneFinalTryAndReturns(t *testing.T) {

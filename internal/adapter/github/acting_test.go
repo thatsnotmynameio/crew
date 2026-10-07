@@ -114,6 +114,7 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: []string{"auth", "status"}}, login, noCodeowners,
+		repositoryReply,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"}]`},
 		reply{prefix: []string{"label", "create"}},
 		reply{prefix: []string{"issue", "view"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
@@ -132,7 +133,7 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 	if _, err := tr.List(ctx, []crew.State{ready}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if err := tr.Move(ctx, "74", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("74"), ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	for range 2 {
@@ -140,7 +141,7 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
-	if err := tr.ReportFailure(ctx, crew.FailureReport{IssueKey: "12", IssueRef: "#12",
+	if err := tr.ReportFailure(ctx, crew.FailureReport{IssueID: issueID("12"), IssueRef: "#12",
 		Failures: []crew.ActionFailure{{Action: "lfg"}}}); err != nil {
 		t.Fatalf("ReportFailure: %v", err)
 	}
@@ -179,6 +180,7 @@ func checkWritesAsOps(t *testing.T, gh *fakeGh) int {
 func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 	tr, gh := build(t,
 		reply{prefix: []string{"auth", "status"}}, login, noCodeowners,
+		repositoryReply,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`},
 		reply{prefix: []string{"api", "graphql"}, stdout: listJSON(nil, nil)},
 		reply{prefix: []string{"issue", "view"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
@@ -191,7 +193,7 @@ func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 	if _, err := tr.List(ctx, []crew.State{ready}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if err := tr.Move(ctx, "74", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("74"), ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	for _, c := range gh.commandsTo() {
@@ -199,7 +201,8 @@ func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 			t.Errorf("%q ran with %q, unset %q; want neither", c.Args, c.Env, c.Unset)
 		}
 	}
-	q := gh.callsTo("api", "graphql")[0]
+	graphql := gh.callsTo("api", "graphql")
+	q := graphql[len(graphql)-1] // the listing, after Prepare's repository read
 	if !slices.Equal(fieldValues(q, "author0"), []string{"me"}) || fieldValues(q, "author1") != nil {
 		t.Errorf("query authors = %q, %q; want me alone", fieldValues(q, "author0"), fieldValues(q, "author1"))
 	}
@@ -217,7 +220,7 @@ func TestABotRefusedAPermissionHandsEveryLaterWriteToYou(t *testing.T) {
 		reply{prefix: []string{"issue", "edit"}, as: asYou},
 	)
 	for range 2 {
-		if err := tr.Move(context.Background(), "74", ready, inProgress); err != nil {
+		if err := tr.Move(context.Background(), issueID("74"), ready, inProgress); err != nil {
 			t.Fatalf("Move: %v", err)
 		}
 	}
@@ -285,7 +288,7 @@ func TestAnIssueGoneForYouTooKeepsTheBotWriting(t *testing.T) {
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: commentOn(12), stderr: "gh: Not Found (HTTP 404)"},
 	)
-	report := crew.FailureReport{IssueKey: "12", IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
+	report := crew.FailureReport{IssueID: issueID("12"), IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
 	for range 2 {
 		err := tr.ReportFailure(context.Background(), report)
 		if !errors.Is(err, port.ErrMovedMeanwhile) {
@@ -329,7 +332,7 @@ func TestARateLimitedBotKeepsWriting(t *testing.T) {
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: commentOn(12), as: asBot, stderr: "gh: You have exceeded a secondary rate limit. (HTTP 403)"},
 	)
-	report := crew.FailureReport{IssueKey: "12", IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
+	report := crew.FailureReport{IssueID: issueID("12"), IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
 	for range 2 {
 		err := tr.ReportFailure(context.Background(), report)
 		if err == nil {
@@ -473,6 +476,7 @@ func TestTheTrackerFindsItsLoginInPrepare(t *testing.T) {
 		reply{prefix: []string{"auth", "status"}}, login,
 		reply{prefix: []string{"api", "-H", rawAccept, "repos/{owner}/{repo}/contents/.github/CODEOWNERS"},
 			stdout: "* @octocat\n"},
+		repositoryReply,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`},
 	)
 	var finder port.LoginFinder = tr

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
@@ -333,7 +334,7 @@ func TestSevenQueuesSetTheBandsHeight(t *testing.T) {
 	u := runningSnapshot()
 	u.Snapshot.Queues = nil
 	for n := 1; n <= 7; n++ {
-		u.Snapshot.Queues = append(u.Snapshot.Queues, core.QueueView{Name: fmt.Sprintf("q%d", n), Slots: 1})
+		u.Snapshot.Queues = append(u.Snapshot.Queues, core.QueueView{Name: crew.QueueName(fmt.Sprintf("q%d", n)), Slots: 1})
 	}
 	u.Snapshot.Recent = nil
 	few := bandRows(t, fitted(t, 80, 40, u))

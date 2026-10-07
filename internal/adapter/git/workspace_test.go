@@ -80,7 +80,7 @@ func TestCreateFetchesThenAddsWorktreeFromOriginDefault(t *testing.T) {
 	git := &scripted{}
 	w, root := scriptedWorkspace(t, git)
 
-	space, err := w.Create(t.Context(), crew.Issue{Key: "7", Ref: "#7"}, "development")
+	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7"), Ref: "#7"}, "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCreateReportsNoStep(t *testing.T) {
 	var steps []string
 	ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
 
-	if _, err := w.Create(ctx, crew.Issue{Key: "7"}, "development"); err != nil {
+	if _, err := w.Create(ctx, crew.Issue{ID: issueID("7")}, "development"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if len(steps) != 0 {
@@ -149,7 +149,7 @@ func TestCreateNames(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
-		action   string
+		action   crew.ActionName
 		branches []string
 		dirs     []string
 		want     string
@@ -174,11 +174,11 @@ func TestCreateNames(t *testing.T) {
 				}
 			}
 
-			space, err := w.Create(t.Context(), crew.Issue{Key: tt.key}, tt.action)
+			space, err := w.Create(t.Context(), crew.Issue{ID: issueID(tt.key)}, tt.action)
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			if space.Name != tt.want || space.Branch != "crew/"+tt.want ||
+			if string(space.Name) != tt.want || space.Branch != "crew/"+tt.want ||
 				space.Dir != filepath.Join(root, ".crew", "worktrees", tt.want) {
 				t.Errorf("space = %+v, want name %s", space, tt.want)
 			}
@@ -191,7 +191,7 @@ func TestCreateFailingWorktreeAddCarriesGitStderr(t *testing.T) {
 	git := &scripted{fail: map[string]string{"worktree add": stderr}}
 	w, _ := scriptedWorkspace(t, git)
 
-	_, err := w.Create(t.Context(), crew.Issue{Key: "7"}, "development")
+	_, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
 	if err == nil || !strings.Contains(err.Error(), stderr) {
 		t.Fatalf("err = %v, want it to carry %q", err, stderr)
 	}
@@ -285,7 +285,7 @@ func TestCreateFromOriginDefaultBranchInRealRepository(t *testing.T) {
 	if err := w.Prepare(t.Context(), nil); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	space, err := w.Create(t.Context(), crew.Issue{Key: "7"}, "development")
+	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestConcurrentCreationsAfterOriginAdvanced(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range spaces {
 		wg.Go(func() {
-			spaces[i], errs[i] = w.Create(t.Context(), crew.Issue{Key: "7"}, "development")
+			spaces[i], errs[i] = w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
 		})
 	}
 	wg.Wait()
@@ -318,9 +318,9 @@ func TestConcurrentCreationsAfterOriginAdvanced(t *testing.T) {
 			t.Fatalf("creation %d: %v", i, err)
 		}
 	}
-	names := []string{spaces[0].Name, spaces[1].Name}
+	names := []crew.WorkspaceName{spaces[0].Name, spaces[1].Name}
 	slices.Sort(names)
-	if want := []string{"issue-7-development", "issue-7-development-2"}; !slices.Equal(names, want) {
+	if want := []crew.WorkspaceName{"issue-7-development", "issue-7-development-2"}; !slices.Equal(names, want) {
 		t.Errorf("names = %q, want %q", names, want)
 	}
 	for _, s := range spaces {
@@ -335,7 +335,7 @@ func TestCreateFindsDefaultBranchThroughLsRemoteWhenOriginAddedByHand(t *testing
 	gitIn(t, root, "remote", "add", "origin", r.bare)
 
 	w := New(&proc.Group{}, root)
-	space, err := w.Create(t.Context(), crew.Issue{Key: "7"}, "development")
+	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -370,7 +370,7 @@ func reopenable(t *testing.T) (remote, string, *Workspace, port.Space) {
 	r := newRemote(t)
 	root := r.clone(t)
 	w := New(&proc.Group{}, root)
-	space, err := w.Create(t.Context(), crew.Issue{Key: "7"}, "development")
+	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestReopenAfterTheRepositoryMovedSaysToRepairTheWorktree(t *testing.T) {
 	if !strings.Contains(err.Error(), "git worktree repair") {
 		t.Errorf("err = %v, want it to offer git worktree repair, which keeps the work", err)
 	}
-	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", space.Name, "notes.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", string(space.Name), "notes.txt")); err != nil {
 		t.Errorf("the worktree's uncommitted file: %v", err)
 	}
 }
@@ -519,8 +519,11 @@ func TestReopenThroughSymlinkedRoot(t *testing.T) {
 		t.Fatalf("Reopen: %v", err)
 	}
 	want := port.Space{Name: space.Name, Branch: space.Branch,
-		Dir: filepath.Join(link, ".crew", "worktrees", space.Name)}
+		Dir: filepath.Join(link, ".crew", "worktrees", string(space.Name))}
 	if got != want {
 		t.Errorf("space = %+v, want %+v", got, want)
 	}
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

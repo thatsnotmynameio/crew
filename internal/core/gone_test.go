@@ -17,8 +17,8 @@ func reviewClosed() []crew.Rule {
 // returns the verdict commands, in flight.
 func implemented(d *driver, development crew.Outcome) []core.Command {
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: development})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: development})
 	return cmds
 }
 
@@ -144,8 +144,8 @@ func TestAnIssueTakenAgainKeepsItsEntryAndItsNextEntryStartsNotGone(t *testing.T
 		t.Fatalf("entry while #1 is held again: got held by %q, want implement", got.HeldBy)
 	}
 	d.settle(take)
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 	if cmds, _ := d.send(core.Tick{}); len(cmds) == 0 {
 		t.Fatal("tick issued no listing")
 	}

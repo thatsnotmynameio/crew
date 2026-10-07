@@ -10,6 +10,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/thatsnotmynameio/crew/internal/config"
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // exampleConfig is the committed reference of .crew/config.yaml: every key,
@@ -66,11 +67,11 @@ func TestTheExampleLoadsUncommented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(uncommented %s) = %v", exampleConfig, err)
 	}
-	names := make([]string, 0, len(cfg.Rules))
+	names := make([]crew.RuleName, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
 		names = append(names, r.Name)
 	}
-	if want := []string{"development", "review", "approve"}; !slices.Equal(names, want) {
+	if want := []crew.RuleName{"development", "review", "approve"}; !slices.Equal(names, want) {
 		t.Errorf("rules = %q, want %q", names, want)
 	}
 }

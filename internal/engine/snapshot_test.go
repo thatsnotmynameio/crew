@@ -74,7 +74,7 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsReason(t *testing.T) {
 		}
 		reasons := make([]string, 0, len(e.Failures))
 		for _, f := range e.Failures {
-			reasons = append(reasons, f.Action+": "+f.Reason)
+			reasons = append(reasons, string(f.Action)+": "+f.Reason)
 		}
 		if want := []string{"development: tests fail"}; !reflect.DeepEqual(reasons, want) {
 			t.Errorf("failures = %v, want %v", reasons, want)

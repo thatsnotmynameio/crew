@@ -17,7 +17,7 @@ func TestAnUpdateMovingTheHighlightOffTheBoardScrollsToIt(t *testing.T) {
 	h.send(updateMsg(onBoard(engine.Update{}, item("1", "l1"), item("2", "l2"), item("3", "l3"), item("4", "l4"))))
 	wantLit(t, h, "#1", 0)
 
-	u := handledBy(crew.Issue{Key: "1", Ref: "#1", Title: "Bug"}, "fix", "l5")
+	u := handledBy(crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Bug"}, "fix", "l5")
 	h.send(updateMsg(onBoard(u, item("1", "l5"), item("2", "l2"), item("3", "l3"), item("4", "l4"))))
 
 	wantLit(t, h, "#1", 2)
@@ -28,7 +28,7 @@ func TestAnUpdateMovingTheHighlightOffTheBoardScrollsToIt(t *testing.T) {
 // last run's words, even before its session starts.
 func TestANewRunWaitingToStartShowsNoneOfTheLastRunsWords(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "the last run's words"})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: "the last run's words"})))
 
 	again := runningSnapshot()
 	again.Snapshot.Issues[0].Claim = core.ClaimTaking

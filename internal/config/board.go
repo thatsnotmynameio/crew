@@ -49,7 +49,7 @@ func board(n *yaml.Node, rules []crew.Rule) ([]crew.BoardColumn, bool, error) {
 
 // columnLabels returns the labels of the column e: one label, or a list of
 // one or more, none empty.
-func columnLabels(e entry) ([]string, error) {
+func columnLabels(e entry) ([]crew.State, error) {
 	var labels located[[]string]
 	if e.value.Kind == yaml.ScalarNode && e.value.ShortTag() != "!!null" {
 		var label located[string]
@@ -67,7 +67,11 @@ func columnLabels(e entry) ([]string, error) {
 	case slices.Contains(labels.value, ""):
 		return nil, keyError(e.path, e.key.Line, column+" must not name an empty label")
 	}
-	return labels.value, nil
+	out := make([]crew.State, len(labels.value))
+	for i, l := range labels.value {
+		out[i] = crew.State(l)
+	}
+	return out, nil
 }
 
 // defaultBoard is the board without board: one column per rule that has
@@ -80,7 +84,7 @@ func defaultBoard(rules []crew.Rule) []crew.BoardColumn {
 			continue
 		}
 		out = append(out, crew.BoardColumn{
-			Name: r.Name, Labels: []string{string(r.Labels.Ready), string(r.Labels.Running)}, Takes: r.Takes,
+			Name: string(r.Name), Labels: []crew.State{r.Labels.Ready, r.Labels.Running}, Takes: r.Takes,
 		})
 	}
 	return out
@@ -89,16 +93,16 @@ func defaultBoard(rules []crew.Rule) []crew.BoardColumn {
 // respell gives every label of board one spelling: the one it has among
 // known, ignoring case, else the one it first has on the board.
 func respell(board []crew.BoardColumn, known []crew.State) {
-	first := map[string]string{}
+	first := map[string]crew.State{}
 	for _, s := range known {
 		if key := strings.ToLower(string(s)); first[key] == "" {
-			first[key] = string(s)
+			first[key] = s
 		}
 	}
 	for i := range board {
 		labels := board[i].Labels[:0]
 		for _, l := range board[i].Labels {
-			key := strings.ToLower(l)
+			key := strings.ToLower(string(l))
 			spelling, ok := first[key]
 			if !ok {
 				spelling = l

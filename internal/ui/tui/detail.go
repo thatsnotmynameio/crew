@@ -32,7 +32,7 @@ func (m Model) popupHeader(c card) []string {
 	none := s.muted.Render("none")
 	rule := none
 	if c.held {
-		rule = s.text.Render(clean(c.view.Rule))
+		rule = s.text.Render(clean(string(c.view.Rule)))
 	}
 	priority := none
 	if c.issue.Priority > 0 {
@@ -58,7 +58,7 @@ func (m Model) popupHeader(c card) []string {
 // fresh on every poll, and from c's issue only off the board: core keeps a
 // held issue as it took it, unblocked (R3, KTD2, KTD3 of #229).
 func (m Model) chips(c card) string {
-	i := slices.IndexFunc(m.snap.Board, func(b crew.BoardIssue) bool { return b.Issue.Key == c.issue.Key })
+	i := slices.IndexFunc(m.snap.Board, func(b crew.BoardIssue) bool { return b.Issue.ID == c.issue.ID })
 	var labels []string
 	switch {
 	case c.held:
@@ -67,7 +67,9 @@ func (m Model) chips(c card) string {
 		labels = states(m.snap.Board[i].Issue)
 	}
 	if i >= 0 {
-		labels = append(labels, m.snap.Board[i].Labels...)
+		for _, l := range m.snap.Board[i].Labels {
+			labels = append(labels, string(l))
+		}
 	}
 	blocked := c.issue.Blocked
 	if i >= 0 {
@@ -128,7 +130,7 @@ func (m Model) popupActions(c card, inner int) []string {
 // liveActionRow is held action a's row: its bot, queue, state and branch,
 // then why it failed or what it last said.
 func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
-	message, branch := m.messages.last(c.issue.Key, a.Name)
+	message, branch := m.messages.last(c.issue.ID, a.Name)
 	if b := clean(a.Branch); b != "" {
 		branch = b
 	}
@@ -141,8 +143,8 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 		}
 	}
 	row.cells = []string{
-		m.styles.text.Render(clean(a.Name)), m.actionBot(c.issue.Ref, c.view.Rule, a.Name),
-		m.styles.text.Render(clean(c.view.Queue)), m.styles.text.Render(state), m.styles.text.Render(branch),
+		m.styles.text.Render(clean(string(a.Name))), m.actionBot(c.issue.Ref, c.view.Rule, a.Name),
+		m.styles.text.Render(clean(string(c.view.Queue))), m.styles.text.Render(state), m.styles.text.Render(branch),
 	}
 	return row
 }
@@ -156,7 +158,7 @@ func (m Model) actionState(a core.ActionView) string {
 	}
 	state += " " + elapsed(m.at.Sub(a.Started))
 	if a.Resumed {
-		state = "resumed in " + clean(a.Workspace) + ", " + state
+		state = "resumed in " + clean(string(a.Workspace)) + ", " + state
 	}
 	return state
 }
@@ -164,7 +166,7 @@ func (m Model) actionState(a core.ActionView) string {
 // actionBot is the bot rule/action of the issue ref acts as: the entry
 // it runs as now, else the first whose pairs hold it and that can act,
 // as its mark and name; empty when no entry has it (KTD8 of #151).
-func (m Model) actionBot(ref, rule, action string) string {
+func (m Model) actionBot(ref string, rule crew.RuleName, action crew.ActionName) string {
 	runs := func(e core.BotView) bool {
 		return slices.ContainsFunc(e.Running, func(r core.RunningAction) bool {
 			return r.IssueRef == ref && r.Rule == rule && r.Action == action
@@ -173,7 +175,7 @@ func (m Model) actionBot(ref, rule, action string) string {
 	i := slices.IndexFunc(m.snap.Bots, runs)
 	if i < 0 {
 		i = slices.IndexFunc(m.snap.Bots, func(e core.BotView) bool {
-			return !e.ActsAsYou && slices.Contains(e.Pairs, rule+"/"+action)
+			return !e.ActsAsYou && slices.Contains(e.Pairs, string(rule)+"/"+string(action))
 		})
 	}
 	if i < 0 {
@@ -256,7 +258,7 @@ func (m Model) note(r actionRow, inner int) []string {
 func (m Model) popupEvents(c card) []string {
 	var out []string
 	for _, e := range m.snap.Recent {
-		if eventIssue(e) == c.issue.Key {
+		if eventIssue(e) == c.issue.ID {
 			out = append(out, m.styles.muted.Render(e.Time().In(m.cfg.Location).Format(time.TimeOnly))+" "+
 				m.styles.text.Render(clean(lines.Text(e))))
 		}
@@ -267,34 +269,34 @@ func (m Model) popupEvents(c card) []string {
 	return out
 }
 
-// eventIssue is the key of the issue e is about, or empty for an event
-// about no one issue (KTD8 of #151).
-func eventIssue(e core.Event) string {
+// eventIssue is the id of the issue e is about, or the zero id for an
+// event about no one issue (KTD8 of #151).
+func eventIssue(e core.Event) crew.IssueID {
 	switch e := e.(type) {
 	case core.IssueTaken:
-		return e.Issue.Key
+		return e.Issue.ID
 	case core.ActionStarted:
-		return e.IssueKey
+		return e.IssueID
 	case core.WorkspaceMissing:
-		return e.IssueKey
+		return e.IssueID
 	case core.RunNotRecorded:
-		return e.IssueKey
+		return e.IssueID
 	case core.ActionEnded:
-		return e.IssueKey
+		return e.IssueID
 	case core.IssueMoved:
-		return e.IssueKey
+		return e.IssueID
 	case core.FailureReported:
-		return e.IssueKey
+		return e.IssueID
 	case core.IssueSkipped:
-		return e.IssueKey
+		return e.IssueID
 	case core.IssueOfOtherKind:
-		return e.IssueKey
+		return e.IssueID
 	case core.StatusFailed:
-		return e.IssueKey
+		return e.IssueID
 	case core.CallOwed:
-		return e.Call.IssueKey
+		return e.Call.IssueID
 	case core.CallDropped:
-		return e.Call.IssueKey
+		return e.Call.IssueID
 	}
-	return ""
+	return crew.IssueID{}
 }

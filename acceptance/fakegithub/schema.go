@@ -31,11 +31,18 @@ func (g *GitHub) queryNode() gqlNode {
 // repositoryNode returns the repository.
 func (g *GitHub) repositoryNode() gqlNode {
 	return gqlNode{typename: "Repository", fields: map[string]gqlField{
+		"id":                 scalar(g.repositoryID()),
 		"nameWithOwner":      scalar(g.owner + "/" + g.name),
 		"issues":             {args: []string{keyFirst, "states", "filterBy", "orderBy", keyLabels}, resolve: g.issues},
 		"pullRequests":       {args: []string{keyFirst, "states", keyLabels, "orderBy", keyHead}, resolve: g.pulls},
 		"issueOrPullRequest": {args: []string{keyNumber}, resolve: g.issueOrPullRequest},
 	}}
+}
+
+// repositoryID returns the node id GitHub gives the repository, the same
+// in GraphQL's id and in the REST API's node_id.
+func (g *GitHub) repositoryID() string {
+	return fmt.Sprintf("R_%d", accountID(g.owner+"/"+g.name))
 }
 
 // issues resolves Repository.issues: the issues in the states, with any of

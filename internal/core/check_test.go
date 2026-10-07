@@ -24,7 +24,7 @@ func runCheck() core.RunCheck {
 	const key = "74"
 	ws := space(key, "development")
 	return core.RunCheck{
-		IssueKey: key, Action: "development", Dir: ws.Dir, Name: "pr-closes-issue", Command: prCheck, Log: ws.Log,
+		IssueID: issueID(key), Action: "development", Dir: ws.Dir, Name: "pr-closes-issue", Command: prCheck, Log: ws.Log,
 		IssueRef: "#" + key, IssueURL: "https://example.com/issues/" + key, Branch: ws.Branch,
 		Prompt: "Implement development for issue #" + key,
 	}
@@ -35,8 +35,8 @@ func runCheck() core.RunCheck {
 func checking(d *driver, acceptance crew.Outcome) {
 	d.t.Helper()
 	d.running(issue("74", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: acceptance})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: acceptance})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	wantCommands(d.t, cmds, runCheck())
 }
 
@@ -55,9 +55,9 @@ func failures(t *testing.T, cmds []core.Command) []crew.ActionFailure {
 func TestAE3SessionThatFailsRunsNoCheck(t *testing.T) {
 	d := newDriver(t, checked(), 2)
 	d.running(issue("74", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("tests fail")})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("tests fail")})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a failed session ran its check: %#v", cmds)
@@ -78,9 +78,9 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 	}
 
 	cmds, _ := d.send(core.CheckEnded{
-		IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: "the check passed"},
+		IssueID: issueID("74"), Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: "the check passed"},
 	})
-	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("74"), From: inProgress, To: readyToReview})
 }
 
 // Each action's session and check act as the action's own bot (KTD9).
@@ -101,8 +101,8 @@ func TestSessionAndCheckCarryTheActionsBot(t *testing.T) {
 	cmds, _ = d.send(space("74", "development"))
 	wantCommands(t, cmds, development)
 
-	d.send(core.SessionStarted{IssueKey: "74", Action: "development"})
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	d.send(core.SessionStarted{IssueID: issueID("74"), Action: "development"})
+	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	check := runCheck()
 	check.Bot = "developer"
 	wantCommands(t, cmds, check)
@@ -113,9 +113,10 @@ func TestAE1CheckThatFailsFailsItsActionWithTheChecksReason(t *testing.T) {
 	checking(d, succeeded)
 
 	reason := "the check failed: no open pull request from crew/issue-74-development"
-	cmds, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed(reason)})
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: failed(reason)})
 	moveID(t, cmds, "74")
-	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueKey: "74", From: inProgress, To: needsAttention}) {
+	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueID: issueID("74"), From: inProgress,
+		To: needsAttention}) {
 		t.Fatalf("verdict = %#v, want the move to needs attention", got)
 	}
 	// AE5: only the action whose check failed is reported.
@@ -131,10 +132,10 @@ func TestAE9StopWhileCheckingStopsTheCheckAndFailsTheAction(t *testing.T) {
 	checking(d, succeeded)
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.StopCheck{IssueKey: "74", Action: "development"})
+	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Action: "development"})
 
 	// Even a check that passed just as it was stopped counts as stopped.
-	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	ws := space("74", "development")
 	want := []crew.ActionFailure{{Action: "development", Reason: "crew stopped", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
@@ -145,10 +146,10 @@ func TestAE9StopWhileCheckingStopsTheCheckAndFailsTheAction(t *testing.T) {
 func TestSessionThatSucceedsAfterAStopStartsNoCheck(t *testing.T) {
 	d := newDriver(t, checked(), 2)
 	d.running(issue("74", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 	d.send(core.StopRequested{})
 
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a check started after a stop: %#v", cmds)
@@ -169,7 +170,7 @@ func TestTimeUpLetsARunningCheckFinishBeforeStopping(t *testing.T) {
 		t.Fatal("stopped while a check runs")
 	}
 
-	verdict, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	verdict, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	if !d.m.Stopped() || !containsStopped(events) {
 		t.Fatal("not stopped once the checked issue was judged")
@@ -180,8 +181,8 @@ func TestCheckingActionIsRunningInItsStatus(t *testing.T) {
 	d := newStatusDriver(t, checked(), 2)
 	d.runAll(d.take(issue("74", 1, ready)))
 	devStarted := started(t, d.m, "development")
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
-	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
@@ -218,7 +219,7 @@ var failedCauseCases = []struct {
 		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
-			cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("token=secret")})
+			cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("token=secret")})
 			return cmds
 		},
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseSession, Log: devSpace.Log},
@@ -230,9 +231,9 @@ var failedCauseCases = []struct {
 		},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 			cmds, _ := d.send(core.CheckEnded{
-				IssueKey: "74", Action: "development", Outcome: failed("the check failed: no pull request"),
+				IssueID: issueID("74"), Action: "development", Outcome: failed("the check failed: no pull request"),
 			})
 			return cmds
 		},
@@ -247,7 +248,8 @@ var failedCauseCases = []struct {
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
 			d.send(core.StopRequested{})
-			cmds, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("stopped by crew")})
+			cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development",
+				Outcome: failed("stopped by crew")})
 			return cmds
 		},
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: devSpace.Log},
@@ -256,7 +258,7 @@ var failedCauseCases = []struct {
 		name:   "workspace",
 		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
 		end: func(d *driver, _ []core.Command) []core.Command {
-			cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "74", Action: "development", Reason: "git: no origin"})
+			cmds, _ := d.send(core.WorkspaceFailed{IssueID: issueID("74"), Action: "development", Reason: "git: no origin"})
 			return cmds
 		},
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseWorkspace},
@@ -266,7 +268,8 @@ var failedCauseCases = []struct {
 		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
 		end: func(d *driver, _ []core.Command) []core.Command {
 			d.send(devSpace)
-			cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "74", Action: "development", Reason: "claude: not found"})
+			cmds, _ := d.send(core.SessionFailedToStart{IssueID: issueID("74"), Action: "development",
+				Reason: "claude: not found"})
 			return cmds
 		},
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStart, Log: devSpace.Log},

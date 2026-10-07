@@ -29,7 +29,7 @@ func TestListBoardSendsOneQueryPerAuthorWithoutPullRequests(t *testing.T) {
 	tr, gh := build(t, login, reply{prefix: []string{"api", "graphql"}, stdout: boardJSON(nil, nil)})
 	tr.ActAs(port.Identity{}, []string{opsLogin})
 
-	if _, err := tr.ListBoard(context.Background(), []string{"bug", "Idea"}); err != nil {
+	if _, err := tr.ListBoard(context.Background(), []crew.State{"bug", "Idea"}); err != nil {
 		t.Fatalf("ListBoard: %v", err)
 	}
 
@@ -77,19 +77,19 @@ func TestListBoardKeepsTheAskedLabelsEachIssueCarries(t *testing.T) {
 	})
 	tr.ActAs(port.Identity{}, []string{opsLogin})
 
-	got, err := tr.ListBoard(context.Background(), []string{"bug", "Idea"})
+	got, err := tr.ListBoard(context.Background(), []crew.State{"bug", "Idea"})
 	if err != nil {
 		t.Fatalf("ListBoard: %v", err)
 	}
 
 	want := []crew.BoardIssue{
-		{Issue: crew.Issue{Key: "9", Ref: "#9", Title: "Issue 9", URL: "https://github.com/o/r/issues/9",
-			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}, Labels: []string{"Idea"}},
-		{Issue: crew.Issue{Key: "14", Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
-			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, Labels: []string{"bug", "Idea"}},
-		{Issue: crew.Issue{Key: "12", Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+		{Issue: crew.Issue{ID: issueID("9"), Ref: "#9", Title: "Issue 9", URL: "https://github.com/o/r/issues/9",
+			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}, Labels: []crew.State{"Idea"}},
+		{Issue: crew.Issue{ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
+			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, Labels: []crew.State{"bug", "Idea"}},
+		{Issue: crew.Issue{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
 			Created: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC), States: []crew.State{inProgress}},
-			Labels: []string{"bug"}},
+			Labels: []crew.State{"bug"}},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("ListBoard = %+v, want %+v", got, want)
@@ -115,7 +115,7 @@ func TestListBoardNamesTheBoardReadWhenGhFails(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, _ := build(t, script...)
-			_, err := tr.ListBoard(context.Background(), []string{"bug"})
+			_, err := tr.ListBoard(context.Background(), []crew.State{"bug"})
 			if err == nil || !strings.Contains(err.Error(), "list the board's issues") {
 				t.Errorf("ListBoard error = %v, want one naming the board's issues", err)
 			}

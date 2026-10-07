@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,13 @@ type message struct {
 
 // sessionKey identifies the session of one action of an issue.
 type sessionKey struct {
-	issue, action string
+	issue  crew.IssueID
+	action crew.ActionName
+}
+
+// compare orders session keys by repository, issue key and action.
+func (k sessionKey) compare(o sessionKey) int {
+	return cmp.Or(k.issue.Compare(o.issue), cmp.Compare(k.action, o.action))
 }
 
 // launch runs cmd in its own goroutine on the command context ctx (KTD7).
@@ -86,7 +93,7 @@ func (e *Engine) loopJob(ctx context.Context, cmd core.Command) func() {
 		failure := core.RecordFailed{Record: c.Record, Reason: e.scrub(err.Error())}
 		return func() { e.post(failure) }
 	case core.StopSession:
-		s, ok := e.sessions[sessionKey{c.IssueKey, c.Action}]
+		s, ok := e.sessions[sessionKey{c.IssueID, c.Action}]
 		if !ok {
 			// The core asks to stop only sessions it saw start, so the
 			// session is known; nothing runs otherwise.
@@ -97,12 +104,12 @@ func (e *Engine) loopJob(ctx context.Context, cmd core.Command) func() {
 		// The check's context is made here, in the loop, so a StopCheck
 		// that follows always finds it.
 		checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
-		e.checks[sessionKey{c.IssueKey, c.Action}] = cancel
+		e.checks[sessionKey{c.IssueID, c.Action}] = cancel
 		return func() { e.runCheck(checkCtx, cancel, c) }
 	case core.StopCheck:
 		// The core asks to stop only checks it started; the check's end
 		// still arrives through its own goroutine, in runCheck.
-		if cancel, ok := e.checks[sessionKey{c.IssueKey, c.Action}]; ok {
+		if cancel, ok := e.checks[sessionKey{c.IssueID, c.Action}]; ok {
 			cancel()
 		}
 		return nil
@@ -129,6 +136,9 @@ func (e *Engine) list(ctx context.Context, c core.ListIssues) {
 		e.post(core.ListFailed{Reason: e.reason(ctx, err)})
 		return
 	}
+	for i := range issues {
+		issues[i].ID.Repository = e.repository.ID
+	}
 	e.post(core.IssuesListed{Issues: issues})
 }
 
@@ -142,13 +152,16 @@ func (e *Engine) listBoard(ctx context.Context, c core.ListBoard) {
 		e.post(core.BoardListFailed{Reason: e.reason(ctx, err)})
 		return
 	}
+	for i := range issues {
+		issues[i].Issue.ID.Repository = e.repository.ID
+	}
 	e.post(core.BoardListed{Issues: issues})
 }
 
 func (e *Engine) move(ctx context.Context, c core.Move) {
 	ctx, cancel := callContext(ctx)
 	defer cancel()
-	err := e.cfg.Tracker.Move(ctx, c.IssueKey, c.From, c.To)
+	err := e.cfg.Tracker.Move(ctx, c.IssueID, c.From, c.To)
 	e.post(e.callResult(ctx, c.ID, err))
 }
 
@@ -166,7 +179,7 @@ func (e *Engine) reportStatus(ctx context.Context, c core.ReportStatus) {
 	defer cancel()
 	err := e.reporter.ReportStatus(ctx, c.Status)
 	result, reason := e.classify(ctx, err)
-	e.post(core.StatusResult{IssueKey: c.Status.IssueKey, Result: result, Reason: reason})
+	e.post(core.StatusResult{IssueID: c.Status.IssueID, Result: result, Reason: reason})
 }
 
 // reportPullRequests shows a report on the issue's pull requests through the
@@ -177,7 +190,7 @@ func (e *Engine) reportPullRequests(ctx context.Context, c core.ReportPullReques
 	defer cancel()
 	err := e.pullRequests.ReportPullRequests(ctx, c.Report)
 	result, reason := e.classify(ctx, err)
-	e.post(core.PullRequestsResult{IssueKey: c.Report.IssueKey, Result: result, Reason: reason})
+	e.post(core.PullRequestsResult{IssueID: c.Report.IssueID, Result: result, Reason: reason})
 }
 
 // callResult maps a tracker call's error onto the core's result classes.
@@ -215,10 +228,10 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	defer cancel()
 	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
 	if err != nil {
-		e.post(core.WorkspaceFailed{IssueKey: c.Issue.Key, Action: c.Action, Reason: e.reason(ctx, err)})
+		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID, Action: c.Action, Reason: e.reason(ctx, err)})
 		return
 	}
-	e.post(e.ready(c.Issue.Key, c.Action, space, false))
+	e.post(e.ready(c.Issue.ID, c.Action, space, false))
 }
 
 // reopenWorkspace reopens a failed run's workspace through the workspace's
@@ -226,7 +239,7 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	r, ok := e.cfg.Workspace.(port.Reopener)
 	if !ok {
-		e.post(core.WorkspaceGone{IssueKey: c.IssueKey, Action: c.Action})
+		e.post(core.WorkspaceGone{IssueID: c.IssueID, Action: c.Action})
 		return
 	}
 	ctx, cancel := callContext(ctx)
@@ -234,19 +247,19 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	space, err := r.Reopen(ctx, port.Space{Name: c.Workspace, Branch: c.Branch})
 	switch {
 	case errors.Is(err, port.ErrWorkspaceGone):
-		e.post(core.WorkspaceGone{IssueKey: c.IssueKey, Action: c.Action})
+		e.post(core.WorkspaceGone{IssueID: c.IssueID, Action: c.Action})
 	case err != nil:
-		e.post(core.WorkspaceFailed{IssueKey: c.IssueKey, Action: c.Action, Reason: e.reason(ctx, err)})
+		e.post(core.WorkspaceFailed{IssueID: c.IssueID, Action: c.Action, Reason: e.reason(ctx, err)})
 	default:
-		e.post(e.ready(c.IssueKey, c.Action, space, true))
+		e.post(e.ready(c.IssueID, c.Action, space, true))
 	}
 }
 
-// ready is the WorkspaceReady of space for action on the issue keyed key.
-func (e *Engine) ready(key, action string, space port.Space, resumed bool) core.WorkspaceReady {
+// ready is the WorkspaceReady of space for action on the issue id.
+func (e *Engine) ready(id crew.IssueID, action crew.ActionName, space port.Space, resumed bool) core.WorkspaceReady {
 	log := logPath(space.Name)
 	return core.WorkspaceReady{
-		IssueKey: key, Action: action,
+		IssueID: id, Action: action,
 		Workspace: space.Name, Dir: space.Dir, Branch: space.Branch, Log: log,
 		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed,
 	}
@@ -265,7 +278,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 		}
 	}
 	if err != nil {
-		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
+		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.scrub(err.Error())})
 		return
 	}
 	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
@@ -274,10 +287,10 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	})
 	if err != nil {
 		_ = log.Close() // nothing was written to it worth keeping
-		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
+		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.scrub(err.Error())})
 		return
 	}
-	e.inbox <- message{input: core.SessionStarted{IssueKey: c.IssueKey, Action: c.Action}, session: s}
+	e.inbox <- message{input: core.SessionStarted{IssueID: c.IssueID, Action: c.Action}, session: s}
 	outcome := s.Wait()
 	// The harness stops writing once Wait returns. A failed close cannot
 	// change the session's verdict, which is what the core needs.
@@ -291,7 +304,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	if r, ok := s.(port.LastMessageReporter); ok {
 		last = r.LastMessage()
 	}
-	e.post(core.SessionEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: outcome, Usage: usage, LastMessage: last})
+	e.post(core.SessionEnded{IssueID: c.IssueID, Action: c.Action, Outcome: outcome, Usage: usage, LastMessage: last})
 }
 
 // findPullRequest looks up the pull request c's action opened, within
@@ -304,7 +317,7 @@ func (e *Engine) findPullRequest(ctx context.Context, c core.FindPullRequest) {
 	if err != nil {
 		pr = crew.PullRequest{}
 	}
-	e.post(core.PullRequestFound{IssueKey: c.IssueKey, Action: c.Action, PullRequest: pr})
+	e.post(core.PullRequestFound{IssueID: c.IssueID, Action: c.Action, PullRequest: pr})
 }
 
 // stopSession stops s within the stop deadline (KTD7). Its end reaches the
@@ -347,13 +360,13 @@ func markResumed(log *os.File) error {
 // (R5, R6).
 func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
 	defer cancel()
-	e.post(core.CheckEnded{IssueKey: c.IssueKey, Action: c.Action, Outcome: e.check(ctx, c)})
+	e.post(core.CheckEnded{IssueID: c.IssueID, Action: c.Action, Outcome: e.check(ctx, c)})
 }
 
 // check runs c, as its action's bot like its session, and returns its
 // verdict.
 func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
-	subject := "the check " + c.Name
+	subject := "the check " + string(c.Name)
 	if e.cfg.Checker == nil {
 		return crew.Outcome{Reason: subject + " could not start: crew has no check runner"}
 	}
@@ -367,7 +380,7 @@ func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	var last lastLine
 	err = e.cfg.Checker.Check(ctx, port.Check{
 		Dir: c.Dir, Name: c.Name, Command: c.Command, Action: c.Action, Prompt: c.Prompt, LastMessage: c.LastMessage,
-		IssueRef: c.IssueRef, IssueKey: c.IssueKey, IssueURL: c.IssueURL,
+		IssueRef: c.IssueRef, IssueID: c.IssueID, IssueURL: c.IssueURL,
 		Branch: c.Branch, Output: io.MultiWriter(log, &last),
 		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
 	})

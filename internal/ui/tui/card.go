@@ -92,7 +92,7 @@ func (m Model) runItems(c card) []string {
 // run, or its phase before its session starts (R2, KTD2).
 func (m Model) runItem(a core.ActionView) string {
 	s := m.styles
-	name := s.text.Render(clean(a.Name))
+	name := s.text.Render(clean(string(a.Name)))
 	switch {
 	case a.Phase == core.PhaseWaiting:
 		return s.warning.Render("○") + " " + name + " " + s.muted.Render(a.Phase.String())
@@ -145,5 +145,5 @@ func (m Model) cardQueue(c card) string {
 	if !c.held {
 		return m.styles.subtle.Render("none")
 	}
-	return m.styles.text.Render(clean(c.view.Queue))
+	return m.styles.text.Render(clean(string(c.view.Queue)))
 }

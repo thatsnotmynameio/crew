@@ -3,7 +3,7 @@ package crew
 import "testing"
 
 func TestStatusCloneSharesNoActions(t *testing.T) {
-	s := Status{IssueKey: "74", Kind: StatusRunning, Actions: []ActionStatus{
+	s := Status{IssueID: IssueID{Key: "74"}, Kind: StatusRunning, Actions: []ActionStatus{
 		{Name: "development", State: ActionRunning, Said: "Starting U2."},
 		{Name: "acceptance", State: ActionSucceeded, Checks: []CheckResult{{Name: "judge", Passed: true}}},
 	}}

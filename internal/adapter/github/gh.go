@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
@@ -93,7 +94,7 @@ func (g *gh) bot() (port.Identity, bool) {
 // backToLogin makes every later write of the run go as you, because
 // GitHub refused bot's write for kind. The first call records the warning
 // lostWarning words; a later one, from a write that raced it, keeps it.
-func (g *gh) backToLogin(kind refusalKind, bot string) {
+func (g *gh) backToLogin(kind refusalKind, bot crew.BotName) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.lost == "" {
@@ -112,7 +113,7 @@ func (g *gh) writerLost() string {
 // to you because GitHub refused one for kind: what happened, what fixes
 // it, and that crew writes as you until it restarts. It quotes nothing
 // gh printed.
-func lostWarning(kind refusalKind, bot string) string {
+func lostWarning(kind refusalKind, bot crew.BotName) string {
 	create := fmt.Sprintf("run `crew bots create %s` in this repository", bot)
 	var why string
 	switch kind {

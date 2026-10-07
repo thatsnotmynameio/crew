@@ -25,7 +25,7 @@ type boardReads struct {
 	reads atomic.Int32
 }
 
-func (b *boardReads) ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error) {
+func (b *boardReads) ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error) {
 	b.reads.Add(1)
 	return b.BoardTracker.ListBoard(ctx, labels)
 }

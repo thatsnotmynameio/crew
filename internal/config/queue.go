@@ -17,7 +17,7 @@ import (
 type queueTable []crew.Queue
 
 // find returns the queue called name.
-func (t queueTable) find(name string) (crew.Queue, bool) {
+func (t queueTable) find(name crew.QueueName) (crew.Queue, bool) {
 	i := slices.IndexFunc(t, func(q crew.Queue) bool { return q.Name == name })
 	if i < 0 {
 		return crew.Queue{}, false
@@ -30,7 +30,7 @@ func (t queueTable) find(name string) (crew.Queue, bool) {
 func (t queueTable) names() string {
 	names := make([]string, len(t))
 	for i, q := range t {
-		names[i] = q.Name
+		names[i] = string(q.Name)
 	}
 	return strings.Join(names, ", ")
 }
@@ -69,7 +69,7 @@ func declaredQueues(n *yaml.Node) ([]crew.Queue, int, error) {
 		} else {
 			sum += slots
 		}
-		out = append(out, crew.Queue{Name: e.key.Value, Slots: slots})
+		out = append(out, crew.Queue{Name: crew.QueueName(e.key.Value), Slots: slots})
 	}
 	return out, sum, errors.Join(errs...)
 }
@@ -78,7 +78,7 @@ func declaredQueues(n *yaml.Node) ([]crew.Queue, int, error) {
 // with it.
 func declaredQueue(e entry) (int, error) {
 	name := e.key.Value
-	if strings.EqualFold(name, crew.DefaultQueue) {
+	if strings.EqualFold(name, string(crew.DefaultQueue)) {
 		return 0, keyError(e.path, e.key.Line,
 			fmt.Sprintf("%q is crew's default queue, which has the slots the other queues leave; "+
 				"name this queue another way", name))
@@ -96,7 +96,7 @@ func declaredQueue(e entry) (int, error) {
 // ruleQueue returns the queue of the rule at path: the one its queue key
 // names, or default when it names none.
 func ruleQueue(l located[string], path string, table queueTable) (crew.Queue, error) {
-	name := l.value
+	name := crew.QueueName(l.value)
 	switch {
 	case l.line == 0:
 		name = crew.DefaultQueue

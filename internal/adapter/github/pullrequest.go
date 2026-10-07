@@ -55,8 +55,8 @@ type pullRequest struct {
 // number GitHub cannot resolve is port.ErrMovedMeanwhile, and gh saying a
 // label does not exist is a refusal, as in Move.
 func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error {
-	what := fmt.Sprintf("update the pull requests of issue #%s to %s", report.IssueKey, report.State)
-	issueURL, prs, err := t.pullRequests(ctx, report.IssueKey)
+	what := fmt.Sprintf("update the pull requests of issue #%s to %s", report.IssueID.Key, report.State)
+	issueURL, prs, err := t.pullRequests(ctx, report.IssueID.Key)
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
@@ -69,7 +69,7 @@ func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullReques
 		}
 		var err error
 		if link == "" {
-			link, err = t.statusLink(ctx, report.IssueKey, report.IssueRef, issueURL)
+			link, err = t.statusLink(ctx, report.IssueID.Key, report.IssueRef, issueURL)
 		}
 		if err == nil {
 			err = t.postStop(ctx, report, pr.number, link)
@@ -204,7 +204,7 @@ func (t *Tracker) postStop(ctx context.Context, report crew.PullRequestReport, n
 
 // commented reports whether the report with id already posted its stop
 // comment on the pull request number.
-func (t *Tracker) commented(id string, number int) bool {
+func (t *Tracker) commented(id crew.PullRequestReportID, number int) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return slices.Contains(t.stopped[id], number)
@@ -212,7 +212,7 @@ func (t *Tracker) commented(id string, number int) bool {
 
 // forgetStops drops what the report with id posted, once no retry of it
 // will come.
-func (t *Tracker) forgetStops(id string) {
+func (t *Tracker) forgetStops(id crew.PullRequestReportID) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.stopped, id)

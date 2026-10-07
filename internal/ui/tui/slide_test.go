@@ -34,7 +34,7 @@ func sliding(t *testing.T, width int) *harness {
 
 // in is key's item on a board of eightColumns, in column n's label.
 func in(key string, n int) crew.BoardIssue {
-	return labeled(crew.Issue{Key: key, Ref: "#" + key}, fmt.Sprintf("l%d", n))
+	return labeled(crew.Issue{ID: issueID(key), Ref: "#" + key}, crew.State(fmt.Sprintf("l%d", n)))
 }
 
 // underlineOf returns the board's underline row.
@@ -133,8 +133,8 @@ func TestASlideFromADroppedMiddleColumnStartsBetweenItsNeighbours(t *testing.T) 
 
 // triageReview is AE3's board.
 var triageReview = []crew.BoardColumn{
-	{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:in progress"}},
-	{Name: "review", Labels: []string{"crew:development:waiting review"}},
+	{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:in progress"}},
+	{Name: "review", Labels: []crew.State{"crew:development:waiting review"}},
 }
 
 // Covers AE3 and KTD7: an issue development holds shows in Not on board
@@ -168,7 +168,7 @@ func TestAE3ACardSlidesFromTheColumnsItWasLastIn(t *testing.T) {
 // to slide from or to.
 func TestACardThatOnlyGainsOrLosesAColumnDoesNotSlide(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
-	for _, labels := range [][]string{{"crew:brainstorm:ready"}, {"crew:brainstorm:ready", "bug"}, {"bug"}} {
+	for _, labels := range [][]crew.State{{"crew:brainstorm:ready"}, {"crew:brainstorm:ready", "bug"}, {"bug"}} {
 		h.send(updateMsg(onBoard(engine.Update{}, labeled(twentyOne, labels...))))
 		if got := h.current().memory.slides; len(got) != 0 {
 			t.Errorf("with labels %v, slides = %+v, want none", labels, got)

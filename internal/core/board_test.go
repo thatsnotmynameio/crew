@@ -12,26 +12,26 @@ import (
 // a parked idea's and a bug's.
 const (
 	brainstormReady crew.State = "brainstorm ready"
-	bug             string     = "bug"
+	bug             crew.State = "bug"
 )
 
 // boardLabels is the board of these tests: ideas (brainstorm ready), bugs
 // (bug), implement (ready, in progress) and review (ready to review).
-var boardLabels = []string{string(brainstormReady), bug, string(ready), string(inProgress), string(readyToReview)}
+var boardLabels = []crew.State{brainstormReady, bug, ready, inProgress, readyToReview}
 
 // newBoardDriver returns a driver whose model reads a written board of one
 // column of issues per label.
-func newBoardDriver(t *testing.T, rules []crew.Rule, maxParallel int, labels ...string) *driver {
+func newBoardDriver(t *testing.T, rules []crew.Rule, maxParallel int, labels ...crew.State) *driver {
 	t.Helper()
 	columns := make([]crew.BoardColumn, len(labels))
 	for i, l := range labels {
-		columns[i] = crew.BoardColumn{Name: l, Labels: []string{l}}
+		columns[i] = crew.BoardColumn{Name: string(l), Labels: []crew.State{l}}
 	}
 	return &driver{t: t, m: core.New(rules, maxParallel, core.ListingBoard(columns)), now: t0}
 }
 
 // onBoard returns key on the board with labels.
-func onBoard(key string, minute int, labels ...string) crew.BoardIssue {
+func onBoard(key string, minute int, labels ...crew.State) crew.BoardIssue {
 	return crew.BoardIssue{Issue: issue(key, minute), Labels: labels}
 }
 
@@ -126,23 +126,23 @@ func TestATickReadsTheBoardAfterTheRunTimeIsUpButNotWhileStopping(t *testing.T) 
 
 // Covers AE3.
 func TestAVerdictMovePutsTheIssueOnTheBoardAtOnceAndAStaleReadKeepsIt(t *testing.T) {
-	d := newBoardDriver(t, draft(), 2, bug, string(readyToReview))
+	d := newBoardDriver(t, draft(), 2, bug, readyToReview)
 	held := issue("12", 12, ready)
 	d.running(held)
 	d.send(core.BoardListed{})
 	wantBoard(t, d)
-	d.send(core.SessionEnded{IssueKey: "12", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "12", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("12"), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
 	if got := listBoard(d.tick()); got == nil {
 		t.Fatal("tick did not read the board")
 	}
 
 	d.settle(verdict)
-	moved := crew.BoardIssue{Issue: held, Labels: []string{string(readyToReview)}}
+	moved := crew.BoardIssue{Issue: held, Labels: []crew.State{readyToReview}}
 	wantBoard(t, d, moved)
 
-	d.send(core.BoardListed{Issues: []crew.BoardIssue{onBoard("12", 12, string(inProgress))}})
-	wantBoard(t, d, crew.BoardIssue{Issue: issue("12", 12), Labels: []string{string(readyToReview)}})
+	d.send(core.BoardListed{Issues: []crew.BoardIssue{onBoard("12", 12, inProgress)}})
+	wantBoard(t, d, crew.BoardIssue{Issue: issue("12", 12), Labels: []crew.State{readyToReview}})
 
 	d.tick()
 	d.send(core.BoardListed{})
@@ -159,25 +159,25 @@ func TestATakeMoveChangesTheIssuesLabelsOnTheBoard(t *testing.T) {
 	tests := []struct {
 		name   string
 		state  crew.State // the issue's rule label, which crew takes it from
-		before []string
+		before []crew.State
 		want   []crew.BoardIssue
 	}{
 		{
-			name: "a board label replaced by the next", state: ready, before: []string{string(ready)},
-			want: []crew.BoardIssue{onBoard("1", 1, string(inProgress))},
+			name: "a board label replaced by the next", state: ready, before: []crew.State{ready},
+			want: []crew.BoardIssue{onBoard("1", 1, inProgress)},
 		},
 		{
-			name: "a label that is not crew's kept", state: readyToReview, before: []string{bug, string(readyToReview)},
+			name: "a label that is not crew's kept", state: readyToReview, before: []crew.State{bug, readyToReview},
 			want: []crew.BoardIssue{onBoard("1", 1, bug)},
 		},
 		{
 			// Covers AE6: only the rules' labels are crew's.
-			name: "a label no rule names kept", state: ready, before: []string{string(brainstormReady), string(ready)},
-			want: []crew.BoardIssue{onBoard("1", 1, string(brainstormReady), string(inProgress))},
+			name: "a label no rule names kept", state: ready, before: []crew.State{brainstormReady, ready},
+			want: []crew.BoardIssue{onBoard("1", 1, brainstormReady, inProgress)},
 		},
 		{
 			name: "an issue left with no board label off the board", state: readyToReview,
-			before: []string{string(readyToReview)},
+			before: []crew.State{readyToReview},
 		},
 	}
 	for _, tt := range tests {
@@ -196,7 +196,7 @@ func TestATakeMoveChangesTheIssuesLabelsOnTheBoard(t *testing.T) {
 }
 
 func TestAPullRequestsMoveNeverPutsItOnTheBoard(t *testing.T) {
-	d := newBoardDriver(t, withFixReview(), 2, string(fixing), string(readyToReview))
+	d := newBoardDriver(t, withFixReview(), 2, fixing, readyToReview)
 	d.send(core.Tick{})
 	d.send(core.BoardListed{})
 
@@ -204,7 +204,7 @@ func TestAPullRequestsMoveNeverPutsItOnTheBoard(t *testing.T) {
 	d.settle(take)
 	wantBoard(t, d)
 
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "90", Action: "fix", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("90"), Action: "fix", Outcome: succeeded})
 	d.settle(verdict)
 	wantBoard(t, d)
 }
@@ -235,11 +235,11 @@ func TestTheBoardIsOldestFirstAndSharesNoMemory(t *testing.T) {
 	d := newBoardDriver(t, draft(), 2, boardLabels...)
 	d.send(core.Tick{})
 	d.send(core.BoardListed{Issues: []crew.BoardIssue{
-		onBoard("9", 9, bug), onBoard("8", 1, bug), onBoard("7", 1, string(ready)),
+		onBoard("9", 9, bug), onBoard("8", 1, bug), onBoard("7", 1, ready),
 	}})
 
 	v := d.m.View()
 	v.Board[0].Labels[0] = "changed"
 
-	wantBoard(t, d, onBoard("7", 1, string(ready)), onBoard("8", 1, bug), onBoard("9", 9, bug))
+	wantBoard(t, d, onBoard("7", 1, ready), onBoard("8", 1, bug), onBoard("9", 9, bug))
 }

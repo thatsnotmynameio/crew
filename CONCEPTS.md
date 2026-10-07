@@ -52,6 +52,8 @@ One pass of an issue through one rule, from the first time crew reports the issu
 
 An issue that is retried in the same rule starts a new rule run. A rule run belongs to one crew process: a rule run cut short by a crash is never continued, and the next one is new, even when its actions resume.
 
+Each rule run has an id that no other rule run has, in any repository or crew process. The status comment entry a rule run opens carries that id.
+
 ### Action run
 
 One attempt at an action on an issue, from the moment its workspace is ready until the action ends, its check included. An action run succeeds or fails; one that never recorded its end, because crew crashed or was killed, counts as failed.
@@ -127,6 +129,12 @@ The comment crew posts on each of an issue's open pull requests when a run of a 
 It is a new comment at every rule end, so its watchers are notified and a rerun leaves a trail. Like the failure report, it never quotes what a session or a tool said.
 
 ## Identity
+
+### Repository
+
+The repository crew works on, as its tracker identifies it: on GitHub by an id that survives a rename, with `owner/name` as its display name. A tracker that names no repository gets the name of crew's root directory.
+
+crew identifies an issue by its repository and its key, so two repositories' issues with the same number are two issues.
 
 ### Bot
 

@@ -8,7 +8,7 @@ import "slices"
 // board.
 type BoardColumn struct {
 	Name   string
-	Labels []string
+	Labels []State
 	// Takes is the kind of item the column shows. The zero Kind shows
 	// issues.
 	Takes Kind
@@ -18,7 +18,7 @@ type BoardColumn struct {
 // board labels it carries, spelled as the board writes them.
 type BoardIssue struct {
 	Issue  Issue
-	Labels []string
+	Labels []State
 }
 
 // Clone returns a copy of b that shares no memory with it.
@@ -30,8 +30,8 @@ func (b BoardIssue) Clone() BoardIssue {
 
 // BoardLabels returns every label the board's columns name, column by
 // column in board order, each once. The slice is new on every call.
-func BoardLabels(board []BoardColumn) []string {
-	labels := []string{}
+func BoardLabels(board []BoardColumn) []State {
+	labels := []State{}
 	for _, c := range board {
 		for _, l := range c.Labels {
 			if !slices.Contains(labels, l) {

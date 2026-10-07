@@ -161,3 +161,40 @@ func TestPrepareRunsEveryAgentsHarnessAndNamesTheOneThatFails(t *testing.T) {
 		t.Errorf("reviewer's harness prepared %d times, want once", len(got))
 	}
 }
+
+// repositoryTracker is a fake tracker that names its repository.
+type repositoryTracker struct {
+	*fake.Tracker
+
+	repository crew.Repository
+}
+
+func (r repositoryTracker) Repository() crew.Repository { return r.repository }
+
+// The engine works on the repository its tracker names in Prepare, and on
+// one named after the root directory when the tracker names none (KTD6).
+func TestPrepareReadsTheRepository(t *testing.T) {
+	widgets := crew.Repository{ID: "R_kgDOWidgets", Name: "acme/widgets"}
+	for name, tc := range map[string]struct {
+		tracker port.Tracker
+		want    crew.Repository
+	}{
+		"the tracker's":      {repositoryTracker{Tracker: fake.NewTracker(), repository: widgets}, widgets},
+		"the root directory": {fake.NewTracker(), crew.Repository{ID: "repo", Name: "repo"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := engine.New(config(t, tc.tracker, develop))
+			var steps []string
+			ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
+			if err := e.Prepare(ctx); err != nil {
+				t.Fatalf("Prepare: %v", err)
+			}
+			if got := e.Repository(); got != tc.want {
+				t.Errorf("Repository = %+v, want %+v", got, tc.want)
+			}
+			if want := []string{"reading the run journal"}; !reflect.DeepEqual(steps, want) {
+				t.Errorf("steps = %q, want %q and no step of the repository's", steps, want)
+			}
+		})
+	}
+}

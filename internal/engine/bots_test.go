@@ -41,18 +41,18 @@ func (f fallingBack) Prepare(ctx context.Context, states []crew.State) error {
 // renewals left failing, settable while the engine reads it.
 type renewals struct {
 	mu      sync.Mutex
-	failing map[string]string
+	failing map[crew.BotName]string
 }
 
 // set makes failing the bots' failed renewals.
-func (r *renewals) set(failing map[string]string) {
+func (r *renewals) set(failing map[crew.BotName]string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.failing = maps.Clone(failing)
 }
 
 // read implements engine.Config.BotFailures.
-func (r *renewals) read() map[string]string {
+func (r *renewals) read() map[crew.BotName]string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return maps.Clone(r.failing)
@@ -71,7 +71,7 @@ type actingRig struct {
 func startActing(t *testing.T, tr port.Tracker, failing *renewals) *actingRig {
 	t.Helper()
 	cfg := config(t, tr, develop)
-	cfg.ActAs, cfg.DefaultBot, cfg.Bots = true, "ops", []string{"ops", "developer"}
+	cfg.ActAs, cfg.DefaultBot, cfg.Bots = true, "ops", []crew.BotName{"ops", "developer"}
 	if failing != nil {
 		cfg.BotFailures = failing.read
 	}
@@ -127,7 +127,7 @@ func (m *actingRig) finish(t *testing.T) {
 }
 
 // botEntry returns the entry called name in u's snapshot.
-func botEntry(t *testing.T, u engine.Update, name string) core.BotView {
+func botEntry(t *testing.T, u engine.Update, name crew.BotName) core.BotView {
 	t.Helper()
 	i := slices.IndexFunc(u.Snapshot.Bots, func(v core.BotView) bool { return v.Name == name })
 	if i < 0 {
@@ -228,7 +228,7 @@ func TestAE5AFailedRenewalStopsTheBotAndASuccessfulOneMakesItActAgain(t *testing
 		m := startActing(t, fake.NewActingTracker(), failing)
 		m.settle()
 
-		failing.set(map[string]string{"developer": notRenewed})
+		failing.set(map[crew.BotName]string{"developer": notRenewed})
 		tick()
 		u, ok := m.newest()
 		if !ok || botEntry(t, u, "developer").State != "token not renewed" {
@@ -260,7 +260,7 @@ func TestAnUnchangedReadingStepsNothing(t *testing.T) {
 		failing := &renewals{}
 		m := startActing(t, tr, failing)
 		tr.SetWriterLost(writesLost)
-		failing.set(map[string]string{"developer": notRenewed})
+		failing.set(map[crew.BotName]string{"developer": notRenewed})
 		tick()
 		if got := botEvents(m.drained()); len(got) != 2 {
 			t.Fatalf("the queue's bot events = %#v, want ops's and developer's", got)
@@ -295,11 +295,11 @@ func TestTheYouEntryCarriesTheTrackersLogin(t *testing.T) {
 		if you := botEntry(t, u, "you"); !you.You || you.Login != "mguilarducci" {
 			t.Errorf("you = %+v, want the tracker's login", you)
 		}
-		names := make([]string, 0, len(u.Snapshot.Bots))
+		names := make([]crew.BotName, 0, len(u.Snapshot.Bots))
 		for _, v := range u.Snapshot.Bots {
 			names = append(names, v.Name)
 		}
-		if want := []string{"ops", "developer", "you"}; !slices.Equal(names, want) {
+		if want := []crew.BotName{"ops", "developer", "you"}; !slices.Equal(names, want) {
 			t.Errorf("the entries = %q, want %q", names, want)
 		}
 
@@ -330,8 +330,8 @@ func TestABotThatCannotActAtStartupShowsItsReasonAndIgnoresItsReadings(t *testin
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewActingTracker()
 		cfg := config(t, tr, develop)
-		cfg.ActAs, cfg.DefaultBot, cfg.Bots = true, "ops", []string{"ops"}
-		cfg.Unable = map[string]string{"ops": "no key"}
+		cfg.ActAs, cfg.DefaultBot, cfg.Bots = true, "ops", []crew.BotName{"ops"}
+		cfg.Unable = map[crew.BotName]string{"ops": "no key"}
 		e := engine.New(cfg)
 		latest := e.SubscribeLatest()
 		m := &actingRig{rig: run(t, cfg, e), latest: latest}

@@ -37,7 +37,7 @@ import (
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
 // a port.Acting, a port.CodeOwnerFinder, a port.LoginFinder, a
-// port.WriterReporter and a port.BoardLister.
+// port.RepositoryFinder, a port.WriterReporter and a port.BoardLister.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -47,6 +47,7 @@ var (
 	_ port.Acting              = (*Tracker)(nil)
 	_ port.CodeOwnerFinder     = (*Tracker)(nil)
 	_ port.LoginFinder         = (*Tracker)(nil)
+	_ port.RepositoryFinder    = (*Tracker)(nil)
 	_ port.WriterReporter      = (*Tracker)(nil)
 	_ port.BoardLister         = (*Tracker)(nil)
 )
@@ -198,10 +199,11 @@ type Tracker struct {
 	labels labels
 
 	mu         sync.Mutex
-	comments   map[string]cachedStatus // status comments by issue key, as last written or read
-	stopped    map[string][]int        // pull requests given a report's stop comment, by report ID
-	codeOwners []string                // the code owners' logins, once Prepare found them
-	bots       []string                // the logins of the bots the config names
+	comments   map[string]cachedStatus            // status comments by issue key, as last written or read
+	stopped    map[crew.PullRequestReportID][]int // pull requests given a report's stop comment, by report ID
+	codeOwners []string                           // the code owners' logins, once Prepare found them
+	repository crew.Repository                    // the repository, once Prepare found it
+	bots       []string                           // the logins of the bots the config names
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -217,7 +219,7 @@ func factory(run proc.Runner) port.TrackerFactory {
 			return nil, err
 		}
 		return &Tracker{gh: &gh{run: run}, labels: newLabels(states),
-			comments: map[string]cachedStatus{}, stopped: map[string][]int{}}, nil
+			comments: map[string]cachedStatus{}, stopped: map[crew.PullRequestReportID][]int{}}, nil
 	}
 }
 
@@ -240,12 +242,8 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	labels := make([]string, len(states))
-	for i, s := range states {
-		labels[i] = string(s)
-	}
 	var reply issuesReply
-	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, labels, true)...); err != nil {
+	if err := t.gh.decode(ctx, &reply, issuesArgs(authors, states, true)...); err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	var items []crew.Issue
@@ -270,7 +268,7 @@ func (t *Tracker) List(ctx context.Context, states []crew.State) ([]crew.Issue, 
 // case, as GitHub compares them, in labels' spelling and order. An issue none
 // of whose labels matches, which GitHub's filter should not return, is left
 // out.
-func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error) {
+func (t *Tracker) ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error) {
 	authors, err := t.authors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list the board's issues: %w", err)
@@ -281,9 +279,9 @@ func (t *Tracker) ListBoard(ctx context.Context, labels []string) ([]crew.BoardI
 	}
 	var board []crew.BoardIssue
 	for _, n := range reply.issues(len(authors)) {
-		var carried []string
+		var carried []crew.State
 		for _, l := range labels {
-			if slices.ContainsFunc(n.Labels.Nodes, func(g ghLabel) bool { return strings.EqualFold(g.Name, l) }) {
+			if slices.ContainsFunc(n.Labels.Nodes, func(g ghLabel) bool { return strings.EqualFold(g.Name, string(l)) }) {
 				carried = append(carried, l)
 			}
 		}
@@ -336,10 +334,10 @@ const stateOpen = "OPEN"
 // issuesArgs returns the gh arguments of issuesQuery, for the issues of
 // authors carrying any of labels and, when pullRequests is set, the pull
 // requests carrying any of them.
-func issuesArgs(authors, labels []string, pullRequests bool) []string {
+func issuesArgs(authors []string, labels []crew.State, pullRequests bool) []string {
 	vars := make([]string, 0, fieldArgs*(len(labels)+len(authors)))
 	for _, l := range labels {
-		vars = append(vars, "-f", "labels[]="+l)
+		vars = append(vars, "-f", "labels[]="+string(l))
 	}
 	for i, a := range authors {
 		vars = append(vars, "-f", "author"+strconv.Itoa(i)+"="+a)
@@ -395,13 +393,13 @@ func priority(values []fieldValue) int {
 // the issue carries and adds to's, leaving the labels that are not crew's,
 // those no rule names, alone. gh saying a label does not exist is a refusal: the
 // label must be created, which retrying cannot do.
-func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
+func (t *Tracker) Move(ctx context.Context, id crew.IssueID, from, to crew.State) error {
 	var issue struct {
 		State  string    `json:"state"`
 		Labels []ghLabel `json:"labels"`
 	}
-	move := fmt.Sprintf("move issue #%s from %s to %s", issueKey, from, to)
-	if err := t.gh.decode(ctx, &issue, "issue", "view", issueKey, "--json", "state,labels"); err != nil {
+	move := fmt.Sprintf("move issue #%s from %s to %s", id.Key, from, to)
+	if err := t.gh.decode(ctx, &issue, "issue", "view", id.Key, "--json", "state,labels"); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	if issue.State != stateOpen {
@@ -414,7 +412,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		}
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
-	if err := t.editLabels(ctx, "issue", issueKey, remove, to); err != nil {
+	if err := t.editLabels(ctx, "issue", id.Key, remove, to); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	return nil
@@ -426,17 +424,19 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 // 403, such as a locked issue, but not a rate limit) is port.ErrRefused, and
 // any other error is transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
-	if _, _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
-		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
+	if _, _, err := t.postComment(ctx, report.IssueID.Key, renderReport(report)); err != nil {
+		return fmt.Errorf("report failure on issue #%s: %w", report.IssueID.Key, err)
 	}
 	return nil
 }
 
 // Prepare implements port.Preparer. It checks that gh is installed and logged
-// in, then finds the code owners in CODEOWNERS, then creates the labels of
-// states the repository lacks, comparing names case-insensitively, and no
-// other label. It reads as gh's login and creates the labels as the writer.
-// It reports each step on ctx as it starts, one per label it creates.
+// in, then finds the code owners in CODEOWNERS, then reads the repository
+// and its labels and creates the labels of states the repository lacks,
+// comparing names case-insensitively, and no other label. It reads as gh's
+// login and creates the labels as the writer. It reports each step on ctx as
+// it starts, one per label it creates; the repository's read is part of the
+// labels' step.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	port.Step(ctx, "checking the gh login")
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
@@ -454,6 +454,9 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	t.codeOwners = codeOwners
 	t.mu.Unlock()
 	port.Step(ctx, "reading the repository's labels")
+	if err := t.readRepository(ctx); err != nil {
+		return fmt.Errorf("tracker github: read the repository: %w", err)
+	}
 	var present []ghLabel
 	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
 		return fmt.Errorf("tracker github: read the repository's labels: %w", err)
@@ -496,7 +499,7 @@ func (t *Tracker) authors(ctx context.Context) ([]string, error) {
 // labels name, each once, in label order.
 func (t *Tracker) item(n itemNode) crew.Issue {
 	key := strconv.Itoa(n.Number)
-	issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
+	issue := crew.Issue{ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
 	for _, l := range n.Labels.Nodes {
 		if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
 			issue.States = append(issue.States, s)
