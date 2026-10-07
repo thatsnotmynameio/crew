@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -40,6 +41,48 @@ func TestAE5WithoutBoardEveryRuleWithActionsHasAColumn(t *testing.T) {
 		{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:in progress"}},
 		{
 			Name: "development", Labels: []crew.State{"crew:development:ready", "crew:development:in progress"},
+			Takes: crew.KindPullRequest,
+		},
+	}
+	if !reflect.DeepEqual(cfg.Board, want) || cfg.BoardWritten {
+		t.Errorf("Board = %+v (written %v)\nwant %+v, not written", cfg.Board, cfg.BoardWritten, want)
+	}
+}
+
+// KTD17: without board, each label a waiting route moves to has a column of
+// its own after its rule's, named after it and showing the rule's kind, so
+// an issue paused there stays on screen. A label already on the board for
+// that kind gets no second column.
+func TestWithoutBoardEveryWaitingRouteLabelHasAColumn(t *testing.T) {
+	waiting := `
+  review:
+    takes: pull_requests
+    labels: {ready: "crew:review:ready", running: "crew:review:in progress"}
+    actions:
+      - {name: review, prompt: "Review {{.Issue.Ref}}", on: {waiting: asks, blocked: handed}}
+      - {name: again, prompt: "Again {{.Issue.Ref}}", on: {waiting: handed}}
+    routes:
+      passed: "crew:review:done"
+      failed: [report, move: "crew:review:failed"]
+      asks: "crew:development:waiting answer"
+      handed: "crew:development:ready"
+`
+	body := strings.Replace(boardRules, `      - {name: lfg, prompt: "/lfg {{.Issue.Ref}}"}`,
+		`      - {name: lfg, prompt: "/lfg {{.Issue.Ref}}", on: {waiting: waiting-answer}}`, 1) +
+		`      waiting-answer: [comment: "{{.Action}} asks", move: "crew:development:waiting answer"]` + waiting
+	cfg := load(t, body)
+	want := []crew.BoardColumn{
+		{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:in progress"}},
+		{
+			Name: "development", Labels: []crew.State{"crew:development:ready", "crew:development:in progress"},
+			Takes: crew.KindPullRequest,
+		},
+		{
+			Name: "crew:development:waiting answer", Labels: []crew.State{"crew:development:waiting answer"},
+			Takes: crew.KindPullRequest,
+		},
+		{
+			Name: "review", Labels: []crew.State{"crew:review:ready", "crew:review:in progress"},
 			Takes: crew.KindPullRequest,
 		},
 	}

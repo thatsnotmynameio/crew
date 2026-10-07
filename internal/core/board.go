@@ -46,7 +46,7 @@ func ListingBoard(columns []crew.BoardColumn) Option {
 
 // BoardFromListings has the model fill the board of columns, the default
 // board, from its own listings, which ask for every rule's ready and
-// running labels: each listed item with a card in the columns of its kind
+// running labels and the labels its waiting routes move to: each listed item with a card in the columns of its kind
 // whose labels it carries. It applies crew's moves as ListingBoard does, and
 // reads no board through ListBoard (KTD10).
 func BoardFromListings(columns []crew.BoardColumn) Option {

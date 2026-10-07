@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -261,9 +262,11 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 	out := r.stdout.String()
 	containsAll(t, out,
 		`crew: implement took #1 "Issue 1" (ready -> in progress)`,
-		`crew: #1 implement/development started on branch crew/issue-1-development, `+
-			`log .crew/logs/issue-1-development.log`,
-		`crew: #1 implement/development succeeded: opened a pull request`,
+		`crew: #1 implement works in worktree issue-1-implement on branch crew/issue-1-implement, `+
+			`log .crew/logs/issue-1-implement.log`,
+		`crew: #1 implement/development started its session`,
+		`crew: #1 implement/development passed: opened a pull request`,
+		`crew: #1 implement ends through passed`,
 		`crew: #1 moved from in progress to ready to review`,
 	)
 	for line := range strings.SplitSeq(strings.TrimSuffix(out, "\n"), "\n") {
@@ -273,14 +276,15 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 	}
 }
 
-// Covers AE1 through the wiring: the check in the config runs through the
-// shell the options carry, and its failure fails the rule.
-func TestAnActionsCheckRunsThroughTheOptionsShell(t *testing.T) {
+// Covers AE1 through the wiring: the shell action after the session runs
+// through the shell the options carry, in the run's branch, and its exit
+// status 1 ends the run through its failed route.
+func TestAShellActionRunsThroughTheOptionsShell(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
 		sh := fake.NewShell()
-		sh.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: 1})
+		sh.Script("crew/issue-1-implement", fake.ShellScript{Print: "no open pull request\n", Exit: 1})
 		body := "actions:\n  pull request: gh pr list\n" +
 			strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n      - pull request\n", 1)
 		r := options(t, body, tr, h)
@@ -296,12 +300,13 @@ func TestAnActionsCheckRunsThroughTheOptionsShell(t *testing.T) {
 			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 		}
 		if got := len(sh.Runs()); got != 1 {
-			t.Fatalf("checks run = %d, want 1", got)
+			t.Fatalf("scripts run = %d, want 1", got)
 		}
 		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
 			t.Errorf("#1 is in %v, want needs attention", got)
 		}
-		out, want := r.stdout.String(), "the check pull request failed: no open pull request"
+		out, want := r.stdout.String(), "crew: #1 implement/pull request failed: "+
+			"the shell action pull request exited with status 1: no open pull request"
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout lacks %q; it is:\n%s", want, out)
 		}
@@ -338,15 +343,20 @@ func TestTheDraftConfigRunsImplementThenReviewAcrossTwoTicks(t *testing.T) {
 		r := options(t, draft, tr, h)
 		r.start()
 
-		prompts := map[string]bool{}
+		// implement's actions run one after the other, in the run's one
+		// worktree.
+		prompts, dirs := make([]string, 0, 2), make([]string, 0, 2)
 		for range 2 {
 			s := next(t, h)
-			prompts[s.Run().Prompt] = true
+			prompts, dirs = append(prompts, s.Run().Prompt), append(dirs, filepath.Base(s.Run().Dir))
 			s.End(success)
 		}
-		want := map[string]bool{"Implement test acceptance for issue #1": true, "Implement development for issue #1": true}
-		if !reflect.DeepEqual(prompts, want) {
-			t.Errorf("the first tick's prompts = %v, want %v", prompts, want)
+		want := []string{"Implement test acceptance for issue #1", "Implement development for issue #1"}
+		if !slices.Equal(prompts, want) {
+			t.Errorf("the first tick's prompts = %q, want %q", prompts, want)
+		}
+		if want := []string{"issue-1-implement", "issue-1-implement"}; !slices.Equal(dirs, want) {
+			t.Errorf("the sessions ran in %q, want %q", dirs, want)
 		}
 		synctest.Wait()
 		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{readyToReview}) {

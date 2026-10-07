@@ -3,6 +3,8 @@ package app_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -46,7 +48,7 @@ func TestAFailingRendererStopsTheEngineThroughItsStopSequenceAndExitsOne(t *test
 		r := options(t, oneAction, tr, h)
 		// The line for the session's start fails, so the session runs when
 		// the renderer ends.
-		r.opts.Stdout = &failingStdout{failOn: " started on branch "}
+		r.opts.Stdout = &failingStdout{failOn: " started its session"}
 		r.start()
 		session := next(t, h)
 
@@ -112,6 +114,7 @@ func TestAFailingEngineKillsEveryProcessAndExitsOne(t *testing.T) {
 	code := r.exitCode(t)
 	// The engine's loop is gone, so nothing stops the session but the test.
 	session.End(port.SessionEnd{Reason: "released by the test"})
+	sessionKept(t, r.opts.Root, "issue-1-implement")
 
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -120,6 +123,24 @@ func TestAFailingEngineKillsEveryProcessAndExitsOne(t *testing.T) {
 		t.Errorf("stderr = %q, want it to say the engine failed, with the panic", stderr)
 	}
 	killed(t, sleeper)
+}
+
+// sessionKept waits until the engine kept the ended session's prompt and
+// last message beside the log of the run in workspace, under root, which
+// it does after the session ended even when its loop is gone; the test's
+// cleanup would otherwise race those writes. It fails the test after a few
+// seconds.
+func sessionKept(t *testing.T, root string, workspace crew.WorkspaceName) {
+	t.Helper()
+	base := filepath.Join(root, ".crew", "logs", string(workspace))
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		_, prompt := os.Stat(base + ".prompt")
+		_, last := os.Stat(base + ".last-message")
+		if prompt == nil && last == nil {
+			return
+		}
+	}
+	t.Fatal("the engine never kept the ended session's prompt and last message")
 }
 
 // cursorShown is how the TUI restores the terminal's cursor as it ends.
