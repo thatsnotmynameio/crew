@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -24,11 +25,11 @@ var checkedDevelop = crew.Rule{
 	}},
 }
 
-// checkedConfig is config for checkedDevelop, with checker as its checker.
-func checkedConfig(t *testing.T, tr *fake.Tracker, checker *fake.Checker) engine.Config {
+// checkedConfig is config for checkedDevelop, with sh as its shell.
+func checkedConfig(t *testing.T, tr *fake.Tracker, sh *fake.Shell) engine.Config {
 	t.Helper()
 	cfg := config(t, tr, checkedDevelop)
-	cfg.Checker = checker
+	cfg.Shell = sh
 	return cfg
 }
 
@@ -59,8 +60,8 @@ func checkedRun(t *testing.T, tr *fake.Tracker, cfg engine.Config) ([]crew.Actio
 
 func TestAE2ACheckThatPassesKeepsTheSuccess(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		cfg := checkedConfig(t, tr, checker)
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		cfg := checkedConfig(t, tr, sh)
 
 		if got, _ := checkedRun(t, tr, cfg); got != nil {
 			t.Fatalf("failures = %+v, want none", got)
@@ -68,7 +69,7 @@ func TestAE2ACheckThatPassesKeepsTheSuccess(t *testing.T) {
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
 			t.Errorf("#1 is in %v, want ready to review", got)
 		}
-		checks := checker.Checks()
+		checks := sh.Runs()
 		if len(checks) != 1 {
 			t.Fatalf("checks = %+v, want one", checks)
 		}
@@ -83,11 +84,11 @@ func TestAE2ACheckThatPassesKeepsTheSuccess(t *testing.T) {
 
 func TestAE1ACheckThatFailsFailsTheActionWithItsLastLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		checker.Script("crew/issue-1-development", fake.CheckScript{
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		sh.Script("crew/issue-1-development", fake.CheckScript{
 			Print: "looking for a pull request\nno open pull request from crew/issue-1-development\n\n", Exit: 1,
 		})
-		cfg := checkedConfig(t, tr, checker)
+		cfg := checkedConfig(t, tr, sh)
 
 		got, reason := checkedRun(t, tr, cfg)
 
@@ -108,12 +109,31 @@ func TestAE1ACheckThatFailsFailsTheActionWithItsLastLine(t *testing.T) {
 	})
 }
 
+// KTD-P3: any status but 0 fails the check with today's reason, -1 (a
+// signal crew did not send) too.
+func TestACheckThatExitsAnyNonZeroStatusFails(t *testing.T) {
+	for _, status := range []int{3, -1} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+				sh.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: status})
+
+				got, reason := checkedRun(t, tr, checkedConfig(t, tr, sh))
+
+				if want := "the check pr-closes-issue failed: no open pull request"; len(got) != 1 || reason != want {
+					t.Fatalf("failures = %+v, reason %q, want reason %q", got, reason, want)
+				}
+			})
+		})
+	}
+}
+
 func TestACheckThatPrintsNothingSaysSo(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		checker.Script("crew/issue-1-development", fake.CheckScript{Print: "\n  \n", Exit: 1})
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		sh.Script("crew/issue-1-development", fake.CheckScript{Print: "\n  \n", Exit: 1})
 
-		got, reason := checkedRun(t, tr, checkedConfig(t, tr, checker))
+		got, reason := checkedRun(t, tr, checkedConfig(t, tr, sh))
 
 		if len(got) != 1 || reason != "the check pr-closes-issue failed and printed nothing" {
 			t.Fatalf("failures = %+v, reason %q", got, reason)
@@ -137,10 +157,10 @@ func TestACheckReasonCarriesNoControlBytes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-				checker.Script("crew/issue-1-development", fake.CheckScript{Print: tt.printed, Exit: 1})
+				tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+				sh.Script("crew/issue-1-development", fake.CheckScript{Print: tt.printed, Exit: 1})
 
-				got, reason := checkedRun(t, tr, checkedConfig(t, tr, checker))
+				got, reason := checkedRun(t, tr, checkedConfig(t, tr, sh))
 
 				if len(got) != 1 || reason != tt.want {
 					t.Fatalf("failures = %+v, reason %q, want reason %q", got, reason, tt.want)
@@ -152,9 +172,9 @@ func TestACheckReasonCarriesNoControlBytes(t *testing.T) {
 
 func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		checker.Script("crew/issue-1-development", fake.CheckScript{Block: true})
-		r := start(t, checkedConfig(t, tr, checker))
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		sh.Script("crew/issue-1-development", fake.CheckScript{Block: true})
+		r := start(t, checkedConfig(t, tr, sh))
 		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
@@ -181,10 +201,10 @@ func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 
 func TestAE9AStopEndsARunningCheckAndTheActionCountsAsStopped(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		checker.Script("crew/issue-1-development", fake.CheckScript{Block: true})
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		sh.Script("crew/issue-1-development", fake.CheckScript{Block: true})
 
-		got, reason := checkedRun(t, tr, checkedConfig(t, tr, checker))
+		got, reason := checkedRun(t, tr, checkedConfig(t, tr, sh))
 
 		if len(got) != 1 || reason != "crew stopped" {
 			t.Fatalf("failures = %+v, reason %q, want development stopped", got, reason)
@@ -194,9 +214,9 @@ func TestAE9AStopEndsARunningCheckAndTheActionCountsAsStopped(t *testing.T) {
 
 func TestACheckThatCannotStartSaysWhyWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		cfg := checkedConfig(t, tr, checker)
-		checker.Script("crew/issue-1-development", fake.CheckScript{
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		cfg := checkedConfig(t, tr, sh)
+		sh.Script("crew/issue-1-development", fake.CheckScript{
 			StartErr: errors.New("chdir " + cfg.Root + "/.crew/worktrees/issue-1-development: no such file or directory"),
 		})
 
@@ -212,8 +232,8 @@ func TestACheckThatCannotStartSaysWhyWithLocalPathsShortened(t *testing.T) {
 
 func TestACheckWhoseLogCannotOpenSaysWhyWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		cfg := checkedConfig(t, tr, checker)
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		cfg := checkedConfig(t, tr, sh)
 		r := start(t, cfg)
 		session := r.sessions(1)["issue-1-development"]
 		// A directory where the log was: the session keeps the file it
@@ -240,7 +260,7 @@ func TestACheckWhoseLogCannotOpenSaysWhyWithLocalPathsShortened(t *testing.T) {
 	})
 }
 
-func TestAnEngineWithoutACheckerFailsAnActionWithACheck(t *testing.T) {
+func TestAnEngineWithoutAShellFailsAnActionWithACheck(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, checkedDevelop)
@@ -255,9 +275,9 @@ func TestAnEngineWithoutACheckerFailsAnActionWithACheck(t *testing.T) {
 
 func TestWhenTheRunTimeIsUpARunningCheckFinishesBeforeTheEngineStops(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		checker.Script("crew/issue-1-development", fake.CheckScript{Block: true})
-		cfg := checkedConfig(t, tr, checker)
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		sh.Script("crew/issue-1-development", fake.CheckScript{Block: true})
+		cfg := checkedConfig(t, tr, sh)
 		cfg.RunTimeLimit = 5 * time.Minute
 		t0 := time.Now()
 		r := start(t, cfg)
@@ -289,10 +309,10 @@ var twoCheckedDevelop = crew.Rule{
 // message, and a passing check's reason is its last line.
 func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker, h := fake.NewReportingTracker(issue(1, ready)), fake.NewChecker(), fake.NewMessagingHarness()
-		checker.ScriptCheck("crew/issue-1-development", "judge", fake.CheckScript{Print: "asking Jev\ndone (0.97)\n"})
+		tr, sh, h := fake.NewReportingTracker(issue(1, ready)), fake.NewShell(), fake.NewMessagingHarness()
+		sh.ScriptCheck("crew/issue-1-development", "judge", fake.CheckScript{Print: "asking Jev\ndone (0.97)\n"})
 		cfg := config(t, tr, twoCheckedDevelop)
-		cfg.Checker, cfg.Harnesses = checker, harnesses(h)
+		cfg.Shell, cfg.Harnesses = sh, harnesses(h)
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 		s.SetLastMessage("PR #2 is open.\nMerging is yours.")
@@ -303,7 +323,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 			t.Fatalf("Run: %v", err)
 		}
 
-		wantInputs(t, checker.Checks(), s.Run().Prompt, "PR #2 is open.\nMerging is yours.")
+		wantInputs(t, sh.Runs(), s.Run().Prompt, "PR #2 is open.\nMerging is yours.")
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
 			t.Errorf("#1 is in %v, want ready to review", got)
 		}
@@ -321,7 +341,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 
 // wantInputs fails unless checks are judge then pr-closes-issue, each run
 // for development with prompt and last.
-func wantInputs(t *testing.T, checks []port.Check, prompt, last string) {
+func wantInputs(t *testing.T, checks []port.Script, prompt, last string) {
 	t.Helper()
 	if len(checks) != 2 || checks[0].Name != "judge" || checks[1].Name != "pr-closes-issue" {
 		t.Fatalf("checks = %+v, want judge then pr-closes-issue", checks)
@@ -349,8 +369,8 @@ func wantLog(t *testing.T, root, want string) {
 // crew neither scrubs nor strips it, as it does the text it shows.
 func TestACheckReadsTheLastMessageAsTheSessionWroteIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker, h := fake.NewTracker(issue(1, ready)), fake.NewChecker(), fake.NewMessagingHarness()
-		cfg := checkedConfig(t, tr, checker)
+		tr, sh, h := fake.NewTracker(issue(1, ready)), fake.NewShell(), fake.NewMessagingHarness()
+		cfg := checkedConfig(t, tr, sh)
 		cfg.Harnesses = harnesses(h)
 		last := "a\x00b \x1b[31mred\x1b[0m 10%\r20% in " + cfg.Root + "/main.go"
 		r := start(t, cfg)
@@ -363,7 +383,7 @@ func TestACheckReadsTheLastMessageAsTheSessionWroteIt(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 
-		checks := checker.Checks()
+		checks := sh.Runs()
 		if len(checks) != 1 || checks[0].LastMessage != last {
 			t.Fatalf("checks = %+v, want one reading the last message %q", checks, last)
 		}
@@ -373,11 +393,11 @@ func TestACheckReadsTheLastMessageAsTheSessionWroteIt(t *testing.T) {
 // R5: each check has its own ten minutes, not what the one before it left.
 func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
-		checker.ScriptCheck("crew/issue-1-development", "judge", fake.CheckScript{Delay: 9 * time.Minute})
-		checker.ScriptCheck("crew/issue-1-development", "pr-closes-issue", fake.CheckScript{Block: true})
+		tr, sh := fake.NewTracker(issue(1, ready)), fake.NewShell()
+		sh.ScriptCheck("crew/issue-1-development", "judge", fake.CheckScript{Delay: 9 * time.Minute})
+		sh.ScriptCheck("crew/issue-1-development", "pr-closes-issue", fake.CheckScript{Block: true})
 		cfg := config(t, tr, twoCheckedDevelop)
-		cfg.Checker = checker
+		cfg.Shell = sh
 		r := start(t, cfg)
 		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()

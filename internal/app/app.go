@@ -55,9 +55,9 @@ type Options struct {
 	Registry registry.Registry
 	// Workspace returns the workspace adapter for the repository at root.
 	Workspace func(root string) port.Workspace
-	// Checker runs the actions' checks; nil fails every action that has a
+	// Shell runs the actions' checks; nil fails every action that has a
 	// check.
-	Checker port.Checker
+	Shell port.Shell
 	// Journal returns the run journal of the repository at root, at
 	// engine.JournalPath; nil journals nothing, so no failed run resumes.
 	Journal func(root string) port.Journal
@@ -270,7 +270,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Tracker:           b.tracker,
 		Harnesses:         b.harnesses,
 		Workspace:         o.Workspace(o.Root),
-		Checker:           o.Checker,
+		Shell:             o.Shell,
 		Journal:           o.journal(),
 		Root:              o.Root,
 		Home:              o.Home,

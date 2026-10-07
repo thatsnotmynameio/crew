@@ -102,12 +102,12 @@ func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
 		tr.SetCodeOwners("mguilarducci")
 		h := fake.NewHarness()
-		checker := fake.NewChecker()
+		sh := fake.NewShell()
 		res := &resolver{bots: app.Bots{Writer: opsWriter,
 			Identities: map[crew.BotName]port.Identity{"ops": opsID, "developer": devID},
 			Logins:     []string{"crew-ops[bot]", "crew-developer[bot]"}}}
 		r := options(t, botAction, tr, h)
-		r.opts.Plain, r.opts.Checker, r.opts.Bots = true, checker, res.resolve
+		r.opts.Plain, r.opts.Shell, r.opts.Bots = true, sh, res.resolve
 		r.start()
 
 		session := next(t, h)
@@ -128,7 +128,7 @@ func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 			!slices.Equal(run.Bots, logins) {
 			t.Errorf("session ran as %+v for %q with bots %q, want developer", run.Identity, run.CodeOwners, run.Bots)
 		}
-		checks := checker.Checks()
+		checks := sh.Runs()
 		if len(checks) != 1 || !sameIdentity(checks[0].Identity, devID) ||
 			!slices.Equal(checks[0].CodeOwners, []string{"mguilarducci"}) || !slices.Equal(checks[0].Bots, logins) {
 			t.Errorf("checks = %+v, want one as developer", checks)
@@ -338,7 +338,7 @@ func TestABotThatCannotActIsNeverSaidToStopAndOneThatActsIs(t *testing.T) {
 			},
 		}}
 		r := options(t, botAction, tr, h)
-		r.opts.Plain, r.opts.Checker, r.opts.Bots = true, fake.NewChecker(), res.resolve
+		r.opts.Plain, r.opts.Shell, r.opts.Bots = true, fake.NewShell(), res.resolve
 
 		out := runOnce(t, r, h)
 
@@ -359,7 +359,7 @@ func TestTheDefaultBotsWritesGoingBackToYouIsSaid(t *testing.T) {
 		res := &resolver{bots: app.Bots{Writer: opsWriter,
 			Identities: map[crew.BotName]port.Identity{"ops": opsID, "developer": devID}}}
 		r := options(t, botAction, tr, h)
-		r.opts.Plain, r.opts.Checker, r.opts.Bots = true, fake.NewChecker(), res.resolve
+		r.opts.Plain, r.opts.Shell, r.opts.Bots = true, fake.NewShell(), res.resolve
 
 		out := runOnce(t, r, h)
 

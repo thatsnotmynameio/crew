@@ -149,7 +149,7 @@ func start(plain bool, stdout, stderr *os.File) int {
 	return app.Run(ctx, app.Options{
 		Registry:     registry.Default(&group),
 		Workspace:    func(root string) port.Workspace { return git.New(&group, root) },
-		Checker:      shell.New(&group),
+		Shell:        shell.New(&group),
 		Journal:      func(root string) port.Journal { return jsonl.New(root, engine.JournalPath, run) },
 		Root:         root,
 		GlobalConfig: config.GlobalFile(os.Getenv("XDG_CONFIG_HOME"), home),

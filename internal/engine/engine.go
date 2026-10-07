@@ -66,9 +66,9 @@ type Config struct {
 	Tracker   port.Tracker
 	Harnesses []AgentHarness
 	Workspace port.Workspace
-	// Checker runs the actions' checks. Without one, an action with a
-	// check fails, saying crew has no check runner.
-	Checker port.Checker
+	// Shell runs the actions' checks. Without one, an action with a check
+	// fails, saying crew has no check runner.
+	Shell port.Shell
 	// Journal is the run journal, at JournalPath: Prepare loads the past
 	// rule runs from it, and the engine appends each run event to it, so a
 	// failed run resumes after a restart (KTD12). Without one, nothing is

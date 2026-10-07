@@ -377,82 +377,81 @@ func TestALookupScriptedToBlockWaitsUntilItsContextEnds(t *testing.T) {
 	}
 }
 
-func TestCheckerRunsEachCheckAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
-	c := fake.NewChecker()
-	c.Script("crew/fails", fake.CheckScript{Print: "no pull request\n", Exit: 1})
-	c.Script("crew/no-sh", fake.CheckScript{StartErr: errors.New("sh: not found")})
+func TestShellRunsEachScriptAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
+	sh := fake.NewShell()
+	sh.Script("crew/fails", fake.CheckScript{Print: "no pull request\n", Exit: 2})
+	sh.Script("crew/no-sh", fake.CheckScript{StartErr: errors.New("sh: not found")})
 
-	if err := c.Check(context.Background(), port.Check{Branch: "crew/passes"}); err != nil {
-		t.Errorf("unscripted check = %v, want nil", err)
+	if got, err := sh.Run(context.Background(), port.Script{Branch: "crew/passes"}); err != nil || got.Status != 0 {
+		t.Errorf("unscripted script = %+v, %v, want status 0", got, err)
 	}
 	var out strings.Builder
-	err := c.Check(context.Background(), port.Check{Branch: "crew/fails", Output: &out})
-	if !errors.Is(err, port.ErrCheckFailed) {
-		t.Errorf("failing check = %v, want ErrCheckFailed", err)
+	got, err := sh.Run(context.Background(), port.Script{Branch: "crew/fails", Output: &out})
+	if err != nil || got.Status != 2 {
+		t.Errorf("failing script = %+v, %v, want status 2 and no error", got, err)
 	}
 	if out.String() != "no pull request\n" {
 		t.Errorf("output = %q", out.String())
 	}
-	err = c.Check(context.Background(), port.Check{Branch: "crew/no-sh"})
-	if err == nil || errors.Is(err, port.ErrCheckFailed) {
-		t.Errorf("check that cannot start = %v", err)
+	if _, err := sh.Run(context.Background(), port.Script{Branch: "crew/no-sh"}); err == nil {
+		t.Error("script that cannot start = nil, want its start error")
 	}
-	if got := len(c.Checks()); got != 3 {
-		t.Errorf("recorded %d checks, want 3", got)
+	if got := len(sh.Runs()); got != 3 {
+		t.Errorf("recorded %d scripts, want 3", got)
 	}
 }
 
-func TestCheckerRunsACheckScriptedByNameOverItsBranchsScript(t *testing.T) {
-	c := fake.NewChecker()
-	c.Script("crew/issue-9-lfg", fake.CheckScript{Exit: 1})
-	c.ScriptCheck("crew/issue-9-lfg", "judge", fake.CheckScript{Print: "done (0.97)\n"})
+func TestShellRunsAScriptScriptedByNameOverItsBranchsScript(t *testing.T) {
+	sh := fake.NewShell()
+	sh.Script("crew/issue-9-lfg", fake.CheckScript{Exit: 1})
+	sh.ScriptCheck("crew/issue-9-lfg", "judge", fake.CheckScript{Print: "done (0.97)\n"})
 
 	var out strings.Builder
-	judge := port.Check{Branch: "crew/issue-9-lfg", Name: "judge", Output: &out}
-	if err := c.Check(context.Background(), judge); err != nil {
-		t.Errorf("judge = %v, want it to pass as scripted by name", err)
+	judge := port.Script{Branch: "crew/issue-9-lfg", Name: "judge", Output: &out}
+	if got, err := sh.Run(context.Background(), judge); err != nil || got.Status != 0 {
+		t.Errorf("judge = %+v, %v, want it to pass as scripted by name", got, err)
 	}
 	if out.String() != "done (0.97)\n" {
 		t.Errorf("judge's output = %q", out.String())
 	}
-	err := c.Check(context.Background(), port.Check{Branch: "crew/issue-9-lfg", Name: "pr-closes-issue"})
-	if !errors.Is(err, port.ErrCheckFailed) {
-		t.Errorf("pr-closes-issue = %v, want the branch's script to fail it", err)
+	got, err := sh.Run(context.Background(), port.Script{Branch: "crew/issue-9-lfg", Name: "pr-closes-issue"})
+	if err != nil || got.Status != 1 {
+		t.Errorf("pr-closes-issue = %+v, %v, want the branch's script to exit 1", got, err)
 	}
 }
 
-func TestHarnessAndCheckerRecordTheIdentityAndTheLogins(t *testing.T) {
+func TestHarnessAndShellRecordTheIdentityAndTheLogins(t *testing.T) {
 	developer := port.Identity{
 		Bot: "developer", Login: "crew-developer[bot]",
 		Env: []string{"GH_CONFIG_DIR=/run/crew/developer"},
 	}
 	codeOwners, bots := []string{"octocat"}, []string{"crew-developer[bot]"}
 	run := port.Run{Prompt: "Implement #80", Identity: developer, CodeOwners: codeOwners, Bots: bots}
-	check := port.Check{Branch: "crew/issue-80-lfg", Identity: developer, CodeOwners: codeOwners, Bots: bots}
-	h, c := fake.NewHarness(), fake.NewChecker()
+	script := port.Script{Branch: "crew/issue-80-lfg", Identity: developer, CodeOwners: codeOwners, Bots: bots}
+	h, sh := fake.NewHarness(), fake.NewShell()
 
 	if _, err := h.Start(context.Background(), run); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := c.Check(context.Background(), check); err != nil {
-		t.Fatalf("Check: %v", err)
+	if _, err := sh.Run(context.Background(), script); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 
 	if got := h.Sessions()[0].Run(); !reflect.DeepEqual(got, run) {
 		t.Errorf("run = %+v, want %+v", got, run)
 	}
-	if got := c.Checks()[0]; !reflect.DeepEqual(got, check) {
-		t.Errorf("check = %+v, want %+v", got, check)
+	if got := sh.Runs()[0]; !reflect.DeepEqual(got, script) {
+		t.Errorf("script = %+v, want %+v", got, script)
 	}
 }
 
-func TestCheckerScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
-	c := fake.NewChecker()
-	c.Script("crew/hangs", fake.CheckScript{Block: true})
+func TestShellScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
+	sh := fake.NewShell()
+	sh.Script("crew/hangs", fake.CheckScript{Block: true})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := c.Check(ctx, port.Check{Branch: "crew/hangs"}); !errors.Is(err, context.Canceled) {
-		t.Errorf("blocking check = %v, want the context's error", err)
+	if _, err := sh.Run(ctx, port.Script{Branch: "crew/hangs"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("blocking script = %v, want the context's error", err)
 	}
 }
 

@@ -76,7 +76,7 @@ func judgeScript(t *testing.T) string {
 	return script
 }
 
-// runJudge runs script as the shell checker would, with stubs for curl and
+// runJudge runs script as the shell adapter would, with stubs for curl and
 // sleep first on its PATH, and the real jq.
 func runJudge(t *testing.T, script string, r judgeRun) judged {
 	t.Helper()

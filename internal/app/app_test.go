@@ -269,18 +269,18 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 }
 
 // Covers AE1 through the wiring: the check in the config runs through the
-// checker the options carry, and its failure fails the rule.
-func TestAnActionsCheckRunsThroughTheOptionsChecker(t *testing.T) {
+// shell the options carry, and its failure fails the rule.
+func TestAnActionsCheckRunsThroughTheOptionsShell(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
-		checker := fake.NewChecker()
-		checker.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: 1})
+		sh := fake.NewShell()
+		sh.Script("crew/issue-1-development", fake.CheckScript{Print: "no open pull request\n", Exit: 1})
 		body := "checks:\n  pull request: gh pr list\n" +
 			strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n", `{{.Issue.Ref}}"`+"\n        check: pull request\n", 1)
 		r := options(t, body, tr, h)
 		r.opts.Plain = true
-		r.opts.Checker = checker
+		r.opts.Shell = sh
 		r.start()
 
 		next(t, h).End(success)
@@ -290,7 +290,7 @@ func TestAnActionsCheckRunsThroughTheOptionsChecker(t *testing.T) {
 		if code := <-r.code; code != 0 {
 			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 		}
-		if got := len(checker.Checks()); got != 1 {
+		if got := len(sh.Runs()); got != 1 {
 			t.Fatalf("checks run = %d, want 1", got)
 		}
 		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{needsAttention}) {

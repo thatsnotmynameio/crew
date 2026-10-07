@@ -404,7 +404,7 @@ func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core
 // the session wrote it (KTD10): crew does not show it.
 func (e *Engine) check(ctx context.Context, c core.RunCheck) (bool, crew.CheckReason) {
 	subject := "the check " + string(c.Name)
-	if e.cfg.Checker == nil {
+	if e.cfg.Shell == nil {
 		return false, crew.NewCheckReason(subject + " could not start: crew has no check runner")
 	}
 	log, err := e.openLog(c.Log)
@@ -415,16 +415,16 @@ func (e *Engine) check(ctx context.Context, c core.RunCheck) (bool, crew.CheckRe
 	defer func() { _ = log.Close() }()
 	_, _ = fmt.Fprintf(log, "\ncrew: running %s: %s\n", subject, c.Command)
 	var last lastLine
-	err = e.cfg.Checker.Check(ctx, port.Check{
+	ran, err := e.cfg.Shell.Run(ctx, port.Script{
 		Dir: c.Dir, Name: c.Name, Command: c.Command, Action: c.Action, Prompt: c.Prompt, LastMessage: c.LastMessage,
 		IssueRef: c.IssueRef, IssueID: c.IssueID, IssueURL: c.IssueURL,
 		Branch: c.Branch, Output: io.MultiWriter(log, &last),
 		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
 	})
 	switch {
-	case err == nil:
+	case err == nil && ran.Status == 0:
 		return true, e.saying(subject+" passed", last.String())
-	case errors.Is(err, port.ErrCheckFailed):
+	case err == nil:
 		line := last.String()
 		if line == "" {
 			return false, crew.NewCheckReason(subject + " failed and printed nothing")

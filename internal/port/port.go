@@ -352,26 +352,30 @@ type PullRequestFinder interface {
 	FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error)
 }
 
-// ErrCheckFailed means a check ran and exited with a non-zero status.
-var ErrCheckFailed = errors.New("the check failed")
-
-// Checker runs action checks: a command you wrote, run in an action's
-// workspace once its session succeeded, so crew does not judge the action
-// by what its session says alone.
-type Checker interface {
-	// Check runs check to its end, with its output going to check.Output.
-	// It returns nil when the command exited 0, and an error wrapping
-	// ErrCheckFailed when it exited otherwise. When ctx ends first, it ends
-	// the command and what the command started, and returns an error
-	// wrapping ctx.Err(). Any other error means the command could not start.
-	Check(ctx context.Context, check Check) error
+// Shell runs scripts: a command you wrote, such as an action's check, run in
+// an action's workspace once its session succeeded, so crew does not judge
+// the action by what its session says alone.
+type Shell interface {
+	// Run runs script to its end, with its output going to script.Output,
+	// and returns its exit status. A script killed by a signal crew did not
+	// send reports status -1. When ctx ends first, it ends the command and
+	// what the command started, and returns an error wrapping ctx.Err().
+	// Any other error means the command could not start.
+	Run(ctx context.Context, script Script) (ShellResult, error)
 }
 
-// Check is what a Checker needs to run a check. The issue and the session
+// ShellResult is how a script that ran ended.
+type ShellResult struct {
+	// Status is the script's exit status: 0 for success, -1 when a signal
+	// killed it.
+	Status int
+}
+
+// Script is what a Shell needs to run a script. The issue and the session
 // reach the command only through these fields, as environment variables
 // and files they name, never as part of the command, so no issue or
 // session text can run as code.
-type Check struct {
+type Script struct {
 	// Dir is the action's workspace directory, where the command runs.
 	Dir string
 	// Name is the check's name, and Command the shell command to run.
