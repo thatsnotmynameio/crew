@@ -95,7 +95,7 @@ func (r *crewRun) eventually(ok func(stdout string) bool) bool {
 // release ends session and waits for the engine's last event line, so the
 // engine is done with the repository before the test removes it.
 func (r *crewRun) release(session *fake.Session) {
-	session.End(crew.Outcome{Reason: "released by the test"})
+	session.End(port.Verdict{Reason: "released by the test"})
 	r.eventually(func(out string) bool { return strings.Contains(out, "crew: stopped") })
 }
 
@@ -186,7 +186,7 @@ func TestOnATerminalQuittingTheTUITwiceKillsEveryProcessAndExitsOne(t *testing.T
 // is removed. The TUI prints no "crew: stopped" for release to wait for.
 func releaseAfterTUI(t *testing.T, r *crewRun, session *fake.Session) {
 	t.Helper()
-	session.End(crew.Outcome{Reason: "released by the test"})
+	session.End(port.Verdict{Reason: "released by the test"})
 	journal := filepath.Join(r.opts.Root, ".crew", "logs", "runs.jsonl")
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		if data, _ := os.ReadFile(journal); strings.Contains(string(data), `"event":"ended"`) {

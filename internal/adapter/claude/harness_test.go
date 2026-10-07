@@ -123,7 +123,7 @@ func fixture(t *testing.T, name string) []byte {
 
 // runSession runs one session of p to its end and returns its outcome and the
 // bytes the engine's writer received.
-func runSession(t *testing.T, p *fakeProcess) (crew.Outcome, []byte) {
+func runSession(t *testing.T, p *fakeProcess) (port.Verdict, []byte) {
 	t.Helper()
 	h := build(t, noSection, &fakeSpawn{process: p})
 	var out bytes.Buffer
@@ -279,7 +279,7 @@ func TestFactoryRejectsAnUnknownHarnessKeyNamingIt(t *testing.T) {
 func TestCleanResultSucceedsWithItsText(t *testing.T) {
 	got, _ := runSession(t, newProcess(fixture(t, "success.jsonl"), nil))
 
-	want := crew.Outcome{Succeeded: true, Reason: "Opened pull request #12 for issue #4. The tests pass."}
+	want := port.Verdict{Succeeded: true, Reason: "Opened pull request #12 for issue #4. The tests pass."}
 	if got != want {
 		t.Errorf("outcome = %+v, want %+v", got, want)
 	}
@@ -288,7 +288,7 @@ func TestCleanResultSucceedsWithItsText(t *testing.T) {
 func TestErrorResultFailsWithItsTextOnOneLineCutTo200Characters(t *testing.T) {
 	got, _ := runSession(t, newProcess(fixture(t, "error.jsonl"), exitError{code: 1, msg: "exit status 1"}))
 
-	want := crew.Outcome{Reason: `API Error: 529 ` +
+	want := port.Verdict{Reason: `API Error: 529 ` +
 		`{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}} ` +
 		`The request could not be completed because the service is temporarily overloaded. The session stopped before…`}
 	if got != want {
@@ -302,7 +302,7 @@ func TestErrorResultFailsWithItsTextOnOneLineCutTo200Characters(t *testing.T) {
 func TestNoResultFailsWithTheExitCode(t *testing.T) {
 	got, _ := runSession(t, newProcess(fixture(t, "noresult.jsonl"), exitError{code: 1, msg: "exit status 1"}))
 
-	want := crew.Outcome{Reason: "exit code 1"}
+	want := port.Verdict{Reason: "exit code 1"}
 	if got != want {
 		t.Errorf("outcome = %+v, want %+v", got, want)
 	}

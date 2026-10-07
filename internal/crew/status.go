@@ -55,9 +55,10 @@ type ActionStatus struct {
 	// created or its session starts, and once it ended.
 	Started time.Time
 	// Said is the last thing its running session said, on one line with
-	// local paths shortened; empty when it said nothing yet or its harness
-	// cannot tell.
-	Said string
+	// local paths shortened and without control characters; empty when it
+	// said nothing yet, said only control characters or its harness cannot
+	// tell.
+	Said Said
 	// Cause says what made a failed action fail; set when State is
 	// ActionFailed.
 	Cause FailureCause
@@ -142,10 +143,10 @@ func cloneActions(actions []ActionStatus) []ActionStatus {
 }
 
 // FailedCheck returns the reason of the check that failed a, when its Cause
-// is CauseCheck, or "".
-func (a ActionStatus) FailedCheck() string {
+// is CauseCheck, or an empty CheckReason.
+func (a ActionStatus) FailedCheck() CheckReason {
 	if a.Cause != CauseCheck || len(a.Checks) == 0 {
-		return ""
+		return CheckReason{}
 	}
 	return a.Checks[len(a.Checks)-1].Reason
 }

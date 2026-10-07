@@ -6,14 +6,15 @@ func TestPullRequestReportCloneSharesNoMemory(t *testing.T) {
 	r := PullRequestReport{
 		ID: "7", IssueID: IssueID{Key: "42"}, IssueRef: "#42", State: "crew:failed",
 		End: &RuleEnd{Rule: "development", Actions: []ActionStatus{
-			{Name: "lfg", State: ActionFailed, Checks: []CheckResult{{Name: "judge", Reason: "unfinished"}}},
+			{Name: "lfg", State: ActionFailed, Checks: []CheckResult{{Name: "judge", Reason: NewCheckReason("unfinished")}}},
 		}},
 	}
 	c := r.Clone()
 	c.End.Rule = "review"
 	c.End.Actions[0].Name = "other"
-	c.End.Actions[0].Checks[0].Reason = "changed"
-	if r.End.Rule != "development" || r.End.Actions[0].Name != "lfg" || r.End.Actions[0].Checks[0].Reason != "unfinished" {
+	c.End.Actions[0].Checks[0].Reason = NewCheckReason("changed")
+	if r.End.Rule != "development" || r.End.Actions[0].Name != "lfg" ||
+		r.End.Actions[0].Checks[0].Reason.String() != "unfinished" {
 		t.Fatalf("changing the clone changed the original: %+v", r.End)
 	}
 }

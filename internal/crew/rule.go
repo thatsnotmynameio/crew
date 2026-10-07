@@ -98,7 +98,7 @@ type CheckResult struct {
 	Passed bool
 	// Reason is crew's one line on how it ended, naming the check, followed
 	// by the last line the check printed when it printed one.
-	Reason string
+	Reason CheckReason
 }
 
 // promptIssue is the only issue data a prompt template can reach. A struct,
@@ -132,11 +132,13 @@ type Outcome struct {
 	// Succeeded is true when the session ended cleanly.
 	Succeeded bool
 	// Reason is one line saying why, such as the session's last message.
-	Reason string
+	Reason SessionText
 }
 
 // FailureReport is what the engine asks a tracker to post on an issue whose
 // rule had failed actions. The tracker adapter formats it in its own markup.
+// It carries no reason: an outcome's reason is a session's or a tool's last
+// words, which a tracker comment must not show.
 type FailureReport struct {
 	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
 	IssueID  IssueID
@@ -145,12 +147,11 @@ type FailureReport struct {
 	Failures []ActionFailure
 }
 
-// ActionFailure is one failed action in a FailureReport.
+// ActionFailure is one failed action in a FailureReport: where to read why
+// it failed, never the reason itself.
 type ActionFailure struct {
 	// Action is the action's name.
 	Action ActionName
-	// Reason is the one-line reason from the action's Outcome.
-	Reason string
 	// Workspace is the workspace the action ran in.
 	Workspace WorkspaceName
 	// Log is the repository-relative path of the session's log file.

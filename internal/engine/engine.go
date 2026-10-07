@@ -417,10 +417,11 @@ func (e *Engine) withBots() core.Option {
 }
 
 // said returns what each running session that implements port.Narrator last
-// said, with local paths shortened (R10), then cut to its last maxSaid
-// characters, in a stable order. Cutting after shortening keeps the end of a
-// cut path from reaching the tracker. Only the loop
-// calls it, as it owns the sessions.
+// said, scrubbed with local paths shortened (R10) and stripped of its control
+// characters (scrubAndStrip), then cut to its last maxSaid characters, in a
+// stable order. A session that said nothing, or only control characters, is
+// left out. Cutting after shortening keeps the end of a cut path from
+// reaching the tracker. Only the loop calls it, as it owns the sessions.
 func (e *Engine) said() []core.Said {
 	var out []core.Said
 	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), sessionKey.compare) {
@@ -428,8 +429,8 @@ func (e *Engine) said() []core.Said {
 		if !ok {
 			continue
 		}
-		if text := n.Said(); text != "" {
-			out = append(out, core.Said{IssueID: k.issue, Action: k.action, Text: lastWords(e.scrub(text))})
+		if text := e.scrubAndStrip(n.Said()); text != "" {
+			out = append(out, core.Said{IssueID: k.issue, Action: k.action, Text: crew.NewSaid(lastWords(text))})
 		}
 	}
 	return out

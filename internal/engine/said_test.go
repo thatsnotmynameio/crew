@@ -11,6 +11,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // saidEvery is how often the engine refreshes what the sessions last said.
@@ -99,7 +100,8 @@ func TestR18TheLatestSubscriberGetsTheSessionsScrubbedWordsBeforeAnyPoll(t *test
 		u := n.refreshed(t)
 
 		want := []core.Said{{
-			IssueID: issueID("1"), Action: "development", Text: "Pushed with [redacted token] from ./internal/core in ~",
+			IssueID: issueID("1"), Action: "development",
+			Text: crew.NewSaid("Pushed with [redacted token] from ./internal/core in ~"),
 		}}
 		if !reflect.DeepEqual(u.Snapshot.Said, want) {
 			t.Errorf("Said = %#v, want %#v", u.Snapshot.Said, want)
@@ -171,7 +173,7 @@ func TestR18OnceTheSessionEndsTheNextRefreshDropsItsWords(t *testing.T) {
 			t.Fatalf("Said = %#v, want the session's words", said)
 		}
 
-		n.session.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		n.session.End(port.Verdict{Succeeded: true, Reason: "done"})
 		if said := n.refreshed(t).Snapshot.Said; len(said) != 0 {
 			t.Errorf("Said = %#v after the session ended, want nothing", said)
 		}
@@ -202,5 +204,68 @@ func TestR18SessionsThatDoNotNarratePublishNothingOnTheRefresh(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
+	})
+}
+
+// saidInStatus has issue 1's narrating development session say text, waits
+// for a poll and returns what the last status the tracker received says the
+// session last said.
+func saidInStatus(t *testing.T, text string) string {
+	t.Helper()
+	tr := fake.NewReportingTracker(issue(1, ready))
+	cfg := config(t, tr, develop)
+	cfg.Harnesses = harnesses(fake.NewNarratingHarness())
+	r := start(t, cfg)
+	r.sessions(1)["issue-1-development"].Say(text)
+	time.Sleep(poll)
+	synctest.Wait()
+
+	got := lastStatus(t, tr)
+	r.engine.Stop()
+	if _, err := r.wait(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.Kind != crew.StatusRunning || len(got.Actions) != 1 {
+		t.Fatalf("status = %#v, want development running", got)
+	}
+	return got.Actions[0].Said.String()
+}
+
+func TestR23TheStatusShowsWhatTheSessionSaidWithoutItsEscapeSequences(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		if got, want := saidInStatus(t, "\x1b[32mrunning tests\x1b[0m"), "running tests"; got != want {
+			t.Errorf("Said = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestR23TheStatusShowsAControlCharacterTheSessionSaidAsASpace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		if got, want := saidInStatus(t, "a\x00b"), "a b"; got != want {
+			t.Errorf("Said = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestR23ASessionThatSaidOnlyControlCharactersGivesAStatusWithoutWords(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		if got := saidInStatus(t, "\x1b[0m"); got != "" {
+			t.Errorf("Said = %q, want nothing", got)
+		}
+	})
+}
+
+func TestR23ASessionThatSaidOnlyControlCharactersPublishesNoWords(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := startNarrating(t)
+		n.session.Say("\x1b[0m")
+
+		time.Sleep(saidEvery)
+		synctest.Wait()
+		if u, ok := n.next(); ok {
+			t.Errorf("words that are only control characters published %#v, want nothing", u)
+		}
+
+		n.finish(t)
 	})
 }

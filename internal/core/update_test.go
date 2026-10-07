@@ -142,10 +142,10 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 				core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention},
 				core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1",
 					Failures: []crew.ActionFailure{{
-						Action: "development", Reason: tt.outcome.Reason,
-						Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
+						Action: "development", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
 					}}}},
 			)
+			d.wantReason("1", "development", tt.outcome.Reason.String())
 
 			_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 			hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
@@ -180,10 +180,10 @@ func TestAE1AE5FailedRuleMovesToItsOwnOnFailure(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueID: issueID("2"), From: inReview, To: ready},
 		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("2"), IssueRef: "#2", Failures: []crew.ActionFailure{{
-			Action: "custom_review", Reason: "changes requested",
-			Workspace: "issue-2-custom_review", Log: ".crew/logs/issue-2-custom_review.log",
+			Action: "custom_review", Workspace: "issue-2-custom_review", Log: ".crew/logs/issue-2-custom_review.log",
 		}}}},
 	)
+	d.wantReason("2", "custom_review", "changes requested")
 	d.settle(cmds)
 	wantHeld(t, d.m)
 
@@ -229,6 +229,7 @@ func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
 }
 
 func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
+	fetchFailed := crew.NewSessionText("fetch failed")
 	tests := []struct {
 		name      string
 		fail      func(d *driver) []core.Command
@@ -238,7 +239,7 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 		{
 			name: "workspace failed",
 			fail: func(d *driver) []core.Command {
-				cmds, _ := d.send(core.WorkspaceFailed{IssueID: issueID("1"), Action: "acceptance", Reason: "fetch failed"})
+				cmds, _ := d.send(core.WorkspaceFailed{IssueID: issueID("1"), Action: "acceptance", Reason: fetchFailed})
 				return cmds
 			},
 		},
@@ -246,7 +247,7 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 			name: "session failed to start",
 			fail: func(d *driver) []core.Command {
 				d.send(space("1", "acceptance"))
-				cmds, _ := d.send(core.SessionFailedToStart{IssueID: issueID("1"), Action: "acceptance", Reason: "fetch failed"})
+				cmds, _ := d.send(core.SessionFailedToStart{IssueID: issueID("1"), Action: "acceptance", Reason: fetchFailed})
 				return cmds
 			},
 			workspace: "issue-1-acceptance",
@@ -271,9 +272,10 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 			wantCommands(t, cmds,
 				core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention},
 				core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{
-					{Action: "acceptance", Reason: "fetch failed", Workspace: tt.workspace, Log: tt.log},
+					{Action: "acceptance", Workspace: tt.workspace, Log: tt.log},
 				}}},
 			)
+			d.wantReason("1", "acceptance", "fetch failed")
 		})
 	}
 }
@@ -288,7 +290,7 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
 	for _, e := range events {
 		if ended, ok := e.(core.ActionEnded); ok && ended.Action == "acceptance" {
-			if ended.Outcome.Succeeded || !strings.Contains(ended.Outcome.Reason, "Number") {
+			if ended.Outcome.Succeeded || !strings.Contains(ended.Outcome.Reason.String(), "Number") {
 				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", ended.Outcome)
 			}
 			return

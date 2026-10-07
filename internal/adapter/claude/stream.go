@@ -11,9 +11,10 @@ import (
 	"sync"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// maxReason is how many characters of a reason an outcome keeps.
+// maxReason is how many characters of a reason a verdict keeps.
 const maxReason = 200
 
 // stream reads claude's stream-json output as it is written: one JSON event
@@ -182,22 +183,22 @@ func (s *stream) usage() crew.Usage {
 // succeeded only when last exists, is not an error, and the process exited
 // 0. The reason is the result's text on one line, cut to maxReason
 // characters, or how the process exited when there is no result.
-func judge(last *result, exit error) crew.Outcome {
+func judge(last *result, exit error) port.Verdict {
 	switch {
 	case last == nil && exit == nil:
-		return crew.Outcome{Reason: "the session ended without a result"}
+		return port.Verdict{Reason: "the session ended without a result"}
 	case last == nil:
-		return crew.Outcome{Reason: exited(exit)}
+		return port.Verdict{Reason: exited(exit)}
 	case last.IsError:
 		text := last.Result
 		if strings.TrimSpace(text) == "" {
 			text = last.Subtype // such as error_max_turns, which has no text
 		}
-		return crew.Outcome{Reason: oneLine(text)}
+		return port.Verdict{Reason: oneLine(text)}
 	case exit != nil:
-		return crew.Outcome{Reason: oneLine(fmt.Sprintf("%s after: %s", exited(exit), last.Result))}
+		return port.Verdict{Reason: oneLine(fmt.Sprintf("%s after: %s", exited(exit), last.Result))}
 	}
-	return crew.Outcome{Succeeded: true, Reason: oneLine(last.Result)}
+	return port.Verdict{Succeeded: true, Reason: oneLine(last.Result)}
 }
 
 // exited says how a process that did not exit 0 ended: "exit code N", or the

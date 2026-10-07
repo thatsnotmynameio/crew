@@ -12,6 +12,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // bugs is a board of one column, for the engine's board tests.
@@ -82,7 +83,7 @@ func TestAFailingBoardReadShowsInTheSnapshotAndCrewKeepsRunning(t *testing.T) {
 		cfg := config(t, tr, develop)
 		cfg.Board, cfg.BoardWritten = bugs, true
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true})
 
 		time.Sleep(poll + time.Second) // the polls at 0s and 300s
 		r.engine.Stop()
@@ -134,7 +135,7 @@ func TestTheDefaultBoardComesFromTheListingsOfATrackerThatCannotListABoard(t *te
 		cfg.Board = []crew.BoardColumn{{Name: "implement", Labels: []crew.State{ready, inProgress}}}
 		r := start(t, cfg)
 
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true})
 		time.Sleep(poll + time.Second) // the polls at 0s and 300s
 		r.engine.Stop()
 		final, err := r.wait()

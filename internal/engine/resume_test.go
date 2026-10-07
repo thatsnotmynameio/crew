@@ -28,6 +28,22 @@ func (r *rig) events() []core.Event {
 	return out
 }
 
+// lastReason returns the reason of the last ActionEnded r's engine
+// published, once Run has returned. It drains r's queue, as events does.
+func (r *rig) lastReason() string {
+	r.t.Helper()
+	reason, found := "", false
+	for _, e := range r.events() {
+		if ended, ok := e.(core.ActionEnded); ok {
+			reason, found = ended.Outcome.Reason.String(), true
+		}
+	}
+	if !found {
+		r.t.Fatal("no ActionEnded")
+	}
+	return reason
+}
+
 // session waits for the next session to start.
 func (r *rig) session() *fake.Session {
 	r.t.Helper()
@@ -46,7 +62,7 @@ func failOnce(t *testing.T, r *rig, tr *fake.Tracker, output, reason string) *fa
 	if _, err := fmt.Fprint(s.Run().Output, output); err != nil {
 		t.Fatal(err)
 	}
-	s.End(crew.Outcome{Reason: reason})
+	s.End(port.Verdict{Reason: reason})
 	synctest.Wait()
 	if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{needsAttention}) {
 		t.Fatalf("issue 1 is in %v after its failure, want needs attention", got)
@@ -71,7 +87,7 @@ func TestAE1ARelabeledFailedRunResumesInItsWorkspaceAndLog(t *testing.T) {
 		if _, err := fmt.Fprint(second.Run().Output, "second output\n"); err != nil {
 			t.Fatal(err)
 		}
-		second.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		second.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -161,6 +177,29 @@ func TestAE5ARunKilledWithCrewResumesAfterARestart(t *testing.T) {
 	})
 }
 
+func TestAResumedRunsPromptQuotesItsJournalReasonWithoutControlBytes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready))
+		cfg := config(t, tr, develop)
+		// A journal an older crew wrote, its reason holding a NUL.
+		ended := strings.Replace(startedLine, `"event":"started"`, `"event":"ended"`, 1)
+		ended = strings.TrimSuffix(ended, "}") + `,"succeeded":false,"reason":"bo\u0000om"}`
+		writeJournal(t, cfg.Root, startedLine, ended)
+		if err := os.Mkdir(filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-development"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		r := start(t, cfg)
+
+		if p := r.session().Run().Prompt; !strings.Contains(p, `That run failed: "bo om".`) {
+			t.Errorf("prompt does not quote the stripped reason:\n%s", p)
+		}
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
 func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
@@ -168,7 +207,7 @@ func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 		r := start(t, cfg)
 
 		s := r.session()
-		s.End(crew.Outcome{Reason: "broke"})
+		s.End(port.Verdict{Reason: "broke"})
 		synctest.Wait()
 		if err := os.RemoveAll(s.Run().Dir); err != nil {
 			t.Fatal(err)
@@ -205,7 +244,7 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 		}
 		r := start(t, cfg)
 
-		r.session().End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -281,7 +320,7 @@ func TestAWorkspaceThatFailsToReopenFailsTheRunWithItsReason(t *testing.T) {
 		var reasons []string
 		for _, e := range r.events() {
 			if a, ok := e.(core.ActionEnded); ok {
-				reasons = append(reasons, a.Outcome.Reason)
+				reasons = append(reasons, a.Outcome.Reason.String())
 			}
 		}
 		if len(reasons) != 2 || !strings.Contains(reasons[1], "disk full") {

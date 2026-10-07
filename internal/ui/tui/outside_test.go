@@ -144,7 +144,7 @@ func TestANotificationIsCleanedOfControlCharacters(t *testing.T) {
 }
 
 func TestFailuresAndGivenUpMovesSayHowTheRuleEnded(t *testing.T) {
-	failed := failedEntry("5", "Parse", 10, 1, "lfg", "tests")
+	failed := failedEntry("5", "Parse", 10, 1, "lfg")
 	if got := noteText(failed); got != "crew: implement failed on #5 Parse; moved to needs attention" {
 		t.Errorf("failed note = %q", got)
 	}
@@ -183,7 +183,7 @@ func windingDown() updateMsg { return updateMsg(windingDownSnapshot()) }
 func TestAMutedRulesFailureCountsAsNeedingAttention(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, crewBoard)
 	u := ended("promote triage", "crew:triage:failed", 1)
-	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "promote", Reason: "boom"}}
+	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "promote"}}
 
 	h.send(updateMsg(u))
 
@@ -244,7 +244,7 @@ func TestAFailureHeldAgainDoesNotCountAsNeedingAttention(t *testing.T) {
 	h := newBoardHarness(t, 80, crewRules, crewBoard)
 	u := held(twelve, "development", "lfg", core.ClaimRunning)
 	e := handledBy(twelve, "fix", "crew:fix:failed").Snapshot.Handled[0]
-	e.Failures = []crew.ActionFailure{{Action: "lfg", Reason: "boom"}}
+	e.Failures = []crew.ActionFailure{{Action: "lfg"}}
 	u.Snapshot.Handled = []core.HandledView{e}
 
 	h.send(updateMsg(u))
@@ -279,7 +279,7 @@ func TestNotifyDecidesWhetherARulesEndNotifies(t *testing.T) {
 	h.send(tea.BlurMsg{})
 
 	u := ended("review", "needs attention", 3)
-	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "review", Reason: "boom"}}
+	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "review"}}
 	if notes := raws(h.send(updateMsg(u))); len(notes) != 0 {
 		t.Errorf("review's failure notified with notify off: %q", notes)
 	}

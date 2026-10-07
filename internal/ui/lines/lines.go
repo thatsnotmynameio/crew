@@ -175,7 +175,7 @@ func actionEnded(e core.ActionEnded) string {
 	if e.Outcome.Succeeded {
 		verdict = "succeeded"
 	}
-	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Rule, e.Action, verdict), e.Outcome.Reason)
+	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Rule, e.Action, verdict), e.Outcome.Reason.String())
 }
 
 // issueSkipped is the line for an issue crew left alone, and why.

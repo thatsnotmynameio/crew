@@ -9,11 +9,16 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
+// checkResult is how the check name ended: passed or not, for reason.
+func checkResult(name crew.CheckName, passed bool, reason string) crew.CheckResult {
+	return crew.CheckResult{Name: name, Passed: passed, Reason: crew.NewCheckReason(reason)}
+}
+
 // running74 is #74 in implement with one action, lfg, running since started
 // and having said said.
 func running74(started time.Time, said string) crew.Status {
 	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
-		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: said}},
+		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: crew.NewSaid(said)}},
 		Updated: updated}
 }
 
@@ -251,7 +256,7 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 		s := developmentEnded()
 		s.Actions[0].Cause = cause
 		// Only a check's reason may show; any other reason must not.
-		s.Actions[0].Checks = []crew.CheckResult{{Name: "pr", Reason: "`gh` found no @someone **pull request**"}}
+		s.Actions[0].Checks = []crew.CheckResult{checkResult("pr", false, "`gh` found no @someone **pull request**")}
 		body := tr.renderStatus(s)
 		if !slices.Contains(strings.Split(body, "\n"), want) {
 			t.Errorf("cause %d: body has no line %q:\n%s", cause, want, body)
@@ -296,11 +301,11 @@ func fenced(t *testing.T, markdown string) []string {
 // passed, one item each; a failed check's reason is on the action's line.
 func TestAnActionListsTheReasonsOfItsChecks(t *testing.T) {
 	tr, _ := build(t)
-	judged := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"}
-	person := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: needs a person (0.95)"}
-	closes := crew.CheckResult{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"}
-	unfinished := crew.CheckResult{Name: "judge", Reason: "the check judge failed: unfinished (1.00)"}
-	noPR := crew.CheckResult{Name: "pr-closes-issue", Reason: "the check pr-closes-issue failed: no open pull request"}
+	judged := checkResult("judge", true, "the check judge passed: done (0.97)")
+	person := checkResult("judge", true, "the check judge passed: needs a person (0.95)")
+	closes := checkResult("pr-closes-issue", true, "the check pr-closes-issue passed")
+	unfinished := checkResult("judge", false, "the check judge failed: unfinished (1.00)")
+	noPR := checkResult("pr-closes-issue", false, "the check pr-closes-issue failed: no open pull request")
 	withChecks := func(s crew.Status, cause crew.FailureCause, checks ...crew.CheckResult) crew.Status {
 		s.Actions[0].Cause, s.Actions[0].Checks = cause, checks
 		return s

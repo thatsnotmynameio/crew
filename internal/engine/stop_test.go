@@ -15,6 +15,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // gatedTracker holds every move to gate until release is closed, and fails
@@ -48,7 +49,7 @@ func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
 		r := start(t, config(t, tr, develop))
 		sessions := r.sessions(2)
 
-		sessions["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		sessions["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		<-tr.entered
 		r.cancel() // Run's context ending is a stop request, not an abort.
 		synctest.Wait()
@@ -98,8 +99,11 @@ func TestStopKillsASessionIgnoringItAtTheTenSecondDeadline(t *testing.T) {
 			t.Errorf("issue 1 is in %v, want needs attention", got)
 		}
 		reports := tr.Reports()
-		if len(reports) != 1 || len(reports[0].Failures) != 1 || reports[0].Failures[0].Reason != fake.KilledReason {
-			t.Errorf("reports = %+v, want one naming the killed session", reports)
+		if len(reports) != 1 || len(reports[0].Failures) != 1 {
+			t.Errorf("reports = %+v, want one with one failure", reports)
+		}
+		if got := r.lastReason(); got != fake.KilledReason {
+			t.Errorf("reason = %q, want %q, naming the killed session", got, fake.KilledReason)
 		}
 	})
 }

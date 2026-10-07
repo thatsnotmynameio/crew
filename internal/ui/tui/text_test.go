@@ -7,6 +7,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // Covers KTD14.
@@ -22,6 +24,37 @@ func TestCleanStripsEscapesAndControlCharactersOntoOneLine(t *testing.T) {
 	} {
 		if got := clean(in); got != want {
 			t.Errorf("clean(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Covers R23: the screen shows a session's or a check's text built by crew's
+// text types exactly as it showed the raw text. Invalid UTF-8 is left out:
+// ansi.Strip keeps a broken rune's bytes, which clean shows as U+FFFD, where
+// the text types drop them.
+func TestCleanShowsBuiltTextAsItShowsTheRawText(t *testing.T) {
+	hostile := []string{
+		"the check tests passed: ok",
+		"a\x00b", "a\x7fb", "a\u0085b", "fatal: x\nhint: y", "a\rb", "a\vb", "a\fb", "a\tb",
+		"\x1b[31mred\x1b[0m", "\x1b[38;2;1;2;3mrgb", "\x1b[?25lhidden",
+		"a\x1b]0;evil\x07b", "a\x1b]0;evil\x1b\\b", "a\x1b]0;evil and the rest",
+		"\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\",
+		"\x1b(Bdone\x1b[m", "a\x1b7b", "a\x1b%Gb", "a\x1b\x1b[1mb", "a\x1b",
+		"a\x1bPq#0;2;0;0;0\x1b\\b", "a\x1bP\x1b\\b", "a\x1b_Gf=24;payload\x1b\\b", "a\x1b^pm\x1b\\b", "a\x1bXsos\x1b\\b",
+		"a\x9b31mb", "c1 \u009b31m control",
+		"a\x1b[3\n1mb", "a\x1b[3\x18b", "a\x1b[3\x7f1mb", "a\x1b[ 1mb", "a\x1b\nAb",
+		"a\x1b]0;x\x1ab", "a\x1b_é\x1b\\b", "a\x1b]0;Ü\x07b",
+	}
+	for _, raw := range hostile {
+		want := clean(raw)
+		for typ, built := range map[string]string{
+			"SessionText": crew.NewSessionText(raw).String(),
+			"Said":        crew.NewSaid(raw).String(),
+			"CheckReason": crew.NewCheckReason(raw).String(),
+		} {
+			if got := clean(built); got != want {
+				t.Errorf("clean of %s built from %q = %q, want %q as from the raw text", typ, raw, got, want)
+			}
 		}
 	}
 }

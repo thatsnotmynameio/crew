@@ -257,12 +257,12 @@ func TestAnActionRunsOnItsEntryFromItsSessionUntilItsSpendLands(t *testing.T) {
 		{"finishing", func(d *driver) {
 			d.running(issue("74", 1, ready))
 			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 		}, true},
 		{"ended", func(d *driver) {
 			d.running(issue("74", 1, ready))
 			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 			d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: noPR})
 		}, false},
 	}
@@ -281,7 +281,7 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 	d := botsDriver(t, botRules(), crewBots(nil))
 	cmds, _ := d.poll(issue("2", 1, needsTriage))
 	d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueID: issueID("2"), Action: "triage", Reason: "disk full"})
+	d.send(core.WorkspaceFailed{IssueID: issueID("2"), Action: "triage", Reason: crew.NewSessionText("disk full")})
 	for _, e := range d.m.View().Bots {
 		if e.Spend != (crew.Spend{}) || e.Running != nil {
 			t.Fatalf("entry %s = %#v, want no spend and nothing running", e.Name, e)

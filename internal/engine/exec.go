@@ -216,11 +216,21 @@ func (e *Engine) classify(ctx context.Context, err error) (core.Result, string) 
 // reason is err as a reason for the core: local paths shortened, and a
 // timeout said as such, as a killed tool's own error rarely does.
 func (e *Engine) reason(ctx context.Context, err error) string {
-	text := err.Error()
+	return e.scrub(callError(ctx, err))
+}
+
+// callError is err's text, with a timeout said as such.
+func callError(ctx context.Context, err error) string {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		text = fmt.Sprintf("timed out after %s: %s", callTimeout, text)
+		return fmt.Sprintf("timed out after %s: %s", callTimeout, err)
 	}
-	return e.scrub(text)
+	return err.Error()
+}
+
+// sessionText is text, from outside crew, as the reason of an action's
+// outcome: scrubbed, stripped and scrubbed again (scrubAndStrip).
+func (e *Engine) sessionText(text string) crew.SessionText {
+	return crew.NewSessionText(e.scrubAndStrip(text))
 }
 
 func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
@@ -228,7 +238,7 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	defer cancel()
 	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
 	if err != nil {
-		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID, Action: c.Action, Reason: e.reason(ctx, err)})
+		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID, Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
 		return
 	}
 	e.post(e.ready(c.Issue.ID, c.Action, space, false))
@@ -249,7 +259,7 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	case errors.Is(err, port.ErrWorkspaceGone):
 		e.post(core.WorkspaceGone{IssueID: c.IssueID, Action: c.Action})
 	case err != nil:
-		e.post(core.WorkspaceFailed{IssueID: c.IssueID, Action: c.Action, Reason: e.reason(ctx, err)})
+		e.post(core.WorkspaceFailed{IssueID: c.IssueID, Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
 	default:
 		e.post(e.ready(c.IssueID, c.Action, space, true))
 	}
@@ -278,7 +288,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 		}
 	}
 	if err != nil {
-		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.scrub(err.Error())})
+		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.sessionText(err.Error())})
 		return
 	}
 	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
@@ -287,15 +297,15 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	})
 	if err != nil {
 		_ = log.Close() // nothing was written to it worth keeping
-		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.scrub(err.Error())})
+		e.post(core.SessionFailedToStart{IssueID: c.IssueID, Action: c.Action, Reason: e.sessionText(err.Error())})
 		return
 	}
 	e.inbox <- message{input: core.SessionStarted{IssueID: c.IssueID, Action: c.Action}, session: s}
-	outcome := s.Wait()
+	verdict := s.Wait()
 	// The harness stops writing once Wait returns. A failed close cannot
 	// change the session's verdict, which is what the core needs.
 	_ = log.Close()
-	outcome.Reason = e.scrub(outcome.Reason)
+	outcome := crew.Outcome{Succeeded: verdict.Succeeded, Reason: e.sessionText(verdict.Reason)}
 	var usage crew.Usage
 	if r, ok := s.(port.UsageReporter); ok {
 		usage = r.Usage()
@@ -360,19 +370,21 @@ func markResumed(log *os.File) error {
 // (R5, R6).
 func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
 	defer cancel()
-	e.post(core.CheckEnded{IssueID: c.IssueID, Action: c.Action, Outcome: e.check(ctx, c)})
+	passed, reason := e.check(ctx, c)
+	e.post(core.CheckEnded{IssueID: c.IssueID, Action: c.Action, Passed: passed, Reason: reason})
 }
 
-// check runs c, as its action's bot like its session, and returns its
-// verdict.
-func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
+// check runs c, as its action's bot like its session, and returns whether
+// it passed and its reason. The session's last message reaches the check as
+// the session wrote it (KTD10): crew does not show it.
+func (e *Engine) check(ctx context.Context, c core.RunCheck) (bool, crew.CheckReason) {
 	subject := "the check " + string(c.Name)
 	if e.cfg.Checker == nil {
-		return crew.Outcome{Reason: subject + " could not start: crew has no check runner"}
+		return false, crew.NewCheckReason(subject + " could not start: crew has no check runner")
 	}
 	log, err := e.openLog(c.Log)
 	if err != nil {
-		return crew.Outcome{Reason: subject + " could not start: " + e.scrub(err.Error())}
+		return false, crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))
 	}
 	// A failed write or close cannot change the check's verdict.
 	defer func() { _ = log.Close() }()
@@ -386,28 +398,29 @@ func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	})
 	switch {
 	case err == nil:
-		return crew.Outcome{Succeeded: true, Reason: e.saying(subject+" passed", last.String())}
+		return true, e.saying(subject+" passed", last.String())
 	case errors.Is(err, port.ErrCheckFailed):
 		line := last.String()
 		if line == "" {
-			return crew.Outcome{Reason: subject + " failed and printed nothing"}
+			return false, crew.NewCheckReason(subject + " failed and printed nothing")
 		}
-		return crew.Outcome{Reason: e.saying(subject+" failed", line)}
+		return false, e.saying(subject+" failed", line)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return crew.Outcome{Reason: fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout)}
+		return false, crew.NewCheckReason(fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout))
 	case ctx.Err() != nil:
-		return crew.Outcome{Reason: subject + " was stopped"}
+		return false, crew.NewCheckReason(subject + " was stopped")
 	}
-	return crew.Outcome{Reason: subject + " could not start: " + e.scrub(err.Error())}
+	return false, crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))
 }
 
 // saying returns verdict, followed by line, the last line a check printed,
-// scrubbed and cut, when the check printed one.
-func (e *Engine) saying(verdict, line string) string {
+// scrubbed, stripped, scrubbed again (scrubAndStrip) and cut, when the check
+// printed one.
+func (e *Engine) saying(verdict, line string) crew.CheckReason {
 	if line == "" {
-		return verdict
+		return crew.NewCheckReason(verdict)
 	}
-	return verdict + ": " + lastWords(e.scrub(line))
+	return crew.NewCheckReason(verdict + ": " + lastWords(e.scrubAndStrip(line)))
 }
 
 // maxLine bounds how much of a check's current line lastLine keeps: the end

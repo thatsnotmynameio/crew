@@ -8,10 +8,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// passed is the outcome of a check that passed for reason.
-func passed(reason string) crew.Outcome {
-	return crew.Outcome{Succeeded: true, Reason: reason}
-}
+// checkPassed is the reason of a check that passed.
+var checkPassed = crew.NewCheckReason("the check passed")
 
 // judgeCheck is the check that runs before prCheck on development in
 // twoChecks.
@@ -52,22 +50,23 @@ func TestAPassingCheckStartsTheNextWhichDecidesTheAction(t *testing.T) {
 	judging(d, "PR #20 is open.\nMerging is yours.")
 
 	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development",
-		Outcome: passed("the check judge passed: done (0.97)")})
+		Passed: true, Reason: crew.NewCheckReason("the check judge passed: done (0.97)")})
 	next := runCheck()
 	next.LastMessage = "PR #20 is open.\nMerging is yours."
 	wantCommands(t, cmds, next)
 
 	reason := "the check pr-closes-issue failed: no open pull request from crew/issue-74-development"
-	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: failed(reason)})
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason(reason)})
 	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueID: issueID("74"), From: inProgress,
 		To: needsAttention}) {
 		t.Fatalf("verdict = %#v, want the move to needs attention", got)
 	}
 	ws := space("74", "development")
-	want := []crew.ActionFailure{{Action: "development", Reason: reason, Workspace: ws.Workspace, Log: ws.Log}}
+	want := []crew.ActionFailure{{Action: "development", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failures = %#v, want %#v", got, want)
 	}
+	d.wantReason("74", "development", reason)
 }
 
 // Covers AE1: the first check that fails ends the action; the checks after
@@ -77,15 +76,16 @@ func TestAFailingCheckEndsTheActionBeforeTheNext(t *testing.T) {
 	judging(d, "The suite is still running in the background.")
 
 	reason := "the check judge failed: unfinished (1.00)"
-	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: failed(reason)})
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason(reason)})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a check ran after one failed: %#v", cmds)
 		}
 	}
-	if got := failures(t, cmds); len(got) != 1 || got[0].Reason != reason {
-		t.Fatalf("failures = %#v, want development failed with %q", got, reason)
+	if got := failures(t, cmds); len(got) != 1 || got[0].Action != "development" {
+		t.Fatalf("failures = %#v, want development failed", got)
 	}
+	d.wantReason("74", "development", reason)
 }
 
 // Covers AE2: the action succeeds once its last check passed.
@@ -93,8 +93,8 @@ func TestAnActionSucceedsOnceEveryCheckPassed(t *testing.T) {
 	d := newDriver(t, twoChecks(), 2)
 	judging(d, "PR #20 is open.")
 
-	d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 	wantCommands(t, cmds, core.Move{IssueID: issueID("74"), From: inProgress, To: readyToReview})
 }
 
@@ -119,15 +119,16 @@ func TestAStopWhileTheFirstCheckRunsEndsTheActionWithoutTheSecond(t *testing.T) 
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Action: "development"})
-	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
 			t.Fatalf("a check started after a stop: %#v", cmds)
 		}
 	}
-	if got := failures(t, cmds); len(got) != 1 || got[0].Reason != "crew stopped" {
-		t.Fatalf("failures = %#v, want development failed as stopped", got)
+	if got := failures(t, cmds); len(got) != 1 || got[0].Action != "development" {
+		t.Fatalf("failures = %#v, want development failed", got)
 	}
+	d.wantReason("74", "development", "crew stopped")
 }
 
 // R6: while its second check runs, an action's status shows how its first
@@ -138,8 +139,10 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	devStarted := started(t, d.m, "development")
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	judged := crew.CheckResult{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"}
-	d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: passed(judged.Reason)})
+	judged := crew.CheckResult{
+		Name: "judge", Passed: true, Reason: crew.NewCheckReason("the check judge passed: done (0.97)"),
+	}
+	d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: judged.Reason})
 
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
@@ -152,8 +155,10 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	}
 
 	d.wrote("74")
-	closes := crew.CheckResult{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"}
-	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: passed(closes.Reason)})
+	closes := crew.CheckResult{
+		Name: "pr-closes-issue", Passed: true, Reason: crew.NewCheckReason("the check pr-closes-issue passed"),
+	}
+	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: closes.Reason})
 	ended := statusOf(t, cmds, "74")
 	dev := ended.Actions[1]
 	if dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {

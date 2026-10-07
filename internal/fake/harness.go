@@ -28,9 +28,9 @@ var (
 
 // The reasons of sessions the fake harness ends itself.
 const (
-	// StoppedReason is the Outcome.Reason of a session ended by Stop.
+	// StoppedReason is the Verdict.Reason of a session ended by Stop.
 	StoppedReason = "stopped"
-	// KilledReason is the Outcome.Reason of a session that ignored Stop and
+	// KilledReason is the Verdict.Reason of a session that ignored Stop and
 	// was ended when the stop deadline passed.
 	KilledReason = "killed at the stop deadline"
 )
@@ -169,7 +169,7 @@ type Session struct {
 	run     port.Run
 
 	mu      sync.Mutex
-	outcome crew.Outcome
+	verdict port.Verdict
 	ended   bool
 	stopped bool
 	said    string
@@ -183,24 +183,24 @@ func (s *Session) Run() port.Run {
 	return s.run
 }
 
-// End ends the session with outcome, releasing Wait. It does nothing once
+// End ends the session with verdict, releasing Wait. It does nothing once
 // the session has ended.
-func (s *Session) End(outcome crew.Outcome) {
+func (s *Session) End(verdict port.Verdict) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ended {
 		return
 	}
-	s.outcome, s.ended = outcome, true
+	s.verdict, s.ended = verdict, true
 	close(s.done)
 }
 
 // Wait implements port.Session.
-func (s *Session) Wait() crew.Outcome {
+func (s *Session) Wait() port.Verdict {
 	<-s.done
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.outcome
+	return s.verdict
 }
 
 // Stop implements port.Session. The session ends as failed with
@@ -211,13 +211,13 @@ func (s *Session) Stop(ctx context.Context) error {
 	s.stopped = true
 	s.mu.Unlock()
 	if !s.harness.ignoresStop() {
-		s.End(crew.Outcome{Reason: StoppedReason})
+		s.End(port.Verdict{Reason: StoppedReason})
 		return nil
 	}
 	select {
 	case <-s.done:
 	case <-ctx.Done():
-		s.End(crew.Outcome{Reason: KilledReason})
+		s.End(port.Verdict{Reason: KilledReason})
 	}
 	return nil
 }

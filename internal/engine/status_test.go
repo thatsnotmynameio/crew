@@ -46,7 +46,7 @@ func TestAE2AE6RunningStatusCarriesTheSessionsWordsWithLocalPathsShortened(t *te
 			t.Fatalf("status = %#v, want development running", got)
 		}
 		a := got.Actions[0]
-		if want := "Edited ./internal/core/update.go for @someone"; a.Said != want {
+		if want := "Edited ./internal/core/update.go for @someone"; a.Said.String() != want {
 			t.Errorf("Said = %q, want %q", a.Said, want)
 		}
 		if !a.Started.Equal(begun) || !got.Updated.Equal(begun.Add(poll)) {
@@ -69,7 +69,7 @@ func TestR9SessionThatCannotNarrateGivesAStatusWithoutWords(t *testing.T) {
 		synctest.Wait()
 
 		got := lastStatus(t, tr)
-		if a := got.Actions[0]; a.State != crew.ActionRunning || a.Started.IsZero() || a.Said != "" {
+		if a := got.Actions[0]; a.State != crew.ActionRunning || a.Started.IsZero() || a.Said.String() != "" {
 			t.Errorf("action = %#v, want running with a start time and no words", a)
 		}
 
@@ -143,7 +143,7 @@ func TestARefusedEndedStatusIsNotRetriedAndStopDoesNotWaitForIt(t *testing.T) {
 
 		locked := fmt.Errorf("issue is locked: %w", port.ErrRefused)
 		tr.FailStatuses("1", locked, locked)
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		writes := tr.count()
 
@@ -183,7 +183,7 @@ func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
 		time.Sleep(poll)
 		synctest.Wait()
 
-		got := lastStatus(t, tr).Actions[0].Said
+		got := lastStatus(t, tr).Actions[0].Said.String()
 		if want := "…" + string([]rune("." + tail)[len([]rune("."+tail))-199:]); got != want {
 			t.Errorf("Said = %q, want %q", got, want)
 		}

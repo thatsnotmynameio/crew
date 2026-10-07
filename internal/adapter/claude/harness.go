@@ -17,7 +17,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// stoppedReason is the Outcome.Reason of a session ended by Stop.
+// stoppedReason is the Verdict.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
 // Compile-time guards: the engine finds Preparer, Narrator, UsageReporter
@@ -111,16 +111,16 @@ type session struct {
 	process process
 	events  *stream // claude's stdout, parsed as it is printed
 	stopped atomic.Bool
-	outcome crew.Outcome  // set before done is closed
+	verdict port.Verdict  // set before done is closed
 	usage   crew.Usage    // set before done is closed
 	last    string        // the last result's text; set before done is closed
 	done    chan struct{} // closed once the process is reaped and judged
 }
 
 // Wait implements port.Session.
-func (s *session) Wait() crew.Outcome {
+func (s *session) Wait() port.Verdict {
 	<-s.done
-	return s.outcome
+	return s.verdict
 }
 
 // Said implements port.Narrator: it returns the last text block of the last
@@ -146,7 +146,7 @@ func (s *session) LastMessage() string {
 
 // Stop implements port.Session. proc sends the terminate signal to the
 // session's process group, and the kill signal once ctx is done. The
-// session's outcome is then a failure saying it was stopped.
+// session's verdict is then a failure saying it was stopped.
 func (s *session) Stop(ctx context.Context) error {
 	select {
 	case <-s.done:
@@ -167,13 +167,13 @@ func (s *session) Stop(ctx context.Context) error {
 func (s *session) reap() {
 	err := s.process.Wait()
 	last := s.events.end()
-	s.outcome = judge(last, err)
+	s.verdict = judge(last, err)
 	if last != nil {
 		s.last = last.Result
 	}
 	switch {
 	case s.stopped.Load():
-		s.outcome = crew.Outcome{Reason: stoppedReason}
+		s.verdict = port.Verdict{Reason: stoppedReason}
 	case !signaled(err):
 		s.usage = s.events.usage()
 	}

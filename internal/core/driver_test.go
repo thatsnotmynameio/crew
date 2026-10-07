@@ -64,7 +64,8 @@ func space(key string, action crew.ActionName) core.WorkspaceReady {
 }
 
 // driver feeds a model inputs one second apart, as the engine would stamp
-// them, each with the next sequential seed, so run ids stay deterministic.
+// them, each with the next sequential seed, so run ids stay deterministic,
+// and keeps every event the model emitted.
 type driver struct {
 	t   *testing.T
 	m   *core.Model
@@ -74,6 +75,7 @@ type driver struct {
 	// listed is the seed stamped on the last IssuesListed sent, from which
 	// the runs it took got their ids.
 	listed uuid.UUID
+	events []core.Event
 }
 
 // seed returns the nth sequential seed: a UUID whose last bytes encode n.
@@ -95,7 +97,24 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 	if _, ok := in.(core.IssuesListed); ok {
 		d.listed = stamp
 	}
-	return d.m.Update(in.Stamped(d.now, stamp))
+	cmds, events := d.m.Update(in.Stamped(d.now, stamp))
+	d.events = append(d.events, events...)
+	return cmds, events
+}
+
+// wantReason fails the test unless the last ActionEnded of action on issue
+// key carried reason.
+func (d *driver) wantReason(key string, action crew.ActionName, reason string) {
+	d.t.Helper()
+	for _, e := range slices.Backward(d.events) {
+		if ended, ok := e.(core.ActionEnded); ok && ended.IssueID == issueID(key) && ended.Action == action {
+			if got := ended.Outcome.Reason.String(); got != reason {
+				d.t.Errorf("%s of #%s ended with reason %q, want %q", action, key, got, reason)
+			}
+			return
+		}
+	}
+	d.t.Fatalf("no end of %s of #%s in %#v", action, key, d.events)
 }
 
 // settle answers cmds as a healthy engine would: moves succeed, workspaces
@@ -224,9 +243,11 @@ func wantHeld(t *testing.T, m *core.Model, keys ...string) {
 	}
 }
 
-func failed(reason string) crew.Outcome { return crew.Outcome{Succeeded: false, Reason: reason} }
+func failed(reason string) crew.Outcome {
+	return crew.Outcome{Succeeded: false, Reason: crew.NewSessionText(reason)}
+}
 
-var succeeded = crew.Outcome{Succeeded: true, Reason: "done"}
+var succeeded = crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("done")}
 
 // issueKey returns the key of the issue c concerns.
 func issueKey(c core.Command) string {

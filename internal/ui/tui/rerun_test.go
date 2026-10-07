@@ -28,7 +28,7 @@ func TestAnUpdateMovingTheHighlightOffTheBoardScrollsToIt(t *testing.T) {
 // last run's words, even before its session starts.
 func TestANewRunWaitingToStartShowsNoneOfTheLastRunsWords(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: "the last run's words"})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("the last run's words")})))
 
 	again := runningSnapshot()
 	again.Snapshot.Issues[0].Claim = core.ClaimTaking

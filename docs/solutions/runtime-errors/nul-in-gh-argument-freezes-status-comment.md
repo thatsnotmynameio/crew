@@ -65,7 +65,7 @@ Removing the bytes at the source breaks the chain at its first link. Every later
 
 ## Prevention
 
-- **Text that crew did not write never reaches a `gh` argument with control characters in it.** Today that covers a check's last line (fixed here) and a running session's last words (`Said`, shown under "It last said:"), which still go into the body unfiltered for control characters. A NUL there does not freeze the queue, because only ended statuses are owed, but every running write of that issue fails until the session says something else.
+- **Text that crew did not write never reaches a `gh` argument with control characters in it.** A check's last line drops them in `lastLine` (fixed here). Since #240, every text crew shows from a session or a check has its own type in `internal/crew` (`SessionText` for an outcome's reason, `Said` for the status's "It last said:" line, `CheckReason` for a check's reason), and only a constructor that strips control characters and escape sequences can build one. The engine builds them after its scrub, so no running session's words reach the status body with a NUL either.
 - **When adding a field to the status body or a failure comment,** strip control characters where the text enters crew (the engine or the adapter that produced it), not in the renderer, so every tracker gets clean text.
 - **A new failure mode in a `gh` call is transient by default.** Before relying on a retry, check whether `classify` can tell the failure apart; a failure that recurs on every try needs to be prevented, since retrying it changes nothing.
 - **Test with hostile bytes.** A test of any path from external output to a comment should include `\x00`, a bare `\r`, and an escape sequence, and assert the exact text that reaches the tracker.

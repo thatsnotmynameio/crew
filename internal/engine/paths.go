@@ -77,6 +77,24 @@ func (e *Engine) scrub(text string) string {
 	return replaceDir(replaceDir(text, e.cfg.Root, "."), e.cfg.Home, "~")
 }
 
+// scrubAndStrip is text scrubbed, stripped of its control characters
+// (crew.StripControls) and scrubbed again, for the constructors of the text
+// crew shows from a session (KTD3). The first scrub sees the raw bytes, so a
+// token after a control byte, as in foo\x00ghp_…, still starts at a word
+// boundary. The second closes what the strip itself opens: removing an
+// escape sequence can join a token's parts, as gh\x1b[0mp_… becomes ghp_….
+func (e *Engine) scrubAndStrip(text string) string {
+	scrubbed := e.scrub(text)
+	stripped := crew.StripControls(scrubbed)
+	if stripped == scrubbed {
+		// Nothing was stripped, so nothing was joined: a second scrub
+		// would find nothing more. This keeps a plain text, as most
+		// sessions' words are at every refresh, to one pass.
+		return scrubbed
+	}
+	return e.scrub(stripped)
+}
+
 // githubToken matches GitHub's tokens by their prefixes: personal, OAuth,
 // user-to-server, installation and refresh tokens, and fine-grained
 // personal access tokens. A stateless installation token, ghs_APPID_JWT,

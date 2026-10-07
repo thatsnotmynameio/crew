@@ -471,7 +471,7 @@ func writePassedChecks(b *strings.Builder, a crew.ActionStatus) {
 			b.WriteString("\n")
 			first = false
 		}
-		b.WriteString("- " + codeSpan(c.Reason) + "\n")
+		b.WriteString("- " + codeSpan(c.Reason.String()) + "\n")
 	}
 }
 
@@ -495,12 +495,12 @@ func writeState(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 		fmt.Fprintf(b, "\n%s%s is running.\n", name, and)
 	default:
 		fmt.Fprintf(b, "\n%s%s has been running for %s.", name, and, elapsed(updated.Sub(a.Started)))
-		if a.Said == "" {
+		if a.Said.String() == "" {
 			b.WriteString("\n")
 			return
 		}
-		fence := strings.Repeat("`", max(minFence, longestBacktickRun(a.Said)+1))
-		fmt.Fprintf(b, " It last said:\n\n%stext\n%s\n%s\n", fence, a.Said, fence)
+		fence := strings.Repeat("`", max(minFence, longestBacktickRun(a.Said.String())+1))
+		fmt.Fprintf(b, " It last said:\n\n%stext\n%s\n%s\n", fence, a.Said.String(), fence)
 	}
 }
 
@@ -538,7 +538,7 @@ func failureCause(a crew.ActionStatus) string {
 	case crew.CauseCheck:
 		// The reason already says which check failed, ran out of time or
 		// could not start.
-		reason := a.FailedCheck()
+		reason := a.FailedCheck().String()
 		if reason == "" {
 			return ": its check failed"
 		}

@@ -9,9 +9,9 @@ import (
 
 // renderReport renders a failure report as one Markdown comment. Each failed
 // action gets its name and its log's repository-relative path, or a line
-// saying it failed before it had a log. A reason is a session's or a tool's
-// last words, which can hold commands and their output, so the comment never
-// carries it: you read it in the log or in crew's output.
+// saying it failed before it had a log. The report carries no reason: a
+// reason is a session's or a tool's last words, which can hold commands and
+// their output, so you read it in the log or in crew's output.
 func renderReport(r crew.FailureReport) string {
 	var b strings.Builder
 	noun := "action"

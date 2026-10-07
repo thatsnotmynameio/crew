@@ -12,20 +12,15 @@ import (
 func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
 	postComment := []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/12/comments"}
 	tr, gh := build(t, reply{prefix: postComment, stdout: "901\n"})
-	reasons := []string{
-		"ran `go test ./...` and got: FAIL token=s3cret",
-		"tests did not build",
-		"workspace: fetch failed",
-	}
+	// The report has no field for a session's words, so the comment cannot
+	// carry them.
 	err := tr.ReportFailure(context.Background(), crew.FailureReport{
 		IssueID: issueID("12"), IssueRef: "#12",
 		Failures: []crew.ActionFailure{
-			{Action: "development", Reason: reasons[0], Workspace: "issue-12-development",
-				Log: ".crew/logs/issue-12-development.log"},
-			{Action: "acceptance", Reason: reasons[1], Workspace: "issue-12-acceptance",
-				Log: ".crew/logs/issue-12-acceptance.log"},
+			{Action: "development", Workspace: "issue-12-development", Log: ".crew/logs/issue-12-development.log"},
+			{Action: "acceptance", Workspace: "issue-12-acceptance", Log: ".crew/logs/issue-12-acceptance.log"},
 			// An action whose workspace was never created has no log.
-			{Action: "lint", Reason: reasons[2]},
+			{Action: "lint"},
 		},
 	})
 	if err != nil {
@@ -46,11 +41,6 @@ func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
 		"\n**`lint`** failed before it had a log. crew's output says why.\n"
 	if body != want {
 		t.Errorf("comment =\n%s\nwant\n%s", body, want)
-	}
-	for _, reason := range reasons {
-		if strings.Contains(body, reason) {
-			t.Errorf("comment carries the session's words %q:\n%s", reason, body)
-		}
 	}
 }
 

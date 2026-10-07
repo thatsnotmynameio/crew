@@ -180,10 +180,7 @@ func TestTrackerScriptedMoveFailuresComeInOrderThenMovesSucceed(t *testing.T) {
 func TestTrackerRecordsFailureReportsAndScriptsTheirFailures(t *testing.T) {
 	tr := fake.NewTracker(issue("1", needsAttention))
 	report := crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{
-		{
-			Action: "development", Reason: "tests fail",
-			Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
-		},
+		{Action: "development", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log"},
 	}}
 	tr.FailReports("1", port.ErrRefused)
 	ctx := context.Background()
@@ -256,7 +253,7 @@ func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 	started := crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
 		Actions: []crew.ActionStatus{{Name: "development", State: crew.ActionRunning}}}
 	running := started.Clone()
-	running.Actions[0].Said = "Reading the plan."
+	running.Actions[0].Said = crew.NewSaid("Reading the plan.")
 	tr.FailStatuses("74", port.ErrRefused)
 	ctx := context.Background()
 
@@ -268,10 +265,10 @@ func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
-	running.Actions[0].Said = "changed after the write"
+	running.Actions[0].Said = crew.NewSaid("changed after the write")
 
 	got := tr.Statuses("74")
-	if len(got) != 2 || got[0].Actions[0].Said != "" || got[1].Actions[0].Said != "Reading the plan." {
+	if len(got) != 2 || got[0].Actions[0].Said.String() != "" || got[1].Actions[0].Said.String() != "Reading the plan." {
 		t.Errorf("Statuses = %+v, want the started then the running status, as written", got)
 	}
 	if _, ok := any(fake.NewPreparingTracker()).(port.StatusReporter); ok {

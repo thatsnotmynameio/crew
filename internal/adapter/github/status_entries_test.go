@@ -102,7 +102,7 @@ const (
 func developmentEnded() crew.Status {
 	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: run1,
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
-			Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: "no open pull request closes #74"}},
+			Checks: []crew.CheckResult{checkResult("pr-closes-issue", false, "no open pull request closes #74")},
 			Log:    ".crew/logs/issue-74-lfg.log"}},
 		To: needsAttention, Move: crew.MoveDone, Updated: updated}
 }
@@ -110,7 +110,7 @@ func developmentEnded() crew.Status {
 // fix is #74's fix rule in run, running its address action that said said.
 func fix(run crew.RuleRunID, said string) crew.Status {
 	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
-		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: said}},
+		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: crew.NewSaid(said)}},
 		Updated: updated}
 }
 

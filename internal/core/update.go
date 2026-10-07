@@ -13,6 +13,12 @@ import (
 // stopped first (R9).
 const stoppedReason = "crew stopped"
 
+// stopped is the outcome of an action crew stopped before it could end
+// on its own.
+func stopped() crew.Outcome {
+	return crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}
+}
+
 // Update applies in to the model and returns the commands to run and the
 // domain events to publish, in order. It is deterministic: the same model
 // and input always give the same result. Inputs that answer nothing the
@@ -443,7 +449,7 @@ func (s *step) taken(h *heldIssue, c *call) {
 		s.judge(h)
 	case m.stopping:
 		for _, a := range h.actions {
-			s.end(h, a, crew.Outcome{Reason: stoppedReason}, crew.CauseStopped)
+			s.end(h, a, stopped(), crew.CauseStopped)
 		}
 	default:
 		s.start(h)
@@ -458,7 +464,7 @@ func (s *step) start(h *heldIssue) {
 	for _, a := range h.actions {
 		prompt, err := crew.Action{Name: a.name, Prompt: a.prompt}.Render(h.issue)
 		if err != nil {
-			s.end(h, a, crew.Outcome{Reason: err.Error()}, crew.CausePrompt)
+			s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(err.Error())}, crew.CausePrompt)
 			continue
 		}
 		a.prompt = prompt
@@ -485,7 +491,7 @@ func (s *step) judge(h *heldIssue) {
 	for _, a := range h.actions {
 		if !a.outcome.Succeeded {
 			report.Failures = append(report.Failures, crew.ActionFailure{
-				Action: a.name, Reason: a.outcome.Reason, Workspace: a.workspace, Log: a.log,
+				Action: a.name, Workspace: a.workspace, Log: a.log,
 			})
 		}
 	}

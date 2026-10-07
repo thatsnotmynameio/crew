@@ -173,15 +173,15 @@ func TestAE2RunningStatusShowsEachSessionsStartAndLastWords(t *testing.T) {
 	d.runAll(d.take(issue("74", 1, ready)))
 
 	cmds, _ := d.send(core.Tick{Said: []core.Said{
-		{IssueID: issueID("74"), Action: "development", Text: "U1 committed: 168 tests pass. Starting U2."},
-		{IssueID: issueID("99"), Action: "development", Text: "not held"},
+		{IssueID: issueID("74"), Action: "development", Text: crew.NewSaid("U1 committed: 168 tests pass. Starting U2.")},
+		{IssueID: issueID("99"), Action: "development", Text: crew.NewSaid("not held")},
 	}})
 	wantStatus(t, statusOf(t, cmds, "74"), crew.Status{
 		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning, Updated: d.now,
 		Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionRunning, Started: started(t, d.m, "acceptance")},
 			{Name: "development", State: crew.ActionRunning, Started: started(t, d.m, "development"),
-				Said: "U1 committed: 168 tests pass. Starting U2."},
+				Said: crew.NewSaid("U1 committed: 168 tests pass. Starting U2.")},
 		},
 	})
 	d.wrote("74")
@@ -189,7 +189,7 @@ func TestAE2RunningStatusShowsEachSessionsStartAndLastWords(t *testing.T) {
 	// A running issue is reported at every tick, changed or not (R6).
 	cmds, _ = d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
-	if got.Updated != d.now || got.Actions[1].Said != "U1 committed: 168 tests pass. Starting U2." {
+	if got.Updated != d.now || got.Actions[1].Said.String() != "U1 committed: 168 tests pass. Starting U2." {
 		t.Fatalf("second tick's status: %#v", got)
 	}
 }
@@ -459,7 +459,9 @@ func TestWithoutStatusReportingNoStatusIsReported(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 	all = append(all, landed...)
 	d.runAll(landed)
-	tick, _ := d.send(core.Tick{Said: []core.Said{{IssueID: issueID("1"), Action: "development", Text: "hi"}}})
+	tick, _ := d.send(core.Tick{Said: []core.Said{
+		{IssueID: issueID("1"), Action: "development", Text: crew.NewSaid("hi")},
+	}})
 	all = append(all, tick...)
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
 	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})

@@ -475,7 +475,7 @@ func TestWhenTheRunTimeIsUpARunningSessionFinishesAndNothingNewIsTaken(t *testin
 		time.Sleep(time.Hour + time.Second)
 		tr.Add(issue(43, ready))
 		time.Sleep(90*time.Minute - time.Since(t0))
-		session.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		session.End(port.Verdict{Succeeded: true, Reason: "done"})
 
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)

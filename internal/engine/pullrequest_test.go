@@ -33,7 +33,7 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsVerdictOnThePullRequests(
 		tr := fake.NewPullRequestTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
 		s := r.sessions(1)["issue-1-development"]
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 
 		want := []string{string(inProgress), string(readyToReview) + " (end of implement)"}
@@ -57,7 +57,7 @@ func TestATrackerWithoutPullRequestReportsGetsNone(t *testing.T) {
 		tr := fake.NewReportingTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
 		s := r.sessions(1)["issue-1-development"]
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 
 		r.engine.Stop()
@@ -78,7 +78,7 @@ func TestAE5AFailedPullRequestReportIsRetriedAtTheNextPollWhileTheIssueKeepsItsM
 		synctest.Wait()
 
 		tr.FailPullRequests("1", errors.New("gh: HTTP 502"))
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
 			t.Errorf("issue 1 is in %v, want ready to review", got)
@@ -109,7 +109,7 @@ func TestARefusedPullRequestReportIsNotRetried(t *testing.T) {
 		synctest.Wait()
 
 		tr.FailPullRequests("1", fmt.Errorf("pull request is locked: %w", port.ErrRefused))
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		time.Sleep(poll)
 		synctest.Wait()
@@ -132,7 +132,7 @@ func TestStoppingGivesAnOwedPullRequestReportOneFinalTry(t *testing.T) {
 		synctest.Wait()
 
 		tr.FailPullRequests("1", errors.New("gh: HTTP 502"))
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 
 		r.engine.Stop()

@@ -37,7 +37,7 @@ type Tick struct {
 type Said struct {
 	IssueID crew.IssueID
 	Action  crew.ActionName
-	Text    string
+	Text    crew.Said
 }
 
 // StopRequested asks the core to stop (R9). The core starts nothing new,
@@ -218,7 +218,7 @@ type WorkspaceFailed struct {
 	At      time.Time
 	IssueID crew.IssueID
 	Action  crew.ActionName
-	Reason  string
+	Reason  crew.SessionText
 }
 
 // SessionStarted is a StartSession whose session is now running. Its At is
@@ -235,7 +235,7 @@ type SessionFailedToStart struct {
 	At      time.Time
 	IssueID crew.IssueID
 	Action  crew.ActionName
-	Reason  string
+	Reason  crew.SessionText
 }
 
 // SessionEnded is a running session that ended, with its harness's
@@ -250,13 +250,15 @@ type SessionEnded struct {
 	LastMessage string
 }
 
-// CheckEnded is a RunCheck that ended, with the check's verdict: it passed,
-// or it failed, ran out of time or could not start, as its Reason says.
+// CheckEnded is a RunCheck that ended, with the check's verdict: Passed, or
+// it failed, ran out of time, was stopped or could not start, as its Reason
+// says.
 type CheckEnded struct {
 	At      time.Time
 	IssueID crew.IssueID
 	Action  crew.ActionName
-	Outcome crew.Outcome
+	Passed  bool
+	Reason  crew.CheckReason
 }
 
 // PullRequestFound is a FindPullRequest that ended: the pull request the

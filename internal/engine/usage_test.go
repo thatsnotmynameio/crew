@@ -13,6 +13,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // journal returns the run journal of root, one decoded object per line.
@@ -79,7 +80,7 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 			Tokens: crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40},
 			Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
 		})
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -116,7 +117,7 @@ func TestAE6AHarnessAndTrackerThatCannotTellLeaveTheValuesOut(t *testing.T) {
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
-		r.session().End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -138,7 +139,7 @@ func TestALookupThatHangsGivesUpAfterFifteenSecondsAndChangesNoOutcome(t *testin
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
-		r.session().End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{inProgress}) {
 			t.Fatalf("issue 1 is in %v while its lookup runs, want in progress", got)
@@ -165,7 +166,7 @@ func TestAStopDuringALookupWaitsForItAndWritesTheLine(t *testing.T) {
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
-		r.session().End(crew.Outcome{Reason: "tests fail"})
+		r.session().End(port.Verdict{Reason: "tests fail"})
 		synctest.Wait()
 		stopped := time.Now()
 		r.engine.Stop()
@@ -192,7 +193,7 @@ func TestAE7NewLinesAreAppendedAndEarlierOnesKeptAsTheyWere(t *testing.T) {
 		writeJournal(t, cfg.Root, earlier)
 		r := start(t, cfg)
 
-		r.session().End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -227,7 +228,7 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 
 			s := r.session()
 			s.SetUsage(used)
-			s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+			s.End(port.Verdict{Succeeded: true, Reason: "done"})
 			synctest.Wait()
 			r.engine.Stop()
 			if _, err := r.wait(); err != nil {

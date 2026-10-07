@@ -353,7 +353,10 @@ func fourActions() engine.Update {
 		{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5*time.Minute - 3*time.Second)},
 		{Name: "tests", Phase: core.PhaseWaiting},
 		{Name: "docs", Phase: core.PhaseEnded, Branch: "crew/1-docs", Outcome: crew.Outcome{Succeeded: true}},
-		{Name: "lint", Phase: core.PhaseEnded, Branch: "crew/1-lint", Outcome: crew.Outcome{Reason: "exited 1"}},
+		{
+			Name: "lint", Phase: core.PhaseEnded, Branch: "crew/1-lint",
+			Outcome: crew.Outcome{Reason: crew.NewSessionText("exited 1")},
+		},
 	}
 	u.Snapshot.Bots = []core.BotView{
 		{Name: "crew-dev", Acting: true, Pairs: []string{"implement/code"},
@@ -406,12 +409,14 @@ func TestAnActionWhoseBotCannotActShowsYou(t *testing.T) {
 // check failed shows the check's reason in the error colour.
 func TestAE5AnEndedActionShowsItsLastMessageAndAFailedOneWhy(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: "running the tests now"})))
+	h.send(updateMsg(saying(core.Said{
+		IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("running the tests now"),
+	})))
 	ended := runningSnapshot()
 	actions := &ended.Snapshot.Issues[0].Actions
 	(*actions)[0].Phase, (*actions)[0].Outcome = core.PhaseEnded, crew.Outcome{Succeeded: true}
 	*actions = append(*actions, core.ActionView{
-		Name: "docs", Phase: core.PhaseEnded, Outcome: crew.Outcome{Reason: "check failed: exited 2"},
+		Name: "docs", Phase: core.PhaseEnded, Outcome: crew.Outcome{Reason: crew.NewSessionText("check failed: exited 2")},
 	})
 	h.send(updateMsg(ended))
 	h.send(enterKey)
@@ -498,7 +503,7 @@ func TestThePopupOfAHandledIssueShowsNoCostNorPullRequests(t *testing.T) {
 func TestALongMessageWrapsInsideThePopup(t *testing.T) {
 	h := newHarness(t, 60)
 	long := strings.Repeat("the parser now reads every key once ", 4)
-	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: long})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid(long)})))
 	h.send(enterKey)
 
 	box, _, _ := popupBox(h.view(), popupWidthIn(60))
@@ -540,7 +545,7 @@ func TestAE6ThePopupFollowsItsIssueAndClosesWhenItLeaves(t *testing.T) {
 	failed := runningSnapshot()
 	failed.Snapshot.Issues = failed.Snapshot.Issues[1:]
 	failed.Snapshot.Board[0].Labels = []crew.State{"ready to review"}
-	failed.Snapshot.Handled = []core.HandledView{failedEntry("1", "Add login form", 10, 0, "code", "exited 1")}
+	failed.Snapshot.Handled = []core.HandledView{failedEntry("1", "Add login form", 10, 0, "code")}
 	h.send(updateMsg(failed))
 	if got := popupRows(t, h)[0]; got != "#1 Add login form" {
 		t.Fatalf("after #1 failed the popup shows %q, want #1's", got)

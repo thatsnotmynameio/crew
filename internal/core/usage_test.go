@@ -109,7 +109,9 @@ func TestALookupThatAnswersFirstWaitsForTheCheck(t *testing.T) {
 
 	d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: pr45})
 	wantPhase(core.PhaseChecking)
-	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("no pull request")})
+	cmds, _ = d.send(core.CheckEnded{
+		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
+	})
 	wantPhase(core.PhaseEnded)
 	if end := records(cmds); len(end) != 1 || end[0].Succeeded || end[0].PullRequest != pr45 || !end[0].Usage.HasCost {
 		t.Fatalf("records = %#v, want a failed end keeping the session's usage and #45", end)
@@ -121,7 +123,7 @@ func TestACheckThatEndsFirstWaitsForTheLookup(t *testing.T) {
 	d.running(issue("74", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 
-	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 	if len(records(cmds)) != 0 || phaseOf(t, d.m, "74", "development") != core.PhaseFinishing {
 		t.Fatalf("the action ended before its lookup: %#v", cmds)
 	}
@@ -144,7 +146,7 @@ func TestAStopDuringTheLookupKeepsTheSessionsOwnFailure(t *testing.T) {
 	}
 	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
 	end := records(cmds)
-	if len(end) != 1 || end[0].Reason != "tests fail" || end[0].PullRequest != noPR {
+	if len(end) != 1 || end[0].Reason.String() != "tests fail" || end[0].PullRequest != noPR {
 		t.Fatalf("records = %#v, want the session's own failure with no pull request", end)
 	}
 }
@@ -157,7 +159,7 @@ func TestAE5AStoppedSessionIsRecordedWithoutUsage(t *testing.T) {
 
 	cmds, _ := d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
 	end := records(cmds)
-	if len(end) != 1 || end[0].Usage.HasCost || end[0].Usage.HasTokens || end[0].Reason != "stopped by crew" {
+	if len(end) != 1 || end[0].Usage.HasCost || end[0].Usage.HasTokens || end[0].Reason.String() != "stopped by crew" {
 		t.Fatalf("records = %#v, want a stopped end with no usage", end)
 	}
 }
@@ -218,7 +220,7 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 	d := usageDriver(t, draft())
 	cmds, _ := d.poll(issue("5", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "5"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueID: issueID("5"), Action: "acceptance", Reason: "no space left"})
+	d.send(core.WorkspaceFailed{IssueID: issueID("5"), Action: "acceptance", Reason: crew.NewSessionText("no space left")})
 	d.send(space("5", "development"))
 	d.send(core.SessionStarted{IssueID: issueID("5"), Action: "development"})
 	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "development", Outcome: succeeded, Usage: spent})

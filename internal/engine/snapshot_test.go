@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
-	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 func TestTheSnapshotCarriesTheFirstPollsTimeAndTheRunTimeLimit(t *testing.T) {
@@ -52,11 +52,11 @@ func TestWithoutARunTimeLimitTheSnapshotStillCarriesTheStart(t *testing.T) {
 	})
 }
 
-func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsReason(t *testing.T) {
+func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Reason: "tests fail"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
 		synctest.Wait()
 
 		r.engine.Stop()
@@ -72,12 +72,15 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsReason(t *testing.T) {
 		if e.Issue.Ref != "#1" || e.Rule != "implement" || e.To != needsAttention || !e.NeedsAttention() {
 			t.Errorf("entry = %#v, want #1 in needs attention, needing attention", e)
 		}
-		reasons := make([]string, 0, len(e.Failures))
+		actions := make([]string, 0, len(e.Failures))
 		for _, f := range e.Failures {
-			reasons = append(reasons, string(f.Action)+": "+f.Reason)
+			actions = append(actions, string(f.Action))
 		}
-		if want := []string{"development: tests fail"}; !reflect.DeepEqual(reasons, want) {
-			t.Errorf("failures = %v, want %v", reasons, want)
+		if want := []string{"development"}; !reflect.DeepEqual(actions, want) {
+			t.Errorf("failed actions = %v, want %v", actions, want)
+		}
+		if got := r.lastReason(); got != "tests fail" {
+			t.Errorf("development's reason = %q, want %q", got, "tests fail")
 		}
 	})
 }

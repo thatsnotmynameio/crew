@@ -148,8 +148,9 @@ func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 	d.runAll(landed)
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	verdict, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development",
-		Outcome: failed("no pull request")})
+	verdict, _ := d.send(core.CheckEnded{
+		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
+	})
 	noPullRequestReport(t, verdict)
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
@@ -158,7 +159,7 @@ func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionFailed, Cause: crew.CauseSession, Log: space("74", "acceptance").Log},
 			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: space("74", "development").Log,
-				Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: "no pull request"}}},
+				Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: crew.NewCheckReason("no pull request")}}},
 		}},
 	})
 }

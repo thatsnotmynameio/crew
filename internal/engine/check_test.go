@@ -34,25 +34,27 @@ func checkedConfig(t *testing.T, tr *fake.Tracker, checker *fake.Checker) engine
 
 // checkedRun runs issue 1 under cfg, ends its session with success, waits
 // until every goroutine is blocked, then stops the engine unless it already
-// stopped, and returns the tracker's one failure report's failures, or nil.
-func checkedRun(t *testing.T, tr *fake.Tracker, cfg engine.Config) []crew.ActionFailure {
+// stopped, and returns the tracker's one failure report's failures, or nil,
+// and the reason development ended with.
+func checkedRun(t *testing.T, tr *fake.Tracker, cfg engine.Config) ([]crew.ActionFailure, string) {
 	t.Helper()
 	r := start(t, cfg)
-	r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+	r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 	synctest.Wait()
 	r.engine.Stop()
 	if _, err := r.wait(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	reason := r.lastReason()
 	reports := tr.Reports()
 	switch len(reports) {
 	case 0:
-		return nil
+		return nil, reason
 	case 1:
-		return reports[0].Failures
+		return reports[0].Failures, reason
 	}
 	t.Fatalf("reports = %+v, want at most one", reports)
-	return nil
+	return nil, reason
 }
 
 func TestAE2ACheckThatPassesKeepsTheSuccess(t *testing.T) {
@@ -60,7 +62,7 @@ func TestAE2ACheckThatPassesKeepsTheSuccess(t *testing.T) {
 		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
 		cfg := checkedConfig(t, tr, checker)
 
-		if got := checkedRun(t, tr, cfg); got != nil {
+		if got, _ := checkedRun(t, tr, cfg); got != nil {
 			t.Fatalf("failures = %+v, want none", got)
 		}
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
@@ -87,15 +89,16 @@ func TestAE1ACheckThatFailsFailsTheActionWithItsLastLine(t *testing.T) {
 		})
 		cfg := checkedConfig(t, tr, checker)
 
-		got := checkedRun(t, tr, cfg)
+		got, reason := checkedRun(t, tr, cfg)
 
 		want := []crew.ActionFailure{{
-			Action:    "development",
-			Reason:    "the check pr-closes-issue failed: no open pull request from crew/issue-1-development",
-			Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
+			Action: "development", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
 		}}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("failures = %+v, want %+v", got, want)
+		}
+		if want := "the check pr-closes-issue failed: no open pull request from crew/issue-1-development"; reason != want {
+			t.Errorf("reason = %q, want %q", reason, want)
 		}
 		if got := states(t, tr, "1"); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
 			t.Errorf("#1 is in %v, want needs attention", got)
@@ -110,10 +113,10 @@ func TestACheckThatPrintsNothingSaysSo(t *testing.T) {
 		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
 		checker.Script("crew/issue-1-development", fake.CheckScript{Print: "\n  \n", Exit: 1})
 
-		got := checkedRun(t, tr, checkedConfig(t, tr, checker))
+		got, reason := checkedRun(t, tr, checkedConfig(t, tr, checker))
 
-		if len(got) != 1 || got[0].Reason != "the check pr-closes-issue failed and printed nothing" {
-			t.Fatalf("failures = %+v", got)
+		if len(got) != 1 || reason != "the check pr-closes-issue failed and printed nothing" {
+			t.Fatalf("failures = %+v, reason %q", got, reason)
 		}
 	})
 }
@@ -137,10 +140,10 @@ func TestACheckReasonCarriesNoControlBytes(t *testing.T) {
 				tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
 				checker.Script("crew/issue-1-development", fake.CheckScript{Print: tt.printed, Exit: 1})
 
-				got := checkedRun(t, tr, checkedConfig(t, tr, checker))
+				got, reason := checkedRun(t, tr, checkedConfig(t, tr, checker))
 
-				if len(got) != 1 || got[0].Reason != tt.want {
-					t.Fatalf("failures = %+v, want reason %q", got, tt.want)
+				if len(got) != 1 || reason != tt.want {
+					t.Fatalf("failures = %+v, reason %q, want reason %q", got, reason, tt.want)
 				}
 			})
 		})
@@ -152,7 +155,7 @@ func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
 		checker.Script("crew/issue-1-development", fake.CheckScript{Block: true})
 		r := start(t, checkedConfig(t, tr, checker))
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
 
@@ -167,7 +170,7 @@ func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 		if len(reports) != 1 || len(reports[0].Failures) != 1 {
 			t.Fatalf("reports = %+v", reports)
 		}
-		if got, want := reports[0].Failures[0].Reason, "the check pr-closes-issue ran out of time after 10m0s"; got != want {
+		if got, want := r.lastReason(), "the check pr-closes-issue ran out of time after 10m0s"; got != want {
 			t.Errorf("reason = %q, want %q", got, want)
 		}
 		if took := time.Since(t0); took > 11*time.Minute {
@@ -181,10 +184,10 @@ func TestAE9AStopEndsARunningCheckAndTheActionCountsAsStopped(t *testing.T) {
 		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
 		checker.Script("crew/issue-1-development", fake.CheckScript{Block: true})
 
-		got := checkedRun(t, tr, checkedConfig(t, tr, checker))
+		got, reason := checkedRun(t, tr, checkedConfig(t, tr, checker))
 
-		if len(got) != 1 || got[0].Reason != "crew stopped" {
-			t.Fatalf("failures = %+v, want development stopped", got)
+		if len(got) != 1 || reason != "crew stopped" {
+			t.Fatalf("failures = %+v, reason %q, want development stopped", got, reason)
 		}
 	})
 }
@@ -197,12 +200,42 @@ func TestACheckThatCannotStartSaysWhyWithLocalPathsShortened(t *testing.T) {
 			StartErr: errors.New("chdir " + cfg.Root + "/.crew/worktrees/issue-1-development: no such file or directory"),
 		})
 
-		got := checkedRun(t, tr, cfg)
+		got, reason := checkedRun(t, tr, cfg)
 
 		want := "the check pr-closes-issue could not start: " +
 			"chdir ./.crew/worktrees/issue-1-development: no such file or directory"
-		if len(got) != 1 || got[0].Reason != want {
-			t.Fatalf("failures = %+v, want reason %q", got, want)
+		if len(got) != 1 || reason != want {
+			t.Fatalf("failures = %+v, reason %q, want reason %q", got, reason, want)
+		}
+	})
+}
+
+func TestACheckWhoseLogCannotOpenSaysWhyWithLocalPathsShortened(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
+		cfg := checkedConfig(t, tr, checker)
+		r := start(t, cfg)
+		session := r.sessions(1)["issue-1-development"]
+		// A directory where the log was: the session keeps the file it
+		// opened, and the check cannot open the log again.
+		log := filepath.Join(cfg.Root, ".crew", "logs", "issue-1-development.log")
+		if err := os.Remove(log); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(log, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		session.End(port.Verdict{Succeeded: true, Reason: "done"})
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		want := "the check pr-closes-issue could not start: open the session log: " +
+			"open for appending: open ./.crew/logs/issue-1-development.log: is a directory"
+		if got := r.lastReason(); got != want {
+			t.Fatalf("reason = %q, want %q", got, want)
 		}
 	})
 }
@@ -212,10 +245,10 @@ func TestAnEngineWithoutACheckerFailsAnActionWithACheck(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, checkedDevelop)
 
-		got := checkedRun(t, tr, cfg)
+		got, reason := checkedRun(t, tr, cfg)
 
-		if len(got) != 1 || got[0].Reason != "the check pr-closes-issue could not start: crew has no check runner" {
-			t.Fatalf("failures = %+v", got)
+		if len(got) != 1 || reason != "the check pr-closes-issue could not start: crew has no check runner" {
+			t.Fatalf("failures = %+v, reason %q", got, reason)
 		}
 	})
 }
@@ -228,7 +261,7 @@ func TestWhenTheRunTimeIsUpARunningCheckFinishesBeforeTheEngineStops(t *testing.
 		cfg.RunTimeLimit = 5 * time.Minute
 		t0 := time.Now()
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -236,9 +269,9 @@ func TestWhenTheRunTimeIsUpARunningCheckFinishesBeforeTheEngineStops(t *testing.
 		if got, want := time.Since(t0), 10*time.Minute; got != want {
 			t.Errorf("Run returned after %v, want %v, once the check ran out of time", got, want)
 		}
-		reports := tr.Reports()
-		if len(reports) != 1 || reports[0].Failures[0].Reason != "the check pr-closes-issue ran out of time after 10m0s" {
-			t.Errorf("reports = %+v, want the check's own end, not a stop", reports)
+		reports, want := tr.Reports(), "the check pr-closes-issue ran out of time after 10m0s"
+		if got := r.lastReason(); len(reports) != 1 || got != want {
+			t.Errorf("reports = %+v, reason %q, want the check's own end, not a stop", reports, got)
 		}
 	})
 }
@@ -263,7 +296,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 		s.SetLastMessage("PR #2 is open.\nMerging is yours.")
-		s.End(crew.Outcome{Succeeded: true, Reason: "PR #2 is open. Merging is yours."})
+		s.End(port.Verdict{Succeeded: true, Reason: "PR #2 is open. Merging is yours."})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -275,8 +308,8 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 			t.Errorf("#1 is in %v, want ready to review", got)
 		}
 		wantChecks := []crew.CheckResult{
-			{Name: "judge", Passed: true, Reason: "the check judge passed: done (0.97)"},
-			{Name: "pr-closes-issue", Passed: true, Reason: "the check pr-closes-issue passed"},
+			{Name: "judge", Passed: true, Reason: crew.NewCheckReason("the check judge passed: done (0.97)")},
+			{Name: "pr-closes-issue", Passed: true, Reason: crew.NewCheckReason("the check pr-closes-issue passed")},
 		}
 		if got := lastStatus(t, tr).Actions[0].Checks; !reflect.DeepEqual(got, wantChecks) {
 			t.Errorf("status checks = %+v, want %+v", got, wantChecks)
@@ -312,6 +345,31 @@ func wantLog(t *testing.T, root, want string) {
 	}
 }
 
+// KTD10: the last message a check reads is the session's, byte for byte:
+// crew neither scrubs nor strips it, as it does the text it shows.
+func TestACheckReadsTheLastMessageAsTheSessionWroteIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr, checker, h := fake.NewTracker(issue(1, ready)), fake.NewChecker(), fake.NewMessagingHarness()
+		cfg := checkedConfig(t, tr, checker)
+		cfg.Harnesses = harnesses(h)
+		last := "a\x00b \x1b[31mred\x1b[0m 10%\r20% in " + cfg.Root + "/main.go"
+		r := start(t, cfg)
+		s := r.sessions(1)["issue-1-development"]
+		s.SetLastMessage(last)
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		checks := checker.Checks()
+		if len(checks) != 1 || checks[0].LastMessage != last {
+			t.Fatalf("checks = %+v, want one reading the last message %q", checks, last)
+		}
+	})
+}
+
 // R5: each check has its own ten minutes, not what the one before it left.
 func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -321,7 +379,7 @@ func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 		cfg := config(t, tr, twoCheckedDevelop)
 		cfg.Checker = checker
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
 
@@ -336,9 +394,9 @@ func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		reports := tr.Reports()
-		if len(reports) != 1 || reports[0].Failures[0].Reason != "the check pr-closes-issue ran out of time after 10m0s" {
-			t.Fatalf("reports = %+v, want pr-closes-issue out of time", reports)
+		reports, want := tr.Reports(), "the check pr-closes-issue ran out of time after 10m0s"
+		if got := r.lastReason(); len(reports) != 1 || got != want {
+			t.Fatalf("reports = %+v, reason %q, want pr-closes-issue out of time", reports, got)
 		}
 		if took := time.Since(t0); took > 20*time.Minute {
 			t.Errorf("judged after %v", took)
