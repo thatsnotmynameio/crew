@@ -10,9 +10,10 @@ import (
 // RuleRun is one run of a rule on an issue, from its take until it is
 // released: an aggregate that decides its changes as events (Decide) and
 // applies them (Apply). It holds the issue as taken, the rule's name, its
-// phase and its action runs in the rule's action order, and it refers to the
-// rule only by name. It cannot be changed once built: accessors return
-// copies, and Apply returns a new run.
+// phase, its one workspace, which its actions share, the cursor on its
+// action runs, which are in the rule's action order, and the lookup of its
+// pull requests. It refers to the rule only by name. It cannot be changed
+// once built: accessors return copies, and Apply returns a new run.
 //
 // The zero RuleRun is no run: Apply of a RunTaken event to it starts one.
 type RuleRun struct {
@@ -24,6 +25,11 @@ type RuleRun struct {
 	stopping  bool
 	phase     RunPhase
 	actions   []ActionRun
+	workspace WorkspaceState
+	resume    Optional[ResumePoint]
+	cursor    int
+	bot       Bot
+	lookup    Lookup
 }
 
 // ID returns the run's id.
@@ -63,22 +69,65 @@ func (r RuleRun) Action(name ActionName) (ActionRun, bool) {
 	return r.actions[i], true
 }
 
-// ActionsEnded reports whether every action run ended; true for a run
-// without actions.
-func (r RuleRun) ActionsEnded() bool {
-	for _, a := range r.actions {
-		if !a.Ended() {
-			return false
-		}
+// Cursor returns the action run at the run's cursor, and whether the run
+// has actions: the action that runs, or the next to run, and once the run
+// chose a route the action whose verdict led to it.
+func (r RuleRun) Cursor() (ActionRun, bool) {
+	if r.cursor >= len(r.actions) {
+		return ActionRun{}, false
 	}
-	return true
+	return r.actions[r.cursor], true
+}
+
+// WorkspaceState returns where the run's workspace stands.
+func (r RuleRun) WorkspaceState() WorkspaceState { return r.workspace }
+
+// Workspace returns the run's workspace, once it was ready.
+func (r RuleRun) Workspace() Optional[OpenedWorkspace] {
+	if w, ok := r.workspace.(InWorkspace); ok {
+		return Some(w.Opened)
+	}
+	return Optional[OpenedWorkspace]{}
+}
+
+// Resume returns where the run resumes the work of the run it continues,
+// when it inherited a resume point.
+func (r RuleRun) Resume() Optional[ResumePoint] { return r.resume }
+
+// Bot returns the bot the run's actions that are not sessions act as: the
+// bot of its latest session that started, or the zero Bot, the tracker's
+// identity, before any did.
+func (r RuleRun) Bot() Bot { return r.bot }
+
+// Lookup returns how the lookup of the run's pull requests stands.
+func (r RuleRun) Lookup() Lookup { return r.lookup }
+
+// PullRequest returns what the lookup of the run's pull requests found, or
+// nil while it was not asked or is pending.
+func (r RuleRun) PullRequest() PullRequest {
+	if done, ok := r.lookup.(LookupDone); ok {
+		return done.PullRequest
+	}
+	return nil
+}
+
+// ActionsEnded reports whether the run's sequence is over: it chose a
+// route, ended or was released, so no action of it runs or will start.
+func (r RuleRun) ActionsEnded() bool {
+	switch r.phase.(type) {
+	case RoutingPhase, EndingPhase, ReleasedPhase:
+		return true
+	case TakingPhase, RunningPhase:
+	}
+	return false
 }
 
 // Snapshot returns the run as plain data, sharing no memory with it.
 func (r RuleRun) Snapshot() RuleRunSnapshot {
 	s := RuleRunSnapshot{
 		ID: r.id, Continues: r.continues, Issue: r.issue.Data(), Rule: r.rule, Taken: r.taken,
-		Stopping: r.stopping, Phase: clonePhase(r.phase),
+		Stopping: r.stopping, Phase: clonePhase(r.phase), Workspace: r.workspace, Resume: r.resume,
+		Cursor: r.cursor, Bot: r.bot, Lookup: r.lookup,
 	}
 	for _, a := range r.actions {
 		s.Actions = append(s.Actions, a.snapshot())
@@ -104,23 +153,31 @@ type RuleRunSnapshot struct {
 	Phase     RunPhase
 	// Actions are the action runs, in the rule's action order, each named
 	// once.
-	Actions []ActionRunSnapshot
+	Actions   []ActionRunSnapshot
+	Workspace WorkspaceState
+	Resume    Optional[ResumePoint]
+	// Cursor is the index in Actions of the action run at the cursor; 0
+	// for a run without actions.
+	Cursor int
+	Bot    Bot
+	Lookup Lookup
 }
 
 // errBadSnapshot is the error of a snapshot RestoreRuleRun rejects.
 var errBadSnapshot = errors.New("not a rule run")
 
 // RestoreRuleRun returns the run s describes, sharing no memory with it. It
-// rejects a snapshot without an id, phase, action state or lookup, one that
-// names an action twice, and one ending or released with an ending while
-// an action has not ended.
+// rejects a snapshot without an id, phase, workspace state, lookup or
+// action state, one that names an action twice, one whose cursor is not on
+// one of its actions, and one whose sequence is over while an action runs.
 func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 	if err := validate(s); err != nil {
 		return RuleRun{}, fmt.Errorf("restore rule run %q: %w", s.ID, err)
 	}
 	r := RuleRun{
 		id: s.ID, continues: s.Continues, issue: NewIssue(s.Issue), rule: s.Rule, taken: s.Taken,
-		stopping: s.Stopping, phase: clonePhase(s.Phase),
+		stopping: s.Stopping, phase: clonePhase(s.Phase), workspace: s.Workspace, resume: s.Resume,
+		cursor: s.Cursor, bot: s.Bot, lookup: s.Lookup,
 	}
 	for _, a := range s.Actions {
 		r.actions = append(r.actions, restoreAction(a))
@@ -130,35 +187,39 @@ func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 
 // validate returns why s is not a rule run, or nil.
 func validate(s RuleRunSnapshot) error {
-	if s.ID == "" || s.Phase == nil {
+	switch {
+	case s.ID == "" || s.Phase == nil:
 		return fmt.Errorf("%w: it has no id or no phase", errBadSnapshot)
+	case s.Workspace == nil || s.Lookup == nil:
+		return fmt.Errorf("%w: it has no workspace state or no lookup", errBadSnapshot)
+	case s.Cursor < 0 || s.Cursor >= max(len(s.Actions), 1):
+		return fmt.Errorf("%w: its cursor %d is not on one of its actions", errBadSnapshot, s.Cursor)
 	}
-	ended := false
-	switch p := s.Phase.(type) {
-	case EndingPhase:
-		ended = true
-	case ReleasedPhase:
-		_, ended = p.Ending.Get()
-	case TakingPhase, RunningPhase:
-	}
+	return validateActions(s)
+}
+
+// validateActions returns why the actions of s are not a rule run's, or
+// nil.
+func validateActions(s RuleRunSnapshot) error {
+	over := RuleRun{phase: s.Phase}.ActionsEnded()
 	var names []ActionName
 	for _, a := range s.Actions {
-		if a.State == nil || a.Lookup == nil {
-			return fmt.Errorf("%w: action %q has no state or no lookup", errBadSnapshot, a.Name)
+		if a.State == nil {
+			return fmt.Errorf("%w: action %q has no state", errBadSnapshot, a.Name)
 		}
 		if slices.Contains(names, a.Name) {
 			return fmt.Errorf("%w: it names action %q twice", errBadSnapshot, a.Name)
 		}
 		names = append(names, a.Name)
-		if _, finished := a.State.(Finished); ended && !finished {
-			return fmt.Errorf("%w: it ended while action %q had not", errBadSnapshot, a.Name)
+		if over && (ActionRun{state: a.State}).running() {
+			return fmt.Errorf("%w: its sequence is over while action %q runs", errBadSnapshot, a.Name)
 		}
 	}
 	return nil
 }
 
 // RunPhase is where a rule run stands: TakingPhase, RunningPhase,
-// EndingPhase or ReleasedPhase.
+// RoutingPhase, EndingPhase or ReleasedPhase.
 //
 //sumtype:decl
 type RunPhase interface {
@@ -168,8 +229,17 @@ type RunPhase interface {
 // TakingPhase is a run whose take move is in flight or owed.
 type TakingPhase struct{}
 
-// RunningPhase is a run whose take landed and some of whose actions run.
+// RunningPhase is a run whose take landed and whose actions run, one at a
+// time.
 type RunningPhase struct{}
+
+// RoutingPhase is a run whose sequence is over and which ends through
+// Route.
+type RoutingPhase struct {
+	Route RouteName
+	// Chosen is when the run chose the route.
+	Chosen time.Time
+}
 
 // EndingPhase is a run whose every action ended: its ending move, and its
 // failure report when an action failed, are delivered.
@@ -195,6 +265,7 @@ type ReleasedPhase struct {
 
 func (TakingPhase) runPhase()   {}
 func (RunningPhase) runPhase()  {}
+func (RoutingPhase) runPhase()  {}
 func (EndingPhase) runPhase()   {}
 func (ReleasedPhase) runPhase() {}
 
@@ -255,7 +326,7 @@ func clonePhase(p RunPhase) RunPhase {
 			p.Ending = Some(v)
 		}
 		return p
-	case TakingPhase, RunningPhase:
+	case TakingPhase, RunningPhase, RoutingPhase:
 	}
 	return p
 }

@@ -3,18 +3,16 @@ package crew
 import "slices"
 
 // Rule is one of the config's rules. It takes an item of its Takes kind in
-// its Labels.Ready state, moves it to Labels.Running while its actions run,
-// and moves it to Labels.Success once every action has succeeded, or to
-// Labels.Failure when any failed. Its Routes, and its actions' Kind and On,
-// describe the same rule as a sequence of actions whose verdicts lead to
-// the next action or to a route.
+// its Labels.Ready state and moves it to Labels.Running while its actions
+// run, one at a time in one workspace. Each action's verdict leads to the
+// next action or to one of its Routes, which ends the run.
 type Rule struct {
 	// Name identifies the rule in events and the TUI.
 	Name RuleName
 	// Labels are the states the rule takes an item from and moves it to.
 	Labels Labels
-	// Actions run in parallel, each in its own workspace and session. A
-	// rule may have none.
+	// Actions run one at a time, in this order, in the run's one
+	// workspace. A rule may have none.
 	Actions []Action
 	// Queue is the queue the rule runs in: the share of the global limit
 	// its issues may hold. The zero Queue is no queue: the rule is limited
@@ -145,4 +143,12 @@ type ActionFailure struct {
 	Workspace WorkspaceName
 	// Log is the repository-relative path of the session's log file.
 	Log string
+}
+
+// hasSession reports whether any of r's actions is a session.
+func (r Rule) hasSession() bool {
+	return slices.ContainsFunc(r.Actions, func(a Action) bool {
+		_, ok := a.Kind.(SessionSpec)
+		return ok
+	})
 }

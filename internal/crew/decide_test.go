@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// The decision tables below mirror today's core handlers, branch by branch:
-// each row names the handler in internal/core and the branch it follows.
+// The decision tables below follow a rule run through its sequence: each
+// row names the fact it decides and the branch it follows.
 
 type decision struct {
 	name  string
@@ -18,13 +18,13 @@ type decision struct {
 	want  []RunEvent
 }
 
-// decide runs each decision and checks the events, then applies them to
-// the run, which must accept each.
+// decide runs each decision on the sequence definition and checks the
+// events, then applies them to the run, which must accept each.
 func decide(t *testing.T, tests []decision) {
 	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			def := definition()
+			def := sequence()
 			def.FindsPullRequests = tt.finds
 			if tt.def != nil {
 				def = tt.def(def)
@@ -44,315 +44,160 @@ func decide(t *testing.T, tests []decision) {
 
 func withoutActions(d RunDefinition) RunDefinition {
 	d.Rule.Actions = nil
+	d.Rule.Routes = d.Rule.Routes[:1]
 	return d
 }
 
-// endedAtOnce is the ending of a rule without actions, whose take landed.
-var endedAtOnce = RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelDone}}
+// stoppedAt is the end of action, stopped before it started, at minute n,
+// and the run through failed.
+func stoppedAt(n int, action ActionName) []RunEvent {
+	return []RunEvent{
+		ActionEnded{EventHead: eh(n), Action: action, End: stopEnd, Verdict: Failed, Target: toFailed},
+		RouteChosen{EventHead: eh(n), Route: FailedRoute, Action: action},
+	}
+}
 
-// takeDecisions mirror taken, start and callResult.
+// takeDecisions decide the take.
 var takeDecisions = []decision{
 	{
-		name: "taken: a rule without actions ends at once", def: withoutActions,
+		name: "take: a rule without actions chooses passed at once", def: withoutActions,
+		given: []RunEvent{takenWithoutActions()}, fact: TakeSettled{FactHead: fh(1), Landed: true},
+		want: []RunEvent{takeMoved(), RouteChosen{EventHead: eh(1), Route: PassedRoute}},
+	},
+	{
+		name: "take: a rule without actions chooses passed after a stop too", def: withoutActions, finds: true,
+		given: seq([]RunEvent{takenWithoutActions()}, stopped(0)), fact: TakeSettled{FactHead: fh(1), Landed: true},
+		want: []RunEvent{takeMoved(), RouteChosen{EventHead: eh(1), Route: PassedRoute}},
+	},
+	{
+		name:  "take: a landed take asks for the run's one workspace",
 		given: []RunEvent{taken()}, fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{takeMoved(), endedAtOnce},
+		want: []RunEvent{takeMoved(), WorkspaceAsked{EventHead: eh(1)}},
 	},
 	{
-		name: "taken: a rule without actions ends in success after a stop too", def: withoutActions,
+		name:  "take: a run that resumes asks to reopen the workspace it resumes",
+		given: []RunEvent{resumedAt("lfg")}, fact: TakeSettled{FactHead: fh(1), Landed: true},
+		want: []RunEvent{takeMoved(), WorkspaceAsked{EventHead: eh(1), Reopen: Some(runWS())}},
+	},
+	{
+		name:  "take: after a stop the first action ends without starting, and the run chooses failed",
 		given: seq([]RunEvent{taken()}, stopped(0)), fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{takeMoved(), endedAtOnce},
+		want: seq([]RunEvent{takeMoved()}, stoppedAt(1, "install")),
 	},
 	{
-		name:  "taken: after a stop every action ends stopped without a workspace, and the run fails",
-		given: seq([]RunEvent{taken(bothActions()...)}, stopped(0)), fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{
-			takeMoved(),
-			ActionEnded{EventHead: eh(1), Action: "development", End: stopEnd},
-			ActionEnded{EventHead: eh(1), Action: "review", End: stopEnd},
-			RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelFailed, Failures: []ActionFailure{
-				{Action: "development"}, {Action: "review"},
-			}}},
-		},
-	},
-	{
-		name: "start: a new workspace without a resume point, the failed run's with one",
-		given: []RunEvent{
-			taken(ActionTaken{Name: "development", Resume: Some(resumePoint())}, ActionTaken{Name: "review"}),
-		},
-		fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{
-			takeMoved(),
-			ActionWorkspaceAsked{EventHead: eh(1), Action: "development", Reopen: Some(ws("development"))},
-			ActionWorkspaceAsked{EventHead: eh(1), Action: "review"},
-		},
-	},
-	{
-		name: "start: a prompt that does not render ends its action, and its sibling starts",
-		def: func(d RunDefinition) RunDefinition {
-			d.Rule.Actions[1].Prompt = badPrompt("review")
-			return d
-		},
-		given: []RunEvent{taken(bothActions()...)}, fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{
-			takeMoved(),
-			ActionWorkspaceAsked{EventHead: eh(1), Action: "development"},
-			ActionEnded{EventHead: eh(1), Action: "review", End: EndFailed{
-				Reason: renderError("review"), Cause: CausePrompt,
-			}},
-		},
-	},
-	{
-		name: "start: when no prompt renders, the last end ends the run",
-		def: func(d RunDefinition) RunDefinition {
-			d.Rule.Actions[0].Prompt = badPrompt("development")
-			d.Rule.Actions[1].Prompt = badPrompt("review")
-			return d
-		},
-		given: []RunEvent{taken(bothActions()...)}, fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{
-			takeMoved(),
-			ActionEnded{EventHead: eh(1), Action: "development", End: EndFailed{
-				Reason: renderError("development"), Cause: CausePrompt,
-			}},
-			ActionEnded{EventHead: eh(1), Action: "review", End: EndFailed{
-				Reason: renderError("review"), Cause: CausePrompt,
-			}},
-			RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelFailed, Failures: []ActionFailure{
-				{Action: "development"}, {Action: "review"},
-			}}},
-		},
-	},
-	{
-		name:  "callResult: a take given up releases the run without an ending",
-		given: []RunEvent{taken(bothActions()...)}, fact: TakeSettled{FactHead: fh(1)},
+		name:  "take: a take given up releases the run without a route",
+		given: []RunEvent{taken()}, fact: TakeSettled{FactHead: fh(1)},
 		want: []RunEvent{RunReleased{EventHead: eh(1)}},
 	},
 }
 
-// stopDecisions mirror stop and stopActions.
+func ready(resumed bool) Fact {
+	return WorkspaceReady{FactHead: fh(2), Workspace: runWS(), Log: runLog, Resumed: resumed}
+}
+
+// workspaceDecisions decide the run's workspace.
+var workspaceDecisions = []decision{
+	{
+		name:  "ready: a new workspace is recorded and the first action, a shell, runs as the tracker's identity",
+		given: asking(), fact: ready(false),
+		want: []RunEvent{
+			WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog},
+			ActionShellAsked{EventHead: eh(2), Action: "install"},
+		},
+	},
+	{
+		name:  "ready: the reopened workspace resumes at the resume point's action",
+		given: reopening(), fact: ready(true),
+		want: []RunEvent{
+			WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog, Resumed: true},
+			ActionSessionAsked{EventHead: eh(2), Action: "lfg"},
+		},
+	},
+	{
+		name:  "ready: after a stop the workspace names no log, and the action at the cursor ends stopped",
+		given: seq(reopening(), stopped(1)), fact: ready(true),
+		want: seq([]RunEvent{WorkspaceOpened{EventHead: eh(2), Workspace: runWS()}}, stoppedAt(2, "lfg")),
+	},
+	{
+		name:  "gone: a reopened workspace that is gone asks for a new one",
+		given: reopening(), fact: WorkspaceGone{FactHead: fh(2)},
+		want: []RunEvent{
+			WorkspaceMissing{EventHead: eh(2), Workspace: runWS()},
+			WorkspaceAsked{EventHead: eh(2)},
+		},
+	},
+	{
+		name: "ready: after a gone workspace the run starts again at its first action",
+		given: seq(reopening(), []RunEvent{
+			WorkspaceMissing{EventHead: eh(2), Workspace: runWS()}, WorkspaceAsked{EventHead: eh(2)},
+		}),
+		fact: ready(false),
+		want: []RunEvent{
+			WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog},
+			ActionShellAsked{EventHead: eh(2), Action: "install"},
+		},
+	},
+	{
+		name:  "gone: after a stop it is still missing, and the first action ends stopped",
+		given: seq(reopening(), stopped(1)), fact: WorkspaceGone{FactHead: fh(2)},
+		want: seq([]RunEvent{WorkspaceMissing{EventHead: eh(2), Workspace: runWS()}}, stoppedAt(2, "install")),
+	},
+	{
+		name:  "failed: a workspace that could not be made fails the action at the cursor",
+		given: asking(), fact: WorkspaceFailed{FactHead: fh(2), Reason: NewSessionText("disk full")},
+		want: []RunEvent{
+			ActionEnded{
+				EventHead: eh(2), Action: "install", Verdict: Failed, Target: toFailed,
+				End: EndFailed{Reason: NewSessionText("disk full"), Cause: CauseWorkspace},
+			},
+			RouteChosen{EventHead: eh(2), Route: FailedRoute, Action: "install"},
+		},
+	},
+	{
+		name:  "failed: after a stop too, a reopened one",
+		given: seq(reopening(), stopped(1)), fact: WorkspaceFailed{FactHead: fh(2), Reason: NewSessionText("not listed")},
+		want: []RunEvent{
+			ActionEnded{
+				EventHead: eh(2), Action: "lfg", Verdict: Failed, Target: toFailed,
+				End: EndFailed{Reason: NewSessionText("not listed"), Cause: CauseWorkspace},
+			},
+			RouteChosen{EventHead: eh(2), Route: FailedRoute, Action: "lfg"},
+		},
+	},
+}
+
+// stopDecisions decide a stop.
 var stopDecisions = []decision{
 	{
 		name:  "stop: a run taking is marked stopping",
-		given: []RunEvent{taken(bothActions()...)}, fact: StopReached{FactHead: fh(1)},
+		given: []RunEvent{taken()}, fact: StopReached{FactHead: fh(1)},
 		want: stopped(1),
 	},
 	{
-		name:  "stopActions: a running run stops its running check and session, in action order",
-		given: seq(preparing(), inChecks(), inSession("review")), fact: StopReached{FactHead: fh(6)},
-		want: []RunEvent{
-			RunStopped{EventHead: eh(6)},
-			ActionCheckStopAsked{EventHead: eh(6), Action: "development"},
-			ActionSessionStopAsked{EventHead: eh(6), Action: "review"},
-		},
+		name:  "stop: the running session is asked to stop",
+		given: inSession(), fact: StopReached{FactHead: fh(5)},
+		want: []RunEvent{RunStopped{EventHead: eh(5)}, ActionSessionStopAsked{EventHead: eh(5), Action: "lfg"}},
 	},
 	{
-		name:  "stopActions: actions without a session or check to stop wait for their next fact",
-		given: seq(preparing(), starting("review")), fact: StopReached{FactHead: fh(4)},
+		name:  "stop: the running script is asked to stop",
+		given: installing(), fact: StopReached{FactHead: fh(3)},
+		want: []RunEvent{RunStopped{EventHead: eh(3)}, ActionShellStopAsked{EventHead: eh(3), Action: "install"}},
+	},
+	{
+		name:  "stop: a session that is starting waits for its next fact",
+		given: starting(), fact: StopReached{FactHead: fh(4)},
 		want: stopped(4),
 	},
 	{
-		name: "stop: an ending run's ending move goes on",
-		given: seq(preparing(), reviewEnded(EndSucceeded{}), []RunEvent{
-			ActionEnded{EventHead: eh(7), Action: "development", End: EndFailed{Cause: CauseWorkspace}},
-			RunEnded{EventHead: eh(7), Ending: RunEnding{To: labelFailed}},
-		}),
-		fact: StopReached{FactHead: fh(8)},
+		name:  "stop: a run whose sequence is over goes on",
+		given: passedAll(), fact: StopReached{FactHead: fh(7)},
 	},
 	{
 		name:  "stop: a stop reaches a run once",
-		given: seq(preparing(), stopped(3)), fact: StopReached{FactHead: fh(4)},
-	},
-}
-
-func ready(action ActionName, resumed bool) Fact {
-	return WorkspaceReady{FactHead: fh(3), Action: action, Workspace: ws(action), Log: logOf(action), Resumed: resumed}
-}
-
-// workspaceDecisions mirror workspaceReady, workspaceGone and actionInput's
-// WorkspaceFailed.
-var workspaceDecisions = []decision{
-	{
-		name:  "workspaceReady: a new workspace records the start and asks for the session",
-		given: preparing(), fact: ready("development", false),
-		want: []RunEvent{
-			ActionOpened{EventHead: eh(3), Action: "development", Workspace: ws("development"), Log: logOf("development")},
-			ActionSessionAsked{EventHead: eh(3), Action: "development"},
-		},
-	},
-	{
-		name:  "workspaceReady: the failed run's reopened workspace resumes",
-		given: reopening(), fact: ready("development", true),
-		want: []RunEvent{
-			ActionOpened{
-				EventHead: eh(3), Action: "development", Workspace: ws("development"), Log: logOf("development"),
-				Resumed: true,
-			},
-			ActionSessionAsked{EventHead: eh(3), Action: "development"},
-		},
-	},
-	{
-		name:  "workspaceReady: after a stop the action starts without a log and ends stopped",
-		given: seq(reopening(), stopped(2)), fact: ready("development", true),
-		want: []RunEvent{
-			ActionOpened{EventHead: eh(3), Action: "development", Workspace: ws("development")},
-			ActionEnded{
-				EventHead: eh(3), Action: "development", End: stopEnd,
-				Workspace: Some(OpenedWorkspace{Workspace: ws("development"), Opened: at(3)}),
-			},
-		},
-	},
-	{
-		name:  "workspaceGone: a reopened workspace that is gone asks for a new one",
-		given: reopening(), fact: WorkspaceGone{FactHead: fh(3), Action: "development"},
-		want: []RunEvent{
-			WorkspaceMissing{EventHead: eh(3), Action: "development", Workspace: ws("development")},
-			ActionWorkspaceAsked{EventHead: eh(3), Action: "development"},
-		},
-	},
-	{
-		name:  "workspaceGone: after a stop it is still missing, and the action ends stopped",
-		given: seq(reopening(), stopped(2)), fact: WorkspaceGone{FactHead: fh(3), Action: "development"},
-		want: []RunEvent{
-			WorkspaceMissing{EventHead: eh(3), Action: "development", Workspace: ws("development")},
-			ActionEnded{EventHead: eh(3), Action: "development", End: stopEnd},
-		},
-	},
-	{
-		name:  "actionInput WorkspaceFailed: a workspace that could not be made fails its action",
-		given: preparing(), fact: WorkspaceFailed{FactHead: fh(3), Action: "review", Reason: NewSessionText("disk full")},
-		want: []RunEvent{ActionEnded{
-			EventHead: eh(3), Action: "review", End: EndFailed{Reason: NewSessionText("disk full"), Cause: CauseWorkspace},
-		}},
-	},
-	{
-		name:  "actionInput WorkspaceFailed: after a stop too, a reopened one",
-		given: seq(reopening(), stopped(2)),
-		fact:  WorkspaceFailed{FactHead: fh(3), Action: "development", Reason: NewSessionText("not listed")},
-		want: []RunEvent{ActionEnded{
-			EventHead: eh(3), Action: "development",
-			End: EndFailed{Reason: NewSessionText("not listed"), Cause: CauseWorkspace},
-		}},
-	},
-}
-
-func ended(outcome Outcome) Fact {
-	return SessionEnded{FactHead: fh(5), Action: "review", Outcome: outcome, Usage: usage}
-}
-
-func reviewSession(outcome Outcome) RunEvent {
-	return ActionSessionEnded{EventHead: eh(5), Action: "review", Outcome: outcome, Usage: usage}
-}
-
-func reviewEnd(end ActionEnd) RunEvent {
-	return ActionEnded{
-		EventHead: eh(5), Action: "review", End: end, Workspace: opened("review"),
-		SessionStarted: Some(at(4)), Usage: usage,
-	}
-}
-
-// sessionDecisions mirror sessionStarted, actionInput's SessionFailedToStart
-// and sessionEnded.
-var sessionDecisions = []decision{
-	{
-		name:  "sessionStarted: the session runs",
-		given: seq(preparing(), starting("review")), fact: SessionStarted{FactHead: fh(4), Action: "review"},
-		want: []RunEvent{ActionSessionStarted{
-			EventHead: eh(4), Action: "review", Workspace: ws("review"), Log: logOf("review"),
-		}},
-	},
-	{
-		name:  "sessionStarted: a session that starts after a stop is asked to stop",
-		given: seq(preparing(), starting("review"), stopped(3)), fact: SessionStarted{FactHead: fh(4), Action: "review"},
-		want: []RunEvent{
-			ActionSessionStarted{EventHead: eh(4), Action: "review", Workspace: ws("review"), Log: logOf("review")},
-			ActionSessionStopAsked{EventHead: eh(4), Action: "review"},
-		},
-	},
-	{
-		name:  "actionInput SessionFailedToStart: the action fails to start",
-		given: seq(preparing(), starting("review")),
-		fact:  SessionFailedToStart{FactHead: fh(4), Action: "review", Reason: NewSessionText("claude: not found")},
-		want: []RunEvent{ActionEnded{
-			EventHead: eh(4), Action: "review", Workspace: opened("review"),
-			End: EndFailed{Reason: NewSessionText("claude: not found"), Cause: CauseStart},
-		}},
-	},
-	{
-		name:  "sessionEnded: a failed session fails its action",
-		given: seq(preparing(), inSession("review")), fact: ended(failedOutcome("gave up")),
-		want: []RunEvent{
-			reviewSession(failedOutcome("gave up")),
-			reviewEnd(EndFailed{Reason: NewSessionText("gave up"), Cause: CauseSession}),
-		},
-	},
-	{
-		name:  "sessionEnded: a failed session after a stop counts as stopped",
-		given: seq(preparing(), inSession("review"), stopped(4)), fact: ended(failedOutcome("killed")),
-		want: []RunEvent{
-			reviewSession(failedOutcome("killed")),
-			reviewEnd(EndFailed{Reason: NewSessionText("killed"), Cause: CauseStopped}),
-		},
-	},
-	{
-		name:  "sessionEnded: a successful session without checks succeeds",
-		given: seq(preparing(), inSession("review")), fact: ended(succeeded("done")),
-		want: []RunEvent{reviewSession(succeeded("done")), reviewEnd(EndSucceeded{Reason: NewSessionText("done")})},
-	},
-	{
-		name:  "sessionEnded: a successful session without checks succeeds after a stop too",
-		given: seq(preparing(), inSession("review"), stopped(4)), fact: ended(succeeded("done")),
-		want: []RunEvent{reviewSession(succeeded("done")), reviewEnd(EndSucceeded{Reason: NewSessionText("done")})},
-	},
-	{
-		name:  "sessionEnded: a session that ends before its start was seen keeps no start",
-		given: seq(preparing(), starting("review")), fact: ended(succeeded("done")),
-		want: []RunEvent{reviewSession(succeeded("done")), ActionEnded{
-			EventHead: eh(5), Action: "review", End: EndSucceeded{Reason: NewSessionText("done")},
-			Workspace: opened("review"), Usage: usage,
-		}},
-	},
-	{
-		name:  "sessionEnded: a successful session with checks runs the first",
-		given: seq(preparing(), inSession("development")),
-		fact:  SessionEnded{FactHead: fh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-		want: []RunEvent{
-			ActionSessionEnded{EventHead: eh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-			ActionCheckAsked{EventHead: eh(5), Action: "development", Check: "build"},
-		},
-	},
-	{
-		name:  "sessionEnded: after a stop no check runs, and the action ends stopped",
-		given: seq(preparing(), inSession("development"), stopped(4)),
-		fact:  SessionEnded{FactHead: fh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-		want: []RunEvent{
-			ActionSessionEnded{EventHead: eh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-			developmentEnded(5, stopEnd),
-		},
-	},
-	{
-		name:  "sessionEnded: with lookups, the lookup is asked and an action that ended waits for it",
-		given: seq(preparing(), inSession("review")), finds: true, fact: ended(failedOutcome("gave up")),
-		want: []RunEvent{
-			reviewSession(failedOutcome("gave up")),
-			ActionLookupAsked{EventHead: eh(5), Action: "review"},
-			ActionFinishing{EventHead: eh(5), Action: "review", End: EndFailed{
-				Reason: NewSessionText("gave up"), Cause: CauseSession,
-			}},
-		},
-	},
-	{
-		name:  "sessionEnded: with lookups, the lookup runs alongside the checks",
-		given: seq(preparing(), inSession("development")), finds: true,
-		fact: SessionEnded{FactHead: fh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-		want: []RunEvent{
-			ActionSessionEnded{EventHead: eh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-			ActionLookupAsked{EventHead: eh(5), Action: "development"},
-			ActionCheckAsked{EventHead: eh(5), Action: "development", Check: "build"},
-		},
+		given: seq(asking(), stopped(1)), fact: StopReached{FactHead: fh(2)},
 	},
 }
 
 func TestDecideTheTake(t *testing.T)      { decide(t, takeDecisions) }
-func TestDecideTheStop(t *testing.T)      { decide(t, stopDecisions) }
 func TestDecideTheWorkspace(t *testing.T) { decide(t, workspaceDecisions) }
-func TestDecideTheSession(t *testing.T)   { decide(t, sessionDecisions) }
+func TestDecideTheStop(t *testing.T)      { decide(t, stopDecisions) }

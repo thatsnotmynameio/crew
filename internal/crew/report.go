@@ -58,7 +58,7 @@ func (r RuleRun) ending() (RunEnding, bool) {
 		if v, ok := p.Ending.Get(); ok {
 			return v.Ending, true
 		}
-	case TakingPhase, RunningPhase:
+	case TakingPhase, RunningPhase, RoutingPhase:
 	}
 	return RunEnding{}, false
 }
@@ -76,7 +76,7 @@ func (r RuleRun) progress() StatusProgress {
 		if v, ok := p.Ending.Get(); ok {
 			return StatusEnded{To: v.Ending.To, Move: moveProgress(v.Move)}
 		}
-	case TakingPhase, RunningPhase:
+	case TakingPhase, RunningPhase, RoutingPhase:
 	}
 	return StatusRunning{}
 }
@@ -90,14 +90,14 @@ func moveProgress(m EndingMove) MoveProgress {
 }
 
 // actionStatuses returns the run's actions as a status shows them: each
-// one's state and how its checks that ran so far ended. Only a check's
-// reason goes with them: a session's or a tool's own words never do. An
-// action that resumed also names its workspace.
+// one's state. A session's or a tool's own words never go with them. When
+// the run resumed, each action that started names its workspace.
 func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []ActionStatus {
 	out := make([]ActionStatus, 0, len(r.actions))
+	w, _ := r.Workspace().Get()
 	for _, a := range r.actions {
-		s := ActionStatus{Name: a.name, State: a.status(said[a.name], showUsage), Checks: a.Checks()}
-		if w, ok := a.workspace.Get(); ok && w.Resumed {
+		s := ActionStatus{Name: a.name, State: r.actionState(a, said[a.name], showUsage)}
+		if _, pending := s.State.(ActionPending); w.Resumed && !pending {
 			s.Workspace = w.Workspace.Name
 		}
 		out = append(out, s)
@@ -105,34 +105,36 @@ func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []Acti
 	return out
 }
 
-// status returns how a stands in a status. An action whose check runs is
-// still running, since its session started; its session's last words are
-// no longer current. A failed action carries its cause and log.
-func (a ActionRun) status(said Said, showUsage bool) ActionState {
-	started, _ := a.session.Get()
+// actionState returns how a stands in a status. A session or a script
+// that runs is running; an action that has none running, has not started
+// or will not start is pending. A failed action carries its cause and the
+// run's log.
+func (r RuleRun) actionState(a ActionRun, said Said, showUsage bool) ActionState {
 	switch s := a.state.(type) {
 	case InSession:
+		started, _ := a.session.Get()
 		return ActionRunning{Started: started, Said: said}
-	case InChecks:
-		return ActionRunning{Started: started}
+	case InShell:
+		return ActionRunning{Started: s.Started}
 	case Finished:
-		return a.endState(s.End, showUsage)
-	case AwaitingTake, CreatingWorkspace, ReopeningWorkspace, StartingSession, Finishing:
-		// No session runs: the action has no start time to report.
+		return r.endState(a, s.End, showUsage)
+	case AwaitingTurn, DoneInEarlierRun, StartingSession, NotRun:
+		// No session or script runs: the action has no start time to
+		// report.
 	}
 	return ActionPending{}
 }
 
 // endState returns how a, which ended with end, stands in a status: with
-// showUsage and a session that started, with what it spent and its pull
-// request.
-func (a ActionRun) endState(end ActionEnd, showUsage bool) ActionState {
+// showUsage and a session that started, with what it spent and the run's
+// pull request.
+func (r RuleRun) endState(a ActionRun, end ActionEnd, showUsage bool) ActionState {
 	var usage Optional[ShownUsage]
 	if _, started := a.session.Get(); showUsage && started {
-		usage = Some(ShownUsage{Spend: a.Spend(), PullRequest: a.PullRequest()})
+		usage = Some(ShownUsage{Spend: a.Spend(), PullRequest: r.PullRequest()})
 	}
 	if failed, ok := end.(EndFailed); ok {
-		w, _ := a.workspace.Get()
+		w, _ := r.Workspace().Get()
 		return ActionFailed{Cause: failed.Cause, Log: w.Log, Usage: usage}
 	}
 	return ActionSucceeded{Usage: usage}

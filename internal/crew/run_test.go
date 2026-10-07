@@ -9,34 +9,57 @@ import (
 )
 
 func TestTheTakeStartsARun(t *testing.T) {
-	e := RunTaken{
-		EventHead: eh(0), Issue: testIssue(), From: labelReady, To: labelRunning, Continues: Some[RuleRunID]("run-1"),
-		Actions: []ActionTaken{{Name: "development", Resume: Some(resumePoint())}, {Name: "review"}},
-	}
+	e, _ := taken().(RunTaken)
+	e.Continues = Some[RuleRunID]("run-1")
 	run, err := Apply(RuleRun{}, e)
 	if err != nil {
 		t.Fatal(err)
 	}
 	continues, _ := run.Continues().Get()
 	if run.ID() != testRun || continues != "run-1" || run.Issue().Ref() != "#9" || run.Rule() != "implement" ||
-		!run.Taken().Equal(at(0)) || run.Stopping() || run.Phase() != (TakingPhase{}) {
+		!run.Taken().Equal(at(0)) || run.Stopping() || run.Phase() != (TakingPhase{}) ||
+		run.WorkspaceState() != (NoWorkspace{}) || run.Lookup() != (LookupNotAsked{}) || run.Bot() != (Bot{}) {
 		t.Errorf("run = %#v, want run-2 continuing run-1, taking #9 for implement at minute 0", run.Snapshot())
 	}
-	names := make([]ActionName, 0, len(e.Actions))
-	for _, a := range run.Actions() {
-		names = append(names, a.Name())
-		if a.State() != (AwaitingTake{}) || a.Lookup() != (LookupNotAsked{}) {
-			t.Errorf("action %s = %#v, want it awaiting the take", a.Name(), a)
-		}
+	if got := states(run); !reflect.DeepEqual(got, []ActionRunState{AwaitingTurn{}, AwaitingTurn{}, AwaitingTurn{}}) {
+		t.Errorf("actions = %#v, want three awaiting their turn", got)
 	}
-	resume, ok := run.Actions()[0].Resume().Get()
-	if !slices.Equal(names, []ActionName{"development", "review"}) || !ok || resume != resumePoint() {
-		t.Errorf("actions = %v, development resumes %+v, want both in order, development resuming", names, resume)
+	if a, ok := run.Cursor(); !ok || a.Name() != "install" {
+		t.Errorf("cursor = %#v, %v, want install", a, ok)
 	}
 }
 
+func TestATakeThatResumesStartsAtTheResumePointsAction(t *testing.T) {
+	run := given(t, []RunEvent{resumedAt("judge")})
+	resume, _ := run.Resume().Get()
+	if a, _ := run.Cursor(); a.Name() != "judge" || resume != resumePoint("judge") {
+		t.Errorf("cursor %s, resume %#v, want judge resuming", a.Name(), resume)
+	}
+	want := []ActionRunState{DoneInEarlierRun{}, DoneInEarlierRun{}, AwaitingTurn{}}
+	if got := states(run); !reflect.DeepEqual(got, want) {
+		t.Errorf("actions = %#v, want install and lfg done in an earlier run", got)
+	}
+	gone := given(t, []RunEvent{resumedAt("deploy")})
+	if a, _ := gone.Cursor(); a.Name() != "install" || !reflect.DeepEqual(states(gone)[0], AwaitingTurn{}) {
+		t.Errorf("a resume at an action the rule lost starts at %s, want install", a.Name())
+	}
+	missing := given(t, seq(reopening(), []RunEvent{WorkspaceMissing{EventHead: eh(2), Workspace: runWS()}}))
+	if a, _ := missing.Cursor(); a.Name() != "install" || !reflect.DeepEqual(states(missing)[0], AwaitingTurn{}) {
+		t.Errorf("after a missing workspace the cursor is on %s, want install, which runs again", a.Name())
+	}
+}
+
+// states returns the states of run's actions, in order.
+func states(run RuleRun) []ActionRunState {
+	out := make([]ActionRunState, 0, len(run.Actions()))
+	for _, a := range run.Actions() {
+		out = append(out, a.State())
+	}
+	return out
+}
+
 func TestApplyRefusesAnEventOfAnotherRun(t *testing.T) {
-	run := given(t, preparing())
+	run := given(t, asking())
 	e := RunStopped{EventHead: eh(3)}
 	e.Run = "run-1"
 	got, err := Apply(run, e)
@@ -46,45 +69,38 @@ func TestApplyRefusesAnEventOfAnotherRun(t *testing.T) {
 }
 
 func TestApplyBuildsARunFromAnActionStartWithoutItsTake(t *testing.T) {
-	run, err := Apply(RuleRun{}, ActionOpened{
-		EventHead: eh(3), Action: "development", Workspace: ws("development"), Log: logOf("development"),
-	})
+	run, err := Apply(RuleRun{}, ActionShellAsked{EventHead: eh(3), Action: "judge", Bot: developer})
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, ok := run.Action("development")
+	a, ok := run.Cursor()
 	if run.ID() != testRun || run.Issue().ID() != testID || run.Rule() != "implement" || !ok ||
-		a.Workspace() != opened("development") {
-		t.Errorf("run = %#v, want run-2 of #9 with development's workspace", run.Snapshot())
+		a.State() != (InShell{Started: at(3)}) || run.Phase() != (RunningPhase{}) {
+		t.Errorf("run = %#v, want run-2 of #9 running judge", run.Snapshot())
 	}
 }
 
 func TestApplyLeavesTheRunItIsGivenAsItWas(t *testing.T) {
-	check := func(n int, name CheckName, passed bool) RunEvent {
-		return ActionCheckEnded{EventHead: eh(n), Action: "development", Result: CheckResult{Name: name, Passed: passed}}
-	}
-	// Three results, so an append in place would have room for a fourth.
-	base := given(t, seq(preparing(), inChecks(), []RunEvent{
-		check(6, "build", true), check(6, "test", true), check(6, "lint", true),
-	}))
+	base := given(t, installing())
 	before := base.Snapshot()
-	one, _ := Apply(base, check(7, "vet", true))
-	two, _ := Apply(base, check(7, "vet", false))
-	a, _ := one.Action("development")
-	b, _ := two.Action("development")
-	if !reflect.DeepEqual(base.Snapshot(), before) || !a.Checks()[3].Passed || b.Checks()[3].Passed {
-		t.Errorf("base = %#v, one = %v, two = %v, want each run its own", base.Snapshot(), a.Checks(), b.Checks())
+	one, _ := Apply(base, ActionShellEnded{EventHead: eh(3), Action: "install", Outcome: exited(0, "passed")})
+	two, _ := Apply(base, ActionShellEnded{EventHead: eh(3), Action: "install", Outcome: exited(2, "failed")})
+	a, _ := one.Action("install")
+	b, _ := two.Action("install")
+	if !reflect.DeepEqual(base.Snapshot(), before) || a.Shell() != Some(exited(0, "passed")) ||
+		b.Shell() != Some(exited(2, "failed")) {
+		t.Errorf("base = %#v, one = %v, two = %v, want each run its own", base.Snapshot(), a.Shell(), b.Shell())
 	}
 }
 
 // snapshots are runs in each phase, for the snapshot tests.
 var snapshots = map[string][]RunEvent{
-	"taking":   {taken(bothActions()...)},
-	"stopping": seq(preparing(), inChecks(), stopped(5)),
-	"looking up": seq(lookingUp, []RunEvent{
-		ActionLookupDone{EventHead: eh(6), Action: "development", PullRequest: foundPR},
-	}),
-	"ending": endedFailed,
+	"taking":     {taken()},
+	"resuming":   reopening(),
+	"stopping":   seq(inSession(), stopped(5)),
+	"in a shell": judging(),
+	"looking up": seq(lookingUp, []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}),
+	"ending":     endedFailed,
 	"released": seq(endedFailed, []RunEvent{
 		EndingDropped{EventHead: eh(8), To: labelFailed, Reason: "closed"}, FailureReported{EventHead: eh(8)},
 		RunReleased{EventHead: eh(8)},
@@ -148,22 +164,35 @@ func plainFields(v reflect.Value, path string) (string, bool) {
 }
 
 func TestRestoreRejectsWhatIsNotARun(t *testing.T) {
-	ending := given(t, endedFailed).Snapshot()
-	running := ending
+	routing := given(t, passedAll()).Snapshot()
+	running := routing
 	running.Actions = slices.Clone(running.Actions)
-	running.Actions[0].State = InSession{}
-	twice := given(t, preparing()).Snapshot()
-	twice.Actions[1].Name = "development"
-	noID := ending
+	running.Actions[2].State = InShell{}
+	twice := given(t, asking()).Snapshot()
+	twice.Actions[1].Name = "install"
+	noID := routing
 	noID.ID = ""
-	noPhase := ending
+	noPhase := routing
 	noPhase.Phase = nil
+	noWorkspace := routing
+	noWorkspace.Workspace = nil
+	noLookup := routing
+	noLookup.Lookup = nil
+	noState := given(t, asking()).Snapshot()
+	noState.Actions[0].State = nil
+	pastTheEnd := routing
+	pastTheEnd.Cursor = 3
 	for name, s := range map[string]RuleRunSnapshot{
-		"ending with an action running": running, "an action twice": twice, "no id": noID, "no phase": noPhase,
+		"routing with an action running": running, "an action twice": twice, "no id": noID, "no phase": noPhase,
+		"no workspace state": noWorkspace, "no lookup": noLookup, "an action without a state": noState,
+		"a cursor past the actions": pastTheEnd,
 	} {
 		if _, err := RestoreRuleRun(s); err == nil {
 			t.Errorf("RestoreRuleRun(%s) = nil, want an error", name)
 		}
+	}
+	if _, err := RestoreRuleRun(given(t, []RunEvent{takenWithoutActions()}).Snapshot()); err != nil {
+		t.Errorf("RestoreRuleRun(a run without actions) = %v, want it restored", err)
 	}
 }
 
@@ -171,13 +200,13 @@ func TestARunSharesNothingWithItsSnapshotsAndCopies(t *testing.T) {
 	run := given(t, endedFailed)
 	before := run.Snapshot()
 	s := run.Snapshot()
-	s.Actions[0].Checks = append(s.Actions[0].Checks, CheckResult{Name: "extra"})
+	s.Actions[1].Usage.Models = append(s.Actions[1].Usage.Models, "extra")
 	failures(t, s.Phase)[0].Action = "changed"
 	s.Issue.States[0] = "changed"
 	restored, _ := RestoreRuleRun(s)
 	failures(t, restored.Phase())[0].Log = "changed"
 	run.Actions()[0] = ActionRun{}
-	failures(t, run.Phase())[1].Log = "changed"
+	failures(t, run.Phase())[0].Log = "changed"
 	if !reflect.DeepEqual(run.Snapshot(), before) {
 		t.Errorf("run = %#v, want it unchanged: %#v", run.Snapshot(), before)
 	}
@@ -197,38 +226,57 @@ func failures(t *testing.T, p RunPhase) []ActionFailure {
 }
 
 func TestAnActionRunTellsWhatItRecorded(t *testing.T) {
-	run := given(t, seq(preparing(), inSession("development"), []RunEvent{
-		ActionSessionEnded{EventHead: eh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-		ActionLookupAsked{EventHead: eh(5), Action: "development"},
-		ActionFinishing{EventHead: eh(5), Action: "development", End: EndSucceeded{Reason: NewSessionText("done")}},
+	run := given(t, seq(judging(), []RunEvent{
+		ActionShellEnded{EventHead: eh(6), Action: "judge", Outcome: exited(3, "judge: ask")},
+		ActionEnded{
+			EventHead: eh(6), Action: "judge", Verdict: "needs_person", Target: ToRoute{Route: "needs-person"},
+			End: EndSucceeded{Reason: NewSessionText("judge: ask")},
+		},
+		chose(6, "needs-person", "judge"),
 	}))
-	dev, _ := run.Action("development")
-	started, _ := dev.SessionStarted().Get()
-	w, _ := dev.Workspace().Get()
-	if !started.Equal(at(4)) || !reflect.DeepEqual(dev.Usage(), usage) || dev.Spend() != usage.Spend() ||
-		!w.Since().Equal(at(3)) || dev.Outcome() != succeeded("done") || dev.Ended() || dev.PullRequest() != nil {
-		t.Errorf("development = %#v, want its session from minute 4, its usage, and its outcome waiting", dev)
+	lfg, _ := run.Action("lfg")
+	started, _ := lfg.SessionStarted().Get()
+	if !started.Equal(at(4)) || !reflect.DeepEqual(lfg.Usage(), usage) || lfg.Spend() != usage.Spend() ||
+		!lfg.Ended() || run.Bot() != developer {
+		t.Errorf("lfg = %#v, want its session from minute 4, its usage, ended, and its bot the run's", lfg)
 	}
-	review, _ := run.Action("review")
-	if review.Spend() != (Spend{}) || review.Outcome() != (Outcome{}) {
-		t.Errorf("review = %#v, want no spend and no outcome before its session", review)
+	judge, _ := run.Cursor()
+	want := Finished{
+		End: EndSucceeded{Reason: NewSessionText("judge: ask")}, Verdict: "needs_person",
+		Target: ToRoute{Route: "needs-person"},
 	}
-	resumed := given(t, seq(reopening(), []RunEvent{ActionOpened{
-		EventHead: eh(3), Action: "development", Workspace: ws("development"), Resumed: true,
+	if judge.Name() != "judge" || judge.State() != want || judge.Shell() != Some(exited(3, "judge: ask")) ||
+		judge.Spend() != (Spend{}) {
+		t.Errorf("judge = %#v, want its verdict, target and exit status, and no spend", judge)
+	}
+	if w, _ := run.Workspace().Get(); w != opened() || !w.Since().Equal(at(2)) {
+		t.Errorf("workspace = %#v, want the run's, made at minute 2", w)
+	}
+	resumed := given(t, seq(reopening(), []RunEvent{WorkspaceOpened{
+		EventHead: eh(2), Workspace: runWS(), Log: runLog, Resumed: true,
 	}}))
-	a, _ := resumed.Action("development")
-	if w, _ := a.Workspace().Get(); !w.Since().IsZero() {
+	if w, _ := resumed.Workspace().Get(); !w.Since().IsZero() {
 		t.Errorf("a reopened workspace's since = %v, want none", w.Since())
 	}
 }
 
-func TestApplyBuildsARunFromASessionStartWithoutItsWorkspace(t *testing.T) {
-	run, err := Apply(RuleRun{}, ActionSessionStarted{
-		EventHead: eh(4), Action: "review", Workspace: ws("review"), Log: logOf("review"),
-	})
-	a, _ := run.Action("review")
-	w, _ := a.Workspace().Get()
-	if err != nil || a.State() != (InSession{}) || w.Workspace != ws("review") || w.Log != logOf("review") {
-		t.Errorf("run = %#v, %v, want review in its session in its workspace", run.Snapshot(), err)
+func TestARouteChosenLeavesTheActionsItDidNotReachNotRun(t *testing.T) {
+	run := given(t, seq(installing(), []RunEvent{
+		ActionShellEnded{EventHead: eh(3), Action: "install", Outcome: exited(2, "install failed")},
+		ActionEnded{
+			EventHead: eh(3), Action: "install", Verdict: Failed, Target: toFailed,
+			End: EndFailed{Reason: NewSessionText("install failed"), Cause: CauseShell},
+		},
+		chose(3, FailedRoute, "install"),
+	}))
+	got := states(run)
+	if !reflect.DeepEqual(got[1:], []ActionRunState{NotRun{}, NotRun{}}) || !run.ActionsEnded() {
+		t.Errorf("actions = %#v, want lfg and judge not run, and the sequence over", got)
+	}
+	if a, _ := run.Cursor(); a.Name() != "install" || run.Phase() != (RoutingPhase{Route: FailedRoute, Chosen: at(3)}) {
+		t.Errorf("cursor %s, phase %#v, want install and failed", a.Name(), run.Phase())
+	}
+	if given(t, inSession()).ActionsEnded() {
+		t.Error("a run whose session runs has ended its actions")
 	}
 }

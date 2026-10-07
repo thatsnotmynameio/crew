@@ -16,17 +16,29 @@ func hh(run RuleRunID, n int) EventHead {
 	return h
 }
 
-// opening is action's workspace ws(action) ready at minute n, in run.
-func opening(run RuleRunID, n int, action ActionName) ActionOpened {
-	return ActionOpened{EventHead: hh(run, n), Action: action, Workspace: ws(action), Log: logOf(action)}
+// ws returns the workspace a run of action works in, in the history
+// tests.
+func ws(action ActionName) Workspace {
+	return Workspace{Name: WorkspaceName("issue-9-" + action), Branch: "crew/issue-9-" + string(action)}
 }
 
-// ending is action's end at minute n, in run, in ws(action), after a
-// session that started when session says so.
+func logOf(action ActionName) string { return ".crew/logs/issue-9-" + string(action) + ".log" }
+
+// opening is a run's workspace ws(action) ready, and action's session asked
+// in it, with head h.
+func opening(h EventHead, action ActionName) []RunEvent {
+	return []RunEvent{
+		WorkspaceOpened{EventHead: h, Workspace: ws(action), Log: logOf(action)},
+		ActionSessionAsked{EventHead: h, Action: action},
+	}
+}
+
+// ending is action's end at minute n, in run, after a session that started
+// when session says so.
 func ending(run RuleRunID, n int, action ActionName, end ActionEnd, session bool) ActionEnded {
-	e := ActionEnded{
-		EventHead: hh(run, n), Action: action, End: end,
-		Workspace: Some(OpenedWorkspace{Workspace: ws(action), Log: logOf(action), Opened: at(n - 1)}),
+	e := ActionEnded{EventHead: hh(run, n), Action: action, End: end, Verdict: Passed, Target: Next{}}
+	if _, failed := end.(EndFailed); failed {
+		e.Verdict, e.Target = Failed, toFailed
 	}
 	if session {
 		e.SessionStarted = Some(at(n - 1))
@@ -38,9 +50,9 @@ func failedEnd(reason string) ActionEnd {
 	return EndFailed{Reason: NewSessionText(reason), Cause: CauseSession}
 }
 
-func folded(events ...RunEvent) *History {
+func folded(events ...[]RunEvent) *History {
 	var h History
-	for _, e := range events {
+	for _, e := range seq(events...) {
 		h.Fold(e)
 	}
 	return &h
@@ -48,7 +60,7 @@ func folded(events ...RunEvent) *History {
 
 // point returns the resume point of action in ws(action) with reason.
 func point(action ActionName, reason string) ResumePoint {
-	return ResumePoint{Workspace: ws(action), Log: logOf(action), Reason: NewSessionText(reason)}
+	return ResumePoint{Workspace: ws(action), Log: logOf(action), Reason: NewSessionText(reason), Action: action}
 }
 
 func wantPoints(t *testing.T, h *History, issue IssueID, rule RuleName, want map[ActionName]ResumePoint) {
@@ -58,8 +70,11 @@ func wantPoints(t *testing.T, h *History, issue IssueID, rule RuleName, want map
 	}
 }
 
+// one returns e alone as events.
+func one(e RunEvent) []RunEvent { return []RunEvent{e} }
+
 func TestAE3AnActionThatStartedAndNeverEndedResumesAsCrashed(t *testing.T) {
-	h := folded(opening("run-1", 3, "implement"))
+	h := folded(opening(hh("run-1", 3), "implement"))
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{
 		"implement": point("implement", "crew stopped before the run ended: it crashed or was killed"),
 	})
@@ -67,9 +82,10 @@ func TestAE3AnActionThatStartedAndNeverEndedResumesAsCrashed(t *testing.T) {
 
 func TestAFailedEndResumesAndASucceededOneDoesNot(t *testing.T) {
 	h := folded(
-		taken(bothActions()...),
-		opening(testRun, 3, "development"), ending(testRun, 6, "development", failedEnd("tests fail"), true),
-		opening(testRun, 3, "review"), ending(testRun, 6, "review", EndSucceeded{Reason: NewSessionText("done")}, true),
+		one(taken()),
+		opening(hh(testRun, 3), "development"), one(ending(testRun, 6, "development", failedEnd("tests fail"), true)),
+		opening(hh("run-3", 3), "review"),
+		one(ending("run-3", 6, "review", EndSucceeded{Reason: NewSessionText("done")}, true)),
 	)
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
 }
@@ -77,8 +93,8 @@ func TestAFailedEndResumesAndASucceededOneDoesNot(t *testing.T) {
 func TestAnEndWithoutAWorkspaceKeepsTheFailedRunsResumePoint(t *testing.T) {
 	gone := ActionEnded{EventHead: hh("run-2", 4), Action: "development", End: stopEnd}
 	h := folded(
-		opening("run-1", 3, "development"), ending("run-1", 6, "development", failedEnd("tests fail"), true),
-		gone,
+		opening(hh("run-1", 3), "development"), one(ending("run-1", 6, "development", failedEnd("tests fail"), true)),
+		one(gone),
 	)
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
 }
@@ -87,7 +103,7 @@ func TestAnEndWithoutAWorkspaceKeepsTheFailedRunsResumePoint(t *testing.T) {
 // resume point it leaves.
 type reasonCase struct {
 	name   string
-	events []RunEvent
+	events [][]RunEvent
 	want   ResumePoint
 }
 
@@ -96,41 +112,43 @@ var notFound = EndFailed{Reason: NewSessionText("start claude: not found"), Caus
 
 // afterFailure is development's failed run in ws("development") at
 // minutes 1 and 2, then events.
-func afterFailure(events ...RunEvent) []RunEvent {
-	return append([]RunEvent{
-		opening("run-1", 1, "development"), ending("run-1", 2, "development", failedEnd("the session's reason"), true),
+func afterFailure(events ...[]RunEvent) [][]RunEvent {
+	return append([][]RunEvent{
+		opening(hh("run-1", 1), "development"),
+		one(ending("run-1", 2, "development", failedEnd("the session's reason"), true)),
 	}, events...)
 }
 
 // inheritedReasons are the ends without a session that keep an earlier
 // failure's reason.
 func inheritedReasons() []reasonCase {
-	stoppedOpening := opening("run-2", 3, "development")
-	stoppedOpening.Log = ""
-	stoppedEnd := ending("run-2", 3, "development", stopEnd, false)
-	stoppedEnd.Workspace = Some(OpenedWorkspace{Workspace: ws("development"), Opened: at(3)})
+	stoppedOpening := WorkspaceOpened{EventHead: hh("run-2", 3), Workspace: ws("development")}
 	return []reasonCase{
 		{
-			name:   "failed to start",
-			events: afterFailure(opening("run-2", 3, "development"), ending("run-2", 4, "development", notFound, false)),
-			want:   point("development", "the session's reason"),
+			name: "failed to start",
+			events: afterFailure(
+				opening(hh("run-2", 3), "development"), one(ending("run-2", 4, "development", notFound, false)),
+			),
+			want: point("development", "the session's reason"),
 		},
 		{
 			name:   "stopped while reopening",
-			events: afterFailure(stoppedOpening, stoppedEnd),
-			want:   ResumePoint{Workspace: ws("development"), Reason: NewSessionText("the session's reason")},
+			events: afterFailure(one(stoppedOpening), one(ending("run-2", 3, "development", stopEnd, false))),
+			want: ResumePoint{
+				Workspace: ws("development"), Reason: NewSessionText("the session's reason"), Action: "development",
+			},
 		},
 		{
 			name: "after a crash",
-			events: []RunEvent{
-				opening("run-1", 1, "development"),
-				opening("run-2", 3, "development"), ending("run-2", 4, "development", notFound, false),
+			events: [][]RunEvent{
+				opening(hh("run-1", 1), "development"),
+				opening(hh("run-2", 3), "development"), one(ending("run-2", 4, "development", notFound, false)),
 			},
 			want: point("development", "crew stopped before the run ended: it crashed or was killed"),
 		},
 		{
 			name:   "with no start since",
-			events: afterFailure(ending("run-2", 4, "development", notFound, false)),
+			events: afterFailure(one(ending("run-2", 4, "development", notFound, false))),
 			want:   point("development", "the session's reason"),
 		},
 	}
@@ -138,33 +156,35 @@ func inheritedReasons() []reasonCase {
 
 // ownReasons are the ends that keep their own reason.
 func ownReasons() []reasonCase {
-	elsewhere := opening("run-2", 3, "development")
-	elsewhere.Workspace = Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
+	elsewhere := Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
 	return []reasonCase{
 		{
 			name: "a session that started",
 			events: afterFailure(
-				opening("run-2", 3, "development"), ending("run-2", 6, "development", failedEnd("new"), true),
+				opening(hh("run-2", 3), "development"),
+				one(ending("run-2", 6, "development", failedEnd("new"), true)),
 			),
 			want: point("development", "new"),
 		},
 		{
 			name: "after a success",
-			events: []RunEvent{
-				opening("run-1", 1, "development"),
-				ending("run-1", 2, "development", EndSucceeded{Reason: NewSessionText("done")}, true),
-				opening("run-2", 3, "development"), ending("run-2", 4, "development", notFound, false),
+			events: [][]RunEvent{
+				opening(hh("run-1", 1), "development"),
+				one(ending("run-1", 2, "development", EndSucceeded{Reason: NewSessionText("done")}, true)),
+				opening(hh("run-2", 3), "development"), one(ending("run-2", 4, "development", notFound, false)),
 			},
 			want: point("development", "start claude: not found"),
 		},
 		{
 			name: "in another workspace",
-			events: afterFailure(elsewhere, ActionEnded{
-				EventHead: hh("run-2", 4), Action: "development", End: notFound,
-				Workspace: Some(OpenedWorkspace{Workspace: elsewhere.Workspace, Log: logOf("development"), Opened: at(3)}),
+			events: afterFailure([]RunEvent{
+				WorkspaceOpened{EventHead: hh("run-2", 3), Workspace: elsewhere, Log: logOf("development")},
+				ActionSessionAsked{EventHead: hh("run-2", 3), Action: "development"},
+				ending("run-2", 4, "development", notFound, false),
 			}),
 			want: ResumePoint{
-				Workspace: elsewhere.Workspace, Log: logOf("development"), Reason: NewSessionText("start claude: not found"),
+				Workspace: elsewhere, Log: logOf("development"), Reason: NewSessionText("start claude: not found"),
+				Action: "development",
 			},
 		},
 	}
@@ -188,15 +208,15 @@ func TestAnEndKeepsItsOwnReasonOtherwise(t *testing.T) {
 
 func TestEachIssueAndRuleKeepsItsOwnResumePoints(t *testing.T) {
 	other := IssueID{Repository: "R_1", Key: "10"}
-	inOtherIssue := opening("run-3", 3, "development")
+	inOtherIssue := hh("run-3", 3)
 	inOtherIssue.IssueID, inOtherIssue.IssueRef = other, "#10"
-	inFix := opening("run-4", 3, "development")
+	inFix := hh("run-4", 3)
 	inFix.Rule = "fix"
-	// fix's action starts in implement's workspace: History retires
-	// nothing by itself; the core has it Retire.
+	// fix's run starts in implement's workspace: History retires nothing
+	// by itself; the core has it Retire.
 	h := folded(
-		opening("run-1", 3, "development"), ending("run-1", 6, "development", failedEnd("tests fail"), true),
-		inOtherIssue, inFix,
+		opening(hh("run-1", 3), "development"), one(ending("run-1", 6, "development", failedEnd("tests fail"), true)),
+		opening(inOtherIssue, "development"), opening(inFix, "development"),
 	)
 	crashed := point("development", "crew stopped before the run ended: it crashed or was killed")
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
@@ -206,15 +226,14 @@ func TestEachIssueAndRuleKeepsItsOwnResumePoints(t *testing.T) {
 }
 
 func TestTheLastRunIsTheOneWhoseEventsCameLast(t *testing.T) {
-	second := taken(bothActions()...)
-	h := folded(
+	h := folded([]RunEvent{
 		RunTaken{EventHead: hh("run-1", 0), Issue: testIssue(), From: labelReady, To: labelRunning},
 		RunReleased{EventHead: hh("run-1", 1)},
-		second, takeMoved(),
-	)
+		taken(), takeMoved(),
+	})
 	run, ok := h.LastRun(testID, "implement")
-	if !ok || run.ID() != testRun || run.Phase() != (RunningPhase{}) || len(run.Actions()) != 2 {
-		t.Errorf("LastRun = %#v, %v, want run-2 running both actions", run.Snapshot(), ok)
+	if !ok || run.ID() != testRun || run.Phase() != (RunningPhase{}) || len(run.Actions()) != 3 {
+		t.Errorf("LastRun = %#v, %v, want run-2 running its three actions", run.Snapshot(), ok)
 	}
 	if _, ok := h.LastRun(testID, "fix"); ok {
 		t.Errorf("fix has a last run, want none")
@@ -222,7 +241,10 @@ func TestTheLastRunIsTheOneWhoseEventsCameLast(t *testing.T) {
 }
 
 func TestARunWithGapsFolds(t *testing.T) {
-	h := folded(ending("run-1", 6, "development", failedEnd("tests fail"), true))
+	h := folded(
+		one(WorkspaceOpened{EventHead: hh("run-1", 5), Workspace: ws("development"), Log: logOf("development")}),
+		one(ending("run-1", 6, "development", failedEnd("tests fail"), true)),
+	)
 	run, ok := h.LastRun(testID, "implement")
 	a, _ := run.Action("development")
 	if !ok || run.ID() != "run-1" || !a.Ended() {
@@ -236,20 +258,25 @@ func TestARetiredActionHasNoResumePointAndItsNextStartCarriesNoReason(t *testing
 	h.Retire("issue-9-development", testID, "fix", "development")
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{})
 
-	h.Fold(opening("run-2", 3, "development"))
-	h.Fold(ending("run-2", 4, "development", notFound, false))
+	again := seq(opening(hh("run-2", 3), "development"), one(ending("run-2", 4, "development", notFound, false)))
+	for _, e := range again {
+		h.Fold(e)
+	}
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{
 		"development": point("development", "start claude: not found"),
 	})
 }
 
 func TestRetireKeepsAnActionWhoseLastRunMovedToAnotherWorkspace(t *testing.T) {
-	first := opening("run-1", 3, "development")
-	moved := opening("run-2", 3, "development")
-	moved.Workspace = Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
-	movedEnd := ending("run-2", 6, "development", failedEnd("still broken"), true)
-	movedEnd.Workspace = Some(OpenedWorkspace{Workspace: moved.Workspace, Log: moved.Log, Opened: at(5)})
-	h := folded(first, ending("run-1", 4, "development", failedEnd("tests fail"), true), moved, movedEnd)
+	moved := Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
+	h := folded(
+		opening(hh("run-1", 3), "development"), one(ending("run-1", 4, "development", failedEnd("tests fail"), true)),
+		[]RunEvent{
+			WorkspaceOpened{EventHead: hh("run-2", 5), Workspace: moved, Log: logOf("development")},
+			ActionSessionAsked{EventHead: hh("run-2", 5), Action: "development"},
+			ending("run-2", 6, "development", failedEnd("still broken"), true),
+		},
+	)
 	h.Retire("issue-9-development", testID, "fix", "development")
 	got := h.ResumePoints(testID, "implement")["development"]
 	if got.Workspace.Name != "issue-9-development-2" || got.Reason.String() != "still broken" {

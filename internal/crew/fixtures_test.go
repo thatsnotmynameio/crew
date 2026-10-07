@@ -7,8 +7,10 @@ import (
 )
 
 // The fixtures of the rule run's tests: one issue, #9, taken by the rule
-// implement, whose actions are development, with the checks build and test,
-// and review, without checks.
+// implement, whose actions run one after another in the run's one
+// workspace: the shell action install, the session lfg, which acts as the
+// bot crew-developer and may report blocked, and the shell action judge,
+// whose exit status 3 is needs_person.
 
 const (
 	labelReady   State     = "crew:ready"
@@ -16,14 +18,17 @@ const (
 	labelDone    State     = "crew:done"
 	labelFailed  State     = "crew:needs attention"
 	testRun      RuleRunID = "run-2"
+	runLog                 = ".crew/logs/issue-9-implement.log"
 )
 
 var (
-	t0      = time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	testID  = IssueID{Repository: "R_1", Key: "9"}
-	usage   = Usage{Cost: Some(0.5), Turns: Some(3)}
-	stopEnd = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStopped}
-	foundPR = PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
+	t0        = time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	testID    = IssueID{Repository: "R_1", Key: "9"}
+	usage     = Usage{Cost: Some(0.5), Turns: Some(3)}
+	stopEnd   = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStopped}
+	foundPR   = PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
+	developer = Bot{Name: "crew-developer"}
+	toFailed  = ToRoute{Route: FailedRoute}
 )
 
 // at returns the time n minutes after t0.
@@ -67,97 +72,138 @@ func renderError(action ActionName) SessionText {
 	return NewSessionText(err.Error())
 }
 
-// definition returns the test rule: development with the checks build and
-// test, then review without checks.
-func definition() RunDefinition {
+// sequence returns the test rule: install, lfg, then judge, with a route
+// for each verdict they map.
+func sequence() RunDefinition {
 	return RunDefinition{Rule: Rule{
 		Name:   "implement",
-		Labels: Labels{Ready: labelReady, Running: labelRunning, Success: labelDone, Failure: labelFailed},
+		Labels: Labels{Ready: labelReady, Running: labelRunning},
 		Actions: []Action{
+			{Name: "install", Kind: ShellSpec{Script: "make deps"}},
 			{
-				Name: "development", Prompt: mustPrompt("development", "Implement {{.Issue.Ref}}"),
-				Checks: []Check{{Name: "build", Script: "make"}, {Name: "test", Script: "make test"}},
+				Name: "lfg",
+				Kind: SessionSpec{
+					Agent:  Agent{Name: "claude", Harness: "claude", Bot: developer.Name},
+					Prompt: mustPrompt("lfg", "Implement {{.Issue.Ref}}"), Bot: developer,
+				},
+				On: On{"blocked": ToRoute{Route: "blocked"}},
 			},
-			{Name: "review", Prompt: mustPrompt("review", "Review {{.Issue.Ref}}")},
+			{
+				Name: "judge", Kind: ShellSpec{Script: "./judge", Verdicts: map[int]Verdict{3: "needs_person"}},
+				On: On{"needs_person": ToRoute{Route: "needs-person"}},
+			},
+		},
+		Routes: []Route{
+			{Name: PassedRoute, Steps: []Step{MoveStep{To: labelDone}}},
+			{Name: FailedRoute, Steps: []Step{ReportStep{}, MoveStep{To: labelFailed}}},
+			{Name: "blocked", Steps: []Step{MoveStep{To: "crew:blocked"}}},
+			{Name: "needs-person", Steps: []Step{MoveStep{To: "crew:needs person"}}},
 		},
 	}}
 }
 
-func ws(action ActionName) Workspace {
-	return Workspace{Name: WorkspaceName("issue-9-" + action), Branch: "crew/issue-9-" + string(action)}
+// runWS is the run's one workspace.
+func runWS() Workspace { return Workspace{Name: "issue-9-implement", Branch: "crew/issue-9-implement"} }
+
+// opened is the run's new workspace, ready at minute 2.
+func opened() OpenedWorkspace { return OpenedWorkspace{Workspace: runWS(), Log: runLog, Opened: at(2)} }
+
+// resumePoint is the point a run resumes at action from.
+func resumePoint(action ActionName) ResumePoint {
+	return ResumePoint{Workspace: runWS(), Log: runLog, Reason: NewSessionText("tests fail"), Action: action}
 }
 
-func logOf(action ActionName) string { return ".crew/logs/issue-9-" + string(action) + ".log" }
-
-func resumePoint() ResumePoint {
-	return ResumePoint{Workspace: ws("development"), Log: logOf("development"), Reason: NewSessionText("tests fail")}
+// taken is the take of the test rule's three actions at minute 0.
+func taken() RunEvent {
+	return RunTaken{
+		EventHead: eh(0), Issue: testIssue(), From: labelReady, To: labelRunning,
+		Actions: []ActionName{"install", "lfg", "judge"},
+	}
 }
 
-// opened returns the new workspace an action opened at minute 3.
-func opened(action ActionName) Optional[OpenedWorkspace] {
-	return Some(OpenedWorkspace{Workspace: ws(action), Log: logOf(action), Opened: at(3)})
+// takenWithoutActions is the take of a rule without actions.
+func takenWithoutActions() RunEvent {
+	return RunTaken{EventHead: eh(0), Issue: testIssue(), From: labelReady, To: labelRunning}
 }
 
-func taken(actions ...ActionTaken) RunEvent {
-	return RunTaken{EventHead: eh(0), Issue: testIssue(), From: labelReady, To: labelRunning, Actions: actions}
+// resumedAt is the take of a run that resumes at action.
+func resumedAt(action ActionName) RunEvent {
+	e, _ := taken().(RunTaken)
+	e.Resume = Some(resumePoint(action))
+	return e
 }
-
-func bothActions() []ActionTaken { return []ActionTaken{{Name: "development"}, {Name: "review"}} }
 
 func takeMoved() RunEvent { return TakeMoved{EventHead: eh(1), From: labelReady, To: labelRunning} }
 
-// preparing is a run whose take landed at minute 1 and whose two actions'
-// new workspaces were asked for at minute 2.
-func preparing() []RunEvent {
-	return []RunEvent{
-		taken(bothActions()...), takeMoved(),
-		ActionWorkspaceAsked{EventHead: eh(2), Action: "development"},
-		ActionWorkspaceAsked{EventHead: eh(2), Action: "review"},
-	}
-}
-
-// reopening is a run whose development resumes in its failed run's
+// asking is a run whose take landed at minute 1 and asked for a new
 // workspace.
+func asking() []RunEvent {
+	return []RunEvent{taken(), takeMoved(), WorkspaceAsked{EventHead: eh(1)}}
+}
+
+// reopening is a run that resumes at lfg, whose take landed at minute 1
+// and asked to reopen the workspace it resumes.
 func reopening() []RunEvent {
-	return []RunEvent{
-		taken(ActionTaken{Name: "development", Resume: Some(resumePoint())}, ActionTaken{Name: "review"}), takeMoved(),
-		ActionWorkspaceAsked{EventHead: eh(2), Action: "development", Reopen: Some(ws("development"))},
-		ActionWorkspaceAsked{EventHead: eh(2), Action: "review"},
-	}
+	return []RunEvent{resumedAt("lfg"), takeMoved(), WorkspaceAsked{EventHead: eh(1), Reopen: Some(runWS())}}
 }
 
-// starting is action's workspace ready at minute 3 and its session asked.
-func starting(action ActionName) []RunEvent {
-	return []RunEvent{
-		ActionOpened{EventHead: eh(3), Action: action, Workspace: ws(action), Log: logOf(action)},
-		ActionSessionAsked{EventHead: eh(3), Action: action},
-	}
-}
-
-// inSession is action's session started at minute 4.
-func inSession(action ActionName) []RunEvent {
-	return append(starting(action), ActionSessionStarted{
-		EventHead: eh(4), Action: action, Workspace: ws(action), Log: logOf(action),
-	})
-}
-
-// inChecks is development's session succeeded at minute 5, and its build
-// check running.
-func inChecks() []RunEvent {
-	return append(inSession("development"),
-		ActionSessionEnded{EventHead: eh(5), Action: "development", Outcome: succeeded("done"), Usage: usage},
-		ActionCheckAsked{EventHead: eh(5), Action: "development", Check: "build"},
+// installing is the run's workspace ready at minute 2, and install asked.
+func installing() []RunEvent {
+	return append(asking(),
+		WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog},
+		ActionShellAsked{EventHead: eh(2), Action: "install"},
 	)
 }
 
-// reviewEnded is review's session ended with end at minute 6.
-func reviewEnded(end ActionEnd) []RunEvent {
-	return append(inSession("review"),
-		ActionSessionEnded{EventHead: eh(6), Action: "review", Outcome: end.Outcome(), Usage: usage},
-		ActionEnded{
-			EventHead: eh(6), Action: "review", End: end, Workspace: opened("review"),
-			SessionStarted: Some(at(4)), Usage: usage,
-		},
+// exited returns how a script that exited with status ended, saying reason.
+func exited(status int, reason string) ShellOutcome {
+	return ShellOutcome{Status: Some(status), Reason: NewCheckReason(reason)}
+}
+
+// passedEnd is the end of an action that passed, saying reason.
+func passedEnd(n int, action ActionName, reason string) ActionEnded {
+	return ActionEnded{
+		EventHead: eh(n), Action: action, End: EndSucceeded{Reason: NewSessionText(reason)},
+		Verdict: Passed, Target: Next{},
+	}
+}
+
+// starting is install passed at minute 3, and lfg asked.
+func starting() []RunEvent {
+	return append(installing(),
+		ActionShellEnded{EventHead: eh(3), Action: "install", Outcome: exited(0, "install passed")},
+		passedEnd(3, "install", "install passed"),
+		ActionSessionAsked{EventHead: eh(3), Action: "lfg"},
+	)
+}
+
+// inSession is lfg's session started at minute 4, as crew-developer.
+func inSession() []RunEvent {
+	return append(starting(), ActionSessionStarted{EventHead: eh(4), Action: "lfg", Bot: developer})
+}
+
+// lfgPassed is lfg's end at minute 5, after its session succeeded.
+func lfgPassed() ActionEnded {
+	e := passedEnd(5, "lfg", "done")
+	e.SessionStarted, e.Usage = Some(at(4)), usage
+	return e
+}
+
+// judging is lfg passed at minute 5, and judge asked as crew-developer.
+func judging() []RunEvent {
+	return append(inSession(),
+		ActionSessionEnded{EventHead: eh(5), Action: "lfg", Outcome: succeeded("done"), Usage: usage},
+		lfgPassed(),
+		ActionShellAsked{EventHead: eh(5), Action: "judge", Bot: developer},
+	)
+}
+
+// passedAll is judge passed at minute 6, and the run through passed.
+func passedAll() []RunEvent {
+	return append(judging(),
+		ActionShellEnded{EventHead: eh(6), Action: "judge", Outcome: exited(0, "judge passed")},
+		passedEnd(6, "judge", "judge passed"),
+		RouteChosen{EventHead: eh(6), Route: PassedRoute, Action: "judge"},
 	)
 }
 
@@ -184,16 +230,7 @@ func given(tb testing.TB, events []RunEvent) RuleRun {
 	return run
 }
 
-// developmentEnded is development's end at minute n, after its session
-// started at minute 4.
-func developmentEnded(n int, end ActionEnd) ActionEnded {
-	return ActionEnded{
-		EventHead: eh(n), Action: "development", End: end, Workspace: opened("development"),
-		SessionStarted: Some(at(4)), Usage: usage,
-	}
-}
-
-// failure returns the failure of action, which had its workspace and log.
+// failure returns the failure of action, in the run's workspace and log.
 func failure(action ActionName) ActionFailure {
-	return ActionFailure{Action: action, Workspace: ws(action).Name, Log: logOf(action)}
+	return ActionFailure{Action: action, Workspace: runWS().Name, Log: runLog}
 }

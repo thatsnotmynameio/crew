@@ -7,9 +7,9 @@ const crashedReason = "crew stopped before the run ended: it crashed or was kill
 // History is the past of the rule runs, folded from their events in the
 // order they happened, replayed from a journal or live: for each issue and
 // rule its last run, rebuilt with Apply, and for each of their actions the
-// last action run that had a workspace. It retires nothing by itself: the
-// core has it Retire the action runs a workspace held once another action
-// starts in it.
+// last action run that started or ended in its rule run's workspace. It
+// retires nothing by itself: the core has it Retire the action runs a
+// workspace held once another run starts in it.
 //
 // The zero History holds no past. Fold changes it, so the one that holds it
 // is the one that folds every event; its accessors return copies.
@@ -24,7 +24,8 @@ type ruleKey struct {
 	rule  RuleName
 }
 
-// pastAction is the last action run of an action that had a workspace.
+// pastAction is the last action run of an action that started or ended in
+// its rule run's workspace.
 type pastAction struct {
 	run       RuleRunID
 	workspace Workspace
@@ -40,9 +41,9 @@ type pastAction struct {
 
 // Fold adds e to the past. An event of another run than its issue and
 // rule's last one starts that rule's last run again, from e alone when e
-// is not its take. An action's start, and its end when it names a
-// workspace, become the action's last action run; an end without a
-// workspace leaves the earlier one, so a failed run still resumes.
+// is not its take. An action's start, and its end, become the action's
+// last action run when the run's workspace was ready; an end in a run
+// without one leaves the earlier one, so a failed run still resumes.
 func (h *History) Fold(e RunEvent) {
 	if h.runs == nil {
 		h.runs = map[ruleKey]RuleRun{}
@@ -55,13 +56,21 @@ func (h *History) Fold(e RunEvent) {
 		run = RuleRun{}
 	}
 	if next, err := Apply(run, e); err == nil {
+		run = next
 		h.runs[k] = next
 	}
-	if opened, ok := e.(ActionOpened); ok {
-		h.opened(k, opened)
+	w, ok := run.Workspace().Get()
+	if !ok {
+		return
+	}
+	if asked, ok := e.(ActionSessionAsked); ok {
+		h.opened(k, asked.Run, asked.Action, w)
+	}
+	if asked, ok := e.(ActionShellAsked); ok {
+		h.opened(k, asked.Run, asked.Action, w)
 	}
 	if ended, ok := e.(ActionEnded); ok {
-		h.ended(k, ended)
+		h.ended(k, ended, w)
 	}
 }
 
@@ -81,7 +90,7 @@ func (h *History) ResumePoints(issue IssueID, rule RuleName) map[ActionName]Resu
 	points := map[ActionName]ResumePoint{}
 	for action, p := range h.actions[ruleKey{issue: issue, rule: rule}] {
 		if reason, ok := p.failure(); ok {
-			points[action] = ResumePoint{Workspace: p.workspace, Log: p.log, Reason: reason}
+			points[action] = ResumePoint{Workspace: p.workspace, Log: p.log, Reason: reason, Action: action}
 		}
 	}
 	return points
@@ -104,26 +113,22 @@ func (h *History) Retire(w WorkspaceName, issue IssueID, rule RuleName, action A
 	}
 }
 
-// opened makes e's action run its action's last one. It carries the reason
-// of the action's last action run when that run failed in the same
-// workspace.
-func (h *History) opened(k ruleKey, e ActionOpened) {
-	p := pastAction{run: e.Run, workspace: e.Workspace, log: e.Log}
-	if prev, ok := h.actions[k][e.Action]; ok && prev.workspace.Name == e.Workspace.Name {
+// opened makes the start of action in run, in the run's workspace w, its
+// action's last action run. It carries the reason of the action's last
+// action run when that run failed in the same workspace.
+func (h *History) opened(k ruleKey, run RuleRunID, action ActionName, w OpenedWorkspace) {
+	p := pastAction{run: run, workspace: w.Workspace, log: w.Log}
+	if prev, ok := h.actions[k][action]; ok && prev.workspace.Name == w.Workspace.Name {
 		p.carried = prev.failed()
 	}
-	h.set(k, e.Action, p)
+	h.set(k, action, p)
 }
 
-// ended makes e's action run its action's last one, when it had a
-// workspace. An end without a session in the workspace of a failed run
-// takes that run's reason: the reason its start carried, or, with no start
-// of its run before it, the reason of the action run before it.
-func (h *History) ended(k ruleKey, e ActionEnded) {
-	w, ok := e.Workspace.Get()
-	if !ok {
-		return
-	}
+// ended makes e's action run, in its run's workspace w, its action's last
+// one. An end without a session in the workspace of a failed run takes
+// that run's reason: the reason its start carried, or, with no start of its
+// run before it, the reason of the action run before it.
+func (h *History) ended(k ruleKey, e ActionEnded, w OpenedWorkspace) {
 	p := pastAction{run: e.Run, workspace: w.Workspace, log: w.Log, end: Some(e.End)}
 	if prev, ok := h.actions[k][e.Action]; ok && prev.workspace.Name == w.Workspace.Name {
 		p.carried = prev.failed()

@@ -206,6 +206,13 @@ const (
 	CauseStart
 	// CausePrompt: its prompt did not render.
 	CausePrompt
+	// CauseShell: its shell action's script exited with a status that gives
+	// Failed, ran out of time or could not start.
+	CauseShell
+	// CauseVerdict: it reported, or its script's exit status gave, a
+	// verdict its on: does not name, or its session reported text with no
+	// verdict name.
+	CauseVerdict
 )
 
 // MoveProgress is how the move that ends a rule stands.

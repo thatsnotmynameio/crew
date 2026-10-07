@@ -18,8 +18,9 @@ const stoppedReason = "crew stopped"
 // do for it.
 type RunDefinition struct {
 	Rule Rule
-	// FindsPullRequests says whether crew looks up the pull request each
-	// action opened, once its session ended.
+	// FindsPullRequests says whether crew can look up the pull requests of
+	// a run's branch. A run of a rule with a session asks for them once it
+	// chose its route.
 	FindsPullRequests bool
 }
 
@@ -30,8 +31,8 @@ type RunDefinition struct {
 // action or a delivery that does not wait for it. It never changes run:
 // the caller applies the events.
 //
-// It renders the prompt of each action the take starts, from def, only to
-// decide whether the action fails with CausePrompt.
+// It renders the prompt of each session action it starts, from def, only
+// to decide whether the action fails with CausePrompt.
 func Decide(run RuleRun, def RunDefinition, fact Fact) ([]RunEvent, error) {
 	h := fact.factHead()
 	if run.id == "" || h.Run != run.id {
@@ -72,14 +73,13 @@ func (d *decider) refused(what string) error {
 	return fmt.Errorf("%w: run %q does not wait for %s", ErrRefused, d.run.id, what)
 }
 
-// action returns the run of the action named name, when its state is one
-// waits accepts.
-func (d *decider) action(name ActionName, waits func(ActionRunState) bool) (ActionRun, error) {
-	a, ok := d.run.Action(name)
-	if !ok || !waits(a.state) {
-		return ActionRun{}, d.refused(fmt.Sprintf("this fact of action %q", name))
+// awaits returns the refusal of a fact of the action named name, unless
+// that action is at the run's cursor in a state waits accepts.
+func (d *decider) awaits(name ActionName, waits func(ActionRunState) bool) error {
+	if a, ok := d.run.Cursor(); !ok || a.name != name || !waits(a.state) {
+		return d.refused(fmt.Sprintf("this fact of action %q", name))
 	}
-	return a, nil
+	return nil
 }
 
 // is reports whether s is a T.
@@ -88,51 +88,67 @@ func is[T ActionRunState](s ActionRunState) bool {
 	return ok
 }
 
-// awaitsWorkspace reports whether s waits for its workspace.
-func awaitsWorkspace(s ActionRunState) bool {
-	return is[CreatingWorkspace](s) || is[ReopeningWorkspace](s)
+// start starts the action named name: asks for its session, after
+// rendering its prompt, or for its script, acting as the run's bot. A
+// session whose prompt does not render ends at once.
+func (d *decider) start(name ActionName) {
+	switch k := d.def.Rule.Action(name).Kind.(type) {
+	case SessionSpec:
+		if _, err := k.Prompt.Render(d.run.issue); err != nil {
+			d.finish(name, failedBy(NewSessionText(err.Error()), CausePrompt))
+			return
+		}
+		d.emit(ActionSessionAsked{EventHead: d.head(), Action: name})
+	case ShellSpec:
+		d.emit(ActionShellAsked{EventHead: d.head(), Action: name, Bot: d.run.bot})
+	}
 }
 
-// end ends the action named name with end and ends the run once every
-// action ended. While its pull request is looked up, the action finishes
-// instead, and the lookup's answer ends it.
-func (d *decider) end(name ActionName, end ActionEnd) {
+// finish ends the action named name with j, then starts the next action
+// when its verdict leads there, or chooses the route it leads to: its own,
+// or PassedRoute after the last action.
+func (d *decider) finish(name ActionName, j Judged) {
 	a, _ := d.run.Action(name)
-	if _, pending := a.lookup.(LookupPending); pending {
-		d.emit(ActionFinishing{EventHead: d.head(), Action: name, End: end})
-		return
-	}
+	target := d.target(name, j.Verdict)
 	d.emit(ActionEnded{
-		EventHead: d.head(), Action: name, End: end, Workspace: a.workspace, SessionStarted: a.session,
-		Usage: cloneUsage(a.usage), PullRequest: a.PullRequest(),
+		EventHead: d.head(), Action: name, End: j.End, Verdict: j.Verdict, Target: target,
+		SessionStarted: a.session, Usage: cloneUsage(a.usage),
 	})
-	if d.run.ActionsEnded() {
-		d.endRun()
+	switch t := target.(type) {
+	case ToRoute:
+		d.choose(t.Route, name)
+	case Next:
+		if i := d.run.actionIndex(name) + 1; i < len(d.run.actions) {
+			d.start(d.run.actions[i].name)
+			return
+		}
+		d.choose(PassedRoute, name)
 	}
 }
 
-// stoppedEnd returns the end of an action crew stopped.
-func stoppedEnd() ActionEnd {
-	return EndFailed{Reason: NewSessionText(stoppedReason), Cause: CauseStopped}
+// stopAtCursor ends the action at the cursor, which did not start, as
+// stopped: the run ends through FailedRoute.
+func (d *decider) stopAtCursor() {
+	a, _ := d.run.Cursor()
+	d.finish(a.name, failedBy(NewSessionText(stoppedReason), CauseStopped))
 }
 
-// endRun decides how the run ends: the rule's success state when every
-// action succeeded, and otherwise its failure state with each failed
-// action, in action order, and where to read why it failed.
-func (d *decider) endRun() {
-	ending := RunEnding{To: d.def.Rule.Labels.Success}
-	for _, a := range d.run.actions {
-		if a.Outcome().Succeeded {
-			continue
-		}
-		f := ActionFailure{Action: a.name}
-		if w, ok := a.workspace.Get(); ok {
-			f.Workspace, f.Log = w.Workspace.Name, w.Log
-		}
-		ending.Failures = append(ending.Failures, f)
+// target returns where verdict v of the action named name leads: where its
+// on sends v, or FailedRoute once a stop reached the run.
+func (d *decider) target(name ActionName, v Verdict) Target {
+	if d.run.stopping {
+		return ToRoute{Route: FailedRoute}
 	}
-	if ending.Failed() {
-		ending.To = d.def.Rule.Labels.Failure
+	return d.def.Rule.Action(name).On.Target(v)
+}
+
+// choose ends the run's sequence through route, with the action named
+// action at its cursor, and asks for the lookup of the run's pull requests
+// when the rule has a session that could have opened one in the run's
+// workspace.
+func (d *decider) choose(route RouteName, action ActionName) {
+	d.emit(RouteChosen{EventHead: d.head(), Route: route, Action: action})
+	if _, ok := d.run.Workspace().Get(); ok && d.def.FindsPullRequests && d.def.Rule.hasSession() {
+		d.emit(RunLookupAsked{EventHead: d.head()})
 	}
-	d.emit(RunEnded{EventHead: d.head(), Ending: ending})
 }
