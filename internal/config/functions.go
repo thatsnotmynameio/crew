@@ -37,7 +37,8 @@ type FunctionUse struct {
 	Refused func(parameter, reason string) error
 	// Failed returns the config error for err, an error building the
 	// function that names no parameter, at the use's file, key path and
-	// line.
+	// line. An error from decoding Section, which names its key, line and
+	// file already, it returns as it is.
 	Failed func(err error) error
 }
 
@@ -47,7 +48,12 @@ func (u FunctionUse) named(o origin) FunctionUse {
 	u.Section = o.decode(u.Section)
 	u.Bind = func(texts map[string]string) Decode { return o.decode(bindTexts(texts)) }
 	u.Refused = func(parameter, reason string) error { return o.name(refused(parameter, reason)) }
-	u.Failed = func(err error) error { return o.name(failed(err)) }
+	u.Failed = func(err error) error {
+		if k := (*keyPathError)(nil); errors.As(err, &k) {
+			return err // Section's decode named its key, line and file already
+		}
+		return o.name(failed(err))
+	}
 	return u
 }
 
