@@ -32,10 +32,11 @@ const (
 	// stopTimeout is how long a session gets to stop before its adapter
 	// kills it.
 	stopTimeout = 10 * time.Second
-	// checkTimeout bounds every action's check, as callTimeout bounds a
-	// tracker call: a check may call gh or git too. It is fixed.
-	checkTimeout = 10 * time.Minute
-	// lookupTimeout bounds the lookup of an action's pull request, which
+	// shellTimeout bounds every script, a shell action's or a route
+	// step's, as callTimeout bounds a tracker call: a script may call gh
+	// or git too. It is fixed.
+	shellTimeout = 10 * time.Minute
+	// lookupTimeout bounds the lookup of a run's pull request, which
 	// runs even while crew stops, so a hung gh delays a stop by no more
 	// (KTD3).
 	lookupTimeout = 15 * time.Second
@@ -66,8 +67,8 @@ type Config struct {
 	Tracker   port.Tracker
 	Harnesses []AgentHarness
 	Workspace port.Workspace
-	// Shell runs the actions' checks. Without one, an action with a check
-	// fails, saying crew has no check runner.
+	// Shell runs the scripts of the shell actions and route steps. Without
+	// one, every script fails to start, saying crew has no shell.
 	Shell port.Shell
 	// Journal is the run journal, at JournalPath: Prepare loads the past
 	// rule runs from it, and the engine appends each run event to it, so a
@@ -95,7 +96,7 @@ type Config struct {
 	Identities map[crew.BotName]port.Identity
 	// BotLogins are the logins of the configured bots crew knows, whether
 	// or not they act: the tracker takes the items they opened, and every
-	// session and check gets them as CREW_BOTS.
+	// session and script gets them as CREW_BOTS.
 	BotLogins []string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
@@ -156,6 +157,11 @@ type Engine struct {
 	// writes is the tracker's port.WriterReporter; nil when the tracker has
 	// none, and crew's writes then never go back to you mid-run.
 	writes port.WriterReporter
+	// commenter and closer are the tracker's port.Commenter and
+	// port.Closer, which the routes' comment and close steps go through;
+	// nil when the tracker has none, and those steps are then refused.
+	commenter port.Commenter
+	closer    port.Closer
 	// opts are the core's options; Prepare builds the core with them once it
 	// has loaded the run journal (KTD2).
 	opts []core.Option
@@ -171,7 +177,8 @@ type Engine struct {
 	inflight int // command goroutines whose final message is still due
 	wg       sync.WaitGroup
 	sessions map[sessionKey]liveSession
-	checks   map[sessionKey]context.CancelFunc // ends each running check
+	shells   map[sessionKey]context.CancelFunc // ends each running shell action's script
+	steps    map[stepKey]context.CancelFunc    // ends each running route step's script
 	recent   []core.Published
 	lastSaid []core.Said      // what the sessions last said, as of the latest said refresh
 	lastBots core.BotsChecked // the bots' live state, as of the last reading that changed it
@@ -183,13 +190,15 @@ type Engine struct {
 // status through it (KTD1). When it implements port.PullRequestReporter, the
 // engine follows each move that landed with a report on the issue's pull
 // requests through it. When the workspace implements port.Reopener, a
-// failed run's action resumes in that run's workspace (KTD4). When the
+// failed run resumes in that run's workspace (KTD4). When the
 // tracker implements port.PullRequestFinder, the engine looks up the pull
-// request each action opened. When cfg has a written Board and the
+// request each run opened. When cfg has a written Board and the
 // tracker implements port.BoardLister, the engine reads the board's issues
 // at each poll through it; a default Board fills from the listings. When
 // the tracker implements port.WriterReporter, the engine reads through it
-// whether crew's writes went back to you.
+// whether crew's writes went back to you. When it implements
+// port.Commenter and port.Closer, the routes' comment and close steps go
+// through them.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
@@ -213,6 +222,8 @@ func New(cfg Config) *Engine {
 	board, boardOpts := boardSource(cfg)
 	opts = append(opts, boardOpts...)
 	writes, _ := cfg.Tracker.(port.WriterReporter)
+	commenter, _ := cfg.Tracker.(port.Commenter)
+	closer, _ := cfg.Tracker.(port.Closer)
 	harnesses := make(map[crew.AgentName]port.Harness, len(cfg.Harnesses))
 	for _, h := range cfg.Harnesses {
 		harnesses[h.Agent] = h.Harness
@@ -227,10 +238,13 @@ func New(cfg Config) *Engine {
 		finder:       finder,
 		board:        board,
 		writes:       writes,
+		commenter:    commenter,
+		closer:       closer,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
 		sessions:     map[sessionKey]liveSession{},
-		checks:       map[sessionKey]context.CancelFunc{},
+		shells:       map[sessionKey]context.CancelFunc{},
+		steps:        map[stepKey]context.CancelFunc{},
 	}
 }
 
@@ -473,15 +487,17 @@ func (e *Engine) receive(ctx context.Context, m message) {
 }
 
 // ran keeps the session a SessionStarted started, s, by its rule run and
-// action, and forgets a session or a check once it ended.
+// action, and forgets a session or a script once it ended.
 func (e *Engine) ran(in core.RunInput, s port.Session) {
 	switch in := in.(type) {
 	case core.SessionStarted:
 		e.sessions[sessionKey{in.Run, in.Action}] = liveSession{issue: in.IssueID, session: s}
 	case core.SessionEnded:
 		delete(e.sessions, sessionKey{in.Run, in.Action})
-	case core.CheckEnded:
-		delete(e.checks, sessionKey{in.Run, in.Action})
+	case core.ShellEnded:
+		delete(e.shells, sessionKey{in.Run, in.Action})
+	case core.StepShellEnded:
+		delete(e.steps, stepKey{in.Run, in.Step})
 	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
 		core.PullRequestFound:
 	}

@@ -103,7 +103,7 @@ func TestScriptReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 
 func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	// The title is not part of port.Script at all, so it cannot reach the
-	// command: the check sees only crew's nine variables, and the command
+	// command: the script sees only crew's nine variables, and the command
 	// runs as written.
 	withoutCrewEnv(t)
 	var out output
@@ -123,8 +123,8 @@ func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	}
 }
 
-// AE6 of #80: whatever GH_TOKEN your shell exports, the check's gh
-// reads its bot's directory, and the check learns the code owners and the bots.
+// AE6 of #80: whatever GH_TOKEN your shell exports, the script's gh
+// reads its bot's directory, and the script learns the code owners and the bots.
 func TestScriptActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	withoutCrewEnv(t)
 	t.Setenv("GH_TOKEN", "your-token")
@@ -146,13 +146,14 @@ func TestScriptActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	}
 }
 
-// R1, R2: a check reads the action's name from CREW_ACTION, and the
-// session's prompt and last message, as written, from the files
-// CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name.
-func TestScriptReadsTheActionThePromptAndTheLastMessage(t *testing.T) {
+// KTD-S12, KTD-S13: a script reads the latest session's name from
+// CREW_ACTION, not its own, and that session's prompt and last message, as
+// written, from the files CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name.
+func TestScriptReadsTheLatestSessionThePromptAndTheLastMessage(t *testing.T) {
 	var out output
 	c := script(t, `echo "$CREW_ACTION"; cat "$CREW_PROMPT_FILE"; echo '|'; cat "$CREW_LAST_MESSAGE_FILE"`, &out)
-	c.Action = "lfg"
+	c.Name = "judge"
+	c.Session = "lfg"
 	c.Prompt = "/lfg #14\n\nYou are resuming a failed run."
 	c.LastMessage = "PR #20 is open.\n\n- CI is green\n- merging is yours"
 
@@ -163,7 +164,7 @@ func TestScriptReadsTheActionThePromptAndTheLastMessage(t *testing.T) {
 	}
 }
 
-// R2: an empty last message is an empty file, which a check tells apart
+// R2: an empty last message is an empty file, which a script tells apart
 // from a message.
 func TestScriptGetsAnEmptyLastMessageAsAnEmptyFile(t *testing.T) {
 	var out output
@@ -172,18 +173,18 @@ func TestScriptGetsAnEmptyLastMessageAsAnEmptyFile(t *testing.T) {
 }
 
 // A message longer than one environment string may be (128 KiB on Linux)
-// still reaches the check whole.
+// still reaches the script whole.
 func TestScriptGetsALongLastMessageWhole(t *testing.T) {
 	var out output
 	c := script(t, `wc -c < "$CREW_LAST_MESSAGE_FILE"`, &out)
 	c.LastMessage = strings.Repeat("a", 200*1024)
 	exits(t, c, 0)
 	if got := strings.TrimSpace(out.String()); got != strconv.Itoa(len(c.LastMessage)) {
-		t.Errorf("the check read %s bytes, want %d", got, len(c.LastMessage))
+		t.Errorf("the script read %s bytes, want %d", got, len(c.LastMessage))
 	}
 }
 
-// The files hold the session's words, so they go once the check ended,
+// The files hold the session's words, so they go once the script ended,
 // however it ended.
 func TestScriptRemovesItsFilesWhenItEnds(t *testing.T) {
 	for _, tt := range []struct {
@@ -210,7 +211,7 @@ func TestScriptRemovesItsFilesWhenItEnds(t *testing.T) {
 			}
 			for dir := range strings.FieldsSeq(string(dirs)) {
 				if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
-					t.Errorf("%s is still there after the check: %v", dir, err)
+					t.Errorf("%s is still there after the script: %v", dir, err)
 				}
 			}
 		})
@@ -244,7 +245,7 @@ func TestScriptEndedByItsContextIsKilledWithWhatItStarted(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for syscall.Kill(n, 0) == nil {
 		if time.Now().After(deadline) {
-			t.Fatalf("the check's child %d still runs", n)
+			t.Fatalf("the script's child %d still runs", n)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -261,7 +262,7 @@ func TestScriptThatCannotStartReportsAnErrorNotAStatus(t *testing.T) {
 }
 
 // A script killed by a signal crew did not send has no exit status of its
-// own: it reports -1, which is not 0, so its check fails.
+// own: it reports -1, which is not 0.
 func TestScriptKilledByASignalReportsMinusOne(t *testing.T) {
 	var out output
 	exits(t, script(t, "kill -KILL $$", &out), -1)

@@ -36,7 +36,7 @@ func TestBusyTicksDoNotListAndAFreedSlotListsAtOnce(t *testing.T) {
 
 		// The ticks at 300s and 600s find both slots busy.
 		time.Sleep(650 * time.Second)
-		sessions["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
+		sessions["issue-1-implement"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		r.sessions(1) // #3, taken by the listing the freed slot started
 		synctest.Wait()
 
@@ -59,7 +59,7 @@ func TestAFreedSlotWithNoSkippedTickWaitsForTheNextTick(t *testing.T) {
 		tr := &slowTracker{Tracker: fake.NewTracker(issue(1, ready))}
 		t0 := time.Now()
 		r := start(t, config(t, tr, develop))
-		first := r.sessions(1)["issue-1-development"]
+		first := r.sessions(1)["issue-1-implement"]
 
 		// The tick at 300s has a free slot: it lists and takes #2.
 		tr.Add(issue(2, ready))

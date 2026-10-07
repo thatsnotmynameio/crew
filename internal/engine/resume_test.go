@@ -106,32 +106,34 @@ func TestAE1ARelabeledFailedRunResumesInItsWorkspaceAndLog(t *testing.T) {
 func checkResumePrompt(t *testing.T, prompt string) {
 	t.Helper()
 	if !strings.HasPrefix(prompt, "Implement development for issue #1\n\ncrew: this session continues") ||
-		!strings.Contains(prompt, `That run failed: "no pull request was found".`) ||
-		!strings.Contains(prompt, "`.crew/logs/issue-1-development.log`") ||
-		!strings.Contains(prompt, "(`../../logs/issue-1-development.log` from this worktree)") {
+		!strings.Contains(prompt, "That run ended through the route `failed`: \"no pull request was found\".") ||
+		!strings.Contains(prompt, "`.crew/logs/issue-1-implement.log`") ||
+		!strings.Contains(prompt, "(`../../logs/issue-1-implement.log` from this worktree)") {
 		t.Fatalf("prompt does not end with the resume paragraph:\n%s", prompt)
 	}
 }
 
-// checkResumedLog checks that the log of issue 1's development under root
-// holds the first run's output, the resume marker, then the second run's.
+// checkResumedLog checks that the log of issue 1's run under root holds
+// the first session's marker and output, then the resume marker naming
+// development, then the second session's output.
 func checkResumedLog(t *testing.T, root string) {
 	t.Helper()
-	log, err := os.ReadFile(filepath.Join(root, ".crew", "logs", "issue-1-development.log"))
+	log, err := os.ReadFile(filepath.Join(root, ".crew", "logs", "issue-1-implement.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSuffix(string(log), "\n"), "\n")
-	if len(lines) != 3 || lines[0] != "first output" || lines[2] != "second output" {
-		t.Fatalf("log = %q, want the first output, the marker, then the second output", log)
+	if len(lines) != 4 || lines[1] != "first output" || lines[3] != "second output" {
+		t.Fatalf("log = %q, want a marker, the first output, the resume marker, then the second output", log)
 	}
 	var marker struct {
 		Type    string `json:"type"`
 		Subtype string `json:"subtype"`
+		Action  string `json:"action"`
 	}
-	err = json.Unmarshal([]byte(lines[1]), &marker)
-	if err != nil || marker.Type != "crew" || marker.Subtype != "resumed" {
-		t.Fatalf("marker line = %q, want a crew resumed JSON line", lines[1])
+	err = json.Unmarshal([]byte(lines[2]), &marker)
+	if err != nil || marker.Type != "crew" || marker.Subtype != "resumed" || marker.Action != "development" {
+		t.Fatalf("marker line = %q, want a crew resumed JSON line naming development", lines[2])
 	}
 }
 
@@ -145,26 +147,25 @@ func TestAE3AnActionThatStartedAndNeverEndedContinuesInItsWorkspace(t *testing.T
 			Run: "killed", At: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC), IssueID: issueID("1"), IssueRef: "#1",
 			Rule: "implement",
 		}
-		space := crew.Workspace{Name: "issue-1-development", Branch: "crew/issue-1-development"}
+		space := crew.Workspace{Name: "issue-1-implement", Branch: "crew/issue-1-implement"}
 		cfg.Journal = fake.NewJournal(
 			crew.RunTaken{
 				EventHead: h, Issue: issue(1, ready).Data(), From: ready, To: inProgress,
-				Actions: []crew.ActionTaken{{Name: "development"}},
+				Actions: []crew.ActionName{"development"},
 			},
 			crew.TakeMoved{EventHead: h, From: ready, To: inProgress},
-			crew.ActionWorkspaceAsked{EventHead: h, Action: "development"},
-			crew.ActionOpened{
-				EventHead: h, Action: "development", Workspace: space, Log: ".crew/logs/issue-1-development.log",
-			},
+			crew.WorkspaceAsked{EventHead: h},
+			crew.WorkspaceOpened{EventHead: h, Workspace: space, Log: ".crew/logs/issue-1-implement.log"},
+			crew.ActionSessionAsked{EventHead: h, Action: "development"},
 		)
-		if err := os.Mkdir(filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-development"), 0o750); err != nil {
+		if err := os.Mkdir(filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-implement"), 0o750); err != nil {
 			t.Fatal(err)
 		}
 		r := start(t, cfg)
 
 		s := r.session()
-		if got := filepath.Base(s.Run().Dir); got != "issue-1-development" {
-			t.Errorf("session runs in %s, want issue-1-development", got)
+		if got := filepath.Base(s.Run().Dir); got != "issue-1-implement" {
+			t.Errorf("session runs in %s, want issue-1-implement", got)
 		}
 		if p := s.Run().Prompt; !strings.Contains(p, "crew stopped before the run ended: it crashed or was killed") {
 			t.Errorf("prompt does not say the run was cut short:\n%s", p)
@@ -209,9 +210,9 @@ func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 		}
 		if !slices.ContainsFunc(r.events(), func(e core.Published) bool {
 			m, ok := e.(crew.WorkspaceMissing)
-			return ok && m.Workspace.Name == "issue-1-development"
+			return ok && m.Workspace.Name == "issue-1-implement"
 		}) {
-			t.Errorf("no WorkspaceMissing event for issue-1-development")
+			t.Errorf("no WorkspaceMissing event for issue-1-implement")
 		}
 	})
 }
@@ -242,9 +243,12 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 				reasons = append(reasons, n.Reason)
 			}
 		}
-		if len(reasons) != 2 || !strings.Contains(reasons[0], "./.crew/logs/runs.jsonl") ||
-			strings.Contains(reasons[0], cfg.Root) {
-			t.Errorf("RunNotRecorded reasons = %q, want two naming ./.crew/logs/runs.jsonl", reasons)
+		// Its worktree, the start of development and of its session, its end,
+		// the route, the route's one step and the release.
+		if len(reasons) != 7 || slices.ContainsFunc(reasons, func(r string) bool {
+			return !strings.Contains(r, "./.crew/logs/runs.jsonl") || strings.Contains(r, cfg.Root)
+		}) {
+			t.Errorf("RunNotRecorded reasons = %q, want seven naming ./.crew/logs/runs.jsonl", reasons)
 		}
 	})
 }
@@ -253,8 +257,8 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 // port.Reopener.
 type createOnly struct{ w *fake.Workspace }
 
-func (c createOnly) Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
-	return c.w.Create(ctx, issue, action)
+func (c createOnly) Create(ctx context.Context, issue crew.Issue, rule crew.RuleName) (port.Space, error) {
+	return c.w.Create(ctx, issue, rule)
 }
 
 func TestAWorkspaceThatCannotReopenStartsAFailedRunFresh(t *testing.T) {

@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
@@ -28,7 +26,7 @@ type message struct {
 	final bool
 }
 
-// sessionKey identifies the session, or the check, of one action of a rule
+// sessionKey identifies the session, or the script, of one action of a rule
 // run (KTD7).
 type sessionKey struct {
 	run    crew.RuleRunID
@@ -70,6 +68,10 @@ func (e *Engine) trackerJob(ctx context.Context, cmd core.TrackerCommand) func()
 			e.listBoard(ctx, c)
 		case core.Move:
 			e.move(ctx, c)
+		case core.Comment:
+			e.comment(ctx, c)
+		case core.Close:
+			e.close(ctx, c)
 		case core.ReportFailure:
 			e.report(ctx, c)
 		case core.ReportStatus:
@@ -83,8 +85,8 @@ func (e *Engine) trackerJob(ctx context.Context, cmd core.TrackerCommand) func()
 // runJob returns the goroutine that runs cmd, a command about one rule run,
 // on the command context ctx, or nil when nothing is left to run once the
 // loop has done its part. The loop itself records run events, starts and stops
-// checks and stops sessions, as it owns the order of the journal, the
-// checks and the sessions.
+// scripts and stops sessions, as it owns the order of the journal, the
+// scripts and the sessions.
 func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 	switch c := cmd.(type) {
 	case core.CreateWorkspace:
@@ -113,18 +115,14 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 			return nil
 		}
 		return func() { e.stopSession(ctx, s.session) }
-	case core.RunCheck:
-		// The check's context is made here, in the loop, so a StopCheck
-		// that follows always finds it.
-		checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
-		e.checks[sessionKey{c.Run, c.Action}] = cancel
-		return func() { e.runCheck(checkCtx, cancel, c) }
-	case core.StopCheck:
-		// The core asks to stop only checks it started; the check's end
-		// still arrives through its own goroutine, in runCheck.
-		if cancel, ok := e.checks[sessionKey{c.Run, c.Action}]; ok {
-			cancel()
-		}
+	case core.RunShell:
+		return e.runShell(ctx, c)
+	case core.RunStepShell:
+		return e.runStepShell(ctx, c)
+	case core.StopShell:
+		stopScript(e.shells, sessionKey{c.Run, c.Action})
+	case core.StopStepShell:
+		stopScript(e.steps, stepKey{c.Run, c.Step})
 	}
 	return nil
 }
@@ -248,22 +246,25 @@ func (e *Engine) sessionText(text string) crew.SessionText {
 func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	ctx, cancel := callContext(ctx)
 	defer cancel()
-	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
+	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Rule)
 	if err != nil {
-		e.post(core.WorkspaceFailed{
-			IssueID: c.Issue.ID(), Run: c.Run, Action: c.Action, Reason: e.sessionText(callError(ctx, err)),
-		})
+		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID(), Run: c.Run, Reason: e.sessionText(callError(ctx, err))})
 		return
 	}
-	e.post(e.ready(c.Issue.ID(), c.Run, c.Action, space, false))
+	// A new workspace may reuse the name of one that is gone, and with it
+	// the log's name: the files an earlier run's session left beside that
+	// log are not this run's (KTD22).
+	e.clearSession(logPath(space.Workspace.Name))
+	e.post(e.ready(c.Issue.ID(), c.Run, space, false))
 }
 
-// reopenWorkspace reopens a failed run's workspace through the workspace's
-// port.Reopener, which the core asks for only when the workspace has one.
+// reopenWorkspace reopens the workspace of the run c's run continues
+// through the workspace's port.Reopener, which the core asks for only when
+// the workspace has one.
 func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	r, ok := e.cfg.Workspace.(port.Reopener)
 	if !ok {
-		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
+		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run})
 		return
 	}
 	ctx, cancel := callContext(ctx)
@@ -271,56 +272,58 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	space, err := r.Reopen(ctx, crew.Workspace{Name: c.Workspace, Branch: c.Branch})
 	switch {
 	case errors.Is(err, port.ErrWorkspaceGone):
-		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
+		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run})
 	case err != nil:
-		e.post(core.WorkspaceFailed{
-			IssueID: c.IssueID, Run: c.Run, Action: c.Action, Reason: e.sessionText(callError(ctx, err)),
-		})
+		e.post(core.WorkspaceFailed{IssueID: c.IssueID, Run: c.Run, Reason: e.sessionText(callError(ctx, err))})
 	default:
-		e.post(e.ready(c.IssueID, c.Run, c.Action, space, true))
+		e.post(e.ready(c.IssueID, c.Run, space, true))
 	}
 }
 
-// ready is the WorkspaceReady of space for action on the issue id, which
-// answers the rule run identified by run.
-func (e *Engine) ready(
-	id crew.IssueID, run crew.RuleRunID, action crew.ActionName, space port.Space, resumed bool,
-) core.WorkspaceReady {
+// ready is the WorkspaceReady of space on the issue id, which answers the
+// rule run identified by run.
+func (e *Engine) ready(id crew.IssueID, run crew.RuleRunID, space port.Space, resumed bool) core.WorkspaceReady {
 	log := logPath(space.Workspace.Name)
 	return core.WorkspaceReady{
-		IssueID: id, Run: run, Action: action,
+		IssueID: id, Run: run,
 		Workspace: space.Workspace.Name, Dir: space.Dir, Branch: space.Workspace.Branch, Log: log,
 		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed,
 	}
 }
 
-// startSession starts the session with its output going to its log, after
-// a marker line when the session resumes a failed run (KTD8), then waits for
-// it to end in the same goroutine (R19). The session acts as its action's
-// bot, or as you when that bot does not act, and learns the code owners' and
-// the bots' logins.
+// startSession starts the session with its output going to the run's log,
+// after a marker line naming its action (startMarker), with a verdict file
+// of its own (KTD8), then waits for it to end in the same goroutine (R19).
+// Once it ended, it reads the session's verdict, keeps its prompt and last
+// message beside the log for the shell actions after it (KTD22), and posts
+// its end. The session acts as its bot, or as you when that bot does not
+// act, and learns the code owners' and the bots' logins.
 func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
-	log, err := e.openLog(c.Log)
-	if err == nil && c.Resumed {
-		if err = markResumed(log); err != nil {
-			_ = log.Close() // the write error is the one to report
-		}
-	}
-	if err != nil {
+	failed := func(err error) {
 		e.post(core.SessionFailedToStart{
 			IssueID: c.IssueID, Run: c.Run, Action: c.Action, Reason: e.sessionText(err.Error()),
 		})
+	}
+	log, err := e.openSessionLog(c)
+	if err != nil {
+		failed(err)
+		return
+	}
+	verdict, err := newVerdictFile()
+	if err != nil {
+		_ = log.Close() // nothing was written to it worth keeping
+		failed(err)
 		return
 	}
 	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
 		Dir: c.Dir, Prompt: c.Prompt, Output: log,
 		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
+		VerdictFile: verdict.file, VerdictDir: verdict.dir,
 	})
 	if err != nil {
-		_ = log.Close() // nothing was written to it worth keeping
-		e.post(core.SessionFailedToStart{
-			IssueID: c.IssueID, Run: c.Run, Action: c.Action, Reason: e.sessionText(err.Error()),
-		})
+		_ = log.Close()
+		verdict.remove()
+		failed(err)
 		return
 	}
 	e.inbox <- message{input: core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action}, session: s}
@@ -328,7 +331,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	// The harness stops writing once Wait returns. A failed close cannot
 	// change how the session ended, which is what the core needs.
 	_ = log.Close()
-	outcome := crew.Outcome{Succeeded: end.Succeeded, Reason: e.sessionText(end.Reason)}
+	report := verdict.read()
 	var usage crew.Usage
 	if r, ok := s.(port.UsageReporter); ok {
 		usage = r.Usage()
@@ -337,12 +340,14 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	if r, ok := s.(port.LastMessageReporter); ok {
 		last = r.LastMessage()
 	}
+	e.keepSession(c.Log, c.Prompt, last)
 	e.post(core.SessionEnded{
-		IssueID: c.IssueID, Run: c.Run, Action: c.Action, Outcome: outcome, Usage: usage, LastMessage: last,
+		IssueID: c.IssueID, Run: c.Run, Action: c.Action, Report: report, Usage: usage,
+		Outcome: crew.Outcome{Succeeded: end.Succeeded, Reason: e.sessionText(end.Reason)},
 	})
 }
 
-// findPullRequest looks up the pull request c's action opened, within
+// findPullRequest looks up the pull request c's run opened, within
 // lookupTimeout. A lookup that fails or times out leaves it not looked up,
 // which changes nothing else (R7).
 func (e *Engine) findPullRequest(ctx context.Context, c core.FindPullRequest) {
@@ -352,7 +357,7 @@ func (e *Engine) findPullRequest(ctx context.Context, c core.FindPullRequest) {
 	if err != nil {
 		pr = crew.PullRequestNotLookedUp{}
 	}
-	e.post(core.PullRequestFound{IssueID: c.IssueID, Run: c.Run, Action: c.Action, PullRequest: pr})
+	e.post(core.PullRequestFound{IssueID: c.IssueID, Run: c.Run, PullRequest: pr})
 }
 
 // stopSession stops s within the stop deadline (KTD7). Its end reaches the
@@ -366,132 +371,39 @@ func (e *Engine) stopSession(ctx context.Context, s port.Session) {
 	e.inbox <- message{final: true}
 }
 
-// resumeMarker is the line a resumed session's output follows in its log. It
+// startMarker is the line a session's output follows in the run's log. It
 // is JSON, as the harness's output is, so tools reading the log as JSON
 // lines keep working.
-type resumeMarker struct {
-	Type    string    `json:"type"`
+type startMarker struct {
+	Type string `json:"type"`
+	// Subtype is "resumed" for a session that resumes the work of an
+	// earlier run, and "started" otherwise.
 	Subtype string    `json:"subtype"`
+	Action  string    `json:"action"`
 	Time    time.Time `json:"time"`
 }
 
-// markResumed writes the resume marker to log, on a line of its own, so the
-// resumed session and you can tell where the failed run's output ends.
-func markResumed(log *os.File) error {
-	data, err := json.Marshal(resumeMarker{Type: "crew", Subtype: "resumed", Time: time.Now().UTC()})
-	if err != nil {
-		return fmt.Errorf("encode the resume marker: %w", err)
-	}
-	if err := fileline.Append(log, data); err != nil {
-		return fmt.Errorf("write the resume marker: %w", err)
-	}
-	return nil
-}
-
-// runCheck runs one of the action's checks within checkTimeout, its output
-// going to the action's log after the session's, and posts its verdict. Its
-// reason says, in crew's words and naming the check, how the check ended,
-// followed, for a check that passed or failed, by the last line it printed
-// (R5, R6).
-func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core.RunCheck) {
-	defer cancel()
-	passed, reason := e.check(ctx, c)
-	e.post(core.CheckEnded{IssueID: c.IssueID, Run: c.Run, Action: c.Action, Passed: passed, Reason: reason})
-}
-
-// check runs c, as its action's bot like its session, and returns whether
-// it passed and its reason. The session's last message reaches the check as
-// the session wrote it (KTD10): crew does not show it.
-func (e *Engine) check(ctx context.Context, c core.RunCheck) (bool, crew.CheckReason) {
-	subject := "the check " + string(c.Name)
-	if e.cfg.Shell == nil {
-		return false, crew.NewCheckReason(subject + " could not start: crew has no check runner")
-	}
+// openSessionLog opens the log of c's run and writes the marker line naming
+// c's action to it, on a line of its own, so the session and you can tell
+// where its output starts, and a resumed one where the earlier run's output
+// ends.
+func (e *Engine) openSessionLog(c core.StartSession) (*os.File, error) {
 	log, err := e.openLog(c.Log)
 	if err != nil {
-		return false, crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))
+		return nil, err
 	}
-	// A failed write or close cannot change the check's verdict.
-	defer func() { _ = log.Close() }()
-	_, _ = fmt.Fprintf(log, "\ncrew: running %s: %s\n", subject, c.Command)
-	var last lastLine
-	ran, err := e.cfg.Shell.Run(ctx, port.Script{
-		Dir: c.Dir, Name: c.Name, Command: c.Command, Action: c.Action, Prompt: c.Prompt, LastMessage: c.LastMessage,
-		IssueRef: c.IssueRef, IssueID: c.IssueID, IssueURL: c.IssueURL,
-		Branch: c.Branch, Output: io.MultiWriter(log, &last),
-		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
-	})
-	switch {
-	case err == nil && ran.Status == 0:
-		return true, e.saying(subject+" passed", last.String())
-	case err == nil:
-		line := last.String()
-		if line == "" {
-			return false, crew.NewCheckReason(subject + " failed and printed nothing")
-		}
-		return false, e.saying(subject+" failed", line)
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return false, crew.NewCheckReason(fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout))
-	case ctx.Err() != nil:
-		return false, crew.NewCheckReason(subject + " was stopped")
+	subtype := "started"
+	if c.Resumed {
+		subtype = "resumed"
 	}
-	return false, crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))
-}
-
-// saying returns verdict, followed by line, the last line a check printed,
-// scrubbed, stripped, scrubbed again (scrubAndStrip) and cut, when the check
-// printed one.
-func (e *Engine) saying(verdict, line string) crew.CheckReason {
-	if line == "" {
-		return crew.NewCheckReason(verdict)
+	marker := startMarker{Type: "crew", Subtype: subtype, Action: string(c.Action), Time: time.Now().UTC()}
+	data, err := json.Marshal(marker)
+	if err == nil {
+		err = fileline.Append(log, data)
 	}
-	return crew.NewCheckReason(verdict + ": " + lastWords(e.scrubAndStrip(line)))
-}
-
-// maxLine bounds how much of a check's current line lastLine keeps: the end
-// of a line is what a check says last.
-const maxLine = 4096
-
-// lastLine is a writer that keeps the last non-empty line written to it,
-// trimmed, in bounded memory. One goroutine writes to it at a time.
-type lastLine struct {
-	cur  []byte // the line being written, cut to its last maxLine bytes
-	last string // the last complete non-empty line
-}
-
-func (l *lastLine) Write(p []byte) (int, error) {
-	for _, b := range p {
-		// A carriage return ends a line too, as progress output uses it.
-		if b == '\n' || b == '\r' {
-			l.end()
-			continue
-		}
-		l.cur = append(l.cur, b)
-		if len(l.cur) > 2*maxLine {
-			l.cur = append(l.cur[:0], l.cur[len(l.cur)-maxLine:]...)
-		}
+	if err != nil {
+		_ = log.Close() // the write error is the one to report
+		return nil, fmt.Errorf("write the session's marker: %w", err)
 	}
-	return len(p), nil
-}
-
-// String returns the last non-empty line, counting an unended last line.
-func (l *lastLine) String() string {
-	l.end()
-	return l.last
-}
-
-// end ends the line being written, keeping it when it is not blank. Control
-// characters other than tab are dropped: the line becomes a reason that goes
-// into a gh argument, which cannot hold a NUL, and into a comment.
-func (l *lastLine) end() {
-	line := strings.Map(func(r rune) rune {
-		if (r < 0x20 && r != '\t') || r == 0x7f {
-			return -1
-		}
-		return r
-	}, strings.ToValidUTF8(string(l.cur), ""))
-	if line = strings.TrimSpace(line); line != "" {
-		l.last = line
-	}
-	l.cur = l.cur[:0]
+	return log, nil
 }

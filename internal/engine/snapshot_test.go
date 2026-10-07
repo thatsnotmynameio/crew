@@ -80,15 +80,16 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing
 	})
 }
 
-// Covers KTD-P6: a failed run publishes its take, its moves, its session's
-// start, its action's end and its failure report, and none of its silent
-// run events, in the updates or in the snapshot's recent events.
+// Covers KTD-P6: a failed run publishes its take, its take move, its
+// session's start, its action's end, the route it chose and its steps'
+// outcomes, and none of its silent run events, in the updates or in the
+// snapshot's recent events.
 func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, final := failOneRun(t)
 		worded := []string{
-			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.EndingMoved",
-			"crew.FailureReported",
+			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.RouteChosen",
+			"crew.StepEnded",
 		}
 		published := runEventKinds(slices.Concat(r.events(), final.Snapshot.Recent))
 		for _, kind := range published {
@@ -109,7 +110,7 @@ func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 func failOneRun(t *testing.T) (*rig, engine.Update) {
 	t.Helper()
 	r := start(t, config(t, fake.NewTracker(issue(1, ready)), develop))
-	r.sessions(1)["issue-1-development"].End(port.SessionEnd{Reason: "tests fail"})
+	r.sessions(1)["issue-1-implement"].End(port.SessionEnd{Reason: "tests fail"})
 	synctest.Wait()
 
 	r.engine.Stop()

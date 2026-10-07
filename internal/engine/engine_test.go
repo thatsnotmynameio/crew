@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -10,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -32,23 +34,44 @@ const (
 
 const poll = 300 * time.Second
 
-// implement is the draft config's implement rule (KTD5).
+// implement is the draft config's implement rule (KTD5): the sessions
+// acceptance then development, one after the other in the run's one
+// workspace.
 var implement = crew.Rule{
 	Name:   "implement",
-	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+	Labels: crew.Labels{Ready: ready, Running: inProgress},
 	Actions: []crew.Action{
-		{Name: "acceptance", Prompt: parsedPrompt("acceptance", "Implement test acceptance for issue {{.Issue.Ref}}")},
-		{Name: "development", Prompt: parsedPrompt("development", "Implement development for issue {{.Issue.Ref}}")},
+		sessionAction("acceptance", "Implement test acceptance for issue {{.Issue.Ref}}"),
+		sessionAction("development", "Implement development for issue {{.Issue.Ref}}"),
 	},
+	Routes: routes(needsAttention),
 }
 
 // develop is a rule with one action, for tests about one session per issue.
 var develop = crew.Rule{
-	Name:   "implement",
-	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-	Actions: []crew.Action{
-		{Name: "development", Prompt: parsedPrompt("development", "Implement development for issue {{.Issue.Ref}}")},
-	},
+	Name:    "implement",
+	Labels:  crew.Labels{Ready: ready, Running: inProgress},
+	Actions: []crew.Action{sessionAction("development", "Implement development for issue {{.Issue.Ref}}")},
+	Routes:  routes(needsAttention),
+}
+
+// sessionAction is a session action named name, whose prompt is text.
+func sessionAction(name crew.ActionName, text string) crew.Action {
+	return crew.Action{Name: name, Kind: crew.SessionSpec{Prompt: parsedPrompt(name, text)}}
+}
+
+// shellAction is a shell action named name, which runs script.
+func shellAction(name crew.ActionName, script string) crew.Action {
+	return crew.Action{Name: name, Kind: crew.ShellSpec{Script: script}}
+}
+
+// routes are a rule's passed route, which moves the issue to ready to
+// review, and its failed route, which reports and moves it to failed.
+func routes(failed crew.State) []crew.Route {
+	return []crew.Route{
+		{Name: crew.PassedRoute, Steps: []crew.Step{crew.MoveStep{To: readyToReview}}},
+		{Name: crew.FailedRoute, Steps: []crew.Step{crew.ReportStep{}, crew.MoveStep{To: failed}}},
+	}
 }
 
 // parsedPrompt parses text as the prompt of the action named action, and
@@ -296,23 +319,28 @@ func TestASlowListingCoalescesTheMissedTick(t *testing.T) {
 	})
 }
 
-// Covers AE1.
-func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t *testing.T) {
+// Covers AE1, R24: each run's actions run one after the other in the run's
+// one workspace, and write into its one log after a marker naming them.
+func TestPollTakesTwoIssuesAndRunsEachRunsSessionsInTurnInItsOwnWorkspaceAndLog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready), issue(2, ready), issue(3, ready))
 		r := start(t, config(t, tr, implement))
 
-		sessions := r.sessions(4)
-
-		want := []string{"issue-1-acceptance", "issue-1-development", "issue-2-acceptance", "issue-2-development"}
-		if names := slices.Sorted(maps.Keys(sessions)); !reflect.DeepEqual(names, want) {
+		acceptance := r.sessions(2)
+		want := []string{"issue-1-implement", "issue-2-implement"}
+		if names := slices.Sorted(maps.Keys(acceptance)); !reflect.DeepEqual(names, want) {
 			t.Fatalf("sessions run in workspaces %v, want %v", names, want)
 		}
-		checkTookTwoIssues(t, tr, sessions)
-		for name, s := range sessions {
-			if _, err := fmt.Fprintf(s.Run().Output, "output of %s\n", name); err != nil {
-				t.Fatalf("write to %s's output: %v", name, err)
+		checkTookTwoIssues(t, tr, acceptance)
+		writeAndEnd(t, acceptance, "acceptance")
+		development := r.sessions(2)
+		for name, s := range development {
+			if s.Run().Dir != acceptance[name].Run().Dir {
+				t.Errorf("development of %s runs in %s, want acceptance's %s", name, s.Run().Dir, acceptance[name].Run().Dir)
 			}
+		}
+		if _, err := fmt.Fprintf(development["issue-1-implement"].Run().Output, "output of development\n"); err != nil {
+			t.Fatal(err)
 		}
 
 		r.engine.Stop()
@@ -321,11 +349,10 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 			t.Fatalf("Run: %v", err)
 		}
 
-		checkEachLogHoldsItsOutput(t, r.root, sessions)
-		wantLogs := []string{
-			".crew/logs/issue-1-acceptance.log", ".crew/logs/issue-1-development.log",
-			".crew/logs/issue-2-acceptance.log", ".crew/logs/issue-2-development.log",
-		}
+		checkRunLog(t, r.root, "issue-1-implement", "acceptance", "output of acceptance\n",
+			"development", "output of development\n")
+		checkRunLog(t, r.root, "issue-2-implement", "acceptance", "output of acceptance\n", "development", "")
+		wantLogs := []string{".crew/logs/issue-1-implement.log", ".crew/logs/issue-2-implement.log"}
 		if logs := reportedLogs(tr); !reflect.DeepEqual(logs, wantLogs) {
 			t.Errorf("failure reports name logs %v, want %v", logs, wantLogs)
 		}
@@ -335,15 +362,15 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 	})
 }
 
-// checkTookTwoIssues checks that sessions run the prompts of issues 1 and 2,
-// which moved to in progress, while issue 3 waits in ready.
+// checkTookTwoIssues checks that sessions run the acceptance prompts of
+// issues 1 and 2, which moved to in progress, while issue 3 waits in ready.
 func checkTookTwoIssues(t *testing.T, tr *fake.Tracker, sessions map[string]*fake.Session) {
 	t.Helper()
-	if got := sessions["issue-1-acceptance"].Run().Prompt; got != "Implement test acceptance for issue #1" {
-		t.Errorf("issue-1-acceptance prompt = %q", got)
+	if got := sessions["issue-1-implement"].Run().Prompt; got != "Implement test acceptance for issue #1" {
+		t.Errorf("issue-1-implement prompt = %q", got)
 	}
-	if got := sessions["issue-2-development"].Run().Prompt; got != "Implement development for issue #2" {
-		t.Errorf("issue-2-development prompt = %q", got)
+	if got := sessions["issue-2-implement"].Run().Prompt; got != "Implement test acceptance for issue #2" {
+		t.Errorf("issue-2-implement prompt = %q", got)
 	}
 	for _, key := range []string{"1", "2"} {
 		if got := states(t, tr, key); !reflect.DeepEqual(got, []crew.State{inProgress}) {
@@ -355,18 +382,47 @@ func checkTookTwoIssues(t *testing.T, tr *fake.Tracker, sessions map[string]*fak
 	}
 }
 
-// checkEachLogHoldsItsOutput checks that the log of each session, under
-// root, holds what that session wrote.
-func checkEachLogHoldsItsOutput(t *testing.T, root string, sessions map[string]*fake.Session) {
+// writeAndEnd has each of sessions write "output of <action>" and end
+// with success.
+func writeAndEnd(t *testing.T, sessions map[string]*fake.Session, action string) {
 	t.Helper()
-	for name := range sessions {
-		got, err := os.ReadFile(filepath.Join(root, ".crew", "logs", name+".log"))
-		if err != nil {
-			t.Fatalf("log of %s: %v", name, err)
+	for name, s := range sessions {
+		if _, err := fmt.Fprintf(s.Run().Output, "output of %s\n", action); err != nil {
+			t.Fatalf("write to %s's output: %v", name, err)
 		}
-		if want := "output of " + name + "\n"; string(got) != want {
-			t.Errorf("log of %s = %q, want %q", name, got, want)
+		s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
+	}
+}
+
+// checkRunLog checks that the log of the run in workspace, under root,
+// holds each session's marker line, naming its action, followed by its
+// output, as actionsAndOutputs alternates them.
+func checkRunLog(t *testing.T, root, workspace string, actionsAndOutputs ...string) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(root, ".crew", "logs", workspace+".log"))
+	if err != nil {
+		t.Fatalf("log of %s: %v", workspace, err)
+	}
+	rest := string(got)
+	for i := 0; i+1 < len(actionsAndOutputs); i += 2 {
+		marker, after, ok := strings.Cut(rest, "\n")
+		var m struct {
+			Type    string `json:"type"`
+			Subtype string `json:"subtype"`
+			Action  string `json:"action"`
 		}
+		if !ok || json.Unmarshal([]byte(marker), &m) != nil || m.Type != "crew" || m.Subtype != "started" ||
+			m.Action != actionsAndOutputs[i] {
+			t.Fatalf("log of %s = %q, want %s's marker line at %q", workspace, got, actionsAndOutputs[i], rest)
+		}
+		output, ok := strings.CutPrefix(after, actionsAndOutputs[i+1])
+		if !ok {
+			t.Fatalf("log of %s = %q, want %q after %s's marker", workspace, got, actionsAndOutputs[i+1], actionsAndOutputs[i])
+		}
+		rest = output
+	}
+	if rest != "" {
+		t.Errorf("log of %s ends with %q, want nothing more", workspace, rest)
 	}
 }
 
@@ -484,7 +540,7 @@ func TestWhenTheRunTimeIsUpARunningSessionFinishesAndNothingNewIsTaken(t *testin
 		cfg.RunTimeLimit = time.Hour
 		t0 := time.Now()
 		r := start(t, cfg)
-		session := r.sessions(1)["issue-42-development"]
+		session := r.sessions(1)["issue-42-implement"]
 
 		time.Sleep(time.Hour + time.Second)
 		tr.Add(issue(43, ready))

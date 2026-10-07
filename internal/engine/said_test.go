@@ -36,7 +36,7 @@ func startNarrating(t *testing.T) *narrating {
 	e := engine.New(cfg)
 	latest := e.SubscribeLatest()
 	r := run(t, cfg, e)
-	s := r.sessions(1)["issue-1-development"]
+	s := r.sessions(1)["issue-1-implement"]
 	synctest.Wait()
 	n := &narrating{rig: r, cfg: cfg, latest: latest, session: s}
 	if _, ok := n.next(); !ok {
@@ -133,9 +133,9 @@ func takenRun(t *testing.T, s engine.Snapshot, key string) crew.RuleRunID {
 	return ""
 }
 
-// The said refresh lists the sessions by issue, then action, whatever
-// order their rule runs took the issues in.
-func TestR18TheSessionsWordsComeByIssueThenAction(t *testing.T) {
+// The said refresh lists the sessions by issue, whatever order their rule
+// runs took the issues in.
+func TestR18TheSessionsWordsComeByIssue(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		urgent := issue(2, ready).Data()
 		urgent.Priority = 1
@@ -144,7 +144,7 @@ func TestR18TheSessionsWordsComeByIssueThenAction(t *testing.T) {
 		e := engine.New(cfg)
 		latest := e.SubscribeLatest()
 		r := run(t, cfg, e)
-		for name, s := range r.sessions(4) {
+		for name, s := range r.sessions(2) {
 			s.Say("in " + name)
 		}
 		time.Sleep(saidEvery)
@@ -159,16 +159,12 @@ func TestR18TheSessionsWordsComeByIssueThenAction(t *testing.T) {
 		if two >= one {
 			t.Fatalf("run of #2 = %q, run of #1 = %q, want #2 taken first", two, one)
 		}
-		said := func(key string, run crew.RuleRunID, action crew.ActionName) core.Said {
+		said := func(key string, run crew.RuleRunID) core.Said {
 			return core.Said{
-				IssueID: issueID(key), Run: run, Action: action,
-				Text: crew.NewSaid("in issue-" + key + "-" + string(action)),
+				IssueID: issueID(key), Run: run, Action: "acceptance", Text: crew.NewSaid("in issue-" + key + "-implement"),
 			}
 		}
-		want := []core.Said{
-			said("1", one, "acceptance"), said("1", one, "development"),
-			said("2", two, "acceptance"), said("2", two, "development"),
-		}
+		want := []core.Said{said("1", one), said("2", two)}
 		if !reflect.DeepEqual(u.Snapshot.Said, want) {
 			t.Errorf("Said = %#v, want %#v", u.Snapshot.Said, want)
 		}
@@ -273,7 +269,7 @@ func saidInStatus(t *testing.T, text string) string {
 	cfg := config(t, tr, develop)
 	cfg.Harnesses = harnesses(fake.NewNarratingHarness())
 	r := start(t, cfg)
-	r.sessions(1)["issue-1-development"].Say(text)
+	r.sessions(1)["issue-1-implement"].Say(text)
 	time.Sleep(poll)
 	synctest.Wait()
 

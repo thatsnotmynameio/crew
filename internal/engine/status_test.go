@@ -34,7 +34,7 @@ func TestAE2AE6RunningStatusCarriesTheSessionsWordsWithLocalPathsShortened(t *te
 		cfg := config(t, tr, develop)
 		cfg.Harnesses = harnesses(fake.NewNarratingHarness())
 		r := start(t, cfg)
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		begun := time.Now()
 
 		s.Say(fmt.Sprintf("Edited %s/internal/core/update.go for @someone", cfg.Root))
@@ -100,7 +100,7 @@ func TestAE3AE4StopLeavesTheMoveOnTheStatusAndTheFailureReportApart(t *testing.T
 			Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
 			Actions: []crew.ActionStatus{{
 				Name:  "development",
-				State: crew.ActionFailed{Cause: crew.CauseStopped, Log: ".crew/logs/issue-1-development.log"},
+				State: crew.ActionFailed{Cause: crew.CauseStopped, Log: ".crew/logs/issue-1-implement.log"},
 			}},
 		}
 		got := lastStatus(t, tr).Data()
@@ -142,7 +142,7 @@ func TestARefusedEndedStatusIsNotRetriedAndStopDoesNotWaitForIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := &statusCounter{ReportingTracker: fake.NewReportingTracker(issue(1, ready))}
 		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		synctest.Wait()
 
 		locked := fmt.Errorf("issue is locked: %w", port.ErrRefused)
@@ -178,7 +178,7 @@ func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
 		cfg := config(t, tr, develop)
 		cfg.Harnesses = harnesses(fake.NewNarratingHarness())
 		r := start(t, cfg)
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 
 		// The repository's path starts before the last 200 characters, so a
 		// cut before shortening would leave the end of it in the text.

@@ -49,7 +49,7 @@ func TestStopLetsAnEndingMoveInFlightFinish(t *testing.T) {
 		r := start(t, config(t, tr, develop))
 		sessions := r.sessions(2)
 
-		sessions["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
+		sessions["issue-1-implement"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		<-tr.entered
 		r.cancel() // Run's context ending is a stop request, not an abort.
 		synctest.Wait()
@@ -59,7 +59,7 @@ func TestStopLetsAnEndingMoveInFlightFinish(t *testing.T) {
 			t.Fatalf("Run returned %v while an ending move was in flight", err)
 		default:
 		}
-		if !sessions["issue-2-development"].Stopped() {
+		if !sessions["issue-2-implement"].Stopped() {
 			t.Error("issue 2's running session was not stopped")
 		}
 		close(tr.release)
@@ -81,7 +81,7 @@ func TestStopKillsASessionIgnoringItAtTheTenSecondDeadline(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
 		r.harness.IgnoreStop(true)
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 
 		t0 := time.Now()
 		r.engine.Stop()
