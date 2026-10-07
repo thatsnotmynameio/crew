@@ -4,8 +4,8 @@
 // task. Each port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
-// LoginFinder, WriterReporter, BoardLister, Narrator or Reopener, that the
-// engine detects by type assertion. An adapter therefore never wraps another
+// LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Narrator or
+// Reopener, that the engine detects by type assertion. An adapter therefore never wraps another
 // adapter value, because a wrapper hides the optional interfaces of what it
 // wraps.
 //
@@ -50,10 +50,11 @@ type Tracker interface {
 	// carries every crew state it is in, not only the ones asked for, so the
 	// engine can skip an issue found in two states; it carries nothing that
 	// is not a crew state. An issue is Blocked while an open issue blocks
-	// it, when the tracker records dependencies. An error means the list
-	// could not be read; it is transient.
+	// it, when the tracker records dependencies. The tracker sets only the
+	// key of each issue's ID; the engine sets its repository. An error
+	// means the list could not be read; it is transient.
 	List(ctx context.Context, states []crew.State) ([]crew.Issue, error)
-	// Move moves the issue identified by issueKey from one state to
+	// Move moves issue, which the tracker finds by its key, from one state to
 	// another, and leaves it in exactly one crew state, to, without
 	// touching what is not crew's. It returns an error wrapping
 	// ErrMovedMeanwhile when the issue is closed or not in from, one
@@ -62,7 +63,7 @@ type Tracker interface {
 	// nothing, when the issue is already exactly in to and not in from,
 	// whatever other labels it carries, so retrying a move that landed is
 	// safe.
-	Move(ctx context.Context, issueKey string, from, to crew.State) error
+	Move(ctx context.Context, issue crew.IssueID, from, to crew.State) error
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
 	ReportFailure(ctx context.Context, report crew.FailureReport) error
@@ -112,8 +113,8 @@ type Run struct {
 // zero Identity changes nothing. An Identity never holds a key or a token,
 // only where the child finds one.
 type Identity struct {
-	// Bot is the bot's name, as the config names it.
-	Bot string
+	// Bot is the bot, as the config names it.
+	Bot crew.BotName
 	// Login is the login the bot acts as, such as crew-ops[bot].
 	Login string
 	// Env holds KEY=value entries added to the child's environment.
@@ -153,7 +154,7 @@ type Verdict struct {
 type Workspace interface {
 	// Create creates a fresh workspace for action on issue. Each call gets
 	// its own workspace, even for an issue and action seen before.
-	Create(ctx context.Context, issue crew.Issue, action string) (Space, error)
+	Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (Space, error)
 }
 
 // Space is a created workspace.
@@ -162,7 +163,7 @@ type Space struct {
 	// name: the session's log is named after it, so a reopened workspace
 	// keeps its log, and a name reused once its workspace is gone reuses
 	// the log too.
-	Name string
+	Name crew.WorkspaceName
 	// Dir is the workspace's absolute directory.
 	Dir string
 	// Branch is the branch the action's work goes on.
@@ -252,6 +253,15 @@ type LoginFinder interface {
 	Login() string
 }
 
+// RepositoryFinder is an optional interface of a Tracker: it tells which
+// repository the tracker works on. Without it the engine names the
+// repository after the root directory.
+type RepositoryFinder interface {
+	// Repository returns the repository as Prepare found it, or the zero
+	// Repository before. It is safe to call from any goroutine.
+	Repository() crew.Repository
+}
+
 // WriterReporter is an optional interface of a Tracker that acts as a bot:
 // it tells when the tracker's own writes went back to you. A tracker
 // without it never reports one.
@@ -270,9 +280,11 @@ type BoardLister interface {
 	// ListBoard returns the open issues the code owners or one of the bots
 	// opened that carry any of labels, never a pull request, oldest first.
 	// Each carries the labels of labels it carries, matched as the tracker
-	// matches labels, spelled as labels spells them and in its order. An error
-	// means the board could not be read; it is transient.
-	ListBoard(ctx context.Context, labels []string) ([]crew.BoardIssue, error)
+	// matches labels, spelled as labels spells them and in its order. The
+	// tracker sets only the key of each issue's ID; the engine sets its
+	// repository. An error means the board could not be read; it is
+	// transient.
+	ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error)
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace
@@ -351,18 +363,19 @@ type Check struct {
 	// Dir is the action's workspace directory, where the command runs.
 	Dir string
 	// Name is the check's name, and Command the shell command to run.
-	Name    string
+	Name    crew.CheckName
 	Command string
-	// Action is the name of the action the check follows.
-	Action string
+	// Action is the action the check follows.
+	Action crew.ActionName
 	// Prompt is the rendered prompt the action's session started with, and
 	// LastMessage what the session last said, as in LastMessageReporter;
 	// the command reads them from files, never as part of it.
 	Prompt      string
 	LastMessage string
-	// IssueRef, IssueKey and IssueURL identify the issue, as in crew.Issue.
+	// IssueRef, IssueID and IssueURL identify the issue, as Ref, ID and URL
+	// in crew.Issue.
 	IssueRef string
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueURL string
 	// Branch is the branch the action's work went on.
 	Branch string

@@ -75,7 +75,7 @@ func TestAE2ACheckThatPassesKeepsTheSuccess(t *testing.T) {
 		c := checks[0]
 		dir := filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-development")
 		if c.Command != "gh pr list" || c.Dir != dir || c.Branch != "crew/issue-1-development" ||
-			c.IssueRef != "#1" || c.IssueKey != "1" || c.IssueURL != "https://example.test/issues/1" {
+			c.IssueRef != "#1" || c.IssueID != issueID("1") || c.IssueURL != "https://example.test/issues/1" {
 			t.Errorf("check = %+v", c)
 		}
 	})

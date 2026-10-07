@@ -24,8 +24,8 @@ type failingWorkspace struct {
 	root, home string
 }
 
-func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action string) (port.Space, error) {
-	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.Key+"-"+action)
+func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
+	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.ID.Key+"-"+string(action))
 	config := filepath.Join(w.home, ".gitconfig")
 	return port.Space{}, fmt.Errorf("git worktree add: fatal: '%s' already exists (see %s)", dir, config)
 }
@@ -142,7 +142,7 @@ func TestASessionsReasonEndsTheActionWithoutControlBytesAndWithTokensRedacted(t 
 // multiLineWorkspace fails every creation with git's multi-line stderr.
 type multiLineWorkspace struct{}
 
-func (multiLineWorkspace) Create(context.Context, crew.Issue, string) (port.Space, error) {
+func (multiLineWorkspace) Create(context.Context, crew.Issue, crew.ActionName) (port.Space, error) {
 	return port.Space{}, errors.New("git worktree add: fatal: x\nhint: y")
 }
 

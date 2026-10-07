@@ -178,22 +178,22 @@ func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	m.at = m.cfg.Now()
 	cards := m.cards()
 	m.messages.record(m.snap, cards)
-	was := m.sel.key
+	was := m.sel.id
 	m.sel = m.sel.repaired(cards)
 	// The popup follows its issue while it has a card, and closes when
 	// it has none (R21 of #151).
-	if m.sel.key != was {
+	if m.sel.id != was {
 		m.popup = false
 	}
 	// The highlighted card's column scrolls to its row now, which moves
 	// when crew takes or lets go of its issue (R5 of #231).
-	if m.sel.key != "" {
+	if !m.sel.empty() {
 		m.sel.top = shownFrom(m.sel.top, m.sel.row, len(byColumn(cards)[m.sel.column]), m.budget().cards)
 	}
 	// The board scrolls to keep the highlight drawn, as ←→ do (R10 of
 	// #151).
 	order := slices.Sorted(maps.Keys(byColumn(cards)))
-	if i := slices.Index(order, m.sel.column); m.sel.key != "" && i >= 0 {
+	if i := slices.Index(order, m.sel.column); !m.sel.empty() && i >= 0 {
 		m = m.reveal(cards, order, i)
 	}
 	slide := m.memory.moved(cards)

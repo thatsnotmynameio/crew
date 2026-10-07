@@ -199,7 +199,7 @@ func issueOfOtherKind(e core.IssueOfOtherKind) string {
 		takes = "pull requests"
 	}
 	return fmt.Sprintf("left %s alone: it is %s %s, and %s is the label of %s, which takes %s",
-		e.IssueRef, article, e.Kind, e.Label, e.Rule, takes)
+		e.IssueRef, article, KindName(e.Kind), e.Label, e.Rule, takes)
 }
 
 func call(c core.Call) string {

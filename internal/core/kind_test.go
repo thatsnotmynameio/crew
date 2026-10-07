@@ -49,7 +49,7 @@ func TestAPullRequestInTheLabelOfARuleThatTakesIssuesIsLeftAloneWithANotice(t *t
 	cmds, events := d.poll(pr90(1, ready))
 	wantCommands(t, cmds)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
-		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		At: d.now, IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 		Label: ready, Rule: "implement", Takes: crew.KindIssue,
 	})
 	wantHeld(t, d.m)
@@ -60,7 +60,7 @@ func TestARuleThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 	d := newDriver(t, withFixReview(), 2)
 
 	cmds, events := d.poll(pr90(1, fixReviewReady))
-	wantCommands(t, cmds, core.Move{IssueKey: "90", From: fixReviewReady, To: fixing})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("90"), From: fixReviewReady, To: fixing})
 	hasEvent(t, events, core.IssueTaken{
 		At: d.now, Issue: pr90(1, fixReviewReady), Rule: "fix review",
 		From: fixReviewReady, To: fixing,
@@ -78,7 +78,7 @@ func TestAnIssueInTheLabelOfARuleThatTakesPullRequestsGetsTheNoticeOnce(t *testi
 	cmds, events := d.poll(issue("42", 1, fixReviewReady))
 	wantCommands(t, cmds)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
-		At: d.now, IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
+		At: d.now, IssueID: issueID("42"), IssueRef: "#42", Kind: crew.KindIssue,
 		Label: fixReviewReady, Rule: "fix review", Takes: crew.KindPullRequest,
 	})
 
@@ -110,7 +110,7 @@ func TestTheNoticeShowsAgainOnceAListingFoundTheItemWithoutTheLabel(t *testing.T
 
 			_, events = d.poll(pr90(1, ready))
 			wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
-				At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+				At: d.now, IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 				Label: ready, Rule: "implement", Takes: crew.KindIssue,
 			})
 		})
@@ -123,7 +123,7 @@ func TestAnItemMovedToTheLabelOfAnotherRuleOfTheOtherKindGetsANewNotice(t *testi
 
 	_, events := d.poll(pr90(1, readyToReview))
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
-		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		At: d.now, IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 		Label: readyToReview, Rule: "review", Takes: crew.KindIssue,
 	})
 }
@@ -154,9 +154,9 @@ func TestAMirroredPullRequestGetsTheNoticeWhileItsIssueIsTaken(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 
 	cmds, events := d.poll(issue("42", 1, ready), pr90(2, ready))
-	wantCommands(t, cmds, core.Move{IssueKey: "42", From: ready, To: inProgress})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("42"), From: ready, To: inProgress})
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
-		At: d.now, IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		At: d.now, IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 		Label: ready, Rule: "implement", Takes: crew.KindIssue,
 	})
 	wantHeld(t, d.m, "42")
@@ -168,7 +168,7 @@ func TestAnItemWithTwoCrewLabelsGetsOnlyTheTwoLabelSkip(t *testing.T) {
 	cmds, events := d.poll(issue("42", 1, ready, fixReviewReady))
 	wantCommands(t, cmds)
 	hasEvent(t, events, core.IssueSkipped{
-		At: d.now, IssueKey: "42", IssueRef: "#42", States: []crew.State{ready, fixReviewReady},
+		At: d.now, IssueID: issueID("42"), IssueRef: "#42", States: []crew.State{ready, fixReviewReady},
 	})
 	wantEvents(t, otherKinds(events))
 }
@@ -180,7 +180,7 @@ func TestABlockedIssueInTheLabelOfARuleThatTakesPullRequestsGetsTheNotice(t *tes
 
 	_, events := d.poll(blocked)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
-		At: d.now, IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
+		At: d.now, IssueID: issueID("42"), IssueRef: "#42", Kind: crew.KindIssue,
 		Label: fixReviewReady, Rule: "fix review", Takes: crew.KindPullRequest,
 	})
 }
@@ -193,6 +193,6 @@ func TestAnItemOfTheOtherKindTakesNoSlot(t *testing.T) {
 	later.Priority = 2
 
 	cmds, _ := d.poll(urgent, later)
-	wantCommands(t, cmds, core.Move{IssueKey: "42", From: ready, To: inProgress})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("42"), From: ready, To: inProgress})
 	wantHeld(t, d.m, "42")
 }

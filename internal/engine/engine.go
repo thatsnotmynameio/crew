@@ -10,13 +10,14 @@
 package engine
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -85,24 +86,24 @@ type Config struct {
 	Writer port.Identity
 	// Identities are the identities of the bots that act, by name. An
 	// action whose bot is not among them runs as you.
-	Identities map[string]port.Identity
+	Identities map[crew.BotName]port.Identity
 	// BotLogins are the logins of the configured bots crew knows, whether
 	// or not they act: the tracker takes the items they opened, and every
 	// session and check gets them as CREW_BOTS.
 	BotLogins []string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
-	DefaultBot string
+	DefaultBot crew.BotName
 	// Bots are the configured bots, the default first, in config order,
 	// whether or not they act.
-	Bots []string
+	Bots []crew.BotName
 	// Unable holds, by name, the short reason of each configured bot that
 	// cannot act this run, such as "no key"; nil when every bot acts.
-	Unable map[string]string
+	Unable map[crew.BotName]string
 	// BotFailures returns, by name, the warning of each bot whose last
 	// token renewal failed. The loop reads it after Prepare and every
 	// saidInterval (KTD1); nil reads none.
-	BotFailures func() map[string]string
+	BotFailures func() map[crew.BotName]string
 	// Board is the live view's board: the columns the config writes, or
 	// its default columns; nil fills no board. The engine reads a written
 	// board's issues at each poll through the tracker's port.BoardLister,
@@ -116,15 +117,15 @@ type Config struct {
 // AgentHarness is the harness of one agent: every session of an action that
 // names the agent runs on it.
 type AgentHarness struct {
-	// Agent is the agent's name, as crew.Action.Agent names it.
-	Agent   string
+	// Agent is the agent, as crew.Action.Agent names it.
+	Agent   crew.AgentName
 	Harness port.Harness
 }
 
 // Engine runs the rules of a Config. Use New; Run it once.
 type Engine struct {
 	cfg       Config
-	harnesses map[string]port.Harness // Config.Harnesses by agent
+	harnesses map[crew.AgentName]port.Harness // Config.Harnesses by agent
 	stream    *stream
 	stop      chan struct{} // closed by Stop
 	stopOnce  sync.Once
@@ -155,6 +156,8 @@ type Engine struct {
 	// codeOwners are the code owners' logins, as the tracker's
 	// port.CodeOwnerFinder found them in Prepare; none without one.
 	codeOwners []string
+	// repository is the repository the engine works on, as Prepare read it.
+	repository crew.Repository
 
 	// The fields below are owned by Run's loop.
 	model    *core.Model
@@ -205,7 +208,7 @@ func New(cfg Config) *Engine {
 	board, boardOpts := boardSource(cfg)
 	opts = append(opts, boardOpts...)
 	writes, _ := cfg.Tracker.(port.WriterReporter)
-	harnesses := make(map[string]port.Harness, len(cfg.Harnesses))
+	harnesses := make(map[crew.AgentName]port.Harness, len(cfg.Harnesses))
 	for _, h := range cfg.Harnesses {
 		harnesses[h.Agent] = h.Harness
 	}
@@ -352,12 +355,12 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // prepare hands the tracker its writer when the config names a bot, runs the
 // Preparer of the tracker, of each agent's harness in config order and of the
 // workspace with crew.RuleStates, the states the rules name, asks the
-// tracker who the code owners are and which login it acts as, then reads the
-// run journal and builds the core from it, with the bots. It returns the first
-// error, naming its port, a harness's agent, or the journal, without running
-// what comes after it (R6). The core is then left unbuilt, which is safe
-// because Run returns the error before its loop, the only place that reads
-// it.
+// tracker who the code owners are and which login it acts as, reads the
+// repository it works on, then reads the run journal and builds the core
+// from it, with the bots. It returns the first error, naming its port, a
+// harness's agent, or the journal, without running what comes after it (R6).
+// The core is then left unbuilt, which is safe because Run returns the error
+// before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.RuleStates(e.cfg.Rules)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
@@ -369,7 +372,7 @@ func (e *Engine) prepare(ctx context.Context) error {
 	}
 	harnesses := make([]named, len(e.cfg.Harnesses))
 	for i, h := range e.cfg.Harnesses {
-		harnesses[i] = named{"harness of agent " + h.Agent, h.Harness}
+		harnesses[i] = named{"harness of agent " + string(h.Agent), h.Harness}
 	}
 	ports := slices.Concat([]named{{"tracker", e.cfg.Tracker}}, harnesses, []named{{"workspace", e.cfg.Workspace}})
 	for _, p := range ports {
@@ -381,13 +384,25 @@ func (e *Engine) prepare(ctx context.Context) error {
 		e.codeOwners = b.CodeOwners()
 	}
 	bots := e.withBots()
+	e.repository = e.findRepository()
 	port.Step(ctx, "reading the run journal")
-	past, err := e.readJournal()
+	past, err := e.readJournal(e.repository.ID)
 	if err != nil {
 		return err
 	}
 	e.model = core.New(e.cfg.Rules, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past), bots)...)
 	return nil
+}
+
+// findRepository returns the repository the engine works on: as the
+// tracker's port.RepositoryFinder found it in Prepare, or else named after
+// the root directory, its base name being both its id and its name (KTD6).
+func (e *Engine) findRepository() crew.Repository {
+	if f, ok := e.cfg.Tracker.(port.RepositoryFinder); ok {
+		return f.Repository()
+	}
+	name := filepath.Base(e.cfg.Root)
+	return crew.Repository{ID: crew.RepositoryID(name), Name: name}
 }
 
 // withBots returns the core's option of the configured bots, with the
@@ -409,15 +424,13 @@ func (e *Engine) withBots() core.Option {
 // reaching the tracker. Only the loop calls it, as it owns the sessions.
 func (e *Engine) said() []core.Said {
 	var out []core.Said
-	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), func(a, b sessionKey) int {
-		return cmp.Or(cmp.Compare(a.issue, b.issue), cmp.Compare(a.action, b.action))
-	}) {
+	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), sessionKey.compare) {
 		n, ok := e.sessions[k].(port.Narrator)
 		if !ok {
 			continue
 		}
 		if text := e.scrubAndStrip(n.Said()); text != "" {
-			out = append(out, core.Said{IssueKey: k.issue, Action: k.action, Text: crew.NewSaid(lastWords(text))})
+			out = append(out, core.Said{IssueID: k.issue, Action: k.action, Text: crew.NewSaid(lastWords(text))})
 		}
 	}
 	return out
@@ -433,19 +446,20 @@ func (e *Engine) receive(ctx context.Context, m message) {
 	case nil:
 		return
 	case core.SessionStarted:
-		e.sessions[sessionKey{in.IssueKey, in.Action}] = m.session
+		e.sessions[sessionKey{in.IssueID, in.Action}] = m.session
 	case core.SessionEnded:
-		delete(e.sessions, sessionKey{in.IssueKey, in.Action})
+		delete(e.sessions, sessionKey{in.IssueID, in.Action})
 	case core.CheckEnded:
-		delete(e.checks, sessionKey{in.IssueKey, in.Action})
+		delete(e.checks, sessionKey{in.IssueID, in.Action})
 	}
 	e.step(ctx, m.input)
 }
 
-// step feeds in to the core, stamped with the time now, launches the
-// commands it returns on the command context ctx and publishes the update.
+// step feeds in to the core, stamped with the time now and a fresh seed,
+// launches the commands it returns on the command context ctx and publishes
+// the update.
 func (e *Engine) step(ctx context.Context, in core.Input) {
-	cmds, events := e.model.Update(in.Stamped(time.Now()))
+	cmds, events := e.model.Update(in.Stamped(time.Now(), uuid.NewV7()))
 	for _, c := range cmds {
 		e.launch(ctx, c)
 	}

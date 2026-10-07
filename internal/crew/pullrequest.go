@@ -8,11 +8,12 @@ import "slices"
 // rule ended. The tracker adapter finds the pull requests and formats the
 // report in its own markup.
 type PullRequestReport struct {
-	// ID identifies the report across its retries: it is unique within one
-	// crew process and stays the same each time the report is sent again.
-	ID string
-	// IssueKey and IssueRef identify the issue, as in Issue.
-	IssueKey string
+	// ID identifies the report: it is derived from the rule run and the move
+	// it reports, so it stays the same across the report's retries and
+	// across crew processes.
+	ID PullRequestReportID
+	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
+	IssueID  IssueID
 	IssueRef string
 	// State is the crew state the issue moved to. Each pull request is put
 	// in it, and in no other crew state.
@@ -25,7 +26,7 @@ type PullRequestReport struct {
 // RuleEnd is how a rule ended on an issue, for a pull request report.
 type RuleEnd struct {
 	// Rule is the rule's name.
-	Rule string
+	Rule RuleName
 	// Actions are the rule's actions, in its action order, as an ended
 	// Status carries them: each succeeded or failed, with its checks'
 	// reasons, and a failed one with its cause and its log. The rule failed

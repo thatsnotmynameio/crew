@@ -39,18 +39,16 @@ type Model struct {
 	// slots is what the rules can use: the queues' slots summed, at most
 	// maxParallel (KTD4).
 	slots int
-	// statuses holds each issue's status slot, by issue key; nil when
+	// statuses holds each issue's status slot, by issue id; nil when
 	// status reporting is off (KTD3).
-	statuses map[string]*statusSlot
-	// pullRequests holds each issue's pull request slot, by issue key, while
+	statuses map[crew.IssueID]*statusSlot
+	// pullRequests holds each issue's pull request slot, by issue id, while
 	// it has a report not settled; nil when pull request reports are off
 	// (KTD3).
-	pullRequests map[string]*pullRequestSlot
+	pullRequests map[crew.IssueID]*pullRequestSlot
 	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
-	// runs counts the rule runs statuses were reported for, for their ids.
-	runs int
 	// lastRuns holds the last run record of each issue, rule and action; nil
 	// when the model records no runs (KTD1, KTD2).
 	lastRuns map[runKey]RunRecord
@@ -65,10 +63,10 @@ type Model struct {
 	statusUsage bool
 	// spent sums what every session that ended this run used (R14).
 	spent crew.Spend
-	// otherKinds holds, by item key, the rule label of each item the last
+	// otherKinds holds, by item id, the rule label of each item the last
 	// listing found in the label of a rule of the other kind, which was
 	// reported then or before (#92).
-	otherKinds map[string]crew.State
+	otherKinds map[crew.IssueID]crew.State
 	// board is the board the model reads; nil when it reads none (KTD4).
 	board *board
 	// bots is what the model knows of the identities crew acts as (KTD3).
@@ -79,7 +77,8 @@ type Model struct {
 // are settled.
 type heldIssue struct {
 	issue   crew.Issue
-	rule    int // index into Model.rules
+	rule    int            // index into Model.rules
+	run     crew.RuleRunID // minted at take, from the listing's seed (KTD5)
 	claim   Claim
 	actions []*actionRun // in the rule's action order
 	calls   []*call      // the take move, then the verdict calls
@@ -102,10 +101,10 @@ type handledEntry struct {
 
 // actionRun is one action of a held issue.
 type actionRun struct {
-	name      string
+	name      crew.ActionName
 	prompt    string
 	phase     Phase
-	workspace string
+	workspace crew.WorkspaceName
 	dir       string
 	branch    string
 	log       string // set once a session is asked to start
@@ -113,8 +112,8 @@ type actionRun struct {
 	said      crew.Said // what its running session last said
 	outcome   crew.Outcome
 	checks    []crew.Check      // its checks, in the order they run
-	agent     string            // the agent whose harness runs its session
-	bot       string            // the bot its session and check act as; empty for you
+	agent     crew.AgentName    // the agent whose harness runs its session
+	bot       crew.BotName      // the bot its session and check act as; empty for you
 	stopped   bool              // a StopCheck was sent for its check
 	cause     crew.FailureCause // what made it fail, once it ended failed
 	// prev is the key's run record from before this run, set when the run
@@ -188,7 +187,7 @@ func queues(rules []crew.Rule, maxParallelIssues int) ([]int, []crew.Queue, int)
 	queueOf := make([]int, len(rules))
 	var out []crew.Queue
 	usable := 0
-	index := map[string]int{}
+	index := map[crew.QueueName]int{}
 	for i, r := range rules {
 		queue := r.Queue
 		if queue == (crew.Queue{}) {
@@ -225,14 +224,14 @@ func ReportingUsage() Option {
 // ReportingStatus has the model report each issue's status through
 // ReportStatus commands, for a tracker that keeps status comments (KTD1).
 func ReportingStatus() Option {
-	return func(m *Model) { m.statuses = map[string]*statusSlot{} }
+	return func(m *Model) { m.statuses = map[crew.IssueID]*statusSlot{} }
 }
 
 // ReportingPullRequests has the model follow each move that landed with a
 // ReportPullRequests command, for a tracker that reports on pull requests
 // (KTD1, KTD2).
 func ReportingPullRequests() Option {
-	return func(m *Model) { m.pullRequests = map[string]*pullRequestSlot{} }
+	return func(m *Model) { m.pullRequests = map[crew.IssueID]*pullRequestSlot{} }
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has
@@ -356,7 +355,7 @@ type View struct {
 	// those of entries Handled no longer shows (R14).
 	Spent crew.Spend
 	// Board is the board's items, as the last board read or listing found
-	// them with crew's moves since applied, oldest first and then by key
+	// them with crew's moves since applied, oldest first and then by id
 	// (KTD4, KTD6, KTD10); nil when the model has no board (ListingBoard,
 	// BoardFromListings).
 	Board []crew.BoardIssue
@@ -372,7 +371,7 @@ type View struct {
 // HandledView is an issue whose rule ended this run, as that rule left it.
 type HandledView struct {
 	Issue crew.Issue
-	Rule  string
+	Rule  crew.RuleName
 	// To is the state the rule's verdict moved the issue to, or meant to
 	// when Move is MoveDropped.
 	To crew.State
@@ -394,7 +393,7 @@ type HandledView struct {
 	Gone bool
 	// HeldBy names the rule that holds the issue again; empty while no
 	// rule does (#109).
-	HeldBy string
+	HeldBy crew.RuleName
 	// Taken is when the rule took the issue; Ended is when its last action
 	// ended.
 	Taken time.Time
@@ -406,7 +405,7 @@ type HandledView struct {
 
 // HandledAction is one action of a HandledView.
 type HandledAction struct {
-	Name string
+	Name crew.ActionName
 	// Spend is what its session used; it sums no session when the action
 	// never had one.
 	Spend crew.Spend
@@ -444,7 +443,7 @@ func (h HandledView) clone() HandledView {
 type QueueView struct {
 	// Name is the queue's name; empty for the queue the rules with the
 	// zero crew.Queue share.
-	Name string
+	Name crew.QueueName
 	// Slots is how many issues the queue may hold at once.
 	Slots int
 	// Busy is how many held issues, in any claim, run in the queue: the
@@ -458,18 +457,18 @@ func (q QueueView) Free() int { return max(q.Slots-q.Busy, 0) }
 // IssueView is one held issue.
 type IssueView struct {
 	Issue crew.Issue
-	Rule  string
+	Rule  crew.RuleName
 	// Queue is the name of the queue the issue's rule runs in.
-	Queue   string
+	Queue   crew.QueueName
 	Claim   Claim
 	Actions []ActionView
 }
 
 // ActionView is one action of a held issue.
 type ActionView struct {
-	Name      string
+	Name      crew.ActionName
 	Phase     Phase
-	Workspace string
+	Workspace crew.WorkspaceName
 	Branch    string
 	Log       string
 	// Started is when its session started; zero before PhaseRunning.
@@ -508,7 +507,7 @@ func (m *Model) View() View {
 	v.Owed = append(v.Owed, m.owedPullRequests()...)
 	for _, e := range m.handled {
 		hv := e.view.clone()
-		if h := m.held(hv.Issue.Key); h != nil {
+		if h := m.held(hv.Issue.ID); h != nil {
 			hv.HeldBy = m.rules[h.rule].Name
 		}
 		v.Handled = append(v.Handled, hv)
@@ -522,5 +521,5 @@ func (m *Model) View() View {
 
 // describe returns c as a Call of h.
 func (h *heldIssue) describe(c *call) Call {
-	return Call{Kind: c.kind, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to}
+	return Call{Kind: c.kind, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to}
 }

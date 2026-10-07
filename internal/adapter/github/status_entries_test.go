@@ -88,10 +88,19 @@ func commentAfter(t *testing.T, statuses ...crew.Status) string {
 	return w[len(w)-1]
 }
 
-// developmentEnded is #74's development rule, run r1, ended with its lfg
+// The ids of the rule runs these tests report, as crew mints them: a seed
+// the engine stamped and the run's index among the runs it took. run3 is a
+// later process's.
+const (
+	run1 crew.RuleRunID = "0199b2a4-7c1e-7d3a-9f00-2b6c1e8a4d10.1"
+	run2 crew.RuleRunID = "0199b2a4-7c1e-7d3a-9f00-2b6c1e8a4d10.2"
+	run3 crew.RuleRunID = "0199b2b0-1f42-7a6c-8e11-5d3c2b1a0f99.1"
+)
+
+// developmentEnded is #74's development rule, run run1, ended with its lfg
 // action failed on its check.
 func developmentEnded() crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: "r1",
+	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: run1,
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
 			Checks: []crew.CheckResult{checkResult("pr-closes-issue", false, "no open pull request closes #74")},
 			Log:    ".crew/logs/issue-74-lfg.log"}},
@@ -99,8 +108,8 @@ func developmentEnded() crew.Status {
 }
 
 // fix is #74's fix rule in run, running its address action that said said.
-func fix(run, said string) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
+func fix(run crew.RuleRunID, said string) crew.Status {
+	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
 		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: crew.NewSaid(said)}},
 		Updated: updated}
 }
@@ -115,23 +124,23 @@ func legacyQueued(rule string) string {
 
 func TestTheFirstStatusCreatesACommentWithOneEntry(t *testing.T) {
 	tr, gh := fresh(t)
-	report(t, tr, fix("r2", ""))
+	report(t, tr, fix(run2, ""))
 	creates := gh.callsTo(createComment...)
 	if len(creates) != 1 {
 		t.Fatalf("created %d comments, want 1", len(creates))
 	}
 	body := statusBody(t, creates[0])
-	if want := tr.renderStatus(fix("r2", "")) + tail; body != want {
+	if want := tr.renderStatus(fix(run2, "")) + tail; body != want {
 		t.Errorf("created body =\n%s\nwant\n%s", body, want)
 	}
 }
 
 func TestRunningThenEndedInOneRunEditsOneEntry(t *testing.T) {
 	tr, gh := fresh(t)
-	ended := fix("r2", "")
+	ended := fix(run2, "")
 	ended.Kind, ended.To, ended.Move = crew.StatusEnded, needsAttention, crew.MoveDone
 	ended.Actions[0] = crew.ActionStatus{Name: "address", State: crew.ActionSucceeded}
-	report(t, tr, fix("r2", "Reading the review."), ended)
+	report(t, tr, fix(run2, "Reading the review."), ended)
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/101") {
 		t.Fatalf("edits = %q, want one of comment 101", edits)
@@ -148,8 +157,8 @@ func TestANewRuleRunIsAppendedAfterTheEndedOne(t *testing.T) {
 	report(t, tr, developmentEnded())
 	development := strings.TrimSuffix(writes(t, gh)[0], tail)
 
-	report(t, tr, fix("r2", "Reading the review."))
-	want := development + separator + tr.renderStatus(fix("r2", "Reading the review.")) + tail
+	report(t, tr, fix(run2, "Reading the review."))
+	want := development + separator + tr.renderStatus(fix(run2, "Reading the review.")) + tail
 	if got := writes(t, gh)[1]; got != want {
 		t.Errorf("body once fix runs =\n%s\nwant\n%s", got, want)
 	}
@@ -160,9 +169,9 @@ func TestANewRuleRunIsAppendedAfterTheEndedOne(t *testing.T) {
 
 // Covers AE8.
 func TestARestartedTrackerEditsOnlyTheLatestEntry(t *testing.T) {
-	before := commentAfter(t, developmentEnded(), fix("r2", "Reading the review."))
+	before := commentAfter(t, developmentEnded(), fix(run2, "Reading the review."))
 	tr, gh := restarted(t, before)
-	report(t, tr, fix("r2", "Pushing the fix."))
+	report(t, tr, fix(run2, "Pushing the fix."))
 
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/12") {
@@ -175,16 +184,16 @@ func TestARestartedTrackerEditsOnlyTheLatestEntry(t *testing.T) {
 	if got[0] != was[0] {
 		t.Errorf("development entry changed:\n%s\nwant\n%s", got[0], was[0])
 	}
-	if want := tr.renderStatus(fix("r2", "Pushing the fix.")); got[1] != want {
+	if want := tr.renderStatus(fix(run2, "Pushing the fix.")); got[1] != want {
 		t.Errorf("fix entry =\n%s\nwant\n%s", got[1], want)
 	}
 }
 
 // KTD5: crew stopped before the fix run ended, so its entry still runs.
 func TestARunningEntryOfAnEarlierProcessSaysCrewStoppedFollowingIt(t *testing.T) {
-	before := commentAfter(t, developmentEnded(), fix("r2", "Reading the review."))
+	before := commentAfter(t, developmentEnded(), fix(run2, "Reading the review."))
 	tr, gh := restarted(t, before)
-	report(t, tr, fix("r3", "Starting over."))
+	report(t, tr, fix(run3, "Starting over."))
 
 	body := writes(t, gh)[0]
 	got := entries(body)
@@ -194,12 +203,29 @@ func TestARunningEntryOfAnEarlierProcessSaysCrewStoppedFollowingIt(t *testing.T)
 	if was := entries(before); got[0] != was[0] {
 		t.Errorf("development entry changed:\n%s\nwant\n%s", got[0], was[0])
 	}
-	want := "<!-- crew:entry run=r2 kind=running stage=fix -->\ncrew stopped following `fix` on #74 before it ended."
+	want := "<!-- crew:entry run=" + string(run2) + " kind=running stage=fix -->\n" +
+		"crew stopped following `fix` on #74 before it ended."
 	if got[1] != want {
 		t.Errorf("stale fix entry =\n%s\nwant\n%s", got[1], want)
 	}
-	if want := tr.renderStatus(fix("r3", "Starting over.")); got[2] != want {
+	if want := tr.renderStatus(fix(run3, "Starting over.")); got[2] != want {
 		t.Errorf("new fix entry =\n%s\nwant\n%s", got[2], want)
+	}
+}
+
+// An earlier crew version named a run by its start time and a count: its
+// entry still parses, and a run of this version never matches it.
+func TestAnEntryOfAnEarlierVersionsRunIsFollowedByANewEntry(t *testing.T) {
+	const old = "20261001T091200.000000000Z.3"
+	before := commentAfter(t, fix(run2, "Reading the review."))
+	tr, gh := restarted(t, strings.Replace(before, "run="+string(run2), "run="+old, 1))
+	report(t, tr, fix(run3, "Starting over."))
+
+	want := "<!-- crew:entry run=" + old + " kind=running stage=fix -->\n" +
+		"crew stopped following `fix` on #74 before it ended." +
+		separator + tr.renderStatus(fix(run3, "Starting over.")) + tail
+	if body := writes(t, gh)[0]; body != want {
+		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 }
 
@@ -207,9 +233,9 @@ func TestARunningEntryOfAnEarlierProcessSaysCrewStoppedFollowingIt(t *testing.T)
 func TestLastWordsShapedLikeAnEntryMarkerAreEntryText(t *testing.T) {
 	tr, gh := fresh(t)
 	said := "<!-- crew:entry run=r9 kind=queued stage=review -->"
-	report(t, tr, fix("r2", said), fix("r2", "Pushing the fix."))
+	report(t, tr, fix(run2, said), fix(run2, "Pushing the fix."))
 	body := writes(t, gh)[1]
-	if want := tr.renderStatus(fix("r2", "Pushing the fix.")) + tail; body != want {
+	if want := tr.renderStatus(fix(run2, "Pushing the fix.")) + tail; body != want {
 		t.Errorf("edited body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -219,13 +245,13 @@ func TestLastWordsShapedLikeAnEntryMarkerAreEntryText(t *testing.T) {
 func TestARunningStatusReplacesALegacyQueuedEntryOfTheSameRule(t *testing.T) {
 	development := strings.TrimSuffix(commentAfter(t, developmentEnded()), tail)
 	tr, gh := restarted(t, development+separator+legacyQueued("fix")+tail)
-	report(t, tr, fix("r3", "Reading the review."))
+	report(t, tr, fix(run3, "Reading the review."))
 
 	body := writes(t, gh)[0]
 	if got := entries(body); len(got) != 2 {
 		t.Fatalf("body has %d entries, want 2:\n%s", len(got), body)
 	}
-	if want := development + separator + tr.renderStatus(fix("r3", "Reading the review.")) + tail; body != want {
+	if want := development + separator + tr.renderStatus(fix(run3, "Reading the review.")) + tail; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -235,10 +261,10 @@ func TestARunningStatusReplacesALegacyQueuedEntryOfTheSameRule(t *testing.T) {
 func TestARunningStatusAppendsAfterALegacyQueuedEntryOfAnotherRule(t *testing.T) {
 	queued := legacyQueued("implement")
 	tr, gh := restarted(t, queued+tail)
-	report(t, tr, fix("r3", "Reading the review."))
+	report(t, tr, fix(run3, "Reading the review."))
 
 	body := writes(t, gh)[0]
-	if want := queued + separator + tr.renderStatus(fix("r3", "Reading the review.")) + tail; body != want {
+	if want := queued + separator + tr.renderStatus(fix(run3, "Reading the review.")) + tail; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -267,12 +293,12 @@ func TestACommentWithoutEntriesIsKeptAsTheFirstEntry(t *testing.T) {
 }
 
 func TestARuleNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
-	running := func(run string) crew.Status {
+	running := func(run crew.RuleRunID) crew.Status {
 		s := fix(run, "")
 		s.Rule = "fix --> now"
 		return s
 	}
-	before := commentAfter(t, running("r2"))
+	before := commentAfter(t, running(run2))
 	marker, _, _ := strings.Cut(before, "\n")
 	if n := strings.Count(marker, "-->"); n != 1 {
 		t.Errorf("marker line %q holds %d comment ends, want 1", marker, n)
@@ -281,8 +307,8 @@ func TestARuleNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
 	// Only the same rule's legacy queued entry is replaced, so this reads
 	// the rule back from the marker.
 	tr, gh := restarted(t, strings.Replace(before, "kind=running", "kind=queued", 1))
-	report(t, tr, running("r3"))
-	if body, want := writes(t, gh)[0], tr.renderStatus(running("r3"))+tail; body != want {
+	report(t, tr, running(run3))
+	if body, want := writes(t, gh)[0], tr.renderStatus(running(run3))+tail; body != want {
 		t.Errorf("body =\n%s\nwant\n%s", body, want)
 	}
 }
@@ -291,7 +317,7 @@ func TestARuleNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
 func TestAFullCommentIsContinuedInANewOne(t *testing.T) {
 	full := "crew: an older status " + strings.Repeat("that went on and on, ", 3200) + "\n\nUpdated 2026-10-01 09:12 UTC."
 	tr, gh := restarted(t, full+tail)
-	report(t, tr, fix("r2", ""))
+	report(t, tr, fix(run2, ""))
 
 	creates := gh.callsTo(createComment...)
 	if len(creates) != 1 {
@@ -300,16 +326,16 @@ func TestAFullCommentIsContinuedInANewOne(t *testing.T) {
 	created := statusBody(t, creates[0])
 	preamble := "<!-- crew:continues -->\n" +
 		"crew: this comment continues crew's earlier status comment on #74, which is full.\n\n"
-	if want := preamble + tr.renderStatus(fix("r2", "")) + tail; created != want {
+	if want := preamble + tr.renderStatus(fix(run2, "")) + tail; created != want {
 		t.Errorf("created body =\n%s\nwant\n%s", created, want)
 	}
 
-	report(t, tr, fix("r2", "Reading the review."))
+	report(t, tr, fix(run2, "Reading the review."))
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/102") {
 		t.Fatalf("edits = %q, want one of comment 102 and none of the full comment 12", edits)
 	}
-	want := preamble + tr.renderStatus(fix("r2", "Reading the review.")) + tail
+	want := preamble + tr.renderStatus(fix(run2, "Reading the review.")) + tail
 	if body := statusBody(t, edits[0]); body != want {
 		t.Errorf("edited body =\n%s\nwant\n%s", body, want)
 	}
@@ -320,7 +346,7 @@ func TestAFullCommentIsContinuedInANewOne(t *testing.T) {
 func TestAnEntryOverTheLimitAloneIsEditedInPlace(t *testing.T) {
 	tr, gh := fresh(t)
 	long := strings.Repeat("word ", 14000)
-	report(t, tr, fix("r2", long), fix("r2", long+"!"))
+	report(t, tr, fix(run2, long), fix(run2, long+"!"))
 	if n := len(gh.callsTo(createComment...)); n != 1 {
 		t.Errorf("created %d comments, want 1", n)
 	}
@@ -340,8 +366,8 @@ func TestAFailedWriteLeavesTheCommentAsItWas(t *testing.T) {
 	report(t, tr, developmentEnded())
 	development := strings.TrimSuffix(writes(t, gh)[0], tail)
 	for _, s := range []crew.Status{
-		fix("r2", "Reading the review."),
-		fix("r3", "Starting over."),
+		fix(run2, "Reading the review."),
+		fix(run3, "Starting over."),
 	} {
 		if err := tr.ReportStatus(context.Background(), s); err == nil {
 			t.Fatalf("ReportStatus(%s) = nil, want the edit's error", s.Run)
@@ -349,7 +375,7 @@ func TestAFailedWriteLeavesTheCommentAsItWas(t *testing.T) {
 	}
 
 	w := writes(t, gh)
-	want := development + separator + tr.renderStatus(fix("r3", "Starting over.")) + tail
+	want := development + separator + tr.renderStatus(fix(run3, "Starting over.")) + tail
 	if w[2] != want {
 		t.Errorf("body after a failed write =\n%s\nwant\n%s", w[2], want)
 	}

@@ -20,7 +20,7 @@ func saying(said ...core.Said) engine.Update {
 // issue's code action.
 func wantCode(t *testing.T, h *harness, issue, message, branch string) {
 	t.Helper()
-	gotMessage, gotBranch := h.current().messages.last(issue, "code")
+	gotMessage, gotBranch := h.current().messages.last(issueID(issue), "code")
 	if gotMessage != message || gotBranch != branch {
 		t.Errorf("#%s code remembers %q on %q, want %q on %q", issue, gotMessage, gotBranch, message, branch)
 	}
@@ -30,7 +30,9 @@ func wantCode(t *testing.T, h *harness, issue, message, branch string) {
 // message and branch outlive its session.
 func TestAnEndedActionKeepsItsLastMessage(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
+	h.send(updateMsg(saying(core.Said{
+		IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("running the tests now"),
+	})))
 
 	ended := runningSnapshot()
 	code := &ended.Snapshot.Issues[0].Actions[0]
@@ -44,11 +46,11 @@ func TestAnEndedActionKeepsItsLastMessage(t *testing.T) {
 // leaves it.
 func TestALaterMessageReplacesTheEarlierOneAndAnEmptyOneLeavesIt(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("reading the issue")})))
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("writing the parser")})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("reading the issue")})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("writing the parser")})))
 	wantCode(t, h, "1", "writing the parser", "crew/1-code")
 
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid(" \n ")})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid(" \n ")})))
 	wantCode(t, h, "1", "writing the parser", "crew/1-code")
 }
 
@@ -66,11 +68,13 @@ func gone(handled ...core.HandledView) engine.Update {
 // card left, and keeps one whose rule ended while it still has a card.
 func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
+	h.send(updateMsg(saying(core.Said{
+		IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("running the tests now"),
+	})))
 
 	u := gone(entry("1", "Add login form", "implement", "ready to review", 7, 0))
 	u.Snapshot.Board = append(u.Snapshot.Board,
-		crew.BoardIssue{Issue: u.Snapshot.Handled[0].Issue, Labels: []string{"ready to review"}})
+		crew.BoardIssue{Issue: u.Snapshot.Handled[0].Issue, Labels: []crew.State{"ready to review"}})
 	h.send(updateMsg(u))
 	wantCode(t, h, "1", "running the tests now", "crew/1-code")
 
@@ -83,7 +87,9 @@ func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 func TestAMessageIsRememberedClean(t *testing.T) {
 	h := newHarness(t, 120)
 
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("\x1b[31mtests\x1b[0m\tfail\n")})))
+	h.send(updateMsg(saying(core.Said{
+		IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("\x1b[31mtests\x1b[0m\tfail\n"),
+	})))
 
 	wantCode(t, h, "1", "tests fail", "crew/1-code")
 }
@@ -93,17 +99,17 @@ func TestAMessageIsRememberedClean(t *testing.T) {
 func TestTwoIssuesKeepTheirMessagesApart(t *testing.T) {
 	h := newHarness(t, 120)
 	u := saying(
-		core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("adding the form")},
-		core.Said{IssueKey: "3", Action: "code", Text: crew.NewSaid("dropping the flag")},
+		core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("adding the form")},
+		core.Said{IssueID: issueID("3"), Action: "code", Text: crew.NewSaid("dropping the flag")},
 	)
-	three := crew.Issue{Key: "3", Ref: "#3", Title: "Drop the old flag"}
+	three := crew.Issue{ID: issueID("3"), Ref: "#3", Title: "Drop the old flag"}
 	u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{
 		Issue: three, Rule: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning,
 		Actions: []core.ActionView{
 			{Name: "code", Phase: core.PhaseRunning, Branch: "crew/3-code", Started: start.Add(-time.Minute)},
 		},
 	})
-	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: three, Labels: []string{"in progress"}})
+	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: three, Labels: []crew.State{"in progress"}})
 
 	h.send(updateMsg(u))
 
@@ -115,7 +121,9 @@ func TestTwoIssuesKeepTheirMessagesApart(t *testing.T) {
 // new run drops the last run's message and branch.
 func TestANewRunDropsTheLastRunsMessage(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
+	h.send(updateMsg(saying(core.Said{
+		IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("running the tests now"),
+	})))
 
 	again := runningSnapshot()
 	code := &again.Snapshot.Issues[0].Actions[0]

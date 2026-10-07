@@ -35,16 +35,16 @@ type ListIssues struct {
 // (ListingBoard).
 type ListBoard struct {
 	// Labels are the board's labels, in board order.
-	Labels []string
+	Labels []crew.State
 }
 
 // Move asks the tracker to move an issue from one state to another. Its
 // result is a CallResult carrying ID.
 type Move struct {
-	ID       CallID
-	IssueKey string
-	From     crew.State
-	To       crew.State
+	ID      CallID
+	IssueID crew.IssueID
+	From    crew.State
+	To      crew.State
 }
 
 // ReportFailure asks the tracker to post Report on its issue (R7). Its
@@ -55,10 +55,10 @@ type ReportFailure struct {
 }
 
 // CreateWorkspace asks for a new workspace for Action on Issue. Its result
-// is WorkspaceReady or WorkspaceFailed, carrying Issue.Key and Action.
+// is WorkspaceReady or WorkspaceFailed, carrying Issue.ID and Action.
 type CreateWorkspace struct {
 	Issue  crew.Issue
-	Action string
+	Action crew.ActionName
 }
 
 // ReopenWorkspace asks to reopen the workspace a failed run of Action on
@@ -67,9 +67,9 @@ type CreateWorkspace struct {
 // longer exists, or WorkspaceFailed. The core asks only when the workspace
 // can reopen (Reopening).
 type ReopenWorkspace struct {
-	IssueKey  string
-	Action    string
-	Workspace string
+	IssueID   crew.IssueID
+	Action    crew.ActionName
+	Workspace crew.WorkspaceName
 	Branch    string
 }
 
@@ -90,21 +90,21 @@ type RecordRun struct {
 // agent, whose harness runs the session. Bot is the action's bot, whom the
 // session acts as on the tracker; empty means you.
 type StartSession struct {
-	IssueKey string
-	Action   string
-	Dir      string
-	Prompt   string
-	Log      string
-	Resumed  bool
-	Agent    string
-	Bot      string
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Dir     string
+	Prompt  string
+	Log     string
+	Resumed bool
+	Agent   crew.AgentName
+	Bot     crew.BotName
 }
 
 // StopSession asks the engine to stop the running session of Action on the
 // issue. The session's end still arrives as SessionEnded.
 type StopSession struct {
-	IssueKey string
-	Action   string
+	IssueID crew.IssueID
+	Action  crew.ActionName
 }
 
 // RunCheck asks the engine to run Command, the script of the action's
@@ -115,16 +115,16 @@ type StopSession struct {
 // as part of it. Bot is the action's bot, whom the check acts as on the
 // tracker; empty means you. Its result is CheckEnded.
 type RunCheck struct {
-	IssueKey    string
-	Action      string
+	IssueID     crew.IssueID
+	Action      crew.ActionName
 	Dir         string
-	Name        string
+	Name        crew.CheckName
 	Command     string
 	Log         string
 	IssueRef    string
 	IssueURL    string
 	Branch      string
-	Bot         string
+	Bot         crew.BotName
 	Prompt      string
 	LastMessage string
 }
@@ -135,21 +135,21 @@ type RunCheck struct {
 // workspace (KTD6). Its result is PullRequestFound. The core asks only when
 // the tracker can find pull requests (FindingPullRequests).
 type FindPullRequest struct {
-	IssueKey string
-	Action   string
-	Branch   string
-	Since    time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Branch  string
+	Since   time.Time
 }
 
 // StopCheck asks the engine to stop the running check of Action on the
 // issue. The check's end still arrives as CheckEnded.
 type StopCheck struct {
-	IssueKey string
-	Action   string
+	IssueID crew.IssueID
+	Action  crew.ActionName
 }
 
 // ReportStatus asks the tracker to show Status on its issue's status
-// comment (KTD3). Its result is a StatusResult carrying Status.IssueKey. The
+// comment (KTD3). Its result is a StatusResult carrying Status.IssueID. The
 // core never has two status writes of one issue in flight.
 type ReportStatus struct {
 	Status crew.Status
@@ -157,7 +157,7 @@ type ReportStatus struct {
 
 // ReportPullRequests asks the tracker to show Report on the open pull
 // requests that close its issue (KTD1). Its result is a PullRequestsResult
-// carrying Report.IssueKey. The core never has two reports of one issue in
+// carrying Report.IssueID. The core never has two reports of one issue in
 // flight, and a retried report keeps its ID.
 type ReportPullRequests struct {
 	Report crew.PullRequestReport

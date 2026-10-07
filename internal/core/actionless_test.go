@@ -36,23 +36,23 @@ func promoted() []crew.Rule {
 
 // promoteMove is #key's move to promote triage's success.
 func promoteMove(key string) core.Move {
-	return core.Move{IssueKey: key, From: triagePromoting, To: developmentReady}
+	return core.Move{IssueID: issueID(key), From: triagePromoting, To: developmentReady}
 }
 
 // promoteMoved is the event of #1's move to promote triage's success at at.
 func promoteMoved(at time.Time) core.IssueMoved {
-	return core.IssueMoved{At: at, IssueKey: "1", IssueRef: "#1", From: triagePromoting, To: developmentReady}
+	return core.IssueMoved{At: at, IssueID: issueID("1"), IssueRef: "#1", From: triagePromoting, To: developmentReady}
 }
 
 // reportOf is #1's pull request report of its move to state, with no End.
 func reportOf(state crew.State) crew.PullRequestReport {
-	return crew.PullRequestReport{IssueKey: "1", IssueRef: "#1", State: state}
+	return crew.PullRequestReport{IssueID: issueID("1"), IssueRef: "#1", State: state}
 }
 
 // triaged runs #1 through triage with outcome and settles every call.
 func triaged(d *driver, outcome crew.Outcome) {
 	d.running(issue("1", 1, triageReady))
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "triage", Outcome: outcome})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: outcome})
 	d.settle(verdict)
 }
 
@@ -60,7 +60,7 @@ func triaged(d *driver, outcome crew.Outcome) {
 func takePromoted(d *driver) []core.Command {
 	d.t.Helper()
 	cmds, _ := d.poll(issue("1", 1, triageDone))
-	wantCommands(d.t, cmds, core.Move{IssueKey: "1", From: triageDone, To: triagePromoting})
+	wantCommands(d.t, cmds, core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
 	return cmds
 }
 
@@ -145,7 +145,7 @@ func TestARuleWithoutActionsHoldsASlotOfItsQueue(t *testing.T) {
 	d := newDriver(t, rules[1:], 2)
 
 	take, _ := d.poll(issue("1", 1, triageDone), issue("2", 2, triageDone))
-	wantCommands(t, take, core.Move{IssueKey: "1", From: triageDone, To: triagePromoting})
+	wantCommands(t, take, core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
 	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
 	if _, events := d.send(core.Tick{}); len(events) != 1 {
 		t.Fatalf("tick while #1 holds the clerk slot: %#v, want the listing skipped", events)
@@ -156,7 +156,7 @@ func TestARuleWithoutActionsHoldsASlotOfItsQueue(t *testing.T) {
 	listing, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
 	wantCommands(t, listing, core.ListIssues{States: []crew.State{triageDone, triagePromoting}})
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("2", 2, triageDone)}})
-	wantCommands(t, cmds, core.Move{IssueKey: "2", From: triageDone, To: triagePromoting})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("2"), From: triageDone, To: triagePromoting})
 }
 
 func TestARuleWithoutActionsMirrorsItsLabelsOnPullRequestsWithoutAStopComment(t *testing.T) {

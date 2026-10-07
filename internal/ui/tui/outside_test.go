@@ -47,7 +47,7 @@ func raws(cmd tea.Cmd) []string {
 
 // ended is a snapshot where rule ended on #12, moved to to, at the minute
 // ended before start.
-func ended(rule string, to crew.State, endedAt int) engine.Update {
+func ended(rule crew.RuleName, to crew.State, endedAt int) engine.Update {
 	u := handledBy(twelve, rule, to)
 	u.Snapshot.Handled[0].Ended = start.Add(-time.Duration(endedAt) * time.Minute)
 	return u

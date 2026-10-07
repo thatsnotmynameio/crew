@@ -53,10 +53,11 @@ var develop = crew.Rule{
 // the oldest.
 var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// issue is the issue keyed n as a tracker lists it, without its repository.
 func issue(n int, states ...crew.State) crew.Issue {
 	key := strconv.Itoa(n)
 	return crew.Issue{
-		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key,
+		ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key,
 		Created: epoch.Add(time.Duration(n) * time.Minute), States: states,
 	}
 }
@@ -493,3 +494,7 @@ func TestWhenTheRunTimeIsUpARunningSessionFinishesAndNothingNewIsTaken(t *testin
 		}
 	})
 }
+
+// issueID returns the id the engine gives the issue keyed key: config roots
+// it in a directory named repo, and the fake trackers name no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Repository: "repo", Key: key} }

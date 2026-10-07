@@ -1,12 +1,6 @@
 package core
 
-import (
-	"maps"
-	"slices"
-	"strconv"
-
-	"github.com/thatsnotmynameio/crew/internal/crew"
-)
+import "github.com/thatsnotmynameio/crew/internal/crew"
 
 // pullRequestSlot holds one issue's pull request reports not settled yet
 // (KTD3). It is kept apart from the held issues, so a report never holds the
@@ -29,23 +23,25 @@ type pendingReport struct {
 // landed, unless pull request reports are off (KTD2). ended is set when the
 // move ended h's rule, so the report carries how it ended, unless the rule
 // has no actions: nobody stopped watching anything, so there is nothing to
-// tell (KTD5). The report's ID is fixed for its life (KTD7).
+// tell (KTD5). The report's ID comes from h's run and the move, so it is
+// fixed for its life (KTD7).
 func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	m := s.m
 	if m.pullRequests == nil {
 		return
 	}
-	m.lastID++
-	r := crew.PullRequestReport{
-		ID: strconv.FormatUint(uint64(m.lastID), 10), IssueKey: h.issue.Key, IssueRef: h.issue.Ref, State: to,
+	id := h.run.TakeReport()
+	if ended {
+		id = h.run.VerdictReport()
 	}
+	r := crew.PullRequestReport{ID: id, IssueID: h.issue.ID, IssueRef: h.issue.Ref, State: to}
 	if ended && len(h.actions) > 0 {
 		r.End = s.ruleEnd(h)
 	}
-	sl := m.pullRequests[r.IssueKey]
+	sl := m.pullRequests[r.IssueID]
 	if sl == nil {
 		sl = &pullRequestSlot{}
-		m.pullRequests[r.IssueKey] = sl
+		m.pullRequests[r.IssueID] = sl
 	}
 	sl.reports = append(sl.reports, &pendingReport{report: r})
 	s.pumpPullRequests(sl)
@@ -78,7 +74,7 @@ func (s *step) sendPullRequests(sl *pullRequestSlot) {
 // cannot work, or failed its final try, is dropped.
 func (s *step) pullRequestsResult(r PullRequestsResult) {
 	m := s.m
-	sl := m.pullRequests[r.IssueKey]
+	sl := m.pullRequests[r.IssueID]
 	if sl == nil || !sl.sending {
 		return
 	}
@@ -99,16 +95,16 @@ func (s *step) pullRequestsResult(r PullRequestsResult) {
 	}
 	sl.reports = sl.reports[1:]
 	if len(sl.reports) == 0 {
-		delete(m.pullRequests, r.IssueKey)
+		delete(m.pullRequests, r.IssueID)
 		return
 	}
 	s.pumpPullRequests(sl)
 }
 
-// retryPullRequests resends each owed report not in flight, in issue-key
+// retryPullRequests resends each owed report not in flight, in issue id
 // order; after a stop, as its one final try.
 func (s *step) retryPullRequests() {
-	for _, key := range slices.Sorted(maps.Keys(s.m.pullRequests)) {
+	for _, key := range sortedIssueIDs(s.m.pullRequests) {
 		sl := s.m.pullRequests[key]
 		if sl.sending || !sl.reports[0].owed {
 			continue
@@ -120,10 +116,10 @@ func (s *step) retryPullRequests() {
 	}
 }
 
-// owedPullRequests returns the owed reports, in issue-key order.
+// owedPullRequests returns the owed reports, in issue id order.
 func (m *Model) owedPullRequests() []Call {
 	var out []Call
-	for _, key := range slices.Sorted(maps.Keys(m.pullRequests)) {
+	for _, key := range sortedIssueIDs(m.pullRequests) {
 		if p := m.pullRequests[key].reports[0]; p.owed {
 			out = append(out, p.describe())
 		}
@@ -133,5 +129,5 @@ func (m *Model) owedPullRequests() []Call {
 
 // describe returns p as a Call.
 func (p *pendingReport) describe() Call {
-	return Call{Kind: CallPullRequests, IssueKey: p.report.IssueKey, IssueRef: p.report.IssueRef, To: p.report.State}
+	return Call{Kind: CallPullRequests, IssueID: p.report.IssueID, IssueRef: p.report.IssueRef, To: p.report.State}
 }

@@ -100,7 +100,8 @@ func TestR18TheLatestSubscriberGetsTheSessionsScrubbedWordsBeforeAnyPoll(t *test
 		u := n.refreshed(t)
 
 		want := []core.Said{{
-			IssueKey: "1", Action: "development", Text: crew.NewSaid("Pushed with [redacted token] from ./internal/core in ~"),
+			IssueID: issueID("1"), Action: "development",
+			Text: crew.NewSaid("Pushed with [redacted token] from ./internal/core in ~"),
 		}}
 		if !reflect.DeepEqual(u.Snapshot.Said, want) {
 			t.Errorf("Said = %#v, want %#v", u.Snapshot.Said, want)

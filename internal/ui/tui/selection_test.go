@@ -52,8 +52,8 @@ func wantLit(t *testing.T, h *harness, ref string, col int) {
 }
 
 // item is a board item for issue n, titled Bug, labeled lab.
-func item(n, lab string) crew.BoardIssue {
-	return labeled(crew.Issue{Key: n, Ref: "#" + n, Title: "Bug"}, lab)
+func item(n string, lab crew.State) crew.BoardIssue {
+	return labeled(crew.Issue{ID: issueID(n), Ref: "#" + n, Title: "Bug"}, lab)
 }
 
 // Covers R10 and KTD5 of #151: the board has focus when the view opens,

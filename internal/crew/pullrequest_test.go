@@ -4,7 +4,7 @@ import "testing"
 
 func TestPullRequestReportCloneSharesNoMemory(t *testing.T) {
 	r := PullRequestReport{
-		ID: "7", IssueKey: "42", IssueRef: "#42", State: "crew:failed",
+		ID: "7", IssueID: IssueID{Key: "42"}, IssueRef: "#42", State: "crew:failed",
 		End: &RuleEnd{Rule: "development", Actions: []ActionStatus{
 			{Name: "lfg", State: ActionFailed, Checks: []CheckResult{{Name: "judge", Reason: NewCheckReason("unfinished")}}},
 		}},

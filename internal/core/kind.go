@@ -10,21 +10,21 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 // again. An item in two or more states is left to skipped.
 func (s *step) otherKind(issues []crew.Issue) {
 	m := s.m
-	found := map[string]crew.State{}
+	found := map[crew.IssueID]crew.State{}
 	for _, issue := range issues {
-		if len(issue.States) != 1 || m.held(issue.Key) != nil {
+		if len(issue.States) != 1 || m.held(issue.ID) != nil {
 			continue
 		}
 		rule, ok := m.ruleLabeled(issue.States[0])
 		if !ok || rule.Takes == issue.Kind {
 			continue
 		}
-		found[issue.Key] = rule.Labels.Ready
-		if m.otherKinds[issue.Key] == rule.Labels.Ready {
+		found[issue.ID] = rule.Labels.Ready
+		if m.otherKinds[issue.ID] == rule.Labels.Ready {
 			continue
 		}
 		s.emit(IssueOfOtherKind{
-			At: s.at, IssueKey: issue.Key, IssueRef: issue.Ref, Kind: issue.Kind,
+			At: s.at, IssueID: issue.ID, IssueRef: issue.Ref, Kind: issue.Kind,
 			Label: rule.Labels.Ready, Rule: rule.Name, Takes: rule.Takes,
 		})
 	}

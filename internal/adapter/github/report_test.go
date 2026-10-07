@@ -15,7 +15,7 @@ func TestReportFailurePointsToEachLogWithoutTheSessionsWords(t *testing.T) {
 	// The report has no field for a session's words, so the comment cannot
 	// carry them.
 	err := tr.ReportFailure(context.Background(), crew.FailureReport{
-		IssueKey: "12", IssueRef: "#12",
+		IssueID: issueID("12"), IssueRef: "#12",
 		Failures: []crew.ActionFailure{
 			{Action: "development", Workspace: "issue-12-development", Log: ".crew/logs/issue-12-development.log"},
 			{Action: "acceptance", Workspace: "issue-12-acceptance", Log: ".crew/logs/issue-12-acceptance.log"},
@@ -61,7 +61,7 @@ func TestReportFailureErrorsAreClassifiedFromTheHTTPStatus(t *testing.T) {
 			tr, _ := build(t,
 				reply{prefix: []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/42/comments"}, stderr: tc.stderr})
 			err := tr.ReportFailure(context.Background(), crew.FailureReport{
-				IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{{Action: "development"}},
+				IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{{Action: "development"}},
 			})
 			if err == nil || !strings.Contains(err.Error(), "report failure on issue #42") {
 				t.Fatalf("ReportFailure = %v, want an error naming issue #42", err)

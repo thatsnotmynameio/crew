@@ -63,19 +63,20 @@ func equalLines(t *testing.T, got, want []string) {
 }
 
 func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing.T) {
-	issue := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
+	issue := crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Add login form"}
 	src := newSource(0,
 		engine.Update{Events: []core.Event{
 			core.IssueTaken{At: at("09:00:01"), Issue: issue, Rule: "implement", From: "ready", To: "in progress"},
 		}},
 		engine.Update{Events: []core.Event{
-			core.ActionStarted{At: at("09:00:02"), IssueKey: "1", IssueRef: "#1", Rule: "implement", Action: "code",
+			core.ActionStarted{At: at("09:00:02"), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "code",
 				Workspace: "1-code", Branch: "crew/1-code", Log: ".crew/logs/1-code.log"},
 		}},
 		engine.Update{Events: []core.Event{
-			core.ActionEnded{At: at("09:12:30"), IssueKey: "1", IssueRef: "#1", Rule: "implement", Action: "code",
+			core.ActionEnded{At: at("09:12:30"), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "code",
 				Outcome: crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("Opened pull request #7")}},
-			core.IssueMoved{At: at("09:12:31"), IssueKey: "1", IssueRef: "#1", From: "in progress", To: "ready to review"},
+			core.IssueMoved{At: at("09:12:31"), IssueID: issueID("1"), IssueRef: "#1", From: "in progress",
+				To: "ready to review"},
 		}},
 	)
 
@@ -89,11 +90,12 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 	})
 }
 
-// The tracker calls the sentences below describe.
+// The tracker calls the sentences below describe, all of issue #2.
 var (
-	move   = core.Call{Kind: core.CallMove, IssueKey: "2", IssueRef: "#2", From: "in review", To: "needs attention"}
-	report = core.Call{Kind: core.CallReport, IssueKey: "2", IssueRef: "#2"}
-	prs    = core.Call{Kind: core.CallPullRequests, IssueKey: "2", IssueRef: "#2", To: "needs attention"}
+	two    = issueID("2")
+	move   = core.Call{Kind: core.CallMove, IssueID: two, IssueRef: "#2", From: "in review", To: "needs attention"}
+	report = core.Call{Kind: core.CallReport, IssueID: two, IssueRef: "#2"}
+	prs    = core.Call{Kind: core.CallPullRequests, IssueID: two, IssueRef: "#2", To: "needs attention"}
 )
 
 // sentences pairs each kind of event with the sentence Text gives it.
@@ -101,16 +103,16 @@ var sentences = []struct {
 	event core.Event
 	want  string
 }{
-	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
+	{core.ActionStarted{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log"},
 		"#9 development/lfg started on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-	{core.ActionStarted{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
+	{core.ActionStarted{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg", Log: ".crew/logs/issue-9-lfg.log", Resumed: true},
 		"#9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .crew/logs/issue-9-lfg.log"},
-	{core.WorkspaceMissing{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
+	{core.WorkspaceMissing{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		Workspace: "issue-9-lfg"},
 		"#9 development/lfg: worktree issue-9-lfg is gone, creating a new one"},
-	{core.RunNotRecorded{At: at("10:00:00"), IssueKey: "9", IssueRef: "#9", Rule: "development", Action: "lfg",
+	{core.RunNotRecorded{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		Reason: "disk full"},
 		"could not record #9 development/lfg's run, so a restart may not resume it: disk full"},
 	{core.ActionEnded{At: at("10:00:00"), IssueRef: "#2", Rule: "review", Action: "check",
@@ -126,10 +128,10 @@ var sentences = []struct {
 		"reported the failure on #2"},
 	{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
 		"skipped #3: it carries 2 crew labels (ready, in progress)"},
-	{core.IssueOfOtherKind{At: at("10:00:00"), IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+	{core.IssueOfOtherKind{At: at("10:00:00"), IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 		Label: "crew:development:ready", Rule: "development", Takes: crew.KindIssue},
 		"left #90 alone: it is a pull request, and crew:development:ready is the label of development, which takes issues"},
-	{core.IssueOfOtherKind{At: at("10:00:00"), IssueKey: "42", IssueRef: "#42", Kind: crew.KindIssue,
+	{core.IssueOfOtherKind{At: at("10:00:00"), IssueID: issueID("42"), IssueRef: "#42", Kind: crew.KindIssue,
 		Label: "fix review ready", Rule: "fix review", Takes: crew.KindPullRequest},
 		"left #42 alone: it is an issue, and fix review ready is the label of fix review, which takes pull requests"},
 	{core.PollDone{At: at("10:00:00"), Listed: 3, Taken: 1},
@@ -219,7 +221,7 @@ func TestNoDropsPrintNoDropLine(t *testing.T) {
 // stamped with the time of the poll that found it, not the time it prints.
 func TestANoticeOfAnItemOfTheOtherKindPrintsAtItsPollsTime(t *testing.T) {
 	src := newSource(0, engine.Update{Events: []core.Event{
-		core.IssueOfOtherKind{At: at("12:30:00"), IssueKey: "90", IssueRef: "#90", Kind: crew.KindPullRequest,
+		core.IssueOfOtherKind{At: at("12:30:00"), IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,
 			Label: "ready", Rule: "implement", Takes: crew.KindIssue},
 	}})
 
@@ -261,3 +263,6 @@ func TestLinePrintsOneStampedLineInItsTimesLocation(t *testing.T) {
 		t.Errorf("Line printed %q, want %q", out.String(), want)
 	}
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

@@ -57,8 +57,8 @@ type parsedRule struct {
 type ruleEnv struct {
 	queues queueTable
 	agents []Agent
-	checks map[string]string
-	bot    string
+	checks map[crew.CheckName]string
+	bot    crew.BotName
 }
 
 // rules decodes and validates rules:, resolving each rule's queue and each
@@ -105,7 +105,7 @@ func parseRule(e entry, env ruleEnv) (parsedRule, error) {
 	if err := decodeItem(e.value, e.path, ruleShape, &doc); err != nil {
 		return parsedRule{}, err
 	}
-	p := parsedRule{Name: e.key.Value, path: e.path}
+	p := parsedRule{Name: crew.RuleName(e.key.Value), path: e.path}
 	hasActions := doc.Actions.Kind == yaml.MappingNode && len(doc.Actions.Content) > 0
 	var labelsErr, queueErr, takesErr, actionsErr error
 	p.Labels, p.labels, labelsErr = ruleLabels(&doc.Labels, e.path+".labels", e.key.Line, hasActions)
@@ -195,7 +195,8 @@ func parseAction(e entry, env ruleEnv) (crew.Action, error) {
 		return crew.Action{}, err
 	}
 	action := crew.Action{
-		Name: e.key.Value, Prompt: prompt, Agent: agent.Name, Checks: checks, Bot: cmp.Or(agent.Bot, env.bot),
+		Name: crew.ActionName(e.key.Value), Prompt: prompt, Agent: agent.Name, Checks: checks,
+		Bot: cmp.Or(agent.Bot, env.bot),
 	}
 	if _, err := action.Render(sampleIssue()); err != nil {
 		return crew.Action{}, keyError(e.path+".prompt", doc.Prompt.line, err.Error())
@@ -221,7 +222,7 @@ func (env ruleEnv) agent(l located[string], path string, line int) (Agent, error
 			"required, since agents declares more than one agent: "+env.agentNames())
 	}
 	for _, a := range env.agents {
-		if a.Name == l.value {
+		if a.Name == crew.AgentName(l.value) {
 			return a, nil
 		}
 	}
@@ -234,7 +235,7 @@ func (env ruleEnv) agent(l located[string], path string, line int) (Agent, error
 func (env ruleEnv) agentNames() string {
 	names := make([]string, len(env.agents))
 	for i, a := range env.agents {
-		names[i] = a.Name
+		names[i] = string(a.Name)
 	}
 	return strings.Join(names, ", ")
 }
@@ -280,8 +281,8 @@ func (env ruleEnv) check(n *yaml.Node, path string) (crew.Check, error) {
 	if n.Kind != yaml.ScalarNode {
 		return crew.Check{}, keyError(path, n.Line, checkShape)
 	}
-	if script, ok := env.checks[n.Value]; ok {
-		return crew.Check{Name: n.Value, Script: script}, nil
+	if script, ok := env.checks[crew.CheckName(n.Value)]; ok {
+		return crew.Check{Name: crew.CheckName(n.Value), Script: script}, nil
 	}
 	if len(env.checks) == 0 {
 		return crew.Check{}, keyError(path, n.Line, fmt.Sprintf("check %q does not exist; checks declares none", n.Value))
@@ -293,7 +294,7 @@ func (env ruleEnv) check(n *yaml.Node, path string) (crew.Check, error) {
 // sampleIssue is the issue every prompt is rendered for at load, so a bad
 // template stops crew before polling rather than when an issue is taken.
 func sampleIssue() crew.Issue {
-	return crew.Issue{Key: "42", Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
+	return crew.Issue{ID: crew.IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
 }
 
 // spellOnce gives every label the spelling it first has in the rules, in

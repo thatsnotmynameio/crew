@@ -35,9 +35,9 @@ func botRules() []crew.Rule {
 
 // crewBots configures botRules' bots, clerk the default, with unable the
 // short reasons of those that cannot act at startup.
-func crewBots(unable map[string]string) core.BotsConfig {
+func crewBots(unable map[crew.BotName]string) core.BotsConfig {
 	return core.BotsConfig{
-		Default: "clerk", Names: []string{"clerk", "developer", "reviewer"}, Unable: unable, Login: "octocat",
+		Default: "clerk", Names: []crew.BotName{"clerk", "developer", "reviewer"}, Unable: unable, Login: "octocat",
 	}
 }
 
@@ -48,7 +48,7 @@ func botsDriver(t *testing.T, rules []crew.Rule, c core.BotsConfig) *driver {
 }
 
 // entry returns the view's entry for name, "you" for yours.
-func entry(t *testing.T, d *driver, name string) core.BotView {
+func entry(t *testing.T, d *driver, name crew.BotName) core.BotView {
 	t.Helper()
 	for _, e := range d.m.View().Bots {
 		if e.Name == name {
@@ -60,9 +60,9 @@ func entry(t *testing.T, d *driver, name string) core.BotView {
 }
 
 // names returns the names of the view's entries, in order.
-func names(d *driver) []string {
+func names(d *driver) []crew.BotName {
 	entries := d.m.View().Bots
-	out := make([]string, 0, len(entries))
+	out := make([]crew.BotName, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, e.Name)
 	}
@@ -71,10 +71,10 @@ func names(d *driver) []string {
 
 // endedAs runs action of issue i to a successful end with usage, and
 // settles its verdict.
-func endedAs(d *driver, i crew.Issue, action string, usage crew.Usage) {
+func endedAs(d *driver, i crew.Issue, action crew.ActionName, usage crew.Usage) {
 	d.t.Helper()
 	d.running(i)
-	verdict, _ := d.send(core.SessionEnded{IssueKey: i.Key, Action: action, Outcome: succeeded, Usage: usage})
+	verdict, _ := d.send(core.SessionEnded{IssueID: i.ID, Action: action, Outcome: succeeded, Usage: usage})
 	d.settle(verdict)
 }
 
@@ -85,7 +85,7 @@ func TestAE1ABotShowsItsStateWritesPairsTotalsAndRunningActions(t *testing.T) {
 	}
 	d.running(issue("1", 1, ready))
 
-	if got := names(d); !slices.Equal(got, []string{"clerk", "developer", "reviewer", "you"}) {
+	if got := names(d); !slices.Equal(got, []crew.BotName{"clerk", "developer", "reviewer", "you"}) {
 		t.Fatalf("entries = %v, want the bots in config order, then you", got)
 	}
 	triaged := spent.Spend().Add(spent.Spend()).Add(spent.Spend())
@@ -111,9 +111,9 @@ func TestAE1ABotShowsItsStateWritesPairsTotalsAndRunningActions(t *testing.T) {
 func TestAE2WithoutBotsOnlyYouActsAndCounts(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded, Usage: spent})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded, Usage: spent})
 
-	if got := names(d); !slices.Equal(got, []string{"you"}) {
+	if got := names(d); !slices.Equal(got, []crew.BotName{"you"}) {
 		t.Fatalf("entries = %v, want only you", got)
 	}
 	want := core.BotView{
@@ -128,7 +128,7 @@ func TestAE2WithoutBotsOnlyYouActsAndCounts(t *testing.T) {
 }
 
 func TestAE3ABotThatCannotActLetsItsActionsActAndCountAsYou(t *testing.T) {
-	d := botsDriver(t, botRules(), crewBots(map[string]string{"reviewer": "no key"}))
+	d := botsDriver(t, botRules(), crewBots(map[crew.BotName]string{"reviewer": "no key"}))
 	endedAs(d, issue("5", 1, readyToReview), "review", spent)
 
 	want := core.BotView{
@@ -146,7 +146,7 @@ func TestAE3ABotThatCannotActLetsItsActionsActAndCountAsYou(t *testing.T) {
 }
 
 func TestADefaultBotThatCannotActPutsTheWritesOnYou(t *testing.T) {
-	d := botsDriver(t, botRules(), crewBots(map[string]string{"clerk": "not installed"}))
+	d := botsDriver(t, botRules(), crewBots(map[crew.BotName]string{"clerk": "not installed"}))
 	if got := entry(t, d, "clerk"); got.Writes || got.State != "cannot act: not installed" {
 		t.Fatalf("clerk = %#v, want cannot act, without the writes", got)
 	}
@@ -181,7 +181,7 @@ func TestAE4WritesThatFallBackStopTheDefaultBotForGood(t *testing.T) {
 
 func TestAE5ATokenNotRenewedStopsABotUntilItRenews(t *testing.T) {
 	d := botsDriver(t, botRules(), crewBots(nil))
-	_, events := d.send(core.BotsChecked{NotRenewed: map[string]string{"developer": "could not renew"}})
+	_, events := d.send(core.BotsChecked{NotRenewed: map[crew.BotName]string{"developer": "could not renew"}})
 	wantEvents(t, events, core.BotStopped{
 		At: d.now, Bot: "developer", Reason: "token not renewed", Warning: "could not renew",
 	})
@@ -190,7 +190,7 @@ func TestAE5ATokenNotRenewedStopsABotUntilItRenews(t *testing.T) {
 		t.Fatalf("developer = %#v, want token not renewed with the warning", got)
 	}
 
-	_, events = d.send(core.BotsChecked{NotRenewed: map[string]string{"developer": "could not renew"}})
+	_, events = d.send(core.BotsChecked{NotRenewed: map[crew.BotName]string{"developer": "could not renew"}})
 	wantEvents(t, events)
 
 	_, events = d.send(core.BotsChecked{})
@@ -202,7 +202,7 @@ func TestAE5ATokenNotRenewedStopsABotUntilItRenews(t *testing.T) {
 
 func TestTheDefaultBotWithBothProblemsKeepsWritingAsYouOnceItsTokenRenews(t *testing.T) {
 	d := botsDriver(t, botRules(), crewBots(nil))
-	token := map[string]string{"clerk": "could not renew"}
+	token := map[crew.BotName]string{"clerk": "could not renew"}
 	_, events := d.send(core.BotsChecked{NotRenewed: token})
 	wantEvents(t, events, core.BotStopped{
 		At: d.now, Bot: "clerk", Reason: "token not renewed", Warning: "could not renew",
@@ -222,10 +222,10 @@ func TestTheDefaultBotWithBothProblemsKeepsWritingAsYouOnceItsTokenRenews(t *tes
 }
 
 func TestReadingsForBotsThatCannotActOrAreNotConfiguredAreIgnored(t *testing.T) {
-	d := botsDriver(t, botRules(), crewBots(map[string]string{"clerk": "no key", "reviewer": "no key"}))
+	d := botsDriver(t, botRules(), crewBots(map[crew.BotName]string{"clerk": "no key", "reviewer": "no key"}))
 	before := d.m.View().Bots
 	_, events := d.send(core.BotsChecked{
-		WritesLost: "refused", NotRenewed: map[string]string{"reviewer": "x", "stranger": "y"},
+		WritesLost: "refused", NotRenewed: map[crew.BotName]string{"reviewer": "x", "stranger": "y"},
 	})
 	wantEvents(t, events)
 	if got := d.m.View().Bots; !reflect.DeepEqual(got, before) {
@@ -245,25 +245,25 @@ func TestAnActionRunsOnItsEntryFromItsSessionUntilItsSpendLands(t *testing.T) {
 			take, _ := d.send(core.CallResult{ID: moveID(d.t, cmds, "74"), Result: core.ResultDone})
 			for _, c := range take {
 				if w, ok := c.(core.CreateWorkspace); ok {
-					d.send(space(w.Issue.Key, w.Action))
+					d.send(space(w.Issue.ID.Key, w.Action))
 				}
 			}
 		}, false},
 		{"running", func(d *driver) { d.running(issue("74", 1, ready)) }, true},
 		{"checking", func(d *driver) {
 			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 		}, true},
 		{"finishing", func(d *driver) {
 			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 		}, true},
 		{"ended", func(d *driver) {
 			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
-			d.send(core.PullRequestFound{IssueKey: "74", Action: "development", PullRequest: noPR})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
+			d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: noPR})
 		}, false},
 	}
 	for _, tt := range tests {
@@ -281,7 +281,7 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 	d := botsDriver(t, botRules(), crewBots(nil))
 	cmds, _ := d.poll(issue("2", 1, needsTriage))
 	d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueKey: "2", Action: "triage", Reason: crew.NewSessionText("disk full")})
+	d.send(core.WorkspaceFailed{IssueID: issueID("2"), Action: "triage", Reason: crew.NewSessionText("disk full")})
 	for _, e := range d.m.View().Bots {
 		if e.Spend != (crew.Spend{}) || e.Running != nil {
 			t.Fatalf("entry %s = %#v, want no spend and nothing running", e.Name, e)
@@ -294,7 +294,7 @@ func TestTheEntriesSpendSumsToTheViewsSpent(t *testing.T) {
 	rules[0].Actions[1].Bot = "developer"
 	rules[1].Actions[0].Bot = "reviewer"
 	d := botsDriver(t, rules, core.BotsConfig{
-		Names: []string{"developer", "reviewer"}, Unable: map[string]string{"reviewer": "bad key file"},
+		Names: []crew.BotName{"developer", "reviewer"}, Unable: map[crew.BotName]string{"reviewer": "bad key file"},
 	})
 	reviewed(d, failed("changes requested"))
 
@@ -316,7 +316,7 @@ func TestTheBotsViewSharesNoMemoryWithTheModel(t *testing.T) {
 	d := botsDriver(t, botRules(), c)
 	c.Names[1], c.Default = "stranger", "stranger"
 	d.running(issue("1", 1, ready))
-	d.send(core.BotsChecked{NotRenewed: map[string]string{"developer": "could not renew"}})
+	d.send(core.BotsChecked{NotRenewed: map[crew.BotName]string{"developer": "could not renew"}})
 
 	v := d.m.View()
 	developer := v.Bots[1]

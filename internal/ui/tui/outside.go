@@ -18,8 +18,9 @@ const full = 100
 
 // noteKey identifies a rule's end: one notification each (KTD6).
 type noteKey struct {
-	issue, rule string
-	ended       time.Time
+	issue crew.IssueID
+	rule  crew.RuleName
+	ended time.Time
 }
 
 // outsideState is what the model knows outside the screen: whether the
@@ -44,7 +45,7 @@ func newOutsideState() *outsideState {
 func (m Model) notifications() []tea.Cmd {
 	var out []tea.Cmd
 	for _, e := range m.snap.Handled {
-		k := noteKey{issue: e.Issue.Key, rule: e.Rule, ended: e.Ended}
+		k := noteKey{issue: e.Issue.ID, rule: e.Rule, ended: e.Ended}
 		if m.outside.seen[k] {
 			continue
 		}
@@ -60,7 +61,7 @@ func (m Model) notifications() []tea.Cmd {
 // muted reports whether the rule named name sends no notification: it is
 // not in the rules, or its notify is off (R9). It looks the name up among
 // the rules, never among the board's columns.
-func (m Model) muted(name string) bool {
+func (m Model) muted(name crew.RuleName) bool {
 	i := slices.IndexFunc(m.cfg.Rules, func(r crew.Rule) bool { return r.Name == name })
 	return i < 0 || !m.cfg.Rules[i].Notify
 }

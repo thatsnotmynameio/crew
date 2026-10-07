@@ -42,16 +42,16 @@ func TestAE3TimeUpLetsARunningIssueFinishAndTakesNothingNew(t *testing.T) {
 	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{issue("43", 2, ready)}})
 	wantCommands(t, cmds)
 
-	d.send(core.SessionEnded{IssueKey: "42", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "42", Action: "development", Outcome: succeeded})
-	wantCommands(t, verdict, core.Move{IssueKey: "42", From: inProgress, To: readyToReview})
+	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: succeeded})
+	wantCommands(t, verdict, core.Move{IssueID: issueID("42"), From: inProgress, To: readyToReview})
 	if d.m.Stopped() {
 		t.Fatal("stopped while #42's verdict move is in flight")
 	}
 
 	_, events = d.send(core.CallResult{ID: moveID(t, verdict, "42"), Result: core.ResultDone})
 	wantEvents(t, events,
-		core.IssueMoved{At: d.now, IssueKey: "42", IssueRef: "#42", From: inProgress, To: readyToReview},
+		core.IssueMoved{At: d.now, IssueID: issueID("42"), IssueRef: "#42", From: inProgress, To: readyToReview},
 		core.Stopped{At: d.now},
 	)
 	if !d.m.Stopped() {
@@ -67,11 +67,11 @@ func TestAE3AnIssueThatFailsWhileWindingDownNeedsAttentionAsUsual(t *testing.T) 
 	d.running(issue("42", 1, ready))
 	d.send(core.TimeUp{Limit: limit})
 
-	d.send(core.SessionEnded{IssueKey: "42", Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "42", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: failed("broke")})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: succeeded})
 	wantCommands(t, cmds,
-		core.Move{IssueKey: "42", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{
+		core.Move{IssueID: issueID("42"), From: inProgress, To: needsAttention},
+		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{
 			failure("42", "acceptance"),
 		}}},
 	)
@@ -105,7 +105,7 @@ func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenRuns(t *testing.T) {
 	wantEvents(t, events, core.WindingDown{At: d.now, Limit: limit})
 
 	retry, events := d.send(core.Tick{})
-	wantCommands(t, retry, core.Move{IssueKey: "42", From: ready, To: inProgress})
+	wantCommands(t, retry, core.Move{IssueID: issueID("42"), From: ready, To: inProgress})
 	if len(events) != 0 || d.m.Stopped() {
 		t.Fatalf("a tick with an owed take: events %#v, stopped %v", events, d.m.Stopped())
 	}
@@ -120,24 +120,24 @@ func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenRuns(t *testing.T) {
 func TestWhileWindingDownOwedCallsAreRetriedAtTicksThenGetAFinalTry(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready), issue("2", 2, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	d.send(core.TimeUp{Limit: limit})
 
 	retry, _ := d.send(core.Tick{})
-	wantCommands(t, retry, core.Move{IssueKey: "1", From: inProgress, To: readyToReview})
-	owed := core.Call{Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview}
+	wantCommands(t, retry, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
+	owed := core.Call{Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: inProgress, To: readyToReview}
 	_, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	wantEvents(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
 
 	// #2's last action ends: nothing is left to end, so the owed move gets
 	// its final try.
-	d.send(core.SessionEnded{IssueKey: "2", Action: "acceptance", Outcome: succeeded})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "2", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("2"), Action: "acceptance", Outcome: succeeded})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("2"), Action: "development", Outcome: succeeded})
 	wantCommands(t, cmds,
-		core.Move{IssueKey: "2", From: inProgress, To: readyToReview},
-		core.Move{IssueKey: "1", From: inProgress, To: readyToReview},
+		core.Move{IssueID: issueID("2"), From: inProgress, To: readyToReview},
+		core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview},
 	)
 
 	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultFailed, Reason: "timeout"})
@@ -153,18 +153,18 @@ func TestAE4AStopWhileWindingDownStopsRunningSessionsAsUsual(t *testing.T) {
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds,
-		core.StopSession{IssueKey: "42", Action: "acceptance"},
-		core.StopSession{IssueKey: "42", Action: "development"},
+		core.StopSession{IssueID: issueID("42"), Action: "acceptance"},
+		core.StopSession{IssueID: issueID("42"), Action: "development"},
 	)
 	if !d.m.View().Stopping {
 		t.Fatal("the view does not say a stop was requested")
 	}
 
-	d.send(core.SessionEnded{IssueKey: "42", Action: "acceptance", Outcome: failed("stopped")})
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "42", Action: "development", Outcome: failed("stopped")})
+	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: failed("stopped")})
+	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: failed("stopped")})
 	wantCommands(t, cmds,
-		core.Move{IssueKey: "42", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{
+		core.Move{IssueID: issueID("42"), From: inProgress, To: needsAttention},
+		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{
 			failure("42", "acceptance"),
 			failure("42", "development"),
 		}}},

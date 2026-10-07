@@ -157,7 +157,7 @@ rules:
 	if want := (crew.Queue{Name: "default", Slots: 2}); rule.Queue != want {
 		t.Errorf("Queue = %+v, want %+v", rule.Queue, want)
 	}
-	wantBoard := []crew.BoardColumn{{Name: "development", Labels: []string{"todo", "doing"}}}
+	wantBoard := []crew.BoardColumn{{Name: "development", Labels: []crew.State{"todo", "doing"}}}
 	if !reflect.DeepEqual(cfg.Board, wantBoard) || cfg.BoardWritten {
 		t.Errorf("Board = %+v (written %v), want %+v, not written", cfg.Board, cfg.BoardWritten, wantBoard)
 	}
@@ -213,7 +213,7 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneRule)
-	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
+	issue := crew.Issue{ID: issueID("42"), Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
 	got, err := cfg.Rules[0].Actions[0].Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -386,3 +386,6 @@ var invalidSettings = []rejectCase{
 		wants: []string{"line 1", "must be a mapping", "rules"},
 	},
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

@@ -31,7 +31,7 @@ func avatarSeed(e core.BotView) string {
 	if e.You && e.Login != "" {
 		return clean(e.Login)
 	}
-	return clean(e.Name)
+	return clean(string(e.Name))
 }
 
 // avatarColour is e's avatar colour: its seed's hue, or the offline grey

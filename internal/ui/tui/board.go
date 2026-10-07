@@ -44,15 +44,15 @@ type card struct {
 // issue whose rule ended has only the cards its labels give it (R7 of
 // #230).
 func (m Model) cards() []card {
-	views := map[string]core.IssueView{}
+	views := map[crew.IssueID]core.IssueView{}
 	for _, iv := range m.snap.Issues {
-		views[iv.Issue.Key] = iv
+		views[iv.Issue.ID] = iv
 	}
 	var held, idle []card
 	for _, bi := range m.snap.Board {
-		view, isHeld := views[bi.Issue.Key]
+		view, isHeld := views[bi.Issue.ID]
 		for i, c := range m.cfg.Board {
-			carries := slices.ContainsFunc(c.Labels, func(l string) bool { return slices.Contains(bi.Labels, l) })
+			carries := slices.ContainsFunc(c.Labels, func(l crew.State) bool { return slices.Contains(bi.Labels, l) })
 			if !carries || c.Takes != bi.Issue.Kind {
 				continue
 			}
@@ -77,13 +77,13 @@ func (m Model) notOnBoard() int { return len(m.cfg.Board) }
 // columns. An issue whose rule has no actions is left out: such a rule
 // has no column on the default board, by design (KTD13 of #151, #134).
 func (m Model) unboardedCards(boarded []card) []card {
-	shown := map[string]bool{}
+	shown := map[crew.IssueID]bool{}
 	for _, c := range boarded {
-		shown[c.issue.Key] = true
+		shown[c.issue.ID] = true
 	}
 	var out []card
 	for _, iv := range m.snap.Issues {
-		if !shown[iv.Issue.Key] && len(iv.Actions) > 0 {
+		if !shown[iv.Issue.ID] && len(iv.Actions) > 0 {
 			out = append(out, card{issue: iv.Issue, column: m.notOnBoard(), held: true, view: iv})
 		}
 	}
@@ -161,10 +161,10 @@ func (m Model) board(limit int) (string, []string) {
 // configured column, the empty columns dropped, and, in the warning style,
 // that the last board read or listing failed (KTD5).
 func (m Model) boardSummary(cards []card, l boardLayout) string {
-	issues := map[string]bool{}
+	issues := map[crew.IssueID]bool{}
 	for _, c := range cards {
 		if c.column < m.notOnBoard() {
-			issues[c.issue.Key] = true
+			issues[c.issue.ID] = true
 		}
 	}
 	summary := fmt.Sprintf("%d %s", len(issues), lines.Plural(len(issues), "issue", "issues"))
@@ -214,7 +214,7 @@ func (m Model) shownCards(l boardLayout, all [][]card, n int) [][]card {
 	out := make([][]card, len(all))
 	for i, cs := range all {
 		from := 0
-		if l.columns[i] == m.sel.column && m.sel.key != "" {
+		if l.columns[i] == m.sel.column && !m.sel.empty() {
 			from = shownFrom(m.sel.top, m.sel.row, len(cs), n)
 		}
 		out[i] = cs[from:min(from+n, len(cs))]

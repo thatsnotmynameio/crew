@@ -50,7 +50,7 @@ func takenKeys(events []core.Event) []string {
 	var keys []string
 	for _, e := range events {
 		if taken, ok := e.(core.IssueTaken); ok {
-			keys = append(keys, taken.Issue.Key)
+			keys = append(keys, taken.Issue.ID.Key)
 		}
 	}
 	return keys
@@ -60,7 +60,7 @@ func takenKeys(events []core.Event) []string {
 func keysOf(issues []crew.Issue) []string {
 	keys := make([]string, 0, len(issues))
 	for _, i := range issues {
-		keys = append(keys, i.Key)
+		keys = append(keys, i.ID.Key)
 	}
 	return keys
 }
@@ -202,7 +202,7 @@ func TestTakesAnIssueOnlyWhileItsRulesQueueHasAFreeSlot(t *testing.T) {
 func TestAnIssueWhoseVerdictMoveIsOwedKeepsItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
 	d.running(issue("1", 1, needsTriage))
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "triage", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: succeeded})
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	if c := claimOf(t, d.m, "1"); c != core.ClaimOwed {
 		t.Fatalf("claim of #1: got %v, want owed", c)
@@ -285,7 +285,7 @@ func TestAFreedQueueSlotAfterASkippedTickListsAtOnce(t *testing.T) {
 	cmds, _ := d.send(core.Tick{})
 	wantListings(t, cmds, 0)
 
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "3", Action: "triage", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("3"), Action: "triage", Outcome: succeeded})
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "3"), Result: core.ResultDone})
 	wantCommands(t, cmds, core.ListIssues{States: []crew.State{needsTriage, triaging, ready, inProgress}})
 }
@@ -306,10 +306,10 @@ func queuesOf(t *testing.T, m *core.Model, free ...int) []core.QueueView {
 }
 
 // queueOf returns the queue the view names for the held issue keyed key.
-func queueOf(t *testing.T, m *core.Model, key string) string {
+func queueOf(t *testing.T, m *core.Model, key string) crew.QueueName {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.Key == key {
+		if iv.Issue.ID.Key == key {
 			return iv.Queue
 		}
 	}
@@ -364,7 +364,7 @@ func TestAnIssueWhoseTakeIsInFlightOrOwedHoldsABusySlot(t *testing.T) {
 func TestAReleasedIssueFreesItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
 	d.running(issue("7", 7, needsTriage))
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "7", Action: "triage", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("7"), Action: "triage", Outcome: succeeded})
 	d.send(core.CallResult{ID: moveID(t, verdict, "7"), Result: core.ResultDone})
 
 	wantHeld(t, d.m)

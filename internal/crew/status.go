@@ -9,11 +9,11 @@ import (
 // in one place it edits in place. The tracker adapter formats it in its own
 // markup and computes elapsed times from Updated.
 type Status struct {
-	// IssueKey and IssueRef identify the issue, as in Issue.
-	IssueKey string
+	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
+	IssueID  IssueID
 	IssueRef string
-	// Rule is the name of the rule that runs or ran on the issue.
-	Rule string
+	// Rule is the rule that runs or ran on the issue.
+	Rule RuleName
 	// Kind says which of the fields below apply.
 	Kind StatusKind
 	// Actions are the rule's actions, in its action order.
@@ -26,12 +26,12 @@ type Status struct {
 	Move MoveProgress
 	// Updated is when crew computed this status.
 	Updated time.Time
-	// Run identifies the rule run this status belongs to: it stays the same
+	// Run identifies the status comment's entry this status belongs to: the
+	// id of the rule run that opened it, so it is global. It stays the same
 	// from the issue's first running status for a rule until the status
-	// after that rule ended, and differs between crew processes. A tracker
-	// that keeps a history of rule runs edits the run's entry, or starts a
-	// new one.
-	Run string
+	// after that rule ended. A tracker that keeps a history of rule runs
+	// edits the entry, or starts a new one, and compares it only as text.
+	Run RuleRunID
 }
 
 // StatusKind is the kind of a Status.
@@ -48,7 +48,7 @@ const (
 // ActionStatus is one action in a Status.
 type ActionStatus struct {
 	// Name is the action's name.
-	Name string
+	Name ActionName
 	// State is how the action stands.
 	State ActionState
 	// Started is when its session started; zero while its workspace is
@@ -70,9 +70,9 @@ type ActionStatus struct {
 	Checks []CheckResult
 	// Log is the repository-relative path of its log, once it has one.
 	Log string
-	// Workspace is the name of the workspace the action resumed in; empty
-	// when it did not resume.
-	Workspace string
+	// Workspace is the workspace the action resumed in; empty when it did
+	// not resume.
+	Workspace WorkspaceName
 	// Spend is what its session used, and PullRequest the pull request it
 	// opened; set only for an ended action whose session started, when crew
 	// is set to show them.

@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -270,7 +271,7 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 // port.Reopener.
 type createOnly struct{ w *fake.Workspace }
 
-func (c createOnly) Create(ctx context.Context, issue crew.Issue, action string) (port.Space, error) {
+func (c createOnly) Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
 	return c.w.Create(ctx, issue, action)
 }
 
@@ -290,6 +291,43 @@ func TestAWorkspaceThatCannotReopenStartsAFailedRunFresh(t *testing.T) {
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
+// brokenReopen is a workspace whose Reopen fails with an error other than
+// port.ErrWorkspaceGone.
+type brokenReopen struct{ createOnly }
+
+func (brokenReopen) Reopen(context.Context, port.Space) (port.Space, error) {
+	return port.Space{}, errors.New("disk full")
+}
+
+func TestAWorkspaceThatFailsToReopenFailsTheRunWithItsReason(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready))
+		cfg := config(t, tr, develop)
+		cfg.Workspace = brokenReopen{createOnly{w: fakeWorkspace(t, cfg)}}
+		r := start(t, cfg)
+
+		failOnce(t, r, tr, "", "broke")
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		var reasons []string
+		for _, e := range r.events() {
+			if a, ok := e.(core.ActionEnded); ok {
+				reasons = append(reasons, a.Outcome.Reason.String())
+			}
+		}
+		if len(reasons) != 2 || !strings.Contains(reasons[1], "disk full") {
+			t.Errorf("ended reasons = %q, want the session's, then one naming disk full", reasons)
+		}
+		if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{needsAttention}) {
+			t.Errorf("issue 1 is in %v, want needs attention", got)
 		}
 	})
 }

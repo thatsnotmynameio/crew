@@ -2,6 +2,7 @@ package core
 
 import (
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -13,8 +14,11 @@ import (
 // The set of inputs is closed: only this package's types implement Input.
 type Input interface {
 	// Stamped returns a copy of the input whose At is at. The engine stamps
-	// each input with this as it takes it from its inbox.
-	Stamped(at time.Time) Input
+	// each input with this as it takes it from its inbox, with a fresh seed
+	// besides the time, so the ids of the rule runs the input takes are
+	// minted outside the core and are global (KTD5). Only IssuesListed
+	// keeps the seed: only a listing takes issues.
+	Stamped(at time.Time, seed uuid.UUID) Input
 	arrival() time.Time
 }
 
@@ -31,9 +35,9 @@ type Tick struct {
 
 // Said is what the running session of Action on an issue last said.
 type Said struct {
-	IssueKey string
-	Action   string
-	Text     crew.Said
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Text    crew.Said
 }
 
 // StopRequested asks the core to stop (R9). The core starts nothing new,
@@ -59,6 +63,9 @@ type TimeUp struct {
 type IssuesListed struct {
 	At     time.Time
 	Issues []crew.Issue
+	// Seed is the fresh seed the engine stamped, from which the rule runs
+	// this listing takes get their ids.
+	Seed uuid.UUID
 }
 
 // ListFailed is a ListIssues that failed. The next tick lists again.
@@ -92,7 +99,7 @@ type BotsChecked struct {
 	WritesLost string
 	// NotRenewed holds, by bot, the warning of its last renewal, for each
 	// bot whose last renewal failed.
-	NotRenewed map[string]string
+	NotRenewed map[crew.BotName]string
 }
 
 // Result classifies how a tracker call (a Move, a ReportFailure or a
@@ -145,22 +152,22 @@ type CallResult struct {
 }
 
 // StatusResult is how a ReportStatus command ended, correlated by its
-// issue's key. Its Result is classified as a CallResult's is.
+// issue's id. Its Result is classified as a CallResult's is.
 type StatusResult struct {
-	At       time.Time
-	IssueKey string
-	Result   Result
+	At      time.Time
+	IssueID crew.IssueID
+	Result  Result
 	// Reason says why the write did not succeed, in one line. Empty on
 	// ResultDone.
 	Reason string
 }
 
 // PullRequestsResult is how a ReportPullRequests command ended, correlated
-// by its issue's key. Its Result is classified as a CallResult's is.
+// by its issue's id. Its Result is classified as a CallResult's is.
 type PullRequestsResult struct {
-	At       time.Time
-	IssueKey string
-	Result   Result
+	At      time.Time
+	IssueID crew.IssueID
+	Result  Result
 	// Reason says why the report did not succeed, in one line. Empty on
 	// ResultDone.
 	Reason string
@@ -169,11 +176,11 @@ type PullRequestsResult struct {
 // WorkspaceReady is a CreateWorkspace or ReopenWorkspace that succeeded.
 type WorkspaceReady struct {
 	At time.Time
-	// IssueKey and Action identify the CreateWorkspace this answers.
-	IssueKey string
-	Action   string
+	// IssueID and Action identify the CreateWorkspace this answers.
+	IssueID crew.IssueID
+	Action  crew.ActionName
 	// Workspace is the workspace's unique name.
-	Workspace string
+	Workspace crew.WorkspaceName
 	// Dir is the workspace's absolute directory, where the session runs.
 	Dir string
 	// Branch is the branch the action's work goes on.
@@ -192,9 +199,9 @@ type WorkspaceReady struct {
 // WorkspaceGone is a ReopenWorkspace whose workspace no longer exists. The
 // core creates a fresh one instead.
 type WorkspaceGone struct {
-	At       time.Time
-	IssueKey string
-	Action   string
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
 }
 
 // RecordFailed is a RecordRun the engine could not write. Record is the
@@ -208,27 +215,27 @@ type RecordFailed struct {
 // WorkspaceFailed is a CreateWorkspace that failed. The action counts as
 // failed with Reason, and its sibling actions go on.
 type WorkspaceFailed struct {
-	At       time.Time
-	IssueKey string
-	Action   string
-	Reason   crew.SessionText
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Reason  crew.SessionText
 }
 
 // SessionStarted is a StartSession whose session is now running. Its At is
 // the action's start time.
 type SessionStarted struct {
-	At       time.Time
-	IssueKey string
-	Action   string
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
 }
 
 // SessionFailedToStart is a StartSession that started no session. The action
 // counts as failed with Reason.
 type SessionFailedToStart struct {
-	At       time.Time
-	IssueKey string
-	Action   string
-	Reason   crew.SessionText
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Reason  crew.SessionText
 }
 
 // SessionEnded is a running session that ended, with its harness's
@@ -236,8 +243,8 @@ type SessionFailedToStart struct {
 // message, which only the action's checks read.
 type SessionEnded struct {
 	At          time.Time
-	IssueKey    string
-	Action      string
+	IssueID     crew.IssueID
+	Action      crew.ActionName
 	Outcome     crew.Outcome
 	Usage       crew.Usage
 	LastMessage string
@@ -247,81 +254,84 @@ type SessionEnded struct {
 // it failed, ran out of time, was stopped or could not start, as its Reason
 // says.
 type CheckEnded struct {
-	At       time.Time
-	IssueKey string
-	Action   string
-	Passed   bool
-	Reason   crew.CheckReason
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Passed  bool
+	Reason  crew.CheckReason
 }
 
 // PullRequestFound is a FindPullRequest that ended: the pull request the
 // tracker found, none, or not looked up when the lookup failed.
 type PullRequestFound struct {
 	At          time.Time
-	IssueKey    string
-	Action      string
+	IssueID     crew.IssueID
+	Action      crew.ActionName
 	PullRequest crew.PullRequest
 }
 
 // Stamped implements Input.
-func (i Tick) Stamped(at time.Time) Input { i.At = at; return i }
+func (i Tick) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i StopRequested) Stamped(at time.Time) Input { i.At = at; return i }
+func (i StopRequested) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i TimeUp) Stamped(at time.Time) Input { i.At = at; return i }
+func (i TimeUp) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i IssuesListed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i IssuesListed) Stamped(at time.Time, seed uuid.UUID) Input {
+	i.At, i.Seed = at, seed
+	return i
+}
 
 // Stamped implements Input.
-func (i ListFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i ListFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i BoardListed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BoardListed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i BoardListFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BoardListFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i BotsChecked) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BotsChecked) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
+func (i CallResult) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i StatusResult) Stamped(at time.Time) Input { i.At = at; return i }
+func (i StatusResult) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i PullRequestsResult) Stamped(at time.Time) Input { i.At = at; return i }
+func (i PullRequestsResult) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i WorkspaceReady) Stamped(at time.Time) Input { i.At = at; return i }
+func (i WorkspaceReady) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i WorkspaceGone) Stamped(at time.Time) Input { i.At = at; return i }
+func (i WorkspaceGone) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i RecordFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i RecordFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i WorkspaceFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i WorkspaceFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i SessionStarted) Stamped(at time.Time) Input { i.At = at; return i }
+func (i SessionStarted) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i SessionFailedToStart) Stamped(at time.Time) Input { i.At = at; return i }
+func (i SessionFailedToStart) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i SessionEnded) Stamped(at time.Time) Input { i.At = at; return i }
+func (i SessionEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i CheckEnded) Stamped(at time.Time) Input { i.At = at; return i }
+func (i CheckEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i PullRequestFound) Stamped(at time.Time) Input { i.At = at; return i }
+func (i PullRequestFound) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }

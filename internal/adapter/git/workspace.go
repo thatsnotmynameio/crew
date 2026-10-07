@@ -74,7 +74,7 @@ func (w *Workspace) Prepare(ctx context.Context, _ []crew.State) error {
 // -3… while the folder or the branch exists. The default branch is resolved
 // on the first call when Prepare has not resolved it. Errors carry git's
 // stderr.
-func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action string) (port.Space, error) {
+func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
 	if err := w.acquire(ctx); err != nil {
 		return port.Space{}, err
 	}
@@ -87,7 +87,7 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action string)
 	if _, err := w.git(ctx, "fetch", "origin", def); err != nil {
 		return port.Space{}, fmt.Errorf("fetch origin %s: %w", def, err)
 	}
-	space, err := w.free(ctx, "issue-"+sanitize(issue.Key)+"-"+sanitize(action))
+	space, err := w.free(ctx, "issue-"+sanitize(issue.ID.Key)+"-"+sanitize(string(action)))
 	if err != nil {
 		return port.Space{}, err
 	}
@@ -122,7 +122,7 @@ func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, e
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	dir := filepath.Join(root, worktrees, space.Name)
+	dir := filepath.Join(root, worktrees, string(space.Name))
 	out, err := w.git(ctx, "worktree", "list", "--porcelain")
 	if err != nil {
 		return port.Space{}, fmt.Errorf("list worktrees: %w", err)
@@ -208,7 +208,7 @@ func (w *Workspace) free(ctx context.Context, base string) (port.Space, error) {
 		if n > 1 {
 			name = fmt.Sprintf("%s-%d", base, n)
 		}
-		space := port.Space{Name: name, Dir: filepath.Join(root, worktrees, name), Branch: "crew/" + name}
+		space := port.Space{Name: crew.WorkspaceName(name), Dir: filepath.Join(root, worktrees, name), Branch: "crew/" + name}
 		if _, err := os.Lstat(space.Dir); err == nil {
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {

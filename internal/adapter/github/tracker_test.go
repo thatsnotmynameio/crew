@@ -180,6 +180,13 @@ var login = reply{prefix: []string{"api", "user"}, stdout: "me\n"}
 // none.
 var noCodeowners = reply{prefix: []string{"api", "-H", rawAccept}, stderr: "gh: Not Found (HTTP 404)"}
 
+// widgets is the repository repositoryReply answers with.
+var widgets = crew.Repository{ID: "R_kgDOWidgets", Name: "acme/widgets"}
+
+// repositoryReply answers Prepare's repository query with widgets.
+var repositoryReply = reply{prefix: []string{"api", "graphql", "-f", "query=" + repositoryQuery},
+	stdout: `{"data":{"repository":{"id":"R_kgDOWidgets","nameWithOwner":"acme/widgets"}}}`}
+
 func issuesJSON(nodes ...string) string {
 	return `{"data":{"repository":{"issues0":{"nodes":[` + strings.Join(nodes, ",") + `]}}}}`
 }
@@ -248,9 +255,9 @@ func TestListSendsOneQueryFilteredByLoginAndLabels(t *testing.T) {
 	}
 
 	want := []crew.Issue{
-		{Key: "12", Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+		{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
 			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}},
-		{Key: "14", Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
+		{ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
 			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{readyToReview}},
 	}
 	wantItems(t, got, want)
@@ -315,7 +322,7 @@ func TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt(t *testing.T) {
 	}
 	blocked := map[string]bool{}
 	for _, issue := range got {
-		blocked[issue.Key] = issue.Blocked
+		blocked[issue.ID.Key] = issue.Blocked
 	}
 	if want := map[string]bool{"4": true, "5": false, "6": false}; !maps.Equal(blocked, want) {
 		t.Errorf("blocked = %v, want %v", blocked, want)
@@ -379,7 +386,7 @@ func TestListReadsEachIssuesPriorityFromItsIssueField(t *testing.T) {
 	}
 	byKey := map[string]int{}
 	for _, issue := range got {
-		byKey[issue.Key] = issue.Priority
+		byKey[issue.ID.Key] = issue.Priority
 	}
 	want := map[string]int{"1": 1, "2": 4, "3": 3, "4": 1, "5": 0, "6": 0, "7": 0, "8": 0}
 	if !maps.Equal(byKey, want) {
@@ -416,7 +423,7 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 				reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[` + tc.labels + `]}`},
 				reply{prefix: []string{"issue", "edit", "3"}},
 			)
-			if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
+			if err := tr.Move(context.Background(), issueID("3"), ready, inProgress); err != nil {
 				t.Fatalf("Move: %v", err)
 			}
 			edits := gh.callsTo("issue", "edit")
@@ -439,7 +446,7 @@ func TestMoveOfAnIssueThatMovedMeanwhileEditsNothing(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t, reply{prefix: []string{"issue", "view", "3"}, stdout: view})
-			err := tr.Move(context.Background(), "3", ready, inProgress)
+			err := tr.Move(context.Background(), issueID("3"), ready, inProgress)
 			if !errors.Is(err, port.ErrMovedMeanwhile) {
 				t.Errorf("Move = %v, want ErrMovedMeanwhile", err)
 			}
@@ -462,7 +469,7 @@ func TestMoveOfAnIssueAlreadyInToIsDoneWithoutAnEdit(t *testing.T) {
 			tr, gh := build(t,
 				reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[` + labels + `]}`},
 			)
-			if err := tr.Move(context.Background(), "3", ready, inProgress); err != nil {
+			if err := tr.Move(context.Background(), issueID("3"), ready, inProgress); err != nil {
 				t.Fatalf("Move = %v, want nil", err)
 			}
 			if edits := gh.callsTo("issue", "edit"); len(edits) != 0 {
@@ -484,7 +491,7 @@ func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
-	if err := tr.Move(context.Background(), "3", blocked, ready); err != nil {
+	if err := tr.Move(context.Background(), issueID("3"), blocked, ready); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	edits := gh.callsTo("issue", "edit")
@@ -515,7 +522,7 @@ func TestMoveToAMissingLabelIsRefused(t *testing.T) {
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
 		reply{prefix: []string{"issue", "edit", "3"}, stderr: "could not add label: 'in progress' not found\n"},
 	)
-	err := tr.Move(context.Background(), "3", ready, inProgress)
+	err := tr.Move(context.Background(), issueID("3"), ready, inProgress)
 	if !errors.Is(err, port.ErrRefused) {
 		t.Errorf("Move = %v, want ErrRefused", err)
 	}
@@ -529,9 +536,9 @@ func TestAFailingGhCallIsTransientAndCarriesItsStderr(t *testing.T) {
 		reply{prefix: []string{"api", "user"}, stderr: "HTTP 502: Bad Gateway"},
 	)
 	errs := map[string]error{
-		"Move": tr.Move(context.Background(), "3", ready, inProgress),
+		"Move": tr.Move(context.Background(), issueID("3"), ready, inProgress),
 		"ReportFailure": tr.ReportFailure(context.Background(), crew.FailureReport{
-			IssueKey: "3", IssueRef: "#3", Failures: []crew.ActionFailure{{Action: "development"}},
+			IssueID: issueID("3"), IssueRef: "#3", Failures: []crew.ActionFailure{{Action: "development"}},
 		}),
 	}
 	_, errs["List"] = tr.List(context.Background(), []crew.State{ready})
@@ -559,3 +566,6 @@ func TestUnknownTrackerKeysFailNamingThem(t *testing.T) {
 		})
 	}
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

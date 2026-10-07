@@ -10,27 +10,28 @@ import (
 func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready), issue("2", 2, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
-	wantCommands(t, verdict, core.Move{IssueKey: "1", From: inProgress, To: readyToReview})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	wantCommands(t, verdict, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds,
-		core.StopSession{IssueKey: "2", Action: "acceptance"},
-		core.StopSession{IssueKey: "2", Action: "development"},
+		core.StopSession{IssueID: issueID("2"), Action: "acceptance"},
+		core.StopSession{IssueID: issueID("2"), Action: "development"},
 	)
 	if d.m.Stopped() {
 		t.Fatal("stopped while issues are held")
 	}
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: inProgress, To: readyToReview})
+	hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
+		To: readyToReview})
 
-	d.send(core.SessionEnded{IssueKey: "2", Action: "acceptance", Outcome: failed("stopped")})
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "2", Action: "development", Outcome: failed("stopped")})
+	d.send(core.SessionEnded{IssueID: issueID("2"), Action: "acceptance", Outcome: failed("stopped")})
+	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("2"), Action: "development", Outcome: failed("stopped")})
 	wantCommands(t, cmds,
-		core.Move{IssueKey: "2", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "2", IssueRef: "#2", Failures: []crew.ActionFailure{
+		core.Move{IssueID: issueID("2"), From: inProgress, To: needsAttention},
+		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("2"), IssueRef: "#2", Failures: []crew.ActionFailure{
 			failure("2", "acceptance"),
 			failure("2", "development"),
 		}}},
@@ -81,7 +82,7 @@ var owedTakeFinalTries = []struct {
 // whose take landed after the stop; if it fails, the core gives it up.
 func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 	stoppedReport := core.ReportFailure{Report: crew.FailureReport{
-		IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
+		IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{
 			{Action: "acceptance"},
 			{Action: "development"},
 		},
@@ -91,10 +92,10 @@ func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 			d := newDriver(t, draft(), 1)
 			take, _ := d.poll(issue("1", 1, ready))
 			final := tt.final(d, take)
-			wantCommands(t, final, core.Move{IssueKey: "1", From: ready, To: inProgress})
+			wantCommands(t, final, core.Move{IssueID: issueID("1"), From: ready, To: inProgress})
 
 			cmds, _ := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultDone})
-			wantCommands(t, cmds, core.Move{IssueKey: "1", From: inProgress, To: needsAttention}, stoppedReport)
+			wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention}, stoppedReport)
 			d.wantReason("1", "acceptance", "crew stopped")
 			d.wantReason("1", "development", "crew stopped")
 			d.settle(cmds)
@@ -110,7 +111,7 @@ func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 			cmds, events := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultFailed, Reason: "still down"})
 			wantCommands(t, cmds)
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-				Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: ready, To: inProgress,
+				Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: ready, To: inProgress,
 			}})
 			if !d.m.Stopped() {
 				t.Fatal("not stopped once the owed take had its final try")
@@ -132,8 +133,8 @@ func TestStopDuringTakeStartsNothingAndNeedsAttention(t *testing.T) {
 
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
 	wantCommands(t, cmds,
-		core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
+		core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention},
+		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{
 			{Action: "acceptance"},
 			{Action: "development"},
 		}}},
@@ -153,13 +154,13 @@ func TestStopDuringSetupStartsNothingMoreAndStopsWhatStarted(t *testing.T) {
 
 	cmds, _ = d.send(space("1", "acceptance"))
 	wantCommands(t, cmds)
-	cmds, _ = d.send(core.SessionStarted{IssueKey: "1", Action: "development"})
-	wantCommands(t, cmds, core.StopSession{IssueKey: "1", Action: "development"})
+	cmds, _ = d.send(core.SessionStarted{IssueID: issueID("1"), Action: "development"})
+	wantCommands(t, cmds, core.StopSession{IssueID: issueID("1"), Action: "development"})
 
-	cmds, _ = d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: failed("stopped")})
+	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: failed("stopped")})
 	wantCommands(t, cmds,
-		core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
+		core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention},
+		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{
 			{Action: "acceptance", Workspace: "issue-1-acceptance"},
 			failure("1", "development"),
 		}}},
@@ -174,7 +175,7 @@ func TestStopGivesEachOwedCallOneFinalTry(t *testing.T) {
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.Move{IssueKey: "1", From: inProgress, To: needsAttention})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention})
 
 	// The report, in flight at stop, fails transiently: it gets its final try.
 	retry, _ := d.send(core.CallResult{ID: reportID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
@@ -185,12 +186,12 @@ func TestStopGivesEachOwedCallOneFinalTry(t *testing.T) {
 
 	_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultFailed, Reason: "still down"})
 	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-		Kind: core.CallMove, IssueKey: "1", IssueRef: "#1", From: inProgress, To: needsAttention,
+		Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: inProgress, To: needsAttention,
 	}})
 	cmds, events = d.send(core.CallResult{ID: reportRetry, Result: core.ResultFailed, Reason: "still down"})
 	wantCommands(t, cmds)
 	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-		Kind: core.CallReport, IssueKey: "1", IssueRef: "#1",
+		Kind: core.CallReport, IssueID: issueID("1"), IssueRef: "#1",
 	}})
 	if !d.m.Stopped() {
 		t.Fatal("not stopped once every owed call had its final try")

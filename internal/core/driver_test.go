@@ -1,10 +1,12 @@
 package core_test
 
 import (
+	"encoding/binary"
 	"reflect"
 	"slices"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -44,27 +46,43 @@ func draft() []crew.Rule {
 // issue returns an issue keyed key, opened minute minutes after t0.
 func issue(key string, minute int, states ...crew.State) crew.Issue {
 	return crew.Issue{
-		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
+		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
 		Created: t0.Add(time.Duration(minute) * time.Minute), States: states,
 	}
 }
 
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
+
 // space is the workspace an engine would create for key and action.
-func space(key, action string) core.WorkspaceReady {
-	name := "issue-" + key + "-" + action
+func space(key string, action crew.ActionName) core.WorkspaceReady {
+	name := "issue-" + key + "-" + string(action)
 	return core.WorkspaceReady{
-		IssueKey: key, Action: action, Workspace: name, Dir: "/repo/.crew/worktrees/" + name,
+		IssueID: issueID(key), Action: action, Workspace: crew.WorkspaceName(name), Dir: "/repo/.crew/worktrees/" + name,
 		Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }
 
 // driver feeds a model inputs one second apart, as the engine would stamp
-// them, and keeps every event the model emitted.
+// them, each with the next sequential seed, so run ids stay deterministic,
+// and keeps every event the model emitted.
 type driver struct {
-	t      *testing.T
-	m      *core.Model
-	now    time.Time
+	t   *testing.T
+	m   *core.Model
+	now time.Time
+	// inputs counts the inputs sent: the nth gets seed(n).
+	inputs uint64
+	// listed is the seed stamped on the last IssuesListed sent, from which
+	// the runs it took got their ids.
+	listed uuid.UUID
 	events []core.Event
+}
+
+// seed returns the nth sequential seed: a UUID whose last bytes encode n.
+func seed(n uint64) uuid.UUID {
+	var u uuid.UUID
+	binary.BigEndian.PutUint64(u[8:], n)
+	return u
 }
 
 func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
@@ -74,17 +92,22 @@ func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 
 func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 	d.now = d.now.Add(time.Second)
-	cmds, events := d.m.Update(in.Stamped(d.now))
+	d.inputs++
+	stamp := seed(d.inputs)
+	if _, ok := in.(core.IssuesListed); ok {
+		d.listed = stamp
+	}
+	cmds, events := d.m.Update(in.Stamped(d.now, stamp))
 	d.events = append(d.events, events...)
 	return cmds, events
 }
 
 // wantReason fails the test unless the last ActionEnded of action on issue
 // key carried reason.
-func (d *driver) wantReason(key, action, reason string) {
+func (d *driver) wantReason(key string, action crew.ActionName, reason string) {
 	d.t.Helper()
 	for _, e := range slices.Backward(d.events) {
-		if ended, ok := e.(core.ActionEnded); ok && ended.IssueKey == key && ended.Action == action {
+		if ended, ok := e.(core.ActionEnded); ok && ended.IssueID == issueID(key) && ended.Action == action {
 			if got := ended.Outcome.Reason.String(); got != reason {
 				d.t.Errorf("%s of #%s ended with reason %q, want %q", action, key, got, reason)
 			}
@@ -108,9 +131,9 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ReportFailure:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
-				out, _ = d.send(space(c.Issue.Key, c.Action))
+				out, _ = d.send(space(c.Issue.ID.Key, c.Action))
 			case core.StartSession:
-				out, _ = d.send(core.SessionStarted{IssueKey: c.IssueKey, Action: c.Action})
+				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Action: c.Action})
 			}
 			next = append(next, out...)
 		}
@@ -157,7 +180,7 @@ func noIDs(cmds []core.Command) []core.Command {
 func moveID(t *testing.T, cmds []core.Command, key string) core.CallID {
 	t.Helper()
 	for _, c := range cmds {
-		if m, ok := c.(core.Move); ok && m.IssueKey == key {
+		if m, ok := c.(core.Move); ok && m.IssueID.Key == key {
 			return m.ID
 		}
 	}
@@ -169,7 +192,7 @@ func moveID(t *testing.T, cmds []core.Command, key string) core.CallID {
 func reportID(t *testing.T, cmds []core.Command, key string) core.CallID {
 	t.Helper()
 	for _, c := range cmds {
-		if r, ok := c.(core.ReportFailure); ok && r.Report.IssueKey == key {
+		if r, ok := c.(core.ReportFailure); ok && r.Report.IssueID.Key == key {
 			return r.ID
 		}
 	}
@@ -200,7 +223,7 @@ func hasEvent(t *testing.T, events []core.Event, want core.Event) {
 func claimOf(t *testing.T, m *core.Model, key string) core.Claim {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.Key == key {
+		if iv.Issue.ID.Key == key {
 			return iv.Claim
 		}
 	}
@@ -213,7 +236,7 @@ func wantHeld(t *testing.T, m *core.Model, keys ...string) {
 	issues := m.View().Issues
 	got := make([]string, 0, len(issues))
 	for _, iv := range issues {
-		got = append(got, iv.Issue.Key)
+		got = append(got, iv.Issue.ID.Key)
 	}
 	if !slices.Equal(got, keys) {
 		t.Fatalf("held issues: got %v, want %v", got, keys)
@@ -230,15 +253,15 @@ var succeeded = crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("done"
 func issueKey(c core.Command) string {
 	switch c := c.(type) {
 	case core.Move:
-		return c.IssueKey
+		return c.IssueID.Key
 	case core.ReportFailure:
-		return c.Report.IssueKey
+		return c.Report.IssueID.Key
 	case core.CreateWorkspace:
-		return c.Issue.Key
+		return c.Issue.ID.Key
 	case core.StartSession:
-		return c.IssueKey
+		return c.IssueID.Key
 	case core.StopSession:
-		return c.IssueKey
+		return c.IssueID.Key
 	}
 	return ""
 }
@@ -247,8 +270,8 @@ func issueKey(c core.Command) string {
 // commands, both in flight.
 func judgedNeedingAttention(d *driver) []core.Command {
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: failed("broke")})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 	return cmds
 }
 

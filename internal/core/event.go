@@ -21,7 +21,7 @@ type Event interface {
 type IssueTaken struct {
 	At    time.Time
 	Issue crew.Issue
-	Rule  string
+	Rule  crew.RuleName
 	From  crew.State
 	To    crew.State
 }
@@ -30,11 +30,11 @@ type IssueTaken struct {
 // when the session continues a failed run in that run's workspace.
 type ActionStarted struct {
 	At        time.Time
-	IssueKey  string
+	IssueID   crew.IssueID
 	IssueRef  string
-	Rule      string
-	Action    string
-	Workspace string
+	Rule      crew.RuleName
+	Action    crew.ActionName
+	Workspace crew.WorkspaceName
 	Branch    string
 	Log       string
 	Resumed   bool
@@ -45,21 +45,21 @@ type ActionStarted struct {
 // unless crew is stopping.
 type WorkspaceMissing struct {
 	At        time.Time
-	IssueKey  string
+	IssueID   crew.IssueID
 	IssueRef  string
-	Rule      string
-	Action    string
-	Workspace string
+	Rule      crew.RuleName
+	Action    crew.ActionName
+	Workspace crew.WorkspaceName
 }
 
 // RunNotRecorded is a run record the engine could not write to the run
 // journal. After a restart, crew may not know how that run ended.
 type RunNotRecorded struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
-	Rule     string
-	Action   string
+	Rule     crew.RuleName
+	Action   crew.ActionName
 	Reason   string
 }
 
@@ -69,19 +69,19 @@ type RunNotRecorded struct {
 // Workspace and Log are empty when the action got no workspace or session.
 type ActionEnded struct {
 	At        time.Time
-	IssueKey  string
+	IssueID   crew.IssueID
 	IssueRef  string
-	Rule      string
-	Action    string
+	Rule      crew.RuleName
+	Action    crew.ActionName
 	Outcome   crew.Outcome
-	Workspace string
+	Workspace crew.WorkspaceName
 	Log       string
 }
 
 // IssueMoved is a move the tracker made, a take or a verdict.
 type IssueMoved struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	From     crew.State
 	To       crew.State
@@ -90,7 +90,7 @@ type IssueMoved struct {
 // FailureReported is a failure report the tracker posted.
 type FailureReported struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 }
 
@@ -98,7 +98,7 @@ type FailureReported struct {
 // taken (R15); a later poll takes it once it is in exactly one.
 type IssueSkipped struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	States   []crew.State
 }
@@ -109,13 +109,13 @@ type IssueSkipped struct {
 // once a listing found it in no such state.
 type IssueOfOtherKind struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	// Kind is the item's kind.
 	Kind crew.Kind
 	// Label is the crew state the item is in, Rule's label.
 	Label crew.State
-	Rule  string
+	Rule  crew.RuleName
 	// Takes is the kind Rule takes.
 	Takes crew.Kind
 }
@@ -174,7 +174,7 @@ type CallDropped struct {
 // issue moved meanwhile (KTD5).
 type StatusFailed struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	Result   Result
 	Reason   string
@@ -201,7 +201,7 @@ type Stopped struct {
 // R11). It is emitted once per problem, when the bot gains it.
 type BotStopped struct {
 	At  time.Time
-	Bot string
+	Bot crew.BotName
 	// Reason is the short reason: "writes as you" or "token not renewed".
 	Reason string
 	// Warning is the full reason and its fix.
@@ -212,7 +212,7 @@ type BotStopped struct {
 // its token was renewed after a failure (R10).
 type BotActsAgain struct {
 	At  time.Time
-	Bot string
+	Bot crew.BotName
 }
 
 // CallKind tells a Move, a ReportFailure and a ReportPullRequests apart in a
@@ -244,7 +244,7 @@ func (k CallKind) String() string {
 // Call describes a tracker call in events and in the View.
 type Call struct {
 	Kind     CallKind
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	// From and To are the move's states; both are empty for a failure
 	// report. For a pull request report, To is the state the pull requests

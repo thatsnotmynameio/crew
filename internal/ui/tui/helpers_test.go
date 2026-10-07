@@ -17,9 +17,9 @@ import (
 
 // entry is #key handled by rule into to, taken and ended the given minutes
 // before start.
-func entry(key, title, rule string, to crew.State, taken, ended int) core.HandledView {
+func entry(key, title string, rule crew.RuleName, to crew.State, taken, ended int) core.HandledView {
 	return core.HandledView{
-		Issue: crew.Issue{Key: key, Ref: "#" + key, Title: title}, Rule: rule, To: to, Move: crew.MoveDone,
+		Issue: crew.Issue{ID: issueID(key), Ref: "#" + key, Title: title}, Rule: rule, To: to, Move: crew.MoveDone,
 		Taken: start.Add(-time.Duration(taken) * time.Minute), Ended: start.Add(-time.Duration(ended) * time.Minute),
 	}
 }
@@ -28,7 +28,7 @@ func entry(key, title, rule string, to crew.State, taken, ended int) core.Handle
 func failedEntry(key, title string, taken, ended int, actions ...string) core.HandledView {
 	e := entry(key, title, "implement", "needs attention", taken, ended)
 	for _, a := range actions {
-		e.Failures = append(e.Failures, crew.ActionFailure{Action: a})
+		e.Failures = append(e.Failures, crew.ActionFailure{Action: crew.ActionName(a)})
 	}
 	return e
 }
@@ -47,7 +47,8 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{
-		Issue: crew.Issue{Key: "7", Ref: "#7", Title: "Log the poll interval"}, Labels: []string{"ready to review"},
+		Issue:  crew.Issue{ID: issueID("7"), Ref: "#7", Title: "Log the poll interval"},
+		Labels: []crew.State{"ready to review"},
 	})
 	u.Snapshot.Handled = []core.HandledView{
 		acted(
@@ -90,7 +91,7 @@ func manySnapshot() engine.Update {
 	}
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
-		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: e.Issue, Labels: []string{"ready to review"}})
+		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: e.Issue, Labels: []crew.State{"ready to review"}})
 	}
 	u.Snapshot.Bots[0].Spend = u.Snapshot.Spent
 	return u
@@ -171,3 +172,6 @@ func nextCard(l, prefix string) int {
 	}
 	return i
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

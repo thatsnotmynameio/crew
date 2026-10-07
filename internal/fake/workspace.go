@@ -42,12 +42,12 @@ func NewWorkspace(root string) *Workspace {
 // Create implements port.Workspace. It names the workspace
 // issue-<key>-<action>, adding -2, -3 and so on when that directory exists,
 // and its branch crew/<name>.
-func (w *Workspace) Create(_ context.Context, issue crew.Issue, action string) (port.Space, error) {
+func (w *Workspace) Create(_ context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
 	root, err := filepath.Abs(w.root)
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	base := fmt.Sprintf("issue-%s-%s", issue.Key, action)
+	base := fmt.Sprintf("issue-%s-%s", issue.ID.Key, action)
 	for n := 1; ; n++ {
 		name := base
 		if n > 1 {
@@ -61,7 +61,7 @@ func (w *Workspace) Create(_ context.Context, issue crew.Issue, action string) (
 		if err != nil {
 			return port.Space{}, fmt.Errorf("create workspace %s: %w", name, err)
 		}
-		space := port.Space{Name: name, Dir: dir, Branch: "crew/" + name}
+		space := port.Space{Name: crew.WorkspaceName(name), Dir: dir, Branch: "crew/" + name}
 		w.mu.Lock()
 		w.spaces = append(w.spaces, space)
 		w.mu.Unlock()
@@ -77,7 +77,7 @@ func (w *Workspace) Reopen(_ context.Context, space port.Space) (port.Space, err
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	dir := filepath.Join(root, space.Name)
+	dir := filepath.Join(root, string(space.Name))
 	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", space.Name, port.ErrWorkspaceGone)
 	} else if err != nil {

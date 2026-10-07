@@ -87,7 +87,7 @@ var success = port.Verdict{Succeeded: true, Reason: "opened a pull request"}
 
 func issue(key string, states ...crew.State) crew.Issue {
 	return crew.Issue{
-		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key, States: states,
+		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key, States: states,
 	}
 }
 
@@ -399,8 +399,11 @@ func TestAE6LabelsNoRuleNamesAreNeverTouched(t *testing.T) {
 		if got := tr.Moves(); !reflect.DeepEqual(got, wantMoves) {
 			t.Errorf("moves = %v, want %v, and none of #2", got, wantMoves)
 		}
-		if want := []string{brainstormReady, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
+		if want := []crew.State{brainstormReady, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
 			t.Errorf("#1 has the labels %q, want %q", tr.Labels("1"), want)
 		}
 	})
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

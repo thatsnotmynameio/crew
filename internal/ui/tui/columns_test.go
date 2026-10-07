@@ -31,7 +31,7 @@ func TestAE6AnIssueWhoseRuleEndedHasOneCardWhereItsLabelsPutIt(t *testing.T) {
 	if got := columnNamesOf(t, board); got != "triage development fix" {
 		t.Errorf("columns = %q, want triage development fix:\n%s", got, board)
 	}
-	want := []slide{{key: "12", ref: "#12", from: 0, to: 1}}
+	want := []slide{{id: issueID("12"), ref: "#12", from: 0, to: 1}}
 	if got := h.current().memory.slides; !slices.Equal(got, want) {
 		t.Errorf("slides = %v, want %v", got, want)
 	}
@@ -48,7 +48,7 @@ func TestAE7AFailedRuleNotifiesAndLeavesNoHandledCard(t *testing.T) {
 	u := onBoard(handledBy(twelve, "triage", "crew:triage:failed"), labeled(twelve, "crew:triage:failed"))
 	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "triage"}}
 	u.Snapshot.Recent = []core.Event{core.IssueMoved{
-		At: start, IssueKey: "12", IssueRef: "#12", From: "crew:triage:in progress", To: "crew:triage:failed",
+		At: start, IssueID: issueID("12"), IssueRef: "#12", From: "crew:triage:in progress", To: "crew:triage:failed",
 	}}
 	notes := raws(h.send(updateMsg(u)))
 	if len(notes) != 1 || !strings.Contains(notes[0], "triage failed on #12 Rule labels") {
@@ -97,7 +97,7 @@ func TestAHeldIssueNoColumnShowsIsInNotOnBoard(t *testing.T) {
 // Covers KTD13 of #151: a pull request a rule holds has no column on a
 // written board of issues, so it shows in Not on board.
 func TestAHeldPullRequestShowsInNotOnBoard(t *testing.T) {
-	pr := crew.Issue{Key: "90", Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
+	pr := crew.Issue{ID: issueID("90"), Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(held(pr, "fix review", "review", core.ClaimRunning), labeled(pr, "bug"))))
 	board := boardOf(t, h.view())

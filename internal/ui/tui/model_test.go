@@ -47,8 +47,8 @@ var testRules = []crew.Rule{
 // testBoard is the default board of testRules: each rule's ready and
 // running labels.
 var testBoard = []crew.BoardColumn{
-	{Name: "implement", Labels: []string{"ready", "in progress"}},
-	{Name: "review", Labels: []string{"ready to review", "in review"}},
+	{Name: "implement", Labels: []crew.State{"ready", "in progress"}},
+	{Name: "review", Labels: []crew.State{"ready to review", "in review"}},
 }
 
 // harness drives a Model directly through Update and View, with a clock the
@@ -135,8 +135,8 @@ func you(pairs []string, running ...core.RunningAction) core.BotView {
 // on the board in its rule's column, 12 minutes into a one-hour run, with
 // no bot configured.
 func runningSnapshot() engine.Update {
-	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
-	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
+	one := crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Add login form"}
+	two := crew.Issue{ID: issueID("2"), Ref: "#2", Title: "Fix the flaky stream test"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
@@ -153,7 +153,7 @@ func runningSnapshot() engine.Update {
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"},
 			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})},
 			Board: []crew.BoardIssue{
-				{Issue: one, Labels: []string{"in progress"}}, {Issue: two, Labels: []string{"ready to review"}},
+				{Issue: one, Labels: []crew.State{"in progress"}}, {Issue: two, Labels: []crew.State{"ready to review"}},
 			}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Event{
@@ -201,7 +201,7 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 // workspace, one resumed in its reopened workspace 3 minutes before start,
 // and one fresh, started 2 minutes before start.
 func resumingSnapshot() engine.Update {
-	issue := crew.Issue{Key: "9", Ref: "#9", Title: "Add login form"}
+	issue := crew.Issue{ID: issueID("9"), Ref: "#9", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{{Name: crew.DefaultQueue, Slots: 2, Busy: 1}}, Issues: []core.IssueView{
 			{Issue: issue, Rule: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
@@ -237,7 +237,7 @@ func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
 
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
-	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
+	issue := crew.Issue{ID: issueID("42"), Ref: "#42", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{TimeUp: true, Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
@@ -247,7 +247,7 @@ func windingDownSnapshot() engine.Update {
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code"},
 			core.RunningAction{IssueRef: "#42", Rule: "implement", Action: "code"})},
-			Board: []crew.BoardIssue{{Issue: issue, Labels: []string{"in progress"}}}},
+			Board: []crew.BoardIssue{{Issue: issue, Labels: []crew.State{"in progress"}}}},
 		Recent: []core.Event{
 			core.WindingDown{At: start.Add(-15 * time.Minute), Limit: time.Hour},
 		},

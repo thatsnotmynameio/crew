@@ -90,7 +90,7 @@ type Options struct {
 	// tracker.bot, def, first when set. It runs among the environment
 	// checks, on their context, and only when the config names a bot. nil
 	// makes such a config an environment error.
-	Bots func(ctx context.Context, def string, names []string) (Bots, error)
+	Bots func(ctx context.Context, def crew.BotName, names []crew.BotName) (Bots, error)
 }
 
 // Bots are the bots that act this run, as Options.Bots made them.
@@ -98,7 +98,7 @@ type Bots struct {
 	// Identities are the identities of the bots that act, by name: what
 	// their actions' sessions and checks act as. A bot that cannot act has
 	// none, and its actions act as you.
-	Identities map[string]port.Identity
+	Identities map[crew.BotName]port.Identity
 	// Writer is what crew's own writes on the tracker act as: the default
 	// bot, or the zero Identity, you, when there is none or it cannot act.
 	Writer port.Identity
@@ -111,10 +111,10 @@ type Bots struct {
 	Warnings []string
 	// Unable holds, by name, the short reason of each configured bot that
 	// cannot act this run, such as "no key"; nil when every bot acts.
-	Unable map[string]string
+	Unable map[crew.BotName]string
 	// Failing returns, by name, the warning of each bot whose last token
 	// renewal failed; the engine reads it while it runs. nil reads none.
-	Failing func() map[string]string
+	Failing func() map[crew.BotName]string
 	// Close stops renewing the bots' tokens and removes them. nil does
 	// nothing.
 	Close func()

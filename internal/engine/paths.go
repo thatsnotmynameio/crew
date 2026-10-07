@@ -23,8 +23,8 @@ const (
 // logPath returns the repository-relative path of the log of the sessions
 // running in workspace. A log holds every session of its workspace: a
 // resumed session's output goes after the failed run's (R10).
-func logPath(workspace string) string {
-	return logDir + "/" + workspace + ".log"
+func logPath(workspace crew.WorkspaceName) string {
+	return logDir + "/" + string(workspace) + ".log"
 }
 
 // logFromDir returns the path of the log at the repository-relative path

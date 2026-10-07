@@ -73,7 +73,7 @@ func prNode(number int, state, repo string, labels ...crew.State) string {
 // ended is report p1 of #42 moving to state at the end of development, whose
 // actions are actions.
 func ended(state crew.State, actions ...crew.ActionStatus) crew.PullRequestReport {
-	return crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: state,
+	return crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: state,
 		End: &crew.RuleEnd{Rule: "development", Actions: actions}}
 }
 
@@ -199,7 +199,8 @@ func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
 			// GitHub resolves #90 to a pull request, which the Issue
 			// fragment leaves empty.
 			tr, gh := prTracker(t, reply{prefix: prQuery, stdout: `{"data":{"repository":{"issueOrPullRequest":{}}}}`})
-			report := crew.PullRequestReport{ID: "p1", IssueKey: "90", IssueRef: "#90", State: crewWaitingReview, End: end}
+			report := crew.PullRequestReport{ID: "p1", IssueID: issueID("90"), IssueRef: "#90", State: crewWaitingReview,
+				End: end}
 			if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 				t.Fatalf("ReportPullRequests: %v", err)
 			}
@@ -225,7 +226,7 @@ func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 			prNode(50, "OPEN", "o/r", crewWaitingReview, crewReadyForFix, crewWaitingBrain, "bug"))},
 		reply{prefix: prEdit},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: crewInProgress}
+	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewInProgress}
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestAReportWithoutAnEndPostsNoComment(t *testing.T) {
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewReadyForFix))},
 		reply{prefix: prEdit},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: crewInProgress}
+	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewInProgress}
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -367,7 +368,7 @@ func TestAMissingLabelIsRefused(t *testing.T) {
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewInProgress))},
 		reply{prefix: prEdit, stderr: "could not add label: 'crew:waiting review' not found\n"},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: crewWaitingReview}
+	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewWaitingReview}
 	if err := tr.ReportPullRequests(context.Background(), report); !errors.Is(err, port.ErrRefused) {
 		t.Errorf("ReportPullRequests = %v, want ErrRefused", err)
 	}
@@ -382,7 +383,7 @@ func TestATransientFailureOutweighsARefusal(t *testing.T) {
 		reply{prefix: []string{"pr", "edit", "50"}, stderr: "could not add label: 'crew:waiting review' not found\n"},
 		reply{prefix: []string{"pr", "edit", "51"}, stderr: "HTTP 502: Bad Gateway"},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: crewWaitingReview}
+	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewWaitingReview}
 	err := tr.ReportPullRequests(context.Background(), report)
 	if err == nil || errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused) {
 		t.Errorf("ReportPullRequests = %v, want a transient error", err)
@@ -402,7 +403,7 @@ func TestTheQuerysErrorsAreClassified(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := prTracker(t, tc.reply)
-			report := crew.PullRequestReport{ID: "p1", IssueKey: "42", IssueRef: "#42", State: crewWaitingReview}
+			report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewWaitingReview}
 			err := tr.ReportPullRequests(context.Background(), report)
 			switch {
 			case err == nil:

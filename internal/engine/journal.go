@@ -38,17 +38,17 @@ const (
 // its field is a pointer. Rule keeps the name stage, from before rules
 // were called stages, so older journals still resume.
 type journalLine struct {
-	Version   int       `json:"v"`
-	Event     string    `json:"event"`
-	Time      time.Time `json:"time"`
-	Run       string    `json:"run,omitempty"`
-	Issue     string    `json:"issue"`
-	Ref       string    `json:"ref"`
-	Rule      string    `json:"stage"`
-	Action    string    `json:"action"`
-	Workspace string    `json:"workspace"`
-	Branch    string    `json:"branch"`
-	Log       string    `json:"log"`
+	Version   int                `json:"v"`
+	Event     string             `json:"event"`
+	Time      time.Time          `json:"time"`
+	Run       string             `json:"run,omitempty"`
+	Issue     string             `json:"issue"`
+	Ref       string             `json:"ref"`
+	Rule      crew.RuleName      `json:"stage"`
+	Action    crew.ActionName    `json:"action"`
+	Workspace crew.WorkspaceName `json:"workspace"`
+	Branch    string             `json:"branch"`
+	Log       string             `json:"log"`
 	// The fields below are set on ended lines only. DurationMS, from the
 	// session's start to the action's end, is left out when no session
 	// started, and so are the usage fields.
@@ -75,9 +75,10 @@ const (
 )
 
 // readJournal returns the run journal's records in the order they were
-// written. A missing journal holds none. A line that does not parse, such as
-// one cut short by a crash, is skipped.
-func (e *Engine) readJournal() ([]core.RunRecord, error) {
+// written, each issue in repository: the journal belongs to one checkout, so
+// its lines hold only the issue's key. A missing journal holds none. A line
+// that does not parse, such as one cut short by a crash, is skipped.
+func (e *Engine) readJournal(repository crew.RepositoryID) ([]core.RunRecord, error) {
 	data, err := os.ReadFile(filepath.Join(e.cfg.Root, filepath.FromSlash(journalPath)))
 	// A file where the log directory goes is no journal either; the session
 	// logs that cannot be created there are reported as they fail.
@@ -93,22 +94,22 @@ func (e *Engine) readJournal() ([]core.RunRecord, error) {
 		if err := json.Unmarshal(line, &l); err != nil {
 			continue
 		}
-		if r, ok := l.record(); ok {
+		if r, ok := l.record(repository); ok {
 			records = append(records, r)
 		}
 	}
 	return records, nil
 }
 
-// record returns the run record l holds, or false when l is not a record
-// this version of crew understands.
-func (l journalLine) record() (core.RunRecord, bool) {
+// record returns the run record l holds, its issue in repository, or false
+// when l is not a record this version of crew understands.
+func (l journalLine) record(repository crew.RepositoryID) (core.RunRecord, bool) {
 	if l.Version != journalVersion || l.Issue == "" || l.Workspace == "" {
 		return core.RunRecord{}, false
 	}
 	r := core.RunRecord{
-		At: l.Time, IssueKey: l.Issue, IssueRef: l.Ref, Rule: l.Rule, Action: l.Action,
-		Workspace: l.Workspace, Branch: l.Branch, Log: l.Log,
+		At: l.Time, IssueID: crew.IssueID{Repository: repository, Key: l.Issue}, IssueRef: l.Ref,
+		Rule: l.Rule, Action: l.Action, Workspace: l.Workspace, Branch: l.Branch, Log: l.Log,
 	}
 	switch l.Event {
 	case eventStarted:
@@ -127,7 +128,7 @@ func (l journalLine) record() (core.RunRecord, bool) {
 // lineOf returns the journal line of r, in the crew run run.
 func lineOf(r core.RunRecord, run string) journalLine {
 	l := journalLine{
-		Version: journalVersion, Event: eventStarted, Time: r.At.UTC(), Run: run, Issue: r.IssueKey,
+		Version: journalVersion, Event: eventStarted, Time: r.At.UTC(), Run: run, Issue: r.IssueID.Key,
 		Ref: r.IssueRef, Rule: r.Rule, Action: r.Action, Workspace: r.Workspace, Branch: r.Branch, Log: r.Log,
 	}
 	if r.Event != core.RunEnded {

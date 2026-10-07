@@ -117,7 +117,7 @@ func TestLoadKeepsRulesAndActionsInFileOrder(t *testing.T) {
 	var got []string
 	for _, r := range cfg.Rules {
 		for _, a := range r.Actions {
-			got = append(got, r.Name+"/"+a.Name)
+			got = append(got, string(r.Name)+"/"+string(a.Name))
 		}
 	}
 	if want := []string{"zeta/second", "zeta/first", "alpha/only"}; !reflect.DeepEqual(got, want) {

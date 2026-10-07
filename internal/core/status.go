@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-	"maps"
 	"reflect"
 	"slices"
 
@@ -33,10 +31,11 @@ type statusSlot struct {
 	// failing is set while writes fail, so failures in a row are reported
 	// once.
 	failing bool
-	// run is the id of the issue's current rule run, and runRule its
-	// rule; runEnded is set once an ended status of it was reported.
-	run      string
-	runRule  string
+	// run is the id of the comment's current entry: the id of the rule run
+	// whose status opened it. runRule is its rule; runEnded is set once an
+	// ended status of it was reported.
+	run      crew.RuleRunID
+	runRule  crew.RuleName
 	runEnded bool
 }
 
@@ -53,10 +52,10 @@ func (s *step) report(st crew.Status) {
 	if m.statuses == nil {
 		return
 	}
-	sl := m.statuses[st.IssueKey]
+	sl := m.statuses[st.IssueID]
 	if sl == nil {
 		sl = &statusSlot{}
-		m.statuses[st.IssueKey] = sl
+		m.statuses[st.IssueID] = sl
 	}
 	sl.ref = st.IssueRef
 	s.assignRun(sl, &st)
@@ -83,15 +82,14 @@ func (s *step) report(st crew.Status) {
 	s.pump(sl)
 }
 
-// assignRun gives st the id of its rule run (R10): the issue's current run
-// goes on until it ended and a status of another kind comes, or until a
-// status of another rule comes. An id is the run's start time and a count,
-// so ids differ across crew processes and within one.
-func (s *step) assignRun(sl *statusSlot, st *crew.Status) {
+// assignRun gives st the id of its comment entry (R10): the issue's current
+// entry goes on until it ended and a status of another kind comes, or until
+// a status of another rule comes. A new entry takes the id of the rule run
+// st comes from, which is global (KTD5); every status of the entry carries
+// it.
+func (*step) assignRun(sl *statusSlot, st *crew.Status) {
 	if sl.run == "" || st.Rule != sl.runRule || (sl.runEnded && st.Kind != crew.StatusEnded) {
-		s.m.runs++
-		sl.run = fmt.Sprintf("%s.%d", s.at.UTC().Format("20060102T150405.000000000Z"), s.m.runs)
-		sl.runRule = st.Rule
+		sl.run, sl.runRule = st.Run, st.Rule
 	}
 	sl.runEnded = st.Kind == crew.StatusEnded
 	st.Run = sl.run
@@ -119,7 +117,7 @@ func (s *step) send(sl *statusSlot, st crew.Status) {
 // the waiting statuses of later runs until it lands or is given up.
 func (s *step) statusResult(r StatusResult) {
 	m := s.m
-	sl := m.statuses[r.IssueKey]
+	sl := m.statuses[r.IssueID]
 	if sl == nil || sl.sending == nil {
 		return
 	}
@@ -131,7 +129,7 @@ func (s *step) statusResult(r StatusResult) {
 		sl.shown = nil
 		if !sl.failing {
 			sl.failing = true
-			s.emit(StatusFailed{At: s.at, IssueKey: r.IssueKey, IssueRef: sl.ref, Result: r.Result, Reason: r.Reason})
+			s.emit(StatusFailed{At: s.at, IssueID: r.IssueID, IssueRef: sl.ref, Result: r.Result, Reason: r.Reason})
 		}
 		superseded := len(sl.waiting) > 0 && sl.waiting[0].Run == sent.Run
 		if r.Result == ResultFailed && sent.Kind == crew.StatusEnded && !superseded {
@@ -149,10 +147,10 @@ func (s *step) statusResult(r StatusResult) {
 	s.pump(sl)
 }
 
-// retryStatuses resends each owed status, in issue-key order; after a stop,
+// retryStatuses resends each owed status, in issue id order; after a stop,
 // as its one final try.
 func (s *step) retryStatuses() {
-	for _, key := range slices.Sorted(maps.Keys(s.m.statuses)) {
+	for _, key := range sortedIssueIDs(s.m.statuses) {
 		sl := s.m.statuses[key]
 		if sl.owed == nil || sl.sending != nil {
 			continue
@@ -211,8 +209,8 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 // it spent and its pull request.
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
-		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
-		Kind: kind, Updated: s.at,
+		IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		Kind: kind, Updated: s.at, Run: h.run,
 	}
 	for _, a := range h.actions {
 		as := crew.ActionStatus{Name: a.name, State: crew.ActionRunning}
@@ -237,7 +235,7 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 
 // sameStatus reports whether a and b show the same, whenever computed (R5).
 func sameStatus(a, b crew.Status) bool {
-	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Rule == b.Rule &&
+	return a.IssueID == b.IssueID && a.IssueRef == b.IssueRef && a.Rule == b.Rule &&
 		a.Kind == b.Kind && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
 		slices.EqualFunc(a.Actions, b.Actions, sameAction)
 }

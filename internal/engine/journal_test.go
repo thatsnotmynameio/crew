@@ -20,13 +20,20 @@ func journalEngine(t *testing.T) *Engine {
 	return &Engine{cfg: Config{Root: t.TempDir()}}
 }
 
-// record is a record of event for the lfg action of the issue keyed key.
+// journalRepository is the repository the journal tests read their records
+// in.
+const journalRepository crew.RepositoryID = "R_journal"
+
+// record is a record of event for the lfg action of the issue keyed key, in
+// journalRepository.
 func record(event core.RunEvent, key string) core.RunRecord {
 	const action = "lfg"
 	name := "issue-" + key + "-" + action
 	r := core.RunRecord{
-		Event: event, At: time.Date(2026, 10, 2, 21, 5, 0, 0, time.UTC), IssueKey: key, IssueRef: "#" + key,
-		Rule: "development", Action: action, Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
+		Event: event, At: time.Date(2026, 10, 2, 21, 5, 0, 0, time.UTC),
+		IssueID: crew.IssueID{Repository: journalRepository, Key: key}, IssueRef: "#" + key,
+		Rule: "development", Action: action, Workspace: crew.WorkspaceName(name),
+		Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 	if event == core.RunEnded {
 		r.Reason = crew.NewSessionText("no pull request was found")
@@ -48,7 +55,7 @@ func TestTheJournalReadsBackWhatWasAppendedInOrder(t *testing.T) {
 		}
 	}
 
-	got, err := e.readJournal()
+	got, err := e.readJournal(journalRepository)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -64,6 +71,31 @@ func TestTheJournalReadsBackWhatWasAppendedInOrder(t *testing.T) {
 		`"succeeded":false,"reason":"no pull request was found","pull_request_lookup":"not looked up"}`
 	if lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n"); len(lines) != 3 || lines[2] != wantEnded {
 		t.Fatalf("journal = %q, want its last line %s", data, wantEnded)
+	}
+}
+
+func TestALineWrittenBeforeIssuesCarriedTheirRepositoryReadsInTheRepositoryGiven(t *testing.T) {
+	e := journalEngine(t)
+	line := `{"v":1,"event":"ended","time":"2026-10-02T21:05:00Z","run":"2026-10-02T21:00:00Z","issue":"9",` +
+		`"ref":"#9","stage":"development","action":"lfg","workspace":"issue-9-lfg","branch":"crew/issue-9-lfg",` +
+		`"log":".crew/logs/issue-9-lfg.log","succeeded":false,"reason":"no pull request was found",` +
+		`"pull_request_lookup":"not looked up"}` + "\n"
+	path := filepath.Join(e.cfg.Root, ".crew", "logs", "runs.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := e.readJournal("R_other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := record(core.RunEnded, "9")
+	want.IssueID.Repository = "R_other"
+	if !reflect.DeepEqual(got, []core.RunRecord{want}) {
+		t.Fatalf("records:\n got %#v\nwant %#v", got, []core.RunRecord{want})
 	}
 }
 
@@ -89,7 +121,7 @@ func TestAJournalLineCutShortIsSkippedAndTheNextAppendStartsItsOwnLine(t *testin
 	if err := e.appendJournal(next); err != nil {
 		t.Fatal(err)
 	}
-	got, err := e.readJournal()
+	got, err := e.readJournal(journalRepository)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +131,7 @@ func TestAJournalLineCutShortIsSkippedAndTheNextAppendStartsItsOwnLine(t *testin
 }
 
 func TestAMissingJournalHoldsNoRecords(t *testing.T) {
-	got, err := journalEngine(t).readJournal()
+	got, err := journalEngine(t).readJournal(journalRepository)
 	if err != nil || got != nil {
 		t.Fatalf("readJournal = %v, %v, want no records and no error", got, err)
 	}
@@ -148,7 +180,7 @@ func TestAnEndWithoutAWorkspaceIsWrittenAndSkippedOnRead(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), `"event":"ended"`) {
 		t.Fatalf("journal = %q, %v, want the end written", data, err)
 	}
-	if got, err := e.readJournal(); err != nil || len(got) != 0 {
+	if got, err := e.readJournal(journalRepository); err != nil || len(got) != 0 {
 		t.Fatalf("readJournal = %#v, %v, want it skipped", got, err)
 	}
 }
@@ -166,7 +198,7 @@ func TestAJournalReasonWithAControlByteLoadsWithASpaceInItsPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := e.readJournal()
+	got, err := e.readJournal(journalRepository)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("readJournal = %#v, %v, want one record", got, err)
 	}

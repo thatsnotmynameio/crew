@@ -57,28 +57,28 @@ var crewRules = []crew.Rule{
 // column per rule with actions, triage, development and fix, each with
 // its ready and running labels (R22).
 var crewBoard = []crew.BoardColumn{
-	{Name: "triage", Labels: []string{"crew:triage:ready", "crew:triage:in progress"}},
-	{Name: "development", Labels: []string{"crew:development:ready", "crew:development:in progress"}},
-	{Name: "fix", Labels: []string{"crew:fix:ready", "crew:fix:in progress"}},
+	{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:in progress"}},
+	{Name: "development", Labels: []crew.State{"crew:development:ready", "crew:development:in progress"}},
+	{Name: "fix", Labels: []crew.State{"crew:fix:ready", "crew:fix:in progress"}},
 }
 
 // ideasBugsDone is a written board.
 var ideasBugsDone = []crew.BoardColumn{
-	{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
-	{Name: "bugs", Labels: []string{"bug"}},
-	{Name: "done", Labels: []string{"crew:brainstorm:done", "crew:triage:done"}},
+	{Name: "ideas", Labels: []crew.State{"crew:brainstorm:ready"}},
+	{Name: "bugs", Labels: []crew.State{"bug"}},
+	{Name: "done", Labels: []crew.State{"crew:brainstorm:done", "crew:triage:done"}},
 }
 
 var (
-	twelve    = crew.Issue{Key: "12", Ref: "#12", Title: "Rule labels", URL: "https://github.com/o/r/issues/12"}
-	twenty    = crew.Issue{Key: "20", Ref: "#20", Title: "Crash on start"}
-	twentyOne = crew.Issue{Key: "21", Ref: "#21", Title: "Retry the poll"}
-	twentyTwo = crew.Issue{Key: "22", Ref: "#22", Title: "Typo in help"}
+	twelve    = crew.Issue{ID: issueID("12"), Ref: "#12", Title: "Rule labels", URL: "https://github.com/o/r/issues/12"}
+	twenty    = crew.Issue{ID: issueID("20"), Ref: "#20", Title: "Crash on start"}
+	twentyOne = crew.Issue{ID: issueID("21"), Ref: "#21", Title: "Retry the poll"}
+	twentyTwo = crew.Issue{ID: issueID("22"), Ref: "#22", Title: "Typo in help"}
 )
 
 // held is a snapshot of issue held by rule in claim, with one running
 // action.
-func held(issue crew.Issue, rule, action string, claim core.Claim) engine.Update {
+func held(issue crew.Issue, rule crew.RuleName, action crew.ActionName, claim core.Claim) engine.Update {
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Issues: []core.IssueView{{
 		Issue: issue, Rule: rule, Queue: "clerk", Claim: claim,
 		Actions: []core.ActionView{{Name: action, Phase: core.PhaseRunning, Started: start.Add(-time.Minute)}},
@@ -86,8 +86,8 @@ func held(issue crew.Issue, rule, action string, claim core.Claim) engine.Update
 }
 
 // handledBy is a snapshot of issue handled by rule, moved to to.
-func handledBy(issue crew.Issue, rule string, to crew.State) engine.Update {
-	e := entry(issue.Key, issue.Title, rule, to, 10, 1)
+func handledBy(issue crew.Issue, rule crew.RuleName, to crew.State) engine.Update {
+	e := entry(issue.ID.Key, issue.Title, rule, to, 10, 1)
 	e.Issue = issue
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Handled: []core.HandledView{e}}}}
 }
@@ -100,7 +100,7 @@ func onBoard(u engine.Update, issues ...crew.BoardIssue) engine.Update {
 }
 
 // labeled is issue carrying the board labels labels.
-func labeled(issue crew.Issue, labels ...string) crew.BoardIssue {
+func labeled(issue crew.Issue, labels ...crew.State) crew.BoardIssue {
 	return crew.BoardIssue{Issue: issue, Labels: labels}
 }
 
@@ -243,8 +243,8 @@ func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
 // never in an issue column whose label its issue mirrored onto it.
 func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
 	board := append(slices.Clone(crewBoard[1:2]),
-		crew.BoardColumn{Name: "fix review", Labels: []string{"crew:fix-review:ready"}, Takes: crew.KindPullRequest})
-	pr := crew.Issue{Key: "90", Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
+		crew.BoardColumn{Name: "fix review", Labels: []crew.State{"crew:fix-review:ready"}, Takes: crew.KindPullRequest})
+	pr := crew.Issue{ID: issueID("90"), Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
 	h := newBoardHarness(t, 120, crewRules, board)
 
 	h.send(updateMsg(onBoard(engine.Update{},
@@ -292,9 +292,9 @@ func TestAE2AnIssueWithTwoColumnsLabelsHasACardInEach(t *testing.T) {
 // rules.
 func TestTheColumnsShowInBoardOrder(t *testing.T) {
 	board := []crew.BoardColumn{
-		{Name: "done", Labels: []string{"crew:triage:done"}},
-		{Name: "ideas", Labels: []string{"crew:brainstorm:ready"}},
-		{Name: "bugs", Labels: []string{"bug"}},
+		{Name: "done", Labels: []crew.State{"crew:triage:done"}},
+		{Name: "ideas", Labels: []crew.State{"crew:brainstorm:ready"}},
+		{Name: "bugs", Labels: []crew.State{"bug"}},
 	}
 	h := newBoardHarness(t, 120, crewRules, board)
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "bug"))))
@@ -310,7 +310,8 @@ func TestTheColumnsShowInBoardOrder(t *testing.T) {
 func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 	issues := make([]crew.BoardIssue, 0, 8)
 	for n := 1; n <= 8; n++ {
-		issues = append(issues, labeled(crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Bug"}, "bug"))
+		issues = append(issues, labeled(crew.Issue{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
+			Title: "Bug"}, "bug"))
 	}
 	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -336,7 +337,7 @@ func holding(claim core.Claim, keys ...string) engine.Update {
 	var u engine.Update
 	for _, k := range keys {
 		u.Snapshot.Issues = append(u.Snapshot.Issues,
-			held(crew.Issue{Key: k, Ref: "#" + k, Title: "Bug"}, "fix", "lfg", claim).Snapshot.Issues...)
+			held(crew.Issue{ID: issueID(k), Ref: "#" + k, Title: "Bug"}, "fix", "lfg", claim).Snapshot.Issues...)
 	}
 	return u
 }
@@ -427,7 +428,8 @@ func TestNotOnBoardKeepsItsOrder(t *testing.T) {
 func elevenBugs() []crew.BoardIssue {
 	issues := make([]crew.BoardIssue, 0, 11)
 	for n := 1; n <= 11; n++ {
-		issues = append(issues, labeled(crew.Issue{Key: strconv.Itoa(n), Ref: fmt.Sprintf("#%d", n), Title: "Bug"}, "bug"))
+		issues = append(issues, labeled(crew.Issue{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
+			Title: "Bug"}, "bug"))
 	}
 	return issues
 }
@@ -467,7 +469,8 @@ func TestAShortWindowTakesOneCardOffACappedColumn(t *testing.T) {
 func eightColumns() []crew.BoardColumn {
 	var out []crew.BoardColumn
 	for i := 1; i <= 8; i++ {
-		out = append(out, crew.BoardColumn{Name: fmt.Sprintf("c%d", i), Labels: []string{fmt.Sprintf("l%d", i)}})
+		label := crew.State(fmt.Sprintf("l%d", i))
+		out = append(out, crew.BoardColumn{Name: fmt.Sprintf("c%d", i), Labels: []crew.State{label}})
 	}
 	return out
 }
@@ -475,8 +478,8 @@ func eightColumns() []crew.BoardColumn {
 // Covers AE4.
 func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 	u := onBoard(engine.Update{},
-		labeled(crew.Issue{Key: "1", Ref: "#1", Title: "One"}, "l2"),
-		labeled(crew.Issue{Key: "2", Ref: "#2", Title: "Two"}, "l6"))
+		labeled(crew.Issue{ID: issueID("1"), Ref: "#1", Title: "One"}, "l2"),
+		labeled(crew.Issue{ID: issueID("2"), Ref: "#2", Title: "Two"}, "l6"))
 
 	h := newBoardHarness(t, 80, crewRules, eightColumns())
 	h.send(updateMsg(u))
@@ -508,7 +511,8 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 	for col, n := range []int{3, 3, 3, 1, 6} {
 		for k := range n {
 			key := fmt.Sprintf("%d-%d", col, k)
-			issues = append(issues, labeled(crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, fmt.Sprintf("l%d", col+1)))
+			label := crew.State(fmt.Sprintf("l%d", col+1))
+			issues = append(issues, labeled(crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Card"}, label))
 		}
 	}
 	u := onBoard(engine.Update{}, issues...)

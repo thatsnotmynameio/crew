@@ -74,7 +74,7 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing
 		}
 		actions := make([]string, 0, len(e.Failures))
 		for _, f := range e.Failures {
-			actions = append(actions, f.Action)
+			actions = append(actions, string(f.Action))
 		}
 		if want := []string{"development"}; !reflect.DeepEqual(actions, want) {
 			t.Errorf("failed actions = %v, want %v", actions, want)

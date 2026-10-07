@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -48,6 +49,7 @@ func (s *step) runInput(in Input) bool {
 	case TimeUp:
 		s.timeUp(in.Limit)
 	case IssuesListed:
+		s.seed = in.Seed
 		s.listed(in.Issues)
 	case ListFailed:
 		s.m.listing = false
@@ -68,7 +70,7 @@ func (s *step) runInput(in Input) bool {
 	case RecordFailed:
 		r := in.Record
 		s.emit(RunNotRecorded{
-			At: s.at, IssueKey: r.IssueKey, IssueRef: r.IssueRef, Rule: r.Rule, Action: r.Action, Reason: in.Reason,
+			At: s.at, IssueID: r.IssueID, IssueRef: r.IssueRef, Rule: r.Rule, Action: r.Action, Reason: in.Reason,
 		})
 	default:
 		return false
@@ -82,6 +84,10 @@ type step struct {
 	at     time.Time
 	cmds   []Command
 	events []Event
+	// seed is the input's seed, from which the rule runs it takes get their
+	// ids, and runs counts those runs (KTD5).
+	seed uuid.UUID
+	runs int
 }
 
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
@@ -99,7 +105,7 @@ func (s *step) tick(said []Said) {
 		return
 	}
 	for _, x := range said {
-		if _, a := m.action(x.IssueKey, x.Action, PhaseRunning); a != nil {
+		if _, a := m.action(x.IssueID, x.Action, PhaseRunning); a != nil {
 			a.said = x.Text
 		}
 	}
@@ -197,10 +203,10 @@ func (s *step) stopActions(h *heldIssue) {
 	for _, a := range h.actions {
 		switch a.phase {
 		case PhaseRunning:
-			s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
+			s.command(StopSession{IssueID: h.issue.ID, Action: a.name})
 		case PhaseChecking:
 			a.stopped = true
-			s.command(StopCheck{IssueKey: h.issue.Key, Action: a.name})
+			s.command(StopCheck{IssueID: h.issue.ID, Action: a.name})
 		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing, PhaseEnded:
 			// No session or check runs: its next input sees the stop.
 		}
@@ -261,8 +267,8 @@ func (s *step) listed(issues []crew.Issue) {
 // (R15).
 func (s *step) skipped(issues []crew.Issue) {
 	for _, issue := range issues {
-		if len(issue.States) > 1 && s.m.held(issue.Key) == nil {
-			s.emit(IssueSkipped{At: s.at, IssueKey: issue.Key, IssueRef: issue.Ref, States: slices.Clone(issue.States)})
+		if len(issue.States) > 1 && s.m.held(issue.ID) == nil {
+			s.emit(IssueSkipped{At: s.at, IssueID: issue.ID, IssueRef: issue.Ref, States: slices.Clone(issue.States)})
 		}
 	}
 }
@@ -307,7 +313,7 @@ func (s *step) takeWaiting(candidates []candidate) int {
 		if m.full() {
 			break
 		}
-		if m.held(c.issue.Key) != nil || m.queueFull(m.queueOf[c.rule]) {
+		if m.held(c.issue.ID) != nil || m.queueFull(m.queueOf[c.rule]) {
 			continue
 		}
 		s.take(c.rule, c.issue)
@@ -334,7 +340,10 @@ func comparePriority(a, b int) int {
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
-	h := &heldIssue{issue: issue.Clone(), rule: si, claim: ClaimTaking, taken: s.at}
+	s.runs++
+	h := &heldIssue{
+		issue: issue.Clone(), rule: si, run: crew.NewRuleRunID(s.seed, s.runs), claim: ClaimTaking, taken: s.at,
+	}
 	for _, a := range rule.Actions {
 		h.actions = append(h.actions, &actionRun{
 			name: a.Name, prompt: a.Prompt, checks: a.Checks, agent: a.Agent, bot: a.Bot,
@@ -360,7 +369,7 @@ func (s *step) attempt(h *heldIssue, c *call) {
 		s.command(ReportFailure{ID: c.id, Report: cloneReport(c.report)})
 		return
 	}
-	s.command(Move{ID: c.id, IssueKey: h.issue.Key, From: c.from, To: c.to})
+	s.command(Move{ID: c.id, IssueID: h.issue.ID, From: c.from, To: c.to})
 }
 
 // callResult settles, owes or retries the call r answers. A take and a
@@ -381,9 +390,9 @@ func (s *step) callResult(r CallResult) {
 			return
 		}
 		if c.kind == CallReport {
-			s.emit(FailureReported{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref})
+			s.emit(FailureReported{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref})
 		} else {
-			s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+			s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 			m.boardMoved(h.issue, c.to)
 			s.ended(h, c.to, crew.MoveDone)
 			s.reportPullRequests(h, c.to, true)
@@ -431,7 +440,7 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 // issue moves on to its rule's success (R8, KTD5).
 func (s *step) taken(h *heldIssue, c *call) {
 	m := s.m
-	s.emit(IssueMoved{At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to})
+	s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to})
 	m.boardMoved(h.issue, c.to)
 	s.reportPullRequests(h, c.to, false)
 	h.settle(c)
@@ -462,7 +471,7 @@ func (s *step) start(h *heldIssue) {
 		if prev, ok := m.resumable(h, a); ok {
 			a.prev = &prev
 			a.phase = PhaseReopening
-			s.command(ReopenWorkspace{IssueKey: h.issue.Key, Action: a.name, Workspace: prev.Workspace, Branch: prev.Branch})
+			s.command(ReopenWorkspace{IssueID: h.issue.ID, Action: a.name, Workspace: prev.Workspace, Branch: prev.Branch})
 			continue
 		}
 		a.phase = PhaseCreating
@@ -478,7 +487,7 @@ func (s *step) start(h *heldIssue) {
 func (s *step) judge(h *heldIssue) {
 	rule := s.m.rules[h.rule]
 	h.claim = ClaimJudging
-	report := crew.FailureReport{IssueKey: h.issue.Key, IssueRef: h.issue.Ref}
+	report := crew.FailureReport{IssueID: h.issue.ID, IssueRef: h.issue.Ref}
 	for _, a := range h.actions {
 		if !a.outcome.Succeeded {
 			report.Failures = append(report.Failures, crew.ActionFailure{
@@ -536,20 +545,20 @@ func (m *Model) busy(q int) int {
 	return held
 }
 
-// held returns the held issue keyed key, or nil.
-func (m *Model) held(key string) *heldIssue {
+// held returns the held issue identified by id, or nil.
+func (m *Model) held(id crew.IssueID) *heldIssue {
 	for _, h := range m.issues {
-		if h.issue.Key == key {
+		if h.issue.ID == id {
 			return h
 		}
 	}
 	return nil
 }
 
-// action returns the named action of the held issue keyed key, when it is in
-// one of phases, or nils.
-func (m *Model) action(key, name string, phases ...Phase) (*heldIssue, *actionRun) {
-	h := m.held(key)
+// action returns the named action of the held issue identified by id, when
+// it is in one of phases, or nils.
+func (m *Model) action(id crew.IssueID, name crew.ActionName, phases ...Phase) (*heldIssue, *actionRun) {
+	h := m.held(id)
 	if h == nil {
 		return nil, nil
 	}
@@ -583,7 +592,7 @@ func (m *Model) release(h *heldIssue) {
 		return
 	}
 	view := *h.verdict
-	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.Key == h.issue.Key })
+	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.ID == h.issue.ID })
 	if i >= 0 {
 		old := m.handled[i].view
 		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !old.NeedsAttention() {
