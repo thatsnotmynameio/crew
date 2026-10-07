@@ -291,7 +291,8 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
 	for _, e := range events {
 		if ended, ok := e.(core.ActionEnded); ok && ended.Action == "acceptance" {
-			if ended.Outcome.Succeeded || !strings.Contains(ended.Outcome.Reason.String(), `render prompt of action "acceptance"`) {
+			reason := ended.Outcome.Reason.String()
+			if ended.Outcome.Succeeded || !strings.Contains(reason, `render prompt of action "acceptance"`) {
 				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", ended.Outcome)
 			}
 			return
