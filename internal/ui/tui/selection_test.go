@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -251,6 +252,31 @@ func TestAE3ATakenIssueMovesUpAndKeepsItsHighlight(t *testing.T) {
 		t.Errorf("the column shows %v, want %v:\n%s", got, want, board)
 	}
 	wantLit(t, h, "#10", 1)
+}
+
+// Covers R5 of #231: when crew takes a highlighted card from deep in a
+// column taller than it shows, the column scrolls to the card's new place,
+// so ↓ then moves the highlight without scrolling the card out of sight.
+func TestATakenCardFromDeepInAColumnStaysDrawnAfterDown(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h.send(tea.WindowSizeMsg{Width: 120, Height: 200})
+	bugs := make([]crew.BoardIssue, 0, 10)
+	for n := 1; n <= 10; n++ {
+		bugs = append(bugs, item(strconv.Itoa(n), "bug"))
+	}
+	h.send(updateMsg(onBoard(engine.Update{}, bugs...)))
+	for range 8 {
+		h.send(downKey)
+	}
+	wantLit(t, h, "#9", 1)
+
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "9"), bugs...)))
+	h.send(downKey)
+
+	wantLit(t, h, "#1", 1)
+	if board := boardOf(t, h.view()); !strings.Contains(board, "│ #9 ") {
+		t.Errorf("#9 scrolled out of sight after ↓:\n%s", board)
+	}
 }
 
 // Covers AE4 and R5 of #231: when crew lets go of the highlighted issue
