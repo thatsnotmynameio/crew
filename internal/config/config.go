@@ -80,6 +80,11 @@ type Config struct {
 	// TrackerSection decodes the tracker adapter's settings: every key under
 	// tracker: except name and bot.
 	TrackerSection Decode
+	// Functions are the config's function uses, one per rule action or
+	// route step that calls a function, in rule order and, in each rule,
+	// its actions' and then its routes' order. It is empty when no rule
+	// calls a function.
+	Functions []FunctionUse
 }
 
 // document is the file's top level. The sections read on their own stay raw
@@ -119,27 +124,33 @@ func (l *located[T]) UnmarshalYAML(n *yaml.Node) error {
 // top-level key of a later file replaces that key of the earlier ones
 // whole. Every error names the file it is about, and every error about a
 // file's content names the key path and its line; all the rules' errors
-// are reported together.
-func Load(root, global string) (*Config, error) {
+// are reported together. functions is the catalog of the registered
+// functions, each with the verdicts it declares besides passed and failed:
+// the names a rule may call beside its defined actions; nil registers none.
+func Load(root, global string, functions map[string][]crew.Verdict) (*Config, error) {
 	sources, err := readSources(root, global)
 	if err != nil {
 		return nil, err
 	}
 	top, o := merge(sources)
-	cfg, err := parse(top)
+	cfg, err := parse(top, functions)
 	if err != nil {
 		return nil, o.name(err)
 	}
 	cfg.TrackerSection = o.decode(cfg.TrackerSection)
+	for i := range cfg.Functions {
+		cfg.Functions[i] = cfg.Functions[i].named(o)
+	}
 	for i := range cfg.Agents {
 		cfg.Agents[i].HarnessSection = o.decode(cfg.Agents[i].HarnessSection)
 	}
 	return cfg, nil
 }
 
-// parse turns the config's top-level mapping into a Config, reporting every
-// error it finds after the top level decodes.
-func parse(top *yaml.Node) (*Config, error) {
+// parse turns the config's top-level mapping into a Config, its names
+// resolved against functions too, reporting every error it finds after the
+// top level decodes.
+func parse(top *yaml.Node, functions map[string][]crew.Verdict) (*Config, error) {
 	var doc document
 	if err := decodeFields(entries(top, ""), reflect.ValueOf(&doc).Elem()); err != nil {
 		return nil, err
@@ -155,11 +166,14 @@ func parse(top *yaml.Node) (*Config, error) {
 	var err error
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
 	errs = append(errs, err)
-	shellActions, err := shells(&doc.Actions)
+	shellActions, presets, err := shells(&doc.Actions, functions)
 	errs = append(errs, err)
 	cfg.Agents, err = agents(&doc.Agents)
 	errs = append(errs, err)
-	env := ruleEnv{queues: table, agents: cfg.Agents, actions: shellActions, bot: cfg.Bot}
+	env := ruleEnv{
+		queues: table, agents: cfg.Agents, actions: shellActions, presets: presets,
+		functions: functions, bot: cfg.Bot, uses: &cfg.Functions,
+	}
 	cfg.Rules, cfg.Notify, err = rules(&doc.Rules, env)
 	errs = append(errs, err, agentsInUse(cfg.Agents, cfg.Rules))
 	cfg.Bots = namedBots(cfg.Bot, cfg.Rules)

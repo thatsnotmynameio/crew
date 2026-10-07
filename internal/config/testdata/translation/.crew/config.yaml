@@ -1,9 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
 # A translation team's config, invented for the tests: a full config with
 # queues, bots, agents on both harnesses, shell actions defined as a string
-# and as a mapping, rules with and without actions, sessions with and
+# and as a mapping, a function preset, a function called through its preset
+# and by its own name, rules with and without actions, sessions with and
 # without a name, on maps, routes as a label and as a list of steps, notify
-# set both ways and multi-line prompts.
+# set both ways and multi-line prompts. Its function, word-count, is
+# invented too: the test registers it.
 poll_interval_seconds: 120
 max_parallel_issues: 4
 queues:
@@ -31,6 +33,11 @@ actions:
     verdicts:
       3: unpushed
     resume: self
+  page-length:
+    name: word-count
+    page: "{{.Issue.URL}}"
+    most: 2000
+    resume: self
 rules:
   accept request:
     queue: desk
@@ -55,6 +62,8 @@ rules:
       - draft-pushed:
         on:
           unpushed: unpushed
+      - page-length:
+          most: 1500
     routes:
       passed: "translation:drafted"
       failed:
@@ -85,6 +94,7 @@ rules:
       rejected:
         - comment: "{{.Issue.Ref}} was rejected in {{.Rule}}."
         - glossary-kept
+        - word-count
         - close
   archive:
     notify: true

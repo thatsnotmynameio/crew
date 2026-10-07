@@ -16,12 +16,15 @@ func (s *step) onRoute(h *heldRun, e crew.RunEvent) {
 		s.askStep(h, e.Step)
 	case crew.StepShellStopAsked:
 		s.command(StopStepShell{IssueID: e.IssueID, Run: e.Run, Step: e.Step})
+	case crew.StepFunctionStopAsked:
+		s.command(StopStepFunction{IssueID: e.IssueID, Run: e.Run, Step: e.Step})
 	case crew.StepEnded:
 		s.stepEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
 		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked, crew.ActionSessionStarted,
 		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellAsked, crew.ActionShellStopAsked,
-		crew.ActionShellEnded, crew.ActionEnded, crew.RunLookupDone, crew.RunReleased:
+		crew.ActionShellEnded, crew.ActionFunctionAsked, crew.ActionFunctionStopAsked, crew.ActionFunctionEnded,
+		crew.ActionEnded, crew.RunLookupDone, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }
@@ -34,9 +37,9 @@ func (s *step) findPullRequest(h *heldRun) {
 }
 
 // askStep runs the step at index i of the route of h's run: a shell step's
-// script, acting as the run's bot, or a tracker step, which the outbox
-// delivers in the run's lane (KTD9). A move and a close take the issue from
-// the rule's running label.
+// script or a function step's function, acting as the run's bot, or a
+// tracker step, which the outbox delivers in the run's lane (KTD9). A move
+// and a close take the issue from the rule's running label.
 func (s *step) askStep(h *heldRun, i int) {
 	p, _ := h.run.Phase().(crew.RoutingPhase)
 	rule := s.m.rules[h.rule]
@@ -60,6 +63,11 @@ func (s *step) askStep(h *heldRun, i int) {
 	case crew.ShellStep:
 		s.command(RunStepShell{
 			IssueID: issue.ID(), Run: h.run.ID(), Step: i, Script: h.script(st.Name, st.Shell.Script, h.run.Bot()),
+		})
+		return
+	case crew.FunctionStep:
+		s.command(RunStepFunction{
+			IssueID: issue.ID(), Run: h.run.ID(), Step: i, Call: h.call(st.Name, st.Function, h.run.Bot()),
 		})
 		return
 	}

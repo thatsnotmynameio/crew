@@ -210,6 +210,32 @@ linters:
               desc: the captain imports only the domain and the ports
             - pkg: github.com/thatsnotmynameio/crew/internal/bots
               desc: the captain imports only the domain and the ports
+        function:
+          files:
+            - "**/internal/function/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/registry
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/app
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/proc
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/bots
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/captain
+              desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/fileline
+              desc: the functions import only the domain and the ports
         bots-users:
           files:
             - "!**/cmd/crew/**"

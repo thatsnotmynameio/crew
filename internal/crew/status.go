@@ -124,8 +124,10 @@ type ActionStatus struct {
 	State ActionState
 	// Shell is how a shell action's script ended: crew's one line, followed
 	// by the last line the script printed, without control characters;
-	// empty for a session, or before the script ended. Only a script's
-	// line goes in a status: a session's or a tool's own words never do,
+	// or how a function action's function ended: crew's one line, with the
+	// error it returned, without control characters; empty for a session,
+	// or before the script or function ended. Only a script's or a
+	// function's line goes in a status: a session's or a tool's own words never do,
 	// since a tracker may show it in public, and those words can hold
 	// commands, output and secrets.
 	Shell ShellReason
@@ -160,14 +162,16 @@ type ActionNotRun struct{}
 // it went on to the next action in the run this one continues.
 type ActionDoneInEarlierRun struct{}
 
-// ActionRunning is an action whose session or shell script runs.
+// ActionRunning is an action whose session, shell script or function
+// runs.
 type ActionRunning struct {
-	// Started is when its session started, or crew asked for its script.
+	// Started is when its session started, or crew asked for its script or
+	// its function.
 	Started time.Time
 	// Said is the last thing its running session said, on one line with
 	// local paths shortened and without control characters; empty when it
 	// said nothing yet, said only control characters, its harness cannot
-	// tell, or it is a shell action.
+	// tell, or it is a shell or function action.
 	Said Said
 }
 
@@ -226,9 +230,10 @@ const (
 	// CauseShell: its shell action's script exited with a status that gives
 	// Failed, ran out of time or could not start.
 	CauseShell
-	// CauseVerdict: it reported, or its script's exit status gave, a
-	// verdict its on: does not name, or its session reported text with no
-	// verdict name.
+	// CauseVerdict: it reported, its script's exit status gave, or its
+	// function returned, a verdict its on: does not name, its function
+	// returned a verdict it does not declare, or its session reported text
+	// with no verdict name.
 	CauseVerdict
 	// CauseStoppedBeforeStart: crew stopped before the action started, so
 	// it never ran.
@@ -236,6 +241,10 @@ const (
 	// CauseTimeUp: crew's run time was up before the action started, so it
 	// never ran.
 	CauseTimeUp
+	// CauseFunction: its function returned Failed or an error, could not
+	// run or ran out of time, or one of its text parameters did not render
+	// for the issue.
+	CauseFunction
 )
 
 // MoveProgress is how the move or close that ends a rule stands.

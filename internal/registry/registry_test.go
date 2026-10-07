@@ -24,7 +24,7 @@ func load(t *testing.T, body string) *config.Config {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root, "")
+	cfg, err := config.Load(root, "", nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -60,7 +60,7 @@ func assertErr(t *testing.T, err error, wants ...string) {
 
 // R13: a harness name no adapter has names the agent's key.
 func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
-	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())})
+	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())}, nil)
 	a := load(t, agent("nosuch")+rules).Agents[0]
 
 	h, err := r.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
@@ -74,7 +74,7 @@ func TestUnregisteredTrackerNamesTheKeyAndTheRegisteredTrackersSorted(t *testing
 	r := registry.New(map[string]port.TrackerFactory{
 		"jira":   fake.TrackerFactory(fake.NewTracker()),
 		"github": fake.TrackerFactory(fake.NewTracker()),
-	}, nil)
+	}, nil, nil)
 
 	_, err := r.Tracker("linear", func(any) error { return nil }, nil)
 	assertErr(t, err, "tracker.name", `"linear"`, "github, jira")
@@ -86,7 +86,7 @@ func TestRegistryWithoutAdaptersSaysNoneIsRegistered(t *testing.T) {
 }
 
 func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
-	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil)
+	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil, nil)
 	cfg := load(t, `tracker:
   name: fake
   lables:
@@ -102,7 +102,7 @@ func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
 
 // Covers AE3: tracker.labels is no longer a key, for the fake as for github.
 func TestTrackerLabelsIsAnUnknownKey(t *testing.T) {
-	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil)
+	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil, nil)
 	cfg := load(t, `tracker:
   name: fake
   labels:
@@ -120,7 +120,7 @@ func TestTheTrackerFactoryGetsTheStates(t *testing.T) {
 			gotStates = states
 			return fake.NewTracker(), nil
 		},
-	}, nil)
+	}, nil, nil)
 	states := []crew.State{"ready", "in progress"}
 
 	if _, err := r.Tracker("fake", func(any) error { return nil }, states); err != nil {
@@ -136,6 +136,7 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
 	r := registry.New(
 		map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)},
 		map[string]port.HarnessFactory{"fake": fake.HarnessFactory(harness)},
+		nil,
 	)
 	cfg := load(t, `tracker:
   name: fake

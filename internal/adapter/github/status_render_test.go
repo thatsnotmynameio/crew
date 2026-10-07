@@ -276,6 +276,7 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 		crew.CauseWorkspace:          "**`lfg`** failed: its workspace could not be created." + log,
 		crew.CauseStart:              "**`lfg`** failed: its session could not start." + log,
 		crew.CausePrompt:             "**`lfg`** failed: its prompt did not render." + log,
+		crew.CauseFunction:           "**`lfg`** failed: `` `gh` found no @someone **pull request** ``." + log,
 	} {
 		s := changed(developmentEnded(), func(d *crew.StatusData) {
 			d.Actions[0].State = crew.ActionFailed{Cause: cause, Log: ".crew/logs/issue-74-lfg.log"}
@@ -298,6 +299,13 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	want = "**`lfg`** failed: its script failed. Its log is `.crew/logs/issue-74-lfg.log`."
 	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
 		t.Errorf("a script failure without a line: body has no line %q:\n%s", want, body)
+	}
+	s = changed(s, func(d *crew.StatusData) {
+		d.Actions[0].State = crew.ActionFailed{Cause: crew.CauseFunction, Log: ".crew/logs/issue-74-lfg.log"}
+	})
+	want = "**`lfg`** failed: its function failed. Its log is `.crew/logs/issue-74-lfg.log`."
+	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
+		t.Errorf("a function failure without a line: body has no line %q:\n%s", want, body)
 	}
 }
 
@@ -372,6 +380,7 @@ func TestARoutesStepIsNamedByItsKind(t *testing.T) {
 		"comment":                   {Kind: crew.StepComment},
 		"report":                    {Kind: crew.StepReport},
 		"shell step `notify`":       {Kind: crew.StepShell, Shell: "notify"},
+		"function step `check`":     {Kind: crew.StepFunction, Function: "check"},
 	}
 	for want, step := range steps {
 		if got := stepName(step); got != want {
@@ -433,6 +442,10 @@ func TestAShellActionShowsItsLastLine(t *testing.T) {
 		{
 			"stopped", withLine(lfgFailed(crew.CauseStopped), "the shell action judge was stopped"),
 			"**`lfg`** failed: crew stopped it." + log + "\n- `the shell action judge was stopped`\n",
+		},
+		{
+			"function failed", withLine(lfgFailed(crew.CauseFunction), "the function action check failed: no pull request"),
+			"**`lfg`** failed: `the function action check failed: no pull request`." + log,
 		},
 	}
 	for _, tt := range tests {
