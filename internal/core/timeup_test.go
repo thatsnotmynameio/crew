@@ -26,7 +26,10 @@ func TestAE2TimeUpWithNothingHeldWindsDownAndStopsAtOnce(t *testing.T) {
 	wantCommands(t, cmds)
 }
 
-func TestAE3TimeUpLetsARunningIssueFinishAndTakesNothingNew(t *testing.T) {
+// Covers R52: the action that runs finishes, the next does not start, and
+// the run ends through failed, naming the action time-up kept from
+// starting.
+func TestAE3TimeUpLetsTheRunningActionFinishAndStartsNoOther(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("42", 1, ready))
 
@@ -42,63 +45,66 @@ func TestAE3TimeUpLetsARunningIssueFinishAndTakesNothingNew(t *testing.T) {
 	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{issue("43", 2, ready)}})
 	wantCommands(t, cmds)
 
-	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: succeeded})
-	wantCommands(t, ending, core.Move{IssueID: issueID("42"), From: inProgress, To: readyToReview})
+	report := d.ended("42", "acceptance", succeeded)
+	wantCommands(t, report, failureOf("42", "implement", "development"))
+	d.wantReason("42", "development", "crew's run time was up")
 	if d.m.Stopped() {
-		t.Fatal("stopped while #42's ending move is in flight")
+		t.Fatal("stopped while #42's route runs")
 	}
 
-	_, events = d.send(core.CallResult{ID: moveID(t, ending, "42"), Result: core.ResultDone})
-	wantEvents(t, events,
-		crew.EndingMoved{EventHead: d.runHead("42"), From: inProgress, To: readyToReview},
-		core.Stopped{At: d.now},
-	)
-	if !d.m.Stopped() {
-		t.Fatal("not stopped once #42's run ended")
-	}
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "42"), Result: core.ResultDone})
+	_, events = d.send(core.CallResult{ID: moveID(t, moved, "42"), Result: core.ResultDone})
+	wantEvents(t, events, d.stepEnded("42", 1, crew.StepLanded{}), core.Stopped{At: d.now})
 	if d.m.View().Stopping {
 		t.Fatal("the view says a stop was requested; none was")
 	}
 }
 
-func TestAE3AnIssueThatFailsWhileWindingDownNeedsAttentionAsUsual(t *testing.T) {
+func TestAE3TheLastActionThatPassesWhileWindingDownEndsThroughPassed(t *testing.T) {
+	d := newDriver(t, draft(), 2)
+	d.running(issue("42", 1, ready))
+	d.settle(d.ended("42", "acceptance", succeeded))
+	d.send(core.TimeUp{Limit: limit})
+
+	ending := d.ended("42", "development", succeeded)
+	wantCommands(t, ending, core.Move{IssueID: issueID("42"), From: inProgress, To: readyToReview})
+	_, events := d.send(core.CallResult{ID: moveID(t, ending, "42"), Result: core.ResultDone})
+	hasEvent(t, events, core.Stopped{At: d.now})
+}
+
+func TestAE3AnIssueThatFailsWhileWindingDownEndsThroughFailedAsUsual(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("42", 1, ready))
 	d.send(core.TimeUp{Limit: limit})
 
-	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: succeeded})
-	wantCommands(t, cmds,
-		core.Move{IssueID: issueID("42"), From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{
-			failure("42", "acceptance"),
-		}}},
-	)
+	report := d.ended("42", "acceptance", failed("broke"))
+	wantCommands(t, report, failureOf("42", "implement", "acceptance"))
 	d.wantReason("42", "acceptance", "broke")
 
-	d.send(core.CallResult{ID: moveID(t, cmds, "42"), Result: core.ResultDone})
-	_, events := d.send(core.CallResult{ID: reportID(t, cmds, "42"), Result: core.ResultDone})
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "42"), Result: core.ResultDone})
+	_, events := d.send(core.CallResult{ID: moveID(t, moved, "42"), Result: core.ResultDone})
 	hasEvent(t, events, core.Stopped{At: d.now})
 }
 
-func TestATakeInFlightWhenTimeIsUpStartsItsActions(t *testing.T) {
+// timeUpReport is the failure report of #42 whose first action time-up kept
+// from starting, before its run had a workspace.
+var timeUpReport = core.ReportFailure{Report: crew.FailureReport{
+	IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{{Action: "acceptance"}},
+}}
+
+func TestATakeThatLandsAfterTimeUpStartsNoActionAndEndsThroughFailed(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	i42 := issue("42", 1, ready)
-	take, _ := d.poll(i42)
+	take, _ := d.poll(issue("42", 1, ready))
 	d.send(core.TimeUp{Limit: limit})
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, take, "42"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "acceptance"},
-		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "development"},
-	)
+	wantCommands(t, cmds, timeUpReport)
+	d.wantReason("42", "acceptance", "crew's run time was up")
 }
 
-func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenRuns(t *testing.T) {
+func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenEndsThroughFailed(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	i42 := issue("42", 1, ready)
-	take, _ := d.poll(i42)
+	take, _ := d.poll(issue("42", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, take, "42"), Result: core.ResultFailed, Reason: "timeout"})
 
 	_, events := d.send(core.TimeUp{Limit: limit})
@@ -111,17 +117,13 @@ func TestAnOwedTakeWhenTimeIsUpIsRetriedAtTicksAndThenRuns(t *testing.T) {
 	}
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, retry, "42"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "acceptance"},
-		core.CreateWorkspace{Issue: i42, Run: d.run(i42.ID()), Action: "development"},
-	)
+	wantCommands(t, cmds, timeUpReport)
 }
 
 func TestWhileWindingDownOwedCallsAreRetriedAtTicksThenGetAFinalTry(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready), issue("2", 2, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	ending := d.endActions("1")
 	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	d.send(core.TimeUp{Limit: limit})
 
@@ -131,46 +133,81 @@ func TestWhileWindingDownOwedCallsAreRetriedAtTicksThenGetAFinalTry(t *testing.T
 	_, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	wantEvents(t, events, core.CallOwed{At: d.now, Call: owed, Reason: "timeout"})
 
-	// #2's last action ends: nothing is left to end, so the owed move gets
+	// #2's running action ends: no run holds crew, so the owed move gets
 	// its final try.
-	d.send(core.SessionEnded{IssueID: issueID("2"), Action: "acceptance", Outcome: succeeded})
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("2"), Action: "development", Outcome: succeeded})
-	wantCommands(t, cmds,
-		core.Move{IssueID: issueID("2"), From: inProgress, To: readyToReview},
-		core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview},
-	)
+	cmds := d.ended("2", "acceptance", succeeded)
+	wantCommands(t, cmds, failureOf("2", "implement", "development"),
+		core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	wantEvents(t, events, core.CallDropped{At: d.now, Call: owed, Result: core.ResultFailed, Reason: "timeout"})
-	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
+	wantEvents(t, events, core.CallDropped{At: d.now, Call: owed, Result: core.ResultFailed, Reason: "timeout"},
+		d.stepEnded("1", 0, crew.StepGivenUp{Reason: "timeout"}))
+	moved, _ := d.send(core.CallResult{ID: reportID(t, cmds, "2"), Result: core.ResultDone})
+	_, events = d.send(core.CallResult{ID: moveID(t, moved, "2"), Result: core.ResultDone})
 	hasEvent(t, events, core.Stopped{At: d.now})
 }
 
-func TestAE4AStopWhileWindingDownStopsRunningSessionsAsUsual(t *testing.T) {
+// Covers R52, KTD12: time-up never cuts a route's shell step short; crew
+// stops once no shell step is left.
+func TestTimeUpWaitsForARoutesShellStepsBeforeItStops(t *testing.T) {
+	d := newDriver(t, shellRouted(), 2)
+	d.running(issue("1", 1, ready))
+	d.ended("1", "acceptance", failed("tests fail"))
+
+	cmds, _ := d.send(core.TimeUp{Limit: limit})
+	wantCommands(t, cmds)
+	cmds, _ = d.send(core.StepShellEnded{IssueID: issueID("1"), Step: 0, Outcome: exited(0)})
+	wantCommands(t, cmds, d.stepShell(1, "cleanup", "./cleanup"))
+	if d.m.Stopped() {
+		t.Fatal("stopped while a shell step runs")
+	}
+
+	moved, events := d.send(core.StepShellEnded{IssueID: issueID("1"), Step: 1, Outcome: exited(0)})
+	hasEvent(t, events, d.stepEnded("1", 1, crew.StepRan{Reason: exited(0).Reason}))
+	wantCommands(t, moved, core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention})
+	_, events = d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
+	hasEvent(t, events, core.Stopped{At: d.now})
+}
+
+// Covers KTD12: a route whose comment is owed does not hold crew past its
+// run time: the stop gives the comment its final try and skips the shell
+// step after it, and the final move still lands.
+func TestTimeUpDoesNotWaitForARouteWhoseTrackerStepIsOwed(t *testing.T) {
+	rules := draft()
+	rules[0].Routes[1].Steps = []crew.Step{
+		crew.CommentStep{}, crew.ShellStep{Name: "notify", Shell: crew.ShellSpec{Script: "./notify"}},
+		crew.MoveStep{To: needsAttention},
+	}
+	d := newDriver(t, rules, 2)
+	d.running(issue("1", 1, ready))
+	comment := d.ended("1", "acceptance", failed("tests fail"))
+	wantCommands(t, comment, core.Comment{IssueID: issueID("1")})
+	d.send(core.TimeUp{Limit: limit})
+
+	final, _ := d.send(core.CallResult{ID: commentID(t, comment), Result: core.ResultFailed, Reason: "timeout"})
+	wantCommands(t, final, core.Comment{IssueID: issueID("1")})
+
+	moved, events := d.send(core.CallResult{ID: commentID(t, final), Result: core.ResultFailed, Reason: "still down"})
+	hasEvent(t, events, d.stepEnded("1", 0, crew.StepGivenUp{Reason: "still down"}))
+	hasEvent(t, events, d.stepEnded("1", 1, crew.StepSkipped{}))
+	wantCommands(t, moved, core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention})
+	_, events = d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
+	hasEvent(t, events, core.Stopped{At: d.now})
+}
+
+func TestAE4AStopWhileWindingDownStopsTheRunningSessionAsUsual(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("42", 1, ready))
 	d.send(core.TimeUp{Limit: limit})
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds,
-		core.StopSession{IssueID: issueID("42"), Run: d.run(issueID("42")), Action: "acceptance"},
-		core.StopSession{IssueID: issueID("42"), Run: d.run(issueID("42")), Action: "development"},
-	)
+	wantCommands(t, cmds, core.StopSession{IssueID: issueID("42"), Run: d.run(issueID("42")), Action: "acceptance"})
 	if !d.m.View().Stopping {
 		t.Fatal("the view does not say a stop was requested")
 	}
 
-	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: failed("stopped")})
-	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: failed("stopped")})
-	wantCommands(t, cmds,
-		core.Move{IssueID: issueID("42"), From: inProgress, To: needsAttention},
-		core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{
-			failure("42", "acceptance"),
-			failure("42", "development"),
-		}}},
-	)
+	wantCommands(t, d.ended("42", "acceptance", failed("stopped")), failureOf("42", "implement", "acceptance"))
 	d.wantReason("42", "acceptance", "stopped")
-	d.wantReason("42", "development", "stopped")
 }
 
 func TestTimeUpAfterAStopOrASecondTimeChangesNothing(t *testing.T) {

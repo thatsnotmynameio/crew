@@ -67,7 +67,7 @@ func (h *History) Start(issue IssueID, rule Rule) Start {
 	}
 	start := startAfter(past.run, rule)
 	if past.retired {
-		return withoutWorktree(start)
+		return WithoutWorktree(start)
 	}
 	return start
 }

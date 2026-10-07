@@ -16,16 +16,18 @@ const (
 	ClaimTaking Claim = iota
 	// ClaimRunning: the issue is taken and its actions run.
 	ClaimRunning
-	// ClaimStopping: a stop was requested before every action ended; the
-	// core waits for them to end.
+	// ClaimStopping: a stop was requested before the run chose its route;
+	// the core waits for its running action to end.
 	ClaimStopping
-	// ClaimJudging: every action ended and the ending calls are in flight.
+	// ClaimJudging: the run's sequence is over and it ends through its
+	// route, one step at a time.
 	ClaimJudging
-	// ClaimOwed: the take move or an ending call failed transiently and
-	// waits for a retry. With an owed take, no action has started yet: they
+	// ClaimOwed: the take move or a route's tracker step failed
+	// transiently and waits for a retry. With an owed take, no action has started yet: they
 	// stay PhaseWaiting until the retried take is done. A held issue never
 	// stores it: the view shows it over any other claim from the first
-	// transient failure until every call of the issue's run lane settled.
+	// transient failure of the call in the issue's run lane until it
+	// settled.
 	ClaimOwed
 )
 
@@ -61,12 +63,8 @@ const (
 	PhaseStarting
 	// PhaseRunning: its session runs.
 	PhaseRunning
-	// PhaseChecking: its session succeeded and its check runs. The action
-	// has not ended: it is still running for you.
+	// PhaseChecking: its shell action's script runs.
 	PhaseChecking
-	// PhaseFinishing: its outcome is known and it waits for the lookup of
-	// its pull request. It is still running for you.
-	PhaseFinishing
 	// PhaseEnded: it ended; see its Outcome.
 	PhaseEnded
 )
@@ -86,8 +84,6 @@ func (p Phase) String() string {
 		return "running"
 	case PhaseChecking:
 		return "checking"
-	case PhaseFinishing:
-		return "finishing"
 	case PhaseEnded:
 		return "ended"
 	}
@@ -136,18 +132,19 @@ type View struct {
 type HandledView struct {
 	Issue crew.Issue
 	Rule  crew.RuleName
-	// To is the state the rule's ending moved the issue to, or meant to
-	// when Move is MoveDropped.
+	// To is the state the final move of the rule's route moved the issue
+	// to, or meant to when Move is MoveDropped; empty for a close.
 	To crew.State
-	// Failures are the rule's failed actions, in its action order; nil
-	// when every action succeeded.
+	// Failures name the action that ended the run's sequence when the run
+	// ended through a route other than passed; nil otherwise.
 	Failures []crew.ActionFailure
 	// Actions are the rule's actions, in its action order, with what each
 	// spent and the pull request it opened (R12).
 	Actions []HandledAction
-	// Move is MoveDone, or MoveDropped when crew gave the ending move up.
+	// Move is MoveDone, or MoveDropped when the route's final move or
+	// close was given up or dropped.
 	Move crew.MoveProgress
-	// DropReason says why the ending move was given up.
+	// DropReason says why the final move or close did not land.
 	DropReason string
 	// Gone is set when a listing requested after the ending move landed, or
 	// was given up, did not find the issue alone in To, and To is the label
@@ -227,12 +224,13 @@ type ActionView struct {
 	Workspace crew.WorkspaceName
 	Branch    string
 	Log       string
-	// Started is when its session started; zero before PhaseRunning.
+	// Started is when its session or script started; zero before
+	// PhaseRunning or PhaseChecking.
 	Started time.Time
 	// Outcome is set once Phase is PhaseEnded.
 	Outcome crew.Outcome
-	// Resumed is set once the action runs in a failed run's reopened
-	// workspace.
+	// Resumed is set once the run works in the reopened workspace of the
+	// run it continues.
 	Resumed bool
 }
 
@@ -249,9 +247,7 @@ func (m *Model) View() View {
 		if m.outbox.owing(h.id()) {
 			iv.Claim = ClaimOwed
 		}
-		for _, a := range h.run.Actions() {
-			iv.Actions = append(iv.Actions, actionView(a))
-		}
+		iv.Actions = h.actionViews()
 		v.Issues = append(v.Issues, iv)
 		v.Owed = append(v.Owed, m.outbox.owedRun(h.id())...)
 	}
@@ -270,13 +266,13 @@ func (m *Model) View() View {
 	return v
 }
 
-// claim returns h's claim, from its run: judging once every action ended,
+// claim returns h's claim, from its run: judging once it chose its route,
 // stopping once a stop reached it before, and taking or running before
 // that.
 func (h *heldRun) claim() Claim {
 	claim := ClaimRunning
 	switch h.run.Phase().(type) {
-	case crew.EndingPhase:
+	case crew.RoutingPhase:
 		return ClaimJudging
 	case crew.TakingPhase:
 		claim = ClaimTaking
@@ -288,35 +284,59 @@ func (h *heldRun) claim() Claim {
 	return claim
 }
 
-// phaseOf returns the phase that shows an action run in state.
-func phaseOf(state crew.ActionRunState) Phase {
+// actionViews returns the actions of h's run as the view shows them, each
+// with the run's one workspace. The action at the cursor shows the run's
+// workspace being made or reopened before it starts.
+func (h *heldRun) actionViews() []ActionView {
+	w, _ := h.run.Workspace().Get()
+	cursor, _ := h.run.Cursor()
+	out := make([]ActionView, 0, len(h.run.Actions()))
+	for _, a := range h.run.Actions() {
+		v := ActionView{
+			Name: a.Name(), Phase: phaseOf(a.State()), Workspace: w.Workspace.Name, Branch: w.Workspace.Branch,
+			Log: w.Log, Resumed: w.Resumed,
+		}
+		if a.Name() == cursor.Name() && v.Phase == PhaseWaiting {
+			v.Phase = workspacePhase(h.run.WorkspaceState())
+		}
+		v.Started, _ = a.SessionStarted().Get()
+		switch s := a.State().(type) {
+		case crew.InShell:
+			v.Started = s.Started
+		case crew.Finished:
+			v.Outcome = s.End.Outcome()
+		case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.StartingSession, crew.InSession, crew.NotRun:
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// workspacePhase returns the phase that shows the action a run is about to
+// start while its workspace stands at state.
+func workspacePhase(state crew.WorkspaceState) Phase {
 	switch state.(type) {
-	case crew.AwaitingTake:
-		return PhaseWaiting
 	case crew.CreatingWorkspace:
 		return PhaseCreating
 	case crew.ReopeningWorkspace:
 		return PhaseReopening
-	case crew.StartingSession:
-		return PhaseStarting
-	case crew.InSession:
-		return PhaseRunning
-	case crew.InChecks:
-		return PhaseChecking
-	case crew.Finishing:
-		return PhaseFinishing
-	case crew.Finished:
-		return PhaseEnded
+	case crew.NoWorkspace, crew.InWorkspace:
 	}
 	return PhaseWaiting
 }
 
-// actionView returns a as the view shows it.
-func actionView(a crew.ActionRun) ActionView {
-	w, _ := a.Workspace().Get()
-	started, _ := a.SessionStarted().Get()
-	return ActionView{
-		Name: a.Name(), Phase: phaseOf(a.State()), Workspace: w.Workspace.Name, Branch: w.Workspace.Branch,
-		Log: w.Log, Started: started, Outcome: a.Outcome(), Resumed: w.Resumed,
+// phaseOf returns the phase that shows an action run in state.
+func phaseOf(state crew.ActionRunState) Phase {
+	switch state.(type) {
+	case crew.StartingSession:
+		return PhaseStarting
+	case crew.InSession:
+		return PhaseRunning
+	case crew.InShell:
+		return PhaseChecking
+	case crew.Finished:
+		return PhaseEnded
+	case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.NotRun:
 	}
+	return PhaseWaiting
 }

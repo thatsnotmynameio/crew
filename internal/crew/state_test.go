@@ -90,3 +90,47 @@ func TestRuleStatesListsRouteMoves(t *testing.T) {
 		})
 	}
 }
+
+func TestWaitingStatesAreTheFinalMovesOfTheRoutesWaitingLeadsTo(t *testing.T) {
+	ask := ToRoute{Route: "ask"}
+	tests := []struct {
+		name string
+		rule Rule
+		want []State
+	}{
+		{
+			name: "the final move of each route an on: sends waiting to, in route order, each once",
+			rule: Rule{
+				Actions: []Action{
+					{Name: "lfg", On: On{Waiting: ask, "blocked": ToRoute{Route: "blocked"}}},
+					{Name: "review", On: On{Waiting: ToRoute{Route: "pause"}}},
+					{Name: "again", On: On{Waiting: ask}},
+				},
+				Routes: []Route{
+					{Name: PassedRoute, Steps: []Step{MoveStep{To: "done"}}},
+					{Name: "pause", Steps: []Step{CommentStep{}, MoveStep{To: "paused"}}},
+					{Name: "blocked", Steps: []Step{MoveStep{To: "blocked"}}},
+					{Name: "ask", Steps: []Step{MoveStep{To: "waiting answer"}}},
+				},
+			},
+			want: []State{"paused", "waiting answer"},
+		},
+		{
+			name: "a waiting route that closes, and waiting left to its default, add none",
+			rule: Rule{
+				Actions: []Action{{Name: "lfg", On: On{Waiting: ToRoute{Route: "close"}}}, {Name: "judge"}},
+				Routes: []Route{
+					{Name: FailedRoute, Steps: []Step{MoveStep{To: "failed"}}},
+					{Name: "close", Steps: []Step{CloseStep{}}},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.rule.WaitingStates(); !slices.Equal(got, tt.want) {
+				t.Errorf("WaitingStates() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

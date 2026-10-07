@@ -18,9 +18,10 @@ const (
 func withFixReview() []crew.Rule {
 	return append(draft(), crew.Rule{
 		Name:    "fix review",
-		Labels:  crew.Labels{Ready: fixReviewReady, Running: fixing, Success: readyToReview, Failure: needsAttention},
+		Labels:  crew.Labels{Ready: fixReviewReady, Running: fixing},
 		Takes:   crew.KindPullRequest,
-		Actions: []crew.Action{{Name: "fix", Prompt: parsedPrompt("fix", "Fix the review comments on {{.Issue.Ref}}")}},
+		Actions: []crew.Action{sessionAction("fix", "Fix the review comments on {{.Issue.Ref}}")},
+		Routes:  routes(readyToReview, needsAttention),
 	})
 }
 

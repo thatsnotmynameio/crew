@@ -162,10 +162,11 @@ func TestAE7NoSkipLineOnceTheRunTimeIsUp(t *testing.T) {
 func TestAReleaseAfterASkippedTickListsNothingOnceTheRunTimeIsUp(t *testing.T) {
 	d := newDriver(t, draft(), 3)
 	d.running(issue("1", 1, ready), issue("2", 2, ready), issue("3", 3, ready))
+	ending := d.endActions("1")
 	d.send(core.Tick{})
 	d.send(core.TimeUp{Limit: limit})
 
-	cmds, _ := d.release("1")
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantListings(t, cmds, 0)
 }
 

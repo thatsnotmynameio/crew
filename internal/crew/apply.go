@@ -88,7 +88,7 @@ func (e WorkspaceAsked) apply(r RuleRun) RuleRun {
 // actions as they were.
 func (WorkspaceMissing) apply(r RuleRun) RuleRun {
 	r = r.acting()
-	r.workspace, r.start = NoWorkspace{}, withoutWorktree(r.Start())
+	r.workspace, r.start = NoWorkspace{}, WithoutWorktree(r.Start())
 	if _, passedAlone := r.start.(StartPassedRoute); passedAlone {
 		return r
 	}

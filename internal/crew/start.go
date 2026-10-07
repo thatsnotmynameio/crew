@@ -99,10 +99,11 @@ func inherited(s Start) Optional[LatestSession] {
 	return Optional[LatestSession]{}
 }
 
-// withoutWorktree returns s once the worktree it reopens is gone: a resume
-// at an action starts fresh, since the actions before it would not have
-// run in a new worktree, and the passed route alone runs without one.
-func withoutWorktree(s Start) Start {
+// WithoutWorktree returns s once the worktree it reopens is gone, or crew
+// cannot reopen worktrees: a resume at an action starts fresh, since the
+// actions before it would not have run in a new worktree, and the passed
+// route alone runs without one.
+func WithoutWorktree(s Start) Start {
 	switch s := s.(type) {
 	case StartAt:
 		return StartFresh{}

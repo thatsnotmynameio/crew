@@ -4,10 +4,10 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 
 // gone marks Gone each handled entry whose issue crew does not hold and
 // whose To is a rule's label, when this listing was asked for after the
-// entry's ending move landed or was given up, unless it found the issue
-// alone in To (KTD4). Only one listing is outstanding at a time, so this one
-// is generation m.listings; one asked for before the move landed predates it
-// and marks nothing. Each later listing decides anew, so an issue found in
+// entry's final move settled, unless it found the issue alone in To (KTD4).
+// Only one listing is outstanding at a time, so this one is generation
+// m.listings; one asked for before the move landed predates it and marks
+// nothing. Each later listing decides anew, so an issue found in
 // To again is no longer gone. A held issue's entry is left alone: its
 // rule's new entry replaces it, or keeps it when both ended well and that
 // rule has no actions.
@@ -24,8 +24,9 @@ func (m *Model) gone(issues []crew.Issue) {
 		if e.landed >= m.listings || m.held(id) != nil {
 			continue
 		}
-		ending, _ := e.ending()
-		to := ending.Ending.To
+		route, _ := e.ending()
+		end, _ := route.End()
+		to := end.To
 		if _, ok := m.ruleLabeled(to); !ok {
 			continue
 		}

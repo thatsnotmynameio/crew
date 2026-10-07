@@ -16,6 +16,8 @@ var nameCases = []struct {
 	{core.CallMove, "move"},
 	{core.CallReport, "report"},
 	{core.CallPullRequests, "pull requests"},
+	{core.CallComment, "comment"},
+	{core.CallClose, "close"},
 	{core.CallKind(99), "move"},
 	{core.ClaimTaking, "taking"},
 	{core.ClaimRunning, "running"},

@@ -17,29 +17,27 @@ var draftPairs = []string{"implement/acceptance", "implement/development", "revi
 func botRules() []crew.Rule {
 	return []crew.Rule{
 		{
-			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
-			Actions: []crew.Action{
-				{Name: "triage", Prompt: parsedPrompt("triage", "Triage {{.Issue.Ref}}"), Bot: crew.Bot{Name: "clerk"}},
-			},
+			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging},
+			Actions: []crew.Action{botSession("triage", "clerk")}, Routes: routes(ready, needsAttention),
 		},
 		{
-			Name:   "implement",
-			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-			Actions: []crew.Action{
-				{
-					Name: "development", Prompt: parsedPrompt("development", "Develop {{.Issue.Ref}}"),
-					Bot: crew.Bot{Name: "developer"},
-				},
-			},
+			Name: "implement", Labels: crew.Labels{Ready: ready, Running: inProgress},
+			Actions: []crew.Action{botSession("development", "developer")}, Routes: routes(readyToReview, needsAttention),
 		},
 		{
-			Name:   "review",
-			Labels: crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
-			Actions: []crew.Action{
-				{Name: "review", Prompt: parsedPrompt("review", "Review {{.Issue.Ref}}"), Bot: crew.Bot{Name: "reviewer"}},
-			},
+			Name: "review", Labels: crew.Labels{Ready: readyToReview, Running: inReview},
+			Actions: []crew.Action{botSession("review", "reviewer")}, Routes: routes(readyToMerge, needsAttention),
 		},
 	}
+}
+
+// botSession is the session action named name, which acts as bot.
+func botSession(name crew.ActionName, bot crew.BotName) crew.Action {
+	a := sessionAction(name, "Do "+string(name)+" on {{.Issue.Ref}}")
+	spec, _ := a.Kind.(crew.SessionSpec)
+	spec.Bot = crew.Bot{Name: bot}
+	a.Kind = spec
+	return a
 }
 
 // crewBots configures botRules' bots, clerk the default, with unable the
@@ -120,7 +118,8 @@ func TestAE1ABotShowsItsStateWritesPairsTotalsAndRunningActions(t *testing.T) {
 func TestAE2WithoutBotsOnlyYouActsAndCounts(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded, Usage: spent})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded, Usage: spent})
+	d.settle(cmds)
 
 	if got := names(d); !slices.Equal(got, []crew.BotName{"you"}) {
 		t.Fatalf("entries = %v, want only you", got)
@@ -242,47 +241,88 @@ func TestReadingsForBotsThatCannotActOrAreNotConfiguredAreIgnored(t *testing.T) 
 	}
 }
 
-func TestAnActionRunsOnItsEntryFromItsSessionUntilItsSpendLands(t *testing.T) {
+// judged is the draft rules with development followed by the shell action
+// judge.
+func judged() []crew.Rule {
+	rules := draft()
+	rules[0].Actions = append(rules[0].Actions, shellAction("judge", "./judge"))
+	return rules
+}
+
+func TestAnActionRunsOnItsEntryWhileItsSessionOrScriptRuns(t *testing.T) {
 	development := core.RunningAction{IssueRef: "#74", Rule: "implement", Action: "development"}
+	judge := core.RunningAction{IssueRef: "#74", Rule: "implement", Action: "judge"}
+	developing := func(d *driver) {
+		d.running(issue("74", 1, ready))
+		d.settle(d.ended("74", "acceptance", succeeded))
+	}
 	tests := []struct {
-		name    string
-		to      func(d *driver)
-		running bool
+		name string
+		to   func(d *driver)
+		want []core.RunningAction
 	}{
 		{"starting", func(d *driver) {
 			cmds, _ := d.poll(issue("74", 1, ready))
-			take, _ := d.send(core.CallResult{ID: moveID(d.t, cmds, "74"), Result: core.ResultDone})
-			for _, c := range take {
-				if w, ok := c.(core.CreateWorkspace); ok {
-					d.send(space(w.Issue.ID().Key, w.Action))
-				}
-			}
-		}, false},
-		{"running", func(d *driver) { d.running(issue("74", 1, ready)) }, true},
-		{"checking", func(d *driver) {
-			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-		}, true},
-		{"finishing", func(d *driver) {
-			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
-		}, true},
+			d.send(core.CallResult{ID: moveID(d.t, cmds, "74"), Result: core.ResultDone})
+			d.ready("74")
+		}, nil},
+		{"running", developing, []core.RunningAction{development}},
+		{"its script running", func(d *driver) {
+			developing(d)
+			d.ended("74", "development", succeeded)
+		}, []core.RunningAction{judge}},
 		{"ended", func(d *driver) {
-			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
-			d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: noPR})
-		}, false},
+			developing(d)
+			d.ended("74", "development", succeeded)
+			d.send(core.ShellEnded{IssueID: issueID("74"), Action: "judge", Outcome: exited(0)})
+		}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := usageDriver(t, checked())
+			d := usageDriver(t, judged())
 			tt.to(d)
-			if got := slices.Contains(entry(t, d, "you").Running, development); got != tt.running {
-				t.Fatalf("development running on you = %v, want %v", got, tt.running)
+			if got := entry(t, d, "you").Running; !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("running on you = %#v, want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+// Covers KTD13, KTD-S11: a shell action acts as the run's latest session's
+// bot, and before any session in a fresh run as the tracker's identity,
+// you.
+func TestAShellActionRunsAsTheLatestSessionsBot(t *testing.T) {
+	rules := botRules()
+	rules[1].Actions = []crew.Action{
+		shellAction("install", "make deps"), botSession("development", "developer"), shellAction("judge", "./judge"),
+	}
+	d := botsDriver(t, rules, crewBots(nil))
+	cmds, _ := d.poll(issue("74", 1, ready))
+	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
+	cmds = d.ready("74")
+	if got := runShellOf(t, cmds); got.Script.Bot != "" || got.Script.Session != "" {
+		t.Fatalf("install runs as %q after session %q, want you after none", got.Script.Bot, got.Script.Session)
+	}
+	install := core.RunningAction{IssueRef: "#74", Rule: "implement", Action: "install"}
+	if got := entry(t, d, "you").Running; !reflect.DeepEqual(got, []core.RunningAction{install}) {
+		t.Fatalf("running on you = %#v, want install", got)
+	}
+
+	d.settle(func() []core.Command {
+		cmds, _ := d.send(core.ShellEnded{IssueID: issueID("74"), Action: "install", Outcome: exited(0)})
+		return cmds
+	}())
+	cmds = d.ended("74", "development", succeeded)
+	if got := runShellOf(t, cmds); got.Script.Bot != "developer" || got.Script.Session != "development" {
+		t.Fatalf("judge runs as %q after session %q, want developer after development", got.Script.Bot,
+			got.Script.Session)
+	}
+	judge := core.RunningAction{IssueRef: "#74", Rule: "implement", Action: "judge"}
+	if got := entry(t, d, "developer").Running; !reflect.DeepEqual(got, []core.RunningAction{judge}) {
+		t.Fatalf("running on developer = %#v, want judge", got)
+	}
+	if got := entry(t, d, "you").Running; got != nil {
+		t.Fatalf("running on you = %#v, want nothing", got)
 	}
 }
 
@@ -290,7 +330,7 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 	d := botsDriver(t, botRules(), crewBots(nil))
 	cmds, _ := d.poll(issue("2", 1, needsTriage))
 	d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueID: issueID("2"), Action: "triage", Reason: crew.NewSessionText("disk full")})
+	d.send(core.WorkspaceFailed{IssueID: issueID("2"), Reason: crew.NewSessionText("disk full")})
 	for _, e := range d.m.View().Bots {
 		if e.Spend != (crew.Spend{}) || e.Running != nil {
 			t.Fatalf("entry %s = %#v, want no spend and nothing running", e.Name, e)
@@ -299,9 +339,8 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 }
 
 func TestTheEntriesSpendSumsToTheViewsSpent(t *testing.T) {
-	rules := draft()
-	rules[0].Actions[1].Bot = crew.Bot{Name: "developer"}
-	rules[1].Actions[0].Bot = crew.Bot{Name: "reviewer"}
+	rules := withSpec(draft(), 0, "development", func(s *crew.SessionSpec) { s.Bot = crew.Bot{Name: "developer"} })
+	rules = withSpec(rules, 1, "custom_review", func(s *crew.SessionSpec) { s.Bot = crew.Bot{Name: "reviewer"} })
 	d := botsDriver(t, rules, core.BotsConfig{
 		Names: []crew.BotName{"developer", "reviewer"}, Unable: map[crew.BotName]string{"reviewer": "bad key file"},
 	})

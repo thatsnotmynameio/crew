@@ -107,8 +107,7 @@ func TestAListingThatPredatesAMoveKeepsIt(t *testing.T) {
 	d := newListedDriver(t)
 	twelve := issue("12", 12, ready)
 	d.running(twelve)
-	d.send(core.SessionEnded{IssueID: issueID("12"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
+	ending := d.endActions("12")
 	d.tick()
 
 	d.settle(ending)
@@ -142,4 +141,44 @@ func TestAFailedListingKeepsTheDefaultBoardAndSaysSo(t *testing.T) {
 		t.Fatalf("board failure after a listing: %q", v.BoardFailure)
 	}
 	wantBoard(t, d)
+}
+
+// waitingAnswer is the label implement's waiting route moves an issue to.
+const waitingAnswer crew.State = "waiting answer"
+
+// asking is the draft rules with acceptance sending waiting to the route
+// ask, which moves the issue to waitingAnswer.
+func asking() []crew.Rule {
+	rules := draft()
+	rules[0].Actions[0].On = crew.On{crew.Waiting: crew.ToRoute{Route: "ask"}}
+	rules[0].Routes = append(rules[0].Routes,
+		crew.Route{Name: "ask", Steps: []crew.Step{crew.MoveStep{To: waitingAnswer}}})
+	return rules
+}
+
+// Covers KTD17: a board filled from the listings lists the label a waiting
+// route moves to, so an issue paused there stays on the board, and crew
+// never takes it from there.
+func TestAnIssueInAWaitingRoutesLabelIsListedForTheBoardAndNeverTaken(t *testing.T) {
+	columns := []crew.BoardColumn{
+		{Name: "implement", Labels: []crew.State{ready, inProgress, waitingAnswer}},
+		{Name: "review", Labels: []crew.State{readyToReview, inReview}},
+	}
+	d := &driver{t: t, m: core.New(asking(), 2, core.BoardFromListings(columns)), now: t0}
+
+	cmds, _ := d.send(core.Tick{})
+	wantCommands(t, cmds, core.ListIssues{States: []crew.State{ready, inProgress, waitingAnswer, readyToReview, inReview}})
+	paused := issue("7", 7, waitingAnswer)
+	cmds, _ = d.send(core.IssuesListed{Issues: []crew.Issue{paused}})
+	wantCommands(t, cmds)
+	wantBoard(t, d, on(paused, waitingAnswer))
+	wantHeld(t, d.m)
+}
+
+// Without a board filled from the listings, no listing asks for a waiting
+// route's label.
+func TestWithoutADefaultBoardAWaitingRoutesLabelIsNotListed(t *testing.T) {
+	d := newDriver(t, asking(), 2)
+	cmds, _ := d.send(core.Tick{})
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 }

@@ -5,11 +5,12 @@
 // is its only caller, from one goroutine.
 //
 // Each issue the core holds moves through claim states kept apart from the
-// tracker's states: Taking, then Running (or Stopping), then Judging. The
-// core's outbox delivers the tracker writes a held issue's rule decides on,
-// and the view shows the issue Owed while one of them waits for a retry
-// (KTD8). An issue is released when its ending calls are settled, or when
-// its take is given up.
+// tracker's states: Taking, then Running (or Stopping), then Judging while
+// its run ends through a route, one step at a time. The core's outbox
+// delivers the tracker writes a held issue's rule decides on, and the view
+// shows the issue Owed while one of them waits for a retry (KTD8). An issue
+// is released once its route's final step settled, or when its take is
+// given up.
 package core
 
 import (
@@ -47,11 +48,11 @@ type Model struct {
 	// journal is the rule runs' past; nil when the model journals no runs
 	// (KTD12).
 	journal *journal
-	// reopening is set when the workspace can reopen a failed run's
-	// workspace (KTD4).
+	// reopening is set when the workspace can reopen the worktree of the
+	// run a new run continues (KTD4).
 	reopening bool
-	// finding is set when the tracker can find the pull request an action
-	// opened (KTD3).
+	// finding is set when the tracker can find the pull requests of a
+	// run's branch (KTD3).
 	finding bool
 	// statusUsage is set when statuses show each ended action's spend and
 	// pull request (KTD11).
@@ -77,7 +78,7 @@ func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
 		r.Actions = slices.Clone(r.Actions)
 		own[i] = r
 	}
-	m := &Model{rules: own, maxParallel: maxParallelIssues, outbox: outbox{runs: map[crew.IssueID]*runLane{}}}
+	m := &Model{rules: own, maxParallel: maxParallelIssues, outbox: outbox{runs: map[crew.IssueID]*delivery{}}}
 	m.queueOf, m.queues, m.slots = queues(own, maxParallelIssues)
 	for _, o := range opts {
 		o(m)
@@ -88,8 +89,9 @@ func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
 // Option changes a new Model.
 type Option func(*Model)
 
-// FindingPullRequests has the model look up the pull request each action
-// opened, through FindPullRequest commands, once its session ended (KTD3).
+// FindingPullRequests has the model look up the pull requests of each run's
+// branch, through FindPullRequest commands, once a run of a rule with a
+// session chose its route (KTD3, KTD-S6).
 func FindingPullRequests() Option {
 	return func(m *Model) { m.finding = true }
 }

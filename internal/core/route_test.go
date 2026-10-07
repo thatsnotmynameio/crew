@@ -46,11 +46,16 @@ func TestAWorkspaceReadyNamingAnUnknownRunChangesNothing(t *testing.T) {
 	d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 
 	before := d.m.View()
-	unknown := space("1", "acceptance")
+	unknown := space("1", "implement")
 	unknown.Run = crew.NewRuleRunID(seed(99), 1)
 	cmds, events := d.send(unknown)
 	wantUnchanged(t, d, before, cmds, events)
 
-	cmds, _ = d.send(space("1", "acceptance"))
+	cmds, _ = d.send(space("1", "implement"))
 	wantCommands(t, cmds, d.session("1", "acceptance", "Implement test acceptance for issue #1"))
+
+	// A second answer for the same run finds it no longer waiting.
+	before = d.m.View()
+	cmds, events = d.send(space("1", "implement"))
+	wantUnchanged(t, d, before, cmds, events)
 }

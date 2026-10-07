@@ -19,15 +19,14 @@ const (
 func queued(triage, development crew.Queue) []crew.Rule {
 	return []crew.Rule{
 		{
-			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "triage", Prompt: parsedPrompt("triage", "Triage issue {{.Issue.Ref}}")}},
-			Queue:   triage,
+			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging},
+			Actions: []crew.Action{sessionAction("triage", "Triage issue {{.Issue.Ref}}")},
+			Routes:  routes(ready, needsAttention), Queue: triage,
 		},
 		{
-			Name:    "development",
-			Labels:  crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "development", Prompt: parsedPrompt("development", "Develop issue {{.Issue.Ref}}")}},
-			Queue:   development,
+			Name: "development", Labels: crew.Labels{Ready: ready, Running: inProgress},
+			Actions: []crew.Action{sessionAction("development", "Develop issue {{.Issue.Ref}}")},
+			Routes:  routes(readyToReview, needsAttention), Queue: development,
 		},
 	}
 }
@@ -199,7 +198,7 @@ func TestTakesAnIssueOnlyWhileItsRulesQueueHasAFreeSlot(t *testing.T) {
 	}
 }
 
-func TestAnIssueWhoseEndingMoveIsOwedKeepsItsQueuesSlot(t *testing.T) {
+func TestAnIssueWhoseFinalMoveIsOwedKeepsItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
 	d.running(issue("1", 1, needsTriage))
 	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: succeeded})

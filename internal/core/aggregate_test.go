@@ -11,17 +11,14 @@ import (
 // TestAE5AFailedReviewIsTheSameFailureInTheStatusTheHandledEntryAndTheEvents
 // runs #7 through a rule whose implement succeeds and whose review fails:
 // the ended status, the failure report, the handled entry and the
-// ActionEnded event all say the run failed and name review, with the same
-// workspace and log, and the status carries the run's id.
+// ActionEnded event all say the run failed and name review, with the run's
+// one workspace and log, and the status carries the run's id.
 func TestAE5AFailedReviewIsTheSameFailureInTheStatusTheHandledEntryAndTheEvents(t *testing.T) {
 	d, run := reviewing(t)
 	cmds, events := d.send(core.SessionEnded{IssueID: issueID("7"), Action: "review", Outcome: failed("found a bug")})
 
-	review := crew.ActionFailure{Action: "review", Workspace: "issue-7-review", Log: ".crew/logs/issue-7-review.log"}
-	hasEnd(t, events, end{
-		head: d.runHead("7"), action: "review", outcome: failed("found a bug"),
-		workspace: review.Workspace, log: review.Log,
-	})
+	review := crew.ActionFailure{Action: "review", Workspace: "issue-7-implement", Log: ".crew/logs/issue-7-implement.log"}
+	hasEnd(t, events, end{head: d.runHead("7"), action: "review", outcome: failed("found a bug")})
 
 	status := statusOf(t, cmds, "7")
 	if status.Run() != run || status.Rule() != "implement" {
@@ -42,8 +39,8 @@ func TestAE5AFailedReviewIsTheSameFailureInTheStatusTheHandledEntryAndTheEvents(
 	if !reflect.DeepEqual(report.Report.Failures, []crew.ActionFailure{review}) {
 		t.Fatalf("failure report = %#v, want review alone", report.Report.Failures)
 	}
-	d.send(core.CallResult{ID: moveID(t, cmds, "7"), Result: core.ResultDone})
-	d.send(core.CallResult{ID: report.ID, Result: core.ResultDone})
+	moved, _ := d.send(core.CallResult{ID: report.ID, Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, moved, "7"), Result: core.ResultDone})
 
 	handled := d.m.View().Handled
 	if len(handled) != 1 {
@@ -69,17 +66,17 @@ func failureReport(t *testing.T, cmds []core.Command, key string) core.ReportFai
 }
 
 // reviewing runs #7 through a rule whose implement succeeded and whose
-// review still runs, with status reporting on and every status written so
+// review runs after it, with status reporting on and every status written so
 // far, and returns the driver and the id of the run.
 func reviewing(t *testing.T) (*driver, crew.RuleRunID) {
 	t.Helper()
 	rules := []crew.Rule{{
 		Name:   "implement",
-		Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+		Labels: crew.Labels{Ready: ready, Running: inProgress},
 		Actions: []crew.Action{
-			{Name: "implement", Prompt: parsedPrompt("implement", "Implement {{.Issue.Ref}}")},
-			{Name: "review", Prompt: parsedPrompt("review", "Review {{.Issue.Ref}}")},
+			sessionAction("implement", "Implement {{.Issue.Ref}}"), sessionAction("review", "Review {{.Issue.Ref}}"),
 		},
+		Routes: routes(readyToReview, needsAttention),
 	}}
 	d := &driver{t: t, m: core.New(rules, 1, core.ReportingStatus()), now: t0}
 	cmds, _ := d.poll(issue("7", 1, ready))
@@ -88,10 +85,9 @@ func reviewing(t *testing.T) (*driver, crew.RuleRunID) {
 	// The running status lands, so the ended one is sent at once.
 	statusOf(t, cmds, "7")
 	d.wrote("7")
-	for _, action := range []crew.ActionName{"implement", "review"} {
-		d.send(space("7", action))
-		d.send(core.SessionStarted{IssueID: issueID("7"), Action: action})
-	}
+	d.ready("7")
+	d.send(core.SessionStarted{IssueID: issueID("7"), Action: "implement"})
 	d.send(core.SessionEnded{IssueID: issueID("7"), Action: "implement", Outcome: succeeded})
+	d.send(core.SessionStarted{IssueID: issueID("7"), Action: "review"})
 	return d, run
 }

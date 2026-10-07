@@ -44,6 +44,32 @@ func (r Rule) Route(name RouteName) (Route, bool) {
 	return Route{}, false
 }
 
+// WaitingStates returns the states r's waiting routes move the item to, in
+// route order, each once: the final move of each route an action's On
+// sends Waiting to. An item there waits for an answer, and r never takes
+// it from there.
+func (r Rule) WaitingStates() []State {
+	var out []State
+	for _, route := range r.Routes {
+		if !r.waitsThrough(route.Name) || len(route.Steps) == 0 {
+			continue
+		}
+		if m, ok := route.Steps[len(route.Steps)-1].(MoveStep); ok && !slices.Contains(out, m.To) {
+			out = append(out, m.To)
+		}
+	}
+	return out
+}
+
+// waitsThrough reports whether an action of r's On sends Waiting to the
+// route named name.
+func (r Rule) waitsThrough(name RouteName) bool {
+	return slices.ContainsFunc(r.Actions, func(a Action) bool {
+		t, ok := a.On[Waiting].(ToRoute)
+		return ok && t.Route == name
+	})
+}
+
 // Labels are a rule's states, one for each point of its run.
 type Labels struct {
 	// Ready is the state an item must be in for the rule to take it.

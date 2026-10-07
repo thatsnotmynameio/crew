@@ -25,9 +25,9 @@ type Input interface {
 	arrival() time.Time
 }
 
-// RunInput is the result of a RunCommand about one action of a rule run:
-// its workspace, its session, its check or its pull request lookup. It
-// names the run that asked, and the core hands it to that run only, so an
+// RunInput is the result of a RunCommand about one rule run: its
+// workspace, an action's session or script, a route's shell step, or the
+// lookup of its pull requests. It names the run that asked, and the core hands it to that run only, so an
 // answer for a run it no longer holds changes nothing, even while a newer
 // run of the same issue runs the same action (KTD7).
 //
@@ -69,18 +69,21 @@ type Said struct {
 	Text    crew.Said
 }
 
-// StopRequested asks the core to stop (R9). The core starts nothing new,
-// stops the running sessions, gives each owed call one final try and ends
-// every issue's run as its actions end. A second request changes nothing.
+// StopRequested asks the core to stop (R9, R53). The core starts nothing
+// new, stops the running sessions and scripts, skips the shell steps of the
+// routes not yet run, gives each owed call one final try and ends every
+// issue's run through its route. A second request changes nothing.
 type StopRequested struct {
 	At time.Time
 }
 
-// TimeUp says the run time limit has passed since the first poll (R2). The
-// core takes no new issue from now on, lets the issues it holds run and
-// end as usual, and once no action is left to end gives each owed call
-// its final try and stops, as after StopRequested. It does nothing after a
-// stop request or a first TimeUp.
+// TimeUp says the run time limit has passed since the first poll (R2,
+// R52). The core takes no new issue from now on, lets each held run's
+// running action finish but starts none after it, and lets every route a
+// run reaches run its steps. Once every held run is routing with no shell
+// step left, or with a tracker step in flight that is owed, it stops as
+// after StopRequested, which gives each owed call its final try (KTD12).
+// It does nothing after a stop request or a first TimeUp.
 type TimeUp struct {
 	At time.Time
 	// Limit is the run time limit, for the WindingDown event.
@@ -131,8 +134,8 @@ type BotsChecked struct {
 	NotRenewed map[crew.BotName]string
 }
 
-// Result classifies how a tracker call (a Move, a ReportFailure or a
-// ReportPullRequests) ended.
+// Result classifies how a tracker call (a Move, a Close, a Comment, a
+// ReportFailure or a ReportPullRequests) ended.
 // The engine maps the port's errors onto it: nil is ResultDone,
 // port.ErrMovedMeanwhile is ResultMovedMeanwhile, port.ErrRefused is
 // ResultRefused, and any other error, a timeout included, is ResultFailed.
@@ -168,11 +171,11 @@ func (r Result) String() string {
 	return unknownName
 }
 
-// CallResult is how a Move or a ReportFailure command ended, correlated by
-// the command's ID.
+// CallResult is how a Move, Close, Comment or ReportFailure command ended,
+// correlated by the command's ID.
 type CallResult struct {
 	At time.Time
-	// ID is the ID of the Move or ReportFailure this answers.
+	// ID is the ID of the command this answers.
 	ID     CallID
 	Result Result
 	// Reason says why the call did not succeed, in one line. Empty on
@@ -205,35 +208,33 @@ type PullRequestsResult struct {
 // WorkspaceReady is a CreateWorkspace or ReopenWorkspace that succeeded.
 type WorkspaceReady struct {
 	At time.Time
-	// IssueID, Run and Action identify the CreateWorkspace or
-	// ReopenWorkspace this answers.
+	// IssueID and Run identify the CreateWorkspace or ReopenWorkspace this
+	// answers.
 	IssueID crew.IssueID
 	Run     crew.RuleRunID
-	Action  crew.ActionName
 	// Workspace is the workspace's unique name.
 	Workspace crew.WorkspaceName
-	// Dir is the workspace's absolute directory, where the session runs.
+	// Dir is the workspace's absolute directory, where the run's sessions
+	// and scripts run.
 	Dir string
-	// Branch is the branch the action's work goes on.
+	// Branch is the branch the run's work goes on.
 	Branch string
-	// Log is the repository-relative path of the session's log file, built
-	// by the engine from Workspace (KTD12).
+	// Log is the repository-relative path of the run's log file, built by
+	// the engine from Workspace (KTD12).
 	Log string
 	// LogFromDir is the same log's path relative to Dir, so a resumed
 	// session can open it from its workspace.
 	LogFromDir string
 	// Resumed is set when this answers a ReopenWorkspace: the workspace is
-	// the failed run's, as it was left.
+	// the continued run's, as it was left.
 	Resumed bool
 }
 
-// WorkspaceGone is a ReopenWorkspace whose workspace no longer exists. The
-// core creates a fresh one instead.
+// WorkspaceGone is a ReopenWorkspace whose workspace no longer exists.
 type WorkspaceGone struct {
 	At      time.Time
 	IssueID crew.IssueID
 	Run     crew.RuleRunID
-	Action  crew.ActionName
 }
 
 // RecordFailed is a Record the engine could not append. Event is the run
@@ -245,13 +246,12 @@ type RecordFailed struct {
 	Reason string
 }
 
-// WorkspaceFailed is a CreateWorkspace that failed. The action counts as
-// failed with Reason, and its sibling actions go on.
+// WorkspaceFailed is a CreateWorkspace or ReopenWorkspace that failed. The
+// action at the run's cursor counts as failed with Reason.
 type WorkspaceFailed struct {
 	At      time.Time
 	IssueID crew.IssueID
 	Run     crew.RuleRunID
-	Action  crew.ActionName
 	Reason  crew.SessionText
 }
 
@@ -275,28 +275,37 @@ type SessionFailedToStart struct {
 }
 
 // SessionEnded is a running session that ended, with how its harness says
-// it ended, what the harness reported it used, and the session's last
-// message, which only the action's checks read.
+// it ended, the verdict it reported and what the harness reported it used.
 type SessionEnded struct {
-	At          time.Time
-	IssueID     crew.IssueID
-	Run         crew.RuleRunID
-	Action      crew.ActionName
-	Outcome     crew.Outcome
-	Usage       crew.Usage
-	LastMessage string
-}
-
-// CheckEnded is a RunCheck that ended, with the check's verdict: Passed, or
-// it failed, ran out of time, was stopped or could not start, as its Reason
-// says.
-type CheckEnded struct {
 	At      time.Time
 	IssueID crew.IssueID
 	Run     crew.RuleRunID
 	Action  crew.ActionName
-	Passed  bool
-	Reason  crew.CheckReason
+	Outcome crew.Outcome
+	// Report is the verdict the session reported, as the engine read it;
+	// nil counts as crew.NoVerdictReported.
+	Report crew.VerdictReport
+	Usage  crew.Usage
+}
+
+// ShellEnded is a RunShell whose script ended: it exited with a status, or
+// it ran out of time, was stopped or could not start, as its Outcome says.
+type ShellEnded struct {
+	At      time.Time
+	IssueID crew.IssueID
+	Run     crew.RuleRunID
+	Action  crew.ActionName
+	Outcome crew.ShellOutcome
+}
+
+// StepShellEnded is a RunStepShell whose script ended, as its Outcome
+// says.
+type StepShellEnded struct {
+	At      time.Time
+	IssueID crew.IssueID
+	Run     crew.RuleRunID
+	Step    int
+	Outcome crew.ShellOutcome
 }
 
 // PullRequestFound is a FindPullRequest that ended: the pull request the
@@ -305,7 +314,6 @@ type PullRequestFound struct {
 	At          time.Time
 	IssueID     crew.IssueID
 	Run         crew.RuleRunID
-	Action      crew.ActionName
 	PullRequest crew.PullRequest
 }
 
@@ -367,7 +375,10 @@ func (i SessionFailedToStart) Stamped(at time.Time, _ uuid.UUID) Input { i.At = 
 func (i SessionEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i CheckEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
+func (i ShellEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
+
+// Stamped implements Input.
+func (i StepShellEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
 func (i PullRequestFound) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
@@ -390,7 +401,8 @@ func (i RecordFailed) arrival() time.Time         { return i.At }
 func (i SessionStarted) arrival() time.Time       { return i.At }
 func (i SessionFailedToStart) arrival() time.Time { return i.At }
 func (i SessionEnded) arrival() time.Time         { return i.At }
-func (i CheckEnded) arrival() time.Time           { return i.At }
+func (i ShellEnded) arrival() time.Time           { return i.At }
+func (i StepShellEnded) arrival() time.Time       { return i.At }
 func (i PullRequestFound) arrival() time.Time     { return i.At }
 
 func (i WorkspaceReady) ruleRun() crew.RuleRunID       { return i.Run }
@@ -399,7 +411,8 @@ func (i WorkspaceFailed) ruleRun() crew.RuleRunID      { return i.Run }
 func (i SessionStarted) ruleRun() crew.RuleRunID       { return i.Run }
 func (i SessionFailedToStart) ruleRun() crew.RuleRunID { return i.Run }
 func (i SessionEnded) ruleRun() crew.RuleRunID         { return i.Run }
-func (i CheckEnded) ruleRun() crew.RuleRunID           { return i.Run }
+func (i ShellEnded) ruleRun() crew.RuleRunID           { return i.Run }
+func (i StepShellEnded) ruleRun() crew.RuleRunID       { return i.Run }
 func (i PullRequestFound) ruleRun() crew.RuleRunID     { return i.Run }
 
 func (Tick) schedulerInput()               {}

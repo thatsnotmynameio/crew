@@ -37,10 +37,10 @@ func (s *step) reportPullRequests(report crew.PullRequestReport) {
 	s.pumpPullRequests(sl)
 }
 
-// reportEnding queues the report that follows the ending move of h's run,
-// which landed. It carries how the rule ended, unless the rule has no
-// actions: nobody stopped watching anything, so there is nothing to tell
-// (KTD5).
+// reportEnding queues the report that follows the final move of h's
+// route, which landed. It carries how the rule ended, unless the rule has
+// no actions: nobody stopped watching anything, so there is nothing to tell
+// (KTD5). A route that closes the issue reports nothing.
 func (s *step) reportEnding(h *heldRun) {
 	if report, ok := h.run.EndingReport(s.m.statusUsage); ok {
 		s.reportPullRequests(report)
@@ -65,13 +65,15 @@ func (s *step) sendPullRequests(sl *pullRequestLane) {
 // pullRequestsResult settles the report in flight for r's issue and sends the
 // next one (R7). A report that failed transiently is owed and holds back the
 // issue's later reports; after a stop it gets one final try. A report that
-// cannot work, or failed its final try, is dropped.
+// cannot work, or failed its final try, is dropped. Once no report of the
+// issue is in flight, a close waiting for it is sent (KTD-S14).
 func (s *step) pullRequestsResult(r PullRequestsResult) {
 	m := s.m
 	sl := m.outbox.pullRequests[r.IssueID]
 	if sl == nil || !sl.sending {
 		return
 	}
+	defer s.sendWaiting(r.IssueID)
 	sl.sending = false
 	p := sl.reports[0]
 	switch {
@@ -108,6 +110,20 @@ func (s *step) retryPullRequests() {
 		}
 		s.sendPullRequests(sl)
 	}
+}
+
+// reporting reports whether a pull request report of the issue identified
+// by id is in flight.
+func (o *outbox) reporting(id crew.IssueID) bool {
+	sl := o.pullRequests[id]
+	return sl != nil && sl.sending
+}
+
+// dropPullRequests forgets the pull request reports of the issue
+// identified by id, none of which is in flight: those queued and the owed
+// one.
+func (o *outbox) dropPullRequests(id crew.IssueID) {
+	delete(o.pullRequests, id)
 }
 
 // owedPullRequests returns the owed reports, in issue id order.

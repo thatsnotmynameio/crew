@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -12,24 +13,16 @@ import (
 type heldRun struct {
 	run  crew.RuleRun
 	rule int // index into Model.rules
-	// live holds, by action, the session plumbing of each action run that
-	// got some (KTD-P5).
-	live map[crew.ActionName]*plumbing
-	// landed is the listing generation when the ending move landed or was
-	// given up (KTD4).
+	// dir is the directory of the run's workspace, and logFromDir the
+	// log's path from it, once the workspace is ready: what its sessions
+	// and scripts need that is in no run event (KTD-P5).
+	dir        string
+	logFromDir string
+	// said holds what each session of the run last said while it ran.
+	said map[crew.ActionName]crew.Said
+	// landed is the listing generation when the final move or close of
+	// its route settled (KTD4).
 	landed int
-}
-
-// plumbing is what one live action run's session and checks need that is
-// neither run state nor in any run event (KTD-P5): the workspace's
-// directory and the log's path from it, the rendered prompt, the session's
-// last message and what it last said.
-type plumbing struct {
-	dir         string
-	logFromDir  string
-	prompt      string
-	lastMessage string
-	said        crew.Said
 }
 
 // findRun returns the held run identified by id, or nil.
@@ -52,38 +45,24 @@ func (m *Model) held(id crew.IssueID) *heldRun {
 	return nil
 }
 
-// plumb returns the plumbing of h's action named name, made on first use.
-func (h *heldRun) plumb(name crew.ActionName) *plumbing {
-	if h.live == nil {
-		h.live = map[crew.ActionName]*plumbing{}
-	}
-	p := h.live[name]
-	if p == nil {
-		p = &plumbing{}
-		h.live[name] = p
-	}
-	return p
-}
-
-// said keeps what the session of h's action named name last said, while
-// it runs.
-func (h *heldRun) said(name crew.ActionName, text crew.Said) {
+// keepSaid keeps what the session of h's action named name last said,
+// while it runs.
+func (h *heldRun) keepSaid(name crew.ActionName, text crew.Said) {
 	a, ok := h.run.Action(name)
 	if !ok {
 		return
 	}
 	if _, running := a.State().(crew.InSession); running {
-		h.plumb(name).said = text
+		if h.said == nil {
+			h.said = map[crew.ActionName]crew.Said{}
+		}
+		h.said[name] = text
 	}
 }
 
 // sayings returns what each of h's sessions last said, by action.
 func (h *heldRun) sayings() map[crew.ActionName]crew.Said {
-	out := make(map[crew.ActionName]crew.Said, len(h.live))
-	for name, p := range h.live {
-		out[name] = p.said
-	}
-	return out
+	return maps.Clone(h.said)
 }
 
 // id returns the id of h's issue.
@@ -106,11 +85,12 @@ func (m *Model) definition(h *heldRun) crew.RunDefinition {
 	return crew.RunDefinition{Rule: m.rules[h.rule], FindsPullRequests: m.finding}
 }
 
-// runInput hands an input about one action's workspace, session, check or
-// pull request to the held rule run it names, as the fact it tells
-// (KTD-P4, KTD7). An input naming a run the core does not hold, such as a
-// late answer for a released run, changes nothing, even while a newer run
-// of the same issue runs the same action.
+// runInput hands an input about a rule run's workspace, an action's
+// session or script, a route's shell step or the lookup of its pull
+// requests to the held rule run it names, as the fact it tells (KTD-P4,
+// KTD7). An input naming a run the core does not hold, such as a late
+// answer for a released run, changes nothing, even while a newer run of
+// the same issue runs the same action.
 func (s *step) runInput(in RunInput) {
 	h := s.m.findRun(in.ruleRun())
 	if h == nil {
@@ -121,67 +101,39 @@ func (s *step) runInput(in RunInput) {
 	case WorkspaceReady:
 		s.workspaceReady(h, in)
 	case WorkspaceFailed:
-		s.decide(h, crew.WorkspaceFailed{FactHead: head, Action: in.Action, Reason: in.Reason})
+		s.decide(h, crew.WorkspaceFailed{FactHead: head, Reason: in.Reason})
 	case WorkspaceGone:
-		s.decide(h, crew.WorkspaceGone{FactHead: head, Action: in.Action})
+		s.decide(h, crew.WorkspaceGone{FactHead: head})
 	case SessionStarted:
 		s.decide(h, crew.SessionStarted{FactHead: head, Action: in.Action})
 	case SessionFailedToStart:
 		s.decide(h, crew.SessionFailedToStart{FactHead: head, Action: in.Action, Reason: in.Reason})
 	case SessionEnded:
-		s.sessionEnded(h, in)
-	case CheckEnded:
-		s.decide(h, crew.CheckEnded{FactHead: head, Action: in.Action, Passed: in.Passed, Reason: in.Reason})
+		s.decide(h, crew.SessionEnded{
+			FactHead: head, Action: in.Action, Outcome: in.Outcome, Report: in.Report, Usage: in.Usage,
+		})
+	case ShellEnded:
+		s.decide(h, crew.ShellEnded{FactHead: head, Action: in.Action, Outcome: in.Outcome})
+	case StepShellEnded:
+		s.decide(h, crew.StepShellEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
 	case PullRequestFound:
-		s.decide(h, crew.PullRequestLookedUp{FactHead: head, Action: in.Action, PullRequest: in.PullRequest})
+		s.decide(h, crew.PullRequestLookedUp{FactHead: head, PullRequest: in.PullRequest})
 	}
 }
 
-// workspaceReady hands h's run the ready workspace and, once the run took
-// it, keeps the workspace's directory and the log's path from it, which the
-// action's session and checks need (KTD-P5).
+// workspaceReady hands h's run its ready workspace and, once the run took
+// it, keeps the workspace's directory and the log's path from it, which
+// its sessions and scripts need (KTD-P5).
 func (s *step) workspaceReady(h *heldRun, in WorkspaceReady) {
 	events, ok := s.decisions(h, crew.WorkspaceReady{
-		FactHead: s.head(h), Action: in.Action,
+		FactHead:  s.head(h),
 		Workspace: crew.Workspace{Name: in.Workspace, Branch: in.Branch}, Log: in.Log, Resumed: in.Resumed,
 	})
 	if !ok {
 		return
 	}
-	p := h.plumb(in.Action)
-	p.dir, p.logFromDir = in.Dir, in.LogFromDir
+	h.dir, h.logFromDir = in.Dir, in.LogFromDir
 	s.apply(h, events)
-}
-
-// sessionEnded hands h's run the session's end and, once the run took it,
-// keeps the session's last message, which the action's checks read
-// (KTD-P5).
-func (s *step) sessionEnded(h *heldRun, in SessionEnded) {
-	events, ok := s.decisions(h, crew.SessionEnded{
-		FactHead: s.head(h), Action: in.Action, Outcome: in.Outcome, Usage: in.Usage,
-	})
-	if !ok {
-		return
-	}
-	h.plumb(in.Action).lastMessage = in.LastMessage
-	s.apply(h, events)
-}
-
-// settled returns the fact that tells h's run how one of its deliveries,
-// of purpose p, settled: it landed, or crew gave it up for reason.
-func (s *step) settled(h *heldRun, p purpose, landed bool, reason string) crew.Fact {
-	head := s.head(h)
-	switch p {
-	case purposeTake:
-		return crew.TakeSettled{FactHead: head, Landed: landed}
-	case purposeEnding:
-		if landed {
-			return crew.EndingMoveSettled{FactHead: head, Move: crew.EndingLanded{}}
-		}
-		return crew.EndingMoveSettled{FactHead: head, Move: crew.EndingGivenUp{Reason: reason}}
-	default:
-		return crew.FailureReportSettled{FactHead: head, Landed: landed}
-	}
 }
 
 // head returns the head of a fact of h's run, at the input's time.
@@ -222,64 +174,53 @@ func (s *step) apply(h *heldRun, events []crew.RunEvent) {
 }
 
 // on issues the commands e calls for, once applied to h's run, and
-// publishes e when the views word it: a landed move or a posted failure
-// report. A run event about one action goes to onAction.
+// publishes e when the views word it: the take that landed or a missing
+// workspace. A run event about one action goes to onAction, and one about
+// the route to onRoute.
 func (s *step) on(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.TakeMoved:
 		s.takeMoved(h, e)
-	case crew.RunEnded:
-		s.runEnded(h, e)
-	case crew.EndingMoved:
-		s.emit(e)
-		s.m.boardMoved(h.run.Issue(), e.To)
-		s.reportRun(h)
-		s.reportEnding(h)
-		h.landed = s.m.listings
-	case crew.EndingDropped:
-		s.reportRun(h)
-		h.landed = s.m.listings
-	case crew.FailureReported:
+	case crew.WorkspaceAsked:
+		s.workspaceAsked(h, e)
+	case crew.WorkspaceMissing:
 		s.emit(e)
 	case crew.RunReleased:
 		s.m.release(h)
 		s.freed()
-	case crew.RunTaken, crew.RunStopped, crew.FailureReportDropped:
+	case crew.RunTaken, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceOpened:
 		// Nothing to do outside the run.
-	case crew.ActionWorkspaceAsked, crew.WorkspaceMissing, crew.ActionOpened, crew.ActionSessionAsked,
-		crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionLookupAsked,
-		crew.ActionCheckAsked, crew.ActionCheckStopAsked, crew.ActionCheckEnded, crew.ActionLookupDone,
-		crew.ActionFinishing, crew.ActionEnded:
+	case crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
+		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded:
 		s.onAction(h, e)
+	case crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
+		crew.StepEnded:
+		s.onRoute(h, e)
 	}
 }
 
-// onAction issues the commands e, an event about one action of h's run,
-// calls for, and publishes e when the views word it: a missing workspace, a
-// started session or an ended action.
+// onAction issues the commands e, an event about the action at the cursor
+// of h's run, calls for, and publishes e when the views word it: a started
+// session or script, or an ended action.
 func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
-	case crew.ActionWorkspaceAsked:
-		s.workspaceAsked(h, e)
-	case crew.WorkspaceMissing:
-		s.emit(e)
 	case crew.ActionSessionAsked:
 		s.startSession(h, e.Action)
 	case crew.ActionSessionStarted:
 		s.emit(e)
 	case crew.ActionSessionStopAsked:
 		s.command(StopSession{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
-	case crew.ActionLookupAsked:
-		s.findPullRequest(h, e.Action)
-	case crew.ActionCheckAsked:
-		s.runCheck(h, e.Action)
-	case crew.ActionCheckStopAsked:
-		s.command(StopCheck{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
+	case crew.ActionShellAsked:
+		s.emit(e)
+		s.runShell(h, e)
+	case crew.ActionShellStopAsked:
+		s.command(StopShell{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.ActionOpened, crew.ActionSessionEnded,
-		crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing, crew.RunEnded, crew.EndingMoved,
-		crew.EndingDropped, crew.FailureReported, crew.FailureReportDropped, crew.RunReleased:
+	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
+		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionEnded, crew.ActionShellEnded,
+		crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
+		crew.StepEnded, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }
@@ -292,89 +233,74 @@ func (s *step) takeMoved(h *heldRun, e crew.TakeMoved) {
 	s.reportPullRequests(h.run.TakeReport(e.To))
 }
 
-// workspaceAsked asks for a new workspace for the action, or for the
-// reopened workspace of the failed run it resumes (R5).
-func (s *step) workspaceAsked(h *heldRun, e crew.ActionWorkspaceAsked) {
+// workspaceAsked asks for the run's one new workspace, or for the reopened
+// workspace of the run it continues (R5, KTD6).
+func (s *step) workspaceAsked(h *heldRun, e crew.WorkspaceAsked) {
 	if w, ok := e.Reopen.Get(); ok {
-		s.command(ReopenWorkspace{
-			IssueID: e.IssueID, Run: e.Run, Action: e.Action, Workspace: w.Name, Branch: w.Branch,
-		})
+		s.command(ReopenWorkspace{IssueID: e.IssueID, Run: e.Run, Workspace: w.Name, Branch: w.Branch})
 		return
 	}
-	s.command(CreateWorkspace{Issue: h.run.Issue(), Run: e.Run, Action: e.Action})
+	s.command(CreateWorkspace{Issue: h.run.Issue(), Run: e.Run, Rule: e.Rule})
 }
 
 // startSession starts the session of h's action named name, with its
-// prompt rendered for the issue and, when the action resumed a failed
-// run's workspace, the resume paragraph after it (R5).
+// prompt rendered for the issue, then crew's paragraphs: the resume
+// paragraph when the action is where the run resumes the work of the run
+// it continues, in that run's reopened workspace (R23), and the verdict
+// paragraph when the action's on: names verdicts (R9).
 func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	def := s.m.rules[h.rule].Action(name)
-	a, _ := h.run.Action(name)
-	w, _ := a.Workspace().Get()
-	p := h.plumb(name)
-	// The run rendered the prompt already, when its take landed: the same
-	// template and issue render the same text.
-	p.prompt, _ = def.Prompt.Render(h.run.Issue())
-	if resume, ok := a.Resume().Get(); ok && w.Resumed {
-		p.prompt += "\n\n" + resumeParagraph(resume.Reason, w.Workspace.Branch, w.Log, p.logFromDir)
+	spec, _ := def.Kind.(crew.SessionSpec)
+	w, _ := h.run.Workspace().Get()
+	// The run rendered the prompt already, when it asked for the session:
+	// the same template and issue render the same text.
+	prompt, _ := spec.Prompt.Render(h.run.Issue())
+	start, resumed := h.run.Start().(crew.StartAt)
+	resumed = resumed && w.Resumed && start.Action == name
+	if resumed {
+		prompt += "\n\n" + resumeParagraph(start, w.Workspace.Branch, w.Log, h.logFromDir)
+	}
+	if verdicts, ok := verdictParagraph(def.On); ok {
+		prompt += "\n\n" + verdicts
 	}
 	s.command(StartSession{
-		IssueID: h.id(), Run: h.run.ID(), Action: name, Dir: p.dir, Prompt: p.prompt, Log: w.Log, Resumed: w.Resumed,
-		Agent: def.Agent.Name, Bot: def.Bot.Name,
+		IssueID: h.id(), Run: h.run.ID(), Action: name, Dir: h.dir, Prompt: prompt, Log: w.Log, Resumed: resumed,
+		Agent: spec.Agent.Name, Bot: spec.Bot.Name,
 	})
 }
 
-// findPullRequest looks up the pull request h's action named name opened
-// since its new workspace was made (KTD3).
-func (s *step) findPullRequest(h *heldRun, name crew.ActionName) {
-	a, _ := h.run.Action(name)
-	w, _ := a.Workspace().Get()
-	s.command(FindPullRequest{
-		IssueID: h.id(), Run: h.run.ID(), Action: name, Branch: w.Workspace.Branch, Since: w.Since(),
-	})
+// runShell runs the script of the shell action e asked for, acting as the
+// bot e names: the run's latest session's.
+func (s *step) runShell(h *heldRun, e crew.ActionShellAsked) {
+	spec, _ := s.m.rules[h.rule].Action(e.Action).Kind.(crew.ShellSpec)
+	s.command(RunShell{IssueID: h.id(), Run: h.run.ID(), Action: e.Action, Script: h.script(e.Action, spec.Script, e.Bot)})
 }
 
-// runCheck runs the next check of h's action named name: the first of its
-// checks that has not ended.
-func (s *step) runCheck(h *heldRun, name crew.ActionName) {
-	def := s.m.rules[h.rule].Action(name)
-	a, _ := h.run.Action(name)
-	w, _ := a.Workspace().Get()
-	c := def.Checks[len(a.Checks())]
-	p := h.plumb(name)
+// script returns the script of the shell action named name, command, as
+// h's run runs it, acting as bot: in its workspace, when it has one, with
+// its latest session's name (KTD-S12).
+func (h *heldRun) script(name crew.ActionName, command string, bot crew.Bot) Script {
+	w, _ := h.run.Workspace().Get()
+	latest, _ := h.run.LatestSession().Get()
 	issue := h.run.Issue()
-	s.command(RunCheck{
-		IssueID: issue.ID(), Run: h.run.ID(), Action: name, Dir: p.dir, Name: c.Name, Command: c.Script, Log: w.Log,
-		IssueRef: issue.Ref(), IssueURL: issue.URL(), Branch: w.Workspace.Branch, Bot: def.Bot.Name,
-		Prompt: p.prompt, LastMessage: p.lastMessage,
-	})
+	return Script{
+		Dir: h.dir, Name: name, Command: command, Log: w.Log, Rule: h.run.Rule(), IssueRef: issue.Ref(),
+		IssueURL: issue.URL(), Branch: w.Workspace.Branch, Session: latest.Action, Bot: bot.Name,
+	}
 }
 
 // actionEnded credits what the action's session spent to the run's total
-// and its identity's (R14, KTD4) and publishes the action run's end.
+// and to the identity of the bot it acted as, the run's latest session's
+// (R14, KTD4, KTD13), and publishes the action run's end.
 func (s *step) actionEnded(h *heldRun, e crew.ActionEnded) {
 	m := s.m
 	a, _ := h.run.Action(e.Action)
 	m.spent = m.spent.Add(a.Spend())
-	m.bots.credit(m.bots.identity(m.rules[h.rule].Action(e.Action).Bot.Name), a.Spend())
+	m.bots.credit(m.bots.identity(h.run.Bot().Name), a.Spend())
 	s.emit(e)
 }
 
-// runEnded moves h to its ending's state, with the failure report when an
-// action failed, and reports the run ended with its move pending (R7).
-func (s *step) runEnded(h *heldRun, e crew.RunEnded) {
-	running := s.m.rules[h.rule].Labels.Running
-	s.deliver(h, &delivery{purpose: purposeEnding, call: h.move(running, e.Ending.To)})
-	if report, ok := h.run.FailureReport(); ok {
-		s.deliver(h, &delivery{
-			purpose: purposeReport, report: report,
-			call: Call{Kind: CallReport, IssueID: e.IssueID, IssueRef: e.IssueRef},
-		})
-	}
-	s.reportRun(h)
-}
-
-// release forgets h, keeping its handled entry when its ending settled
+// release forgets h, keeping its handled entry when its route ended
 // (handle).
 func (m *Model) release(h *heldRun) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldRun) bool { return x == h })

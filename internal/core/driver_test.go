@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"reflect"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 	"uuid"
@@ -24,25 +25,59 @@ const (
 
 var t0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 
-// draft is the rules of your draft config (KTD5).
+// draft is the rules of your draft config (KTD5): implement runs the
+// sessions acceptance then development, one after the other in one
+// workspace, and review runs custom_review. Each moves the issue on through
+// passed, and reports and moves it to needs attention through failed.
 func draft() []crew.Rule {
 	return []crew.Rule{
 		{
 			Name:   "implement",
-			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
+			Labels: crew.Labels{Ready: ready, Running: inProgress},
 			Actions: []crew.Action{
-				{Name: "acceptance", Prompt: parsedPrompt("acceptance", "Implement test acceptance for issue {{.Issue.Ref}}")},
-				{Name: "development", Prompt: parsedPrompt("development", "Implement development for issue {{.Issue.Ref}}")},
+				sessionAction("acceptance", "Implement test acceptance for issue {{.Issue.Ref}}"),
+				sessionAction("development", "Implement development for issue {{.Issue.Ref}}"),
 			},
+			Routes: routes(readyToReview, needsAttention),
 		},
 		{
-			Name:   "review",
-			Labels: crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
-			Actions: []crew.Action{
-				{Name: "custom_review", Prompt: parsedPrompt("custom_review", "Review implementation for issue {{.Issue.Ref}}")},
-			},
+			Name:    "review",
+			Labels:  crew.Labels{Ready: readyToReview, Running: inReview},
+			Actions: []crew.Action{sessionAction("custom_review", "Review implementation for issue {{.Issue.Ref}}")},
+			Routes:  routes(readyToMerge, needsAttention),
 		},
 	}
+}
+
+// sessionAction is a session action named name, whose prompt is text.
+func sessionAction(name crew.ActionName, text string) crew.Action {
+	return crew.Action{Name: name, Kind: crew.SessionSpec{Prompt: parsedPrompt(name, text)}}
+}
+
+// shellAction is a shell action named name, which runs script.
+func shellAction(name crew.ActionName, script string) crew.Action {
+	return crew.Action{Name: name, Kind: crew.ShellSpec{Script: script}}
+}
+
+// routes are a rule's passed route, which moves the issue to passed, and
+// its failed route, which reports and moves it to failed.
+func routes(passed, failed crew.State) []crew.Route {
+	return []crew.Route{
+		{Name: crew.PassedRoute, Steps: []crew.Step{crew.MoveStep{To: passed}}},
+		{Name: crew.FailedRoute, Steps: []crew.Step{crew.ReportStep{}, crew.MoveStep{To: failed}}},
+	}
+}
+
+// withSpec returns rules with the session of the action named action of
+// rule ri changed by change.
+func withSpec(rules []crew.Rule, ri int, action crew.ActionName, change func(*crew.SessionSpec)) []crew.Rule {
+	for i, a := range rules[ri].Actions {
+		if spec, ok := a.Kind.(crew.SessionSpec); ok && a.Name == action {
+			change(&spec)
+			rules[ri].Actions[i].Kind = spec
+		}
+	}
+	return rules
 }
 
 // issue returns an issue keyed key, opened minute minutes after t0.
@@ -81,12 +116,12 @@ func parsedPrompt(action crew.ActionName, text string) crew.Prompt {
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
 
-// space is the workspace an engine would create for key and action. It
-// names no run: the driver fills in the run that holds the issue.
-func space(key string, action crew.ActionName) core.WorkspaceReady {
-	name := "issue-" + key + "-" + string(action)
+// space is the workspace an engine would create for the run of rule on
+// key. It names no run: the driver fills in the run that holds the issue.
+func space(key string, rule crew.RuleName) core.WorkspaceReady {
+	name := "issue-" + key + "-" + string(rule)
 	return core.WorkspaceReady{
-		IssueID: issueID(key), Action: action, Workspace: crew.WorkspaceName(name), Dir: "/repo/.crew/worktrees/" + name,
+		IssueID: issueID(key), Workspace: crew.WorkspaceName(name), Dir: "/repo/.crew/worktrees/" + name,
 		Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }
@@ -176,7 +211,10 @@ func (d *driver) named(in core.Input) core.Input {
 	case core.SessionEnded:
 		fill(&in.Run, in.IssueID)
 		return in
-	case core.CheckEnded:
+	case core.ShellEnded:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.StepShellEnded:
 		fill(&in.Run, in.IssueID)
 		return in
 	case core.PullRequestFound:
@@ -208,8 +246,9 @@ func (d *driver) wantReason(key string, action crew.ActionName, reason string) {
 	d.t.Fatalf("no end of %s of #%s in %#v", action, key, d.events)
 }
 
-// settle answers cmds as a healthy engine would: moves succeed, workspaces
-// are created and sessions start. Listings and stops are left unanswered.
+// settle answers cmds as a healthy engine would: tracker writes succeed,
+// workspaces are created and sessions start. Listings, scripts and stops
+// are left unanswered.
 func (d *driver) settle(cmds []core.Command) {
 	d.t.Helper()
 	for len(cmds) > 0 {
@@ -221,14 +260,19 @@ func (d *driver) settle(cmds []core.Command) {
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.ReportFailure:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
+			case core.Comment:
+				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
+			case core.Close:
+				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
-				ready := space(c.Issue.ID().Key, c.Action)
+				ready := space(c.Issue.ID().Key, c.Rule)
 				ready.Run = c.Run
 				out, _ = d.send(ready)
 			case core.StartSession:
 				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
 			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
-				core.Record, core.StopSession, core.RunCheck, core.FindPullRequest, core.StopCheck:
+				core.Record, core.StopSession, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell,
+				core.FindPullRequest:
 				// Left unanswered.
 			}
 			next = append(next, out...)
@@ -265,9 +309,15 @@ func noIDs(cmds []core.Command) []core.Command {
 		case core.ReportFailure:
 			call.ID = 0
 			c = call
+		case core.Comment:
+			call.ID = 0
+			c = call
+		case core.Close:
+			call.ID = 0
+			c = call
 		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
-			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunCheck,
-			core.FindPullRequest, core.StopCheck:
+			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunShell, core.StopShell,
+			core.RunStepShell, core.StopStepShell, core.FindPullRequest:
 		}
 		out = append(out, c)
 	}
@@ -324,28 +374,22 @@ func (d *driver) runHead(key string) crew.EventHead {
 }
 
 // taken is the event of rule taking it at d.now, as the nth run of d's last
-// listing, from one state to another; none of its actions resumes.
+// listing, from one state to another, with actions; it starts fresh.
 func (d *driver) taken(n int, it crew.Issue, rule crew.RuleName, from, to crew.State,
 	actions ...crew.ActionName,
 ) crew.RunTaken {
-	e := crew.RunTaken{
+	return crew.RunTaken{
 		Run: crew.NewRuleRunID(d.listed, n), At: d.now, IssueID: it.ID(), IssueRef: it.Ref(), Rule: rule,
-		Issue: it.Data(), From: from, To: to,
+		Issue: it.Data(), From: from, To: to, Actions: actions, Start: crew.StartFresh{},
 	}
-	for _, a := range actions {
-		e.Actions = append(e.Actions, crew.ActionTaken{Name: a})
-	}
-	return e
 }
 
-// end is an action's end as its line shows it: its head, its action, its
-// outcome, and the workspace and log it worked in.
+// end is an action's end as its line shows it: its head, its action and
+// its outcome.
 type end struct {
-	head      crew.EventHead
-	action    crew.ActionName
-	outcome   crew.Outcome
-	workspace crew.WorkspaceName
-	log       string
+	head    crew.EventHead
+	action  crew.ActionName
+	outcome crew.Outcome
 }
 
 // hasEnd fails the test unless events hold the end of an action that shows
@@ -354,11 +398,7 @@ func hasEnd(t *testing.T, events []core.Published, want end) {
 	t.Helper()
 	for _, e := range events {
 		if ended, ok := e.(crew.ActionEnded); ok {
-			w, _ := ended.Workspace.Get()
-			got := end{
-				head: ended.EventHead, action: ended.Action, outcome: ended.End.Outcome(),
-				workspace: w.Workspace.Name, log: w.Log,
-			}
+			got := end{head: ended.EventHead, action: ended.Action, outcome: ended.End.Outcome()}
 			if got == want {
 				return
 			}
@@ -419,19 +459,41 @@ func issueKey(c core.Command) string {
 		return c.IssueID.Key
 	case core.StopSession:
 		return c.IssueID.Key
+	case core.Comment:
+		return c.IssueID.Key
+	case core.Close:
+		return c.IssueID.Key
 	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
-		core.Record, core.RunCheck, core.FindPullRequest, core.StopCheck:
+		core.Record, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell, core.FindPullRequest:
 	}
 	return ""
 }
 
-// endedNeedingAttention runs #1 to a failed ending and returns the ending
-// commands, both in flight.
+// endedNeedingAttention runs #1 to its failed route, as acceptance fails,
+// and returns the commands of its first step, the failure report, in
+// flight.
 func endedNeedingAttention(d *driver) []core.Command {
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: failed("broke")})
 	return cmds
+}
+
+// failureOf is the failure report of issue key's run of rule, ended by
+// action in the run's one workspace.
+func failureOf(key string, rule crew.RuleName, action crew.ActionName) core.ReportFailure {
+	name := "issue-" + key + "-" + string(rule)
+	return core.ReportFailure{Report: crew.FailureReport{
+		IssueID: issueID(key), IssueRef: "#" + key, Failures: []crew.ActionFailure{{
+			Action: action, Workspace: crew.WorkspaceName(name), Log: ".crew/logs/" + name + ".log",
+		}},
+	}}
+}
+
+// stepEnded is the event of the step at index step of issue key's last run
+// settling as outcome, at d.now.
+func (d *driver) stepEnded(key string, step int, outcome crew.StepOutcome) crew.StepEnded {
+	d.t.Helper()
+	return crew.StepEnded{EventHead: d.runHead(key), Step: step, Outcome: outcome}
 }
 
 func wantEvents(t *testing.T, got []core.Published, want ...core.Published) {
@@ -439,4 +501,65 @@ func wantEvents(t *testing.T, got []core.Published, want ...core.Published) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("events:\n got %#v\nwant %#v", got, want)
 	}
+}
+
+// records returns the events of the Record commands in cmds, in order.
+func records(cmds []core.Command) []crew.RunEvent {
+	var out []crew.RunEvent
+	for _, c := range cmds {
+		if r, ok := c.(core.Record); ok {
+			out = append(out, r.Event)
+		}
+	}
+	return out
+}
+
+// rule returns the rule of issue key's last run, as its published take
+// named it.
+func (d *driver) rule(key string) crew.RuleName {
+	d.t.Helper()
+	return d.runHead(key).Rule
+}
+
+// ready answers the workspace of issue key's last run as ready, as space
+// gives it, and returns the commands that follow.
+func (d *driver) ready(key string) []core.Command {
+	d.t.Helper()
+	cmds, _ := d.send(space(key, d.rule(key)))
+	return cmds
+}
+
+// session is the StartSession of action for prompt in the workspace space
+// gives issue key's last run.
+func (d *driver) session(key string, action crew.ActionName, prompt string) core.StartSession {
+	d.t.Helper()
+	w := space(key, d.rule(key))
+	return core.StartSession{
+		IssueID: issueID(key), Run: d.run(issueID(key)), Action: action, Dir: w.Dir, Prompt: prompt, Log: w.Log,
+	}
+}
+
+// ended sends the end of the session of action on issue key with outcome,
+// and returns the commands that follow.
+func (d *driver) ended(key string, action crew.ActionName, outcome crew.Outcome) []core.Command {
+	d.t.Helper()
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID(key), Action: action, Outcome: outcome})
+	return cmds
+}
+
+// exited is how a script that exited with status ended.
+func exited(status int) crew.ShellOutcome {
+	return crew.ShellOutcome{Status: crew.Some(status), Reason: crew.NewCheckReason("exited " + strconv.Itoa(status))}
+}
+
+// runShellOf returns the RunShell in cmds.
+func runShellOf(t *testing.T, cmds []core.Command) core.RunShell {
+	t.Helper()
+	for _, c := range cmds {
+		if r, ok := c.(core.RunShell); ok {
+			return r
+		}
+	}
+	t.Fatalf("no RunShell in %#v", cmds)
+	return core.RunShell{}
 }
