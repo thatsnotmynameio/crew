@@ -28,7 +28,7 @@ Queues ─── 0 of 2 busy   Events ──────────────
                           HH:MM:SS reported the failure on #1
                           HH:MM:SS #1 moved from dev:running to dev:failed
 
-q stop · tab focus · ←→↑↓ move · enter open · ? help
+q q stop · tab focus · ←→↑↓ move · enter open · ? help
 
 
 
