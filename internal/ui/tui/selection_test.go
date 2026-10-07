@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
@@ -231,6 +233,42 @@ func TestTheHighlightedCardIsDrawnInTheHighlightColourWithAMarker(t *testing.T) 
 		}
 		h.send(rightKey)
 	}
+}
+
+// Covers AE3 and R5 of #231: when crew takes the highlighted issue, its
+// card moves to the top of the held cards and keeps the highlight.
+func TestAE3ATakenIssueMovesUpAndKeepsItsHighlight(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	bugs := []crew.BoardIssue{item("10", "bug"), item("12", "bug"), item("15", "bug")}
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), bugs...)))
+	h.send(downKey)
+	wantLit(t, h, "#10", 1)
+
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12", "10"), bugs...)))
+
+	board := boardOf(t, h.view())
+	if got, want := cardOrder(board, "#10", "#12", "#15"), []string{"#10", "#12", "#15"}; !slices.Equal(got, want) {
+		t.Errorf("the column shows %v, want %v:\n%s", got, want, board)
+	}
+	wantLit(t, h, "#10", 1)
+}
+
+// Covers AE4 and R5 of #231: when crew lets go of the highlighted issue
+// and it keeps its label, its card returns to its board-order place among
+// the cards crew does not hold and keeps the highlight.
+func TestAE4ALetGoIssueReturnsToItsPlaceAndKeepsItsHighlight(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	bugs := []crew.BoardIssue{item("10", "bug"), item("12", "bug")}
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), bugs...)))
+	wantLit(t, h, "#12", 1)
+
+	h.send(updateMsg(onBoard(engine.Update{}, bugs...)))
+
+	board := boardOf(t, h.view())
+	if got, want := cardOrder(board, "#10", "#12"), []string{"#10", "#12"}; !slices.Equal(got, want) {
+		t.Errorf("the column shows %v, want %v:\n%s", got, want, board)
+	}
+	wantLit(t, h, "#12", 1)
 }
 
 // Covers R21 and KTD5 of #151: the highlighted issue's card moving to

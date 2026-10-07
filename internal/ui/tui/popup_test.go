@@ -163,6 +163,23 @@ func TestThePopupWalksTheCardsInBoardOrderAndStopsAtTheEnds(t *testing.T) {
 	}
 }
 
+// Covers R1 of #231: in the popup → walks a column as it shows, the held
+// cards first.
+func TestThePopupWalksTheHeldCardsFirst(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), item("10", "bug"), item("12", "bug"))))
+	h.send(enterKey)
+	if got := popupRows(t, h)[0]; !strings.HasPrefix(got, "#12 ") {
+		t.Fatalf("Enter opens %q, want #12's popup", got)
+	}
+
+	h.send(rightKey)
+
+	if got := popupRows(t, h)[0]; !strings.HasPrefix(got, "#10 ") {
+		t.Errorf("→ opens %q, want #10's popup", got)
+	}
+}
+
 // headerIssue is #3, with everything the popup's header shows.
 var headerIssue = crew.Issue{
 	Key: "3", Ref: "#3", Title: "Speed up the poll", URL: "https://github.com/o/r/issues/3",
@@ -529,9 +546,11 @@ func TestAE6ThePopupFollowsItsIssueAndClosesWhenItLeaves(t *testing.T) {
 		t.Fatalf("after #1 failed the popup shows %q, want #1's", got)
 	}
 
+	// #1, which crew let go, now sits below #2, which crew holds (R1 of
+	// #231).
 	h.send(escKey)
 	wantLit(t, h, "#1", 1)
-	h.send(downKey)
+	h.send(upKey)
 	h.send(enterKey)
 	if got := popupRows(t, h)[0]; got != "#2 Fix the flaky stream test" {
 		t.Fatalf("the popup shows %q, want #2's", got)
