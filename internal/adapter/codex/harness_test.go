@@ -390,6 +390,37 @@ func TestSaidIsTheLastMessageWhileCodexRunsAndAfterItWasStopped(t *testing.T) {
 	}
 }
 
+// lastMessageOf returns s's last message, failing when it cannot tell.
+func lastMessageOf(t *testing.T, s port.Session) string {
+	t.Helper()
+	r, ok := s.(port.LastMessageReporter)
+	if !ok {
+		t.Fatalf("session %T is not a port.LastMessageReporter", s)
+	}
+	return r.LastMessage()
+}
+
+// The judge after a session reads its last message from the file the
+// engine fills from LastMessage, so it gets the message as Codex wrote it,
+// line breaks and all.
+func TestLastMessageIsTheLastAgentMessageAsCodexWroteIt(t *testing.T) {
+	s := start(t, newProcess(fixture(t, "success.jsonl")))
+	s.Wait()
+
+	if got, want := lastMessageOf(t, s), "I fixed the parser.\n\nThe tests pass."; got != want {
+		t.Errorf("last message = %q, want %q", got, want)
+	}
+}
+
+func TestLastMessageIsEmptyWhenCodexSaidNothing(t *testing.T) {
+	s := start(t, newProcess(fixture(t, "loggedout.jsonl")))
+	s.Wait()
+
+	if got := lastMessageOf(t, s); got != "" {
+		t.Errorf("last message = %q, want none", got)
+	}
+}
+
 // failingWriter is a log that cannot be written, such as on a full disk.
 type failingWriter struct{}
 
