@@ -94,6 +94,21 @@ func TestAResumeWithEverySlotBusyListsNothing(t *testing.T) {
 	wantEvents(t, events, core.Resumed{At: d.now})
 }
 
+// Covers KTD3: a resume with every slot busy, after paused ticks that
+// listed, still lists at once when the next slot frees, as an unpaused
+// crew whose tick skipped its listing does.
+func TestAfterAResumeWithEverySlotBusyAFreedSlotListsAtOnce(t *testing.T) {
+	d := newDriver(t, draft(), 1)
+	d.running(issue("1", 1, ready))
+	d.send(core.PauseToggled{})
+	d.poll(issue("1", 1, inProgress), issue("2", 2, ready))
+	d.send(core.PauseToggled{})
+
+	cmds, _ := d.release("1")
+
+	wantCommands(t, cmds, core.ListIssues{States: draftListing})
+}
+
 // Covers AE5 (R3): a paused crew with every slot busy still lists, so a
 // new ready issue reaches the board, and still takes nothing.
 func TestAE5APausedCrewWithEverySlotBusyListsForTheBoard(t *testing.T) {
