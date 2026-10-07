@@ -124,8 +124,10 @@ type ActionStatus struct {
 	State ActionState
 	// Shell is how a shell action's script ended: crew's one line, followed
 	// by the last line the script printed, without control characters;
-	// empty for a session, or before the script ended. Only a script's
-	// line goes in a status: a session's or a tool's own words never do,
+	// or how a function action's function ended: crew's one line, with the
+	// error it returned, without control characters; empty for a session,
+	// or before the script or function ended. Only a script's or a
+	// function's line goes in a status: a session's or a tool's own words never do,
 	// since a tracker may show it in public, and those words can hold
 	// commands, output and secrets.
 	Shell ShellReason
@@ -160,14 +162,16 @@ type ActionNotRun struct{}
 // it went on to the next action in the run this one continues.
 type ActionDoneInEarlierRun struct{}
 
-// ActionRunning is an action whose session or shell script runs.
+// ActionRunning is an action whose session, shell script or function
+// runs.
 type ActionRunning struct {
-	// Started is when its session started, or crew asked for its script.
+	// Started is when its session started, or crew asked for its script or
+	// its function.
 	Started time.Time
 	// Said is the last thing its running session said, on one line with
 	// local paths shortened and without control characters; empty when it
 	// said nothing yet, said only control characters, its harness cannot
-	// tell, or it is a shell action.
+	// tell, or it is a shell or function action.
 	Said Said
 }
 

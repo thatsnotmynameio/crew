@@ -165,6 +165,32 @@ type ActionShellEnded struct {
 	Outcome ShellOutcome
 }
 
+// ActionFunctionAsked is a function action's start: its function asked to
+// run, at the run's cursor, acting as Bot.
+type ActionFunctionAsked struct {
+	EventHead
+
+	Action ActionName
+	// Bot is the bot the function acts as: the run's latest session's, or
+	// the zero Bot, the tracker's identity, before any session started.
+	Bot Bot
+}
+
+// ActionFunctionStopAsked is an action's running function asked to stop.
+type ActionFunctionStopAsked struct {
+	EventHead
+
+	Action ActionName
+}
+
+// ActionFunctionEnded is an action's function that ended.
+type ActionFunctionEnded struct {
+	EventHead
+
+	Action  ActionName
+	Outcome FunctionOutcome
+}
+
 // ActionEnded is an action run that ended: the action run's end, with its
 // verdict, where the verdict leads, and all it recorded.
 type ActionEnded struct {
@@ -211,7 +237,8 @@ type RunLookupDone struct {
 }
 
 // StepAsked is the route's step at index Step asked: a tracker call to
-// deliver, or a shell action's script to run, acting as the run's bot.
+// deliver, a shell action's script to run or a function to call, acting as
+// the run's bot.
 type StepAsked struct {
 	EventHead
 
@@ -221,6 +248,14 @@ type StepAsked struct {
 // StepShellStopAsked is the route's shell step at index Step, whose script
 // runs, asked to stop.
 type StepShellStopAsked struct {
+	EventHead
+
+	Step int
+}
+
+// StepFunctionStopAsked is the route's function step at index Step, whose
+// function runs, asked to stop.
+type StepFunctionStopAsked struct {
 	EventHead
 
 	Step int

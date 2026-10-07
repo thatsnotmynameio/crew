@@ -309,3 +309,40 @@ func TestAReleasedRunKeepsItsEndingOnlyWhenItChoseARoute(t *testing.T) {
 		t.Errorf("a take given up has the ending report %#v", r)
 	}
 }
+
+// R49: a function action's line shows crew's reason, as a shell action's
+// shows its script's line, and a running function is running.
+func TestAFunctionActionShowsItsReason(t *testing.T) {
+	failed := seq(checking(), []RunEvent{
+		checkEnded(6, FunctionOutcome{Reason: NewShellReason("check failed: \x1b[31mno pull request\x1b[0m")}),
+		checkEnd(6, failedBy(NewSessionText("check failed: no pull request"), CauseFunction), toFailed),
+		chose(6, FailedRoute, "check"),
+	})
+	tests := []struct {
+		name  string
+		given []RunEvent
+		want  ActionStatus
+	}{
+		{name: "running", given: checking(), want: ActionStatus{Name: "check", State: ActionRunning{Started: at(5)}}},
+		{
+			name: "failed", given: failed,
+			want: ActionStatus{
+				Name: "check", State: ActionFailed{Cause: CauseFunction, Log: runLog},
+				Shell: NewShellReason("check failed: no pull request"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := given(t, tt.given).Status(at(9), nil, false).Actions()
+			want := []ActionStatus{
+				{Name: "install", State: ActionSucceeded{Verdict: Passed}, Shell: installRan},
+				{Name: "lfg", State: ActionSucceeded{Verdict: Passed}},
+				tt.want,
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("Actions =\n%#v\nwant\n%#v", got, want)
+			}
+		})
+	}
+}

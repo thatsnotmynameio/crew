@@ -111,8 +111,9 @@ func (r RuleRun) stepStatuses() []StepStatus {
 }
 
 // actionStatuses returns the run's actions as a status shows them: each
-// one's state, and a shell action's line once its script ended. A
-// session's or a tool's own words never go with them. When the run
+// one's state, and a shell action's line once its script ended, or a
+// function action's once its function ended. A session's or a tool's own
+// words never go with them. When the run
 // resumed, each action that ran in it names its workspace.
 func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []ActionStatus {
 	out := make([]ActionStatus, 0, len(r.actions))
@@ -120,6 +121,9 @@ func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []Acti
 	for i, a := range r.actions {
 		s := ActionStatus{Name: a.name, State: r.actionState(i, said[a.name], showUsage)}
 		if o, ok := a.shell.Get(); ok {
+			s.Shell = o.Reason
+		}
+		if o, ok := a.function.Get(); ok {
 			s.Shell = o.Reason
 		}
 		if w.Resumed && ran(s.State) {
@@ -141,7 +145,7 @@ func ran(state ActionState) bool {
 }
 
 // actionState returns how the action at index i stands in a status. A
-// session or a script that runs is running. The action at the cursor that
+// session, a script or a function that runs is running. The action at the cursor that
 // has none running yet is pending, and those after it await their turn. A
 // failed action carries its cause and the run's log.
 func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
@@ -151,6 +155,8 @@ func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
 		started, _ := a.session.Get()
 		return ActionRunning{Started: started, Said: said}
 	case InShell:
+		return ActionRunning{Started: s.Started}
+	case InFunction:
 		return ActionRunning{Started: s.Started}
 	case Finished:
 		return r.endState(a, s, showUsage)
