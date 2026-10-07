@@ -38,7 +38,7 @@ On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your 
     *":$bin:"*)
       hash -r 2>/dev/null || true
       found=$(command -v crew || true)
-      if [ "$found" != "$bin/crew" ]; then
+      if [ -n "$found" ] && [ "$found" != "$bin/crew" ]; then
         echo "warning: crew runs $found, not $bin/crew; remove $found to run the crew just installed" >&2
       fi
       ;;
