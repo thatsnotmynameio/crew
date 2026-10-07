@@ -220,6 +220,9 @@ func (d *driver) named(in core.Input) core.Input {
 	case core.PullRequestFound:
 		fill(&in.Run, in.IssueID)
 		return in
+	case core.AnswersRead:
+		fill(&in.Run, in.IssueID)
+		return in
 	case core.Tick:
 		in.Said = slices.Clone(in.Said)
 		for i := range in.Said {
@@ -272,7 +275,7 @@ func (d *driver) settle(cmds []core.Command) {
 				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
 			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 				core.Record, core.StopSession, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell,
-				core.FindPullRequest:
+				core.FindPullRequest, core.ReadAnswers:
 				// Left unanswered.
 			}
 			next = append(next, out...)
@@ -317,7 +320,7 @@ func noIDs(cmds []core.Command) []core.Command {
 			c = call
 		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
 			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunShell, core.StopShell,
-			core.RunStepShell, core.StopStepShell, core.FindPullRequest:
+			core.RunStepShell, core.StopStepShell, core.FindPullRequest, core.ReadAnswers:
 		}
 		out = append(out, c)
 	}
@@ -464,7 +467,8 @@ func issueKey(c core.Command) string {
 	case core.Close:
 		return c.IssueID.Key
 	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
-		core.Record, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell, core.FindPullRequest:
+		core.Record, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell, core.FindPullRequest,
+		core.ReadAnswers:
 	}
 	return ""
 }

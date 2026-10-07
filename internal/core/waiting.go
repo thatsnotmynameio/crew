@@ -55,30 +55,62 @@ func (m *Model) waitingOf(h *heldRun, name crew.ActionName, spec crew.SessionSpe
 	}
 }
 
-// readCommand returns the one command a waiting session reads the issue's
+// reader is what a read command reads on an issue: the questions it
+// prints, by their markers and the logins they were asked as, and who may
+// answer them.
+type reader struct {
+	// issue is the issue's number.
+	issue string
+	// questions are the questions' markers and logins; one with an empty
+	// login prints nothing.
+	questions []asked
+	// owners are the code owners' logins.
+	owners []string
+	// apps are the answering list's logins, without those of the questions.
+	apps []string
+}
+
+// asked is a question a read command prints: the marker of the session
+// that asked it and the login it acted as.
+type asked struct {
+	marker string
+	login  string
+}
+
+// reader returns what the read command of w reads: its session's question
+// and who may answer it.
+func (w waiting) reader() reader {
+	return reader{issue: w.issue, questions: []asked{{marker: w.marker, login: w.login}}, owners: w.owners, apps: w.apps}
+}
+
+// readCommand returns the one command a session reads the issue's
 // comments with: every page of them, each filtered on its own by
 // answerFilter, so no other comment's body reaches the session (KTD-W10).
-func readCommand(w waiting) string {
-	return "gh api --paginate " + shellQuote("repos/{owner}/{repo}/issues/"+w.issue+"/comments?per_page=100") +
-		" --jq " + shellQuote(answerFilter(w))
+func readCommand(r reader) string {
+	return "gh api --paginate " + shellQuote("repos/{owner}/{repo}/issues/"+r.issue+"/comments?per_page=100") +
+		" --jq " + shellQuote(answerFilter(r))
 }
 
 // answerFilter returns the jq program that turns one page of comments into
-// one JSON object per line: each comment by the session's login that holds
-// its marker and not crew's own, as its question, with when it was
-// written, and each comment that holds none of crew's markers by a code
-// owner who is not an App or by an App on the list, with when and by whom
-// it was written and its body. Logins compare in lower case. With the
-// session's login unknown, it prints no question.
-func answerFilter(w waiting) string {
+// one JSON object per line: each comment by the login of one of r's
+// questions that holds that question's marker and not crew's own, as a
+// question, with when it was written, and each comment that holds none of
+// crew's markers by a code owner who is not an App or by an App on the
+// list, with when and by whom it was written and its body. Logins compare
+// in lower case. A question whose login is unknown prints nothing.
+func answerFilter(r reader) string {
 	answer := "($b | contains(" + jqString(crew.MarkerPrefix) + ") | not) and " +
-		"((.user.type != \"Bot\" and any(" + jqList(w.owners) + "[]; . == $l)) or " +
-		"(.user.type == \"Bot\" and any(" + jqList(w.apps) + "[]; . == $l)))"
+		"((.user.type != \"Bot\" and any(" + jqList(r.owners) + "[]; . == $l)) or " +
+		"(.user.type == \"Bot\" and any(" + jqList(r.apps) + "[]; . == $l)))"
 	pick := "if " + answer + " then {created_at, login: .user.login, body: $b} else empty end"
-	if w.login != "" {
-		question := "$l == " + jqString(asciiLower(w.login)) +
-			" and ($b | contains(" + jqString(w.marker) + "))" +
-			" and ($b | contains(" + jqString(crew.PostedMarker) + ") | not)"
+	var asks []string
+	for _, q := range r.questions {
+		if q.login != "" {
+			asks = append(asks, "($l == "+jqString(asciiLower(q.login))+" and ($b | contains("+jqString(q.marker)+")))")
+		}
+	}
+	if len(asks) > 0 {
+		question := "(" + strings.Join(asks, " or ") + ") and ($b | contains(" + jqString(crew.PostedMarker) + ") | not)"
 		pick = "if " + question + " then {question: true, created_at} elif " + strings.TrimPrefix(pick, "if ")
 	}
 	return `.[] | ((.user.login // "") | ascii_downcase) as $l | (.body // "") as $b | ` + pick + " | tojson"

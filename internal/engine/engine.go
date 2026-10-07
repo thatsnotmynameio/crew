@@ -38,7 +38,7 @@ const (
 	shellTimeout = 10 * time.Minute
 	// lookupTimeout bounds the lookup of a run's pull request, which
 	// runs even while crew stops, so a hung gh delays a stop by no more
-	// (KTD3).
+	// (KTD3), and the read of the answers a session starts with.
 	lookupTimeout = 15 * time.Second
 	// saidInterval is how often the loop refreshes what the running
 	// sessions last said for the latest-wins subscribers (KTD5).
@@ -511,7 +511,7 @@ func (e *Engine) ran(in core.RunInput, s port.Session) {
 	case core.StepShellEnded:
 		delete(e.steps, stepKey{in.Run, in.Step})
 	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
-		core.PullRequestFound:
+		core.PullRequestFound, core.AnswersRead:
 	}
 }
 

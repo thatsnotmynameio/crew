@@ -97,6 +97,8 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 		return func() { e.startSession(ctx, c) }
 	case core.FindPullRequest:
 		return func() { e.findPullRequest(ctx, c) }
+	case core.ReadAnswers:
+		return func() { e.readAnswers(ctx, c) }
 	case core.Record:
 		// Appended here, in the loop, so events land in the order the core
 		// asked for them: an action's start before its session starts and
