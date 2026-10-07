@@ -420,7 +420,8 @@ type runner struct {
 func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
 		model := tui.New(tui.Config{
-			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Now: time.Now, Location: time.Local,
+			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Pause: r.eng.TogglePause,
+			Now: time.Now, Location: time.Local,
 			Notify: r.notify, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
 		})
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)

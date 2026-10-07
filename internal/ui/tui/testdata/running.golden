@@ -26,4 +26,4 @@ Queues ─── 2 of 3 busy   Events ──────────────
                           14:29:50 poll: listed 2 issues, took 1
                           14:29:50 review took #2 "Fix the flaky stream test" (…
 
-q q stop · tab focus · ←→↑↓ move · enter open · ? help
+q q stop · ctrl+p pause · tab focus · ←→↑↓ move · enter open · ? help

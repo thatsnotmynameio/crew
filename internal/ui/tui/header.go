@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -23,7 +24,8 @@ const (
 
 // header is the first line (R3): crew's name and a gradient run of ╱, then
 // the repository, the time up, the time left, the spend and tokens, and the
-// key for help, or the state crew is stopping in (KTD16). On a narrow window
+// key for help, or the state crew is stopping in (KTD16), or, while crew is
+// paused, how many held issues still run (R6 of #282). On a narrow window
 // the details drop from the right.
 func (m Model) header() string {
 	s := m.styles
@@ -43,6 +45,8 @@ func (m Model) header() string {
 		right = s.warningPill.Render("STOPPING")
 	case m.snap.TimeUp:
 		right = s.warningPill.Render("WINDING DOWN")
+	case m.snap.Paused:
+		right = s.warningPill.Render(pausedPill(len(m.snap.Issues)))
 	}
 	name := s.title.Render("crew")
 	for k := len(items); k >= 0; k-- {
@@ -56,6 +60,15 @@ func (m Model) header() string {
 		}
 	}
 	return name
+}
+
+// pausedPill says crew is paused and how many held issues still run, or
+// that none does, so stopping now loses nothing (R6 of #282).
+func pausedPill(running int) string {
+	if running == 0 {
+		return "PAUSED · nothing running"
+	}
+	return fmt.Sprintf("PAUSED · %d running", running)
 }
 
 // rule opens a section (R4): its title, a rule to the edge of width, and a
