@@ -38,7 +38,7 @@ func checkedConfig(t *testing.T, tr *fake.Tracker, checker *fake.Checker) engine
 func checkedRun(t *testing.T, tr *fake.Tracker, cfg engine.Config) []crew.ActionFailure {
 	t.Helper()
 	r := start(t, cfg)
-	r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+	r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 	synctest.Wait()
 	r.engine.Stop()
 	if _, err := r.wait(); err != nil {
@@ -152,7 +152,7 @@ func TestAE4ACheckThatNeverEndsRunsOutOfTimeAfterTenMinutes(t *testing.T) {
 		tr, checker := fake.NewTracker(issue(1, ready)), fake.NewChecker()
 		checker.Script("crew/issue-1-development", fake.CheckScript{Block: true})
 		r := start(t, checkedConfig(t, tr, checker))
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
 
@@ -228,7 +228,7 @@ func TestWhenTheRunTimeIsUpARunningCheckFinishesBeforeTheEngineStops(t *testing.
 		cfg.RunTimeLimit = 5 * time.Minute
 		t0 := time.Now()
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -263,7 +263,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 		r := start(t, cfg)
 		s := r.sessions(1)["issue-1-development"]
 		s.SetLastMessage("PR #2 is open.\nMerging is yours.")
-		s.End(crew.Outcome{Succeeded: true, Reason: "PR #2 is open. Merging is yours."})
+		s.End(port.Verdict{Succeeded: true, Reason: "PR #2 is open. Merging is yours."})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -321,7 +321,7 @@ func TestEachCheckRunsOutOfTimeOnItsOwnLimit(t *testing.T) {
 		cfg := config(t, tr, twoCheckedDevelop)
 		cfg.Checker = checker
 		r := start(t, cfg)
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		t0 := time.Now()
 

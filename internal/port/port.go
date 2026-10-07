@@ -129,15 +129,24 @@ type Identity struct {
 // Session is a running harness session.
 type Session interface {
 	// Wait blocks until the session ends and returns the harness's verdict.
-	// A session that ends cleanly succeeded; one that fails, dies or is
-	// stopped did not, and its Reason says why in one line. Wait may be
-	// called more than once, and from any goroutine.
-	Wait() crew.Outcome
+	// Wait may be called more than once, and from any goroutine.
+	Wait() Verdict
 	// Stop asks the session to end and returns once it has. The adapter
 	// terminates the session, then kills it when ctx is done: the caller owns
 	// the deadline and the adapter owns the signals. Stopping a session that
 	// already ended does nothing.
 	Stop(ctx context.Context) error
+}
+
+// Verdict is how a session ended, as its harness judged it. A session that
+// ends cleanly succeeded; one that fails, dies or is stopped did not. The
+// engine turns a verdict into the action's crew.Outcome.
+type Verdict struct {
+	// Succeeded is true when the session ended cleanly.
+	Succeeded bool
+	// Reason says why in one line, such as the session's last message. It
+	// is the harness's raw text: the engine scrubs it.
+	Reason string
 }
 
 // Workspace creates the place each action works in.

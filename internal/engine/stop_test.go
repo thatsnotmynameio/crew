@@ -15,6 +15,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // gatedTracker holds every move to gate until release is closed, and fails
@@ -48,7 +49,7 @@ func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
 		r := start(t, config(t, tr, develop))
 		sessions := r.sessions(2)
 
-		sessions["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		sessions["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		<-tr.entered
 		r.cancel() // Run's context ending is a stop request, not an abort.
 		synctest.Wait()

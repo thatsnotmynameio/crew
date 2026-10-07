@@ -142,7 +142,7 @@ func TestARefusedEndedStatusIsNotRetriedAndStopDoesNotWaitForIt(t *testing.T) {
 
 		locked := fmt.Errorf("issue is locked: %w", port.ErrRefused)
 		tr.FailStatuses("1", locked, locked)
-		s.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		s.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		writes := tr.count()
 

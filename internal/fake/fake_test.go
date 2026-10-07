@@ -49,16 +49,16 @@ func start(t *testing.T, h *fake.Harness, prompt string) port.Session {
 }
 
 // waitOutcome waits for s to end, failing the test after a second.
-func waitOutcome(t *testing.T, s port.Session) crew.Outcome {
+func waitOutcome(t *testing.T, s port.Session) port.Verdict {
 	t.Helper()
-	done := make(chan crew.Outcome, 1)
+	done := make(chan port.Verdict, 1)
 	go func() { done <- s.Wait() }()
 	select {
 	case o := <-done:
 		return o
 	case <-time.After(time.Second):
 		t.Fatal("the session did not end")
-		return crew.Outcome{}
+		return port.Verdict{}
 	}
 }
 
@@ -66,7 +66,7 @@ func TestHarnessSessionEndsWithTheOutcomeTheTestReleasesItWith(t *testing.T) {
 	h := fake.NewHarness()
 	s := start(t, h, "implement #1")
 
-	ended := make(chan crew.Outcome, 1)
+	ended := make(chan port.Verdict, 1)
 	go func() { ended <- s.Wait() }()
 	select {
 	case o := <-ended:
@@ -78,7 +78,7 @@ func TestHarnessSessionEndsWithTheOutcomeTheTestReleasesItWith(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].Run().Prompt != "implement #1" {
 		t.Fatalf("Sessions = %v, want the one started with its prompt", sessions)
 	}
-	want := crew.Outcome{Succeeded: true, Reason: "opened a pull request"}
+	want := port.Verdict{Succeeded: true, Reason: "opened a pull request"}
 	sessions[0].End(want)
 	if got := waitOutcome(t, s); got != want {
 		t.Errorf("Wait = %+v, want %+v", got, want)

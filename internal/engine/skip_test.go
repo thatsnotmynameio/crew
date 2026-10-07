@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
-	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // skipped counts the skipped polls among the updates r published. Call it
@@ -36,7 +36,7 @@ func TestBusyTicksDoNotListAndAFreedSlotListsAtOnce(t *testing.T) {
 
 		// The ticks at 300s and 600s find both slots busy.
 		time.Sleep(650 * time.Second)
-		sessions["issue-1-development"].End(crew.Outcome{Succeeded: true, Reason: "done"})
+		sessions["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
 		r.sessions(1) // #3, taken by the listing the freed slot started
 		synctest.Wait()
 
@@ -65,7 +65,7 @@ func TestAFreedSlotWithNoSkippedTickWaitsForTheNextTick(t *testing.T) {
 		tr.Add(issue(2, ready))
 		r.sessions(1)
 		time.Sleep(350*time.Second - time.Since(t0))
-		first.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		first.End(port.Verdict{Succeeded: true, Reason: "done"})
 		time.Sleep(650*time.Second - time.Since(t0))
 
 		want := []time.Duration{0, 300 * time.Second, 600 * time.Second}

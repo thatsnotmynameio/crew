@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
-	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // saidEvery is how often the engine refreshes what the sessions last said.
@@ -171,7 +171,7 @@ func TestR18OnceTheSessionEndsTheNextRefreshDropsItsWords(t *testing.T) {
 			t.Fatalf("Said = %#v, want the session's words", said)
 		}
 
-		n.session.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		n.session.End(port.Verdict{Succeeded: true, Reason: "done"})
 		if said := n.refreshed(t).Snapshot.Said; len(said) != 0 {
 			t.Errorf("Said = %#v after the session ended, want nothing", said)
 		}

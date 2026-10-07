@@ -278,11 +278,11 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 		return
 	}
 	e.inbox <- message{input: core.SessionStarted{IssueKey: c.IssueKey, Action: c.Action}, session: s}
-	outcome := s.Wait()
+	verdict := s.Wait()
 	// The harness stops writing once Wait returns. A failed close cannot
 	// change the session's verdict, which is what the core needs.
 	_ = log.Close()
-	outcome.Reason = e.scrub(outcome.Reason)
+	outcome := crew.Outcome{Succeeded: verdict.Succeeded, Reason: e.scrub(verdict.Reason)}
 	var usage crew.Usage
 	if r, ok := s.(port.UsageReporter); ok {
 		usage = r.Usage()

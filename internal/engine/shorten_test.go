@@ -80,7 +80,7 @@ func TestASessionsReasonReachesTheReportWithLocalPathsShortened(t *testing.T) {
 		cfg := config(t, tr, develop)
 
 		got := reportedReason(t, tr, cfg, func(r *rig) {
-			r.sessions(1)["issue-1-development"].End(crew.Outcome{
+			r.sessions(1)["issue-1-development"].End(port.Verdict{
 				Reason: fmt.Sprintf("go test failed in %s/engine (cache %s/.cache), ran in %s.", cfg.Root, cfg.Home, cfg.Root),
 			})
 		})

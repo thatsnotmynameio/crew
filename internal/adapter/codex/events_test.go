@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 // exitError is a fake process's non-zero exit, read as *exec.ExitError is:
@@ -55,7 +56,7 @@ type judgeCase struct {
 	stderr  string
 	exit    error
 	stopped bool
-	want    crew.Outcome
+	want    port.Verdict
 }
 
 // ended is a turn ending in turn.started, then an error, then turn.completed.
@@ -66,101 +67,101 @@ var judgeCases = []judgeCase{
 	{
 		name: "a completed turn and exit 0 succeed with the last message",
 		file: "success.jsonl",
-		want: crew.Outcome{Succeeded: true, Reason: "I fixed the parser. The tests pass."},
+		want: port.Verdict{Succeeded: true, Reason: "I fixed the parser. The tests pass."},
 	},
 	{
 		name: "a failed turn fails with its error even when codex exits 0",
 		file: "failed.jsonl",
-		want: crew.Outcome{Reason: "stream disconnected before completion: " +
+		want: port.Verdict{Reason: "stream disconnected before completion: " +
 			"error sending request for url (https://api.openai.com/v1/responses)"},
 	},
 	{
 		name: "a logged-out run fails with the turn's error, not a retry",
 		file: "loggedout.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
-		want: crew.Outcome{Reason: "unexpected status 401 Unauthorized: Missing bearer or basic " +
+		want: port.Verdict{Reason: "unexpected status 401 Unauthorized: Missing bearer or basic " +
 			"authentication in header, url: https://api.openai.com/v1/responses"},
 	},
 	{
 		name: "retries and error items before a completed turn do not fail it",
 		file: "retried.jsonl",
-		want: crew.Outcome{Succeeded: true, Reason: "Done: the review is posted."},
+		want: port.Verdict{Succeeded: true, Reason: "Done: the review is posted."},
 	},
 	{
 		name:   "a completed turn fails when codex exits non-zero, naming the last error",
 		stdout: ended,
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   crew.Outcome{Reason: "exit code 1 after: model refused"},
+		want:   port.Verdict{Reason: "exit code 1 after: model refused"},
 	},
 	{
 		name: "a completed turn fails when codex exits non-zero, naming the last message",
 		file: "success.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
-		want: crew.Outcome{Reason: "exit code 1 after: I fixed the parser. The tests pass."},
+		want: port.Verdict{Reason: "exit code 1 after: I fixed the parser. The tests pass."},
 	},
 	{
 		name:   "a completed turn fails when codex exits non-zero, with nothing else to say",
 		stdout: `{"type":"turn.completed","usage":{}}` + "\n",
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   crew.Outcome{Reason: "exit code 1"},
+		want:   port.Verdict{Reason: "exit code 1"},
 	},
 	{
 		name: "no turn event fails with the last error",
 		file: "interrupted.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
-		want: crew.Outcome{Reason: "Reconnecting... 2/5 (stream disconnected before completion: connection reset)"},
+		want: port.Verdict{Reason: "Reconnecting... 2/5 (stream disconnected before completion: connection reset)"},
 	},
 	{
 		name:   "no stdout at all fails with the last stderr line",
 		stderr: "Reading additional input from stdin...\nerror: unexpected argument '--approve-for-me' found\n\n",
 		exit:   exitError{code: 2, msg: "exit status 2"},
-		want:   crew.Outcome{Reason: "error: unexpected argument '--approve-for-me' found"},
+		want:   port.Verdict{Reason: "error: unexpected argument '--approve-for-me' found"},
 	},
 	{
 		name: "no stdout and no stderr fail with the exit code",
 		exit: exitError{code: 2, msg: "exit status 2"},
-		want: crew.Outcome{Reason: "exit code 2"},
+		want: port.Verdict{Reason: "exit code 2"},
 	},
 	{
 		name:   "stderr is not the reason once stdout held an event",
 		stdout: `{"type":"thread.started","thread_id":"t"}` + "\n",
 		stderr: "2026-10-05T21:13:33Z ERROR codex_core: something\n",
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   crew.Outcome{Reason: "exit code 1"},
+		want:   port.Verdict{Reason: "exit code 1"},
 	},
 	{
 		name: "no stdout and exit 0 fail without a result",
-		want: crew.Outcome{Reason: "the session ended without a result"},
+		want: port.Verdict{Reason: "the session ended without a result"},
 	},
 	{
 		name:   "a signal names itself",
 		stdout: `{"type":"thread.started","thread_id":"t"}` + "\n",
 		exit:   exitError{code: -1, msg: "signal: killed"},
-		want:   crew.Outcome{Reason: "signal: killed"},
+		want:   port.Verdict{Reason: "signal: killed"},
 	},
 	{
 		name:    "a session crew stopped fails as stopped whatever it printed",
 		file:    "success.jsonl",
 		exit:    exitError{code: -1, msg: "signal: terminated"},
 		stopped: true,
-		want:    crew.Outcome{Reason: "stopped by crew before the session ended"},
+		want:    port.Verdict{Reason: "stopped by crew before the session ended"},
 	},
 	{
 		name: "text quoting an event inside a message never counts as one",
 		file: "quoted.jsonl",
-		want: crew.Outcome{Succeeded: true,
+		want: port.Verdict{Succeeded: true,
 			Reason: `A failed turn prints {"type":"turn.failed","error":{"message":"boom"}} on a line of its own.`},
 	},
 	{
 		name:   "a last line without a newline still counts",
 		stdout: `{"type":"turn.started"}` + "\n" + `{"type":"turn.failed","error":{"message":"quota exceeded"}}`,
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   crew.Outcome{Reason: "quota exceeded"},
+		want:   port.Verdict{Reason: "quota exceeded"},
 	},
 	{
 		name:   "lines that are not events are skipped",
 		stdout: "not json\n[1,2]\n{broken\n" + `{"type":"turn.completed","usage":{}}` + "\n",
-		want:   crew.Outcome{Succeeded: true},
+		want:   port.Verdict{Succeeded: true},
 	},
 }
 

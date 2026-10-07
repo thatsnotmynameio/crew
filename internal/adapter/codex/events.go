@@ -9,9 +9,10 @@ import (
 	"sync"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// maxReason is how many characters of a reason an outcome keeps.
+// maxReason is how many characters of a reason a verdict keeps.
 const maxReason = 200
 
 // stoppedReason is the Outcome.Reason of a session ended by Stop.
@@ -137,18 +138,18 @@ func (r *recorder) stderrLine(line []byte) {
 // stopped it. codex runs one turn and prints its end: the session succeeded
 // only when that turn completed and codex exited 0. An error event alone
 // never fails it, since codex prints one for each retry too.
-func (r *recorder) judge(exit error, stopped bool) crew.Outcome {
+func (r *recorder) judge(exit error, stopped bool) port.Verdict {
 	switch {
 	case stopped:
-		return crew.Outcome{Reason: stoppedReason}
+		return port.Verdict{Reason: stoppedReason}
 	case r.turn == nil:
-		return crew.Outcome{Reason: oneLine(r.unended(exit))}
+		return port.Verdict{Reason: oneLine(r.unended(exit))}
 	case r.turn.failed:
-		return crew.Outcome{Reason: oneLine(r.turn.message)}
+		return port.Verdict{Reason: oneLine(r.turn.message)}
 	case exit != nil:
-		return crew.Outcome{Reason: oneLine(r.failedAfterTurn(exit))}
+		return port.Verdict{Reason: oneLine(r.failedAfterTurn(exit))}
 	}
-	return crew.Outcome{Succeeded: true, Reason: oneLine(r.said)}
+	return port.Verdict{Succeeded: true, Reason: oneLine(r.said)}
 }
 
 // usage is what a session that printed what r recorded used, stopped

@@ -83,7 +83,7 @@ rules:
         prompt: "Review implementation for issue {{.Issue.Ref}}"
 `
 
-var success = crew.Outcome{Succeeded: true, Reason: "opened a pull request"}
+var success = port.Verdict{Succeeded: true, Reason: "opened a pull request"}
 
 func issue(key string, states ...crew.State) crew.Issue {
 	return crew.Issue{

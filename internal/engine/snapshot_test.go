@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
-	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
+	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
 func TestTheSnapshotCarriesTheFirstPollsTimeAndTheRunTimeLimit(t *testing.T) {
@@ -56,7 +56,7 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsReason(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		r.sessions(1)["issue-1-development"].End(crew.Outcome{Reason: "tests fail"})
+		r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
 		synctest.Wait()
 
 		r.engine.Stop()

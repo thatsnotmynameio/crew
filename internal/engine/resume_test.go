@@ -45,7 +45,7 @@ func failOnce(t *testing.T, r *rig, tr *fake.Tracker, output, reason string) *fa
 	if _, err := fmt.Fprint(s.Run().Output, output); err != nil {
 		t.Fatal(err)
 	}
-	s.End(crew.Outcome{Reason: reason})
+	s.End(port.Verdict{Reason: reason})
 	synctest.Wait()
 	if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{needsAttention}) {
 		t.Fatalf("issue 1 is in %v after its failure, want needs attention", got)
@@ -70,7 +70,7 @@ func TestAE1ARelabeledFailedRunResumesInItsWorkspaceAndLog(t *testing.T) {
 		if _, err := fmt.Fprint(second.Run().Output, "second output\n"); err != nil {
 			t.Fatal(err)
 		}
-		second.End(crew.Outcome{Succeeded: true, Reason: "done"})
+		second.End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
@@ -167,7 +167,7 @@ func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 		r := start(t, cfg)
 
 		s := r.session()
-		s.End(crew.Outcome{Reason: "broke"})
+		s.End(port.Verdict{Reason: "broke"})
 		synctest.Wait()
 		if err := os.RemoveAll(s.Run().Dir); err != nil {
 			t.Fatal(err)
@@ -204,7 +204,7 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 		}
 		r := start(t, cfg)
 
-		r.session().End(crew.Outcome{Succeeded: true, Reason: "done"})
+		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
