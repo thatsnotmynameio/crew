@@ -20,13 +20,16 @@ func (m *Model) gone(issues []crew.Issue) {
 	}
 	for i := range m.handled {
 		e := &m.handled[i]
-		if e.landed >= m.listings || m.held(e.view.Issue.ID()) != nil {
+		id := e.run.Issue().ID()
+		if e.landed >= m.listings || m.held(id) != nil {
 			continue
 		}
-		if _, ok := m.ruleLabeled(e.view.To); !ok {
+		verdict, _ := e.verdict()
+		to := verdict.Verdict.To
+		if _, ok := m.ruleLabeled(to); !ok {
 			continue
 		}
-		state, found := alone[e.view.Issue.ID()]
-		e.view.Gone = !found || state != e.view.To
+		state, found := alone[id]
+		e.gone = !found || state != to
 	}
 }

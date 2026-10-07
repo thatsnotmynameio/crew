@@ -247,12 +247,21 @@ func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	var out []RunningAction
 	for _, h := range m.issues {
 		for _, a := range h.run.Actions() {
-			phase := phaseOf(a.State())
-			running := phase == PhaseRunning || phase == PhaseChecking || phase == PhaseFinishing
-			if running && m.bots.identity(m.action(h, a.Name()).Bot.Name) == identity {
+			if spending(a.State()) && m.bots.identity(m.action(h, a.Name()).Bot.Name) == identity {
 				out = append(out, RunningAction{IssueRef: h.run.Issue().Ref(), Rule: h.run.Rule(), Action: a.Name()})
 			}
 		}
 	}
 	return out
+}
+
+// spending reports whether an action run in state is between its session's
+// start and its spend landing: in its session, in its checks, or finishing.
+func spending(state crew.ActionRunState) bool {
+	switch state.(type) {
+	case crew.InSession, crew.InChecks, crew.Finishing:
+		return true
+	case crew.AwaitingTake, crew.CreatingWorkspace, crew.ReopeningWorkspace, crew.StartingSession, crew.Finished:
+	}
+	return false
 }

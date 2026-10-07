@@ -100,7 +100,13 @@ linters:
             - "**/internal/crew/**"
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal
-              desc: the domain imports nothing of crew's
+              desc: the domain holds the rule run's rules and imports nothing of crew's
+        fileline:
+          files:
+            - "**/internal/fileline/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal
+              desc: fileline imports only the standard library
         port:
           files:
             - "**/internal/port/**"
@@ -120,21 +126,21 @@ linters:
             - "**/internal/core/**"
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal/port
-              desc: the core imports only the domain; the engine translates port results
+              desc: the core orchestrates rule runs and imports only the domain; the engine translates port results
             - pkg: github.com/thatsnotmynameio/crew/internal/engine
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/adapter
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/ui
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/proc
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/config
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/registry
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
             - pkg: github.com/thatsnotmynameio/crew/internal/app
-              desc: the core imports only the domain
+              desc: the core orchestrates rule runs and imports only the domain
         engine:
           files:
             - "**/internal/engine/**"

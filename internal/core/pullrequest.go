@@ -41,7 +41,7 @@ func (s *step) reportPullRequests(report crew.PullRequestReport) {
 // which landed. It carries how the rule ended, unless the rule has no
 // actions: nobody stopped watching anything, so there is nothing to tell
 // (KTD5).
-func (s *step) reportVerdict(h *heldIssue) {
+func (s *step) reportVerdict(h *heldRun) {
 	if report, ok := h.run.VerdictReport(s.m.statusUsage); ok {
 		s.reportPullRequests(report)
 	}

@@ -14,7 +14,6 @@ package core
 
 import (
 	"slices"
-	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -24,14 +23,14 @@ import (
 type Model struct {
 	rules       []crew.Rule
 	maxParallel int
-	issues      []*heldIssue // in the order they were taken
-	listing     bool         // a ListIssues is outstanding
-	listings    int          // the ListIssues asked for: the generation of the last one (KTD4)
-	skipped     int          // ticks that skipped their listing since the last one
-	timeUp      bool         // the run time is up: take nothing new
-	requested   bool         // a stop was requested
-	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
-	stopped     bool         // the Stopped event was emitted
+	issues      []*heldRun // in the order they were taken
+	listing     bool       // a ListIssues is outstanding
+	listings    int        // the ListIssues asked for: the generation of the last one (KTD4)
+	skipped     int        // ticks that skipped their listing since the last one
+	timeUp      bool       // the run time is up: take nothing new
+	requested   bool       // a stop was requested
+	stopping    bool       // the stop sequence runs: requested, or ending a wind-down
+	stopped     bool       // the Stopped event was emitted
 	// outbox delivers the tracker writes the rules decide on (KTD8).
 	outbox outbox
 	// queueOf holds the queue each rule runs in, by rule index, as an
@@ -69,28 +68,6 @@ type Model struct {
 	bots bots
 }
 
-// heldIssue is an issue the core holds, from its take until its rule run is
-// released: the run, which decides its own changes (KTD2), and what only
-// this crew process needs to drive it.
-type heldIssue struct {
-	run  crew.RuleRun
-	rule int // index into Model.rules
-	// live holds, by action, the session plumbing of each action run that
-	// got some (KTD-P5).
-	live map[crew.ActionName]*plumbing
-	// landed is the listing generation when the verdict move landed or was
-	// given up (KTD4).
-	landed int
-}
-
-// handledEntry is a handled entry with the listing generation when its
-// verdict move landed or was given up: only a later listing marks it Gone
-// (KTD4).
-type handledEntry struct {
-	view   HandledView
-	landed int
-}
-
 // New returns a model for rules, whose rules are in config order and
 // already validated, taking at most maxParallelIssues issues at once (R6),
 // and for each rule at most its queue's slots (R6, KTD2).
@@ -106,34 +83,6 @@ func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
 		o(m)
 	}
 	return m
-}
-
-// queues returns the queue each of rules runs in, as an index into the
-// second result; each queue some rule runs in, told apart by name, with its
-// slots; and what the rules can use, the sum of those slots at most
-// maxParallelIssues (KTD2, KTD4). The rules with the zero Queue share one
-// unnamed queue of maxParallelIssues slots, so the global cap alone limits
-// them.
-func queues(rules []crew.Rule, maxParallelIssues int) ([]int, []crew.Queue, int) {
-	queueOf := make([]int, len(rules))
-	var out []crew.Queue
-	usable := 0
-	index := map[crew.QueueName]int{}
-	for i, r := range rules {
-		queue := r.Queue
-		if queue == (crew.Queue{}) {
-			queue.Slots = maxParallelIssues
-		}
-		q, ok := index[queue.Name]
-		if !ok {
-			q = len(out)
-			index[queue.Name] = q
-			out = append(out, queue)
-			usable += queue.Slots
-		}
-		queueOf[i] = q
-	}
-	return queueOf, out, min(usable, maxParallelIssues)
 }
 
 // Option changes a new Model.
@@ -165,284 +114,5 @@ func ReportingPullRequests() Option {
 	return func(m *Model) { m.outbox.pullRequests = map[crew.IssueID]*pullRequestLane{} }
 }
 
-// Stopped reports whether a stop, requested or ending a wind-down, has
-// completed: the core holds no issue, no owed call, no status write in
-// flight or owed and no pull request report not settled. The engine returns
-// once Stopped is true and none of its commands is still running.
-func (m *Model) Stopped() bool {
-	return m.stopping && len(m.issues) == 0 && m.outbox.idle()
-}
-
 // unknownName is what String gives for a value outside its enumeration.
 const unknownName = "unknown"
-
-// Claim is a held issue's state inside the core, as the view derives it
-// from the issue's rule run and its run lane (KTD-P14).
-type Claim int
-
-// The claim states.
-const (
-	// ClaimTaking: the take move is in flight.
-	ClaimTaking Claim = iota
-	// ClaimRunning: the issue is taken and its actions run.
-	ClaimRunning
-	// ClaimStopping: a stop was requested before every action ended; the
-	// core waits for them to end.
-	ClaimStopping
-	// ClaimJudging: every action ended and the verdict calls are in flight.
-	ClaimJudging
-	// ClaimOwed: the take move or a verdict call failed transiently and
-	// waits for a retry. With an owed take, no action has started yet: they
-	// stay PhaseWaiting until the retried take is done. A held issue never
-	// stores it: the view shows it over any other claim from the first
-	// transient failure until every call of the issue's run lane settled.
-	ClaimOwed
-)
-
-// String names the claim for renderers.
-func (c Claim) String() string {
-	switch c {
-	case ClaimTaking:
-		return "taking"
-	case ClaimRunning:
-		return "running"
-	case ClaimStopping:
-		return "stopping"
-	case ClaimJudging:
-		return "judging"
-	case ClaimOwed:
-		return "owed"
-	}
-	return unknownName
-}
-
-// Phase is where one action of a held issue stands.
-type Phase int
-
-// The phases of an action.
-const (
-	// PhaseWaiting: the issue's take move is in flight or owed.
-	PhaseWaiting Phase = iota
-	// PhaseCreating: its workspace is being created.
-	PhaseCreating
-	// PhaseReopening: a failed run's workspace is being reopened.
-	PhaseReopening
-	// PhaseStarting: its session is being started.
-	PhaseStarting
-	// PhaseRunning: its session runs.
-	PhaseRunning
-	// PhaseChecking: its session succeeded and its check runs. The action
-	// has not ended: it is still running for you.
-	PhaseChecking
-	// PhaseFinishing: its outcome is known and it waits for the lookup of
-	// its pull request. It is still running for you.
-	PhaseFinishing
-	// PhaseEnded: it ended; see its Outcome.
-	PhaseEnded
-)
-
-// String names the phase for renderers.
-func (p Phase) String() string {
-	switch p {
-	case PhaseWaiting:
-		return "waiting"
-	case PhaseCreating:
-		return "creating workspace"
-	case PhaseReopening:
-		return "reopening workspace"
-	case PhaseStarting:
-		return "starting"
-	case PhaseRunning:
-		return "running"
-	case PhaseChecking:
-		return "checking"
-	case PhaseFinishing:
-		return "finishing"
-	case PhaseEnded:
-		return "ended"
-	}
-	return unknownName
-}
-
-// View is a snapshot of what the core holds, for subscribers (KTD6). It
-// shares no memory with the Model, so it may be kept and changed freely.
-type View struct {
-	// Stopping is true once a stop was requested. A wind-down ending in the
-	// stop sequence by itself does not set it.
-	Stopping bool
-	// TimeUp is true once the run time is up and crew winds down.
-	TimeUp bool
-	// Issues are the held issues, in the order they were taken.
-	Issues []IssueView
-	// Queues are the queues some rule runs in, in the order of the first
-	// rule that runs in each.
-	Queues []QueueView
-	// Owed are the tracker calls waiting for a retry: the held issues'
-	// moves and failure reports, then the pull request reports.
-	Owed []Call
-	// Handled are the issues whose rule ended this run, one entry per
-	// issue holding its latest rule, in the order they were released. An
-	// issue held again keeps its entry, marked HeldBy, until its new rule
-	// ends (#109).
-	Handled []HandledView
-	// Spent sums what every session that ended this run used, including
-	// those of entries Handled no longer shows (R14).
-	Spent crew.Spend
-	// Board is the board's items, as the last board read or listing found
-	// them with crew's moves since applied, oldest first and then by id
-	// (KTD4, KTD6, KTD10); nil when the model has no board (ListingBoard,
-	// BoardFromListings).
-	Board []crew.BoardIssue
-	// BoardFailure says why the last board read, or the last listing of a
-	// board filled from the listings, failed; empty once one succeeds
-	// (KTD5).
-	BoardFailure string
-	// Bots are the configured bots, the default first, in config order,
-	// then the "you" entry (KTD3).
-	Bots []BotView
-}
-
-// HandledView is an issue whose rule ended this run, as that rule left it.
-type HandledView struct {
-	Issue crew.Issue
-	Rule  crew.RuleName
-	// To is the state the rule's verdict moved the issue to, or meant to
-	// when Move is MoveDropped.
-	To crew.State
-	// Failures are the rule's failed actions, in its action order; nil
-	// when every action succeeded.
-	Failures []crew.ActionFailure
-	// Actions are the rule's actions, in its action order, with what each
-	// spent and the pull request it opened (R12).
-	Actions []HandledAction
-	// Move is MoveDone, or MoveDropped when crew gave the verdict move up.
-	Move crew.MoveProgress
-	// DropReason says why the verdict move was given up.
-	DropReason string
-	// Gone is set when a listing requested after the verdict move landed, or
-	// was given up, did not find the issue alone in To, and To is the label
-	// of a rule: only those states are listed (KTD4). A blocked issue stays
-	// in its label and stays listed, so it is not gone; an issue in two crew
-	// states is, since crew skips it. Each such listing decides it anew.
-	Gone bool
-	// HeldBy names the rule that holds the issue again; empty while no
-	// rule does (#109).
-	HeldBy crew.RuleName
-	// Taken is when the rule took the issue; Ended is when its last action
-	// ended.
-	Taken time.Time
-	Ended time.Time
-	// Earlier sums what the rules that ended on the issue before this one
-	// spent this run, whose entries this one replaced (KTD14).
-	Earlier crew.Spend
-}
-
-// HandledAction is one action of a HandledView.
-type HandledAction struct {
-	Name crew.ActionName
-	// Spend is what its session used; it sums no session when the action
-	// never had one.
-	Spend crew.Spend
-	// PullRequest is the pull request its lookup found.
-	PullRequest crew.PullRequest
-}
-
-// Spend sums what the rule's sessions used.
-func (h HandledView) Spend() crew.Spend {
-	var sum crew.Spend
-	for _, a := range h.Actions {
-		sum = sum.Add(a.Spend)
-	}
-	return sum
-}
-
-// NeedsAttention reports whether you should look at the issue: an
-// action failed, or crew gave the verdict move up.
-func (h HandledView) NeedsAttention() bool {
-	return len(h.Failures) > 0 || h.Move == crew.MoveDropped
-}
-
-// Duration is the rule's time, from the take to the verdict.
-func (h HandledView) Duration() time.Duration { return h.Ended.Sub(h.Taken) }
-
-// clone returns a copy of h that shares no memory with it.
-func (h HandledView) clone() HandledView {
-	h.Failures = slices.Clone(h.Failures)
-	h.Actions = slices.Clone(h.Actions)
-	return h
-}
-
-// QueueView is one queue some rule runs in.
-type QueueView struct {
-	// Name is the queue's name; empty for the queue the rules with the
-	// zero crew.Queue share.
-	Name crew.QueueName
-	// Slots is how many issues the queue may hold at once.
-	Slots int
-	// Busy is how many held issues, in any claim, run in the queue: the
-	// count the core takes by (KTD3).
-	Busy int
-}
-
-// Free is how many of the queue's slots are not busy.
-func (q QueueView) Free() int { return max(q.Slots-q.Busy, 0) }
-
-// IssueView is one held issue.
-type IssueView struct {
-	Issue crew.Issue
-	Rule  crew.RuleName
-	// Queue is the name of the queue the issue's rule runs in.
-	Queue   crew.QueueName
-	Claim   Claim
-	Actions []ActionView
-}
-
-// ActionView is one action of a held issue.
-type ActionView struct {
-	Name      crew.ActionName
-	Phase     Phase
-	Workspace crew.WorkspaceName
-	Branch    string
-	Log       string
-	// Started is when its session started; zero before PhaseRunning.
-	Started time.Time
-	// Outcome is set once Phase is PhaseEnded.
-	Outcome crew.Outcome
-	// Resumed is set once the action runs in a failed run's reopened
-	// workspace.
-	Resumed bool
-}
-
-// View returns a snapshot of what the core holds.
-func (m *Model) View() View {
-	v := View{Stopping: m.requested, TimeUp: m.timeUp, Spent: m.spent}
-	for q, queue := range m.queues {
-		v.Queues = append(v.Queues, QueueView{Name: queue.Name, Slots: queue.Slots, Busy: m.busy(q)})
-	}
-	for _, h := range m.issues {
-		iv := IssueView{
-			Issue: h.run.Issue(), Rule: h.run.Rule(), Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim(),
-		}
-		if m.outbox.owing(h.id()) {
-			iv.Claim = ClaimOwed
-		}
-		for _, a := range h.run.Actions() {
-			iv.Actions = append(iv.Actions, actionView(a))
-		}
-		v.Issues = append(v.Issues, iv)
-		v.Owed = append(v.Owed, m.outbox.owedRun(h.id())...)
-	}
-	v.Owed = append(v.Owed, m.outbox.owedPullRequests()...)
-	for _, e := range m.handled {
-		hv := e.view.clone()
-		if h := m.held(hv.Issue.ID()); h != nil {
-			hv.HeldBy = h.run.Rule()
-		}
-		v.Handled = append(v.Handled, hv)
-	}
-	if m.board != nil {
-		v.Board, v.BoardFailure = m.board.view(), m.board.failure
-	}
-	v.Bots = m.botsView()
-	return v
-}

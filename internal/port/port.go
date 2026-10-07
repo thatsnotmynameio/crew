@@ -170,17 +170,16 @@ type Journal interface {
 	Append(e crew.RunEvent) error
 }
 
-// Space is a created workspace.
+// Space is a created workspace on this machine: the workspace and its
+// directory.
 type Space struct {
-	// Name is unique among the workspaces that exist, and safe in a file
-	// name: the session's log is named after it, so a reopened workspace
-	// keeps its log, and a name reused once its workspace is gone reuses
-	// the log too.
-	Name crew.WorkspaceName
+	// Workspace is the workspace's name and branch. Its name is safe in a
+	// file name: the session's log is named after it, so a reopened
+	// workspace keeps its log, and a name reused once its workspace is gone
+	// reuses the log too.
+	Workspace crew.Workspace
 	// Dir is the workspace's absolute directory.
 	Dir string
-	// Branch is the branch the action's work goes on.
-	Branch string
 }
 
 // Preparer is an optional interface of any port's adapter: it checks the
@@ -304,12 +303,12 @@ type BoardLister interface {
 // it created before, so a failed action can resume where it stopped. A
 // workspace without it creates a fresh workspace for every action.
 type Reopener interface {
-	// Reopen returns the workspace space names, as it is now, without
-	// changing what it holds: space carries the Name and Branch crew
-	// recorded, and the returned Space the current Dir and Branch. It
-	// returns an error wrapping ErrWorkspaceGone when the workspace no
-	// longer exists, and any other error when it cannot be reopened.
-	Reopen(ctx context.Context, space Space) (Space, error)
+	// Reopen returns the workspace w, as crew recorded it, as it is now,
+	// without changing what it holds: the returned Space has its current
+	// directory and branch. It returns an error wrapping ErrWorkspaceGone
+	// when the workspace no longer exists, and any other error when it
+	// cannot be reopened.
+	Reopen(ctx context.Context, w crew.Workspace) (Space, error)
 }
 
 // Narrator is an optional interface of a harness's Session: it tells what

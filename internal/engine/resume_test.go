@@ -281,7 +281,7 @@ func TestAWorkspaceThatCannotReopenStartsAFailedRunFresh(t *testing.T) {
 // port.ErrWorkspaceGone.
 type brokenReopen struct{ createOnly }
 
-func (brokenReopen) Reopen(context.Context, port.Space) (port.Space, error) {
+func (brokenReopen) Reopen(context.Context, crew.Workspace) (port.Space, error) {
 	return port.Space{}, errors.New("disk full")
 }
 

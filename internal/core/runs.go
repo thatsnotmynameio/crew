@@ -6,6 +6,20 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
+// heldRun is a rule run the core holds, from its take until it is
+// released: the run, which decides its own changes (KTD2), and what only
+// this crew process needs to drive it.
+type heldRun struct {
+	run  crew.RuleRun
+	rule int // index into Model.rules
+	// live holds, by action, the session plumbing of each action run that
+	// got some (KTD-P5).
+	live map[crew.ActionName]*plumbing
+	// landed is the listing generation when the verdict move landed or was
+	// given up (KTD4).
+	landed int
+}
+
 // plumbing is what one live action run's session and checks need that is
 // neither run state nor in any run event (KTD-P5): the workspace's
 // directory and the log's path from it, the rendered prompt, the session's
@@ -18,8 +32,28 @@ type plumbing struct {
 	said        crew.Said
 }
 
+// findRun returns the held run identified by id, or nil.
+func (m *Model) findRun(id crew.RuleRunID) *heldRun {
+	for _, h := range m.issues {
+		if h.run.ID() == id {
+			return h
+		}
+	}
+	return nil
+}
+
+// held returns the held run of the issue identified by id, or nil.
+func (m *Model) held(id crew.IssueID) *heldRun {
+	for _, h := range m.issues {
+		if h.id() == id {
+			return h
+		}
+	}
+	return nil
+}
+
 // plumb returns the plumbing of h's action named name, made on first use.
-func (h *heldIssue) plumb(name crew.ActionName) *plumbing {
+func (h *heldRun) plumb(name crew.ActionName) *plumbing {
 	if h.live == nil {
 		h.live = map[crew.ActionName]*plumbing{}
 	}
@@ -33,14 +67,18 @@ func (h *heldIssue) plumb(name crew.ActionName) *plumbing {
 
 // said keeps what the session of h's action named name last said, while
 // it runs.
-func (h *heldIssue) said(name crew.ActionName, text crew.Said) {
-	if a, ok := h.run.Action(name); ok && phaseOf(a.State()) == PhaseRunning {
+func (h *heldRun) said(name crew.ActionName, text crew.Said) {
+	a, ok := h.run.Action(name)
+	if !ok {
+		return
+	}
+	if _, running := a.State().(crew.InSession); running {
 		h.plumb(name).said = text
 	}
 }
 
 // sayings returns what each of h's sessions last said, by action.
-func (h *heldIssue) sayings() map[crew.ActionName]crew.Said {
+func (h *heldRun) sayings() map[crew.ActionName]crew.Said {
 	out := make(map[crew.ActionName]crew.Said, len(h.live))
 	for name, p := range h.live {
 		out[name] = p.said
@@ -49,72 +87,27 @@ func (h *heldIssue) sayings() map[crew.ActionName]crew.Said {
 }
 
 // id returns the id of h's issue.
-func (h *heldIssue) id() crew.IssueID { return h.run.Issue().ID() }
+func (h *heldRun) id() crew.IssueID { return h.run.Issue().ID() }
+
+// running reports whether h's run runs its actions and no stop reached it.
+func (h *heldRun) running() bool {
+	_, running := h.run.Phase().(crew.RunningPhase)
+	return running && !h.run.Stopping()
+}
 
 // move returns the move of h's issue from one state to another, as a Call.
-func (h *heldIssue) move(from, to crew.State) Call {
+func (h *heldRun) move(from, to crew.State) Call {
 	issue := h.run.Issue()
 	return Call{Kind: CallMove, IssueID: issue.ID(), IssueRef: issue.Ref(), From: from, To: to}
 }
 
-// claim returns h's claim, from its run: judging once every action ended,
-// stopping once a stop reached it before, and taking or running before
-// that.
-func (h *heldIssue) claim() Claim {
-	claim := ClaimRunning
-	switch h.run.Phase().(type) {
-	case crew.JudgingPhase:
-		return ClaimJudging
-	case crew.TakingPhase:
-		claim = ClaimTaking
-	case crew.RunningPhase, crew.ReleasedPhase:
-	}
-	if h.run.Stopping() {
-		return ClaimStopping
-	}
-	return claim
-}
-
-// phaseOf returns the phase that shows an action run in state.
-func phaseOf(state crew.ActionRunState) Phase {
-	switch state.(type) {
-	case crew.AwaitingTake:
-		return PhaseWaiting
-	case crew.CreatingWorkspace:
-		return PhaseCreating
-	case crew.ReopeningWorkspace:
-		return PhaseReopening
-	case crew.StartingSession:
-		return PhaseStarting
-	case crew.InSession:
-		return PhaseRunning
-	case crew.InChecks:
-		return PhaseChecking
-	case crew.Finishing:
-		return PhaseFinishing
-	case crew.Finished:
-		return PhaseEnded
-	}
-	return PhaseWaiting
-}
-
-// actionView returns a as the view shows it.
-func actionView(a crew.ActionRun) ActionView {
-	w, _ := a.Workspace().Get()
-	started, _ := a.SessionStarted().Get()
-	return ActionView{
-		Name: a.Name(), Phase: phaseOf(a.State()), Workspace: w.Workspace.Name, Branch: w.Workspace.Branch,
-		Log: w.Log, Started: started, Outcome: a.Outcome(), Resumed: w.Resumed,
-	}
-}
-
 // definition returns what h's run decides by.
-func (m *Model) definition(h *heldIssue) crew.RunDefinition {
+func (m *Model) definition(h *heldRun) crew.RunDefinition {
 	return crew.RunDefinition{Rule: m.rules[h.rule], FindsPullRequests: m.finding}
 }
 
 // action returns the definition of the action named name in h's rule.
-func (m *Model) action(h *heldIssue, name crew.ActionName) crew.Action {
+func (m *Model) action(h *heldRun, name crew.ActionName) crew.Action {
 	actions := m.rules[h.rule].Actions
 	if i := slices.IndexFunc(actions, func(a crew.Action) bool { return a.Name == name }); i >= 0 {
 		return actions[i]
@@ -122,15 +115,93 @@ func (m *Model) action(h *heldIssue, name crew.ActionName) crew.Action {
 	return crew.Action{}
 }
 
+// runInput hands an input about one action's workspace, session, check or
+// pull request to the held rule run it names, as the fact it tells
+// (KTD-P4, KTD7). An input naming a run the core does not hold, such as a
+// late answer for a released run, changes nothing, even while a newer run
+// of the same issue runs the same action.
+func (s *step) runInput(in RunInput) {
+	h := s.m.findRun(in.ruleRun())
+	if h == nil {
+		return
+	}
+	head := s.head(h)
+	switch in := in.(type) {
+	case WorkspaceReady:
+		s.workspaceReady(h, in)
+	case WorkspaceFailed:
+		s.decide(h, crew.WorkspaceFailed{FactHead: head, Action: in.Action, Reason: in.Reason})
+	case WorkspaceGone:
+		s.decide(h, crew.WorkspaceGone{FactHead: head, Action: in.Action})
+	case SessionStarted:
+		s.decide(h, crew.SessionStarted{FactHead: head, Action: in.Action})
+	case SessionFailedToStart:
+		s.decide(h, crew.SessionFailedToStart{FactHead: head, Action: in.Action, Reason: in.Reason})
+	case SessionEnded:
+		s.sessionEnded(h, in)
+	case CheckEnded:
+		s.decide(h, crew.CheckEnded{FactHead: head, Action: in.Action, Passed: in.Passed, Reason: in.Reason})
+	case PullRequestFound:
+		s.decide(h, crew.PullRequestLookedUp{FactHead: head, Action: in.Action, PullRequest: in.PullRequest})
+	}
+}
+
+// workspaceReady hands h's run the ready workspace and, once the run took
+// it, keeps the workspace's directory and the log's path from it, which the
+// action's session and checks need (KTD-P5).
+func (s *step) workspaceReady(h *heldRun, in WorkspaceReady) {
+	events, ok := s.decisions(h, crew.WorkspaceReady{
+		FactHead: s.head(h), Action: in.Action,
+		Workspace: crew.Workspace{Name: in.Workspace, Branch: in.Branch}, Log: in.Log, Resumed: in.Resumed,
+	})
+	if !ok {
+		return
+	}
+	p := h.plumb(in.Action)
+	p.dir, p.logFromDir = in.Dir, in.LogFromDir
+	s.apply(h, events)
+}
+
+// sessionEnded hands h's run the session's end and, once the run took it,
+// keeps the session's last message, which the action's checks read
+// (KTD-P5).
+func (s *step) sessionEnded(h *heldRun, in SessionEnded) {
+	events, ok := s.decisions(h, crew.SessionEnded{
+		FactHead: s.head(h), Action: in.Action, Outcome: in.Outcome, Usage: in.Usage,
+	})
+	if !ok {
+		return
+	}
+	h.plumb(in.Action).lastMessage = in.LastMessage
+	s.apply(h, events)
+}
+
+// settled returns the fact that tells h's run how one of its deliveries,
+// of purpose p, settled: it landed, or crew gave it up for reason.
+func (s *step) settled(h *heldRun, p purpose, landed bool, reason string) crew.Fact {
+	head := s.head(h)
+	switch p {
+	case purposeTake:
+		return crew.TakeSettled{FactHead: head, Landed: landed}
+	case purposeVerdict:
+		if landed {
+			return crew.VerdictSettled{FactHead: head, Move: crew.VerdictLanded{}}
+		}
+		return crew.VerdictSettled{FactHead: head, Move: crew.VerdictGivenUp{Reason: reason}}
+	default:
+		return crew.FailureReportSettled{FactHead: head, Landed: landed}
+	}
+}
+
 // head returns the head of a fact of h's run, at the input's time.
-func (s *step) head(h *heldIssue) crew.FactHead {
+func (s *step) head(h *heldRun) crew.FactHead {
 	return crew.FactHead{Run: h.run.ID(), At: s.at}
 }
 
 // decide hands fact to h's run and applies the events it decides. A fact
 // the run refuses changes nothing, as an input that answers nothing the
 // core waits for.
-func (s *step) decide(h *heldIssue, fact crew.Fact) {
+func (s *step) decide(h *heldRun, fact crew.Fact) {
 	if events, ok := s.decisions(h, fact); ok {
 		s.apply(h, events)
 	}
@@ -138,7 +209,7 @@ func (s *step) decide(h *heldIssue, fact crew.Fact) {
 
 // decisions returns the events h's run decides on fact, and false when the
 // run refuses it.
-func (s *step) decisions(h *heldIssue, fact crew.Fact) ([]crew.RunEvent, bool) {
+func (s *step) decisions(h *heldRun, fact crew.Fact) ([]crew.RunEvent, bool) {
 	events, err := crew.Decide(h.run, s.m.definition(h), fact)
 	return events, err == nil
 }
@@ -146,7 +217,7 @@ func (s *step) decisions(h *heldIssue, fact crew.Fact) ([]crew.RunEvent, bool) {
 // apply applies events to h's run, in order, and after each records it,
 // then issues the commands it calls for and publishes it when the views
 // word it (KTD-P6).
-func (s *step) apply(h *heldIssue, events []crew.RunEvent) {
+func (s *step) apply(h *heldRun, events []crew.RunEvent) {
 	for _, e := range events {
 		run, err := crew.Apply(h.run, e)
 		if err != nil {
@@ -162,7 +233,7 @@ func (s *step) apply(h *heldIssue, events []crew.RunEvent) {
 // on issues the commands e calls for, once applied to h's run, and
 // publishes e when the views word it: a landed move or a posted failure
 // report. A run event about one action goes to onAction.
-func (s *step) on(h *heldIssue, e crew.RunEvent) {
+func (s *step) on(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.TakeMoved:
 		s.takeMoved(h, e)
@@ -195,7 +266,7 @@ func (s *step) on(h *heldIssue, e crew.RunEvent) {
 // onAction issues the commands e, an event about one action of h's run,
 // calls for, and publishes e when the views word it: a missing workspace, a
 // started session or an ended action.
-func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
+func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionWorkspaceAsked:
 		s.workspaceAsked(h, e)
@@ -224,7 +295,7 @@ func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
 
 // takeMoved publishes the take, applies it to the board (KTD4) and reports
 // it on h's pull requests.
-func (s *step) takeMoved(h *heldIssue, e crew.TakeMoved) {
+func (s *step) takeMoved(h *heldRun, e crew.TakeMoved) {
 	s.emit(e)
 	s.m.boardMoved(h.run.Issue(), e.To)
 	s.reportPullRequests(h.run.TakeReport(e.To))
@@ -232,7 +303,7 @@ func (s *step) takeMoved(h *heldIssue, e crew.TakeMoved) {
 
 // workspaceAsked asks for a new workspace for the action, or for the
 // reopened workspace of the failed run it resumes (R5).
-func (s *step) workspaceAsked(h *heldIssue, e crew.ActionWorkspaceAsked) {
+func (s *step) workspaceAsked(h *heldRun, e crew.ActionWorkspaceAsked) {
 	if w, ok := e.Reopen.Get(); ok {
 		s.command(ReopenWorkspace{
 			IssueID: e.IssueID, Run: e.Run, Action: e.Action, Workspace: w.Name, Branch: w.Branch,
@@ -245,7 +316,7 @@ func (s *step) workspaceAsked(h *heldIssue, e crew.ActionWorkspaceAsked) {
 // startSession starts the session of h's action named name, with its
 // prompt rendered for the issue and, when the action resumed a failed
 // run's workspace, the resume paragraph after it (R5).
-func (s *step) startSession(h *heldIssue, name crew.ActionName) {
+func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	def := s.m.action(h, name)
 	a, _ := h.run.Action(name)
 	w, _ := a.Workspace().Get()
@@ -264,7 +335,7 @@ func (s *step) startSession(h *heldIssue, name crew.ActionName) {
 
 // findPullRequest looks up the pull request h's action named name opened
 // since its new workspace was made (KTD3).
-func (s *step) findPullRequest(h *heldIssue, name crew.ActionName) {
+func (s *step) findPullRequest(h *heldRun, name crew.ActionName) {
 	a, _ := h.run.Action(name)
 	w, _ := a.Workspace().Get()
 	s.command(FindPullRequest{
@@ -274,7 +345,7 @@ func (s *step) findPullRequest(h *heldIssue, name crew.ActionName) {
 
 // runCheck runs the next check of h's action named name: the first of its
 // checks that has not ended.
-func (s *step) runCheck(h *heldIssue, name crew.ActionName) {
+func (s *step) runCheck(h *heldRun, name crew.ActionName) {
 	def := s.m.action(h, name)
 	a, _ := h.run.Action(name)
 	w, _ := a.Workspace().Get()
@@ -290,7 +361,7 @@ func (s *step) runCheck(h *heldIssue, name crew.ActionName) {
 
 // actionEnded credits what the action's session spent to the run's total
 // and its identity's (R14, KTD4) and publishes the action run's end.
-func (s *step) actionEnded(h *heldIssue, e crew.ActionEnded) {
+func (s *step) actionEnded(h *heldRun, e crew.ActionEnded) {
 	m := s.m
 	a, _ := h.run.Action(e.Action)
 	m.spent = m.spent.Add(a.Spend())
@@ -300,7 +371,7 @@ func (s *step) actionEnded(h *heldIssue, e crew.ActionEnded) {
 
 // judged moves h to its verdict's state, with the failure report when an
 // action failed, and reports the run ended with its move pending (R7).
-func (s *step) judged(h *heldIssue, e crew.RunJudged) {
+func (s *step) judged(h *heldRun, e crew.RunJudged) {
 	running := s.m.rules[h.rule].Labels.Running
 	s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(running, e.Verdict.To)})
 	if report, ok := h.run.FailureReport(); ok {
@@ -312,57 +383,9 @@ func (s *step) judged(h *heldIssue, e crew.RunJudged) {
 	s.reportRun(h)
 }
 
-// fact returns the fact o tells the run of its delivery.
-func (o outcome) fact(head crew.FactHead) crew.Fact {
-	switch o.purpose {
-	case purposeTake:
-		return crew.TakeSettled{FactHead: head, Landed: o.landed}
-	case purposeVerdict:
-		if o.landed {
-			return crew.VerdictSettled{FactHead: head, Move: crew.VerdictLanded{}}
-		}
-		return crew.VerdictSettled{FactHead: head, Move: crew.VerdictGivenUp{Reason: o.reason}}
-	default:
-		return crew.FailureReportSettled{FactHead: head, Landed: o.landed}
-	}
-}
-
-// release forgets h, keeping its handled entry, which replaces the issue's
-// earlier one, when its verdict settled. A rule without actions that ended
-// well keeps an earlier entry that ended well too, marked Gone: its move
-// took the issue out of the entry's To (#109, R10, KTD6).
-func (m *Model) release(h *heldIssue) {
-	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
-	released, _ := h.run.Phase().(crew.ReleasedPhase)
-	verdict, ok := released.Verdict.Get()
-	if !ok {
-		return
-	}
-	view := handledView(h.run, verdict)
-	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.ID() == h.id() })
-	if i >= 0 {
-		old := m.handled[i].view
-		if len(m.rules[h.rule].Actions) == 0 && !view.NeedsAttention() && !old.NeedsAttention() {
-			m.handled[i].view.Gone = true
-			return
-		}
-		view.Earlier = old.Spend().Add(old.Earlier)
-		m.handled = slices.Delete(m.handled, i, i+1)
-	}
-	m.handled = append(m.handled, handledEntry{view: view, landed: h.landed})
-}
-
-// handledView returns the handled entry of run, released with verdict.
-func handledView(run crew.RuleRun, verdict crew.SettledVerdict) HandledView {
-	view := HandledView{
-		Issue: run.Issue(), Rule: run.Rule(), To: verdict.Verdict.To, Failures: verdict.Verdict.Failures,
-		Move: crew.MoveDone, Taken: run.Taken(), Ended: verdict.Judged,
-	}
-	if givenUp, ok := verdict.Move.(crew.VerdictGivenUp); ok {
-		view.Move, view.DropReason = crew.MoveDropped, givenUp.Reason
-	}
-	for _, a := range run.Actions() {
-		view.Actions = append(view.Actions, HandledAction{Name: a.Name(), Spend: a.Spend(), PullRequest: a.PullRequest()})
-	}
-	return view
+// release forgets h, keeping its handled entry when its verdict settled
+// (handle).
+func (m *Model) release(h *heldRun) {
+	m.issues = slices.DeleteFunc(m.issues, func(x *heldRun) bool { return x == h })
+	m.handle(h)
 }

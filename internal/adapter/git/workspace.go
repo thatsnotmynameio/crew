@@ -93,8 +93,9 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action crew.Ac
 	}
 	// --no-track: the branch is new work, not a copy of the default branch,
 	// so a bare `git push` must not target the default branch.
-	if _, err := w.git(ctx, "worktree", "add", "--no-track", "-b", space.Branch, space.Dir, "origin/"+def); err != nil {
-		return port.Space{}, fmt.Errorf("create worktree %s: %w", space.Name, err)
+	branch := space.Workspace.Branch
+	if _, err := w.git(ctx, "worktree", "add", "--no-track", "-b", branch, space.Dir, "origin/"+def); err != nil {
+		return port.Space{}, fmt.Errorf("create worktree %s: %w", space.Workspace.Name, err)
 	}
 	return space, nil
 }
@@ -110,7 +111,7 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action crew.Ac
 // repair`, which keeps that work. The branch is the one checked out, or the
 // recorded one when HEAD is detached, as in the middle of a rebase. Errors
 // carry git's stderr.
-func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, error) {
+func (w *Workspace) Reopen(ctx context.Context, recorded crew.Workspace) (port.Space, error) {
 	// The lock keeps a creation from adding a worktree under this name while
 	// it is being inspected.
 	if err := w.acquire(ctx); err != nil {
@@ -122,7 +123,7 @@ func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, e
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	dir := filepath.Join(root, worktrees, string(space.Name))
+	dir := filepath.Join(root, worktrees, string(recorded.Name))
 	out, err := w.git(ctx, "worktree", "list", "--porcelain")
 	if err != nil {
 		return port.Space{}, fmt.Errorf("list worktrees: %w", err)
@@ -143,9 +144,9 @@ func (w *Workspace) Reopen(ctx context.Context, space port.Space) (port.Space, e
 	}
 	branch := tree.branch
 	if branch == "" {
-		branch = space.Branch
+		branch = recorded.Branch
 	}
-	return port.Space{Name: space.Name, Dir: dir, Branch: branch}, nil
+	return port.Space{Workspace: crew.Workspace{Name: recorded.Name, Branch: branch}, Dir: dir}, nil
 }
 
 // worktree is one entry of `git worktree list --porcelain`.
@@ -208,15 +209,18 @@ func (w *Workspace) free(ctx context.Context, base string) (port.Space, error) {
 		if n > 1 {
 			name = fmt.Sprintf("%s-%d", base, n)
 		}
-		space := port.Space{Name: crew.WorkspaceName(name), Dir: filepath.Join(root, worktrees, name), Branch: "crew/" + name}
+		space := port.Space{
+			Workspace: crew.Workspace{Name: crew.WorkspaceName(name), Branch: "crew/" + name},
+			Dir:       filepath.Join(root, worktrees, name),
+		}
 		if _, err := os.Lstat(space.Dir); err == nil {
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return port.Space{}, fmt.Errorf("check worktree folder %s: %w", space.Dir, err)
 		}
-		out, err := w.git(ctx, "branch", "--list", space.Branch)
+		out, err := w.git(ctx, "branch", "--list", space.Workspace.Branch)
 		if err != nil {
-			return port.Space{}, fmt.Errorf("check branch %s: %w", space.Branch, err)
+			return port.Space{}, fmt.Errorf("check branch %s: %w", space.Workspace.Branch, err)
 		}
 		if strings.TrimSpace(string(out.Stdout)) == "" {
 			return space, nil

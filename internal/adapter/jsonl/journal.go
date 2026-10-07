@@ -9,13 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/fileline"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -102,7 +102,7 @@ func (j *Journal) Append(e crew.RunEvent) error {
 	if err != nil {
 		return fmt.Errorf("open the run journal: %w", err)
 	}
-	err = appendLine(f, data)
+	err = fileline.Append(f, data)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -130,40 +130,4 @@ func (j *Journal) open() (*os.File, error) {
 		return nil, fmt.Errorf("open for appending: %w", err)
 	}
 	return f, nil
-}
-
-// appendLine appends data to f, a file opened for reading and appending, as
-// a line of its own.
-func appendLine(f *os.File, data []byte) error {
-	if err := startLine(f); err != nil {
-		return err
-	}
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("append the line: %w", err)
-	}
-	return nil
-}
-
-// startLine makes the next write to f, a file opened for reading and
-// appending, start on a line of its own: when f ends in the middle of a
-// line, as after a crash during a write, it writes a newline first.
-func startLine(f *os.File) error {
-	info, err := f.Stat()
-	if err != nil {
-		return fmt.Errorf("find the end of the last line: %w", err)
-	}
-	if info.Size() == 0 {
-		return nil
-	}
-	last := make([]byte, 1)
-	if _, err := f.ReadAt(last, info.Size()-1); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("find the end of the last line: %w", err)
-	}
-	if last[0] == '\n' {
-		return nil
-	}
-	if _, err := f.Write([]byte{'\n'}); err != nil {
-		return fmt.Errorf("end the last line: %w", err)
-	}
-	return nil
 }

@@ -222,8 +222,8 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if first.Name != "issue-42-development" {
-		t.Errorf("Name = %q, want issue-42-development", first.Name)
+	if first.Workspace.Name != "issue-42-development" {
+		t.Errorf("Name = %q, want issue-42-development", first.Workspace.Name)
 	}
 	if !filepath.IsAbs(first.Dir) || filepath.Dir(first.Dir) != root {
 		t.Errorf("Dir = %q, want an absolute directory under %q", first.Dir, root)
@@ -231,7 +231,7 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	if info, err := os.Stat(first.Dir); err != nil || !info.IsDir() {
 		t.Errorf("Dir %q is not a directory: %v", first.Dir, err)
 	}
-	if first.Branch == "" {
+	if first.Workspace.Branch == "" {
 		t.Error("Branch is empty")
 	}
 
@@ -239,7 +239,8 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Create: %v", err)
 	}
-	if second.Name == first.Name || second.Dir == first.Dir || second.Branch == first.Branch {
+	if second.Workspace.Name == first.Workspace.Name || second.Workspace.Branch == first.Workspace.Branch ||
+		second.Dir == first.Dir {
 		t.Errorf("second workspace %+v repeats the first %+v", second, first)
 	}
 }
@@ -260,7 +261,7 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			names[s.Name] = true
+			names[s.Workspace.Name] = true
 		})
 	}
 	wg.Wait()

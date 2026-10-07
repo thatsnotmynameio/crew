@@ -65,18 +65,9 @@ type delivery struct {
 	final    bool // its current or last attempt is its one try after stop
 }
 
-// outcome is how one of a run's deliveries settled: it landed, or crew gave
-// it up. The run receives it as a fact (fact).
-type outcome struct {
-	purpose purpose
-	landed  bool
-	call    Call
-	reason  string
-}
-
 // deliver enqueues d on the run lane of h's issue under a new CallID and
 // makes its first attempt.
-func (s *step) deliver(h *heldIssue, d *delivery) {
+func (s *step) deliver(h *heldRun, d *delivery) {
 	o := &s.m.outbox
 	o.lastID++
 	d.id = o.lastID
@@ -117,22 +108,23 @@ func (s *step) callResult(r CallResult) {
 		return
 	}
 	d.inFlight = false
-	out, settled := s.settleDelivery(id, d, r)
+	fact, settled := s.settleDelivery(h, d, r)
 	if !settled {
 		return
 	}
-	s.decide(h, out.fact(s.head(h)))
-	if _, running := h.run.Phase().(crew.RunningPhase); running && out.purpose == purposeTake {
+	s.decide(h, fact)
+	if _, running := h.run.Phase().(crew.RunningPhase); running && d.purpose == purposeTake {
 		s.reportRun(h)
 	}
 }
 
-// settleDelivery applies r to d, a delivery of the issue identified by id,
-// and returns its outcome when it settled. A transient failure makes d owed,
-// and after a stop gives it its final try at once; a failure on its final
-// try, or a call that cannot work, gives it up.
-func (s *step) settleDelivery(id crew.IssueID, d *delivery, r CallResult) (outcome, bool) {
+// settleDelivery applies r to d, a delivery of h's issue, and returns the
+// fact that tells h's run how it settled, when it did. A transient failure
+// makes d owed, and after a stop gives it its final try at once; a failure
+// on its final try, or a call that cannot work, gives it up.
+func (s *step) settleDelivery(h *heldRun, d *delivery, r CallResult) (crew.Fact, bool) {
 	o := &s.m.outbox
+	id := h.id()
 	switch {
 	case r.Result == ResultDone:
 	case r.Result == ResultFailed && (!s.m.stopping || !d.final):
@@ -143,12 +135,12 @@ func (s *step) settleDelivery(id crew.IssueID, d *delivery, r CallResult) (outco
 			d.final = true
 			s.attempt(d)
 		}
-		return outcome{}, false
+		return nil, false
 	default:
 		s.emit(CallDropped{At: s.at, Call: d.call, Result: r.Result, Reason: r.Reason})
 	}
 	o.settle(id, d)
-	return outcome{purpose: d.purpose, landed: r.Result == ResultDone, call: d.call, reason: r.Reason}, true
+	return s.settled(h, d.purpose, r.Result == ResultDone, r.Reason), true
 }
 
 // retryRun attempts the owed deliveries not in flight of the issue

@@ -61,7 +61,7 @@ func (w *Workspace) Create(_ context.Context, issue crew.Issue, action crew.Acti
 		if err != nil {
 			return port.Space{}, fmt.Errorf("create workspace %s: %w", name, err)
 		}
-		space := port.Space{Name: crew.WorkspaceName(name), Dir: dir, Branch: "crew/" + name}
+		space := port.Space{Workspace: crew.Workspace{Name: crew.WorkspaceName(name), Branch: "crew/" + name}, Dir: dir}
 		w.mu.Lock()
 		w.spaces = append(w.spaces, space)
 		w.mu.Unlock()
@@ -69,21 +69,21 @@ func (w *Workspace) Create(_ context.Context, issue crew.Issue, action crew.Acti
 	}
 }
 
-// Reopen implements port.Reopener. It returns the workspace named
-// space.Name as it is, keeping the recorded branch, or an error wrapping
+// Reopen implements port.Reopener. It returns the workspace recorded as it
+// is, keeping the recorded branch, or an error wrapping
 // port.ErrWorkspaceGone when its directory no longer exists.
-func (w *Workspace) Reopen(_ context.Context, space port.Space) (port.Space, error) {
+func (w *Workspace) Reopen(_ context.Context, recorded crew.Workspace) (port.Space, error) {
 	root, err := filepath.Abs(w.root)
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	dir := filepath.Join(root, string(space.Name))
+	dir := filepath.Join(root, string(recorded.Name))
 	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", space.Name, port.ErrWorkspaceGone)
+		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", recorded.Name, port.ErrWorkspaceGone)
 	} else if err != nil {
-		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", space.Name, err)
+		return port.Space{}, fmt.Errorf("reopen workspace %s: %w", recorded.Name, err)
 	}
-	return port.Space{Name: space.Name, Dir: dir, Branch: space.Branch}, nil
+	return port.Space{Workspace: recorded, Dir: dir}, nil
 }
 
 // Spaces returns the workspaces created so far, in creation order.

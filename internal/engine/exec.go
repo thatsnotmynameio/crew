@@ -12,6 +12,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/fileline"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -267,7 +268,7 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	}
 	ctx, cancel := callContext(ctx)
 	defer cancel()
-	space, err := r.Reopen(ctx, port.Space{Name: c.Workspace, Branch: c.Branch})
+	space, err := r.Reopen(ctx, crew.Workspace{Name: c.Workspace, Branch: c.Branch})
 	switch {
 	case errors.Is(err, port.ErrWorkspaceGone):
 		e.post(core.WorkspaceGone{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
@@ -285,10 +286,10 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 func (e *Engine) ready(
 	id crew.IssueID, run crew.RuleRunID, action crew.ActionName, space port.Space, resumed bool,
 ) core.WorkspaceReady {
-	log := logPath(space.Name)
+	log := logPath(space.Workspace.Name)
 	return core.WorkspaceReady{
 		IssueID: id, Run: run, Action: action,
-		Workspace: space.Name, Dir: space.Dir, Branch: space.Branch, Log: log,
+		Workspace: space.Workspace.Name, Dir: space.Dir, Branch: space.Workspace.Branch, Log: log,
 		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed,
 	}
 }
@@ -381,7 +382,7 @@ func markResumed(log *os.File) error {
 	if err != nil {
 		return fmt.Errorf("encode the resume marker: %w", err)
 	}
-	if err := appendLine(log, data); err != nil {
+	if err := fileline.Append(log, data); err != nil {
 		return fmt.Errorf("write the resume marker: %w", err)
 	}
 	return nil

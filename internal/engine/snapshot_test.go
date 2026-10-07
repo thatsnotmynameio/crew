@@ -10,6 +10,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
@@ -57,16 +58,7 @@ func TestWithoutARunTimeLimitTheSnapshotStillCarriesTheStart(t *testing.T) {
 
 func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		r := start(t, config(t, tr, develop))
-		r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
-		synctest.Wait()
-
-		r.engine.Stop()
-		final, err := r.wait()
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
+		r, final := failOneRun(t)
 		handled := final.Snapshot.Handled
 		if len(handled) != 1 {
 			t.Fatalf("handled = %#v, want #1 alone", handled)
@@ -93,16 +85,7 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing
 // run events, in the updates or in the snapshot's recent events.
 func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		r := start(t, config(t, tr, develop))
-		r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
-		synctest.Wait()
-
-		r.engine.Stop()
-		final, err := r.wait()
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
+		r, final := failOneRun(t)
 		worded := []string{
 			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.VerdictMoved",
 			"crew.FailureReported",
@@ -119,6 +102,22 @@ func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 			}
 		}
 	})
+}
+
+// failOneRun runs #1 through a rule whose only session fails, stops crew
+// and returns the rig and its last update.
+func failOneRun(t *testing.T) (*rig, engine.Update) {
+	t.Helper()
+	r := start(t, config(t, fake.NewTracker(issue(1, ready)), develop))
+	r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
+	synctest.Wait()
+
+	r.engine.Stop()
+	final, err := r.wait()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return r, final
 }
 
 // runEventKinds returns the type of each run event in events, in order.
