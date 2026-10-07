@@ -190,7 +190,7 @@ func (e *Engine) reportPullRequests(ctx context.Context, c core.ReportPullReques
 	defer cancel()
 	err := e.pullRequests.ReportPullRequests(ctx, c.Report)
 	result, reason := e.classify(ctx, err)
-	e.post(core.PullRequestsResult{IssueID: c.Report.IssueID, Result: result, Reason: reason})
+	e.post(core.PullRequestsResult{IssueID: c.Report.IssueID(), Result: result, Reason: reason})
 }
 
 // callResult maps a tracker call's error onto the core's result classes.
@@ -325,7 +325,7 @@ func (e *Engine) findPullRequest(ctx context.Context, c core.FindPullRequest) {
 	defer cancel()
 	pr, err := e.finder.FindPullRequest(ctx, c.Branch, c.Since)
 	if err != nil {
-		pr = crew.PullRequest{}
+		pr = crew.PullRequestNotLookedUp{}
 	}
 	e.post(core.PullRequestFound{IssueID: c.IssueID, Action: c.Action, PullRequest: pr})
 }

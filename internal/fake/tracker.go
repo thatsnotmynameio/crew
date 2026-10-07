@@ -425,9 +425,8 @@ type Lookup struct {
 
 // LookupScript is how a fake pull request lookup goes.
 type LookupScript struct {
-	// Found is what the lookup returns; its zero value, not looked up, is
-	// returned as no pull request, as a tracker that looked finds one or
-	// none.
+	// Found is what the lookup returns; nil or not looked up is returned
+	// as no pull request, as a tracker that looked finds one or none.
 	Found crew.PullRequest
 	// Err, when set, makes the lookup fail with it.
 	Err error
@@ -472,13 +471,16 @@ func (p *PullRequests) FindPullRequest(ctx context.Context, branch string, since
 	switch {
 	case s.Block:
 		<-ctx.Done()
-		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, ctx.Err())
+		return nil, fmt.Errorf("find the pull request from %s: %w", branch, ctx.Err())
 	case s.Err != nil:
-		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, s.Err)
-	case s.Found.Lookup == crew.PullRequestNotLookedUp:
-		return crew.PullRequest{Lookup: crew.PullRequestNone}, nil
+		return nil, fmt.Errorf("find the pull request from %s: %w", branch, s.Err)
 	}
-	return s.Found, nil
+	switch s.Found.(type) {
+	case crew.PullRequestFound, crew.PullRequestNone:
+		return s.Found, nil
+	case crew.PullRequestNotLookedUp:
+	}
+	return crew.PullRequestNone{}, nil
 }
 
 // FindingTracker is a ReportingTracker that also implements
@@ -511,13 +513,14 @@ type PullRequestBoard struct {
 func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.PullRequestReport) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.errs.pop(report.IssueID.Key); err != nil {
-		return fmt.Errorf("report pull requests of issue %s: %w", report.IssueID.Key, err)
+	key := report.IssueID().Key
+	if err := b.errs.pop(key); err != nil {
+		return fmt.Errorf("report pull requests of issue %s: %w", key, err)
 	}
 	if b.reports == nil {
 		b.reports = map[string][]crew.PullRequestReport{}
 	}
-	b.reports[report.IssueID.Key] = append(b.reports[report.IssueID.Key], report.Clone())
+	b.reports[key] = append(b.reports[key], report)
 	return nil
 }
 
@@ -535,11 +538,7 @@ func (b *PullRequestBoard) FailPullRequests(key string, errs ...error) {
 func (b *PullRequestBoard) PullRequestReports(key string) []crew.PullRequestReport {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]crew.PullRequestReport, len(b.reports[key]))
-	for i, r := range b.reports[key] {
-		out[i] = r.Clone()
-	}
-	return out
+	return slices.Clone(b.reports[key])
 }
 
 // PullRequestTracker is a ReportingTracker that also implements

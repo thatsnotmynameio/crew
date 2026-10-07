@@ -29,10 +29,9 @@ func TestUsageOfACleanResultIsItsCostTokensTurnsAndModel(t *testing.T) {
 	got := usageOf(t, newProcess(fixture(t, "success.jsonl"), nil))
 
 	want := crew.Usage{
-		Cost: 0.4182, HasCost: true,
-		Tokens:    crew.Tokens{Input: 14, Output: 132, CacheRead: 38216, CacheWrite: 5360},
-		HasTokens: true,
-		Turns:     3, HasTurns: true,
+		Cost:   crew.Some(0.4182),
+		Tokens: crew.Some(crew.Tokens{Input: 14, Output: 132, CacheRead: 38216, CacheWrite: 5360}),
+		Turns:  crew.Some(3),
 		Models: []string{"claude-opus-5-5"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -47,15 +46,14 @@ func TestUsageOfSeveralResultsIsTheLastCostAndTokensAndEveryResultsTurns(t *test
 	got := usageOf(t, newProcess(fixture(t, "multiresult.jsonl"), nil))
 
 	want := crew.Usage{
-		Cost: 19.946884799999992, HasCost: true,
-		Tokens: crew.Tokens{
+		Cost: crew.Some(19.946884799999992),
+		Tokens: crew.Some(crew.Tokens{
 			Input:      450 + 92,
 			Output:     161694 + 23168,
 			CacheRead:  45538985 + 1277724,
 			CacheWrite: 894564 + 470360,
-		},
-		HasTokens: true,
-		Turns:     42 + 1 + 21, HasTurns: true,
+		}),
+		Turns:  crew.Some(42 + 1 + 21),
 		Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -66,7 +64,7 @@ func TestUsageOfSeveralResultsIsTheLastCostAndTokensAndEveryResultsTurns(t *test
 func TestUsageOfAnErrorResultWithoutModelUsageIsItsCostWithoutTokens(t *testing.T) {
 	got := usageOf(t, newProcess(fixture(t, "error.jsonl"), exitError{code: 1, msg: "exit status 1"}))
 
-	want := crew.Usage{Cost: 0.0311, HasCost: true, Turns: 1, HasTurns: true}
+	want := crew.Usage{Cost: crew.Some(0.0311), Turns: crew.Some(1)}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usage = %+v, want %+v", got, want)
 	}
@@ -78,7 +76,7 @@ func TestUsageReportsACostOfZero(t *testing.T) {
 
 	got := usageOf(t, newProcess([]byte(line), nil))
 
-	want := crew.Usage{HasCost: true, Turns: 1, HasTurns: true}
+	want := crew.Usage{Cost: crew.Some(0.0), Turns: crew.Some(1)}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usage = %+v, want %+v", got, want)
 	}

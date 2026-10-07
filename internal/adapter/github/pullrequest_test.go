@@ -70,11 +70,19 @@ func prNode(number int, state, repo string, labels ...crew.State) string {
 		number, state, repo, strings.Join(names, ","))
 }
 
+// taken is report p1 of #42 moving to state, with no end, as when a rule
+// takes the issue.
+func taken(state crew.State) crew.PullRequestReport {
+	return crew.NewPullRequestReport(crew.PullRequestReportData{
+		ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: state,
+	})
+}
+
 // ended is report p1 of #42 moving to state at the end of development, whose
 // actions are actions.
 func ended(state crew.State, actions ...crew.ActionStatus) crew.PullRequestReport {
-	return crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: state,
-		End: &crew.RuleEnd{Rule: "development", Actions: actions}}
+	return crew.NewPullRequestReport(crew.PullRequestReportData{ID: "p1", IssueID: issueID("42"), IssueRef: "#42",
+		State: state, End: crew.Some(crew.NewRuleEnd("development", actions))})
 }
 
 // comments returns the body of each comment posted on number, failed posts
@@ -191,16 +199,16 @@ func TestAnIssueWithoutAPullRequestGetsOnlyTheQuery(t *testing.T) {
 // Covers AE3 of #35: a pull request crew moved closes no issue, so its
 // report writes to no other pull request, with or without the rule's end.
 func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
-	for name, end := range map[string]*crew.RuleEnd{
-		"taken": nil,
-		"ended": {Rule: "development", Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded{}}}},
+	for name, end := range map[string]crew.Optional[crew.RuleEnd]{
+		"taken": {},
+		"ended": crew.Some(crew.NewRuleEnd("development", []crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded{}}})),
 	} {
 		t.Run(name, func(t *testing.T) {
 			// GitHub resolves #90 to a pull request, which the Issue
 			// fragment leaves empty.
 			tr, gh := prTracker(t, reply{prefix: prQuery, stdout: `{"data":{"repository":{"issueOrPullRequest":{}}}}`})
-			report := crew.PullRequestReport{ID: "p1", IssueID: issueID("90"), IssueRef: "#90", State: crewWaitingReview,
-				End: end}
+			report := crew.NewPullRequestReport(crew.PullRequestReportData{ID: "p1", IssueID: issueID("90"), IssueRef: "#90",
+				State: crewWaitingReview, End: end})
 			if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 				t.Fatalf("ReportPullRequests: %v", err)
 			}
@@ -226,7 +234,7 @@ func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 			prNode(50, "OPEN", "o/r", crewWaitingReview, crewReadyForFix, crewWaitingBrain, "bug"))},
 		reply{prefix: prEdit},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewInProgress}
+	report := taken(crewInProgress)
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -242,7 +250,7 @@ func TestAReportWithoutAnEndPostsNoComment(t *testing.T) {
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewReadyForFix))},
 		reply{prefix: prEdit},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewInProgress}
+	report := taken(crewInProgress)
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
@@ -368,7 +376,7 @@ func TestAMissingLabelIsRefused(t *testing.T) {
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewInProgress))},
 		reply{prefix: prEdit, stderr: "could not add label: 'crew:waiting review' not found\n"},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewWaitingReview}
+	report := taken(crewWaitingReview)
 	if err := tr.ReportPullRequests(context.Background(), report); !errors.Is(err, port.ErrRefused) {
 		t.Errorf("ReportPullRequests = %v, want ErrRefused", err)
 	}
@@ -383,7 +391,7 @@ func TestATransientFailureOutweighsARefusal(t *testing.T) {
 		reply{prefix: []string{"pr", "edit", "50"}, stderr: "could not add label: 'crew:waiting review' not found\n"},
 		reply{prefix: []string{"pr", "edit", "51"}, stderr: "HTTP 502: Bad Gateway"},
 	)
-	report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewWaitingReview}
+	report := taken(crewWaitingReview)
 	err := tr.ReportPullRequests(context.Background(), report)
 	if err == nil || errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused) {
 		t.Errorf("ReportPullRequests = %v, want a transient error", err)
@@ -403,7 +411,7 @@ func TestTheQuerysErrorsAreClassified(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := prTracker(t, tc.reply)
-			report := crew.PullRequestReport{ID: "p1", IssueID: issueID("42"), IssueRef: "#42", State: crewWaitingReview}
+			report := taken(crewWaitingReview)
 			err := tr.ReportPullRequests(context.Background(), report)
 			switch {
 			case err == nil:

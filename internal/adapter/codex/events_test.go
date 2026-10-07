@@ -215,7 +215,7 @@ type usageCase struct {
 
 // once is the usage of a session whose one turn used tokens.
 func once(tokens crew.Tokens) crew.Usage {
-	return crew.Usage{Tokens: tokens, HasTokens: true, Turns: 1, HasTurns: true}
+	return crew.Usage{Tokens: crew.Some(tokens), Turns: crew.Some(1)}
 }
 
 var usageCases = []usageCase{
@@ -249,7 +249,7 @@ var usageCases = []usageCase{
 	{
 		name:   "a completed turn without usage reports its turn but no tokens",
 		stdout: `{"type":"turn.completed"}` + "\n",
-		want:   crew.Usage{Turns: 1, HasTurns: true},
+		want:   crew.Usage{Turns: crew.Some(1)},
 	},
 	{
 		name: "a failed turn reports nothing",
@@ -297,7 +297,7 @@ func TestUsage(t *testing.T) {
 // counts the cost of one session of two, so the live view shows it as
 // partial, and the tokens of both (AE5).
 func TestCodexUsageMarksASumWithAClaudeCostPartial(t *testing.T) {
-	claude := crew.Usage{Cost: 3.10, HasCost: true, Tokens: crew.Tokens{Input: 200_000}, HasTokens: true}
+	claude := crew.Usage{Cost: crew.Some(3.10), Tokens: crew.Some(crew.Tokens{Input: 200_000})}
 	codex := record(fixture(t, "success.jsonl"), nil).usage(false)
 
 	got := claude.Spend().Add(codex.Spend())

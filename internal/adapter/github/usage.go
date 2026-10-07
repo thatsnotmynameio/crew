@@ -17,16 +17,20 @@ func usage(shown crew.Optional[crew.ShownUsage]) string {
 	if !ok {
 		return ""
 	}
-	var pr string
-	switch u.PullRequest.Lookup {
+	return " Usage: " + spendText(u.Spend) + ". Pull request: " + pullRequestText(u.PullRequest) + "."
+}
+
+// pullRequestText words the pull request an action opened for the usage
+// sentence: a link to it, "none", or "not looked up".
+func pullRequestText(pr crew.PullRequest) string {
+	switch pr := pr.(type) {
 	case crew.PullRequestFound:
-		pr = "[" + u.PullRequest.Ref + "](" + u.PullRequest.URL + ")"
+		return "[" + pr.Ref + "](" + pr.URL + ")"
 	case crew.PullRequestNone:
-		pr = "none"
-	default:
-		pr = "not looked up"
+		return "none"
+	case crew.PullRequestNotLookedUp:
 	}
-	return " Usage: " + spendText(u.Spend) + ". Pull request: " + pr + "."
+	return "not looked up"
 }
 
 // spendText words a spend for the usage sentence: the cost, then the

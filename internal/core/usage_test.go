@@ -18,15 +18,15 @@ func usageDriver(t *testing.T, rules []crew.Rule, opts ...core.Option) *driver {
 
 var (
 	spent = crew.Usage{
-		Cost: 12.40, HasCost: true, Tokens: crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40},
-		HasTokens: true, Turns: 7, HasTurns: true, Models: []string{"claude-opus-5-5"},
+		Cost: crew.Some(12.40), Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40}),
+		Turns: crew.Some(7), Models: []string{"claude-opus-5-5"},
 	}
-	pr45   = crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.com/pull/45"}
-	noPR   = crew.PullRequest{Lookup: crew.PullRequestNone}
-	tokens = crew.Usage{Tokens: crew.Tokens{Output: 5}, HasTokens: true}
+	pr45   = crew.PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
+	noPR   = crew.PullRequestNone{}
+	tokens = crew.Usage{Tokens: crew.Some(crew.Tokens{Output: 5})}
 	// partialSpend is spent's session summed with one that reported
 	// nothing: two sessions, of which only one reported cost and tokens.
-	partialSpend = crew.Spend{Sessions: 2, Cost: 12.40, WithCost: 1, Tokens: spent.Tokens, WithTokens: 1}
+	partialSpend = crew.Spend{Sessions: 2, Cost: 12.40, WithCost: 1, Tokens: spent.Spend().Tokens, WithTokens: 1}
 )
 
 // lookups returns the FindPullRequest commands in cmds.
@@ -113,7 +113,8 @@ func TestALookupThatAnswersFirstWaitsForTheCheck(t *testing.T) {
 		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
 	})
 	wantPhase(core.PhaseEnded)
-	if end := records(cmds); len(end) != 1 || end[0].Succeeded || end[0].PullRequest != pr45 || !end[0].Usage.HasCost {
+	if end := records(cmds); len(end) != 1 || end[0].Succeeded || end[0].PullRequest != pr45 ||
+		end[0].Usage.Cost != spent.Cost {
 		t.Fatalf("records = %#v, want a failed end keeping the session's usage and #45", end)
 	}
 }
@@ -159,7 +160,7 @@ func TestAE5AStoppedSessionIsRecordedWithoutUsage(t *testing.T) {
 
 	cmds, _ := d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
 	end := records(cmds)
-	if len(end) != 1 || end[0].Usage.HasCost || end[0].Usage.HasTokens || end[0].Reason.String() != "stopped by crew" {
+	if len(end) != 1 || !reflect.DeepEqual(end[0].Usage, crew.Usage{}) || end[0].Reason.String() != "stopped by crew" {
 		t.Fatalf("records = %#v, want a stopped end with no usage", end)
 	}
 }
@@ -170,7 +171,7 @@ func TestWithoutAFinderNothingIsLookedUp(t *testing.T) {
 
 	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "development", Outcome: succeeded, Usage: spent})
 	end := records(cmds)
-	if len(lookups(cmds)) != 0 || len(end) != 1 || end[0].PullRequest.Lookup != crew.PullRequestNotLookedUp {
+	if len(lookups(cmds)) != 0 || len(end) != 1 || end[0].PullRequest != nil {
 		t.Fatalf("commands = %#v, want an end at once, not looked up", cmds)
 	}
 }
@@ -271,7 +272,7 @@ func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T)
 	})
 	d := usageDriver(t, rules)
 	cost := func(dollars float64, output int64) crew.Usage {
-		return crew.Usage{Cost: dollars, HasCost: true, Tokens: crew.Tokens{Output: output}, HasTokens: true}
+		return crew.Usage{Cost: crew.Some(dollars), Tokens: crew.Some(crew.Tokens{Output: output})}
 	}
 	end := func(action crew.ActionName, u crew.Usage) {
 		d.send(core.SessionEnded{IssueID: issueID("8"), Action: action, Outcome: succeeded, Usage: u})

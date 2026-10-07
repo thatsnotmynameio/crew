@@ -38,11 +38,11 @@ func (t *Tracker) FindPullRequest(ctx context.Context, branch string, since time
 	out, err := t.gh.call(ctx, "pr", "list", "--head="+branch, "--state=all", "--limit", "100",
 		"--json", "number,url,state,createdAt,isCrossRepository")
 	if err != nil {
-		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, classify(err, out, false))
+		return nil, fmt.Errorf("find the pull request from %s: %w", branch, classify(err, out, false))
 	}
 	var prs []ghPullRequest
 	if err := json.Unmarshal(out.Stdout, &prs); err != nil {
-		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: unreadable output: %w", branch, err)
+		return nil, fmt.Errorf("find the pull request from %s: unreadable output: %w", branch, err)
 	}
 	var open, ended *ghPullRequest
 	for i := range prs {
@@ -64,7 +64,7 @@ func (t *Tracker) FindPullRequest(ctx context.Context, branch string, since time
 		found = ended
 	}
 	if found == nil {
-		return crew.PullRequest{Lookup: crew.PullRequestNone}, nil
+		return crew.PullRequestNone{}, nil
 	}
-	return crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#" + strconv.Itoa(found.Number), URL: found.URL}, nil
+	return crew.PullRequestFound{Ref: "#" + strconv.Itoa(found.Number), URL: found.URL}, nil
 }

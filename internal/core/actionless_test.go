@@ -44,9 +44,9 @@ func promoteMoved(at time.Time) core.IssueMoved {
 	return core.IssueMoved{At: at, IssueID: issueID("1"), IssueRef: "#1", From: triagePromoting, To: developmentReady}
 }
 
-// reportOf is #1's pull request report of its move to state, with no End.
-func reportOf(state crew.State) crew.PullRequestReport {
-	return crew.PullRequestReport{IssueID: issueID("1"), IssueRef: "#1", State: state}
+// reportOf is #1's pull request report of its move to state, with no end.
+func reportOf(state crew.State) crew.PullRequestReportData {
+	return crew.PullRequestReportData{IssueID: issueID("1"), IssueRef: "#1", State: state}
 }
 
 // triaged runs #1 through triage with outcome and settles every call.

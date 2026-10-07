@@ -67,7 +67,7 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewFindingTracker(issue(31, ready))
 		tr.ScriptLookup("crew/issue-31-development", fake.LookupScript{
-			Found: crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.test/pull/45"},
+			Found: crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"},
 		})
 		cfg := config(t, tr, develop)
 		cfg.Harnesses = harnesses(fake.NewUsageHarness())
@@ -76,8 +76,8 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 		s := r.session()
 		time.Sleep(90 * time.Second)
 		s.SetUsage(crew.Usage{
-			Cost: 12.40, HasCost: true, HasTokens: true, HasTurns: true, Turns: 7,
-			Tokens: crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40},
+			Cost: crew.Some(12.40), Turns: crew.Some(7),
+			Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40}),
 			Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
 		})
 		s.End(port.Verdict{Succeeded: true, Reason: "done"})
@@ -215,8 +215,8 @@ func TestAE7NewLinesAreAppendedAndEarlierOnesKeptAsTheyWere(t *testing.T) {
 }
 
 func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T) {
-	pr := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.test/pull/45"}
-	used := crew.Usage{Cost: 1.5, HasCost: true}
+	pr := crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"}
+	used := crew.Usage{Cost: crew.Some(1.5)}
 	for _, on := range []bool{false, true} {
 		synctest.Test(t, func(t *testing.T) {
 			tr := fake.NewFindingTracker(issue(1, ready))

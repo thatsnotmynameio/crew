@@ -161,9 +161,9 @@ func (r *recorder) usage(stopped bool) crew.Usage {
 	if stopped || r.turns == 0 {
 		return crew.Usage{}
 	}
-	u := crew.Usage{Turns: r.turns, HasTurns: true}
+	u := crew.Usage{Turns: crew.Some(r.turns)}
 	if r.used != nil {
-		u.Tokens, u.HasTokens = r.used.tokens(), true
+		u.Tokens = crew.Some(r.used.tokens())
 	}
 	return u
 }

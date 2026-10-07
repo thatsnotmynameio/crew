@@ -161,18 +161,22 @@ func (s *stream) usage() crew.Usage {
 	if s.last == nil {
 		return crew.Usage{}
 	}
-	u := crew.Usage{Turns: s.turns, HasTurns: s.turned}
-	if s.last.Cost != nil {
-		u.Cost, u.HasCost = *s.last.Cost, true
+	var u crew.Usage
+	if s.turned {
+		u.Turns = crew.Some(s.turns)
 	}
+	if s.last.Cost != nil {
+		u.Cost = crew.Some(*s.last.Cost)
+	}
+	var tokens crew.Tokens
 	for _, m := range s.last.Models {
-		u.Tokens.Input += m.Input
-		u.Tokens.Output += m.Output
-		u.Tokens.CacheRead += m.CacheRead
-		u.Tokens.CacheWrite += m.CacheWrite
+		tokens.Input += m.Input
+		tokens.Output += m.Output
+		tokens.CacheRead += m.CacheRead
+		tokens.CacheWrite += m.CacheWrite
 	}
 	if len(s.last.Models) > 0 {
-		u.HasTokens = true
+		u.Tokens = crew.Some(tokens)
 		u.Models = slices.Sorted(maps.Keys(s.last.Models))
 	}
 	return u

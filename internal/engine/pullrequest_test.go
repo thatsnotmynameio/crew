@@ -19,9 +19,9 @@ func prStates(tr fake.PullRequestTracker) []string {
 	reports := tr.PullRequestReports("1")
 	out := make([]string, 0, len(reports))
 	for _, r := range reports {
-		s := string(r.State)
-		if r.End != nil {
-			s += " (end of " + string(r.End.Rule) + ")"
+		s := string(r.State())
+		if end, ok := r.End().Get(); ok {
+			s += " (end of " + string(end.Rule()) + ")"
 		}
 		out = append(out, s)
 	}
@@ -40,8 +40,8 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsVerdictOnThePullRequests(
 		if got := prStates(tr); !reflect.DeepEqual(got, want) {
 			t.Errorf("pull request reports = %q, want %q", got, want)
 		}
-		end := tr.PullRequestReports("1")[1].End
-		if len(end.Actions) != 1 || end.Actions[0].State != (crew.ActionSucceeded{}) {
+		end, _ := tr.PullRequestReports("1")[1].End().Get()
+		if actions := end.Actions(); len(actions) != 1 || actions[0].State != (crew.ActionSucceeded{}) {
 			t.Errorf("rule end = %+v, want development succeeded", end)
 		}
 

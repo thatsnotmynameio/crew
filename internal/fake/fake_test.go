@@ -302,7 +302,7 @@ func TestUsageHarnessSessionsReportWhatTheTestSets(t *testing.T) {
 	if got := r.Usage(); !reflect.DeepEqual(got, crew.Usage{}) {
 		t.Errorf("Usage before SetUsage = %+v, want nothing reported", got)
 	}
-	want := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{Input: 10, Output: 20}, HasTokens: true,
+	want := crew.Usage{Cost: crew.Some(12.4), Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20}),
 		Models: []string{"claude-opus"}}
 	h.Sessions()[0].SetUsage(want)
 	if got := r.Usage(); !reflect.DeepEqual(got, want) {
@@ -337,7 +337,7 @@ func TestMessagingHarnessSessionsReportTheLastMessageTheTestSets(t *testing.T) {
 func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T) {
 	tr := fake.NewFindingTracker()
 	var finder port.PullRequestFinder = tr
-	pr45 := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.com/pull/45"}
+	pr45 := crew.PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
 	tr.ScriptLookup("crew/issue-31-lfg", fake.LookupScript{Found: pr45})
 	tr.ScriptLookup("crew/issue-32-lfg", fake.LookupScript{Err: errors.New("HTTP 502")})
 	since := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
@@ -350,7 +350,7 @@ func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T)
 		t.Error("failing lookup = nil error, want the scripted error")
 	}
 	none, err := finder.FindPullRequest(ctx, "crew/issue-9-lfg", since)
-	if err != nil || none.Lookup != crew.PullRequestNone {
+	if err != nil || none != (crew.PullRequestNone{}) {
 		t.Errorf("unscripted lookup = %+v, %v; want no pull request", none, err)
 	}
 	want := []fake.Lookup{

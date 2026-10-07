@@ -156,10 +156,33 @@ func TestAJournalThatCannotBeReadFailsPrepareNamingIt(t *testing.T) {
 	}
 }
 
+func TestTheEndedLineWritesWhatTheLookupFound(t *testing.T) {
+	for _, tt := range []struct {
+		pr   crew.PullRequest
+		want string
+	}{
+		{crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"},
+			`"pull_request":"#45","pull_request_url":"https://example.test/pull/45","pull_request_lookup":"found"}`},
+		{crew.PullRequestNone{}, `was found","pull_request_lookup":"none"}`},
+		{crew.PullRequestNotLookedUp{}, `was found","pull_request_lookup":"not looked up"}`},
+		{nil, `was found","pull_request_lookup":"not looked up"}`},
+	} {
+		r := record(core.RunEnded, "9")
+		r.PullRequest = tt.pr
+		data, err := json.Marshal(lineOf(r, "run"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(string(data), tt.want) {
+			t.Errorf("line for %#v = %s, want it to end with %s", tt.pr, data, tt.want)
+		}
+	}
+}
+
 func TestAReportedZeroCostIsWrittenAndAnUnreportedOneLeftOut(t *testing.T) {
 	r := record(core.RunEnded, "9")
 	r.SessionStarted = r.At.Add(-time.Minute)
-	r.Usage = crew.Usage{HasCost: true}
+	r.Usage = crew.Usage{Cost: crew.Some(0.0)}
 	data, err := json.Marshal(lineOf(r, "run"))
 	if err != nil {
 		t.Fatal(err)

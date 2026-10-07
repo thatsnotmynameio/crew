@@ -35,23 +35,23 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	if ended {
 		id = h.run.VerdictReport()
 	}
-	r := crew.PullRequestReport{ID: id, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), State: to}
+	d := crew.PullRequestReportData{ID: id, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), State: to}
 	if ended && len(h.actions) > 0 {
-		r.End = s.ruleEnd(h)
+		d.End = crew.Some(s.ruleEnd(h))
 	}
-	sl := m.outbox.pullRequests[r.IssueID]
+	sl := m.outbox.pullRequests[d.IssueID]
 	if sl == nil {
 		sl = &pullRequestLane{}
-		m.outbox.pullRequests[r.IssueID] = sl
+		m.outbox.pullRequests[d.IssueID] = sl
 	}
-	sl.reports = append(sl.reports, &pendingReport{report: r})
+	sl.reports = append(sl.reports, &pendingReport{report: crew.NewPullRequestReport(d)})
 	s.pumpPullRequests(sl)
 }
 
 // ruleEnd returns how h's rule ended, with each action as its ended status
 // shows it.
-func (s *step) ruleEnd(h *heldIssue) *crew.RuleEnd {
-	return &crew.RuleEnd{Rule: s.m.rules[h.rule].Name, Actions: s.actionStatuses(h)}
+func (s *step) ruleEnd(h *heldIssue) crew.RuleEnd {
+	return crew.NewRuleEnd(s.m.rules[h.rule].Name, s.actionStatuses(h))
 }
 
 // pumpPullRequests sends the lane's oldest report, unless a report is in
@@ -66,7 +66,7 @@ func (s *step) pumpPullRequests(sl *pullRequestLane) {
 // sendPullRequests issues the lane's oldest report.
 func (s *step) sendPullRequests(sl *pullRequestLane) {
 	sl.sending = true
-	s.command(ReportPullRequests{Report: sl.reports[0].report.Clone()})
+	s.command(ReportPullRequests{Report: sl.reports[0].report})
 }
 
 // pullRequestsResult settles the report in flight for r's issue and sends the
@@ -130,5 +130,5 @@ func (o *outbox) owedPullRequests() []Call {
 
 // describe returns p as a Call.
 func (p *pendingReport) describe() Call {
-	return Call{Kind: CallPullRequests, IssueID: p.report.IssueID, IssueRef: p.report.IssueRef, To: p.report.State}
+	return Call{Kind: CallPullRequests, IssueID: p.report.IssueID(), IssueRef: p.report.IssueRef(), To: p.report.State()}
 }

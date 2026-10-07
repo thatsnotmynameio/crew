@@ -140,24 +140,24 @@ func lineOf(r core.RunRecord, run string) journalLine {
 		l.DurationMS = new(r.At.Sub(r.SessionStarted).Milliseconds())
 	}
 	u := r.Usage
-	if u.HasCost {
-		l.CostUSD = new(u.Cost)
+	if cost, ok := u.Cost.Get(); ok {
+		l.CostUSD = new(cost)
 	}
-	if u.HasTokens {
-		l.InputTokens, l.OutputTokens = new(u.Tokens.Input), new(u.Tokens.Output)
-		l.CacheReadTokens, l.CacheWriteTokens = new(u.Tokens.CacheRead), new(u.Tokens.CacheWrite)
+	if t, ok := u.Tokens.Get(); ok {
+		l.InputTokens, l.OutputTokens = new(t.Input), new(t.Output)
+		l.CacheReadTokens, l.CacheWriteTokens = new(t.CacheRead), new(t.CacheWrite)
 	}
-	if u.HasTurns {
-		l.Turns = new(u.Turns)
+	if turns, ok := u.Turns.Get(); ok {
+		l.Turns = new(turns)
 	}
 	l.Models = u.Models
-	switch r.PullRequest.Lookup {
+	l.PullRequestLookup = lookupNotLookedUp
+	switch pr := r.PullRequest.(type) {
 	case crew.PullRequestFound:
-		l.PullRequestLookup, l.PullRequest, l.PullRequestURL = lookupFound, r.PullRequest.Ref, r.PullRequest.URL
+		l.PullRequestLookup, l.PullRequest, l.PullRequestURL = lookupFound, pr.Ref, pr.URL
 	case crew.PullRequestNone:
 		l.PullRequestLookup = lookupNone
-	default:
-		l.PullRequestLookup = lookupNotLookedUp
+	case crew.PullRequestNotLookedUp:
 	}
 	return l
 }

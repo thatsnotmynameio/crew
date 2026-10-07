@@ -54,20 +54,20 @@ func longestBacktickRun(s string) int {
 	return longest
 }
 
-// renderStop renders a pull request report's stop comment, for a report
-// with an end, in Markdown: how the rule ended on the issue and the label
+// renderStop renders the stop comment of a pull request report whose rule
+// ended as end, in Markdown: how the rule ended on the issue and the label
 // the issue and the pull request moved to, each failed action as the status
 // comment words it, that nobody watches the pull request any more, then
 // link. Like the status comment, it carries no session's words.
-func renderStop(r crew.PullRequestReport, link string) string {
+func renderStop(r crew.PullRequestReport, end crew.RuleEnd, link string) string {
 	var b strings.Builder
 	outcome := "succeeded"
-	if r.End.Failed() {
+	if end.Failed() {
 		outcome = "failed"
 	}
 	fmt.Fprintf(&b, "crew: %s %s on %s, which moved to %s, as did this pull request.\n",
-		codeSpan(string(r.End.Rule)), outcome, r.IssueRef, codeSpan(string(r.State)))
-	for _, a := range r.End.Actions {
+		codeSpan(string(end.Rule())), outcome, r.IssueRef(), codeSpan(string(r.State())))
+	for _, a := range end.Actions() {
 		if failed, ok := a.State.(crew.ActionFailed); ok {
 			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(string(a.Name))+"**", a, failed))
 		}

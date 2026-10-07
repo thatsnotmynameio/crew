@@ -142,8 +142,8 @@ func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 // with its pull request; one without stays as it was.
 func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
 	tr, _ := build(t)
-	pr45 := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://github.com/o/r/pull/45"}
-	spent := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{CacheRead: 17_200_000}, HasTokens: true}.Spend()
+	pr45 := crew.PullRequestFound{Ref: "#45", URL: "https://github.com/o/r/pull/45"}
+	spent := crew.Usage{Cost: crew.Some(12.4), Tokens: crew.Some(crew.Tokens{CacheRead: 17_200_000})}.Spend()
 	tests := []struct {
 		name  string
 		state crew.ActionState
@@ -155,7 +155,7 @@ func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
 		{"failed without a pull request",
 			crew.ActionFailed{
 				Cause: crew.CauseSession, Log: ".crew/logs/issue-9-lfg.log",
-				Usage: crew.Some(crew.ShownUsage{Spend: spent, PullRequest: crew.PullRequest{Lookup: crew.PullRequestNone}}),
+				Usage: crew.Some(crew.ShownUsage{Spend: spent, PullRequest: crew.PullRequestNone{}}),
 			},
 			"**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`. " +
 				"Usage: $12.40, 17.2M tokens. Pull request: none.\n"},

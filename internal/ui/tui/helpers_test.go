@@ -156,15 +156,15 @@ func checkFits(t *testing.T, h *harness, width, height int) string {
 
 // spent is one session that reported cost dollars and tokens tokens.
 func spent(cost float64, tokens int64) crew.Spend {
-	return crew.Usage{Cost: cost, HasCost: true, Tokens: crew.Tokens{Output: tokens}, HasTokens: true}.Spend()
+	return crew.Usage{Cost: crew.Some(cost), Tokens: crew.Some(crew.Tokens{Output: tokens})}.Spend()
 }
 
 // found is the pull request ref, as a lookup found it.
 func found(ref string) crew.PullRequest {
-	return crew.PullRequest{Lookup: crew.PullRequestFound, Ref: ref, URL: "https://github.com/o/r/pull/" + ref[1:]}
+	return crew.PullRequestFound{Ref: ref, URL: "https://github.com/o/r/pull/" + ref[1:]}
 }
 
-var noPullRequest = crew.PullRequest{Lookup: crew.PullRequestNone}
+var noPullRequest = crew.PullRequestNone{}
 
 // acted is e with its rule's actions.
 func acted(e core.HandledView, actions ...core.HandledAction) core.HandledView {

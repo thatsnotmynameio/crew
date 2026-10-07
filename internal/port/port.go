@@ -213,12 +213,12 @@ type StatusReporter interface {
 // writes nothing to pull requests, and crew works as it does without them.
 type PullRequestReporter interface {
 	// ReportPullRequests puts each open pull request that closes report's
-	// issue in report.State, as Move puts the issue, removing every other
+	// issue in report.State(), as Move puts the issue, removing every other
 	// crew state it carries without touching what is not crew's.
-	// When report.End is set, it also posts a new comment on each saying
+	// When the report has an end, it also posts a new comment on each saying
 	// that the rule ended and nobody watches the pull request any more. An
 	// issue without such a pull request gets nothing. A retry of the same
-	// report, by its ID, posts no comment twice. The engine never has two
+	// report, by its ID(), posts no comment twice. The engine never has two
 	// calls for one issue in flight. Its errors are classified as
 	// Tracker.Move's are.
 	ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error
