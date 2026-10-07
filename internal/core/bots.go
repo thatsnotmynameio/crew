@@ -246,10 +246,11 @@ func (m *Model) pairs(is func(bot crew.BotName) bool) []string {
 func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	var out []RunningAction
 	for _, h := range m.issues {
-		for _, a := range h.actions {
-			running := a.phase == PhaseRunning || a.phase == PhaseChecking || a.phase == PhaseFinishing
-			if running && m.bots.identity(a.bot) == identity {
-				out = append(out, RunningAction{IssueRef: h.issue.Ref(), Rule: m.rules[h.rule].Name, Action: a.name})
+		for _, a := range h.run.Actions() {
+			phase := phaseOf(a.State())
+			running := phase == PhaseRunning || phase == PhaseChecking || phase == PhaseFinishing
+			if running && m.bots.identity(m.action(h, a.Name()).Bot.Name) == identity {
+				out = append(out, RunningAction{IssueRef: h.run.Issue().Ref(), Rule: h.run.Rule(), Action: a.Name()})
 			}
 		}
 	}

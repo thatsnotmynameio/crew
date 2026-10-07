@@ -2,7 +2,6 @@ package core
 
 import (
 	"reflect"
-	"slices"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -168,65 +167,12 @@ func (s *step) retryStatuses() {
 	}
 }
 
-// running reports h's rule and its actions as they stand (R6, R7, R8).
-func (s *step) running(h *heldIssue) {
-	s.report(s.status(h, crew.StatusRunning{}))
-}
-
-// ended reports h's rule as ended, with each action's final state and its
-// move to the state to (R11).
-func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
-	s.report(s.status(h, crew.StatusEnded{To: to, Move: move}))
-}
-
-// status returns h's status with progress and its actions as they stand.
-func (s *step) status(h *heldIssue, progress crew.StatusProgress) crew.Status {
-	return crew.NewStatus(crew.StatusData{
-		IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
-		Progress: progress, Actions: s.actionStatuses(h), Updated: s.at, Run: h.run,
-	})
-}
-
-// actionStatuses returns h's actions as a status shows them: each one's
-// state and how its checks that ran so far ended. Only a check's reason goes
-// with them: a session's or a tool's own words never do (R12). An action
-// that resumed also names its workspace.
-func (s *step) actionStatuses(h *heldIssue) []crew.ActionStatus {
-	out := make([]crew.ActionStatus, 0, len(h.actions))
-	for _, a := range h.actions {
-		as := crew.ActionStatus{Name: a.name, State: s.actionState(a), Checks: slices.Clone(a.results)}
-		if a.resumed {
-			as.Workspace = a.workspace
-		}
-		out = append(out, as)
-	}
-	return out
-}
-
-// actionState returns how a stands. An action whose check runs is still
-// running, since its session started; its session's last words are no
-// longer current. A failed action carries its cause and log. With
-// ReportingUsage, an ended action whose session started also carries what
-// it spent and its pull request.
-func (s *step) actionState(a *actionRun) crew.ActionState {
-	switch a.phase {
-	case PhaseRunning:
-		return crew.ActionRunning{Started: a.started, Said: a.said}
-	case PhaseChecking:
-		return crew.ActionRunning{Started: a.started}
-	case PhaseEnded:
-		var usage crew.Optional[crew.ShownUsage]
-		if s.m.statusUsage && !a.started.IsZero() {
-			usage = crew.Some(crew.ShownUsage{Spend: a.spend(), PullRequest: a.pr})
-		}
-		if a.outcome.Succeeded {
-			return crew.ActionSucceeded{Usage: usage}
-		}
-		return crew.ActionFailed{Cause: a.cause, Log: a.log, Usage: usage}
-	case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing:
-		// No session runs: the action has no start time to report.
-	}
-	return crew.ActionPending{}
+// reportRun reports h's run as it stands, with what its sessions last
+// said: running while it runs its actions, and ended once it was judged,
+// with each action's final state and how its verdict move stands (R6, R7,
+// R8, R11, KTD-P10).
+func (s *step) reportRun(h *heldIssue) {
+	s.report(h.run.Status(s.at, h.sayings(), s.m.statusUsage))
 }
 
 // sameStatus reports whether a and b show the same, whenever computed (R5).

@@ -9,16 +9,6 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// stoppedReason is the reason of an action that never ran because crew
-// stopped first (R9).
-const stoppedReason = "crew stopped"
-
-// stopped is the outcome of an action crew stopped before it could end
-// on its own.
-func stopped() crew.Outcome {
-	return crew.Outcome{Reason: crew.NewSessionText(stoppedReason)}
-}
-
 // Update applies in to the model and returns the commands to run and the
 // domain events to publish, in order. It is deterministic: the same model
 // and input always give the same result. Inputs that answer nothing the
@@ -105,8 +95,8 @@ func (s *step) tick(said []Said) {
 		return
 	}
 	for _, x := range said {
-		if _, a := m.action(x.IssueID, x.Action, PhaseRunning); a != nil {
-			a.said = x.Text
+		if h := m.held(x.IssueID); h != nil {
+			h.said(x.Action, x.Text)
 		}
 	}
 	s.readBoard()
@@ -119,9 +109,9 @@ func (s *step) tick(said []Said) {
 		}
 	}
 	for _, h := range m.issues {
-		s.retryRun(h.issue.ID(), false)
-		if h.claim == ClaimRunning {
-			s.running(h)
+		s.retryRun(h.id(), false)
+		if h.claim() == ClaimRunning {
+			s.reportRun(h)
 		}
 	}
 	s.retryStatuses()
@@ -158,10 +148,10 @@ func (s *step) freed() {
 	}
 }
 
-// stop starts nothing new from now on, stops the running sessions and
-// checks, and gives each owed call, status and pull request report not in
-// flight its final try (R9). Issues whose actions have all ended are already
-// being judged, so their verdicts go on.
+// stop starts nothing new from now on, hands every held run the stop, which
+// stops its running sessions and checks, and gives each owed call, status
+// and pull request report not in flight its final try (R9). Runs whose
+// actions have all ended are already being judged, so their verdicts go on.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {
@@ -169,35 +159,11 @@ func (s *step) stop() {
 	}
 	m.stopping = true
 	for _, h := range m.issues {
-		switch h.claim {
-		case ClaimTaking:
-			h.claim = ClaimStopping
-		case ClaimRunning:
-			h.claim = ClaimStopping
-			s.stopActions(h)
-		case ClaimJudging, ClaimStopping, ClaimOwed:
-			// Judging goes on; only stop sets stopping, and it runs once;
-			// owed is never stored, the view derives it.
-		}
-		s.retryRun(h.issue.ID(), true)
+		s.decide(h, crew.StopReached{FactHead: s.head(h)})
+		s.retryRun(h.id(), true)
 	}
 	s.retryStatuses()
 	s.retryPullRequests()
-}
-
-// stopActions stops h's running sessions and checks.
-func (s *step) stopActions(h *heldIssue) {
-	for _, a := range h.actions {
-		switch a.phase {
-		case PhaseRunning:
-			s.command(StopSession{IssueID: h.issue.ID(), Action: a.name})
-		case PhaseChecking:
-			a.stopped = true
-			s.command(StopCheck{IssueID: h.issue.ID(), Action: a.name})
-		case PhaseWaiting, PhaseCreating, PhaseReopening, PhaseStarting, PhaseFinishing, PhaseEnded:
-			// No session or check runs: its next input sees the stop.
-		}
-	}
 }
 
 // timeUp ends the run time (R2): from now on nothing new is taken, while the
@@ -220,7 +186,7 @@ func (s *step) windDown() {
 		return
 	}
 	for _, h := range m.issues {
-		if !h.ended() {
+		if !h.run.ActionsEnded() {
 			return
 		}
 	}
@@ -323,139 +289,27 @@ func comparePriority(a, b int) int {
 	return cmp.Compare(a, b)
 }
 
-// take holds issue for rule si and moves it to the rule's running label.
+// take holds issue for rule si, as a new rule run that inherits today's
+// resume points (KTD-P4), and moves it to the rule's running label.
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
 	s.runs++
-	h := &heldIssue{
-		issue: issue, rule: si, run: crew.NewRuleRunID(s.seed, s.runs), claim: ClaimTaking, taken: s.at,
+	taken := crew.RunTaken{
+		Run: crew.NewRuleRunID(s.seed, s.runs), At: s.at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule.Name,
+		Issue: issue.Data(), From: rule.Labels.Ready, To: rule.Labels.Running,
 	}
 	for _, a := range rule.Actions {
-		h.actions = append(h.actions, &actionRun{
-			name: a.Name, checks: a.Checks, agent: a.Agent.Name, bot: a.Bot.Name,
+		taken.Actions = append(taken.Actions, crew.ActionTaken{
+			Name: a.Name, Resume: m.resumable(issue.ID(), rule.Name, a.Name),
 		})
 	}
+	// Applied to the zero run, a RunTaken event is never refused.
+	run, _ := crew.Apply(crew.RuleRun{}, taken)
+	h := &heldIssue{run: run, rule: si}
 	m.issues = append(m.issues, h)
 	s.emit(IssueTaken{At: s.at, Issue: issue, Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
 	s.deliver(h, &delivery{purpose: purposeTake, call: h.move(rule.Labels.Ready, rule.Labels.Running)})
-}
-
-// move returns the move of h's issue from one state to another, as a Call.
-func (h *heldIssue) move(from, to crew.State) Call {
-	return Call{Kind: CallMove, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), From: from, To: to}
-}
-
-// taken applies the take to the board (KTD4), reports it on h's pull
-// requests and starts h's actions once its take move is done, or, after a
-// stop, ends them unstarted so the issue moves to its rule's failure label
-// (R9). A rule without actions is judged at once, after a stop too, so the
-// issue moves on to its rule's success (R8, KTD5).
-func (s *step) taken(h *heldIssue, c Call) {
-	m := s.m
-	s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), From: c.From, To: c.To})
-	m.boardMoved(h.issue, c.To)
-	s.reportPullRequests(h, c.To, false)
-	switch {
-	case len(h.actions) == 0:
-		s.judge(h)
-	case m.stopping:
-		for _, a := range h.actions {
-			s.end(h, a, stopped(), crew.CauseStopped)
-		}
-	default:
-		s.start(h)
-	}
-}
-
-// start starts h's actions, each in a new workspace or in its failed run's
-// (R5), and reports h running unless every action already ended.
-func (s *step) start(h *heldIssue) {
-	m := s.m
-	h.claim = ClaimRunning
-	for _, a := range h.actions {
-		prompt, err := m.prompt(h, a).Render(h.issue)
-		if err != nil {
-			s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(err.Error())}, crew.CausePrompt)
-			continue
-		}
-		a.prompt = prompt
-		if prev, ok := m.resumable(h, a); ok {
-			a.prev = &prev
-			a.phase = PhaseReopening
-			s.command(ReopenWorkspace{IssueID: h.issue.ID(), Action: a.name, Workspace: prev.Workspace, Branch: prev.Branch})
-			continue
-		}
-		a.phase = PhaseCreating
-		s.command(CreateWorkspace{Issue: h.issue, Action: a.name})
-	}
-	if h.claim == ClaimRunning {
-		s.running(h)
-	}
-}
-
-// prompt returns the parsed prompt of a's definition in h's rule, found by
-// the action's name.
-func (m *Model) prompt(h *heldIssue, a *actionRun) crew.Prompt {
-	actions := m.rules[h.rule].Actions
-	i := slices.IndexFunc(actions, func(d crew.Action) bool { return d.Name == a.name })
-	return actions[i].Prompt
-}
-
-// judge moves h to its rule's success label when every action succeeded,
-// and otherwise to its failure label with a failure report (R7).
-func (s *step) judge(h *heldIssue) {
-	rule := s.m.rules[h.rule]
-	h.claim = ClaimJudging
-	report := crew.FailureReport{IssueID: h.issue.ID(), IssueRef: h.issue.Ref()}
-	for _, a := range h.actions {
-		if !a.outcome.Succeeded {
-			report.Failures = append(report.Failures, crew.ActionFailure{
-				Action: a.name, Workspace: a.workspace, Log: a.log,
-			})
-		}
-	}
-	h.verdict = &HandledView{
-		Issue: h.issue, Rule: rule.Name, To: rule.Labels.Success, Taken: h.taken, Ended: s.at,
-	}
-	for _, a := range h.actions {
-		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
-	}
-	if len(report.Failures) == 0 {
-		s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(rule.Labels.Running, rule.Labels.Success)})
-		s.ended(h, rule.Labels.Success, crew.MovePending)
-		return
-	}
-	h.verdict.To, h.verdict.Failures = rule.Labels.Failure, slices.Clone(report.Failures)
-	s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(rule.Labels.Running, rule.Labels.Failure)})
-	s.deliver(h, &delivery{
-		purpose: purposeReport, report: report,
-		call: Call{Kind: CallReport, IssueID: h.issue.ID(), IssueRef: h.issue.Ref()},
-	})
-	s.ended(h, rule.Labels.Failure, crew.MovePending)
-}
-
-// received applies to h the outcome of one of its deliveries: a
-// landed take starts its actions, a landed verdict move reports the move, a
-// landed failure report is reported, and a verdict move given up ends the
-// status with the move dropped. A take given up leaves nothing to do.
-func (s *step) received(h *heldIssue, o outcome) {
-	switch {
-	case o.purpose == purposeTake && o.landed:
-		s.taken(h, o.call)
-	case o.purpose == purposeVerdict && o.landed:
-		s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), From: o.call.From, To: o.call.To})
-		s.m.boardMoved(h.issue, o.call.To)
-		s.ended(h, o.call.To, crew.MoveDone)
-		s.reportPullRequests(h, o.call.To, true)
-		h.verdict.Move, h.landed = crew.MoveDone, s.m.listings
-	case o.purpose == purposeVerdict:
-		s.ended(h, o.call.To, crew.MoveDropped)
-		h.verdict.Move, h.verdict.DropReason = crew.MoveDropped, o.reason
-		h.landed = s.m.listings
-	case o.purpose == purposeReport && o.landed:
-		s.emit(FailureReported{At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref()})
-	}
 }
 
 // full reports whether every slot is busy, so a listing could take nothing:
@@ -494,57 +348,9 @@ func (m *Model) busy(q int) int {
 // held returns the held issue identified by id, or nil.
 func (m *Model) held(id crew.IssueID) *heldIssue {
 	for _, h := range m.issues {
-		if h.issue.ID() == id {
+		if h.id() == id {
 			return h
 		}
 	}
 	return nil
-}
-
-// action returns the named action of the held issue identified by id, when
-// it is in one of phases, or nils.
-func (m *Model) action(id crew.IssueID, name crew.ActionName, phases ...Phase) (*heldIssue, *actionRun) {
-	h := m.held(id)
-	if h == nil {
-		return nil, nil
-	}
-	for _, a := range h.actions {
-		if a.name == name && slices.Contains(phases, a.phase) {
-			return h, a
-		}
-	}
-	return nil, nil
-}
-
-// release forgets h, keeping its handled entry, which replaces the issue's
-// earlier one, when its rule ended. A rule without actions that ended well
-// keeps an earlier entry that ended well too, marked Gone: its move took the
-// issue out of the entry's To (#109, R10, KTD6).
-func (m *Model) release(h *heldIssue) {
-	m.issues = slices.DeleteFunc(m.issues, func(x *heldIssue) bool { return x == h })
-	if h.verdict == nil {
-		return
-	}
-	view := *h.verdict
-	i := slices.IndexFunc(m.handled, func(e handledEntry) bool { return e.view.Issue.ID() == h.issue.ID() })
-	if i >= 0 {
-		old := m.handled[i].view
-		if len(m.rules[h.rule].Actions) == 0 && !h.verdict.NeedsAttention() && !old.NeedsAttention() {
-			m.handled[i].view.Gone = true
-			return
-		}
-		view.Earlier = old.Spend().Add(old.Earlier)
-		m.handled = slices.Delete(m.handled, i, i+1)
-	}
-	m.handled = append(m.handled, handledEntry{view: view, landed: h.landed})
-}
-
-// ended reports whether every action of h has ended.
-func (h *heldIssue) ended() bool {
-	for _, a := range h.actions {
-		if a.phase != PhaseEnded {
-			return false
-		}
-	}
-	return true
 }

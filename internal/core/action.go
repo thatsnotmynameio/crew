@@ -2,211 +2,84 @@ package core
 
 import "github.com/thatsnotmynameio/crew/internal/crew"
 
-// actionInput applies an input about one action's workspace, session or
-// check.
+// actionInput hands an input about one action's workspace, session, check
+// or pull request to the rule run of its issue, as the fact it tells
+// (KTD-P4). An input for an issue the core does not hold changes nothing.
 func (s *step) actionInput(in Input) {
-	m := s.m
 	switch in := in.(type) {
 	case WorkspaceReady:
 		s.workspaceReady(in)
 	case WorkspaceFailed:
-		if h, a := m.action(in.IssueID, in.Action, PhaseCreating, PhaseReopening); a != nil {
-			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseWorkspace)
-		}
+		s.tell(in.IssueID, func(head crew.FactHead) crew.Fact {
+			return crew.WorkspaceFailed{FactHead: head, Action: in.Action, Reason: in.Reason}
+		})
 	case WorkspaceGone:
-		s.workspaceGone(in)
+		s.tell(in.IssueID, func(head crew.FactHead) crew.Fact {
+			return crew.WorkspaceGone{FactHead: head, Action: in.Action}
+		})
 	case SessionStarted:
-		s.sessionStarted(in)
+		s.tell(in.IssueID, func(head crew.FactHead) crew.Fact {
+			return crew.SessionStarted{FactHead: head, Action: in.Action}
+		})
 	case SessionFailedToStart:
-		if h, a := m.action(in.IssueID, in.Action, PhaseStarting); a != nil {
-			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseStart)
-		}
+		s.tell(in.IssueID, func(head crew.FactHead) crew.Fact {
+			return crew.SessionFailedToStart{FactHead: head, Action: in.Action, Reason: in.Reason}
+		})
 	case SessionEnded:
 		s.sessionEnded(in)
 	case CheckEnded:
-		s.checkEnded(in)
+		s.tell(in.IssueID, func(head crew.FactHead) crew.Fact {
+			return crew.CheckEnded{FactHead: head, Action: in.Action, Passed: in.Passed, Reason: in.Reason}
+		})
 	case PullRequestFound:
-		s.pullRequestFound(in)
+		s.tell(in.IssueID, func(head crew.FactHead) crew.Fact {
+			return crew.PullRequestLookedUp{FactHead: head, Action: in.Action, PullRequest: in.PullRequest}
+		})
 	}
 }
 
-// workspaceGone creates a fresh workspace for an action whose failed run's
-// workspace no longer exists (R4), or, after a stop, fails the action
-// without one: its end is written without a workspace and not remembered, so
-// the failed run stays resumable.
-func (s *step) workspaceGone(in WorkspaceGone) {
-	h, a := s.m.action(in.IssueID, in.Action, PhaseReopening)
-	if a == nil {
-		return
+// tell hands the run of the issue identified by id the fact that build
+// returns, when the core holds the issue.
+func (s *step) tell(id crew.IssueID, build func(crew.FactHead) crew.Fact) {
+	if h := s.m.held(id); h != nil {
+		s.decide(h, build(s.head(h)))
 	}
-	s.emit(WorkspaceMissing{
-		At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
-		Action: a.name, Workspace: a.prev.Workspace,
-	})
-	if s.m.stopping {
-		s.end(h, a, stopped(), crew.CauseStopped)
-		return
-	}
-	a.prev = nil
-	a.phase = PhaseCreating
-	s.command(CreateWorkspace{Issue: h.issue, Action: a.name})
 }
 
-// workspaceReady records the run's start and starts the action's session,
-// with the resume paragraph after its prompt when the workspace is a failed
-// run's (R5), or, after a stop, fails the action without starting it.
+// workspaceReady hands the run the ready workspace and, once the run took
+// it, keeps the workspace's directory and the log's path from it, which the
+// action's session and checks need (KTD-P5).
 func (s *step) workspaceReady(in WorkspaceReady) {
-	m := s.m
-	h, a := m.action(in.IssueID, in.Action, PhaseCreating, PhaseReopening)
-	if a == nil {
+	h := s.m.held(in.IssueID)
+	if h == nil {
 		return
 	}
-	a.workspace, a.dir, a.branch = in.Workspace, in.Dir, in.Branch
-	if !in.Resumed {
-		a.since = in.At
-	}
-	if !m.stopping {
-		// A session that never starts writes no log, so a stopped action
-		// names none.
-		a.log = in.Log
-	}
-	a.prev = nil
-	if prev, ok := m.lastRun(h, a); ok {
-		a.prev = &prev
-	}
-	s.record(h, a, RunStarted)
-	if m.stopping {
-		s.end(h, a, stopped(), crew.CauseStopped)
-		return
-	}
-	if in.Resumed && a.prev != nil {
-		a.resumed = true
-		a.prompt += "\n\n" + resumeParagraph(*a.prev, a.branch, a.log, in.LogFromDir)
-	}
-	a.phase = PhaseStarting
-	s.command(StartSession{
-		IssueID: h.issue.ID(), Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
-		Agent: a.agent, Bot: a.bot,
+	events, ok := s.decisions(h, crew.WorkspaceReady{
+		FactHead: s.head(h), Action: in.Action,
+		Workspace: crew.Workspace{Name: in.Workspace, Branch: in.Branch}, Log: in.Log, Resumed: in.Resumed,
 	})
+	if !ok {
+		return
+	}
+	p := h.plumb(in.Action)
+	p.dir, p.logFromDir = in.Dir, in.LogFromDir
+	s.apply(h, events)
 }
 
-// sessionStarted records the action's start time, and stops the session at
-// once when a stop arrived while it was starting.
-func (s *step) sessionStarted(in SessionStarted) {
-	h, a := s.m.action(in.IssueID, in.Action, PhaseStarting)
-	if a == nil {
-		return
-	}
-	a.phase = PhaseRunning
-	a.started = s.at
-	s.emit(ActionStarted{
-		At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
-		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log, Resumed: a.resumed,
-	})
-	if s.m.stopping {
-		s.command(StopSession{IssueID: h.issue.ID(), Action: a.name})
-	}
-}
-
-// sessionEnded ends the action whose session ended, or, when the session
-// succeeded and the action has checks, runs the first (R2, R3). After a
-// stop, no check is started and the action counts as stopped (R8). It
-// keeps what the session used and its last message, and looks up the pull
-// request the action opened, whatever its outcome (R5, KTD3).
+// sessionEnded hands the run the session's end and, once the run took it,
+// keeps the session's last message, which the action's checks read
+// (KTD-P5).
 func (s *step) sessionEnded(in SessionEnded) {
-	h, a := s.m.action(in.IssueID, in.Action, PhaseStarting, PhaseRunning)
-	if a == nil {
+	h := s.m.held(in.IssueID)
+	if h == nil {
 		return
 	}
-	a.usage, a.lastMessage = in.Usage, in.LastMessage
-	if s.m.finding {
-		a.finding = true
-		s.command(FindPullRequest{IssueID: h.issue.ID(), Action: a.name, Branch: a.branch, Since: a.since})
-	}
-	cause := crew.CauseSession
-	if s.m.stopping {
-		cause = crew.CauseStopped
-	}
-	switch {
-	case !in.Outcome.Succeeded || len(a.checks) == 0:
-		s.end(h, a, in.Outcome, cause)
-	case s.m.stopping:
-		s.end(h, a, stopped(), crew.CauseStopped)
-	default:
-		a.phase = PhaseChecking
-		s.runCheck(h, a)
-	}
-}
-
-// runCheck runs a's next check, checks[len(results)].
-func (s *step) runCheck(h *heldIssue, a *actionRun) {
-	c := a.checks[len(a.results)]
-	s.command(RunCheck{
-		IssueID: h.issue.ID(), Action: a.name, Dir: a.dir, Name: c.Name, Command: c.Script, Log: a.log,
-		IssueRef: h.issue.Ref(), IssueURL: h.issue.URL(), Branch: a.branch, Bot: a.bot,
-		Prompt: a.prompt, LastMessage: a.lastMessage,
+	events, ok := s.decisions(h, crew.SessionEnded{
+		FactHead: s.head(h), Action: in.Action, Outcome: in.Outcome, Usage: in.Usage,
 	})
-}
-
-// checkEnded keeps how the action's running check ended. A check that
-// passed starts the next, or ends the action as succeeded when it was the
-// last; one that did not pass ends it as failed (R4). Either way the
-// action's reason is the check's (KTD7). A stop ends it as stopped, whatever
-// the check returned (R8).
-func (s *step) checkEnded(in CheckEnded) {
-	h, a := s.m.action(in.IssueID, in.Action, PhaseChecking)
-	if a == nil {
+	if !ok {
 		return
 	}
-	a.results = append(a.results, crew.CheckResult{
-		Name: a.checks[len(a.results)].Name, Passed: in.Passed, Reason: in.Reason,
-	})
-	switch {
-	case a.stopped:
-		s.end(h, a, stopped(), crew.CauseStopped)
-	case !in.Passed || len(a.results) == len(a.checks):
-		outcome := crew.Outcome{Succeeded: in.Passed, Reason: crew.NewSessionText(in.Reason.String())}
-		s.end(h, a, outcome, crew.CauseCheck)
-	default:
-		s.runCheck(h, a)
-	}
-}
-
-// pullRequestFound keeps the pull request the lookup found, and ends the
-// action when its outcome was waiting for it (KTD3).
-func (s *step) pullRequestFound(in PullRequestFound) {
-	h, a := s.m.action(in.IssueID, in.Action, PhaseChecking, PhaseFinishing)
-	if a == nil || !a.finding {
-		return
-	}
-	a.finding, a.pr = false, in.PullRequest
-	if a.phase == PhaseFinishing {
-		s.end(h, a, a.outcome, a.cause)
-	}
-}
-
-// end ends action a of h with outcome, records the end of its run, and
-// judges h once every action ended. cause says what made it fail when the
-// outcome is a failure. While its pull request is being looked up, the
-// action waits in PhaseFinishing instead, and the lookup's result ends it.
-func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.FailureCause) {
-	a.outcome = outcome
-	if !outcome.Succeeded {
-		a.cause = cause
-	}
-	if a.finding {
-		a.phase = PhaseFinishing
-		return
-	}
-	a.phase = PhaseEnded
-	s.m.spent = s.m.spent.Add(a.spend())
-	s.m.bots.credit(s.m.bots.identity(a.bot), a.spend())
-	s.record(h, a, RunEnded)
-	s.emit(ActionEnded{
-		At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(), Rule: s.m.rules[h.rule].Name,
-		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
-	})
-	if h.ended() {
-		s.judge(h)
-	}
+	h.plumb(in.Action).lastMessage = in.LastMessage
+	s.apply(h, events)
 }

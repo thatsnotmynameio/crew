@@ -110,70 +110,84 @@ func (m *Model) remember(r RunRecord) {
 	m.lastRuns[keyOf(r)] = r
 }
 
-// lastRun returns the last run record of a, in h's rule, on h's issue
-// (R3).
-func (m *Model) lastRun(h *heldIssue, a *actionRun) (RunRecord, bool) {
-	r, ok := m.lastRuns[runKey{h.issue.ID(), m.rules[h.rule].Name, a.name}]
-	return r, ok
+// resumable returns where the action named action, in rule, on the issue
+// identified by id, resumes its failed last run, when the model can reopen
+// that run's workspace (R1, R2): a new rule run inherits it at take.
+func (m *Model) resumable(id crew.IssueID, rule crew.RuleName, action crew.ActionName) crew.Optional[crew.ResumePoint] {
+	r, ok := m.lastRuns[runKey{id, rule, action}]
+	if !m.reopening || !ok || !r.failed() {
+		return crew.Optional[crew.ResumePoint]{}
+	}
+	return crew.Some(crew.ResumePoint{
+		Workspace: crew.Workspace{Name: r.Workspace, Branch: r.Branch}, Log: r.Log, Reason: r.reason(),
+	})
 }
 
-// resumable returns the failed last run of a when the model can reopen its
-// workspace (R1, R2).
-func (m *Model) resumable(h *heldIssue, a *actionRun) (RunRecord, bool) {
-	if !m.reopening {
-		return RunRecord{}, false
-	}
-	r, ok := m.lastRun(h, a)
-	if !ok || !r.failed() {
-		return RunRecord{}, false
-	}
-	return r, true
-}
-
-// record remembers a's run event and asks the engine to write it, when the
-// model records runs. An ended run whose session never started keeps the
-// reason of the last session in its workspace, which says more than how
-// this run failed to start (KTD6). The end of a run without a workspace is
-// written but not remembered: it would replace the key's last record, and
-// stop a failed run from resuming.
-func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
+// recordOpened records the start of the action run e opened in its
+// workspace, keeping first its key's last record from before, when the
+// model records runs.
+func (s *step) recordOpened(h *heldIssue, e crew.ActionOpened) {
 	m := s.m
 	if m.lastRuns == nil {
 		return
 	}
+	p := h.plumb(e.Action)
+	p.prev = nil
+	if prev, ok := m.lastRuns[runKey{e.IssueID, e.Rule, e.Action}]; ok {
+		p.prev = &prev
+	}
+	s.record(RunRecord{
+		Event: RunStarted, At: e.At, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
+		Workspace: e.Workspace.Name, Branch: e.Workspace.Branch, Log: e.Log,
+	})
+}
+
+// recordEnded records the end of the action run e ended, when the model
+// records runs. An ended run whose session never started keeps the reason
+// of the last session in its workspace, which says more than how this run
+// failed to start (KTD6).
+func (s *step) recordEnded(h *heldIssue, e crew.ActionEnded) {
+	if s.m.lastRuns == nil {
+		return
+	}
+	outcome := e.End.Outcome()
 	r := RunRecord{
-		Event: event, At: s.at, IssueID: h.issue.ID(), IssueRef: h.issue.Ref(),
-		Rule: m.rules[h.rule].Name, Action: a.name,
-		Workspace: a.workspace, Branch: a.branch, Log: a.log,
+		Event: RunEnded, At: e.At, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
+		Succeeded: outcome.Succeeded, Reason: outcome.Reason, PullRequest: e.PullRequest,
 	}
-	if event == RunEnded {
-		r.Succeeded, r.Reason = a.outcome.Succeeded, a.outcome.Reason
-		if p := a.prev; a.started.IsZero() && p != nil && p.Workspace == a.workspace && p.failed() {
-			r.Reason = p.reason()
-		}
-		r.SessionStarted, r.PullRequest = a.started, a.pr
-		if !a.started.IsZero() {
-			r.Usage = a.usage
-		}
+	if w, ok := e.Workspace.Get(); ok {
+		r.Workspace, r.Branch, r.Log = w.Workspace.Name, w.Workspace.Branch, w.Log
 	}
+	if started, ok := e.SessionStarted.Get(); ok {
+		r.SessionStarted, r.Usage = started, e.Usage
+	} else if p := h.live[e.Action]; p != nil && p.prev != nil && p.prev.Workspace == r.Workspace && p.prev.failed() {
+		r.Reason = p.prev.reason()
+	}
+	s.record(r)
+}
+
+// record remembers r and asks the engine to write it. The end of a run
+// without a workspace is written but not remembered: it would replace the
+// key's last record, and stop a failed run from resuming.
+func (s *step) record(r RunRecord) {
 	if r.Workspace != "" {
-		m.remember(r)
+		s.m.remember(r)
 	}
 	s.command(RecordRun{Record: r})
 }
 
 // resumeParagraph is what crew appends to a resumed session's prompt (R5,
-// KTD7): that the session continues prev's failed run in this workspace,
-// why that run failed, and where its output is. log is the repository-
-// relative path of the log, and logFromDir the same path from the
-// workspace; branch is the workspace's branch.
-func resumeParagraph(prev RunRecord, branch, log, logFromDir string) string {
+// KTD7): that the session continues a failed run in this workspace, why
+// that run failed (reason), and where its output is. log is the
+// repository-relative path of the log, and logFromDir the same path from
+// the workspace; branch is the workspace's branch.
+func resumeParagraph(reason crew.SessionText, branch, log, logFromDir string) string {
 	var b strings.Builder
 	b.WriteString("crew: this session continues the work of an earlier session on this action, in this worktree")
 	if branch != "" {
 		fmt.Fprintf(&b, ", on branch `%s`", branch)
 	}
-	fmt.Fprintf(&b, ". That run failed: %q.", oneLine(prev.reason().String()))
+	fmt.Fprintf(&b, ". That run failed: %q.", oneLine(reason.String()))
 	fmt.Fprintf(&b, " Its output is in the log `%s` of the repository's main checkout", log)
 	if logFromDir != "" {
 		fmt.Fprintf(&b, " (`%s` from this worktree)", logFromDir)

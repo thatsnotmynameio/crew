@@ -69,18 +69,15 @@ type Model struct {
 	bots bots
 }
 
-// heldIssue is an issue the core holds, from its take until its verdict calls
-// are settled.
+// heldIssue is an issue the core holds, from its take until its rule run is
+// released: the run, which decides its own changes (KTD2), and what only
+// this crew process needs to drive it.
 type heldIssue struct {
-	issue   crew.Issue
-	rule    int            // index into Model.rules
-	run     crew.RuleRunID // minted at take, from the listing's seed (KTD5)
-	claim   Claim
-	actions []*actionRun // in the rule's action order
-	taken   time.Time    // when the rule took the issue
-	// verdict is the issue's handled entry, set once every action ended and
-	// completed by its verdict move's result; nil before.
-	verdict *HandledView
+	run  crew.RuleRun
+	rule int // index into Model.rules
+	// live holds, by action, the session plumbing of each action run that
+	// got some (KTD-P5).
+	live map[crew.ActionName]*plumbing
 	// landed is the listing generation when the verdict move landed or was
 	// given up (KTD4).
 	landed int
@@ -92,55 +89,6 @@ type heldIssue struct {
 type handledEntry struct {
 	view   HandledView
 	landed int
-}
-
-// actionRun is one action of a held issue.
-type actionRun struct {
-	name      crew.ActionName
-	prompt    string // its prompt rendered for the issue, once it starts
-	phase     Phase
-	workspace crew.WorkspaceName
-	dir       string
-	branch    string
-	log       string // set once a session is asked to start
-	started   time.Time
-	said      crew.Said // what its running session last said
-	outcome   crew.Outcome
-	checks    []crew.Check      // its checks, in the order they run
-	agent     crew.AgentName    // the agent whose harness runs its session
-	bot       crew.BotName      // the bot its session and check act as; empty for you
-	stopped   bool              // a StopCheck was sent for its check
-	cause     crew.FailureCause // what made it fail, once it ended failed
-	// prev is the key's run record from before this run, set when the run
-	// reopens a workspace or records its start; nil when there was none.
-	prev *RunRecord
-	// resumed is set once the action runs in a failed run's reopened
-	// workspace.
-	resumed bool
-	// since is when the action's new workspace was made; zero for a
-	// reopened one (KTD6).
-	since time.Time
-	// usage is what its session reported it used, once the session ended.
-	usage crew.Usage
-	// lastMessage is its session's last message, which its checks read.
-	lastMessage string
-	// results are how its checks that ended so far ended, in order; the
-	// running check is checks[len(results)].
-	results []crew.CheckResult
-	// finding is set while its pull request is being looked up; pr holds
-	// what the lookup found once it is done. An action whose outcome is
-	// known before the lookup is done waits in PhaseFinishing, holding its
-	// outcome and cause.
-	finding bool
-	pr      crew.PullRequest
-}
-
-// spend is what a's session used, or nothing when no session started.
-func (a *actionRun) spend() crew.Spend {
-	if a.started.IsZero() {
-		return crew.Spend{}
-	}
-	return a.usage.Spend()
 }
 
 // New returns a model for rules, whose rules are in config order and
@@ -228,7 +176,8 @@ func (m *Model) Stopped() bool {
 // unknownName is what String gives for a value outside its enumeration.
 const unknownName = "unknown"
 
-// Claim is a held issue's state inside the core.
+// Claim is a held issue's state inside the core, as the view derives it
+// from the issue's rule run and its run lane (KTD-P14).
 type Claim int
 
 // The claim states.
@@ -472,26 +421,22 @@ func (m *Model) View() View {
 	}
 	for _, h := range m.issues {
 		iv := IssueView{
-			Issue: h.issue, Rule: m.rules[h.rule].Name,
-			Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim,
+			Issue: h.run.Issue(), Rule: h.run.Rule(), Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim(),
 		}
-		if m.outbox.owing(h.issue.ID()) {
+		if m.outbox.owing(h.id()) {
 			iv.Claim = ClaimOwed
 		}
-		for _, a := range h.actions {
-			iv.Actions = append(iv.Actions, ActionView{
-				Name: a.name, Phase: a.phase, Workspace: a.workspace, Branch: a.branch,
-				Log: a.log, Started: a.started, Outcome: a.outcome, Resumed: a.resumed,
-			})
+		for _, a := range h.run.Actions() {
+			iv.Actions = append(iv.Actions, actionView(a))
 		}
 		v.Issues = append(v.Issues, iv)
-		v.Owed = append(v.Owed, m.outbox.owedRun(h.issue.ID())...)
+		v.Owed = append(v.Owed, m.outbox.owedRun(h.id())...)
 	}
 	v.Owed = append(v.Owed, m.outbox.owedPullRequests()...)
 	for _, e := range m.handled {
 		hv := e.view.clone()
 		if h := m.held(hv.Issue.ID()); h != nil {
-			hv.HeldBy = m.rules[h.rule].Name
+			hv.HeldBy = h.run.Rule()
 		}
 		v.Handled = append(v.Handled, hv)
 	}
