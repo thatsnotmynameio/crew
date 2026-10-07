@@ -110,10 +110,10 @@ func (m *Model) windsDown(h *heldRun) bool {
 		return false
 	}
 	i, asked := p.InFlight()
-	if asked && !runsItself(p.Steps[i].Kind) && m.outbox.owing(h.id()) {
+	if asked && p.Steps[i].Kind.Delivered() && m.outbox.owing(h.id()) {
 		return true
 	}
-	return !slices.ContainsFunc(p.Steps[i:], func(st crew.StepPlan) bool { return runsItself(st.Kind) })
+	return !slices.ContainsFunc(p.Steps[i:], func(st crew.StepPlan) bool { return !st.Kind.Delivered() })
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has

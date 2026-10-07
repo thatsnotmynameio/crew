@@ -69,7 +69,7 @@ func (e *Engine) callFunction(
 	if !ok {
 		return notStarted(fmt.Errorf("crew has no function for %s", c.Use))
 	}
-	log, err := e.openLog(scriptLog(issue, core.Script{Log: c.Log, Rule: c.Rule}))
+	log, err := e.openLog(scriptLog(issue, c.Log, c.Rule))
 	if err != nil {
 		return notStarted(err)
 	}

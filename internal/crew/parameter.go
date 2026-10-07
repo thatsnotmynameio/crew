@@ -67,3 +67,11 @@ func (s FunctionSpec) RenderTexts(issue Issue) (map[string]string, error) {
 	}
 	return out, nil
 }
+
+// SampleTexts returns each of s's text parameters rendered for the sample
+// issue every template is checked against when the config loads. It cannot
+// fail: ParseParameterTemplate rendered each one for that issue already.
+func (s FunctionSpec) SampleTexts() map[string]string {
+	out, _ := s.RenderTexts(sampleIssue())
+	return out
+}

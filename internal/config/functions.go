@@ -246,11 +246,8 @@ func functionUse(p preset, params []parameter, path string, line int, functions 
 		}
 	}
 	bindTexts := bindParameters(path, params)
-	// Every text parameter rendered for the sample issue when it was parsed,
-	// so this renders them all.
-	sample, _ := spec.RenderTexts(sampleIssue())
 	use := FunctionUse{
-		Use: spec.Use, Function: p.function, Section: bindTexts(sample), Bind: bindTexts,
+		Use: spec.Use, Function: p.function, Section: bindTexts(spec.SampleTexts()), Bind: bindTexts,
 		Refused: func(name, reason string) error {
 			for _, param := range params {
 				if param.key.Value == name {
@@ -279,15 +276,6 @@ func bindParameters(path string, params []parameter) func(texts map[string]strin
 		}
 		return bind(path, section)
 	}
-}
-
-// sampleIssue is the issue a use's text parameters are rendered for when
-// the config loads, as the domain renders prompts and parameters to check
-// them.
-func sampleIssue() crew.Issue {
-	return crew.NewIssue(crew.IssueData{
-		ID: crew.IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42",
-	})
 }
 
 // callee is what a name in a rule's actions or a route's steps calls: a

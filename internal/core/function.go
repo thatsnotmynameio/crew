@@ -130,9 +130,3 @@ func (h *heldRun) call(name crew.ActionName, spec crew.FunctionSpec, bot crew.Bo
 		IssueRef: issue.Ref(), IssueURL: issue.URL(), Branch: w.Workspace.Branch, Bot: bot.Name,
 	}
 }
-
-// runsItself reports whether a step of kind k is one crew runs itself, a
-// shell or a function step, rather than one the outbox delivers.
-func runsItself(k crew.StepKind) bool {
-	return k == crew.StepShell || k == crew.StepFunction
-}

@@ -87,11 +87,10 @@ func (m *Model) definition(h *heldRun) crew.RunDefinition {
 
 // runInput hands an input about a rule run's workspace, an action's
 // session, script or function, a route's shell or function step or the
-// lookup of its pull
-// requests to the held rule run it names, as the fact it tells (KTD-P4,
-// KTD7). An input naming a run the core does not hold, such as a late
-// answer for a released run, changes nothing, even while a newer run of
-// the same issue runs the same action.
+// lookup of its pull requests to the held rule run it names, as the fact
+// it tells (KTD-P4, KTD7). An input naming a run the core does not hold,
+// such as a late answer for a released run, changes nothing, even while a
+// newer run of the same issue runs the same action.
 func (s *step) runInput(in RunInput) {
 	h := s.m.findRun(in.ruleRun())
 	if h == nil {

@@ -38,9 +38,8 @@ func (s *step) findPullRequest(h *heldRun) {
 
 // askStep runs the step at index i of the route of h's run: a shell step's
 // script or a function step's function, acting as the run's bot, or a
-// tracker step, which the outbox
-// delivers in the run's lane (KTD9). A move and a close take the issue from
-// the rule's running label.
+// tracker step, which the outbox delivers in the run's lane (KTD9). A move
+// and a close take the issue from the rule's running label.
 func (s *step) askStep(h *heldRun, i int) {
 	p, _ := h.run.Phase().(crew.RoutingPhase)
 	rule := s.m.rules[h.rule]

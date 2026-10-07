@@ -113,8 +113,8 @@ func (r RuleRun) stepStatuses() []StepStatus {
 // actionStatuses returns the run's actions as a status shows them: each
 // one's state, and a shell action's line once its script ended, or a
 // function action's once its function ended. A session's or a tool's own
-// words never go with them. When the run
-// resumed, each action that ran in it names its workspace.
+// words never go with them. When the run resumed, each action that ran in
+// it names its workspace.
 func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []ActionStatus {
 	out := make([]ActionStatus, 0, len(r.actions))
 	w, _ := r.Workspace().Get()
@@ -145,9 +145,9 @@ func ran(state ActionState) bool {
 }
 
 // actionState returns how the action at index i stands in a status. A
-// session, a script or a function that runs is running. The action at the cursor that
-// has none running yet is pending, and those after it await their turn. A
-// failed action carries its cause and the run's log.
+// session, a script or a function that runs is running. The action at the
+// cursor that has none running yet is pending, and those after it await
+// their turn. A failed action carries its cause and the run's log.
 func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
 	a := r.actions[i]
 	switch s := a.state.(type) {

@@ -32,7 +32,7 @@ type StepFunctionEnded struct {
 
 // decide records how the tracker step settled and goes on with the route.
 func (f StepSettled) decide(d *decider) error {
-	if err := d.awaitsStep(f.Step, StepKind.delivered); err != nil {
+	if err := d.awaitsStep(f.Step, StepKind.Delivered); err != nil {
 		return err
 	}
 	switch f.Outcome.(type) {
@@ -82,10 +82,10 @@ func kindIs(want StepKind) func(StepKind) bool {
 	return func(k StepKind) bool { return k == want }
 }
 
-// delivered reports whether a step of kind k is a tracker step: one crew
+// Delivered reports whether a step of kind k is a tracker step: one crew
 // delivers through its tracker, rather than a shell or a function step it
 // runs itself.
-func (k StepKind) delivered() bool {
+func (k StepKind) Delivered() bool {
 	switch k {
 	case StepShell, StepFunction:
 		return false

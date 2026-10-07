@@ -74,7 +74,7 @@ func (e *Engine) runScript(
 	if e.cfg.Shell == nil {
 		return notStarted(errors.New("crew has no shell to run it"))
 	}
-	logRel := scriptLog(issue, s)
+	logRel := scriptLog(issue, s.Log, s.Rule)
 	prompt, last, err := e.session(logRel, s.Session)
 	if err != nil {
 		return notStarted(err)
@@ -114,14 +114,14 @@ func (e *Engine) runScript(
 	return notStarted(err)
 }
 
-// scriptLog returns the repository-relative path of the log s writes
-// into: its run's, or for a run without a workspace the log of the
-// workspace the run of s's rule on issue would have (KTD-S13).
-func scriptLog(issue crew.IssueID, s core.Script) string {
-	if s.Log != "" {
-		return s.Log
+// scriptLog returns the repository-relative path of the log a script or a
+// function writes into: log, its run's, or for a run without a workspace
+// the log of the workspace the run of rule on issue would have (KTD-S13).
+func scriptLog(issue crew.IssueID, log string, rule crew.RuleName) string {
+	if log != "" {
+		return log
 	}
-	return logPath(port.WorkspaceBase(issue, s.Rule))
+	return logPath(port.WorkspaceBase(issue, rule))
 }
 
 // scriptDir returns the directory a script runs in, dir, and what removes
