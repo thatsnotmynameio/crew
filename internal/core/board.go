@@ -198,7 +198,7 @@ func (b *board) view() []crew.BoardIssue {
 		if c := x.Issue.Created.Compare(y.Issue.Created); c != 0 {
 			return c
 		}
-		return compareIssueIDs(x.Issue.ID, y.Issue.ID)
+		return x.Issue.ID.Compare(y.Issue.ID)
 	})
 	return out
 }

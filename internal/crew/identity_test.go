@@ -1,6 +1,7 @@
 package crew
 
 import (
+	"cmp"
 	"fmt"
 	"testing"
 	"uuid"
@@ -65,5 +66,16 @@ func TestPullRequestReportIDs(t *testing.T) {
 	}
 	if other := NewRuleRunID(seed(2), 1).TakeReport(); other == take {
 		t.Fatalf("two runs' take reports share the id %q", take)
+	}
+}
+
+func TestIssueIDCompare(t *testing.T) {
+	ordered := []IssueID{{Repository: "R_a", Key: "10"}, {Repository: "R_a", Key: "9"}, {Repository: "R_b", Key: "1"}}
+	for i, a := range ordered {
+		for j, b := range ordered {
+			if got, want := a.Compare(b), cmp.Compare(i, j); got != want {
+				t.Fatalf("%#v.Compare(%#v) = %d, want %d", a, b, got, want)
+			}
+		}
 	}
 }

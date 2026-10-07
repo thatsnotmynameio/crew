@@ -36,8 +36,7 @@ type sessionKey struct {
 
 // compare orders session keys by repository, issue key and action.
 func (k sessionKey) compare(o sessionKey) int {
-	return cmp.Or(cmp.Compare(k.issue.Repository, o.issue.Repository), cmp.Compare(k.issue.Key, o.issue.Key),
-		cmp.Compare(k.action, o.action))
+	return cmp.Or(k.issue.Compare(o.issue), cmp.Compare(k.action, o.action))
 }
 
 // launch runs cmd in its own goroutine on the command context ctx (KTD7).

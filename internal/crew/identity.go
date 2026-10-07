@@ -1,6 +1,7 @@
 package crew
 
 import (
+	"cmp"
 	"strconv"
 	"uuid"
 )
@@ -50,6 +51,12 @@ type IssueID struct {
 // String returns the key, the issue's display form within its repository,
 // so "#%s" of an IssueID reads as "#42".
 func (id IssueID) String() string { return id.Key }
+
+// Compare orders issue ids by repository, then by key as text, as
+// cmp.Compare orders values: -1, 0 or +1.
+func (id IssueID) Compare(o IssueID) int {
+	return cmp.Or(cmp.Compare(id.Repository, o.Repository), cmp.Compare(id.Key, o.Key))
+}
 
 // RuleRunID identifies one rule run: no other rule run has it, in any
 // repository or crew process. It is opaque; compare it only as text.

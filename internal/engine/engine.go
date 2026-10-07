@@ -357,11 +357,10 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // workspace with crew.RuleStates, the states the rules name, asks the
 // tracker who the code owners are and which login it acts as, reads the
 // repository it works on, then reads the run journal and builds the core
-// from it, with the bots. It returns the first
-// error, naming its port, a harness's agent, or the journal, without running
-// what comes after it (R6). The core is then left unbuilt, which is safe
-// because Run returns the error before its loop, the only place that reads
-// it.
+// from it, with the bots. It returns the first error, naming its port, a
+// harness's agent, or the journal, without running what comes after it (R6).
+// The core is then left unbuilt, which is safe because Run returns the error
+// before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
 	states := crew.RuleStates(e.cfg.Rules)
 	if a, ok := e.cfg.Tracker.(port.Acting); ok && e.cfg.ActAs {
