@@ -18,19 +18,26 @@ func botRules() []crew.Rule {
 	return []crew.Rule{
 		{
 			Name: "triage", Labels: crew.Labels{Ready: needsTriage, Running: triaging, Success: ready, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "triage", Prompt: parsedPrompt("triage", "Triage {{.Issue.Ref}}"), Bot: "clerk"}},
+			Actions: []crew.Action{
+				{Name: "triage", Prompt: parsedPrompt("triage", "Triage {{.Issue.Ref}}"), Bot: crew.Bot{Name: "clerk"}},
+			},
 		},
 		{
 			Name:   "implement",
 			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
 			Actions: []crew.Action{
-				{Name: "development", Prompt: parsedPrompt("development", "Develop {{.Issue.Ref}}"), Bot: "developer"},
+				{
+					Name: "development", Prompt: parsedPrompt("development", "Develop {{.Issue.Ref}}"),
+					Bot: crew.Bot{Name: "developer"},
+				},
 			},
 		},
 		{
-			Name:    "review",
-			Labels:  crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
-			Actions: []crew.Action{{Name: "review", Prompt: parsedPrompt("review", "Review {{.Issue.Ref}}"), Bot: "reviewer"}},
+			Name:   "review",
+			Labels: crew.Labels{Ready: readyToReview, Running: inReview, Success: readyToMerge, Failure: needsAttention},
+			Actions: []crew.Action{
+				{Name: "review", Prompt: parsedPrompt("review", "Review {{.Issue.Ref}}"), Bot: crew.Bot{Name: "reviewer"}},
+			},
 		},
 	}
 }
@@ -293,8 +300,8 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 
 func TestTheEntriesSpendSumsToTheViewsSpent(t *testing.T) {
 	rules := draft()
-	rules[0].Actions[1].Bot = "developer"
-	rules[1].Actions[0].Bot = "reviewer"
+	rules[0].Actions[1].Bot = crew.Bot{Name: "developer"}
+	rules[1].Actions[0].Bot = crew.Bot{Name: "reviewer"}
 	d := botsDriver(t, rules, core.BotsConfig{
 		Names: []crew.BotName{"developer", "reviewer"}, Unable: map[crew.BotName]string{"reviewer": "bad key file"},
 	})

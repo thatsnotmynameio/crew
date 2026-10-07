@@ -233,7 +233,7 @@ func (m *Model) pairs(is func(bot crew.BotName) bool) []string {
 	var out []string
 	for _, rule := range m.rules {
 		for _, a := range rule.Actions {
-			if is(a.Bot) {
+			if is(a.Bot.Name) {
 				out = append(out, string(rule.Name)+"/"+string(a.Name))
 			}
 		}

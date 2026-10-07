@@ -47,11 +47,11 @@ type Config struct {
 	// Bot is tracker.bot: the bot crew's own writes on the tracker act as,
 	// and the bot of every agent that names none. Empty, the default, means
 	// the gh login crew runs as. Its spelling is not checked here.
-	Bot crew.BotName
+	Bot crew.Bot
 	// Bots is every bot crew makes act, each once: Bot first, then the
 	// bots of the agents some action names, in rule order. It is empty when
 	// no bot is named.
-	Bots []crew.BotName
+	Bots []crew.Bot
 	// Agents are the agents in file order, including those no action names
 	// (see Agent.Used).
 	Agents []Agent
@@ -190,14 +190,14 @@ func engineSettings(doc *document, cfg *Config) []error {
 
 // namedBots lists the bot def, tracker.bot, when set, and then each
 // action's bot in rule order, each once.
-func namedBots(def crew.BotName, rules []crew.Rule) []crew.BotName {
-	var out []crew.BotName
-	if def != "" {
+func namedBots(def crew.Bot, rules []crew.Rule) []crew.Bot {
+	var out []crew.Bot
+	if def != (crew.Bot{}) {
 		out = append(out, def)
 	}
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			if a.Bot != "" && !slices.Contains(out, a.Bot) {
+			if a.Bot != (crew.Bot{}) && !slices.Contains(out, a.Bot) {
 				out = append(out, a.Bot)
 			}
 		}
@@ -232,7 +232,7 @@ func trackerSection(n *yaml.Node, cfg *Config) (Decode, error) {
 	if err := decodeFields(own, reflect.ValueOf(&engine).Elem()); err != nil {
 		return nil, err
 	}
-	cfg.Tracker, cfg.Bot = engine.Name, crew.BotName(engine.Bot)
+	cfg.Tracker, cfg.Bot = engine.Name, crew.Bot{Name: crew.BotName(engine.Bot)}
 	return bind("tracker", rest), nil
 }
 

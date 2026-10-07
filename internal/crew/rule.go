@@ -62,15 +62,15 @@ type Action struct {
 	// Prompt is the action's prompt, parsed when the config loaded.
 	Prompt Prompt
 	// Agent is the agent whose harness runs the action's session.
-	Agent AgentName
+	Agent Agent
 	// Checks run in the action's workspace once its session succeeded, one
 	// after another in this order, until one does not pass; empty when the
 	// action has none. A check that does not pass fails the action.
 	Checks []Check
-	// Bot is the bot that acts for the action's session and
-	// check on the tracker: its agent's, or the tracker's when the agent
-	// names none. Empty means you.
-	Bot BotName
+	// Bot is the bot that acts for the action's session and check on the
+	// tracker: its agent's, or the tracker's when the agent names none. The
+	// zero Bot is you.
+	Bot Bot
 }
 
 // Check is one of an action's checks.

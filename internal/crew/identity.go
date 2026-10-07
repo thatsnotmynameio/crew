@@ -21,6 +21,9 @@ type AgentName string
 // BotName names one of crew's bots, as the config names it.
 type BotName string
 
+// HarnessName names a harness adapter, such as "claude".
+type HarnessName string
+
 // QueueName names a queue: DefaultQueue or a queue the config declares.
 type QueueName string
 

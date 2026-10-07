@@ -346,7 +346,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	}
 	for _, a := range rule.Actions {
 		h.actions = append(h.actions, &actionRun{
-			name: a.Name, checks: a.Checks, agent: a.Agent, bot: a.Bot,
+			name: a.Name, checks: a.Checks, agent: a.Agent.Name, bot: a.Bot.Name,
 		})
 	}
 	m.issues = append(m.issues, h)

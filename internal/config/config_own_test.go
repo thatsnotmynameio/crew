@@ -59,7 +59,7 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
 	wantBots := []crew.BotName{"clerk", "product-manager", "developer"}
-	if cfg.Bot != "clerk" || !reflect.DeepEqual(cfg.Bots, wantBots) {
+	if cfg.Bot.Name != "clerk" || !reflect.DeepEqual(botNames(cfg.Bots), wantBots) {
 		t.Errorf("Bot = %q, Bots = %q; want clerk, %q", cfg.Bot, cfg.Bots, wantBots)
 	}
 	columns := make([]string, 0, len(cfg.Board))
@@ -226,7 +226,7 @@ func ownRules(rules []crew.Rule) []ownRule {
 		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
 		for _, a := range r.Actions {
 			out[i].actions = append(out[i].actions,
-				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent, a.Bot, checkNames(a.Checks)))
+				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent.Name, a.Bot.Name, checkNames(a.Checks)))
 		}
 	}
 	return out

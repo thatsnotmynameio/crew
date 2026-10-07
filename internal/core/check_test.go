@@ -105,8 +105,8 @@ func endOf(t *testing.T, events []core.Event, action crew.ActionName) crew.Outco
 // Each action's session and check act as the action's own bot (KTD9).
 func TestSessionAndCheckCarryTheActionsBot(t *testing.T) {
 	w := checked()
-	w[0].Actions[0].Bot = "ops"
-	w[0].Actions[1].Bot = "developer"
+	w[0].Actions[0].Bot = crew.Bot{Name: "ops"}
+	w[0].Actions[1].Bot = crew.Bot{Name: "developer"}
 	d := newDriver(t, w, 2)
 	cmds, _ := d.poll(issue("74", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})

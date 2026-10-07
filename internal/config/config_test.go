@@ -88,6 +88,7 @@ const ruleOnly = `rules:
 // draftRules are the rules testdata/draft's config loads into.
 func draftRules(t *testing.T) []crew.Rule {
 	t.Helper()
+	claude := crew.Agent{Name: "claude", Harness: "claude"}
 	queue := crew.Queue{Name: "default", Slots: 2}
 	return []crew.Rule{
 		{
@@ -97,11 +98,11 @@ func draftRules(t *testing.T) []crew.Rule {
 			},
 			Actions: []crew.Action{
 				{
-					Name: "acceptance", Agent: "claude",
+					Name: "acceptance", Agent: claude,
 					Prompt: parsedPrompt(t, "acceptance", "Implement test acceptance for issue {{.Issue.Ref}}"),
 				},
 				{
-					Name: "development", Agent: "claude",
+					Name: "development", Agent: claude,
 					Prompt: parsedPrompt(t, "development", "Implement development for issue {{.Issue.Ref}}"),
 				},
 			},
@@ -113,7 +114,7 @@ func draftRules(t *testing.T) []crew.Rule {
 			},
 			Actions: []crew.Action{
 				{
-					Name: "custom_review", Agent: "claude",
+					Name: "custom_review", Agent: claude,
 					Prompt: parsedPrompt(t, "custom_review", "Review implementation for issue {{.Issue.Ref}}"),
 				},
 			},
@@ -166,8 +167,8 @@ rules:
         prompt: "/lfg {{.Issue.Ref}}"
 `)
 	rule := cfg.Rules[0]
-	if got := rule.Actions[0].Agent; got != "developer" {
-		t.Errorf("the action's agent = %q, want developer", got)
+	if got, want := rule.Actions[0].Agent, (crew.Agent{Name: "developer", Harness: "claude"}); got != want {
+		t.Errorf("the action's agent = %+v, want %+v", got, want)
 	}
 	if want := (crew.Queue{Name: "default", Slots: 2}); rule.Queue != want {
 		t.Errorf("Queue = %+v, want %+v", rule.Queue, want)
@@ -176,7 +177,7 @@ rules:
 	if !reflect.DeepEqual(cfg.Board, wantBoard) || cfg.BoardWritten {
 		t.Errorf("Board = %+v (written %v), want %+v, not written", cfg.Board, cfg.BoardWritten, wantBoard)
 	}
-	if cfg.Bot != "" || cfg.Bots != nil {
+	if cfg.Bot != (crew.Bot{}) || cfg.Bots != nil {
 		t.Errorf("Bot = %q, Bots = %q, want none", cfg.Bot, cfg.Bots)
 	}
 }

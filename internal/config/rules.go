@@ -1,7 +1,6 @@
 package config
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,7 +57,7 @@ type ruleEnv struct {
 	queues queueTable
 	agents []Agent
 	checks map[crew.CheckName]string
-	bot    crew.BotName
+	bot    crew.Bot
 }
 
 // rules decodes and validates rules:, resolving each rule's queue and each
@@ -202,9 +201,11 @@ func parseAction(e entry, env ruleEnv) (crew.Action, error) {
 	if err := retiredVariables(text, e.path+".prompt", doc.Prompt.line); err != nil {
 		return crew.Action{}, err
 	}
-	return crew.Action{
-		Name: name, Prompt: prompt, Agent: agent.Name, Checks: checks, Bot: cmp.Or(agent.Bot, env.bot),
-	}, nil
+	bot := env.bot
+	if agent.Bot != "" {
+		bot = crew.Bot{Name: agent.Bot}
+	}
+	return crew.Action{Name: name, Prompt: prompt, Agent: agent.Agent, Checks: checks, Bot: bot}, nil
 }
 
 // agent returns the agent an action names in l, at path, whose key is on

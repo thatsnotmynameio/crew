@@ -224,7 +224,7 @@ func build(o Options) (built, error) {
 	errs := []error{err}
 	var harnesses []engine.AgentHarness
 	for _, a := range cfg.Agents {
-		harness, err := o.Registry.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+		harness, err := o.Registry.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
 		errs = append(errs, err)
 		if err == nil && a.Used {
 			harnesses = append(harnesses, engine.AgentHarness{Agent: a.Name, Harness: harness})
@@ -248,11 +248,21 @@ func (b built) bots(ctx context.Context, o Options) (Bots, error) {
 	if o.Bots == nil {
 		return Bots{}, errors.New("the config names bots, and crew cannot make them act here")
 	}
-	m, err := o.Bots(ctx, b.cfg.Bot, b.cfg.Bots)
+	m, err := o.Bots(ctx, b.cfg.Bot.Name, b.botNames())
 	if err != nil {
 		return Bots{}, fmt.Errorf("make the bots act: %w", err)
 	}
 	return m, nil
+}
+
+// botNames returns the names of the bots the config names, in its order:
+// the engine and Options.Bots refer to bots by name.
+func (b built) botNames() []crew.BotName {
+	names := make([]crew.BotName, 0, len(b.cfg.Bots))
+	for _, bot := range b.cfg.Bots {
+		names = append(names, bot.Name)
+	}
+	return names
 }
 
 // engine builds the engine of the config and its adapters, whose actions
@@ -274,8 +284,8 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Writer:            bots.Writer,
 		Identities:        bots.Identities,
 		BotLogins:         bots.Logins,
-		DefaultBot:        b.cfg.Bot,
-		Bots:              b.cfg.Bots,
+		DefaultBot:        b.cfg.Bot.Name,
+		Bots:              b.botNames(),
 		Unable:            bots.Unable,
 		BotFailures:       bots.Failing,
 		Board:             b.cfg.Board,

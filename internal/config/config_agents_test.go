@@ -21,8 +21,8 @@ const twoAgents = `agents:
 // declared.
 func TestAE3AnActionWithoutAgentRunsOnTheOnlyAgent(t *testing.T) {
 	cfg := load(t, oneAgent+ruleOnly)
-	if got := cfg.Rules[0].Actions[0].Agent; got != "claude" {
-		t.Errorf("the action's agent = %q, want claude", got)
+	if got, want := cfg.Rules[0].Actions[0].Agent, (crew.Agent{Name: "claude", Harness: "claude"}); got != want {
+		t.Errorf("the action's agent = %+v, want %+v", got, want)
 	}
 	loadErr(t, twoAgents+ruleOnly,
 		"rules.implement.actions.development.agent", "line 14", "required", "more than one agent: claude, codex")
@@ -32,8 +32,8 @@ func TestLoadGivesEveryActionItsAgent(t *testing.T) {
 	body := twoAgents + strings.Replace(ruleOnly,
 		"        prompt:", "        agent: codex\n        prompt:", 1)
 	cfg := load(t, body)
-	if got := cfg.Rules[0].Actions[0].Agent; got != "codex" {
-		t.Errorf("the action's agent = %q, want codex", got)
+	if got, want := cfg.Rules[0].Actions[0].Agent, (crew.Agent{Name: "codex", Harness: "codex"}); got != want {
+		t.Errorf("the action's agent = %+v, want %+v", got, want)
 	}
 	used := map[crew.AgentName]bool{}
 	for _, a := range cfg.Agents {
@@ -96,7 +96,7 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 	}{
 		{
 			name: "no bot anywhere", body: botAgents("", "", "", "idler"),
-			wantBot: "", wantBots: nil, want: []crew.BotName{"", "", ""},
+			wantBot: "", wantBots: []crew.BotName{}, want: []crew.BotName{"", "", ""},
 		},
 		{
 			name: "only tracker.bot", body: botAgents("clerk", "", "", "idler"),
@@ -126,13 +126,27 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 			if got := actionBots(cfg.Rules); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("action bots = %q, want %q", got, tt.want)
 			}
-			if cfg.Bot != tt.wantBot || !reflect.DeepEqual(cfg.Bots, tt.wantBots) {
+			if cfg.Bot.Name != tt.wantBot || !reflect.DeepEqual(botNames(cfg.Bots), tt.wantBots) {
 				t.Errorf("Bot = %q, Bots = %q; want %q, %q", cfg.Bot, cfg.Bots, tt.wantBot, tt.wantBots)
 			}
+			actsAsItsAgentsBot(t, cfg.Rules)
 			if idle := cfg.Agents[2]; idle.Used {
 				t.Errorf("agent idle is in use, want it unused: %+v", idle)
 			}
 		})
+	}
+}
+
+// actsAsItsAgentsBot fails t for each action of rules whose agent names a
+// bot the action does not act as.
+func actsAsItsAgentsBot(t *testing.T, rules []crew.Rule) {
+	t.Helper()
+	for _, r := range rules {
+		for _, a := range r.Actions {
+			if a.Agent.Bot != "" && a.Bot.Name != a.Agent.Bot {
+				t.Errorf("action %s acts as %q, want its agent's bot %q", a.Name, a.Bot.Name, a.Agent.Bot)
+			}
+		}
 	}
 }
 
@@ -141,8 +155,17 @@ func actionBots(rules []crew.Rule) []crew.BotName {
 	var out []crew.BotName
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			out = append(out, a.Bot)
+			out = append(out, a.Bot.Name)
 		}
+	}
+	return out
+}
+
+// botNames returns the names of bots, in order.
+func botNames(bots []crew.Bot) []crew.BotName {
+	out := make([]crew.BotName, 0, len(bots))
+	for _, b := range bots {
+		out = append(out, b.Name)
 	}
 	return out
 }

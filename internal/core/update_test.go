@@ -82,7 +82,7 @@ func session(key string, action crew.ActionName, prompt string) core.StartSessio
 // Each action's session starts on its agent's harness (R13).
 func TestEverySessionStartsOnItsActionsAgent(t *testing.T) {
 	rules := draft()
-	rules[0].Actions[0].Agent, rules[0].Actions[1].Agent = "tester", "developer"
+	rules[0].Actions[0].Agent, rules[0].Actions[1].Agent = crew.Agent{Name: "tester"}, crew.Agent{Name: "developer"}
 	d := newDriver(t, rules, 2)
 	d.send(core.Tick{})
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
