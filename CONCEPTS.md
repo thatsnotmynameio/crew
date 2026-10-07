@@ -12,21 +12,21 @@ crew takes the issues a code owner or a configured bot opened. A code owner is n
 
 ### Rule
 
-What crew does with the items that carry one label: it takes the items of its kind that carry its ready label, issues by default or pull requests when it declares them, moves each to its running label, runs its actions on each, and moves each to its success label when every action succeeded, or to its failure label when any failed.
+What crew does with the items that carry one label: it takes the items of its kind that carry its ready label, issues by default or pull requests when it declares them, moves each to its running label, runs its actions on each one after another, and ends each rule run through one of its routes: `passed` after its last action, or the route an action's verdict leads to.
 
-Rules form no sequence: each reacts to its ready label alone, and the order of work comes only from how their labels chain, one rule's success label being another's ready label. Among items of equal priority, the rule later in the file takes first.
+Rules form no sequence with each other: each reacts to its ready label alone, and the order of work comes only from how their labels chain, a label one rule's route moves to being another's ready label. Among items of equal priority, the rule later in the file takes first.
 
 ### Rule without actions
 
-A rule that only moves the label: crew takes the item, moves it to the rule's running label and at once on to its success label, without a workspace or a session.
+A rule that only moves the label: crew takes the item, moves it to the rule's running label and at once runs its `passed` route, its only route, without a workspace or a session.
 
-It holds a slot of its queue for those two moves, never fails, sends no notification unless told to, has no column on the default board, and leaves an earlier handled entry that ended well in place.
+It holds a slot of its queue while its route runs, ends through `passed` even while crew stops, sends no notification unless told to, has no column on the default board, and leaves an earlier handled entry that ended through `passed` in place.
 
 ### Action
 
-One unattended coding-agent session a rule runs on an item, in its own workspace, on its agent's harness, together with the action's optional check.
+One step of a rule's sequence: a session, an unattended coding-agent session written in the rule with its prompt and run on its agent's harness, or a shell action, which the config defines once by name. A session is named after its agent unless the rule names it, and no two actions of a rule share a name.
 
-A rule's actions run in parallel, and the rule is judged only once every one of them has ended.
+A rule's actions run one at a time, in the listed order, in the rule run's one workspace. Each ends with a verdict, which its `on:` sends to the next action or to one of the rule's routes.
 
 ### Agent
 
@@ -36,31 +36,47 @@ Actions on different agents can run at once on different harnesses. An agent no 
 
 ### Harness
 
-The coding-agent program a session runs on, such as Claude Code or Codex, which crew starts headless in the action's workspace.
+The coding-agent program a session runs on, such as Claude Code or Codex, which crew starts headless in the rule run's workspace.
 
 A session's identity reaches the harness through its environment only, never its command line, which any process on the machine can read. The harness must pass that identity on to every command the session runs, so that the session never acts as you when its agent has a bot.
 
+### Shell action
+
+A named shell script the config defines once, under its top-level `actions`, and that a rule runs as an action of its sequence or as a step of a route, in the rule run's workspace. As an action, its exit status gives its verdict: 0 is `passed` and any other status `failed`, unless its definition's `verdicts` maps the status to another verdict.
+
+It reads the issue from environment variables, and the run's latest session's name, prompt and last message from a variable and the files it names, so it can judge that session. It acts as that session's bot. As a route's step it has no verdict: one that does not exit 0 is recorded as failed, and the route goes on.
+
 ### Check
 
-A named shell script that an action points to, run in the action's workspace after its session succeeded, whose exit status decides whether the action succeeded. An action points to one check or a list of checks, which run one after another in the listed order.
+The former name of a shell action that judged a session, run after it; see Shell action. The config no longer has checks.
 
-A check runs only after a successful session, never after a failed one. It reads the issue from environment variables, and the prompt the session started with and the session's last message from files they name. A check that fails, cannot start, runs out of time or is ended by a stop fails its action, the checks after it do not run, and the action then takes the same path as any failed action. While its checks run, the action still counts as running.
+### Verdict
+
+An action's result: `passed`, `failed`, or another name the action's `on:` maps. A session gives `passed` or `failed` by how it ended, or the verdict it wrote to the file crew gave it; a shell action gives one by its exit status. A stop, an action that cannot start, and a verdict the action's `on:` does not name give `failed`.
+
+The action's `on:` maps each verdict to `next`, the next action, or to a route. Without an entry, `passed` goes to `next` and every other verdict to `failed`.
+
+### Route
+
+A named way to end a rule run: steps that run in order and end by moving the item to a label or closing the issue. A step is a move, a close, a comment from a template that names only what crew knows of the run, the failure report, or a shell action.
+
+A rule with actions declares `passed`, which its run takes after its last action, and `failed`; a rule without actions declares `passed` alone. A step that fails is recorded and the route goes on, so its final move or close still happens. A route is finished once its final move or close landed, or was dropped because the item moved meanwhile.
 
 ### Rule run
 
-One pass of an issue through one rule, from the moment crew takes the issue for that rule until the next rule run of that issue starts.
+One pass of an issue through one rule, from the moment crew takes the issue for that rule until the next rule run of that issue starts. It runs the rule's actions in one workspace and ends through one route.
 
-An issue that the same rule takes again starts a new rule run, with its own id, which continues that issue and rule's last rule run: crew rebuilds that run from the run journal, even when an earlier crew process left it. A rule run never goes on in another crew process: one cut short by a crash stays as the journal left it, and the next one can resume its failed actions.
+An issue that the same rule takes again starts a new rule run, with its own id, which continues that issue and rule's last rule run: crew rebuilds that run from the run journal, even when an earlier crew process left it, and decides from it where the new run starts. A rule run never goes on in another crew process: one cut short by a crash stays as the journal left it, and the next one resumes it.
 
 Each rule run has an id that no other rule run has, in any repository or crew process. The status comment entry a rule run opens carries that id.
 
 ### Action run
 
-One attempt at an action on an issue, within a rule run, from the moment its workspace is ready until the action ends, its check included. An action run succeeds or fails; one that never recorded its end, because crew crashed or was killed, counts as failed.
+One attempt at an action on an issue, within a rule run, from the moment it starts until it ends with a verdict. One that never recorded its end, because crew crashed or was killed, counts as failed, and the next rule run starts at it. An action a rule run did not reach is not run; one before the action a resumed run started at is done in an earlier run.
 
 ### Workspace
 
-The isolated checkout an action works in: a git worktree on its own branch, kept after the action run ends. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
+The isolated checkout a rule run works in: a git worktree on its own branch, `issue-<key>-<rule>`, shared by every action of the run and its route's shell steps, and kept after the run ends. Only a rule with actions gets one. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
 
 ### Priority
 
@@ -78,31 +94,31 @@ A queue never lends an idle slot to another queue, so a slot is guaranteed to a 
 
 The live view's columns of labels, each holding a card for each item that carries one of its labels, held by crew or idle.
 
-The config may write the columns, any labels, crew's or not, which show issues only. Without that, the board has one column per rule that has actions, with the rule's ready and running labels and its kind. An item sits in every column whose labels it carries and nowhere else; no card waits for the next rule. Within a column, the cards of the items crew holds, whatever their claim, come first, then the idle ones, each in the board's order, oldest first.
+The config may write the columns, any labels, crew's or not, which show issues only. Without that, the board has one column per rule that has actions, with the rule's ready and running labels and its kind, and a column of its own for each label where the route of a `waiting` verdict leaves the item, so an item paused there stays on screen. An item sits in every column whose labels it carries and nowhere else; no card waits for the next rule. Within a column, the cards of the items crew holds, whatever their claim, come first, then the idle ones, each in the board's order, oldest first.
 
 After its columns, the board shows a Not on board column, only while it holds a card, for each held item with actions that no column shows. An issue whose rule ended has only the cards its labels give it.
 
 ### Handled entry
 
-The live view's record of how an issue's latest rule run in this crew process ended: the rule, where it moved the issue, what its sessions cost, and why it failed when it did. It feeds the desktop notifications and the count of issues needing you; the board draws no card for it. An issue has at most one: a later rule's entry replaces it and keeps what the earlier rules' sessions cost.
+The live view's record of how an issue's latest rule run in this crew process ended: the rule, the route it ended through and where that moved the issue, what its sessions cost, and, when the route was not `passed`, the action that ended the run with its verdict. It feeds the desktop notifications and the count of issues needing you; the board draws no card for it. An issue has at most one: a later rule's entry replaces it and keeps what the earlier rules' sessions cost.
 
-A later rule run that ends replaces the entry, except that a rule without actions ending well leaves an entry that ended well in place; without one, it leaves its own. While a rule holds the issue again, the entry stays and names that rule, and a failure in it no longer counts as needing you.
+An entry needs you when its run ended through any route other than `passed`, or when its route's final move or close did not land. A later rule run that ends replaces the entry, except that a rule without actions ending through `passed` leaves an entry that ended so too in place; without one, it leaves its own. While a rule holds the issue again, the entry stays and names that rule, and it no longer counts as needing you.
 
 ## Recovery
 
 ### Resume
 
-What crew does when a rule takes an issue whose last action run of one of its actions failed: it runs that action again in the failed action run's workspace, as that run left it, instead of a fresh one, and tells the new session that it continues earlier work. Only the same action in the same rule on the same issue resumes an action run; one that succeeded is never resumed.
+What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action that judged a session before it, the new run starts at that session instead, unless the shell action's definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through.
 
-Resuming is triggered only by the rule's ready label going back on the issue; crew never resumes on its own. Removing the workspace before that makes the action start over.
+When the last run chose `passed` and its final move or close never landed, crew runs only the `passed` route again, in that run's workspace when it still exists. When the workspace to reopen is gone, the run starts over at the first action in a new one, since the actions before the resume point would not have run there. A run that started no action and opened no workspace, such as one stopped at its take, passes its own start on to the next run. A run that finished its `passed` route is never resumed.
 
-What resumes is each action's last action run that had a workspace. When another action later starts in a workspace of the same name, which crew gives out again only once the earlier workspace is gone, no action whose last action run was there resumes any more; an action whose last action run is in another workspace still does.
+Resuming is triggered only by the rule's ready label going back on the issue; crew never resumes on its own. When another rule run later opens a workspace of the same name, which crew gives out again only once the earlier workspace is gone, the run that worked there no longer resumes.
 
 ### Run journal
 
-crew's local, append-only record of every rule run's events, one line each, such as its take, its actions' starts and ends and its verdict. After a restart it tells crew how each issue's last rule run in each rule went, which action runs failed and so which actions resume.
+crew's local, append-only record of every rule run's events, one line each, such as its take, its actions' starts and their ends with their verdicts, the route it chose, each step's outcome and its release. After a restart it tells crew how each issue's last rule run in each rule went, and so where the next one starts.
 
-It still reads the lines older versions wrote, which recorded only each action run's start and end, so an action that failed before an upgrade still resumes. Its lines keep the key `stage` for the rule's name, the wire name of earlier versions.
+Its lines are version 3. It skips the lines older versions wrote, so a run that failed before the upgrade starts over in a new workspace. Its lines keep the key `stage` for the rule's name, the wire name of earlier versions.
 
 ## Reporting
 
@@ -114,15 +130,15 @@ Only the latest entry changes; earlier entries keep the text they had when their
 
 ### Failure report
 
-The comment crew posts when a rule run ends with a failed action, naming each failed action and where its log is.
+The comment a route's `report` step posts: the rule, the route its run ended through, and the action that ended the run, with its verdict and where its log is.
 
 It is a new comment, so the tracker notifies the people who watch the issue, and it never quotes what a session or a tool said.
 
 ### Owed call
 
-A tracker write crew decided on whose last attempt failed transiently, and which crew tries again at each poll: an issue's take or verdict move, its failure report, or a pull request report.
+A tracker write crew decided on whose last attempt failed transiently, and which crew tries again at each poll: an issue's take, a route's move, close, comment or report, or a pull request report.
 
-An issue shows owed from the first such failure of its move or failure report until all of them settle, and keeps its slot meanwhile; an owed pull request report or status comment write holds no slot. After a stop, each owed call gets one final try, and crew gives it up if that fails.
+An issue shows owed from the first such failure of its take or a route's step until all of them settle, and keeps its slot meanwhile; an owed pull request report or status comment write holds no slot. After a stop, each owed call gets one final try, and crew gives it up if that fails.
 
 ### Mirrored label
 
@@ -132,7 +148,7 @@ It goes from the issue to its pull requests only: crew replaces a rule label put
 
 ### Stop comment
 
-The comment crew posts on each of an issue's open pull requests when a run of a rule with actions ends, saying how the rule ended and that nobody watches the pull request any more.
+The comment crew posts on each of an issue's open pull requests when a run of a rule with actions ends, saying which route the rule ended through and where that moved the issue and the pull request, or that the route closed the issue and took crew's labels off the pull request, and that nobody watches the pull request any more.
 
 It is a new comment at every rule end, so its watchers are notified and a rerun leaves a trail. Like the failure report, it never quotes what a session or a tool said.
 
@@ -148,7 +164,7 @@ crew identifies an issue by its repository and its key, so two repositories' iss
 
 A GitHub identity of crew's own: a private GitHub App created with `crew bots create`, owned by the account that owns the repository, whose private key stays on the machine that created it. It acts on GitHub as `<slug>[bot]`, such as `crew-tester[bot]`.
 
-You can have many bots, and a bot is only an identity: it carries no model, prompt or settings. `tracker.bot` names the bot crew's own writes on GitHub act as, and the default bot of every agent; an agent's `bot` names the one the sessions and checks of its actions act as. Commits stay yours, with the bot as co-author. Without a bot, crew and its sessions act as your `gh` login.
+You can have many bots, and a bot is only an identity: it carries no model, prompt or settings. `tracker.bot` names the bot crew's own writes on GitHub act as, and the default bot of every agent; an agent's `bot` names the one its sessions act as. A shell action, as an action or a route's step, acts as the run's latest session's bot, or as `tracker.bot` before any session. Commits stay yours, with the bot as co-author. Without a bot, crew and its sessions act as your `gh` login.
 
 A bot acts when crew could make it act at startup. One that cannot act then stays that way until crew restarts, and its actions act as you. A bot that acts can stop acting while crew runs: when crew's own writes as `tracker.bot` go back to you, which lasts until restart, or when its token fails to renew, which lasts until a renewal succeeds. An action's cost counts on the identity it acted as.
 
@@ -195,4 +211,5 @@ A question moves up only by a person's edit to the question bank, once its evide
 ## Flagged ambiguities
 
 - "Run" alone is ambiguous: a *rule run* is one pass through a rule, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
+- "Verdict" and "ending" are two things: a *verdict* is one action's result, which its `on:` sends on, while a rule run *ends* through a route, the way the whole run finished.
 - "Stage" alone is ambiguous: the run journal's `stage` key is a rule's name, kept from earlier versions, while a *question stage* is how far a TypeSafe question is trusted.

@@ -53,38 +53,36 @@ func TestAE2ATakeOwedTwiceStartsItsActionsOnceItLands(t *testing.T) {
 	retry, _ = d.send(core.Tick{})
 	cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	wantEvents(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "acceptance"},
-		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "development"},
-	)
+	wantCommands(t, cmds, core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Rule: "implement"})
 	wantClaim(t, d.m, "1", core.ClaimRunning)
 	wantOwed(t, d.m)
 }
 
-// An ending whose move was owed keeps showing owed until its failure report
-// lands too, and only then is the issue released.
-func TestAnOwedEndingShowsOwedUntilEveryEndingCallSettles(t *testing.T) {
+// A route's step that was owed shows owed until it settles; the route then
+// goes on with its next step, which is not owed (KTD9).
+func TestAnOwedStepShowsOwedUntilItSettles(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	ending := endedNeedingAttention(d)
-	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
-	retry, _ := d.send(core.Tick{})
-
-	d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	wantHeld(t, d.m, "1")
+	report := endedNeedingAttention(d)
+	d.send(core.CallResult{ID: reportID(t, report, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	wantClaim(t, d.m, "1", core.ClaimOwed)
+	retry, _ := d.send(core.Tick{})
+	wantClaim(t, d.m, "1", core.ClaimOwed)
+
+	moved, _ := d.send(core.CallResult{ID: reportID(t, retry, "1"), Result: core.ResultDone})
+	wantHeld(t, d.m, "1")
+	wantClaim(t, d.m, "1", core.ClaimRouting)
 	wantOwed(t, d.m)
 
-	d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
 	wantHeld(t, d.m)
 }
 
-// An owed ending move holds its queue's slot, while the global limit has
+// An owed final move holds its queue's slot, while the global limit has
 // room, and frees it once its retry lands.
-func TestAnOwedEndingMoveHoldsItsQueuesSlot(t *testing.T) {
+func TestAnOwedFinalMoveHoldsItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, inQueues(draft(), clerk), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	ending := d.endActions("1")
 	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	retry, _ := d.send(core.Tick{})
@@ -141,7 +139,6 @@ func TestAStopTriesOwedCallsAndStopsSessionsInTakenOrder(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueID: issueID("1"), From: ready, To: inProgress},
 		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "acceptance"},
-		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "development"},
 	)
 	wantClaim(t, d.m, "1", core.ClaimOwed)
 	wantClaim(t, d.m, "2", core.ClaimStopping)
@@ -162,9 +159,9 @@ func TestOwedCallsListRunCallsInTakenOrderThenReports(t *testing.T) {
 	)
 }
 
-// A rule without actions whose owed take lands ends at once and shows
-// judging while its ending move is in flight.
-func TestARuleWithoutActionsWhoseOwedTakeLandsShowsJudging(t *testing.T) {
+// A rule without actions whose owed take lands chooses passed at once and
+// shows routing while its route's move is in flight.
+func TestARuleWithoutActionsWhoseOwedTakeLandsShowsRouting(t *testing.T) {
 	d := newDriver(t, promoted(), 2)
 	take := takePromoted(d)
 	d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
@@ -172,20 +169,20 @@ func TestARuleWithoutActionsWhoseOwedTakeLandsShowsJudging(t *testing.T) {
 
 	ending, _ := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	wantCommands(t, ending, promoteMove())
-	wantClaim(t, d.m, "1", core.ClaimJudging)
+	wantClaim(t, d.m, "1", core.ClaimRouting)
 	wantOwed(t, d.m)
 }
 
-// An owed take whose final try lands after a stop ends its actions
-// unstarted and shows judging while its ending calls are in flight.
-func TestAnOwedTakeLandingOnItsFinalTryShowsJudging(t *testing.T) {
+// An owed take whose final try lands after a stop ends its first action
+// unstarted and shows routing while its route's steps are in flight.
+func TestAnOwedTakeLandingOnItsFinalTryShowsRouting(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	take, _ := d.poll(issue("1", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	final, _ := d.send(core.StopRequested{})
 
 	d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultDone})
-	wantClaim(t, d.m, "1", core.ClaimJudging)
+	wantClaim(t, d.m, "1", core.ClaimRouting)
 	wantOwed(t, d.m)
 }
 
@@ -250,25 +247,26 @@ func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 	d := newStatusDriver(t, draft(), 2)
 	d.runAll(d.take(issue("74", 1, ready)))
 	d.send(core.StopRequested{})
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("stopped")})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("stopped")})
+	report := d.ended("74", "acceptance", failed("stopped"))
 
 	cmds, _ := d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
-	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MovePending}) {
+	pending := crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MovePending}
+	if st := statusOf(t, cmds, "74"); st.Progress() != pending {
 		t.Fatalf("final try: got %#v, want the ended status with the move pending", st)
 	}
 	d.wrote("74")
 
-	cmds, _ = d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
-	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MoveDone}) {
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
+	d.wrote("74")
+	cmds, _ = d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
+	done := crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MoveDone}
+	if st := statusOf(t, cmds, "74"); st.Progress() != done {
 		t.Fatalf("after the move landed: got %#v, want the ended status with the move done", st)
 	}
 	cmds, _ = d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
 	noStatusOf(t, cmds, "74")
-
-	d.send(core.CallResult{ID: reportID(t, ending, "74"), Result: core.ResultDone})
 	if !d.m.Stopped() {
-		t.Fatal("not stopped once the ending calls settled")
+		t.Fatal("not stopped once the route's steps settled")
 	}
 }
 

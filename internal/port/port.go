@@ -1,8 +1,8 @@
 // Package port holds the interfaces the engine reaches the outside world
 // through: a Tracker for issues, a Harness for coding-agent sessions, a
-// Workspace for each action's checkout and a Journal for the rule runs'
-// events. A Captain answers a session's next
-// task. Each port holds only what every adapter must provide; anything an
+// Shell for scripts, a Workspace for each rule run's checkout and a Journal
+// for the rule runs' events. A Captain answers a session's next task. Each
+// port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
 // LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Commenter,
@@ -117,7 +117,7 @@ type Run struct {
 	VerdictDir  string
 }
 
-// Identity is who a child process, such as a session or a check, acts as on
+// Identity is who a child process, such as a session or a script, acts as on
 // the tracker: one of crew's bots, or, as the zero Identity, you. The
 // zero Identity changes nothing. An Identity never holds a key or a token,
 // only where the child finds one.
@@ -159,11 +159,13 @@ type SessionEnd struct {
 	Reason string
 }
 
-// Workspace creates the place each action works in.
+// Workspace creates the place each rule run works in, which its actions
+// share.
 type Workspace interface {
-	// Create creates a fresh workspace for action on issue. Each call gets
-	// its own workspace, even for an issue and action seen before.
-	Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (Space, error)
+	// Create creates a fresh workspace for a run of rule on issue, named
+	// from WorkspaceBase. Each call gets its own workspace, even for an
+	// issue and rule seen before.
+	Create(ctx context.Context, issue crew.Issue, rule crew.RuleName) (Space, error)
 }
 
 // Journal is the run journal: the rule runs' events, kept so a later crew
@@ -342,8 +344,8 @@ type CommentLister interface {
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace
-// it created before, so a failed action can resume where it stopped. A
-// workspace without it creates a fresh workspace for every action.
+// it created before, so a failed run can resume where it stopped. A
+// workspace without it creates a fresh workspace for every run.
 type Reopener interface {
 	// Reopen returns the workspace w, as crew recorded it, as it is now,
 	// without changing what it holds: the returned Space has its current
@@ -373,8 +375,9 @@ type UsageReporter interface {
 }
 
 // LastMessageReporter is an optional interface of a harness's Session: it
-// tells the session's last message, which crew hands to the action's checks.
-// A session without it gives its checks an empty message.
+// tells the session's last message, which crew hands to the shell actions
+// and route steps after it. A session without it gives them an empty
+// message.
 type LastMessageReporter interface {
 	// LastMessage returns the session's last message as it wrote it, every
 	// line kept, or "" when it ended without one. It is called once Wait
@@ -394,9 +397,8 @@ type PullRequestFinder interface {
 	FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error)
 }
 
-// Shell runs scripts: a command you wrote, such as an action's check, run in
-// an action's workspace once its session succeeded, so crew does not judge
-// the action by what its session says alone.
+// Shell runs scripts: the command of one of the config's shell actions, run
+// in a rule run's workspace as one of its actions or a step of its route.
 type Shell interface {
 	// Run runs script to its end, with its output going to script.Output,
 	// and returns its exit status. A script killed by a signal crew did not
@@ -418,16 +420,20 @@ type ShellResult struct {
 // and files they name, never as part of the command, so no issue or
 // session text can run as code.
 type Script struct {
-	// Dir is the action's workspace directory, where the command runs.
+	// Dir is the directory the command runs in: the run's workspace, or an
+	// empty temporary directory for a run without one.
 	Dir string
-	// Name is the check's name, and Command the shell command to run.
-	Name    crew.CheckName
+	// Name is the shell action's name, and Command the shell command to
+	// run.
+	Name    crew.ActionName
 	Command string
-	// Action is the action the check follows.
-	Action crew.ActionName
-	// Prompt is the rendered prompt the action's session started with, and
-	// LastMessage what the session last said, as in LastMessageReporter;
-	// the command reads them from files, never as part of it.
+	// Session is the name of the run's latest session, which the command
+	// gets as CREW_ACTION; empty before any session.
+	Session crew.ActionName
+	// Prompt is the rendered prompt the latest session started with, and
+	// LastMessage what it last said, as in LastMessageReporter; both empty
+	// before any session. The command reads them from files, never as part
+	// of it.
 	Prompt      string
 	LastMessage string
 	// IssueRef, IssueID and IssueURL identify the issue, as Ref, ID and URL
@@ -435,13 +441,14 @@ type Script struct {
 	IssueRef string
 	IssueID  crew.IssueID
 	IssueURL string
-	// Branch is the branch the action's work went on.
+	// Branch is the branch the run's work goes on; empty for a run
+	// without a workspace.
 	Branch string
 	// Output receives everything the command prints, stdout and stderr
 	// together, from one goroutine at a time; nil discards it.
 	Output io.Writer
-	// Identity is who the command acts as on the tracker, the same as its
-	// action's session; the zero Identity is you.
+	// Identity is who the command acts as on the tracker, the same as the
+	// run's latest session; the zero Identity is you.
 	Identity Identity
 	// CodeOwners and Bots are the code owners' logins and the logins of the
 	// bots the config names, as in Run.

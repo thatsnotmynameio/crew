@@ -8,18 +8,19 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// twoRules is a config of two rules, implement and review, of one action
-// each, whose labels are a and b, YAML flow mappings on lines 6 and 10.
+// twoRules is a config of two rules, implement and review, of one session
+// each, whose labels and routes are a and b, each a labels key and a routes
+// key, YAML flow mappings on lines 6 and 7, and 11 and 12.
 func twoRules(a, b string) string {
 	return oneAgent + `rules:
   implement:
-    labels: ` + a + `
+    ` + a + `
     actions:
-      development: {prompt: "Implement {{.Issue.Ref}}"}
+      - {name: development, prompt: "Implement {{.Issue.Ref}}"}
   review:
-    labels: ` + b + `
+    ` + b + `
     actions:
-      custom_review: {prompt: "Review {{.Issue.Ref}}"}
+      - {name: custom_review, prompt: "Review {{.Issue.Ref}}"}
 `
 }
 
@@ -28,59 +29,54 @@ func ruleWith(key string) string {
 	return strings.Replace(oneRule, "  implement:\n", "  implement:\n    "+key+"\n", 1)
 }
 
-// The labels of twoRules' implement, and of review, which follows it.
+// The labels and routes of twoRules' implement, and of review, which
+// follows it.
 const (
-	implementLabels = "{ready: ready, running: in progress, success: ready to review, failure: needs attention}"
-	reviewLabels    = "{ready: ready to review, running: in review, success: ready to merge, failure: needs attention}"
+	implementRule = "labels: {ready: ready, running: in progress}\n" +
+		"    routes: {passed: ready to review, failed: needs attention}"
+	reviewRule = "labels: {ready: ready to review, running: in review}\n" +
+		"    routes: {passed: ready to merge, failed: needs attention}"
 )
 
-// ruleLabelCases are rules Load reads, with the labels of each rule.
+// ruleLabelCases are rules Load reads, with the states of each rule: its
+// ready and running labels, then the labels its routes move to.
 var ruleLabelCases = []struct {
 	name string
 	body string
-	want []crew.Labels
+	want [][]crew.State
 }{
 	{
 		name: "any label text, kept as written",
-		body: twoRules(implementLabels, reviewLabels),
-		want: []crew.Labels{
-			{Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention"},
-			{Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention"},
+		body: twoRules(implementRule, reviewRule),
+		want: [][]crew.State{
+			{"ready", "in progress", "ready to review", "needs attention"},
+			{"ready to review", "in review", "ready to merge", "needs attention"},
 		},
 	},
 	{
 		// A failed review goes back to implement.
-		name: "failure is another rule's ready label",
-		body: twoRules(implementLabels, "{ready: ready to review, running: in review, success: done, failure: ready}"),
-		want: []crew.Labels{
-			{Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention"},
-			{Ready: "ready to review", Running: "in review", Success: "done", Failure: "ready"},
+		name: "failed moves to another rule's ready label",
+		body: twoRules(implementRule, "labels: {ready: ready to review, running: in review}\n"+
+			"    routes: {passed: done, failed: ready}"),
+		want: [][]crew.State{
+			{"ready", "in progress", "ready to review", "needs attention"},
+			{"ready to review", "in review", "done", "ready"},
 		},
 	},
 	{
 		// A label is spelled everywhere as it is first written.
 		name: "a label written in two cases takes its first spelling",
-		body: twoRules(implementLabels,
-			"{ready: Ready To Review, running: in review, success: done, failure: NEEDS attention}"),
-		want: []crew.Labels{
-			{Ready: "ready", Running: "in progress", Success: "ready to review", Failure: "needs attention"},
-			{Ready: "ready to review", Running: "in review", Success: "done", Failure: "needs attention"},
+		body: twoRules(implementRule, "labels: {ready: Ready To Review, running: in review}\n"+
+			"    routes: {passed: done, failed: [report, move: NEEDS attention]}"),
+		want: [][]crew.State{
+			{"ready", "in progress", "ready to review", "needs attention"},
+			{"ready to review", "in review", "done", "needs attention"},
 		},
 	},
 	{
-		// The item stays in running when the rule fails.
-		name: "failure equals the rule's own running",
-		body: twoRules("{ready: ready, running: stuck, success: ready to review, failure: stuck}", reviewLabels),
-		want: []crew.Labels{
-			{Ready: "ready", Running: "stuck", Success: "ready to review", Failure: "stuck"},
-			{Ready: "ready to review", Running: "in review", Success: "ready to merge", Failure: "needs attention"},
-		},
-	},
-	{
-		// A rule without actions never fails.
-		name: "a rule without actions and without failure",
-		body: "rules:\n  promote:\n    labels: {ready: done, running: promoting, success: next}\n",
-		want: []crew.Labels{{Ready: "done", Running: "promoting", Success: "next"}},
+		name: "a rule without actions moves through passed",
+		body: "rules:\n  promote:\n    labels: {ready: done, running: promoting}\n    routes: {passed: next}\n",
+		want: [][]crew.State{{"done", "promoting", "next"}},
 	},
 }
 
@@ -89,30 +85,32 @@ func TestLoadReadsRuleLabels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rules := load(t, tt.body).Rules
-			got := make([]crew.Labels, len(rules))
+			got := make([][]crew.State, len(rules))
 			for i, r := range rules {
-				got[i] = r.Labels
+				got[i] = crew.RuleStates([]crew.Rule{r})
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("labels = %+v\nwant %+v", got, tt.want)
+				t.Errorf("states = %q\nwant %q", got, tt.want)
 			}
 		})
 	}
 }
 
 // Rules and their actions keep file order, which breaks ties when crew
-// takes items.
+// takes items and orders the actions of a rule.
 func TestLoadKeepsRulesAndActionsInFileOrder(t *testing.T) {
 	cfg := load(t, oneAgent+`rules:
   zeta:
-    labels: {ready: z, running: z running, success: z done, failure: z failed}
+    labels: {ready: z, running: z running}
     actions:
-      second: {prompt: "2"}
-      first: {prompt: "1"}
+      - {name: second, prompt: "2"}
+      - {name: first, prompt: "1"}
+    routes: {passed: z done, failed: z failed}
   alpha:
-    labels: {ready: a, running: a running, success: a done, failure: a failed}
+    labels: {ready: a, running: a running}
     actions:
-      only: {prompt: "a"}
+      - {name: only, prompt: "a"}
+    routes: {passed: a done, failed: a failed}
 `)
 	var got []string
 	for _, r := range cfg.Rules {
@@ -126,7 +124,7 @@ func TestLoadKeepsRulesAndActionsInFileOrder(t *testing.T) {
 }
 
 func TestLoadGivesEveryRuleWhetherItNotifies(t *testing.T) {
-	const promote = "rules:\n  promote:\n    labels: {ready: done, running: promoting, success: next}\n"
+	const promote = "rules:\n  promote:\n    labels: {ready: done, running: promoting}\n    routes: {passed: next}\n"
 	tests := []struct {
 		name string
 		body string
@@ -165,34 +163,6 @@ func TestLoadGivesEveryRuleTheKindItTakes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := load(t, ruleWith(tt.takes)).Rules[0].Takes; got != tt.want {
 				t.Errorf("Takes = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLoadReadsActionCheck(t *testing.T) {
-	withCheck := func(script string) string {
-		return "checks:\n  branch: " + script + "\n" +
-			strings.Replace(oneRule, "        prompt:", "        check: branch\n        prompt:", 1)
-	}
-	tests := []struct {
-		name string
-		body string
-		want string
-	}{
-		{name: "left out", body: oneRule, want: ""},
-		{name: "a command", body: withCheck(`"test -n \"$CREW_BRANCH\""`), want: `test -n "$CREW_BRANCH"`},
-		// A check is a shell command, never a template: braces stay as written.
-		{name: "not a template", body: withCheck(`"echo '{{.Issue.Title}}'"`), want: "echo '{{.Issue.Title}}'"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var got string
-			if checks := load(t, tt.body).Rules[0].Actions[0].Checks; len(checks) > 0 {
-				got = checks[0].Script
-			}
-			if got != tt.want {
-				t.Errorf("check script = %q, want %q", got, tt.want)
 			}
 		})
 	}

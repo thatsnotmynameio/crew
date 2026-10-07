@@ -46,7 +46,7 @@ func ListingBoard(columns []crew.BoardColumn) Option {
 
 // BoardFromListings has the model fill the board of columns, the default
 // board, from its own listings, which ask for every rule's ready and
-// running labels: each listed item with a card in the columns of its kind
+// running labels and the labels its waiting routes move to: each listed item with a card in the columns of its kind
 // whose labels it carries. It applies crew's moves as ListingBoard does, and
 // reads no board through ListBoard (KTD10).
 func BoardFromListings(columns []crew.BoardColumn) Option {
@@ -138,8 +138,9 @@ func (m *Model) boardListFailed(reason string) {
 	}
 }
 
-// boardMoved applies at once the move of held issue to to, which landed,
-// and records it for the read that may predate it.
+// boardMoved applies at once the move of held issue to to, or its close
+// when to is empty, which landed, and records it for the read that may
+// predate it.
 func (m *Model) boardMoved(issue crew.Issue, to crew.State) {
 	b := m.board
 	if b == nil {
@@ -160,11 +161,16 @@ func (b *board) names(kind crew.Kind, label crew.State) bool {
 // apply moves mv's issue on the board: it loses every crew label and gains
 // mv's target when a column of its kind names it. An issue not on the board
 // joins it from crew's copy when such a column names the target; an issue
-// left with no board label leaves it.
+// left with no board label leaves it, and so does an issue mv closes, as no
+// read lists a closed issue.
 func (b *board) apply(mv boardMove) {
 	to := mv.to
-	named := b.names(mv.issue.Kind(), to)
+	named := to != "" && b.names(mv.issue.Kind(), to)
 	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue().ID() == mv.issue.ID() })
+	if i >= 0 && to == "" {
+		b.issues = slices.Delete(b.issues, i, i+1)
+		return
+	}
 	if i < 0 {
 		if named {
 			b.issues = append(b.issues, crew.NewBoardIssue(mv.issue, []crew.State{to}))

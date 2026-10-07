@@ -19,19 +19,43 @@ func Apply(run RuleRun, e RunEvent) (RuleRun, error) {
 	if run.id == "" {
 		run = RuleRun{
 			id: h.Run, issue: NewIssue(IssueData{ID: h.IssueID, Ref: h.IssueRef}), rule: h.Rule, taken: h.At,
-			phase: TakingPhase{},
+			phase: TakingPhase{}, workspace: NoWorkspace{}, lookup: LookupNotAsked{},
 		}
 	}
 	return e.apply(run), nil
 }
 
+// apply starts the run as its start says: with its cursor on its first
+// action; on the restart point's action, the actions before which were
+// done in an earlier run, an action the rule lost counting as the first;
+// or, for the passed route alone, with every action done in an earlier run
+// and its cursor on the last. A resumed run inherits the continued run's
+// latest session.
 func (e RunTaken) apply(RuleRun) RuleRun {
+	start := e.Start
+	if start == nil {
+		start = StartFresh{}
+	}
 	r := RuleRun{
 		id: e.Run, continues: e.Continues, issue: NewIssue(e.Issue), rule: e.Rule, taken: e.At,
-		phase: TakingPhase{},
+		phase: TakingPhase{}, workspace: NoWorkspace{}, start: start, session: inherited(start),
+		lookup: LookupNotAsked{},
 	}
-	for _, a := range e.Actions {
-		r.actions = append(r.actions, newActionRun(a.Name, a.Resume))
+	for _, name := range e.Actions {
+		r.actions = append(r.actions, newActionRun(name))
+	}
+	done := 0
+	switch s := start.(type) {
+	case StartAt:
+		r.cursor = max(r.actionIndex(s.Action), 0)
+		done = r.cursor
+	case StartPassedRoute:
+		r.cursor = max(len(r.actions)-1, 0)
+		done = len(r.actions)
+	case StartFresh, StartWithoutAction:
+	}
+	for i := range done {
+		r.actions[i].state = DoneInEarlierRun{}
 	}
 	return r
 }
@@ -43,25 +67,46 @@ func (RunStopped) apply(r RuleRun) RuleRun {
 	return r
 }
 
-func (e ActionWorkspaceAsked) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.state = CreatingWorkspace{}
-		if _, reopen := e.Reopen.Get(); reopen {
-			a.state = ReopeningWorkspace{}
+func (RunOutOfTime) apply(r RuleRun) RuleRun {
+	r.timeUp = true
+	return r
+}
+
+func (e WorkspaceAsked) apply(r RuleRun) RuleRun {
+	r = r.acting()
+	r.workspace = CreatingWorkspace{}
+	if reopen, ok := e.Reopen.Get(); ok {
+		r.workspace = ReopeningWorkspace{Workspace: reopen}
+	}
+	return r
+}
+
+// apply drops the worktree from the run's start. A run that resumed at an
+// action starts fresh: its cursor moves back to its first action, which no
+// earlier run did in the new workspace, and it no longer inherits the
+// continued run's latest session. The passed route alone keeps its
+// actions as they were.
+func (WorkspaceMissing) apply(r RuleRun) RuleRun {
+	r = r.acting()
+	r.workspace, r.start = NoWorkspace{}, WithoutWorktree(r.Start())
+	if _, passedAlone := r.start.(StartPassedRoute); passedAlone {
+		return r
+	}
+	r.cursor, r.session = 0, Optional[LatestSession]{}
+	r.actions = slices.Clone(r.actions)
+	for i, a := range r.actions {
+		if is[DoneInEarlierRun](a.state) {
+			r.actions[i].state = AwaitingTurn{}
 		}
-		return a
-	})
+	}
+	return r
 }
 
-func (e WorkspaceMissing) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun { return a })
-}
-
-func (e ActionOpened) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.workspace = Some(OpenedWorkspace{Workspace: e.Workspace, Log: e.Log, Resumed: e.Resumed, Opened: e.At})
-		return a
-	})
+func (e WorkspaceOpened) apply(r RuleRun) RuleRun {
+	r = r.acting()
+	opened := OpenedWorkspace{Workspace: e.Workspace, Log: e.Log, Resumed: e.Resumed, Opened: e.At}
+	r.workspace = InWorkspace{Opened: opened}
+	return r
 }
 
 func (e ActionSessionAsked) apply(r RuleRun) RuleRun {
@@ -72,10 +117,8 @@ func (e ActionSessionAsked) apply(r RuleRun) RuleRun {
 }
 
 func (e ActionSessionStarted) apply(r RuleRun) RuleRun {
+	r.session = Some(LatestSession{Action: e.Action, Bot: e.Bot})
 	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		if _, ok := a.workspace.Get(); !ok {
-			a.workspace = Some(OpenedWorkspace{Workspace: e.Workspace, Log: e.Log, Resumed: e.Resumed})
-		}
 		a.state, a.session = InSession{}, Some(e.At)
 		return a
 	})
@@ -92,47 +135,20 @@ func (e ActionSessionEnded) apply(r RuleRun) RuleRun {
 	})
 }
 
-func (e ActionLookupAsked) apply(r RuleRun) RuleRun {
+func (e ActionShellAsked) apply(r RuleRun) RuleRun {
 	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.lookup = LookupPending{}
+		a.state = InShell{Started: e.At}
 		return a
 	})
 }
 
-func (e ActionCheckAsked) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.state = InChecks{Check: e.Check}
-		return a
-	})
+func (e ActionShellStopAsked) apply(r RuleRun) RuleRun {
+	return r.withAction(e.Action, func(a ActionRun) ActionRun { return a })
 }
 
-func (e ActionCheckStopAsked) apply(r RuleRun) RuleRun {
+func (e ActionShellEnded) apply(r RuleRun) RuleRun {
 	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		if checks, ok := a.state.(InChecks); ok {
-			checks.StopSent = true
-			a.state = checks
-		}
-		return a
-	})
-}
-
-func (e ActionCheckEnded) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.checks = append(slices.Clip(a.checks), e.Result)
-		return a
-	})
-}
-
-func (e ActionLookupDone) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.lookup = LookupDone{PullRequest: e.PullRequest}
-		return a
-	})
-}
-
-func (e ActionFinishing) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		a.state = Finishing{End: e.End}
+		a.shell = Some(e.Outcome)
 		return a
 	})
 }
@@ -141,51 +157,65 @@ func (e ActionFinishing) apply(r RuleRun) RuleRun {
 // Decide returned, is what the action run already holds.
 func (e ActionEnded) apply(r RuleRun) RuleRun {
 	return r.withAction(e.Action, func(a ActionRun) ActionRun {
-		if _, ok := e.Workspace.Get(); ok {
-			a.workspace = e.Workspace
-		}
 		if _, ok := e.SessionStarted.Get(); ok {
 			a.session = e.SessionStarted
 		}
-		if e.PullRequest != nil {
-			a.lookup = LookupDone{PullRequest: e.PullRequest}
-		}
-		a.usage, a.state = cloneUsage(e.Usage), Finished{End: e.End}
+		a.usage = cloneUsage(e.Usage)
+		a.state = Finished{End: e.End, Verdict: e.Verdict, Target: e.Target}
 		return a
 	})
 }
 
-func (e RunEnded) apply(r RuleRun) RuleRun {
-	r.phase = EndingPhase{Ending: e.Ending.clone(), Ended: e.At, ReportSettled: !e.Ending.Failed()}
+// apply ends the run's sequence: its cursor stays on the event's action,
+// and every action it did not reach did not run.
+func (e RouteChosen) apply(r RuleRun) RuleRun {
+	if e.Action != "" {
+		r = r.withAction(e.Action, func(a ActionRun) ActionRun { return a })
+	}
+	r.actions = slices.Clone(r.actions)
+	for i, a := range r.actions {
+		if is[AwaitingTurn](a.state) {
+			r.actions[i].state = NotRun{}
+		}
+	}
+	r.phase = RoutingPhase{Route: e.Route, Chosen: e.At, Steps: slices.Clone(e.Steps)}
 	return r
 }
 
-func (e EndingMoved) apply(r RuleRun) RuleRun {
-	return r.whileEnding(func(j EndingPhase) EndingPhase {
-		j.Move = Some[EndingMove](EndingLanded{})
-		return j
+func (RunLookupAsked) apply(r RuleRun) RuleRun {
+	r.lookup = LookupPending{}
+	return r
+}
+
+func (e RunLookupDone) apply(r RuleRun) RuleRun {
+	r.lookup = LookupDone{PullRequest: e.PullRequest}
+	return r
+}
+
+func (e StepAsked) apply(r RuleRun) RuleRun {
+	return r.whileRouting(e.Step, func(p RoutingPhase) RoutingPhase {
+		p.Asked = true
+		return p
 	})
 }
 
-func (e EndingDropped) apply(r RuleRun) RuleRun {
-	return r.whileEnding(func(j EndingPhase) EndingPhase {
-		j.Move = Some[EndingMove](EndingGivenUp{Reason: e.Reason})
-		return j
+func (StepShellStopAsked) apply(r RuleRun) RuleRun { return r }
+
+// apply settles the step, which is no longer in flight.
+func (e StepEnded) apply(r RuleRun) RuleRun {
+	return r.whileRouting(e.Step, func(p RoutingPhase) RoutingPhase {
+		p.Settled = append(slices.Clone(p.Settled), e.Outcome)
+		p.Asked = false
+		return p
 	})
 }
 
-func (FailureReported) apply(r RuleRun) RuleRun { return r.reportSettled() }
-
-func (FailureReportDropped) apply(r RuleRun) RuleRun { return r.reportSettled() }
-
-// apply releases the run, keeping its ending once the ending's move
-// settled.
+// apply releases the run, keeping its route and how its steps settled
+// once it chose one.
 func (RunReleased) apply(r RuleRun) RuleRun {
 	var released ReleasedPhase
-	if j, ok := r.phase.(EndingPhase); ok {
-		if move, settled := j.Move.Get(); settled {
-			released.Ending = Some(SettledEnding{Ending: j.Ending, Ended: j.Ended, Move: move})
-		}
+	if p, ok := r.phase.(RoutingPhase); ok {
+		released.Route = Some(p)
 	}
 	r.phase = released
 	return r
@@ -200,33 +230,37 @@ func (r RuleRun) acting() RuleRun {
 }
 
 // withAction returns r with change applied to the run of the action named
-// name, added when r has none, and r running its actions when it was
-// taking. r's actions are left as they were.
+// name, added when r has none, its cursor on that action, and r running its
+// actions when it was taking. r's actions are left as they were.
 func (r RuleRun) withAction(name ActionName, change func(ActionRun) ActionRun) RuleRun {
 	r = r.acting()
 	r.actions = slices.Clone(r.actions)
 	i := r.actionIndex(name)
 	if i < 0 {
-		r.actions = append(r.actions, newActionRun(name, Optional[ResumePoint]{}))
+		r.actions = append(r.actions, newActionRun(name))
 		i = len(r.actions) - 1
 	}
-	r.actions[i] = change(r.actions[i])
+	r.actions[i], r.cursor = change(r.actions[i]), i
 	return r
 }
 
-// whileEnding returns r with change applied to its phase, when it is ending.
-func (r RuleRun) whileEnding(change func(EndingPhase) EndingPhase) RuleRun {
-	if j, ok := r.phase.(EndingPhase); ok {
-		r.phase = change(j)
+// whileRouting returns r with change applied to its phase, when it is
+// routing and step, a step of its route, is its next step to settle or one
+// after it. The steps before step that have not settled are steps whose end
+// the journal lost: they settle as given up, not recorded, so a later
+// step's end, the final move's among them, still counts.
+func (r RuleRun) whileRouting(step int, change func(RoutingPhase) RoutingPhase) RuleRun {
+	p, ok := r.phase.(RoutingPhase)
+	if !ok || step < len(p.Settled) || step >= len(p.Steps) {
+		return r
 	}
+	if lost := step - len(p.Settled); lost > 0 {
+		p.Settled = append(slices.Clone(p.Settled), slices.Repeat([]StepOutcome{StepGivenUp{Reason: notRecorded}}, lost)...)
+		p.Asked = false
+	}
+	r.phase = change(p)
 	return r
 }
 
-// reportSettled returns r with its failure report settled, when it is
-// ending.
-func (r RuleRun) reportSettled() RuleRun {
-	return r.whileEnding(func(j EndingPhase) EndingPhase {
-		j.ReportSettled = true
-		return j
-	})
-}
+// notRecorded is the reason of a route's step whose end the journal lost.
+const notRecorded = "not recorded"

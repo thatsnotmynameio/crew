@@ -171,9 +171,9 @@ func (s *step) retryStatuses() {
 }
 
 // reportRun reports h's run as it stands, with what its sessions last
-// said: running while it runs its actions, and ended once it ended,
-// with each action's final state and how its ending move stands (R6, R7,
-// R8, R11, KTD-P10).
+// said: running while it runs its actions, and ended once it chose its
+// route, with each action's state and how the route's final move or close
+// stands (R6, R7, R8, R11, KTD-P10).
 func (s *step) reportRun(h *heldRun) {
 	s.report(h.run.Status(s.at, h.sayings(), s.m.statusUsage))
 }

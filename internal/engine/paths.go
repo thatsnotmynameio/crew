@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,18 +21,92 @@ const logDir = ".crew/logs"
 // under a directory crew's ignore rules already cover.
 const JournalPath = logDir + "/runs.jsonl"
 
-// logPath returns the repository-relative path of the log of the sessions
-// running in workspace. A log holds every session of its workspace: a
-// resumed session's output goes after the failed run's (R10).
+// logPath returns the repository-relative path of the log of the rule runs
+// working in workspace. A log holds every action of its run, each after a
+// marker line naming it, and a resumed run's output goes after the earlier
+// run's (R10, KTD6).
 func logPath(workspace crew.WorkspaceName) string {
 	return logDir + "/" + string(workspace) + ".log"
+}
+
+// sessionFiles returns the repository-relative paths of the two files kept
+// beside the log at the repository-relative path log: the prompt the run's
+// latest session started with and its last message (KTD22). They stay on
+// this machine, under the directory crew's ignore rules cover.
+func sessionFiles(log string) (string, string) {
+	base := strings.TrimSuffix(log, ".log")
+	return base + ".prompt", base + ".last-message"
+}
+
+// keepSession keeps prompt and lastMessage, the latest session's, beside
+// the log at the repository-relative path log, for the shell actions and
+// route steps after it, also after a restart (AE11). When it cannot write
+// them, it removes both, so no script reads an earlier session's words as
+// this one's.
+func (e *Engine) keepSession(log, prompt, lastMessage string) {
+	promptFile, lastFile := sessionFiles(log)
+	for rel, text := range map[string]string{promptFile: prompt, lastFile: lastMessage} {
+		if err := os.WriteFile(e.abs(rel), []byte(text), sessionFilePerm); err != nil {
+			e.clearSession(log)
+			return
+		}
+	}
+}
+
+// clearSession removes the files kept beside the log at the
+// repository-relative path log. What a failed removal leaves is read only
+// by a script after a session, which keeps its own first.
+func (e *Engine) clearSession(log string) {
+	promptFile, lastFile := sessionFiles(log)
+	_ = os.Remove(e.abs(promptFile))
+	_ = os.Remove(e.abs(lastFile))
+}
+
+// session returns the prompt and the last message of the session named
+// name, as kept beside the log at the repository-relative path log: both
+// empty when name is, before any session (KTD-S11), or when it kept none.
+func (e *Engine) session(log string, name crew.ActionName) (string, string, error) {
+	if name == "" {
+		return "", "", nil
+	}
+	promptFile, lastFile := sessionFiles(log)
+	prompt, err := readKept(e.abs(promptFile))
+	if err != nil {
+		return "", "", err
+	}
+	lastMessage, err := readKept(e.abs(lastFile))
+	if err != nil {
+		return "", "", err
+	}
+	return prompt, lastMessage, nil
+}
+
+// readKept returns the text of the file at path, or "" when there is none.
+func readKept(path string) (string, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // G304: a file crew keeps beside a log of its own
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read the session's words: %w", err)
+	}
+	return string(data), nil
+}
+
+// sessionFilePerm is the permission of the files kept beside a log, which
+// hold what a session read or wrote: yours alone.
+const sessionFilePerm = 0o600
+
+// abs returns the absolute path of the repository-relative path rel.
+func (e *Engine) abs(rel string) string {
+	return filepath.Join(e.cfg.Root, filepath.FromSlash(rel))
 }
 
 // logFromDir returns the path of the log at the repository-relative path
 // log, relative to dir, so a session working in dir can open it; "" when
 // there is no such path.
 func (e *Engine) logFromDir(dir, log string) string {
-	rel, err := filepath.Rel(dir, filepath.Join(e.cfg.Root, filepath.FromSlash(log)))
+	rel, err := filepath.Rel(dir, e.abs(log))
 	if err != nil {
 		return ""
 	}
@@ -50,7 +126,7 @@ func (e *Engine) openLog(rel string) (*os.File, error) {
 // openAppend opens the file at the repository-relative path rel for reading
 // and appending, creating it and its directory as needed.
 func (e *Engine) openAppend(rel string) (*os.File, error) {
-	return fileline.Open(filepath.Join(e.cfg.Root, filepath.FromSlash(rel)))
+	return fileline.Open(e.abs(rel))
 }
 
 // scrub shortens the local paths in text before it enters the core: the

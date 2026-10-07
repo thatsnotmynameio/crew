@@ -46,8 +46,10 @@ func endedLines(t *testing.T, journal string) []map[string]any {
 	return ended
 }
 
-// R20: a run that failed before crew journaled run events still resumes.
-func TestAFailedRunInAVersion1JournalResumesInItsWorkspace(t *testing.T) {
+// KTD18: crew skips the lines of an older journal, so a run that failed
+// before the upgrade starts over: its session runs in the rule's worktree
+// with its prompt alone, not in the failed run's.
+func TestAFailedRunInAVersion1JournalStartsOverInTheRulesWorktree(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue("1", ready))
 		h := fake.NewHarness()
@@ -73,15 +75,52 @@ func TestAFailedRunInAVersion1JournalResumesInItsWorkspace(t *testing.T) {
 		r.start()
 
 		session := next(t, h)
-		if got := filepath.Base(session.Run().Dir); got != "issue-1-development" {
-			t.Errorf("session runs in %s, want the failed run's issue-1-development", got)
+		if got := filepath.Base(session.Run().Dir); got != "issue-1-implement" {
+			t.Errorf("session runs in %s, want the rule's issue-1-implement", got)
 		}
-		if p := session.Run().Prompt; !strings.Contains(p, `That run failed: "no pull request was found".`) {
-			t.Errorf("prompt does not resume the failed run:\n%s", p)
+		if p, want := session.Run().Prompt, "Implement development for issue #1"; p != want {
+			t.Errorf("prompt = %q, want %q alone", p, want)
 		}
 		r.signals <- syscall.SIGTERM
 		if code := <-r.code; code != 0 {
 			t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
+		}
+	})
+}
+
+// KTD18, KTD19: a run that failed resumes, after crew restarts, in the
+// worktree it worked in, from the journal the earlier crew wrote.
+func TestAFailedRunResumesInItsWorktreeAfterARestart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue("1", ready))
+		h := fake.NewHarness()
+		first := options(t, oneAction, tr, h)
+		first.start()
+		next(t, h).End(port.SessionEnd{Reason: "no pull request was found"})
+		synctest.Wait()
+		first.signals <- syscall.SIGTERM
+		if code := <-first.code; code != 0 {
+			t.Fatalf("first exit code = %d, want 0; stderr:\n%s", code, first.stderr)
+		}
+		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{needsAttention}) {
+			t.Fatalf("#1 is in %v after the first run, want needs attention", got)
+		}
+
+		tr.SetStates("1", ready)
+		second := options(t, oneAction, tr, h)
+		second.opts.Root, second.opts.Home = first.opts.Root, first.opts.Home
+		second.start()
+		session := next(t, h)
+		if got := filepath.Base(session.Run().Dir); got != "issue-1-implement" {
+			t.Errorf("session runs in %s, want the failed run's issue-1-implement", got)
+		}
+		if p := session.Run().Prompt; !strings.Contains(p, "continues the work of an earlier run") ||
+			!strings.Contains(p, "That run ended through the route `failed`") {
+			t.Errorf("prompt does not resume the failed run:\n%s", p)
+		}
+		second.signals <- syscall.SIGTERM
+		if code := <-second.code; code != 0 {
+			t.Fatalf("second exit code = %d, want 0; stderr:\n%s", code, second.stderr)
 		}
 	})
 }

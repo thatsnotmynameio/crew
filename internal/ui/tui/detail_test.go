@@ -14,13 +14,15 @@ func TestEachEventAboutAnIssueIsThatIssues(t *testing.T) {
 	head := crew.EventHead{IssueID: id}
 	for _, e := range []core.Published{
 		crew.RunTaken{EventHead: head, Issue: crew.IssueData{ID: id}},
+		crew.WorkspaceOpened{EventHead: head},
 		crew.ActionSessionStarted{EventHead: head},
+		crew.ActionShellAsked{EventHead: head},
 		crew.WorkspaceMissing{EventHead: head},
 		core.RunNotRecorded{IssueID: id},
 		crew.ActionEnded{EventHead: head},
 		crew.TakeMoved{EventHead: head},
-		crew.EndingMoved{EventHead: head},
-		crew.FailureReported{EventHead: head},
+		crew.RouteChosen{EventHead: head},
+		core.RouteStepEnded{IssueID: id},
 		core.IssueSkipped{IssueID: id},
 		core.IssueOfOtherKind{IssueID: id},
 		core.StatusFailed{IssueID: id},

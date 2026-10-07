@@ -1,20 +1,13 @@
 package config_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestLoadRejectsInvalidRules(t *testing.T) {
 	testRejects(t, invalidRules)
-}
-
-func TestLoadRejectsRulesThatTakeAnItemTwice(t *testing.T) {
-	testRejects(t, invalidRuleGraphs)
-}
-
-func TestLoadRejectsInvalidActions(t *testing.T) {
-	testRejects(t, invalidActions)
 }
 
 // invalidRules are errors in one rule, or in rules as a whole.
@@ -44,13 +37,13 @@ var invalidRules = []rejectCase{
 	{
 		// A bad takes is reported with the rule's other errors.
 		name:  "takes and a label wrong in one rule",
-		body:  strings.Replace(ruleWith("takes: prs"), "      success: ready to review\n", "", 1),
-		wants: []string{"rules.implement.takes", `"prs"`, "rules.implement.labels.success", "required"},
+		body:  strings.Replace(ruleWith("takes: prs"), "      running: in progress\n", "", 1),
+		wants: []string{"rules.implement.takes", `"prs"`, "rules.implement.labels.running", "required"},
 	},
 	{
 		name:  "a rule that is not a mapping",
 		body:  "rules:\n  implement: yes\n",
-		wants: []string{"rules.implement", "line 2", "must be a rule with labels"},
+		wants: []string{"rules.implement", "line 2", "must be a rule with labels and routes"},
 	},
 	{
 		name:  "rules written as a list",
@@ -70,45 +63,34 @@ var invalidRules = []rejectCase{
 	{
 		name:  "two rules share a name",
 		body:  oneRule + strings.TrimPrefix(oneRule, oneAgent+"rules:\n"),
-		wants: []string{"rules.implement", "line 14", "duplicate key, first set on line 5"},
+		wants: []string{"rules.implement", "line 17", "duplicate key, first set on line 5"},
 	},
 	{
 		name:  "a rule with an empty name",
-		body:  `rules: {"": {labels: {ready: a, running: b, success: c}}}`,
+		body:  `rules: {"": {labels: {ready: a, running: b}, routes: {passed: c}}}`,
 		wants: []string{"rules", "line 1", "a name must not be empty"},
 	},
 	{
 		name:  "a rule without labels",
-		body:  oneAgent + "rules:\n  implement:\n    actions:\n      development: {prompt: go}\n",
-		wants: []string{"rules.implement.labels", "line 5", "required"},
+		body:  "rules:\n  implement:\n    routes: {passed: done}\n",
+		wants: []string{"rules.implement.labels", "line 2", "required"},
 	},
 	{
 		name:  "labels that are not a mapping",
-		body:  twoRules("ready", reviewLabels),
-		wants: []string{"rules.implement.labels", "line 6", "must be a mapping with ready"},
+		body:  "rules:\n  implement:\n    labels: ready\n    routes: {passed: done}\n",
+		wants: []string{"rules.implement.labels", "line 3", "must be a mapping with ready and running"},
 	},
 	{
-		name:  "a label key no rule has",
-		body:  twoRules("{ready: a, running: b, success: c, failure: d, done: e}", reviewLabels),
-		wants: []string{"rules.implement.labels.done", "line 6", "unknown key"},
-	},
-	{
-		name: "labels without ready, running and success",
-		body: twoRules("{failure: d}", reviewLabels),
+		name: "labels without ready and running",
+		body: "rules:\n  implement:\n    labels: {}\n    routes: {passed: done}\n",
 		wants: []string{
-			"rules.implement.labels.ready", "rules.implement.labels.running", "rules.implement.labels.success", "required",
+			"rules.implement.labels.ready", "rules.implement.labels.running", "required",
 		},
 	},
 	{
-		// A rule with actions can fail, so it needs a label to fail to.
-		name:  "a rule with actions without failure",
-		body:  twoRules("{ready: a, running: b, success: c}", reviewLabels),
-		wants: []string{"rules.implement.labels.failure", "line 6", "required"},
-	},
-	{
 		name:  "an empty label",
-		body:  twoRules(`{ready: a, running: "", success: c, failure: d}`, reviewLabels),
-		wants: []string{"rules.implement.labels.running", "line 6", "required"},
+		body:  "rules:\n  implement:\n    labels: {ready: a, running: \"\"}\n    routes: {passed: done}\n",
+		wants: []string{"rules.implement.labels.running", "line 3", "required"},
 	},
 	{
 		name:  "a rule names a queue that does not exist",
@@ -122,86 +104,62 @@ var invalidRules = []rejectCase{
 	},
 }
 
-// invalidRuleGraphs are rules that would take an item twice, or take back
-// what one of them moved (R7).
-var invalidRuleGraphs = []rejectCase{
-	{
-		name: "two rules take the same label in different cases",
-		body: twoRules(implementLabels, "{ready: READY, running: sorting, success: sorted, failure: failed}"),
-		wants: []string{
-			"rules.review.labels.ready", "line 10", `rule "review" takes "ready", as rule "implement" (rules.implement) does`,
-			"two rules cannot take the same label",
-		},
-	},
-	{
-		name:  "success equals the rule's own ready",
-		body:  twoRules("{ready: ready, running: in progress, success: Ready, failure: failed}", reviewLabels),
-		wants: []string{"rules.implement.labels.success", "line 6", `"ready" is the rule's own ready label`},
-	},
-	{
-		name: "failure equals the rule's own ready in another case",
-		body: twoRules(implementLabels,
-			"{ready: ready to review, running: in review, success: done, failure: READY TO REVIEW}"),
-		wants: []string{"rules.review.labels.failure", "line 10", "would take the failed item again"},
-	},
-	{
-		name: "running is another rule's ready",
-		body: twoRules("{ready: ready, running: Ready To Review, success: done, failure: failed}", reviewLabels),
-		wants: []string{
-			"rules.implement.labels.running", "line 6",
-			`"Ready To Review" is the ready label of rule "review" (rules.review.labels.ready)`,
-			`while rule "implement" runs`,
-		},
-	},
-	{
-		name:  "running is its own rule's ready",
-		body:  twoRules("{ready: ready, running: ready, success: done, failure: failed}", reviewLabels),
-		wants: []string{"rules.implement.labels.running", "line 6", `of rule "implement"`},
-	},
+// Covers the rule sequences' AE10 (R33): a config in the old rule shape is
+// refused by the ordinary strict checks, each key with the error any other
+// key would get and no word about routes, actions or the new format.
+func TestAE10TheOldRuleShapeIsRefusedWithNoHint(t *testing.T) {
+	for _, tt := range oldShapes {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := loadFilesErr(t, tt.body, noFile)
+			for i, line := range lines {
+				lines[i] = strings.TrimPrefix(line, sharedName+": ")
+			}
+			if !reflect.DeepEqual(lines, tt.want) {
+				t.Errorf("error =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(tt.want, "\n"))
+			}
+		})
+	}
 }
 
-// invalidActions are errors in a rule's actions.
-var invalidActions = []rejectCase{
+// oldShapes are configs in the old rule shape, each with the whole error,
+// without the file's name, that Load must refuse it with.
+var oldShapes = []struct {
+	name, body string
+	want       []string
+}{
 	{
-		name:  "actions written as a list",
-		body:  oneAgent + "rules:\n  implement:\n    labels: " + implementLabels + "\n    actions:\n      - development\n",
-		wants: []string{"rules.implement.actions", "line 8", "must be a mapping"},
+		name: "a success label",
+		body: "rules:\n  implement:\n    labels: {ready: a, running: b, success: c}\n    routes: {passed: done}\n",
+		want: []string{"rules.implement.labels.success (line 3): unknown key"},
 	},
 	{
-		name:  "an action that is not a mapping",
-		body:  oneAgent + "rules:\n  implement:\n    labels: " + implementLabels + "\n    actions:\n      development: go\n",
-		wants: []string{"rules.implement.actions.development", "line 8", "must be an action with prompt"},
+		name: "a failure label",
+		body: "rules:\n  implement:\n    labels: {ready: a, running: b, failure: c}\n    routes: {passed: done}\n",
+		want: []string{"rules.implement.labels.failure (line 3): unknown key"},
 	},
 	{
-		name:  "action without prompt",
-		body:  strings.Replace(oneRule, `        prompt: "Implement {{.Issue.Ref}}"`, "        check:", 1),
-		wants: []string{"rules.implement.actions.development.prompt", "line 12", "required"},
+		name: "an old stage key in a rule",
+		body: "rules:\n  implement:\n    labels: {ready: a, running: b}\n    on_success: c\n    routes: {passed: done}\n",
+		want: []string{"rules.implement.on_success (line 4): unknown key"},
 	},
 	{
-		name:  "an action key crew does not know",
-		body:  strings.Replace(oneRule, "        prompt:", "        model: opus\n        prompt:", 1),
-		wants: []string{"rules.implement.actions.development.model", "line 13", "unknown key"},
+		name: "a top-level checks",
+		body: oneRule + "checks:\n  test: go test ./...\n",
+		want: []string{"checks (line 17): unknown key"},
 	},
 	{
-		name:  "two actions of a rule share a name",
-		body:  oneRule + "      development: {prompt: again}\n",
-		wants: []string{"rules.implement.actions.development", "line 14", "duplicate key, first set on line 12"},
+		name: "a check under a session",
+		body: sequenceRule(oneAgent, "      - prompt: go\n        check: test\n", ""),
+		want: []string{"rules.implement.actions[0].check (line 9): unknown key"},
 	},
 	{
-		name: "prompt references an unknown issue field",
-		body: strings.Replace(oneRule, "{{.Issue.Ref}}", "{{.Issue.Number}}", 1),
-		wants: []string{
-			"rules.implement.actions.development.prompt", "line 13", `render prompt of action "development"`, "Number",
-		},
+		name: "actions written as a mapping of old actions",
+		body: sequenceRule(oneAgent, "      development: {prompt: go, mate: developer}\n", ""),
+		want: []string{"rules.implement.actions (line 8): must be a list of actions"},
 	},
 	{
-		name:  "prompt does not parse",
-		body:  strings.Replace(oneRule, "{{.Issue.Ref}}", "{{.Issue.Ref", 1),
-		wants: []string{"rules.implement.actions.development.prompt", "line 13", `parse prompt of action "development"`},
-	},
-	{
-		name:  "a prompt that reads CREW_BOSS",
-		body:  strings.Replace(oneRule, "Implement {{.Issue.Ref}}", "Ask $CREW_BOSS about {{.Issue.Ref}}", 1),
-		wants: []string{"rules.implement.actions.development.prompt", "line 13", "CREW_BOSS is now CREW_CODE_OWNERS"},
+		name: "an old top-level key",
+		body: oneRule + "workflow: []\n",
+		want: []string{"workflow (line 17): unknown key"},
 	},
 }

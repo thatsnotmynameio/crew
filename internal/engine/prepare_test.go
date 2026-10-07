@@ -99,7 +99,7 @@ func TestPrepareReportsTheJournalStepAfterEveryPortPrepared(t *testing.T) {
 
 func TestPrepareGetsOnlyTheStatesTheRulesName(t *testing.T) {
 	blocked := develop
-	blocked.Labels.Failure = "blocked"
+	blocked.Routes = routes("blocked")
 	tr := fake.NewPreparingTracker()
 
 	if err := engine.New(config(t, tr, blocked)).Prepare(context.Background()); err != nil {

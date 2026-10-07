@@ -1,8 +1,14 @@
 package engine
 
 import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 func TestScrubShortensRootAndHomeOnlyAtWholePathBoundaries(t *testing.T) {
@@ -85,5 +91,79 @@ func TestScrubRedactsPrivateKeys(t *testing.T) {
 	cut := "head: -----BEGIN PRIVATE KEY-----\nMIIEow" // gitleaks:allow
 	if got := e.scrub(cut); got != "head: [redacted private key]" {
 		t.Errorf("scrub = %q, want a cut block redacted to the end", got)
+	}
+}
+
+// KTD22: the latest session's prompt and last message are kept beside the
+// run's log, private to you, and read back only for a script after a
+// session.
+func TestTheLatestSessionsWordsAreKeptBesideTheRunsLog(t *testing.T) {
+	root := t.TempDir()
+	e := &Engine{cfg: Config{Root: root}}
+	if err := os.MkdirAll(filepath.Join(root, ".crew", "logs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	wantSession(t, e, "lfg", "", "")
+	e.keepSession(keptLog, "/lfg #9", "PR #10 is open.")
+	for _, name := range []string{"issue-9-lfg.prompt", "issue-9-lfg.last-message"} {
+		info, err := os.Stat(filepath.Join(root, ".crew", "logs", name))
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Errorf("%s = %v, %v, want a file only you can read", name, info, err)
+		}
+	}
+	wantSession(t, e, "lfg", "/lfg #9", "PR #10 is open.")
+	wantSession(t, e, "", "", "")
+	e.clearSession(keptLog)
+	wantSession(t, e, "lfg", "", "")
+}
+
+// keptLog is the log of the run in the workspace issue-9-lfg.
+const keptLog = ".crew/logs/issue-9-lfg.log"
+
+// wantSession fails unless e reads prompt and last as the words of the
+// session named name kept beside the log of issue-9-lfg.
+func wantSession(t *testing.T, e *Engine, name crew.ActionName, prompt, last string) {
+	t.Helper()
+	gotPrompt, gotLast, err := e.session(keptLog, name)
+	if err != nil || gotPrompt != prompt || gotLast != last {
+		t.Errorf("session(%q) = %q, %q, %v, want %q, %q", name, gotPrompt, gotLast, err, prompt, last)
+	}
+}
+
+// A session whose words cannot be kept leaves none of an earlier session's
+// for the scripts after it.
+func TestWordsThatCannotBeKeptClearTheEarlierOnes(t *testing.T) {
+	root := t.TempDir()
+	e := &Engine{cfg: Config{Root: root}}
+	logs := filepath.Join(root, ".crew", "logs")
+	if err := os.MkdirAll(filepath.Join(logs, "issue-9-lfg.last-message"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "issue-9-lfg.prompt"), []byte("an earlier prompt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	e.keepSession(keptLog, "/lfg #9", "PR #10 is open.")
+
+	if _, err := os.Stat(filepath.Join(logs, "issue-9-lfg.prompt")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("prompt kept after a failed write: %v, want it gone", err)
+	}
+}
+
+// The words of a session that crew kept but cannot read are an error, not
+// words a script would take as the session's.
+func TestKeptWordsThatCannotBeReadAreAnError(t *testing.T) {
+	for _, name := range []string{"issue-9-lfg.prompt", "issue-9-lfg.last-message"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			e := &Engine{cfg: Config{Root: root}}
+			if err := os.MkdirAll(filepath.Join(root, ".crew", "logs", name), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if prompt, last, err := e.session(keptLog, "lfg"); err == nil {
+				t.Errorf("session = %q, %q, nil, want an error", prompt, last)
+			}
+		})
 	}
 }

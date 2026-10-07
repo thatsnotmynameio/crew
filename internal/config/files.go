@@ -119,19 +119,9 @@ func topMapping(doc *yaml.Node) (*yaml.Node, error) {
 	top := doc.Content[0]
 	if top.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("line %d: the config must be a mapping of crew's keys, such as "+
-			"tracker, agents, checks, board and rules", top.Line)
+			"tracker, agents, actions, board and rules", top.Line)
 	}
 	return top, nil
-}
-
-// refuseOldKeys reports the old keys of every source, each with its file:
-// an origin of no keys names every error by all, the one file.
-func refuseOldKeys(sources []source) error {
-	errs := make([]error, 0, len(sources))
-	for _, s := range sources {
-		errs = append(errs, origin{all: s.name}.name(oldKeys(s.top)))
-	}
-	return errors.Join(errs...)
 }
 
 // merge builds the mapping of the sources' top-level keys, each set by the

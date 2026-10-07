@@ -76,7 +76,7 @@ type ActingBot struct {
 	Name string
 	// Login is its bot's login, such as crew-ops[bot].
 	Login string
-	// Env holds the KEY=value entries that make a session or a check act as
+	// Env holds the KEY=value entries that make a session or a script act as
 	// the bot: GH_CONFIG_DIR of its sessions' directory, and the git config
 	// of the co-author hook and of your pinned credential helper when they
 	// apply.
@@ -140,7 +140,7 @@ type acted struct {
 	path string
 	// inst is its installation on the repository.
 	inst int64
-	// sessionsDir is the gh config directory of its sessions and checks.
+	// sessionsDir is the gh config directory of its sessions and shell actions.
 	sessionsDir string
 	// writerDir, for the default bot alone, is the gh config directory of
 	// crew's own writes; "" for any other bot.

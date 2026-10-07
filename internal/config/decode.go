@@ -51,6 +51,9 @@ func bind(section string, entries []entry) Decode {
 	}
 }
 
+// nullTag is the tag of a YAML value left empty, such as "key:".
+const nullTag = "!!null"
+
 // nodesPerEntry is how many nodes each entry takes in a mapping node's
 // Content: its key, then its value.
 const nodesPerEntry = 2
@@ -111,13 +114,20 @@ func fieldsByKey(t reflect.Type) map[string][]int {
 	return fields
 }
 
+// resolve returns the node an alias n points to, or n itself when it is no
+// alias.
+func resolve(n *yaml.Node) *yaml.Node {
+	if n.Kind == yaml.AliasNode {
+		return n.Alias
+	}
+	return n
+}
+
 // decodeValue decodes n into v, recursing where a mapping meets a struct or
 // a sequence meets a slice of structs, so unknown keys are found at any depth.
 func decodeValue(n *yaml.Node, path string, v reflect.Value) error {
-	if n.Kind == yaml.AliasNode {
-		n = n.Alias
-	}
-	if n.ShortTag() == "!!null" {
+	n = resolve(n)
+	if n.ShortTag() == nullTag {
 		return nil // an empty value is as if the key were left out
 	}
 	if v.Type() == reflect.TypeFor[yaml.Node]() || isUnmarshaler(v) {

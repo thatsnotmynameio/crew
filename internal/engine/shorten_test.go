@@ -24,8 +24,8 @@ type failingWorkspace struct {
 	root, home string
 }
 
-func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
-	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.ID().Key+"-"+string(action))
+func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, rule crew.RuleName) (port.Space, error) {
+	dir := filepath.Join(w.root, ".crew", "worktrees", "issue-"+issue.ID().Key+"-"+string(rule))
 	config := filepath.Join(w.home, ".gitconfig")
 	return port.Space{}, fmt.Errorf("git worktree add: fatal: '%s' already exists (see %s)", dir, config)
 }
@@ -47,7 +47,7 @@ func TestAWorkspaceFailureEndsTheActionWithLocalPathsShortened(t *testing.T) {
 		if len(reports) != 1 || len(reports[0].Failures) != 1 {
 			t.Fatalf("reports = %+v, want one with one failure", reports)
 		}
-		want := "git worktree add: fatal: './.crew/worktrees/issue-1-development' already exists (see ~/.gitconfig)"
+		want := "git worktree add: fatal: './.crew/worktrees/issue-1-implement' already exists (see ~/.gitconfig)"
 		if got := r.lastReason(); got != want {
 			t.Errorf("reason = %q, want %q", got, want)
 		}
@@ -81,7 +81,7 @@ func TestASessionsReasonEndsTheActionWithLocalPathsShortened(t *testing.T) {
 		cfg := config(t, tr, develop)
 
 		got := reportedReason(t, tr, cfg, func(r *rig) {
-			r.sessions(1)["issue-1-development"].End(port.SessionEnd{
+			r.sessions(1)["issue-1-implement"].End(port.SessionEnd{
 				Reason: fmt.Sprintf("go test failed in %s/engine (cache %s/.cache), ran in %s.", cfg.Root, cfg.Home, cfg.Root),
 			})
 		})
@@ -142,7 +142,7 @@ func TestASessionsReasonEndsTheActionWithoutControlBytesAndWithTokensRedacted(t 
 // multiLineWorkspace fails every creation with git's multi-line stderr.
 type multiLineWorkspace struct{}
 
-func (multiLineWorkspace) Create(context.Context, crew.Issue, crew.ActionName) (port.Space, error) {
+func (multiLineWorkspace) Create(context.Context, crew.Issue, crew.RuleName) (port.Space, error) {
 	return port.Space{}, errors.New("git worktree add: fatal: x\nhint: y")
 }
 
@@ -188,7 +188,7 @@ func TestAHarnessStartFailureEndsTheActionWithLocalPathsShortened(t *testing.T) 
 
 		got := reportedReason(t, tr, cfg, nil)
 
-		if want := "claude: cannot run in ./.crew/worktrees/issue-1-development: no settings in ~/.claude"; got != want {
+		if want := "claude: cannot run in ./.crew/worktrees/issue-1-implement: no settings in ~/.claude"; got != want {
 			t.Errorf("reason = %q, want %q", got, want)
 		}
 	})

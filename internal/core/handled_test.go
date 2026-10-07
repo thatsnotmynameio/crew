@@ -22,13 +22,13 @@ func onlyEntry(t *testing.T, d *driver) core.HandledView {
 	return got[0]
 }
 
-// failure is the failure of action on issue key, as its report carries it.
-func failure(key string, action crew.ActionName) crew.ActionFailure {
-	name := "issue-" + key + "-" + string(action)
-	return crew.ActionFailure{Action: action, Workspace: crew.WorkspaceName(name), Log: ".crew/logs/" + name + ".log"}
+// failure is the failure of action in #1's run of rule, as its report
+// carries it.
+func failure(rule crew.RuleName, action crew.ActionName) crew.ActionFailure {
+	return failureOf("1", rule, action).Report.Failures[0]
 }
 
-func TestASucceededRuleIsHandledOnceItsEndingMoveIsDone(t *testing.T) {
+func TestASucceededRuleIsHandledOnceItsFinalMoveIsDone(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	i1 := issue("1", 1, ready)
 	take, events := d.poll(i1)
@@ -36,16 +36,17 @@ func TestASucceededRuleIsHandledOnceItsEndingMoveIsDone(t *testing.T) {
 	hasEvent(t, events, d.taken(1, i1, "implement", ready, inProgress, "acceptance", "development"))
 	d.settle(take)
 
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	d.settle(d.ended("1", "acceptance", succeeded))
+	ending := d.ended("1", "development", succeeded)
 	ended := d.now
 	if got := handled(d); got != nil {
-		t.Fatalf("handled while the ending move is in flight: %#v", got)
+		t.Fatalf("handled while the final move is in flight: %#v", got)
 	}
 
 	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	want := core.HandledView{
-		Issue: i1, Rule: "implement", To: readyToReview, Move: crew.MoveDone, Taken: taken, Ended: ended,
+		Issue: i1, Rule: "implement", Route: crew.PassedRoute, To: readyToReview, Move: crew.MoveDone, Taken: taken,
+		Ended: ended,
 		Actions: []core.HandledAction{
 			{Name: "acceptance", Spend: crew.Spend{Sessions: 1}},
 			{Name: "development", Spend: crew.Spend{Sessions: 1}},
@@ -64,23 +65,23 @@ func TestASucceededRuleIsHandledOnceItsEndingMoveIsDone(t *testing.T) {
 }
 
 // Covers AE2.
-func TestAFailedRuleIsHandledWithItsFailedActionsOnceItsReportSettles(t *testing.T) {
+func TestAFailedRuleIsHandledWithTheActionThatEndedItOnceItsFinalMoveSettles(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: failed("tests fail")})
+	report, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: failed("tests fail")})
 
-	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "1"), Result: core.ResultDone})
 	if got := handled(d); got != nil {
-		t.Fatalf("handled while the failure report is in flight: %#v", got)
+		t.Fatalf("handled while the final move is in flight: %#v", got)
 	}
-	d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
 
 	got := onlyEntry(t, d)
 	if got.To != needsAttention || got.Move != crew.MoveDone {
 		t.Fatalf("entry: got to %q, move %v; want needs attention, done", got.To, got.Move)
 	}
-	if want := []crew.ActionFailure{failure("1", "development")}; !reflect.DeepEqual(got.Failures, want) {
+	if want := []crew.ActionFailure{failure("implement", "development")}; !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
 	d.wantReason("1", "development", "tests fail")
@@ -90,7 +91,7 @@ func TestAFailedRuleIsHandledWithItsFailedActionsOnceItsReportSettles(t *testing
 }
 
 // Covers AE3.
-func TestASucceededRuleWhoseEndingMoveIsGivenUpNeedsAttention(t *testing.T) {
+func TestASucceededRuleWhoseFinalMoveIsDroppedNeedsAttention(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
@@ -107,15 +108,15 @@ func TestASucceededRuleWhoseEndingMoveIsGivenUpNeedsAttention(t *testing.T) {
 		t.Fatalf("failures of a succeeded rule: %#v", got.Failures)
 	}
 	if !got.NeedsAttention() {
-		t.Fatal("a given-up ending move does not need attention")
+		t.Fatal("a dropped final move does not need attention")
 	}
 }
 
 func TestAFailedRuleWhoseReportIsRefusedIsHandledWithTheMoveDone(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	ending := endedNeedingAttention(d)
-	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
-	d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: core.ResultRefused, Reason: "nope"})
+	report := endedNeedingAttention(d)
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "1"), Result: core.ResultRefused, Reason: "nope"})
+	d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
 
 	got := onlyEntry(t, d)
 	if got.Move != crew.MoveDone || len(got.Failures) != 1 || !got.NeedsAttention() {
@@ -125,15 +126,15 @@ func TestAFailedRuleWhoseReportIsRefusedIsHandledWithTheMoveDone(t *testing.T) {
 
 func TestAFailedRuleWhoseMoveIsRefusedKeepsItsFailuresAndTheGivenUpMove(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	ending := endedNeedingAttention(d)
-	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultRefused, Reason: "label missing"})
-	d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: core.ResultDone})
+	report := endedNeedingAttention(d)
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultRefused, Reason: "label missing"})
 
 	got := onlyEntry(t, d)
 	if got.Move != crew.MoveDropped || got.DropReason != "label missing" {
 		t.Fatalf("entry: got move %v, reason %q; want dropped, label missing", got.Move, got.DropReason)
 	}
-	if want := []crew.ActionFailure{failure("1", "acceptance")}; !reflect.DeepEqual(got.Failures, want) {
+	if want := []crew.ActionFailure{failure("implement", "acceptance")}; !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
 	d.wantReason("1", "acceptance", "broke")
@@ -143,9 +144,7 @@ func TestAFailedRuleWhoseMoveIsRefusedKeepsItsFailuresAndTheGivenUpMove(t *testi
 func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
-	d.settle(ending)
+	d.settle(d.endActions("1"))
 	if got := onlyEntry(t, d); got.Rule != "implement" || got.HeldBy != "" {
 		t.Fatalf("first entry: got rule %q, held by %q; want implement, held by none", got.Rule, got.HeldBy)
 	}
@@ -157,7 +156,7 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) 
 			got.Rule, got.HeldBy)
 	}
 	d.settle(take)
-	ending, _ = d.send(core.SessionEnded{IssueID: issueID("1"), Action: "custom_review",
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "custom_review",
 		Outcome: failed("changes requested")})
 	ended := d.now
 	d.settle(ending)
@@ -167,7 +166,7 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) 
 		t.Fatalf("entry after review: got %#v, want review, needs attention, taken %v, ended %v, held by none",
 			got, taken, ended)
 	}
-	want := []crew.ActionFailure{failure("1", "custom_review")}
+	want := []crew.ActionFailure{failure("review", "custom_review")}
 	if !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
@@ -177,9 +176,7 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) 
 func TestATakeGivenUpOnAHandledIssueKeepsItsEarlierEntryNoLongerHeld(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
-	d.settle(ending)
+	d.settle(d.endActions("1"))
 	before := onlyEntry(t, d)
 
 	take, _ := d.poll(issue("1", 1, readyToReview))
@@ -202,16 +199,15 @@ func TestATakeGivenUpOnANewIssueIsNotHandled(t *testing.T) {
 	}
 }
 
-func TestAnOwedEndingMoveIsHandledWhenItsRetryLandsWithTheRulesOwnDuration(t *testing.T) {
+func TestAnOwedFinalMoveIsHandledWhenItsRetryLandsWithTheRulesOwnDuration(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	ending := d.endActions("1")
 	ended := d.now
 
 	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	if got := handled(d); got != nil {
-		t.Fatalf("handled while the ending move is owed: %#v", got)
+		t.Fatalf("handled while the final move is owed: %#v", got)
 	}
 	d.now = d.now.Add(time.Hour)
 	retry, _ := d.send(core.Tick{})
@@ -226,13 +222,12 @@ func TestAnActionEndedByAStopIsHandledAsAFailure(t *testing.T) {
 	d := newDriver(t, draft(), 1)
 	d.running(issue("1", 1, ready))
 	d.send(core.StopRequested{})
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: failed("crew stopped")})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: failed("crew stopped")})
-	d.settle(ending)
+	d.settle(d.ended("1", "acceptance", failed("crew stopped")))
 
 	got := onlyEntry(t, d)
-	if got.To != needsAttention || len(got.Failures) != 2 || !got.NeedsAttention() {
-		t.Fatalf("entry: got %#v, want needs attention with two failures", got)
+	want := []crew.ActionFailure{failure("implement", "acceptance")}
+	if got.To != needsAttention || !reflect.DeepEqual(got.Failures, want) || !got.NeedsAttention() {
+		t.Fatalf("entry: got %#v, want needs attention, failed by acceptance", got)
 	}
 }
 
@@ -269,7 +264,8 @@ func TestAViewsHandledEntriesShareNoMemoryWithTheModel(t *testing.T) {
 	first := d.m.View()
 	first.Handled[0].Failures[0].Log = "changed"
 	first.Handled[0].Issue.States()[0] = "changed"
-	if got := onlyEntry(t, d); got.Failures[0].Log != failure("1", "acceptance").Log || got.Issue.States()[0] != ready {
+	got := onlyEntry(t, d)
+	if got.Failures[0].Log != failure("implement", "acceptance").Log || got.Issue.States()[0] != ready {
 		t.Fatalf("entry after changing a view: %#v", got)
 	}
 }
@@ -278,12 +274,10 @@ func TestAViewsHandledEntriesShareNoMemoryWithTheModel(t *testing.T) {
 // settles every move.
 func reviewed(d *driver, outcome crew.Outcome) {
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
-	d.settle(ending)
+	d.settle(d.ended("1", "acceptance", succeeded))
+	d.settle(d.ended("1", "development", succeeded))
 	d.running(issue("1", 1, readyToReview))
-	ending, _ = d.send(core.SessionEnded{IssueID: issueID("1"), Action: "custom_review", Outcome: outcome})
-	d.settle(ending)
+	d.settle(d.ended("1", "custom_review", outcome))
 }
 
 // A rule with actions replaces the earlier entry even when both ended well:
@@ -294,5 +288,36 @@ func TestARuleWithActionsThatSucceedsReplacesAnEarlierEntryThatEndedWell(t *test
 
 	if got := onlyEntry(t, d); got.Rule != "review" || got.To != readyToMerge || got.Gone {
 		t.Fatalf("entry after review: got %#v, want review's, not gone", got)
+	}
+}
+
+// Covers R50: an entry needs attention when its run ended through a route
+// other than passed, or when its final move was given up or dropped.
+func TestAHandledEntryNeedsAttentionUnlessItEndedThroughPassedAndItsMoveLanded(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		result core.Result
+		route  crew.RouteName
+		want   bool
+	}{
+		{name: "needs-person", status: 3, result: core.ResultDone, route: "needs-person", want: true},
+		{name: "passed", status: 0, result: core.ResultDone, route: crew.PassedRoute},
+		{name: "passed, its move dropped", status: 0, result: core.ResultMovedMeanwhile, route: crew.PassedRoute, want: true},
+		{name: "passed, its move given up", status: 0, result: core.ResultRefused, route: crew.PassedRoute, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newDriver(t, judging(), 2)
+			d.judged()
+			move, _ := d.send(core.ShellEnded{IssueID: issueID("1"), Action: "judge", Outcome: exited(tt.status)})
+			d.send(core.CallResult{ID: moveID(t, move, "1"), Result: tt.result, Reason: "nope"})
+
+			got := onlyEntry(t, d)
+			if got.Route != tt.route || got.NeedsAttention() != tt.want {
+				t.Fatalf("entry: got route %q, needs attention %v; want %q, %v", got.Route, got.NeedsAttention(),
+					tt.route, tt.want)
+			}
+		})
 	}
 }

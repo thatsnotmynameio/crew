@@ -40,14 +40,14 @@ func NewWorkspace(root string) *Workspace {
 }
 
 // Create implements port.Workspace. It names the workspace
-// issue-<key>-<action>, adding -2, -3 and so on when that directory exists,
-// and its branch crew/<name>.
-func (w *Workspace) Create(_ context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
+// port.WorkspaceBase, issue-<key>-<rule>, adding -2, -3 and so on when that
+// directory exists, and its branch crew/<name>.
+func (w *Workspace) Create(_ context.Context, issue crew.Issue, rule crew.RuleName) (port.Space, error) {
 	root, err := filepath.Abs(w.root)
 	if err != nil {
 		return port.Space{}, fmt.Errorf("workspace root: %w", err)
 	}
-	base := fmt.Sprintf("issue-%s-%s", issue.ID().Key, action)
+	base := string(port.WorkspaceBase(issue.ID(), rule))
 	for n := 1; ; n++ {
 		name := base
 		if n > 1 {

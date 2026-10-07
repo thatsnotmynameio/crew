@@ -150,10 +150,10 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 }
 
 // actionState is what a not yet ended does, with how long it has run
-// while its session runs or its check does.
+// while its session or its script runs.
 func (m Model) actionState(a core.ActionView) string {
 	state := a.Phase.String()
-	if a.Phase != core.PhaseRunning && a.Phase != core.PhaseChecking {
+	if a.Phase != core.PhaseRunning {
 		return state
 	}
 	state += " " + elapsed(m.at.Sub(a.Started))
@@ -287,6 +287,8 @@ func eventIssue(e core.Published) crew.IssueID {
 func coreEventIssue(e core.Event) crew.IssueID {
 	switch e := e.(type) {
 	case core.RunNotRecorded:
+		return e.IssueID
+	case core.RouteStepEnded:
 		return e.IssueID
 	case core.IssueSkipped:
 		return e.IssueID

@@ -6,35 +6,26 @@ import (
 )
 
 // ActionRun is one run of an action inside a rule run: the action's name,
-// the resume point it inherited, its workspace once ready, its session,
-// its checks, the lookup of its pull request and where it stands. It
-// cannot be changed once built: a rule run's events make new ones.
+// its session, how its shell script ended, and where it stands. The
+// workspace, log and pull requests belong to the rule run, which all its
+// actions share. It cannot be changed once built: a rule run's events make
+// new ones.
 type ActionRun struct {
-	name      ActionName
-	resume    Optional[ResumePoint]
-	workspace Optional[OpenedWorkspace]
-	session   Optional[time.Time]
-	usage     Usage
-	checks    []CheckResult
-	lookup    Lookup
-	state     ActionRunState
+	name    ActionName
+	session Optional[time.Time]
+	usage   Usage
+	shell   Optional[ShellOutcome]
+	state   ActionRunState
 }
 
-// newActionRun returns the run of the action named name, waiting for the
-// take, with what it inherited.
-func newActionRun(name ActionName, resume Optional[ResumePoint]) ActionRun {
-	return ActionRun{name: name, resume: resume, lookup: LookupNotAsked{}, state: AwaitingTake{}}
+// newActionRun returns the run of the action named name, which its rule run
+// has not reached.
+func newActionRun(name ActionName) ActionRun {
+	return ActionRun{name: name, state: AwaitingTurn{}}
 }
 
 // Name returns the action's name.
 func (a ActionRun) Name() ActionName { return a.name }
-
-// Resume returns where the action resumes a failed run's work, when the run
-// inherited a resume point.
-func (a ActionRun) Resume() Optional[ResumePoint] { return a.resume }
-
-// Workspace returns the workspace its session works in, once it was ready.
-func (a ActionRun) Workspace() Optional[OpenedWorkspace] { return a.workspace }
 
 // SessionStarted returns when its session started, when one did.
 func (a ActionRun) SessionStarted() Optional[time.Time] { return a.session }
@@ -51,37 +42,12 @@ func (a ActionRun) Spend() Spend {
 	return a.usage.Spend()
 }
 
-// Checks returns a copy of how its checks that ended so far ended, in the
-// order they ran.
-func (a ActionRun) Checks() []CheckResult { return slices.Clone(a.checks) }
-
-// Lookup returns how the lookup of its pull request stands.
-func (a ActionRun) Lookup() Lookup { return a.lookup }
-
-// PullRequest returns what the lookup of its pull request found, or nil
-// while it was not asked or is pending.
-func (a ActionRun) PullRequest() PullRequest {
-	if done, ok := a.lookup.(LookupDone); ok {
-		return done.PullRequest
-	}
-	return nil
-}
+// Shell returns how its shell script ended, once a shell action's script
+// ended.
+func (a ActionRun) Shell() Optional[ShellOutcome] { return a.shell }
 
 // State returns where the action run stands.
 func (a ActionRun) State() ActionRunState { return a.state }
-
-// Outcome returns the action's outcome once it is known: while it finishes
-// and once it ended. It is the zero Outcome before.
-func (a ActionRun) Outcome() Outcome {
-	switch s := a.state.(type) {
-	case Finishing:
-		return s.End.Outcome()
-	case Finished:
-		return s.End.Outcome()
-	case AwaitingTake, CreatingWorkspace, ReopeningWorkspace, StartingSession, InSession, InChecks:
-	}
-	return Outcome{}
-}
 
 // Ended reports whether the action run ended.
 func (a ActionRun) Ended() bool {
@@ -89,48 +55,35 @@ func (a ActionRun) Ended() bool {
 	return ended
 }
 
-// OpenedWorkspace is the workspace an action run's session works in, once
-// it is ready.
-type OpenedWorkspace struct {
-	Workspace Workspace
-	// Log is the repository-relative path of the session's log file; empty
-	// when crew stopped before the session could start, as such a session
-	// writes no log.
-	Log string
-	// Resumed says whether the workspace is the reopened workspace of the
-	// failed run the action resumes.
-	Resumed bool
-	// Opened is when the workspace was ready.
-	Opened time.Time
-}
-
-// Since returns when the action's new workspace was made, from which its
-// pull request is looked up: Opened, or the zero time for a reopened one.
-func (w OpenedWorkspace) Since() time.Time {
-	if w.Resumed {
-		return time.Time{}
+// running reports whether the action run has a session or a script that
+// was asked for and has not ended.
+func (a ActionRun) running() bool {
+	switch a.state.(type) {
+	case StartingSession, InSession, InShell:
+		return true
+	case AwaitingTurn, DoneInEarlierRun, NotRun, Finished:
 	}
-	return w.Opened
+	return false
 }
 
-// ActionRunState is where an action run stands: AwaitingTake,
-// CreatingWorkspace, ReopeningWorkspace, StartingSession, InSession,
-// InChecks, Finishing or Finished.
+// ActionRunState is where an action run stands: AwaitingTurn,
+// DoneInEarlierRun, StartingSession, InSession, InShell, Finished or
+// NotRun.
 //
 //sumtype:decl
 type ActionRunState interface {
 	actionRunState()
 }
 
-// AwaitingTake is an action run whose rule run's take move has not landed.
-type AwaitingTake struct{}
+// AwaitingTurn is an action run its rule run has not reached: its take has
+// not landed, its workspace is not ready, or an action before it has not
+// ended.
+type AwaitingTurn struct{}
 
-// CreatingWorkspace is an action run whose new workspace is being made.
-type CreatingWorkspace struct{}
-
-// ReopeningWorkspace is an action run whose failed run's workspace is being
-// reopened.
-type ReopeningWorkspace struct{}
+// DoneInEarlierRun is an action before the one its rule run resumes at: it
+// went on to the next action in the run this one continues, so it does not
+// run again.
+type DoneInEarlierRun struct{}
 
 // StartingSession is an action run whose session is being started.
 type StartingSession struct{}
@@ -138,34 +91,31 @@ type StartingSession struct{}
 // InSession is an action run whose session runs.
 type InSession struct{}
 
-// InChecks is an action run whose session succeeded and one of whose checks
-// runs. It is still running for you.
-type InChecks struct {
-	// Check is the check that runs.
-	Check CheckName
-	// StopSent is set once crew asked the check to stop.
-	StopSent bool
+// InShell is an action run whose shell script runs.
+type InShell struct {
+	// Started is when crew asked for the script to run.
+	Started time.Time
 }
 
-// Finishing is an action run whose outcome is known and which waits for the
-// lookup of its pull request. It is still running for you.
-type Finishing struct {
-	End ActionEnd
-}
-
-// Finished is an action run that ended.
+// Finished is an action run that ended, with its verdict and where the
+// verdict leads.
 type Finished struct {
-	End ActionEnd
+	End     ActionEnd
+	Verdict Verdict
+	Target  Target
 }
 
-func (AwaitingTake) actionRunState()       {}
-func (CreatingWorkspace) actionRunState()  {}
-func (ReopeningWorkspace) actionRunState() {}
-func (StartingSession) actionRunState()    {}
-func (InSession) actionRunState()          {}
-func (InChecks) actionRunState()           {}
-func (Finishing) actionRunState()          {}
-func (Finished) actionRunState()           {}
+// NotRun is an action its rule run never reached: an action before it
+// chose a route.
+type NotRun struct{}
+
+func (AwaitingTurn) actionRunState()     {}
+func (DoneInEarlierRun) actionRunState() {}
+func (StartingSession) actionRunState()  {}
+func (InSession) actionRunState()        {}
+func (InShell) actionRunState()          {}
+func (Finished) actionRunState()         {}
+func (NotRun) actionRunState()           {}
 
 // ActionEnd is how an action run ended: EndSucceeded or EndFailed.
 //
@@ -197,15 +147,7 @@ func (e EndFailed) Outcome() Outcome { return Outcome{Reason: e.Reason} }
 func (EndSucceeded) actionEnd() {}
 func (EndFailed) actionEnd()    {}
 
-// endOf returns outcome as an end, failed by cause when it did not succeed.
-func endOf(outcome Outcome, cause FailureCause) ActionEnd {
-	if outcome.Succeeded {
-		return EndSucceeded{Reason: outcome.Reason}
-	}
-	return EndFailed{Reason: outcome.Reason, Cause: cause}
-}
-
-// Lookup is how the lookup of an action run's pull request stands:
+// Lookup is how the lookup of a rule run's pull requests stands:
 // LookupNotAsked, LookupPending or LookupDone.
 //
 //sumtype:decl
@@ -232,20 +174,16 @@ func (LookupDone) lookup()     {}
 // RuleRunSnapshot.
 type ActionRunSnapshot struct {
 	Name           ActionName
-	Resume         Optional[ResumePoint]
-	Workspace      Optional[OpenedWorkspace]
 	SessionStarted Optional[time.Time]
 	Usage          Usage
-	Checks         []CheckResult
-	Lookup         Lookup
+	Shell          Optional[ShellOutcome]
 	State          ActionRunState
 }
 
 // snapshot returns a as plain data, sharing no memory with it.
 func (a ActionRun) snapshot() ActionRunSnapshot {
 	return ActionRunSnapshot{
-		Name: a.name, Resume: a.resume, Workspace: a.workspace, SessionStarted: a.session,
-		Usage: cloneUsage(a.usage), Checks: slices.Clone(a.checks), Lookup: a.lookup, State: a.state,
+		Name: a.name, SessionStarted: a.session, Usage: cloneUsage(a.usage), Shell: a.shell, State: a.state,
 	}
 }
 
@@ -253,8 +191,7 @@ func (a ActionRun) snapshot() ActionRunSnapshot {
 // it.
 func restoreAction(s ActionRunSnapshot) ActionRun {
 	return ActionRun{
-		name: s.Name, resume: s.Resume, workspace: s.Workspace, session: s.SessionStarted,
-		usage: cloneUsage(s.Usage), checks: slices.Clone(s.Checks), lookup: s.Lookup, state: s.State,
+		name: s.Name, session: s.SessionStarted, usage: cloneUsage(s.Usage), shell: s.Shell, state: s.State,
 	}
 }
 

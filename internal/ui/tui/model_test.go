@@ -123,10 +123,10 @@ func you(pairs []string, running ...core.RunningAction) core.BotView {
 	return core.BotView{Name: "you", You: true, Writes: true, Pairs: pairs, Running: running}
 }
 
-// runningSnapshot is #1 running two actions in default, started 5 and 7
-// minutes before start, and #2 being taken by a later rule in clerk, each
-// on the board in its rule's column, 12 minutes into a one-hour run, with
-// no bot configured.
+// runningSnapshot is #1 running code, the first of its two actions, in
+// default, started 5 minutes before start, and #2 being taken by a later
+// rule in clerk, each on the board in its rule's column, 12 minutes into a
+// one-hour run, with no bot configured.
 func runningSnapshot() engine.Update {
 	one := crew.NewIssue(crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "Add login form"})
 	two := crew.NewIssue(crew.IssueData{ID: issueID("2"), Ref: "#2", Title: "Fix the flaky stream test"})
@@ -137,27 +137,25 @@ func runningSnapshot() engine.Update {
 		}, Issues: []core.IssueView{
 			{Issue: one, Rule: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
 				{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5 * time.Minute)},
-				{Name: "tests", Phase: core.PhaseRunning, Branch: "crew/1-tests", Started: start.Add(-7 * time.Minute)},
+				{Name: "tests", Phase: core.PhaseAwaitingTurn, Branch: "crew/1-code"},
 			}},
 			{Issue: two, Rule: "review", Queue: "clerk", Claim: core.ClaimTaking, Actions: []core.ActionView{
-				{Name: "check", Phase: core.PhaseWaiting},
+				{Name: "check", Phase: core.PhaseTaking},
 			}},
 		}, Bots: []core.BotView{you([]string{"implement/code", "implement/tests", "review/check"},
-			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"},
-			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "tests"})},
+			core.RunningAction{IssueRef: "#1", Rule: "implement", Action: "code"})},
 			Board: []crew.BoardIssue{
 				crew.NewBoardIssue(one, []crew.State{"in progress"}), crew.NewBoardIssue(two, []crew.State{"ready to review"}),
 			}},
 		Started: start.Add(-12 * time.Minute), RunTimeLimit: time.Hour,
 		Recent: []core.Published{
 			taken(start.Add(-7*time.Minute-2*time.Second), one, "implement", "ready", "in progress"),
-			crew.ActionSessionStarted{
+			crew.WorkspaceOpened{
 				At: start.Add(-7 * time.Minute), IssueRef: "#1", Rule: "implement",
-				Action: "tests", Workspace: crew.Workspace{Branch: "crew/1-tests"}, Log: ".crew/logs/1-tests.log",
+				Workspace: crew.Workspace{Name: "1-code", Branch: "crew/1-code"}, Log: ".crew/logs/1-code.log",
 			},
 			crew.ActionSessionStarted{
-				At: start.Add(-5 * time.Minute), IssueRef: "#1", Rule: "implement",
-				Action: "code", Workspace: crew.Workspace{Branch: "crew/1-code"}, Log: ".crew/logs/1-code.log",
+				At: start.Add(-5 * time.Minute), IssueRef: "#1", Rule: "implement", Action: "code",
 			},
 			core.PollDone{At: start.Add(-10 * time.Second), Listed: 2, Taken: 1},
 			taken(start.Add(-10*time.Second), two, "review", "ready to review", "in review"),
@@ -184,7 +182,7 @@ func golden(t *testing.T, name, got string) {
 
 // Covers AE6 (TUI side), and AE1 of #94: each queue's size, busy and free
 // slots, and each action's queue.
-func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
+func TestASnapshotWithARunningSequenceRendersTheGoldenView(t *testing.T) {
 	h := newHarness(t, 80)
 
 	h.send(updateMsg(runningSnapshot()))
@@ -192,48 +190,46 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 	golden(t, "running", h.view())
 }
 
-// resumingSnapshot is #9 with one action reopening a failed run's
-// workspace, one resumed in its reopened workspace 3 minutes before start,
-// and one fresh, started 2 minutes before start.
+// resumingSnapshot is #9's run resumed in the reopened workspace of a run
+// that failed: docs done in that run, lfg running since 3 minutes before
+// start, and tests awaiting its turn.
 func resumingSnapshot() engine.Update {
 	issue := crew.NewIssue(crew.IssueData{ID: issueID("9"), Ref: "#9", Title: "Add login form"})
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{{Name: crew.DefaultQueue, Slots: 2, Busy: 1}}, Issues: []core.IssueView{
 			{Issue: issue, Rule: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
-				{Name: "docs", Phase: core.PhaseReopening, Workspace: "issue-9-docs", Branch: "crew/issue-9-docs"},
-				{Name: "lfg", Phase: core.PhaseRunning, Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
+				{Name: "docs", Phase: core.PhaseDoneInEarlierRun, Workspace: "issue-9-development",
+					Branch: "crew/issue-9-development", Resumed: true},
+				{Name: "lfg", Phase: core.PhaseRunning, Workspace: "issue-9-development", Branch: "crew/issue-9-development",
 					Started: start.Add(-3 * time.Minute), Resumed: true},
-				{Name: "tests", Phase: core.PhaseRunning, Workspace: "issue-9-tests", Branch: "crew/issue-9-tests",
-					Started: start.Add(-2 * time.Minute)},
+				{Name: "tests", Phase: core.PhaseAwaitingTurn, Workspace: "issue-9-development",
+					Branch: "crew/issue-9-development", Resumed: true},
 			}},
 		}, Bots: []core.BotView{you([]string{"development/docs", "development/lfg", "development/tests"},
-			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "lfg"},
-			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "tests"})}},
+			core.RunningAction{IssueRef: "#9", Rule: "development", Action: "lfg"})}},
 		Started: start.Add(-4 * time.Minute),
 		Recent: []core.Published{
-			crew.ActionSessionStarted{
-				At: start.Add(-3 * time.Minute), IssueRef: "#9", Rule: "development",
-				Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
-				Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
+			crew.WorkspaceOpened{
+				At: start.Add(-3*time.Minute - time.Second), IssueRef: "#9", Rule: "development",
+				Workspace: crew.Workspace{Name: "issue-9-development", Branch: "crew/issue-9-development"},
+				Log:       ".crew/logs/issue-9-development.log", Resumed: true,
 			},
 			crew.ActionSessionStarted{
-				At: start.Add(-2 * time.Minute), IssueRef: "#9", Rule: "development",
-				Action: "tests", Workspace: crew.Workspace{Name: "issue-9-tests", Branch: "crew/issue-9-tests"},
-				Log: ".crew/logs/issue-9-tests.log",
+				At: start.Add(-3 * time.Minute), IssueRef: "#9", Rule: "development", Action: "lfg",
 			},
 		},
 	}}
 }
 
-// Covers R16: a reopening action reads its phase on its card, and a
-// resumed one's workspace shows in its event.
-func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
+// Covers R16 and KTD-S17: a resumed run's card shows the action it runs
+// and how many are left, and its reopened worktree shows in its event.
+func TestAResumedRunShowsItsRunningActionAndItsWorktree(t *testing.T) {
 	h := newHarness(t, 120)
 
 	h.send(updateMsg(resumingSnapshot()))
 
 	golden(t, "resuming", h.view())
-	contains(t, h.view(), "⠋ docs reopenin", "lfg resumed in worktree issue-9-lfg")
+	contains(t, h.view(), "⠋ lfg 3m · 1 left", "development resumed in worktree issue-9-development")
 }
 
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
@@ -276,8 +272,8 @@ func TestATickAMinuteLaterAdvancesBothElapsedTimes(t *testing.T) {
 	cmd := h.send(tickMsg{})
 
 	view := h.view()
-	contains(t, view, "⠋ code 6m · ⠋ tests 8m")
-	if strings.Contains(view, "code 5m") || strings.Contains(view, "tests 7m") {
+	contains(t, view, "⠋ code 6m · 1 left")
+	if strings.Contains(view, "code 5m") {
 		t.Errorf("view still shows the old elapsed times:\n%s", view)
 	}
 	if cmd == nil {
@@ -285,16 +281,27 @@ func TestATickAMinuteLaterAdvancesBothElapsedTimes(t *testing.T) {
 	}
 }
 
-// Covers R9 (TUI side): an action whose check runs still runs on its card.
-func TestAnActionRunningItsCheckStillRunsOnItsCard(t *testing.T) {
-	h := newHarness(t, 80)
-	u := runningSnapshot()
-	u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseChecking
+// Covers KTD-S17 (TUI side): a run in its routing phase shows the route it
+// ends through, after a stop or an owed step's claim.
+func TestARoutingRunShowsTheRouteItEndsThrough(t *testing.T) {
+	for _, tt := range []struct {
+		claim core.Claim
+		want  string
+	}{
+		{core.ClaimRouting, "run  ⠋ through stale"},
+		{core.ClaimOwed, "run  ! owed · ⠋ through stale"},
+	} {
+		h := newHarness(t, 80)
+		u := runningSnapshot()
+		iv := &u.Snapshot.Issues[0]
+		iv.Claim, iv.Route = tt.claim, "stale"
+		iv.Actions[0].Phase, iv.Actions[1].Phase = core.PhaseEnded, core.PhaseNotRun
 
-	h.send(updateMsg(u))
+		h.send(updateMsg(u))
 
-	if got := faceOf(t, boardOf(t, h.view()), "#1")[1]; got != "run  ⠋ code 5m · ⠋ tests 7m" {
-		t.Errorf("#1's run row = %q, want the checking action running with its elapsed time", got)
+		if got := faceOf(t, boardOf(t, h.view()), "#1")[1]; got != tt.want {
+			t.Errorf("%s: #1's run row = %q, want %q", tt.claim, got, tt.want)
+		}
 	}
 }
 

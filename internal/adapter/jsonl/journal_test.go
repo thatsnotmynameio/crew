@@ -42,26 +42,35 @@ func head(n int) crew.EventHead {
 	}
 }
 
-// space is the workspace of the action lfg on issue #9.
-var space = crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"}
+// space is the run's worktree on issue #9.
+var space = crew.Workspace{Name: "issue-9-development", Branch: "crew/issue-9-development"}
 
-const logPath = ".crew/logs/issue-9-lfg.log"
+const logPath = ".crew/logs/issue-9-development.log"
 
 var (
 	usage = crew.Usage{
 		Cost: crew.Some(12.40), Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40}),
 		Turns: crew.Some(7), Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
 	}
-	pr45 = crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"}
+	pr45      = crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"}
+	developer = crew.Bot{Name: "crew-developer"}
+	// resumed is the start of a run that resumes at lfg the work of a run
+	// that ended through no-pr.
+	resumed = crew.StartAt{
+		Workspace: space, Log: logPath, Action: "lfg", Route: "no-pr",
+		Reason:  crew.NewSessionText("no pull request was found"),
+		Session: crew.Some(crew.LatestSession{Action: "lfg", Bot: developer}),
+	}
 )
 
 // everyEvent is one event of each type, every field set, in the order a
 // run could have them.
 func everyEvent() []crew.RunEvent {
-	return slices.Concat(takeEvents(), actionEvents(), endingEvents())
+	return slices.Concat(takeEvents(), actionEvents(), routeEvents())
 }
 
-// takeEvents are the events of a take, and a stop.
+// takeEvents are the events of a take, a stop, time-up and the run's
+// worktree.
 func takeEvents() []crew.RunEvent {
 	return []crew.RunEvent{
 		crew.RunTaken{
@@ -71,66 +80,63 @@ func takeEvents() []crew.RunEvent {
 				Created: t0.Add(-time.Hour), Priority: 2, States: []crew.State{"ready"}, Blocked: true,
 				Kind: crew.KindPullRequest,
 			},
-			Actions: []crew.ActionTaken{
-				{Name: "lfg", Resume: crew.Some(crew.ResumePoint{
-					Workspace: space, Log: logPath, Reason: crew.NewSessionText("no pull request was found"),
-				})},
-				{Name: "review"},
-			},
+			Actions: []crew.ActionName{"install", "lfg", "judge"}, Start: resumed,
 		},
 		crew.TakeMoved{EventHead: head(1), From: "ready", To: "in progress"},
 		crew.RunStopped{EventHead: head(2)},
+		crew.RunOutOfTime{EventHead: head(2)},
+		crew.WorkspaceAsked{EventHead: head(3), Reopen: crew.Some(space)},
+		crew.WorkspaceMissing{EventHead: head(4), Workspace: space},
+		crew.WorkspaceAsked{EventHead: head(4)},
+		crew.WorkspaceOpened{EventHead: head(5), Workspace: space, Log: logPath, Resumed: true},
 	}
 }
 
-// failure is how the lfg action fails.
-var failure = crew.EndFailed{Reason: crew.NewSessionText("tests fail"), Cause: crew.CauseCheck}
+// failure is how the judge action fails.
+var failure = crew.EndFailed{Reason: crew.NewSessionText("judge: exit status 1"), Cause: crew.CauseShell}
 
-// actionEvents are the events of two actions, from their workspaces to
-// their ends.
+// actionEvents are the events of a session action and a shell action,
+// from their starts to their ends.
 func actionEvents() []crew.RunEvent {
 	return []crew.RunEvent{
-		crew.ActionWorkspaceAsked{EventHead: head(3), Action: "lfg", Reopen: crew.Some(space)},
-		crew.ActionWorkspaceAsked{EventHead: head(3), Action: "review"},
-		crew.WorkspaceMissing{EventHead: head(4), Action: "lfg", Workspace: space},
-		crew.ActionOpened{EventHead: head(5), Action: "lfg", Workspace: space, Log: logPath, Resumed: true},
 		crew.ActionSessionAsked{EventHead: head(6), Action: "lfg"},
-		crew.ActionSessionStarted{EventHead: head(7), Action: "lfg", Workspace: space, Log: logPath, Resumed: true},
+		crew.ActionSessionStarted{EventHead: head(7), Action: "lfg", Bot: developer},
 		crew.ActionSessionStopAsked{EventHead: head(8), Action: "lfg"},
 		crew.ActionSessionEnded{
 			EventHead: head(9), Action: "lfg", Usage: usage,
 			Outcome: crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("done")},
 		},
-		crew.ActionLookupAsked{EventHead: head(10), Action: "lfg"},
-		crew.ActionCheckAsked{EventHead: head(11), Action: "lfg", Check: "pr-open"},
-		crew.ActionCheckStopAsked{EventHead: head(12), Action: "lfg"},
-		crew.ActionCheckEnded{EventHead: head(13), Action: "lfg", Result: crew.CheckResult{
-			Name: "pr-open", Reason: crew.NewCheckReason("the check failed: no pull request"),
-		}},
-		crew.ActionLookupDone{EventHead: head(14), Action: "lfg", PullRequest: pr45},
-		crew.ActionFinishing{EventHead: head(15), Action: "lfg", End: failure},
 		crew.ActionEnded{
-			EventHead: head(16), Action: "lfg", End: failure,
-			Workspace:      crew.Some(crew.OpenedWorkspace{Workspace: space, Log: logPath, Resumed: true, Opened: t0}),
-			SessionStarted: crew.Some(t0.Add(7 * time.Second)), Usage: usage, PullRequest: pr45,
+			EventHead: head(10), Action: "lfg", End: crew.EndSucceeded{Reason: crew.NewSessionText("done")},
+			Verdict: crew.Passed, Target: crew.Next{}, SessionStarted: crew.Some(t0.Add(7 * time.Second)), Usage: usage,
 		},
+		crew.ActionShellAsked{EventHead: head(11), Action: "judge", Bot: developer},
+		crew.ActionShellStopAsked{EventHead: head(12), Action: "judge"},
+		crew.ActionShellEnded{EventHead: head(13), Action: "judge", Outcome: crew.ShellOutcome{
+			Status: crew.Some(1), Reason: crew.NewShellReason("judge: exit status 1"),
+		}},
 		crew.ActionEnded{
-			EventHead: head(17), Action: "review", PullRequest: crew.PullRequestNone{},
-			End: crew.EndSucceeded{Reason: crew.NewSessionText("crew stopped")},
+			EventHead: head(14), Action: "judge", End: failure, Verdict: crew.Failed,
+			Target: crew.ToRoute{Route: crew.FailedRoute},
 		},
 	}
 }
 
-// endingEvents are the events of an ending and the run's release.
-func endingEvents() []crew.RunEvent {
+// routeEvents are the events of the run's route, one step of each kind,
+// and its release.
+func routeEvents() []crew.RunEvent {
 	return []crew.RunEvent{
-		crew.RunEnded{EventHead: head(18), Ending: crew.RunEnding{To: "needs attention", Failures: []crew.ActionFailure{
-			{Action: "lfg", Workspace: "issue-9-lfg", Log: logPath}, {Action: "review"},
-		}}},
-		crew.EndingMoved{EventHead: head(19), From: "in progress", To: "needs attention"},
-		crew.EndingDropped{EventHead: head(20), To: "needs attention", Reason: "the issue moved meanwhile"},
-		crew.FailureReported{EventHead: head(21)},
-		crew.FailureReportDropped{EventHead: head(22)},
+		crew.RouteChosen{EventHead: head(15), Route: crew.FailedRoute, Action: "judge", Steps: []crew.StepPlan{
+			{Kind: crew.StepComment}, {Kind: crew.StepReport}, {Kind: crew.StepShell, Shell: "notify"},
+			{Kind: crew.StepMove, To: "needs attention"}, {Kind: crew.StepClose},
+		}},
+		crew.RunLookupAsked{EventHead: head(16)},
+		crew.RunLookupDone{EventHead: head(17), PullRequest: pr45},
+		crew.StepAsked{EventHead: head(18), Step: 0},
+		crew.StepEnded{EventHead: head(19), Step: 0, Outcome: crew.StepLanded{}},
+		crew.StepAsked{EventHead: head(20), Step: 2},
+		crew.StepShellStopAsked{EventHead: head(21), Step: 2},
+		crew.StepEnded{EventHead: head(22), Step: 2, Outcome: crew.StepStopped{Reason: crew.NewShellReason("stopped")}},
 		crew.RunReleased{EventHead: head(23)},
 	}
 }
@@ -163,71 +169,75 @@ func lines(t *testing.T, root string) []map[string]any {
 	return out
 }
 
-func TestEveryRunEventAppendsAndLoadsBackEqualInOrder(t *testing.T) {
-	j, _ := journal(t)
-	want := everyEvent()
-	appendAll(t, j, want...)
-
-	got, err := j.Load(repository)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+// writeJournal writes lines, each a JSON object, as the journal under
+// root.
+func writeJournal(t *testing.T, root string, lines ...string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".crew", "logs"), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("events:\n got %#v\nwant %#v", got, want)
+	if err := os.WriteFile(filepath.Join(root, path), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestEveryLineCarriesTheCrewRunAndTheEndedOnesAreOnePerEndedAction(t *testing.T) {
+// roundTrip appends want and fails the test unless the journal loads it
+// back equal.
+func roundTrip(t *testing.T, want []crew.RunEvent) {
+	t.Helper()
+	j, _ := journal(t)
+	appendAll(t, j, want...)
+	got, err := j.Load(repository)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("Load =\n%#v, %v\nwant\n%#v", got, err, want)
+	}
+}
+
+func TestEveryRunEventAppendsAndLoadsBackEqualInOrder(t *testing.T) {
+	roundTrip(t, everyEvent())
+}
+
+func TestEveryLineIsVersion3OfTheCrewRunAndAnActionsLinesMarkItsStartAndEnd(t *testing.T) {
 	j, root := journal(t)
 	appendAll(t, j, everyEvent()...)
 
-	var ended, started []map[string]any
+	var ended, started []any
 	for _, l := range lines(t, root) {
-		if l["run"] != process || l["v"] != 2.0 {
-			t.Errorf("line %v, want version 2 of the crew run %s", l, process)
+		if l["run"] != process || l["v"] != 3.0 {
+			t.Errorf("line %v, want version 3 of the crew run %s", l, process)
 		}
 		switch l["event"] {
 		case "ended":
-			ended = append(ended, l)
+			ended = append(ended, l["action"])
 		case "started":
-			started = append(started, l)
+			started = append(started, l["action"])
 		}
 	}
-	if len(ended) != 2 || ended[0]["action"] != "lfg" || ended[1]["action"] != "review" {
-		t.Errorf("ended lines = %v, want lfg's then review's", ended)
-	}
-	if len(started) != 1 || started[0]["type"] != "action_opened" {
-		t.Errorf("started lines = %v, want lfg's start", started)
+	if want := []any{"lfg", "judge"}; !reflect.DeepEqual(ended, want) || !reflect.DeepEqual(started, want) {
+		t.Errorf("started %v and ended %v, want lfg's then judge's", started, ended)
 	}
 }
 
-func TestAnActionsStartAndEndKeepTheirVersion1Keys(t *testing.T) {
+func TestTheEndedLineIsTheCostRecord(t *testing.T) {
 	j, root := journal(t)
-	events := everyEvent()
-	appendAll(t, j, events[6], events[17])
+	appendAll(t, j, actionEvents()[4])
 
 	data, err := os.ReadFile(filepath.Join(root, path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"v":2,"type":"action_opened","event":"started","time":"2026-10-07T09:00:05Z",` +
+	want := `{"v":3,"type":"action_ended","event":"ended","time":"2026-10-07T09:00:10Z",` +
 		`"run":"2026-10-07T09:00:00Z","rule_run":"development-1","issue":"9","ref":"#9","stage":"development",` +
-		`"action":"lfg","workspace":"issue-9-lfg","branch":"crew/issue-9-lfg","log":".crew/logs/issue-9-lfg.log",` +
-		`"resumed":true}` + "\n" +
-		`{"v":2,"type":"action_ended","event":"ended","time":"2026-10-07T09:00:16Z",` +
-		`"run":"2026-10-07T09:00:00Z","rule_run":"development-1","issue":"9","ref":"#9","stage":"development",` +
-		`"action":"lfg","workspace":"issue-9-lfg","branch":"crew/issue-9-lfg","log":".crew/logs/issue-9-lfg.log",` +
-		`"resumed":true,"opened":"2026-10-07T09:00:00Z","succeeded":false,"reason":"tests fail","cause":"check",` +
-		`"session_started":"2026-10-07T09:00:07Z","duration_ms":9000,"cost_usd":12.4,"input_tokens":10,` +
+		`"action":"lfg","succeeded":true,"reason":"done","verdict":"passed","target":"next",` +
+		`"session_started":"2026-10-07T09:00:07Z","duration_ms":3000,"cost_usd":12.4,"input_tokens":10,` +
 		`"output_tokens":20,"cache_read_tokens":300,"cache_write_tokens":40,"turns":7,` +
-		`"models":["claude-opus-5-5","claude-sonnet-5-5"],"pull_request":"#45",` +
-		`"pull_request_url":"https://example.test/pull/45","pull_request_lookup":"found"}` + "\n"
+		`"models":["claude-opus-5-5","claude-sonnet-5-5"]}` + "\n"
 	if string(data) != want {
 		t.Fatalf("journal:\n got %s\nwant %s", data, want)
 	}
 }
 
-func TestTheEndedLineWritesWhatTheLookupFound(t *testing.T) {
+func TestTheLookupLineWritesWhatItFound(t *testing.T) {
 	for _, tt := range []struct {
 		pr   crew.PullRequest
 		want map[string]any
@@ -240,7 +250,7 @@ func TestTheEndedLineWritesWhatTheLookupFound(t *testing.T) {
 		{nil, map[string]any{"pull_request_lookup": "not looked up"}},
 	} {
 		j, root := journal(t)
-		appendAll(t, j, crew.ActionEnded{EventHead: head(1), Action: "lfg", End: crew.EndSucceeded{}, PullRequest: tt.pr})
+		appendAll(t, j, crew.RunLookupDone{EventHead: head(1), PullRequest: tt.pr})
 		l := lines(t, root)[0]
 		for _, k := range []string{"pull_request", "pull_request_url", "pull_request_lookup"} {
 			if l[k] != tt.want[k] {
@@ -276,9 +286,10 @@ func TestLinesItCannotReadAreSkippedAndTheNextAppendStartsItsOwnLine(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	unread := `{"v":3,"type":"run_stopped","issue":"9"}` + "\n" +
-		`{"v":2,"type":"run_paused","issue":"9"}` + "\n" +
-		`{"v":2,"type":"run_stopped","issue":"9"`
+	unread := `{"v":4,"type":"run_stopped","issue":"9"}` + "\n" +
+		`{"v":3,"type":"run_paused","issue":"9"}` + "\n" +
+		`{"v":3,"type":"run_stopped"}` + "\n" +
+		`{"v":3,"type":"run_stopped","issue":"9"`
 	if _, err := f.WriteString(unread); err != nil {
 		t.Fatal(err)
 	}
@@ -294,6 +305,31 @@ func TestLinesItCannotReadAreSkippedAndTheNextAppendStartsItsOwnLine(t *testing.
 	}
 	if want := []crew.RunEvent{first, next}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("events:\n got %#v\nwant %#v", got, want)
+	}
+}
+
+func TestVersion1And2LinesAreSkippedSoTheIssueStartsFresh(t *testing.T) {
+	j, root := journal(t)
+	writeJournal(t, root,
+		`{"v":1,"event":"started","time":"2026-10-02T21:00:00Z","issue":"9","ref":"#9","stage":"development",`+
+			`"action":"lfg","workspace":"issue-9-lfg","branch":"crew/issue-9-lfg","log":".crew/logs/issue-9-lfg.log"}`,
+		`{"v":2,"type":"run_taken","time":"2026-10-07T09:00:00Z","rule_run":"development-1","issue":"9",`+
+			`"ref":"#9","stage":"development","actions":[{"name":"lfg","workspace":"issue-9-lfg"}]}`,
+		`{"v":2,"type":"action_opened","event":"started","time":"2026-10-07T09:00:05Z","rule_run":"development-1",`+
+			`"issue":"9","ref":"#9","stage":"development","action":"lfg","workspace":"issue-9-lfg"}`,
+	)
+
+	got, err := j.Load(repository)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("Load = %#v, %v, want every line skipped", got, err)
+	}
+	var h crew.History
+	for _, e := range got {
+		h.Fold(e)
+	}
+	rule := crew.Rule{Name: "development", Actions: []crew.Action{{Name: "lfg", Kind: crew.SessionSpec{}}}}
+	if start := h.Start(head(0).IssueID, rule); start != (crew.StartFresh{}) {
+		t.Errorf("Start = %#v, want fresh", start)
 	}
 }
 
@@ -345,15 +381,10 @@ func TestAJournalThatCannotBeWrittenIsAnErrorNamingIt(t *testing.T) {
 
 func TestNewLinesAreAppendedAndEarlierOnesKeptAsTheyWere(t *testing.T) {
 	j, root := journal(t)
-	const earlier = `{"v":1,"event":"ended","time":"2026-01-01T10:00:00Z","issue":"9","ref":"#9","stage":"implement",` +
-		`"action":"development","workspace":"issue-9-development","branch":"crew/issue-9-development",` +
-		`"log":".crew/logs/issue-9-development.log","succeeded":true,"reason":"done","cost_usd":6.89}`
-	if err := os.MkdirAll(filepath.Join(root, ".crew", "logs"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, path), []byte(earlier+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	const earlier = `{"v":2,"type":"action_ended","event":"ended","time":"2026-01-01T10:00:00Z","issue":"9",` +
+		`"ref":"#9","stage":"implement","action":"development","workspace":"issue-9-development",` +
+		`"succeeded":true,"reason":"done","cost_usd":6.89}`
+	writeJournal(t, root, earlier)
 
 	appendAll(t, j, everyEvent()[:2]...)
 
@@ -367,24 +398,5 @@ func TestNewLinesAreAppendedAndEarlierOnesKeptAsTheyWere(t *testing.T) {
 	got := lines(t, root)
 	if len(got) != 3 || got[1]["run"] != process || got[2]["run"] != process {
 		t.Fatalf("journal = %v, want two new lines of the crew run after the earlier one", got)
-	}
-}
-
-func TestEveryFailureCauseLoadsBackAsItself(t *testing.T) {
-	j, _ := journal(t)
-	causes := []crew.FailureCause{
-		crew.CauseSession, crew.CauseCheck, crew.CauseStopped, crew.CauseWorkspace, crew.CauseStart, crew.CausePrompt,
-	}
-	want := make([]crew.RunEvent, 0, len(causes))
-	for i, cause := range causes {
-		want = append(want, crew.ActionFinishing{
-			EventHead: head(i), Action: "lfg", End: crew.EndFailed{Reason: crew.NewSessionText("broke"), Cause: cause},
-		})
-	}
-	appendAll(t, j, want...)
-
-	got, err := j.Load(repository)
-	if err != nil || !reflect.DeepEqual(got, want) {
-		t.Fatalf("Load = %#v, %v, want %#v", got, err, want)
 	}
 }

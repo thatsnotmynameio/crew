@@ -47,15 +47,19 @@ type pullRequest struct {
 // finds the open pull requests in the issue's repository that GitHub links
 // as closing it; a pull request crew moved closes none, so it gets only the
 // query. Each, in number order, gets the swap Move makes, through gh pr edit,
-// unless its only crew label is already report.State()'s; then, when the
-// report has an end, the stop comment, unless this report's ID already
-// posted it there. It writes every pull request even when one fails, and
+// unless its only crew label is already report.State()'s, or the report has
+// no state: the route closed the issue, and the close took crew's labels
+// off its pull requests (R51); then, when the report has an end, the stop
+// comment, unless this report's ID already posted it there. It writes every pull request even when one fails, and
 // returns a transient error when any write failed transiently, so the report
 // is retried, and otherwise the first refusal or moved-meanwhile error. A
 // number GitHub cannot resolve is port.ErrMovedMeanwhile, and gh saying a
 // label does not exist is a refusal, as in Move.
 func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error {
 	what := fmt.Sprintf("update the pull requests of issue #%s to %s", report.IssueID().Key, report.State())
+	if report.State() == "" {
+		what = fmt.Sprintf("tell the pull requests of issue #%s it was closed", report.IssueID().Key)
+	}
 	issueURL, prs, err := t.pullRequests(ctx, report.IssueID().Key)
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
@@ -64,7 +68,9 @@ func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullReques
 	link := ""
 	end, ended := report.End().Get()
 	for _, pr := range prs {
-		errs.add(t.mirror(ctx, pr, report.State()))
+		if report.State() != "" {
+			errs.add(t.mirror(ctx, pr, report.State()))
+		}
 		if !ended || t.commented(report.ID(), pr.number) {
 			continue
 		}

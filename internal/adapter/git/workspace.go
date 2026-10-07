@@ -1,4 +1,4 @@
-// Package git is the workspace adapter: each action works in its own git
+// Package git is the workspace adapter: each rule run works in its own git
 // worktree, on its own branch, made from the latest default branch of origin.
 package git
 
@@ -26,7 +26,7 @@ var (
 // worktrees is where the worktrees go, relative to the repository root.
 const worktrees = ".crew/worktrees"
 
-// Workspace creates each action's worktree under <root>/.crew/worktrees/,
+// Workspace creates each rule run's worktree under <root>/.crew/worktrees/,
 // on a new branch from origin's latest default branch. It is safe for
 // concurrent use, and creates one worktree at a time.
 type Workspace struct {
@@ -69,12 +69,12 @@ func (w *Workspace) Prepare(ctx context.Context, _ []crew.State) error {
 
 // Create implements port.Workspace. It fetches origin's default branch, then
 // adds the worktree .crew/worktrees/<name> on the new branch crew/<name>
-// from origin/<default>. The name is issue-<key>-<action>, both lowercased
-// and with every character outside [a-z0-9-] replaced by '-', suffixed -2,
-// -3… while the folder or the branch exists. The default branch is resolved
+// from origin/<default>. The name is port.WorkspaceBase, issue-<key>-<rule>,
+// both lowercased and with every character outside [a-z0-9-] replaced by
+// '-', suffixed -2, -3… while the folder or the branch exists. The default branch is resolved
 // on the first call when Prepare has not resolved it. Errors carry git's
 // stderr.
-func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (port.Space, error) {
+func (w *Workspace) Create(ctx context.Context, issue crew.Issue, rule crew.RuleName) (port.Space, error) {
 	if err := w.acquire(ctx); err != nil {
 		return port.Space{}, err
 	}
@@ -87,7 +87,7 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action crew.Ac
 	if _, err := w.git(ctx, "fetch", "origin", def); err != nil {
 		return port.Space{}, fmt.Errorf("fetch origin %s: %w", def, err)
 	}
-	space, err := w.free(ctx, "issue-"+sanitize(issue.ID().Key)+"-"+sanitize(string(action)))
+	space, err := w.free(ctx, string(port.WorkspaceBase(issue.ID(), rule)))
 	if err != nil {
 		return port.Space{}, err
 	}
@@ -276,17 +276,3 @@ func (w *Workspace) acquire(ctx context.Context) error {
 }
 
 func (w *Workspace) release() { <-w.lock }
-
-// sanitize lowercases s and replaces every character outside [a-z0-9-]
-// with '-', so it is safe in a folder and a branch name.
-func sanitize(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			return r - 'A' + 'a'
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
-			return r
-		}
-		return '-'
-	}, s)
-}

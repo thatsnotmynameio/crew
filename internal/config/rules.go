@@ -17,53 +17,62 @@ type ruleDoc struct {
 	Notify  located[bool]   `yaml:"notify"`
 	Labels  yaml.Node       `yaml:"labels"`
 	Actions yaml.Node       `yaml:"actions"`
+	Routes  yaml.Node       `yaml:"routes"`
 }
 
 // labelsDoc is a rule's labels.
 type labelsDoc struct {
 	Ready   located[string] `yaml:"ready"`
 	Running located[string] `yaml:"running"`
-	Success located[string] `yaml:"success"`
-	Failure located[string] `yaml:"failure"`
 }
 
-// actionDoc is one action of a rule's actions, keyed by its name.
-type actionDoc struct {
-	Agent  located[string] `yaml:"agent"`
-	Prompt located[string] `yaml:"prompt"`
-	Check  yaml.Node       `yaml:"check"`
-}
-
-// What each kind of named item must be, said when an item is not a mapping.
+// What a rule and its labels must be, said when one is not a mapping.
 const (
-	ruleShape   = "must be a rule with labels, and optionally takes, queue, notify and actions"
-	labelsShape = "must be a mapping with ready, running, success and failure"
-	actionShape = "must be an action with prompt, and optionally agent and check"
-	checkShape  = "must be a check's name or a list of checks' names"
+	ruleShape   = "must be a rule with labels and routes, and optionally takes, queue, notify and actions"
+	labelsShape = "must be a mapping with ready and running"
 )
 
-// parsedRule is a rule that passed its own checks, with what the
-// rule-graph checks need to name its keys.
+// parsedRule is a rule that passed its own checks, with its actions and
+// routes as they were parsed and what the rule-graph checks need to name
+// its keys.
 type parsedRule struct {
 	crew.Rule
 
-	path   string
-	labels labelsDoc
-	notify bool
+	path       string
+	ruleLine   int
+	routesLine int
+	labels     labelsDoc
+	notify     bool
+	actions    []parsedAction
+	routes     []parsedRoute
+}
+
+// rule returns the domain's rule p describes.
+func (p parsedRule) rule() crew.Rule {
+	r := p.Rule
+	r.Actions, r.Routes = nil, nil
+	for _, a := range p.actions {
+		r.Actions = append(r.Actions, a.Action)
+	}
+	for _, route := range p.routes {
+		r.Routes = append(r.Routes, route.Route)
+	}
+	return r
 }
 
 // ruleEnv is what the rules' names resolve against: the queues, the agents,
-// the checks' scripts by name, and tracker.bot.
+// the shell actions by name, and tracker.bot.
 type ruleEnv struct {
-	queues queueTable
-	agents []Agent
-	checks map[crew.CheckName]string
-	bot    crew.Bot
+	queues  queueTable
+	agents  []Agent
+	actions map[crew.ActionName]crew.ShellSpec
+	bot     crew.Bot
 }
 
-// rules decodes and validates rules:, resolving each rule's queue and each
-// action's agent, check and bot in env. It returns the rules, and whether
-// each notifies, by name. It reports every error it finds.
+// rules decodes and validates rules:, resolving each rule's queue, each
+// session's agent and bot, and each shell action in env. It returns the
+// rules, and whether each notifies, by name. It reports every error it
+// finds.
 func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, map[crew.RuleName]bool, error) {
 	if n.Kind == 0 {
 		return nil, nil, errors.New("rules: missing; write at least one rule")
@@ -95,7 +104,7 @@ func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, map[crew.RuleName]bool, erro
 	out := make([]crew.Rule, len(parsed))
 	notify := make(map[crew.RuleName]bool, len(parsed))
 	for i, p := range parsed {
-		out[i], notify[p.Name] = p.Rule, p.notify
+		out[i], notify[p.Name] = p.rule(), p.notify
 	}
 	return out, notify, nil
 }
@@ -107,24 +116,27 @@ func parseRule(e entry, env ruleEnv) (parsedRule, error) {
 	if err := decodeItem(e.value, e.path, ruleShape, &doc); err != nil {
 		return parsedRule{}, err
 	}
-	p := parsedRule{Name: crew.RuleName(e.key.Value), path: e.path}
-	hasActions := doc.Actions.Kind == yaml.MappingNode && len(doc.Actions.Content) > 0
-	var labelsErr, queueErr, takesErr, actionsErr error
-	p.Labels, p.labels, labelsErr = ruleLabels(&doc.Labels, e.path+".labels", e.key.Line, hasActions)
+	p := parsedRule{Name: crew.RuleName(e.key.Value), path: e.path, ruleLine: e.key.Line}
+	var labelsErr, queueErr, takesErr, actionsErr, routesErr error
+	p.Labels, p.labels, labelsErr = ruleLabels(&doc.Labels, e.path+".labels", e.key.Line)
 	p.Queue, queueErr = ruleQueue(doc.Queue, e.path, env.queues)
 	p.Takes, takesErr = ruleTakes(doc.Takes, e.path)
-	p.Actions, actionsErr = actions(&doc.Actions, e.path+".actions", env)
-	p.notify = hasActions
+	p.actions, actionsErr = sequence(&doc.Actions, e.path+".actions", env)
+	p.routes, routesErr = routes(&doc.Routes, e.path+".routes", env)
+	p.routesLine = doc.Routes.Line
+	p.notify = doc.Actions.Kind == yaml.SequenceNode && len(doc.Actions.Content) > 0
 	if doc.Notify.line != 0 {
 		p.notify = doc.Notify.value
 	}
-	return p, errors.Join(labelsErr, queueErr, takesErr, actionsErr)
+	if err := errors.Join(labelsErr, queueErr, takesErr, actionsErr, routesErr); err != nil {
+		return p, err
+	}
+	return p, checkRoutes(p)
 }
 
 // ruleLabels decodes the labels n of a rule at path, whose key is on
-// ruleLine. ready, running and success are required, and failure too when
-// the rule has actions: a rule without actions never fails.
-func ruleLabels(n *yaml.Node, path string, ruleLine int, hasActions bool) (crew.Labels, labelsDoc, error) {
+// ruleLine. ready and running are required.
+func ruleLabels(n *yaml.Node, path string, ruleLine int) (crew.Labels, labelsDoc, error) {
 	var doc labelsDoc
 	switch n.Kind {
 	case 0:
@@ -137,14 +149,10 @@ func ruleLabels(n *yaml.Node, path string, ruleLine int, hasActions bool) (crew.
 		return crew.Labels{}, doc, keyError(path, n.Line, labelsShape)
 	}
 	var labels crew.Labels
-	var errs [4]error
-	labels.Ready, errs[0] = state(doc.Ready, path+".ready", n.Line)
-	labels.Running, errs[1] = state(doc.Running, path+".running", n.Line)
-	labels.Success, errs[2] = state(doc.Success, path+".success", n.Line)
-	if hasActions || doc.Failure.line != 0 {
-		labels.Failure, errs[3] = state(doc.Failure, path+".failure", n.Line)
-	}
-	return labels, doc, errors.Join(errs[:]...)
+	var readyErr, runningErr error
+	labels.Ready, readyErr = state(doc.Ready, path+".ready", n.Line)
+	labels.Running, runningErr = state(doc.Running, path+".running", n.Line)
+	return labels, doc, errors.Join(readyErr, runningErr)
 }
 
 // The values of a rule's takes, one per kind.
@@ -166,53 +174,8 @@ func ruleTakes(l located[string], path string) (crew.Kind, error) {
 		fmt.Sprintf("%q must be %s or %s", l.value, takesIssues, takesPullRequests))
 }
 
-// actions decodes and checks the optional actions n of a rule at path, in
-// file order. It reports every error it finds.
-func actions(n *yaml.Node, path string, env ruleEnv) ([]crew.Action, error) {
-	section, err := named(n, path)
-	errs := []error{err}
-	out := make([]crew.Action, 0, len(section))
-	for _, e := range section {
-		action, err := parseAction(e, env)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		out = append(out, action)
-	}
-	return out, errors.Join(errs...)
-}
-
-// parseAction decodes and checks the action e, resolving its agent, its
-// check and its bot, its agent's or else tracker.bot, in env.
-func parseAction(e entry, env ruleEnv) (crew.Action, error) {
-	var doc actionDoc
-	if err := decodeItem(e.value, e.path, actionShape, &doc); err != nil {
-		return crew.Action{}, err
-	}
-	text, promptErr := required(doc.Prompt, e.path+".prompt", e.key.Line)
-	agent, agentErr := env.agent(doc.Agent, e.path+".agent", e.key.Line)
-	checks, checkErr := env.resolveChecks(&doc.Check, e.path+".check")
-	if err := errors.Join(promptErr, agentErr, checkErr); err != nil {
-		return crew.Action{}, err
-	}
-	name := crew.ActionName(e.key.Value)
-	prompt, err := crew.ParsePrompt(name, text)
-	if err != nil {
-		return crew.Action{}, keyError(e.path+".prompt", doc.Prompt.line, err.Error())
-	}
-	if err := retiredVariables(text, e.path+".prompt", doc.Prompt.line); err != nil {
-		return crew.Action{}, err
-	}
-	bot := env.bot
-	if agent.Bot != "" {
-		bot = crew.Bot{Name: agent.Bot}
-	}
-	return crew.Action{Name: name, Prompt: prompt, Agent: agent.Agent, Checks: checks, Bot: bot}, nil
-}
-
-// agent returns the agent an action names in l, at path, whose key is on
-// line. An action may leave its agent out only when one agent is declared.
+// agent returns the agent a session names in l, at path, on line. A
+// session may leave its agent out only when one agent is declared.
 // Without agents it returns no agent and no error: the missing agents are
 // reported once, by agentsInUse.
 func (env ruleEnv) agent(l located[string], path string, line int) (Agent, error) {
@@ -244,109 +207,34 @@ func (env ruleEnv) agentNames() string {
 	return strings.Join(names, ", ")
 }
 
-// resolveChecks returns the checks an action names in n, at path: one name,
-// or a list of names in the order they run. It returns none when n is left
-// out, and reports every name that is not a check.
-func (env ruleEnv) resolveChecks(n *yaml.Node, path string) ([]crew.Check, error) {
-	switch n.Kind {
-	case 0:
-		return nil, nil
-	case yaml.ScalarNode:
-		c, err := env.check(n, path)
-		if err != nil {
-			return nil, err
-		}
-		return []crew.Check{c}, nil
-	case yaml.SequenceNode:
-		if len(n.Content) == 0 {
-			return nil, keyError(path, n.Line, "must name at least one check")
-		}
-		out := make([]crew.Check, 0, len(n.Content))
-		var errs []error
-		for i, item := range n.Content {
-			c, err := env.check(item, fmt.Sprintf("%s[%d]", path, i))
-			if err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			out = append(out, c)
-		}
-		return out, errors.Join(errs...)
-	default:
-		return nil, keyError(path, n.Line, checkShape)
-	}
-}
-
-// check returns the check the scalar n names, at path.
-func (env ruleEnv) check(n *yaml.Node, path string) (crew.Check, error) {
-	if n.Kind == yaml.AliasNode {
-		n = n.Alias
-	}
-	if n.Kind != yaml.ScalarNode {
-		return crew.Check{}, keyError(path, n.Line, checkShape)
-	}
-	if script, ok := env.checks[crew.CheckName(n.Value)]; ok {
-		return crew.Check{Name: crew.CheckName(n.Value), Script: script}, nil
-	}
-	if len(env.checks) == 0 {
-		return crew.Check{}, keyError(path, n.Line, fmt.Sprintf("check %q does not exist; checks declares none", n.Value))
-	}
-	return crew.Check{}, keyError(path, n.Line, fmt.Sprintf("check %q does not exist; the checks are %s",
-		n.Value, strings.Join(sortedKeys(env.checks), ", ")))
-}
-
 // spellOnce gives every label the spelling it first has in the rules, in
-// rule order and then ready, running, success, failure. GitHub does not tell
-// labels apart by case, so "In Review" and "in review" are one label; after
-// this, comparing states exactly compares them as GitHub does.
+// rule order and then ready, running and each move of the routes, in route
+// order. GitHub does not tell labels apart by case, so "In Review" and
+// "in review" are one label; after this, comparing states exactly compares
+// them as GitHub does.
 func spellOnce(rules []parsedRule) {
 	first := map[string]crew.State{}
+	spell := func(state crew.State) crew.State {
+		key := strings.ToLower(string(state))
+		if spelling, ok := first[key]; ok {
+			return spelling
+		}
+		if state != "" {
+			first[key] = state
+		}
+		return state
+	}
 	for i := range rules {
 		l := &rules[i].Labels
-		for _, state := range []*crew.State{&l.Ready, &l.Running, &l.Success, &l.Failure} {
-			key := strings.ToLower(string(*state))
-			if spelling, ok := first[key]; ok {
-				*state = spelling
-			} else if *state != "" {
-				first[key] = *state
+		l.Ready, l.Running = spell(l.Ready), spell(l.Running)
+		for _, route := range rules[i].routes {
+			for j, step := range route.Steps {
+				if m, ok := step.(crew.MoveStep); ok {
+					route.Steps[j] = crew.MoveStep{To: spell(m.To)}
+				}
 			}
 		}
 	}
-}
-
-// checkGraph rejects a set of rules that would take an item twice or take
-// back what one of them moved. It runs after spellOnce, so it compares
-// labels ignoring case.
-func checkGraph(rules []parsedRule) error {
-	var errs []error
-	byReady := make(map[crew.State]parsedRule, len(rules))
-	for _, r := range rules {
-		l := r.Labels
-		if other, ok := byReady[l.Ready]; ok {
-			errs = append(errs, keyError(r.path+".labels.ready", r.labels.Ready.line,
-				fmt.Sprintf("rule %q takes %q, as rule %q (%s) does; two rules cannot take the same label",
-					r.Name, l.Ready, other.Name, other.path)))
-		} else {
-			byReady[l.Ready] = r
-		}
-		if l.Success == l.Ready {
-			errs = append(errs, keyError(r.path+".labels.success", r.labels.Success.line,
-				fmt.Sprintf("%q is the rule's own ready label, so rule %q would take the item again", l.Success, r.Name)))
-		}
-		if l.Failure == l.Ready {
-			errs = append(errs, keyError(r.path+".labels.failure", r.labels.Failure.line,
-				fmt.Sprintf("%q is the rule's own ready label, so rule %q would take the failed item again",
-					l.Failure, r.Name)))
-		}
-	}
-	for _, r := range rules {
-		if other, ok := byReady[r.Labels.Running]; ok {
-			errs = append(errs, keyError(r.path+".labels.running", r.labels.Running.line,
-				fmt.Sprintf("%q is the ready label of rule %q (%s.labels.ready), which would take the item while rule %q runs",
-					r.Labels.Running, other.Name, other.path, r.Name)))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // required returns a key's non-empty value. A missing key is reported on the

@@ -1,7 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/thatsnotmynameio/crew/main/schema/config.schema.json
 # A translation team's config, invented for the tests: a full config with
-# queues, bots, agents on both harnesses, checks, rules with and without
-# actions, notify set both ways and multi-line prompts.
+# queues, bots, agents on both harnesses, shell actions defined as a string
+# and as a mapping, rules with and without actions, sessions with and
+# without a name, on maps, routes as a label and as a list of steps, notify
+# set both ways and multi-line prompts.
 poll_interval_seconds: 120
 max_parallel_issues: 4
 queues:
@@ -20,51 +22,74 @@ agents:
     harness:
       name: codex
       model: gpt-5.5
-checks:
+actions:
   glossary-kept: grep -rq glossary docs/
-  draft-pushed: |-
-    n=$(git rev-list --count "origin/$CREW_BRANCH" 2>/dev/null) || n=0
-    [ "$n" -gt 0 ] || { echo "nothing pushed to $CREW_BRANCH"; exit 1; }
+  draft-pushed:
+    script: |-
+      n=$(git rev-list --count "origin/$CREW_BRANCH" 2>/dev/null) || n=0
+      [ "$n" -gt 0 ] || { echo "nothing pushed to $CREW_BRANCH"; exit 3; }
+    verdicts:
+      3: unpushed
+    resume: self
 rules:
   accept request:
     queue: desk
     labels:
       ready: "request:new"
       running: "request:accepting"
-      success: "translation:to do"
+    routes:
+      passed: "translation:to do"
   translation:
     queue: translators
     labels:
       ready: "translation:to do"
       running: "translation:drafting"
-      success: "translation:drafted"
-      failure: "translation:stuck"
     actions:
-      draft:
-        agent: translator
-        check: [glossary-kept, draft-pushed]
+      - agent: translator
+        name: draft
         prompt: |-
           Translate the page {{.Issue.Ref}} names, "{{.Issue.Title}}", into Portuguese.
 
           Keep every term the glossary lists, and push the draft to a branch.
+      - glossary-kept
+      - draft-pushed:
+        on:
+          unpushed: unpushed
+    routes:
+      passed: "translation:drafted"
+      failed:
+        - report
+        - move: "translation:stuck"
+      unpushed:
+        - comment: "{{.Issue.Ref}}: `{{.Action}}` found no draft pushed. Its log is {{.Log}}."
+        - move: "translation:stuck"
   proofreading:
     notify: false
     labels:
       ready: "translation:drafted"
       running: "translation:proofreading"
-      success: "translation:published"
-      failure: "translation:rejected"
     actions:
-      proofread:
-        agent: proofreader
-        check: glossary-kept
+      - agent: proofreader
+        name: proofread
         prompt: Proofread the draft of {{.Issue.Ref}} ({{.Issue.URL}}).
-      typeset:
-        agent: translator
+        on:
+          failed: rejected
+      - glossary-kept
+      - agent: translator
         prompt: Typeset the draft of {{.Issue.Ref}} for print.
+    routes:
+      passed: "translation:published"
+      failed:
+        - report
+        - move: "translation:rejected"
+      rejected:
+        - comment: "{{.Issue.Ref}} was rejected in {{.Rule}}."
+        - glossary-kept
+        - close
   archive:
     notify: true
     labels:
       ready: "translation:published"
       running: "translation:archiving"
-      success: "translation:archived"
+    routes:
+      passed: "translation:archived"

@@ -72,14 +72,13 @@ func (d *driver) takeLanded() []core.Command {
 	return landed
 }
 
-// endingLanded starts #74's actions from landed, ends them with acceptance
-// and development and lands the ending move. It returns the commands the
-// landed ending move issued.
-func (d *driver) endingLanded(landed []core.Command, acceptance, development crew.Outcome) []core.Command {
+// endingLanded starts #74's actions from landed, ends them both well and
+// lands the passed route's move. It returns the commands the landed move
+// issued.
+func (d *driver) endingLanded(landed []core.Command) []core.Command {
 	d.t.Helper()
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: acceptance})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: development})
+	ending := d.endActions("74")
 	noPullRequestReport(d.t, ending)
 	cmds, _ := d.send(core.CallResult{ID: moveID(d.t, ending, "74"), Result: core.ResultDone})
 	return cmds
@@ -92,13 +91,13 @@ func (d *driver) succeededRule() []core.Command {
 	d.t.Helper()
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
-	return d.endingLanded(landed, succeeded, succeeded)
+	return d.endingLanded(landed)
 }
 
 // allSucceeded is the end of implement when both its actions succeeded.
-var allSucceeded = crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
-	{Name: "acceptance", State: crew.ActionSucceeded{}},
-	{Name: "development", State: crew.ActionSucceeded{}},
+var allSucceeded = crew.Some(crew.NewRuleEnd("implement", crew.PassedRoute, []crew.ActionStatus{
+	{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
+	{Name: "development", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 }))
 
 func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
@@ -107,12 +106,11 @@ func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 	noPullRequestReport(t, landed)
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	moved, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
+	report := d.ended("74", "acceptance", failed("broke"))
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
 	noPullRequestReport(t, moved)
-	reported, _ := d.send(core.CallResult{ID: reportID(t, ending, "74"), Result: core.ResultDone})
-	noPullRequestReport(t, reported)
+	cmds, _ = d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
+	noPullRequestReport(t, cmds)
 	wantHeld(t, d.m)
 }
 
@@ -141,25 +139,23 @@ func TestAE1ASucceededRuleReportsOnSuccessAndItsEndOnceItsMoveLands(t *testing.T
 	})
 }
 
-func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
-	d := newPullRequestDriver(t, checked())
+func TestAFailedRuleReportsOnFailureWithTheActionThatEndedIt(t *testing.T) {
+	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-	ending, _ := d.send(core.CheckEnded{
-		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
-	})
-	noPullRequestReport(t, ending)
+	d.settle(d.ended("74", "acceptance", succeeded))
+	report := d.ended("74", "development", failed("broke"))
+	noPullRequestReport(t, report)
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
+	noPullRequestReport(t, moved)
 
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
-		End: crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionFailed{Cause: crew.CauseSession, Log: space("74", "acceptance").Log}},
-			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseCheck, Log: space("74", "development").Log},
-				Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: crew.NewCheckReason("no pull request")}}},
+		End: crew.Some(crew.NewRuleEnd("implement", crew.FailedRoute, []crew.ActionStatus{
+			{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
+			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseSession, Log: space("74", "implement").Log}},
 		})),
 	})
 }
@@ -169,30 +165,29 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
+	d.settle(d.ended("74", "acceptance", succeeded))
 	d.send(core.StopRequested{})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("killed")})
-	d.send(core.CallResult{ID: reportID(t, ending, "74"), Result: core.ResultDone})
+	report := d.ended("74", "development", failed("killed"))
+	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
 
-	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
-		End: crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionSucceeded{}},
-			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStopped, Log: space("74", "development").Log}},
+		End: crew.Some(crew.NewRuleEnd("implement", crew.FailedRoute, []crew.ActionStatus{
+			{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
+			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStopped, Log: space("74", "implement").Log}},
 		})),
 	})
 }
 
-func TestADroppedEndingMoveReportsNothing(t *testing.T) {
+func TestADroppedFinalMoveReportsNothing(t *testing.T) {
 	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
 		t.Run(result.String(), func(t *testing.T) {
 			d := newPullRequestDriver(t, draft())
 			landed := d.takeLanded()
 			d.answerPullRequests("74", core.ResultDone)
 			d.runAll(landed)
-			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
-			ending, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			ending := d.endActions("74")
 
 			cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: result})
 			noPullRequestReport(t, cmds)
@@ -201,13 +196,13 @@ func TestADroppedEndingMoveReportsNothing(t *testing.T) {
 	}
 }
 
-func TestTheEndingReportWaitsForTheTakeReportInFlight(t *testing.T) {
+func TestTheFinalMovesReportWaitsForTheTakeReportInFlight(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	run := crew.NewRuleRunID(d.listed, 1)
 	take := pullRequestReportOf(t, landed)
 
-	noPullRequestReport(t, d.endingLanded(landed, succeeded, succeeded))
+	noPullRequestReport(t, d.endingLanded(landed))
 
 	cmds, _ := d.answerPullRequests("74", core.ResultDone)
 	ending := pullRequestReportOf(t, cmds)
@@ -248,7 +243,7 @@ func TestAnOwedReportIsInTheViewAndHoldsBackTheIssuesLaterReports(t *testing.T) 
 		t.Fatalf("owed: got %#v, want %#v", got, []core.Call{owed})
 	}
 
-	noPullRequestReport(t, d.endingLanded(landed, succeeded, succeeded))
+	noPullRequestReport(t, d.endingLanded(landed))
 
 	cmds, _ := d.send(core.Tick{})
 	if got := pullRequestReportOf(t, cmds); got.State() != inProgress {
@@ -270,7 +265,7 @@ func TestARefusedOrMovedMeanwhileReportIsDroppedAndTheNextOneSent(t *testing.T) 
 		t.Run(result.String(), func(t *testing.T) {
 			d := newPullRequestDriver(t, draft())
 			landed := d.takeLanded()
-			d.endingLanded(landed, succeeded, succeeded)
+			d.endingLanded(landed)
 
 			cmds, events := d.answerPullRequests("74", result)
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: result.String(), Call: core.Call{
@@ -351,7 +346,7 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	take := pullRequestReportOf(t, landed)
-	noPullRequestReport(t, d.endingLanded(landed, succeeded, succeeded))
+	noPullRequestReport(t, d.endingLanded(landed))
 	d.send(core.StopRequested{})
 
 	cmds, _ := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "down"})
@@ -377,13 +372,13 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 func TestAnOwedTakeReportLeavesTheIssueRunning(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
-	var created []crew.ActionName
+	var created []crew.RuleName
 	for _, c := range landed {
 		if w, ok := c.(core.CreateWorkspace); ok {
-			created = append(created, w.Action)
+			created = append(created, w.Rule)
 		}
 	}
-	if want := []crew.ActionName{"acceptance", "development"}; !reflect.DeepEqual(created, want) {
+	if want := []crew.RuleName{"implement"}; !reflect.DeepEqual(created, want) {
 		t.Fatalf("the landed take created workspaces for %v, want %v", created, want)
 	}
 
@@ -392,10 +387,8 @@ func TestAnOwedTakeReportLeavesTheIssueRunning(t *testing.T) {
 		t.Fatalf("claim of #74: got %v, want running", c)
 	}
 	d.runAll(landed)
-	for _, a := range d.m.View().Issues[0].Actions {
-		if a.Phase != core.PhaseRunning {
-			t.Fatalf("action %s is %v, want running", a.Name, a.Phase)
-		}
+	if a := d.m.View().Issues[0].Actions[0]; a.Phase != core.PhaseRunning {
+		t.Fatalf("action %s is %v, want running", a.Name, a.Phase)
 	}
 }
 

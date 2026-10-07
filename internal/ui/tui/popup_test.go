@@ -339,15 +339,15 @@ func TestThePopupOfAnIdleIssueHasNoRuleAndNoActions(t *testing.T) {
 	}
 }
 
-// fourActions is #1 of runningSnapshot held by implement with code
-// running as crew-dev, tests waiting, docs done and lint failed; every
-// action but code acts as you.
+// fourActions is #1 of runningSnapshot held by implement with docs done,
+// lint failed, code running as crew-dev and tests awaiting its turn;
+// every action but code acts as you.
 func fourActions() engine.Update {
 	u := runningSnapshot()
 	iv := &u.Snapshot.Issues[0]
 	iv.Actions = []core.ActionView{
 		{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5*time.Minute - 3*time.Second)},
-		{Name: "tests", Phase: core.PhaseWaiting},
+		{Name: "tests", Phase: core.PhaseAwaitingTurn},
 		{Name: "docs", Phase: core.PhaseEnded, Branch: "crew/1-docs", Outcome: crew.Outcome{Succeeded: true}},
 		{
 			Name: "lint", Phase: core.PhaseEnded, Branch: "crew/1-lint",
@@ -373,7 +373,7 @@ func TestThePopupTableShowsEachActionsBotQueueStateAndBranch(t *testing.T) {
 	for _, want := range []string{
 		"action bot queue state branch",
 		"code ■ crew-dev default running 5m03s crew/1-code",
-		"tests ■ you default waiting",
+		"tests ■ you default awaiting its turn",
 		"docs ■ you default done crew/1-docs",
 		"lint ■ you default failed crew/1-lint",
 	} {
@@ -389,7 +389,7 @@ func TestThePopupTableShowsEachActionsBotQueueStateAndBranch(t *testing.T) {
 func TestAnActionWhoseBotCannotActShowsYou(t *testing.T) {
 	h := newHarness(t, 120)
 	u := held(headerIssue, "implement", "code", core.ClaimTaking)
-	u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseWaiting
+	u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseTaking
 	u.Snapshot.Bots = []core.BotView{
 		{Name: "crew-dev", ActsAsYou: true, Pairs: []string{"implement/code"}},
 		you([]string{"implement/code"}),
@@ -397,7 +397,7 @@ func TestAnActionWhoseBotCannotActShowsYou(t *testing.T) {
 	h.send(updateMsg(onBoard(u, labeled(headerIssue, "in progress"))))
 	h.send(enterKey)
 
-	hasRow(t, popupRows(t, h), "code ■ you clerk waiting")
+	hasRow(t, popupRows(t, h), "code ■ you clerk taking")
 }
 
 // Covers AE5, R17 and R18 of #151: an action that said something and
@@ -441,8 +441,7 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 	u.Snapshot.Recent = []core.Published{
 		taken(start.Add(-7*time.Minute), one, "implement", "ready", "in progress"),
 		crew.ActionSessionStarted{
-			At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
-			Action: "tests", Workspace: crew.Workspace{Branch: "crew/1-tests"}, Log: ".crew/logs/1-tests.log",
+			At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "code",
 		},
 		taken(start.Add(-5*time.Minute), two, "review", "ready to review", "in review"),
 		core.CallOwed{At: start.Add(-4 * time.Minute), Call: core.Call{Kind: core.CallMove, IssueID: issueID("1"),

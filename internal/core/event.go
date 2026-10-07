@@ -8,10 +8,10 @@ import (
 
 // Published is an event the core publishes for subscribers (R16, R13): the
 // TUI and the line renderer. It is either a crew.RunEvent, one of a rule
-// run's events that the views word (the take, a landed move, a missing
-// workspace, a started session, an ended action, a posted failure report),
-// or an Event of the core's own. The rule runs' other events are not
-// published.
+// run's events that the views word (the take, its landed move, a missing
+// or ready workspace, a started session or script, an ended action, the
+// route chosen), or an Event of the core's own, a step of the route that
+// settled among them. The rule runs' other events are not published.
 type Published interface {
 	// Time returns when the event happened.
 	Time() time.Time
@@ -28,16 +28,42 @@ type Event interface {
 	event()
 }
 
-// RunNotRecorded is an action run's start or end the engine could not
-// append to the run journal. After a restart, crew may not know how that
-// action run ended.
+// RunNotRecorded is a run event a resume depends on that the engine could
+// not append to the run journal (KTD18): the run's worktree, an action's
+// start or end, its session's start, the route it chose, a step's outcome
+// or its release. After a restart, crew may not know where that run
+// stopped.
 type RunNotRecorded struct {
 	At       time.Time
 	IssueID  crew.IssueID
 	IssueRef string
 	Rule     crew.RuleName
-	Action   crew.ActionName
-	Reason   string
+	// Action is the action the event is about; empty for an event about
+	// the run as a whole.
+	Action crew.ActionName
+	// What says which event was not recorded, in crew's words, such as
+	// "the start of lfg" or "the route failed it chose".
+	What   string
+	Reason string
+}
+
+// RouteStepEnded is a step of the route a rule run ends through that
+// settled (crew.StepEnded), with what the step does, for the views to word
+// it (R16, KTD23).
+type RouteStepEnded struct {
+	At       time.Time
+	IssueID  crew.IssueID
+	IssueRef string
+	Rule     crew.RuleName
+	// Route is the route the run ends through.
+	Route crew.RouteName
+	// Step is the step's index in the route, and Plan what it does.
+	Step int
+	Plan crew.StepPlan
+	// From is the state a move or close took the issue from, the rule's
+	// running label; empty for the other steps.
+	From    crew.State
+	Outcome crew.StepOutcome
 }
 
 // IssueSkipped is a listed issue found in two or more crew states. It is not
@@ -94,8 +120,8 @@ type ListingFailed struct {
 	Reason string
 }
 
-// CallOwed is a take move, ending move, failure report or pull request
-// report that failed transiently. The core owes it and retries it at the
+// CallOwed is a take move, a route's move, close, comment or report, or a
+// pull request report that failed transiently. The core owes it and retries it at the
 // next tick (KTD8), or once at stop.
 type CallOwed struct {
 	At     time.Time
@@ -161,8 +187,8 @@ type BotActsAgain struct {
 	Bot crew.BotName
 }
 
-// CallKind tells a Move, a ReportFailure and a ReportPullRequests apart in a
-// Call.
+// CallKind tells a Move, a ReportFailure, a ReportPullRequests, a Comment
+// and a Close apart in a Call.
 type CallKind int
 
 // The kinds of tracker call.
@@ -173,6 +199,10 @@ const (
 	CallReport
 	// CallPullRequests is a ReportPullRequests.
 	CallPullRequests
+	// CallComment is a Comment.
+	CallComment
+	// CallClose is a Close.
+	CallClose
 )
 
 // String names the kind for renderers.
@@ -182,6 +212,10 @@ func (k CallKind) String() string {
 		return "report"
 	case CallPullRequests:
 		return "pull requests"
+	case CallComment:
+		return "comment"
+	case CallClose:
+		return "close"
 	default:
 		return "move"
 	}
@@ -193,14 +227,18 @@ type Call struct {
 	IssueID  crew.IssueID
 	IssueRef string
 	// From and To are the move's states; both are empty for a failure
-	// report. For a pull request report, To is the state the pull requests
-	// are put in and From is empty.
+	// report and a comment. For a pull request report, To is the state the
+	// pull requests are put in and From is empty; for a close, From is the
+	// state the issue is closed from and To is empty.
 	From crew.State
 	To   crew.State
 }
 
 // Time implements Event.
 func (e RunNotRecorded) Time() time.Time { return e.At }
+
+// Time implements Event.
+func (e RouteStepEnded) Time() time.Time { return e.At }
 
 // Time implements Event.
 func (e IssueSkipped) Time() time.Time { return e.At }
@@ -239,6 +277,7 @@ func (e BotStopped) Time() time.Time { return e.At }
 func (e BotActsAgain) Time() time.Time { return e.At }
 
 func (RunNotRecorded) event()   {}
+func (RouteStepEnded) event()   {}
 func (IssueSkipped) event()     {}
 func (IssueOfOtherKind) event() {}
 func (PollDone) event()         {}

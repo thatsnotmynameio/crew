@@ -155,9 +155,10 @@ func agent(harness string) string {
     harness: {name: codex` + harness + `}
 rules:
   review:
-    labels: {ready: ready, running: in review, success: reviewed, failure: needs attention}
+    labels: {ready: ready, running: in review}
     actions:
-      review: {prompt: "Review {{.Issue.Ref}}"}
+      - {name: review, prompt: "Review {{.Issue.Ref}}"}
+    routes: {passed: reviewed, failed: [report, move: needs attention]}
 `
 }
 

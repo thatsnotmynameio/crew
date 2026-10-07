@@ -30,10 +30,27 @@ func ended(t *testing.T, cfg engine.Config) []crew.ActionEnded {
 	return out
 }
 
-func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
+// lookedUp returns the pull requests the lookups of the runs found, as
+// cfg's fake journal holds them, in the order they were appended.
+func lookedUp(t *testing.T, cfg engine.Config) []crew.PullRequest {
+	t.Helper()
+	j, ok := cfg.Journal.(*fake.Journal)
+	if !ok {
+		t.Fatalf("journal is %T, want the fake one", cfg.Journal)
+	}
+	var out []crew.PullRequest
+	for _, e := range j.Appended() {
+		if done, ok := e.(crew.RunLookupDone); ok {
+			out = append(out, done.PullRequest)
+		}
+	}
+	return out
+}
+
+func TestAE1AnEndedActionsLineHoldsItsUsageAndTheRunsPullRequest(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewFindingTracker(issue(31, ready))
-		tr.ScriptLookup("crew/issue-31-development", fake.LookupScript{
+		tr.ScriptLookup("crew/issue-31-implement", fake.LookupScript{
 			Found: crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"},
 		})
 		cfg := config(t, tr, develop)
@@ -65,12 +82,15 @@ func TestAE1AnEndedActionsLineHoldsItsUsageAndPullRequest(t *testing.T) {
 		}
 		started, _ := end[0].SessionStarted.Get()
 		if !end[0].End.Outcome().Succeeded || !reflect.DeepEqual(end[0].Usage, want) ||
-			end[0].PullRequest != (crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"}) ||
 			end[0].At.Sub(started) != 90*time.Second {
-			t.Errorf("end = %#v, want a success after 90s with its usage and #45", end[0])
+			t.Errorf("end = %#v, want a success after 90s with its usage", end[0])
 		}
-		if got := tr.Lookups(); len(got) != 1 || got[0].Branch != "crew/issue-31-development" || got[0].Since.IsZero() {
-			t.Errorf("lookups = %#v, want one from crew/issue-31-development since its worktree was made", got)
+		found := crew.PullRequest(crew.PullRequestFound{Ref: "#45", URL: "https://example.test/pull/45"})
+		if prs := lookedUp(t, cfg); !slices.Equal(prs, []crew.PullRequest{found}) {
+			t.Errorf("pull requests = %#v, want #45", prs)
+		}
+		if got := tr.Lookups(); len(got) != 1 || got[0].Branch != "crew/issue-31-implement" || got[0].Since.IsZero() {
+			t.Errorf("lookups = %#v, want one from crew/issue-31-implement since its worktree was made", got)
 		}
 		if got := states(t, tr, "31"); !slices.Equal(got, []crew.State{readyToReview}) {
 			t.Errorf("issue 31 is in %v, want ready to review", got)
@@ -92,8 +112,11 @@ func TestAE6AHarnessAndTrackerThatCannotTellLeaveTheValuesOut(t *testing.T) {
 		}
 
 		end := ended(t, cfg)
-		if len(end) != 1 || end[0].PullRequest != nil || !reflect.DeepEqual(end[0].Usage, crew.Usage{}) {
-			t.Fatalf("ends = %#v, want one with no usage, whose pull request was not looked up", end)
+		if len(end) != 1 || !reflect.DeepEqual(end[0].Usage, crew.Usage{}) {
+			t.Fatalf("ends = %#v, want one with no usage", end)
+		}
+		if prs := lookedUp(t, cfg); len(prs) != 0 {
+			t.Errorf("pull requests = %#v, want none looked up", prs)
 		}
 	})
 }
@@ -101,7 +124,7 @@ func TestAE6AHarnessAndTrackerThatCannotTellLeaveTheValuesOut(t *testing.T) {
 func TestALookupThatHangsGivesUpAfterFifteenSecondsAndChangesNoOutcome(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewFindingTracker(issue(1, ready))
-		tr.ScriptLookup("crew/issue-1-development", fake.LookupScript{Block: true})
+		tr.ScriptLookup("crew/issue-1-implement", fake.LookupScript{Block: true})
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
@@ -119,8 +142,8 @@ func TestALookupThatHangsGivesUpAfterFifteenSecondsAndChangesNoOutcome(t *testin
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		if end := ended(t, cfg); len(end) != 1 || end[0].PullRequest != (crew.PullRequestNotLookedUp{}) {
-			t.Fatalf("ends = %#v, want one whose pull request was not looked up", end)
+		if prs := lookedUp(t, cfg); !slices.Equal(prs, []crew.PullRequest{crew.PullRequestNotLookedUp{}}) {
+			t.Fatalf("pull requests = %#v, want one not looked up", prs)
 		}
 	})
 }
@@ -128,7 +151,7 @@ func TestALookupThatHangsGivesUpAfterFifteenSecondsAndChangesNoOutcome(t *testin
 func TestAStopDuringALookupWaitsForItAndWritesTheLine(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewFindingTracker(issue(1, ready))
-		tr.ScriptLookup("crew/issue-1-development", fake.LookupScript{Block: true})
+		tr.ScriptLookup("crew/issue-1-implement", fake.LookupScript{Block: true})
 		cfg := config(t, tr, develop)
 		r := start(t, cfg)
 
@@ -155,7 +178,7 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 	for _, on := range []bool{false, true} {
 		synctest.Test(t, func(t *testing.T) {
 			tr := fake.NewFindingTracker(issue(1, ready))
-			tr.ScriptLookup("crew/issue-1-development", fake.LookupScript{Found: pr})
+			tr.ScriptLookup("crew/issue-1-implement", fake.LookupScript{Found: pr})
 			cfg := config(t, tr, develop)
 			cfg.Harnesses = harnesses(fake.NewUsageHarness())
 			cfg.UsageInStatus = on
@@ -171,9 +194,11 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 			}
 
 			got := lastStatus(t, tr.ReportingTracker).Actions()[0]
-			want := crew.ActionStatus{Name: "development", State: crew.ActionSucceeded{}}
+			want := crew.ActionStatus{Name: "development", State: crew.ActionSucceeded{Verdict: crew.Passed}}
 			if on {
-				want.State = crew.ActionSucceeded{Usage: crew.Some(crew.ShownUsage{Spend: used.Spend(), PullRequest: pr})}
+				want.State = crew.ActionSucceeded{
+					Verdict: crew.Passed, Usage: crew.Some(crew.ShownUsage{Spend: used.Spend(), PullRequest: pr}),
+				}
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("usage_in_status %v: action status = %#v, want %#v", on, got, want)

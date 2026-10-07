@@ -3,9 +3,9 @@ package core_test
 import (
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -20,91 +20,92 @@ const (
 	crewFailed  crew.State = "crew:failed"
 )
 
-// crewRules is crew's own development and fix rules, whose actions share
-// the name lfg, plus a two-action rule.
+// crewRules is crew's own development and fix rules, whose sessions share
+// the name lfg, then the draft's implement, whose sessions acceptance and
+// development run one after the other.
 func crewRules() []crew.Rule {
 	return []crew.Rule{
 		{
-			Name:    "development",
-			Labels:  crew.Labels{Ready: readyForDev, Running: crewRunning, Success: crewReview, Failure: crewFailed},
-			Actions: []crew.Action{{Name: "lfg", Prompt: parsedPrompt("lfg", "/lfg {{.Issue.Ref}}")}},
+			Name: "development", Labels: crew.Labels{Ready: readyForDev, Running: crewRunning},
+			Actions: []crew.Action{sessionAction("lfg", "/lfg {{.Issue.Ref}}")}, Routes: routes(crewReview, crewFailed),
 		},
 		{
-			Name: "fix", Labels: crew.Labels{Ready: readyForFix, Running: crewRunning, Success: crewReview, Failure: crewFailed},
-			Actions: []crew.Action{{Name: "lfg", Prompt: parsedPrompt("lfg", "/lfg {{.Issue.Ref}} as a bug")}},
+			Name: "fix", Labels: crew.Labels{Ready: readyForFix, Running: crewRunning},
+			Actions: []crew.Action{sessionAction("lfg", "/lfg {{.Issue.Ref}} as a bug")},
+			Routes:  routes(crewReview, crewFailed),
 		},
-		{
-			Name:   "implement",
-			Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview, Failure: needsAttention},
-			Actions: []crew.Action{
-				{Name: "acceptance", Prompt: parsedPrompt("acceptance", "acceptance for {{.Issue.Ref}}")},
-				{Name: "development", Prompt: parsedPrompt("development", "development for {{.Issue.Ref}}")},
-			},
-		},
+		draft()[0],
 	}
 }
 
-// resumeDriver drives a model that journals runs, starting from past, and
-// can reopen workspaces.
+// resumeDriver drives a model of crewRules that journals runs, starting
+// from past, and can reopen worktrees. Its inputs are seeded after those
+// of the drivers that left past, so its runs get ids of their own.
 func resumeDriver(t *testing.T, past ...crew.RunEvent) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(crewRules(), 2, core.Journaling(past), core.Reopening()), now: t0}
+	return resumeDriverOf(t, crewRules(), past...)
 }
 
-// pastRun is the id of the past run of rule on issue key.
-func pastRun(key string, rule crew.RuleName) crew.RuleRunID {
-	return crew.RuleRunID("past-" + string(rule) + "-" + key)
-}
-
-// startedRun is the start of an action run of action in rule on issue key,
-// in the past run of the rule on the issue, in the workspace the engine
-// would name issue-<key>-<workspace>.
-func startedRun(key string, rule crew.RuleName, action crew.ActionName, workspace string) crew.ActionOpened {
-	name := "issue-" + key + "-" + workspace
-	return crew.ActionOpened{
-		Run: pastRun(key, rule), At: t0, IssueID: issueID(key), IssueRef: "#" + key, Rule: rule,
-		Action: action, Workspace: crew.Workspace{Name: crew.WorkspaceName(name), Branch: "crew/" + name},
-		Log: ".crew/logs/" + name + ".log",
+// resumeDriverOf is resumeDriver for rules.
+func resumeDriverOf(t *testing.T, rules []crew.Rule, past ...crew.RunEvent) *driver {
+	t.Helper()
+	d := &driver{t: t, m: core.New(rules, 2, core.Journaling(past), core.Reopening()), now: t0}
+	for _, e := range past {
+		if _, ok := e.(crew.RunTaken); ok {
+			d.inputs += 1000
+		}
 	}
+	return d
 }
 
-// endedRun is the end of the action run r started, after a session, with
-// outcome.
-func endedRun(r crew.ActionOpened, outcome crew.Outcome) crew.ActionEnded {
-	var end crew.ActionEnd = crew.EndFailed{Reason: outcome.Reason}
-	if outcome.Succeeded {
-		end = crew.EndSucceeded{Reason: outcome.Reason}
-	}
-	return crew.ActionEnded{
-		EventHead: r.EventHead, Action: r.Action, End: end, SessionStarted: crew.Some(r.At),
-		Workspace: crew.Some(crew.OpenedWorkspace{Workspace: r.Workspace, Log: r.Log, Opened: r.At}),
-	}
+// journaled plays on a driver of rules that journals from past, and
+// returns the journal it leaves: past, then every event it recorded.
+func journaled(t *testing.T, rules []crew.Rule, past []crew.RunEvent, play func(d *driver)) []crew.RunEvent {
+	t.Helper()
+	d := resumeDriverOf(t, rules, past...)
+	play(d)
+	return append(slices.Clone(past), d.recorded...)
 }
 
-// take lists iss, answers its take move and returns the commands that
-// start its actions.
+// failedRun is the journal of a run of development on #9 whose session lfg
+// failed for reason, which ended through failed.
+func failedRun(t *testing.T, reason string) []crew.RunEvent {
+	t.Helper()
+	return journaled(t, crewRules(), nil, func(d *driver) {
+		d.running(issue("9", 1, readyForDev))
+		d.settle(d.ended("9", "lfg", failed(reason)))
+		wantHeld(t, d.m)
+	})
+}
+
+// created is the CreateWorkspace of a new workspace for the last run of
+// rule on it.
+func (d *driver) created(it crew.Issue, rule crew.RuleName) core.CreateWorkspace {
+	return core.CreateWorkspace{Issue: it, Run: d.run(it.ID()), Rule: rule}
+}
+
+// takeIssue lists iss, answers its take move and returns the commands that
+// follow, the Record commands left out.
 func (d *driver) takeIssue(iss crew.Issue) []core.Command {
 	d.t.Helper()
 	cmds, _ := d.poll(iss)
 	cmds, _ = d.send(core.CallResult{ID: moveID(d.t, cmds, iss.ID().Key), Result: core.ResultDone})
-	return cmds
+	return unrecorded(cmds)
+}
+
+// reopen is the ReopenWorkspace of the worktree of the run of rule on key,
+// for key's last run.
+func (d *driver) reopen(key string, rule crew.RuleName) core.ReopenWorkspace {
+	w := space(key, rule)
+	return core.ReopenWorkspace{IssueID: issueID(key), Run: d.run(issueID(key)), Workspace: w.Workspace, Branch: w.Branch}
 }
 
 // reopened is the WorkspaceReady answering a ReopenWorkspace of the
-// workspace issue-<key>-<workspace>.
-func reopened(key string, action crew.ActionName, workspace string) core.WorkspaceReady {
-	r := space(key, crew.ActionName(workspace))
-	r.Action = action
+// worktree of the run of rule on key.
+func reopened(key string, rule crew.RuleName) core.WorkspaceReady {
+	r := space(key, rule)
 	r.Resumed = true
-	r.LogFromDir = "../../logs/issue-" + key + "-" + workspace + ".log"
-	return r
-}
-
-// created is the WorkspaceReady answering a CreateWorkspace of action with
-// the workspace issue-<key>-<workspace>.
-func created(key string, action crew.ActionName, workspace string) core.WorkspaceReady {
-	r := space(key, crew.ActionName(workspace))
-	r.Action = action
+	r.LogFromDir = "../../logs/issue-" + key + "-" + string(rule) + ".log"
 	return r
 }
 
@@ -120,28 +121,6 @@ func startOf(t *testing.T, cmds []core.Command) core.StartSession {
 	return core.StartSession{}
 }
 
-// records returns the events the Record commands in cmds carry.
-func records(cmds []core.Command) []crew.RunEvent {
-	var out []crew.RunEvent
-	for _, c := range cmds {
-		if r, ok := c.(core.Record); ok {
-			out = append(out, r.Event)
-		}
-	}
-	return out
-}
-
-// ends returns the action runs' ends the Record commands in cmds carry.
-func ends(cmds []core.Command) []crew.ActionEnded {
-	var out []crew.ActionEnded
-	for _, e := range records(cmds) {
-		if ended, ok := e.(crew.ActionEnded); ok {
-			out = append(out, ended)
-		}
-	}
-	return out
-}
-
 // unrecorded returns cmds without their Record commands.
 func unrecorded(cmds []core.Command) []core.Command {
 	return slices.DeleteFunc(slices.Clone(cmds), func(c core.Command) bool {
@@ -150,17 +129,45 @@ func unrecorded(cmds []core.Command) []core.Command {
 	})
 }
 
-// reasonOf returns the reason of the action run's end e.
-func reasonOf(e crew.ActionEnded) string { return e.End.Outcome().Reason.String() }
+// takenOf returns the last take of issue key in d's events.
+func takenOf(t *testing.T, d *driver, key string) crew.RunTaken {
+	t.Helper()
+	for _, e := range slices.Backward(d.events) {
+		if taken, ok := e.(crew.RunTaken); ok && taken.IssueID == issueID(key) {
+			return taken
+		}
+	}
+	t.Fatalf("no take of #%s", key)
+	return crew.RunTaken{}
+}
 
-func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
-	failedRun := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("no pull request was found"))
-	d := resumeDriver(t, startedRun("9", "development", "lfg", "lfg"), failedRun)
+// wantResumeReason fails the test unless the prompt of the session in cmds
+// says its last run ended through failed for reason.
+func wantResumeReason(t *testing.T, cmds []core.Command, reason string) {
+	t.Helper()
+	quoted := "That run ended through the route `failed`: " + strconv.Quote(reason) + "."
+	if p := startOf(t, cmds).Prompt; !strings.Contains(p, quoted) {
+		t.Fatalf("prompt does not say %s:\n%s", quoted, p)
+	}
+}
+
+// Covers AE1, R22, R23: the take starts where the last run's failed route
+// says, in its reopened worktree, and the session gets the resume
+// paragraph naming that route.
+func TestAE1AFailedRunResumesInItsWorktreeWithTheParagraph(t *testing.T) {
+	d := resumeDriver(t, failedRun(t, "no pull request was found")...)
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
-		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
-	})
+	wantCommands(t, cmds, d.reopen("9", "development"))
+	w := space("9", "development")
+	ws := crew.Workspace{Name: w.Workspace, Branch: w.Branch}
+	wantStart := crew.StartAt{
+		Workspace: ws, Log: w.Log, Action: "lfg", Route: crew.FailedRoute,
+		Reason: crew.NewSessionText("no pull request was found"), Session: crew.Some(crew.LatestSession{Action: "lfg"}),
+	}
+	if got := takenOf(t, d, "9").Start; !reflect.DeepEqual(got, crew.Start(wantStart)) {
+		t.Fatalf("start:\n got %#v\nwant %#v", got, wantStart)
+	}
 	if got := claimOf(t, d.m, "9"); got != core.ClaimRunning {
 		t.Fatalf("claim = %v, want running", got)
 	}
@@ -168,338 +175,302 @@ func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 		t.Fatalf("phase = %v, want %v", got, core.PhaseReopening)
 	}
 
-	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-	want := "/lfg #9\n\ncrew: this session continues the work of an earlier session on this action, in this worktree, " +
-		"on branch `crew/issue-9-lfg`. That run failed: \"no pull request was found\". " +
-		"Its output is in the log `.crew/logs/issue-9-lfg.log` of the repository's main checkout " +
-		"(`../../logs/issue-9-lfg.log` from this worktree), above the line crew wrote there when this session started. " +
-		"Check the worktree's state with `git status` and `git log` before you go on, " +
-		"and continue from where it stopped instead of starting over."
-	opened := crew.ActionOpened{
-		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
-		Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
-	}
-	// The action run's start is recorded before its session starts.
+	cmds, _ = d.send(reopened("9", "development"))
+	want := "/lfg #9\n\ncrew: this session continues the work of an earlier run of this rule, in this worktree, " +
+		"on branch `crew/issue-9-development`. That run ended through the route `failed`: " +
+		"\"no pull request was found\". Its output is in the log `.crew/logs/issue-9-development.log` of the " +
+		"repository's main checkout (`../../logs/issue-9-development.log` from this worktree), above the line crew " +
+		"wrote there when this session started. Check the worktree's state with `git status` and `git log` before " +
+		"you go on, and continue from where it stopped instead of starting over."
+	// The run's worktree and the action's start are recorded before its
+	// session starts.
 	wantCommands(t, cmds,
-		core.Record{Event: opened},
+		core.Record{Event: crew.WorkspaceOpened{EventHead: d.runHead("9"), Workspace: ws, Log: w.Log, Resumed: true}},
 		core.Record{Event: crew.ActionSessionAsked{EventHead: d.runHead("9"), Action: "lfg"}},
 		core.StartSession{
-			IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Dir: "/repo/.crew/worktrees/issue-9-lfg",
-			Prompt: want, Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
+			IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Dir: w.Dir, Prompt: want, Log: w.Log,
+			Resumed: true,
 		})
 
 	_, events := d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
-	hasEvent(t, events, crew.ActionSessionStarted{
-		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
-		Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
-	})
+	hasEvent(t, events, crew.ActionSessionStarted{EventHead: d.runHead("9"), Action: "lfg"})
 	if !d.m.View().Issues[0].Actions[0].Resumed {
 		t.Fatalf("the view does not show the action resumed")
 	}
 }
 
-func TestAE2ASucceededRunStartsFresh(t *testing.T) {
-	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), succeeded))
+func TestAE2ARunThatEndedThroughPassedStartsFresh(t *testing.T) {
+	past := journaled(t, crewRules(), nil, func(d *driver) {
+		d.running(issue("9", 1, readyForDev))
+		d.settle(d.ended("9", "lfg", succeeded))
+	})
+	d := resumeDriver(t, past...)
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, unrecorded(cmds),
-		core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
-	cmds, _ = d.send(created("9", "lfg", "lfg-2"))
-	if s := startOf(t, cmds); s.Prompt != "/lfg #9" || s.Resumed {
+	wantCommands(t, cmds, d.created(issue("9", 1, readyForDev), "development"))
+	if s := startOf(t, d.ready("9")); s.Prompt != "/lfg #9" || s.Resumed {
 		t.Fatalf("start = %#v, want the bare prompt, not resumed", s)
 	}
 }
 
-func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
-	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke")))
+func TestAE3AGoneWorktreeStartsFreshWithoutTheParagraph(t *testing.T) {
+	d := resumeDriver(t, failedRun(t, "broke")...)
 	d.takeIssue(issue("9", 1, readyForDev))
 
-	cmds, events := d.send(core.WorkspaceGone{IssueID: issueID("9"), Action: "lfg"})
+	cmds, events := d.send(core.WorkspaceGone{IssueID: issueID("9")})
+	w := space("9", "development")
 	hasEvent(t, events, crew.WorkspaceMissing{
-		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
+		EventHead: d.runHead("9"), Workspace: crew.Workspace{Name: w.Workspace, Branch: w.Branch},
 	})
 	wantCommands(t, unrecorded(cmds),
-		core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
+		d.created(issue("9", 1, readyForDev), "development"))
 
-	cmds, _ = d.send(created("9", "lfg", "lfg-2"))
-	if s := startOf(t, cmds); s.Prompt != "/lfg #9" || s.Resumed {
+	created := space("9", "development-2")
+	if s := startOf(t, func() []core.Command { cmds, _ := d.send(created); return cmds }()); s.Prompt != "/lfg #9" ||
+		s.Resumed {
 		t.Fatalf("start = %#v, want the bare prompt, not resumed", s)
 	}
 }
 
-func TestAE4AnotherRulesActionOfTheSameNameStartsFresh(t *testing.T) {
-	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke")))
+func TestAE4AnotherRulesRunOnTheIssueStartsFresh(t *testing.T) {
+	d := resumeDriver(t, failedRun(t, "broke")...)
 
 	cmds := d.takeIssue(issue("9", 1, readyForFix))
-	wantCommands(t, unrecorded(cmds),
-		core.CreateWorkspace{Issue: issue("9", 1, readyForFix), Run: d.run(issueID("9")), Action: "lfg"})
+	wantCommands(t, cmds, d.created(issue("9", 1, readyForFix), "fix"))
 }
 
-func TestAE5ARunThatNeverRecordedItsEndResumesAsCrashed(t *testing.T) {
-	d := resumeDriver(t, startedRun("9", "development", "lfg", "lfg"))
+func TestAE5ARunThatNeverChoseARouteResumesAsCrashed(t *testing.T) {
+	// crew died while lfg's session ran: the journal ends with its start.
+	past := journaled(t, crewRules(), nil, func(d *driver) { d.running(issue("9", 1, readyForDev)) })
+	d := resumeDriver(t, past...)
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
-		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
-	})
-	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-	crashed := `That run failed: "crew stopped before the run ended: it crashed or was killed".`
+	wantCommands(t, cmds, d.reopen("9", "development"))
+	cmds, _ = d.send(reopened("9", "development"))
+	crashed := `That run stopped before it chose a route: "crew stopped before the run ended: it crashed or was killed".`
 	if p := startOf(t, cmds).Prompt; !strings.Contains(p, crashed) {
 		t.Fatalf("prompt does not give the crash reason:\n%s", p)
 	}
 }
 
-func TestAE6EachActionOfARuleIsDecidedOnItsOwn(t *testing.T) {
-	d := resumeDriver(t,
-		endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail")),
-		endedRun(startedRun("5", "implement", "development", "development"), succeeded),
-	)
+// Covers AE6: the actions before the restart point went on to the next, so
+// they do not run again.
+func TestAResumeSkipsTheActionsThatWentOnToTheNext(t *testing.T) {
+	past := journaled(t, crewRules(), nil, func(d *driver) {
+		d.running(issue("5", 1, ready))
+		d.settle(d.ended("5", "acceptance", succeeded))
+		d.settle(d.ended("5", "development", failed("tests fail")))
+	})
+	d := resumeDriver(t, past...)
 
 	cmds := d.takeIssue(issue("5", 1, ready))
-	wantCommands(t, unrecorded(cmds),
-		core.ReopenWorkspace{
-			IssueID: issueID("5"), Run: d.run(issueID("5")), Action: "acceptance",
-			Workspace: "issue-5-acceptance", Branch: "crew/issue-5-acceptance",
-		},
-		core.CreateWorkspace{Issue: issue("5", 1, ready), Run: d.run(issueID("5")), Action: "development"},
-	)
+	wantCommands(t, cmds, d.reopen("5", "implement"))
+	cmds, _ = d.send(reopened("5", "implement"))
+	if s := startOf(t, cmds); s.Action != "development" || !s.Resumed {
+		t.Fatalf("start = %#v, want development resumed", s)
+	}
+	wantResumeReason(t, cmds, "tests fail")
+	if got := d.m.View().Issues[0].Actions[0].Phase; got != core.PhaseDoneInEarlierRun {
+		t.Fatalf("acceptance's phase = %v, want it done in an earlier run", got)
+	}
 }
 
 func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) {
-	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("first reason")))
+	d := resumeDriver(t, failedRun(t, "first reason")...)
 	d.takeIssue(issue("9", 1, readyForDev))
-	d.send(reopened("9", "lfg", "lfg"))
+	d.send(reopened("9", "development"))
 	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
+	d.settle(d.ended("9", "lfg", failed("second reason")))
+	wantHeld(t, d.m)
 
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: failed("second reason")})
-	got := ends(cmds)
-	if len(got) != 1 || got[0].End.Outcome().Succeeded || reasonOf(got[0]) != "second reason" ||
-		workspaceOf(got[0]) != "issue-9-lfg" {
-		t.Fatalf("ends = %#v, want one failed end in issue-9-lfg with the second reason", got)
-	}
-	d.settle(cmds)
-
-	cmds = d.takeIssue(issue("9", 2, readyForDev))
-	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
-		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
-	})
-	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-	if p := startOf(t, cmds).Prompt; !strings.Contains(p, `That run failed: "second reason".`) {
-		t.Fatalf("prompt does not give the latest reason:\n%s", p)
-	}
+	cmds := d.takeIssue(issue("9", 2, readyForDev))
+	wantCommands(t, cmds, d.reopen("9", "development"))
+	cmds, _ = d.send(reopened("9", "development"))
+	wantResumeReason(t, cmds, "second reason")
 }
 
-func TestAModelThatCannotReopenCreatesForAFailedRun(t *testing.T) {
-	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-	d := &driver{t: t, m: core.New(crewRules(), 2, core.Journaling([]crew.RunEvent{past})), now: t0}
+// Without a workspace that reopens, a run that would resume starts fresh,
+// and the passed route alone runs without its worktree (KTD19).
+func TestAModelThatCannotReopenStartsFresh(t *testing.T) {
+	t.Run("a failed run", func(t *testing.T) {
+		past := failedRun(t, "broke")
+		d := &driver{t: t, m: core.New(crewRules(), 2, core.Journaling(past)), now: t0, inputs: 1000}
 
-	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, unrecorded(cmds),
-		core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
-}
-
-func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
-	devFailed := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-	fixStarted := startedRun("9", "fix", "lfg", "lfg")
-	fixStarted.At = t0.Add(time.Hour)
-
-	t.Run("in the journal", func(t *testing.T) {
-		d := resumeDriver(t, devFailed, fixStarted, endedRun(fixStarted, succeeded))
 		cmds := d.takeIssue(issue("9", 1, readyForDev))
-		wantCommands(t, unrecorded(cmds), core.CreateWorkspace{
-			Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg",
-		})
+		wantCommands(t, cmds, d.created(issue("9", 1, readyForDev), "development"))
+		if got := takenOf(t, d, "9").Start; got != crew.Start(crew.StartFresh{}) {
+			t.Fatalf("start = %#v, want fresh", got)
+		}
 	})
+
+	t.Run("the passed route alone", func(t *testing.T) {
+		past := journaled(t, crewRules(), nil, func(d *driver) {
+			d.running(issue("9", 1, readyForDev))
+			moved := d.ended("9", "lfg", succeeded)
+			d.send(core.CallResult{ID: moveID(t, moved, "9"), Result: core.ResultRefused, Reason: "nope"})
+		})
+		d := &driver{t: t, m: core.New(crewRules(), 2, core.Journaling(past)), now: t0, inputs: 1000}
+
+		cmds := d.takeIssue(issue("9", 1, readyForDev))
+		wantCommands(t, cmds, core.Move{IssueID: issueID("9"), From: crewRunning, To: crewReview})
+		want := crew.StartPassedRoute{Session: crew.Some(crew.LatestSession{Action: "lfg"})}
+		if got := takenOf(t, d, "9").Start; !reflect.DeepEqual(got, crew.Start(want)) {
+			t.Fatalf("start = %#v, want %#v", got, want)
+		}
+	})
+}
+
+// Covers KTD18: once another run opens a worktree of its name, a past run's
+// worktree is gone, whether crew saw it open or reads it from the journal.
+func TestAWorktreeOpenedUnderTheNameOfAPastRunsRetiresIt(t *testing.T) {
+	devFailed := failedRun(t, "broke")
+	// You removed development's worktree and its branch, so fix got its
+	// name.
+	fixed := func(d *driver) {
+		cmds, _ := d.poll(issue("9", 1, readyForFix))
+		d.send(core.CallResult{ID: moveID(t, cmds, "9"), Result: core.ResultDone})
+		d.send(space("9", "development"))
+		d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
+		d.settle(d.ended("9", "lfg", succeeded))
+	}
 
 	t.Run("in memory", func(t *testing.T) {
-		d := resumeDriver(t, devFailed)
-		d.takeIssue(issue("9", 1, readyForFix))
-		// You removed development's worktree and its branch, so fix
-		// gets its name.
-		d.send(space("9", "lfg"))
-		d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
-		cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: succeeded})
-		d.settle(cmds)
-
-		cmds = d.takeIssue(issue("9", 2, readyForDev))
-		wantCommands(t, unrecorded(cmds), core.CreateWorkspace{
-			Issue: issue("9", 2, readyForDev), Run: d.run(issueID("9")), Action: "lfg",
-		})
+		d := resumeDriver(t, devFailed...)
+		fixed(d)
+		cmds := d.takeIssue(issue("9", 2, readyForDev))
+		wantCommands(t, cmds, d.created(issue("9", 2, readyForDev), "development"))
 	})
 
-	// Development's failed run no longer resumes, so its fresh workspace,
-	// which gets the old name again, carries no reason from it.
-	t.Run("a fresh start in the name again", func(t *testing.T) {
-		d := resumeDriver(t, devFailed, fixStarted, endedRun(fixStarted, succeeded))
-		d.takeIssue(issue("9", 1, readyForDev))
-		d.send(created("9", "lfg", "lfg"))
-		cmds, _ := d.send(core.SessionFailedToStart{
-			IssueID: issueID("9"), Action: "lfg", Reason: crew.NewSessionText("start claude: not found"),
-		})
-		d.settle(cmds)
-		wantResumeReason(t, d, issue("9", 2, readyForDev), "start claude: not found")
+	t.Run("in the journal", func(t *testing.T) {
+		d := resumeDriver(t, journaled(t, crewRules(), devFailed, fixed)...)
+		cmds := d.takeIssue(issue("9", 2, readyForDev))
+		wantCommands(t, cmds, d.created(issue("9", 2, readyForDev), "development"))
 	})
 }
 
-// An action whose last run moved to another workspace keeps its resume
-// point when another rule's action later starts in the workspace it left:
-// only the actions whose last run is in that workspace are retired.
-func TestAStartRetiresOnlyTheActionsWhoseLastRunIsInItsWorkspace(t *testing.T) {
-	fixFirst := startedRun("9", "fix", "lfg", "lfg")
-	fixAgain := startedRun("9", "fix", "lfg", "lfg-2")
-	devLater := startedRun("9", "development", "lfg", "lfg")
-	d := resumeDriver(t,
-		fixFirst, endedRun(fixFirst, succeeded),
-		fixAgain, endedRun(fixAgain, failed("broke")),
-		devLater, endedRun(devLater, succeeded),
-	)
-	cmds := d.takeIssue(issue("9", 1, readyForFix))
-	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
-		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg",
-		Workspace: "issue-9-lfg-2", Branch: "crew/issue-9-lfg-2",
-	})
-}
+// Covers KTD-S9: a run that started no action and opened no worktree of its
+// own passes its start on, and so do the failures around a reopen.
+func TestARunThatStartedNothingPassesItsStartOn(t *testing.T) {
+	tests := []struct {
+		name string
+		cut  func(d *driver)
+	}{
+		{"stopped while reopening", func(d *driver) {
+			d.send(core.StopRequested{})
+			d.settle(func() []core.Command { cmds, _ := d.send(reopened("9", "development")); return cmds }())
+		}},
+		{"its worktree failed to reopen", func(d *driver) {
+			cmds, _ := d.send(core.WorkspaceFailed{IssueID: issueID("9"), Reason: crew.NewSessionText("git failed")})
+			d.settle(cmds)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			past := journaled(t, crewRules(), failedRun(t, "the session's reason"),
+				func(d *driver) {
+					d.takeIssue(issue("9", 1, readyForDev))
+					tt.cut(d)
+					wantHeld(t, d.m)
+				})
+			d := resumeDriver(t, past...)
 
-func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
-	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("the session's reason"))
-
-	t.Run("failed to start", func(t *testing.T) {
-		d := resumeDriver(t, past)
-		d.takeIssue(issue("9", 1, readyForDev))
-		d.send(reopened("9", "lfg", "lfg"))
-		cmds, _ := d.send(core.SessionFailedToStart{
-			IssueID: issueID("9"), Action: "lfg", Reason: crew.NewSessionText("start claude: not found"),
+			cmds := d.takeIssue(issue("9", 2, readyForDev))
+			wantCommands(t, cmds, d.reopen("9", "development"))
+			cmds, _ = d.send(reopened("9", "development"))
+			wantResumeReason(t, cmds, "the session's reason")
 		})
-		// The end shows and records how it failed; the resume quotes more.
-		d.wantReason("9", "lfg", "start claude: not found")
-		d.settle(cmds)
-		journal := append([]crew.RunEvent{past}, d.recorded...)
-		wantResumeReason(t, d, issue("9", 2, readyForDev), "the session's reason")
-		// So does a crew that starts from the journal.
-		wantResumeReason(t, resumeDriver(t, journal...), issue("9", 2, readyForDev), "the session's reason")
-	})
-
-	t.Run("stopped while reopening", func(t *testing.T) {
-		d := resumeDriver(t, past)
-		d.takeIssue(issue("9", 1, readyForDev))
-		d.send(core.StopRequested{})
-		cmds, _ := d.send(reopened("9", "lfg", "lfg"))
-		if got := ends(cmds); len(got) != 1 || reasonOf(got[0]) != "crew stopped" || workspaceOf(got[0]) != "issue-9-lfg" {
-			t.Fatalf("ends = %#v, want a stopped end in issue-9-lfg", got)
-		}
-		wantResumeReason(t, resumeDriver(t, append([]crew.RunEvent{past}, d.recorded...)...),
-			issue("9", 2, readyForDev), "the session's reason")
-	})
-}
-
-// wantResumeReason fails the test unless d, taking iss, reopens its lfg
-// action's workspace with a prompt that quotes reason.
-func wantResumeReason(t *testing.T, d *driver, iss crew.Issue, reason string) {
-	t.Helper()
-	d.takeIssue(iss)
-	cmds, _ := d.send(reopened(iss.ID().Key, "lfg", "lfg"))
-	if p := startOf(t, cmds).Prompt; !strings.Contains(p, `That run failed: "`+reason+`".`) {
-		t.Fatalf("prompt does not quote %q:\n%s", reason, p)
 	}
 }
 
-// workspaceOf returns the name of the workspace the action run's end e
-// names; empty when it names none.
-func workspaceOf(e crew.ActionEnded) crew.WorkspaceName {
-	w, _ := e.Workspace.Get()
-	return w.Workspace.Name
-}
-
-func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T) {
-	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-	d := resumeDriver(t, past)
-	d.takeIssue(issue("9", 1, readyForDev))
-
-	cmds, _ := d.send(core.WorkspaceFailed{
-		IssueID: issueID("9"), Action: "lfg", Reason: crew.NewSessionText("git worktree list failed"),
-	})
-	if got := ends(cmds); len(got) != 1 || workspaceOf(got[0]) != "" || reasonOf(got[0]) != "git worktree list failed" {
-		t.Fatalf("ends = %#v, want one end without a workspace", got)
-	}
-	d.settle(cmds)
-
-	cmds = d.takeIssue(issue("9", 2, readyForDev))
-	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
-		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
-	})
-}
-
-func TestAStopThenAGoneWorkspaceCreatesNothing(t *testing.T) {
-	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-	d := resumeDriver(t, past)
+func TestAStopThenAGoneWorktreeCreatesNothing(t *testing.T) {
+	d := resumeDriver(t, failedRun(t, "broke")...)
 	d.takeIssue(issue("9", 1, readyForDev))
 	d.send(core.StopRequested{})
 
-	cmds, _ := d.send(core.WorkspaceGone{IssueID: issueID("9"), Action: "lfg"})
+	cmds, _ := d.send(core.WorkspaceGone{IssueID: issueID("9")})
 	for _, c := range cmds {
 		if _, ok := c.(core.CreateWorkspace); ok {
 			t.Fatalf("got %#v after a stop, want no workspace", c)
 		}
 	}
-	if got := ends(cmds); len(got) != 1 || workspaceOf(got[0]) != "" || reasonOf(got[0]) != "crew stopped" {
-		t.Fatalf("ends = %#v, want one stopped end without a workspace", got)
-	}
+	d.wantReason("9", "lfg", "crew stopped")
 	if a := d.m.View().Issues[0].Actions[0]; a.Phase != core.PhaseEnded || a.Outcome.Reason.String() != "crew stopped" {
 		t.Fatalf("action = %#v, want ended with crew stopped", a)
 	}
 }
 
-func TestAFreshRunIsRecordedFromItsWorkspaceToItsEnd(t *testing.T) {
+func TestAFreshRunIsRecordedFromItsTakeToItsRelease(t *testing.T) {
 	d := resumeDriver(t)
-	d.takeIssue(issue("9", 1, readyForDev))
+	d.running(issue("9", 1, readyForDev))
+	started := d.events[len(d.events)-1].Time()
+	d.settle(d.ended("9", "lfg", succeeded))
 
-	cmds, _ := d.send(space("9", "lfg"))
-	start := records(cmds)
-	opened := d.now
-	wantStart := crew.ActionOpened{
-		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
-		Log: ".crew/logs/issue-9-lfg.log",
+	w := space("9", "development")
+	ws := crew.Workspace{Name: w.Workspace, Branch: w.Branch}
+	got := make([]string, 0, len(d.recorded))
+	for _, e := range d.recorded {
+		got = append(got, strings.TrimPrefix(reflect.TypeOf(e).String(), "crew."))
+		if opened, ok := e.(crew.WorkspaceOpened); ok && (opened.Workspace != ws || opened.Log != w.Log) {
+			t.Errorf("opened %#v, want %v with its log", opened, ws)
+		}
+		if ended, ok := e.(crew.ActionEnded); ok {
+			if s, _ := ended.SessionStarted.Get(); ended.Verdict != crew.Passed || ended.Target != (crew.Next{}) ||
+				!s.Equal(started) {
+				t.Errorf("end %#v, want passed, to the next, with its session's start", ended)
+			}
+		}
 	}
-	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
-	sessionStarted := d.now
-	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: succeeded})
-	end := ends(cmds)
-
-	wantEnd := crew.ActionEnded{
-		EventHead: d.runHead("9"), Action: "lfg", End: crew.EndSucceeded{Reason: succeeded.Reason},
-		Workspace: crew.Some(crew.OpenedWorkspace{
-			Workspace: wantStart.Workspace, Log: wantStart.Log, Opened: opened,
-		}),
-		SessionStarted: crew.Some(sessionStarted),
+	want := []string{
+		"RunTaken", "TakeMoved", "WorkspaceAsked", "WorkspaceOpened", "ActionSessionAsked", "ActionSessionStarted",
+		"ActionSessionEnded", "ActionEnded", "RouteChosen", "StepAsked", "StepEnded", "RunReleased",
 	}
-	if len(start) == 0 || !reflect.DeepEqual(start[0], crew.RunEvent(wantStart)) || len(end) != 1 ||
-		!reflect.DeepEqual(end[0], wantEnd) {
-		t.Fatalf("records = %#v then %#v, want %#v then %#v", start, end, wantStart, wantEnd)
+	if !slices.Equal(got, want) {
+		t.Fatalf("recorded:\n got %v\nwant %v", got, want)
 	}
 }
 
-// A RecordFailed reaches no run, so it is reported even after its run was
-// released, as the past run these events belong to was.
-func TestAnActionsStartOrEndThatFailsToWriteIsReported(t *testing.T) {
+// Covers KTD18: a RecordFailed reaches no run, so it is reported even after
+// its run was released, worded for each event a resume depends on.
+func TestEveryEventAResumeDependsOnSaysSoWhenItFailsToWrite(t *testing.T) {
+	journal := failedRun(t, "broke")
 	d := resumeDriver(t)
-	started := startedRun("9", "development", "lfg", "lfg")
-
-	for _, e := range []crew.RunEvent{started, endedRun(started, failed("broke"))} {
+	want := map[string]core.RunNotRecorded{
+		"WorkspaceOpened":      {What: "its worktree issue-9-development"},
+		"ActionSessionAsked":   {Action: "lfg", What: "the start of lfg"},
+		"ActionSessionStarted": {Action: "lfg", What: "the start of lfg's session"},
+		"ActionEnded":          {Action: "lfg", What: "the end of lfg"},
+		"RouteChosen":          {Action: "lfg", What: "the route failed it chose"},
+		"RunReleased":          {What: "its release"},
+	}
+	steps := 0
+	for _, e := range journal {
 		_, events := d.send(core.RecordFailed{Event: e, Reason: "disk full"})
-		wantEvents(t, events, core.RunNotRecorded{
-			At: d.now, IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg", Reason: "disk full",
-		})
+		name := strings.TrimPrefix(reflect.TypeOf(e).String(), "crew.")
+		w, says := want[name]
+		if step, ok := e.(crew.StepEnded); ok {
+			steps++
+			w, says = core.RunNotRecorded{What: "the outcome of step " + strconv.Itoa(step.Step+1) + " of its route"}, true
+		}
+		if !says {
+			wantEvents(t, events)
+			continue
+		}
+		w.At, w.IssueID, w.IssueRef, w.Rule, w.Reason = d.now, issueID("9"), "#9", "development", "disk full"
+		wantEvents(t, events, w)
 	}
-	_, events := d.send(core.RecordFailed{
-		Event: crew.TakeMoved{EventHead: started.EventHead, From: readyForDev, To: crewRunning}, Reason: "disk full",
-	})
-	wantEvents(t, events)
+	if steps != 2 {
+		t.Fatalf("the journal holds %d step outcomes, want the report's and the move's", steps)
+	}
 }
 
-func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
-	past := endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail"))
-	m := core.New(crewRules(), 2, core.Journaling([]crew.RunEvent{past}), core.Reopening(), core.ReportingStatus())
-	d := &driver{t: t, m: m, now: t0}
+func TestTheStatusOfAResumedRunNamesItsWorktree(t *testing.T) {
+	past := journaled(t, crewRules(), nil, func(d *driver) {
+		d.running(issue("5", 1, ready))
+		d.settle(d.ended("5", "acceptance", succeeded))
+		d.settle(d.ended("5", "development", failed("tests fail")))
+	})
+	m := core.New(crewRules(), 2, core.Journaling(past), core.Reopening(), core.ReportingStatus())
+	d := &driver{t: t, m: m, now: t0, inputs: 1000}
 	// last answers every status write and keeps the newest status.
 	var last crew.Status
 	answer := func(cmds []core.Command) {
@@ -515,59 +486,45 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, cmds, "5"), Result: core.ResultDone})
 	answer(cmds)
 	for _, in := range []core.Input{
-		reopened("5", "acceptance", "acceptance"), created("5", "development", "development"),
-		core.SessionStarted{IssueID: issueID("5"), Action: "acceptance"}, core.SessionStarted{IssueID: issueID("5"),
-			Action: "development"},
-		core.Tick{},
+		reopened("5", "implement"), core.SessionStarted{IssueID: issueID("5"), Action: "development"}, core.Tick{},
 	} {
 		cmds, _ = d.send(in)
 		answer(cmds)
 	}
-	if a := last.Actions(); len(a) != 2 || a[0].Workspace != "issue-5-acceptance" || a[1].Workspace != "" {
-		t.Fatalf("actions = %#v, want the resumed acceptance naming its workspace and development none", a)
+	if a := last.Actions(); len(a) != 2 || a[0].Workspace != "" || a[1].Workspace != "issue-5-implement" {
+		t.Fatalf("actions = %#v, want the resumed development naming its worktree and acceptance none", a)
 	}
 }
 
-func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
-	wf := crewRules()
-	wf[0].Actions[0].Checks = []crew.Check{{Name: "pr-open", Script: "gh pr view --json url"}}
-	d := &driver{t: t, m: core.New(wf, 2, core.Journaling(nil), core.Reopening()), now: t0}
-	d.takeIssue(issue("9", 1, readyForDev))
-	d.send(created("9", "lfg", "lfg"))
-	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
-	d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: succeeded})
-
-	reason := "the check failed: no pull requests found for branch \"crew/issue-9-lfg\""
-	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("9"), Action: "lfg", Reason: crew.NewCheckReason(reason)})
-	got := ends(cmds)
-	if len(got) != 1 || got[0].End.Outcome().Succeeded || reasonOf(got[0]) != reason {
-		t.Fatalf("ends = %#v, want one failed end with the check's reason", got)
-	}
-	d.settle(cmds)
-
-	cmds = d.takeIssue(issue("9", 2, readyForDev))
-	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
-		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
+// Covers R22, KTD-S12: a judge after a session that failed restarts the
+// run at the session, which is told the judge's reason, and the judge then
+// runs again as that session.
+func TestAJudgeThatFailedIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
+	rules := crewRules()
+	rules[0].Actions = append(rules[0].Actions, shellAction("pr-open", "gh pr view --json url"))
+	reason := `the script exited 1: no pull requests found for branch "crew/issue-9-development"`
+	past := journaled(t, rules, nil, func(d *driver) {
+		d.running(issue("9", 1, readyForDev))
+		d.ended("9", "lfg", succeeded)
+		cmds, _ := d.send(core.ShellEnded{IssueID: issueID("9"), Action: "pr-open", Outcome: crew.ShellOutcome{
+			Status: crew.Some(1), Reason: crew.NewShellReason(reason),
+		}})
+		d.settle(cmds)
+		wantHeld(t, d.m)
 	})
-	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-	quoted := `That run failed: "the check failed: no pull requests found for branch \"crew/issue-9-lfg\"".`
-	start := startOf(t, cmds)
-	if !strings.Contains(start.Prompt, quoted) {
-		t.Fatalf("prompt does not quote the check's reason:\n%s", start.Prompt)
-	}
+	d := resumeDriverOf(t, rules, past...)
 
-	// R1: the resumed run's check reads the prompt with its resume note.
-	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
-	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: succeeded,
-		LastMessage: "PR #12 is open."})
-	for _, c := range cmds {
-		if run, ok := c.(core.RunCheck); ok {
-			if run.Prompt != start.Prompt || run.LastMessage != "PR #12 is open." {
-				t.Fatalf("check's prompt %q and last message %q, want the resumed session's %q and its last message",
-					run.Prompt, run.LastMessage, start.Prompt)
-			}
-			return
-		}
+	cmds := d.takeIssue(issue("9", 2, readyForDev))
+	wantCommands(t, cmds, d.reopen("9", "development"))
+	cmds, _ = d.send(reopened("9", "development"))
+	if s := startOf(t, cmds); s.Action != "lfg" {
+		t.Fatalf("resumed at %q, want lfg", s.Action)
 	}
-	t.Fatalf("the resumed run ran no check: %#v", cmds)
+	wantResumeReason(t, cmds, reason)
+
+	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
+	run := runShellOf(t, d.ended("9", "lfg", succeeded))
+	if run.Action != "pr-open" || run.Script.Session != "lfg" || run.Script.Dir != space("9", "development").Dir {
+		t.Fatalf("judge = %#v, want pr-open after lfg in the reopened worktree", run)
+	}
 }

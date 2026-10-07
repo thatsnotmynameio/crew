@@ -34,13 +34,15 @@ func TestDefaultBuildsAClaudeAgentAndACodexAgentSideBySide(t *testing.T) {
     bot: reviewer
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      development: {agent: developer, prompt: "Implement {{.Issue.Ref}}"}
+      - {agent: developer, name: development, prompt: "Implement {{.Issue.Ref}}"}
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
   review:
-    labels: {ready: ready to review, running: in review, success: reviewed, failure: review failed}
+    labels: {ready: ready to review, running: in review}
     actions:
-      review: {agent: reviewer, prompt: "Review {{.Issue.Ref}}"}
+      - {agent: reviewer, name: review, prompt: "Review {{.Issue.Ref}}"}
+    routes: {passed: reviewed, failed: [report, move: review failed]}
 `)
 
 	for _, a := range cfg.Agents {

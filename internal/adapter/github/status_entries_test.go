@@ -97,15 +97,15 @@ const (
 	run3 crew.RuleRunID = "0199b2b0-1f42-7a6c-8e11-5d3c2b1a0f99.1"
 )
 
-// developmentEnded is #74's development rule, run run1, ended with its lfg
-// action failed on its check.
+// developmentEnded is #74's development rule, run run1, ended through
+// failed with its lfg action, a shell action, failed by its script.
 func developmentEnded() crew.Status {
 	return crew.NewStatus(crew.StatusData{
 		IssueID: issueID("74"), IssueRef: "#74", Rule: "development", Run: run1,
-		Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
+		Progress: crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MoveDone},
 		Actions: []crew.ActionStatus{{
-			Name: "lfg", State: crew.ActionFailed{Cause: crew.CauseCheck, Log: ".crew/logs/issue-74-lfg.log"},
-			Checks: []crew.CheckResult{checkResult("pr-closes-issue", false, "no open pull request closes #74")},
+			Name: "lfg", State: crew.ActionFailed{Cause: crew.CauseShell, Log: ".crew/logs/issue-74-lfg.log"},
+			Shell: crew.NewShellReason("no open pull request closes #74"),
 		}},
 		Updated: updated,
 	})
@@ -172,7 +172,7 @@ func TestANewRuleRunIsAppendedAfterTheEndedOne(t *testing.T) {
 		t.Errorf("body once fix runs =\n%s\nwant\n%s", got, want)
 	}
 	if !strings.Contains(development, "**`lfg`** failed: `no open pull request closes #74`.") {
-		t.Errorf("the development entry does not give lfg's check reason:\n%s", development)
+		t.Errorf("the development entry does not give lfg's line:\n%s", development)
 	}
 }
 

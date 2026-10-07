@@ -12,9 +12,6 @@ type RuleName string
 // ActionName names an action within its rule.
 type ActionName string
 
-// CheckName names a check, as the config's checks key it.
-type CheckName string
-
 // AgentName names an agent, as the config's agents key it.
 type AgentName string
 
@@ -82,8 +79,8 @@ func (r RuleRunID) TakeReport() PullRequestReportID {
 	return PullRequestReportID(string(r) + "/take")
 }
 
-// EndingReport returns the id of the report that follows the run's
-// ending move.
+// EndingReport returns the id of the report that follows the final move
+// of the run's route.
 func (r RuleRunID) EndingReport() PullRequestReportID {
 	return PullRequestReportID(string(r) + "/ending")
 }

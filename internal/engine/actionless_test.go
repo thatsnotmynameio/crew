@@ -13,7 +13,8 @@ import (
 // promote is a rule without actions: it moves ready to ready to review.
 var promote = crew.Rule{
 	Name:   "promote",
-	Labels: crew.Labels{Ready: ready, Running: inProgress, Success: readyToReview},
+	Labels: crew.Labels{Ready: ready, Running: inProgress},
+	Routes: []crew.Route{{Name: crew.PassedRoute, Steps: []crew.Step{crew.MoveStep{To: readyToReview}}}},
 }
 
 // gatedTake returns a tracker holding #1 in ready, whose take move waits

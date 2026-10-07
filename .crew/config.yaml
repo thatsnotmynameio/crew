@@ -3,13 +3,16 @@
 # settings, such as poll_interval_seconds or a board, in
 # .crew/config.local.yaml, which git ignores: each top-level key it sets
 # replaces that key here. .crew/config.example.yaml lists every key. After
-# changing this file, run `sh .crew/config_test.sh`: it tests the prompts
-# and checks below, which crew's own tests never read.
+# changing this file, run `sh tools/crew_config_test.sh`: it tests the
+# prompts and shell actions below, which crew's own tests never read.
 # Every label crew uses is `crew:<rule>:<state>`, so it says which rule an
 # issue is in and where it stands there. Each rule takes `crew:<rule>:ready`,
-# moves the issue to `crew:<rule>:in progress` and ends in
-# `crew:<rule>:done`, or in `crew:<rule>:waiting review` when a code owner
-# reviews a pull request, or in `crew:<rule>:failed`.
+# moves the issue to `crew:<rule>:in progress`, runs its actions one after
+# another, and ends through one of its routes: passed, in `crew:<rule>:done`,
+# or in `crew:<rule>:waiting review` when a code owner reviews a pull
+# request; failed, which reports why on the issue, in `crew:<rule>:failed`;
+# and, for development and fix, needs-person, which says so on the issue,
+# in `crew:<rule>:needs person`.
 # An idea parked in `crew:brainstorm:ready` waits for /cw-brainstorm, which
 # no rule runs; once its brainstorm is done, it is in `crew:brainstorm:done`.
 # From there the clerk hands each issue on: promote brainstorm moves it to
@@ -20,19 +23,22 @@
 # them to `crew:development:ready`. A split parent stays open with its whole
 # plan and leaves crew, so crew reports its own move of it as given up; that
 # is how a split ends. A promote rule has no actions: crew moves the label
-# itself, without a session. crew skips an issue an open issue blocks, so a
-# blocked feature waits in its label until its blockers close.
+# itself through its passed route, without a session. crew skips an issue an
+# open issue blocks, so a blocked feature waits in its label until its
+# blockers close.
 # The board has no `board` key, so it shows one column per rule that has
 # actions: refinement, development and fix.
-# The lfg actions of development and fix run two checks, in order:
-# session-finished asks TypeSafe's Jev whether the session's last message
-# says it is still waiting on work it started or stopped without doing it,
-# and fails the action if so; then pr-closes-issue makes them succeed only
-# when their pull request is open and closes the issue. session-finished
-# sends the session's prompt and last message to TypeSafe, needs
-# TYPESAFE_API_KEY in crew's environment, and jq and curl on the PATH. The
-# refine action runs split-finished: it fails when a split stopped before the
-# session took the parent out of crew.
+# The lfg sessions of development and fix are followed by two shell actions,
+# in order: session-finished asks TypeSafe's Jev whether the session's last
+# message says it is still waiting on work it started or stopped without
+# doing it, and fails if so, or says a person must act, which ends the run
+# through needs-person; then pr-closes-issue passes only when their pull
+# request is open and closes the issue. session-finished sends the
+# session's prompt and last message to TypeSafe, needs TYPESAFE_API_KEY in
+# crew's environment, and jq and curl on the PATH. The refine session is
+# followed by split-finished: it fails when a split stopped before the
+# session took the parent out of crew. An issue returned to a rule's ready
+# label after any route but passed resumes at the session, in its worktree.
 # crew writes as the bot clerk, which also moves the promote rules' labels;
 # refinement's session acts as product-manager, and development's and fix's
 # as developer. The clerk's rules run in the 1-slot clerk queue, refinement in
@@ -60,10 +66,10 @@ agents:
       name: claude
       model: claude-opus-5-5
     bot: developer
-checks:
-  # Fails the action unless an open pull request from this repository, on
-  # the worktree's branch, has the line that closes the issue. It echoes its
-  # own reason last: that line reaches the issue's status comment.
+actions:
+  # Fails unless an open pull request from this repository, on the
+  # worktree's branch, has the line that closes the issue. It echoes its own
+  # reason last: that line reaches the issue's status comment.
   pr-closes-issue: |-
     state=$(gh pr list --head "$CREW_BRANCH" --state open --json isCrossRepository,body --jq '[.[] | select(.isCrossRepository | not)] | if length == 0 then "none" elif any(.[]; .body | gsub("\r"; "") | split("\n") | any(. == "Closes " + env.CREW_ISSUE_REF)) then "closes" else "open" end') || { echo "gh could not list the pull requests from $CREW_BRANCH"; exit 1; }
     case $state in
@@ -71,91 +77,96 @@ checks:
     none) echo "no open pull request from $CREW_BRANCH"; exit 1 ;;
     *) echo "the pull request from $CREW_BRANCH does not close $CREW_ISSUE_REF"; exit 1 ;;
     esac
-  # Fails the refine action when the issue is still in refinement but has a
-  # sub-issue /cw-split-plan created: the split stopped before the session
-  # labelled the parts and took the issue out of crew. crew then moves it to
-  # crew:refinement:failed, not on to development. It echoes its own reason
-  # last.
+  # Fails after the refine session when the issue is still in refinement but
+  # has a sub-issue /cw-split-plan created: the split stopped before the
+  # session labelled the parts and took the issue out of crew. crew then
+  # moves it to crew:refinement:failed, not on to development. It echoes its
+  # own reason last.
   split-finished: |-
     running=$(gh issue view "$CREW_ISSUE_KEY" --json labels --jq 'any(.labels[]; .name | ascii_downcase == "crew:refinement:in progress")') || { echo "gh could not read the labels of $CREW_ISSUE_REF"; exit 1; }
     [ "$running" = true ] || exit 0
     parts=$(gh api --paginate "repos/{owner}/{repo}/issues/$CREW_ISSUE_KEY/sub_issues" --jq ".[] | select((.body // \"\") | contains(\"<!-- cw-split-plan: part of $CREW_ISSUE_REF -->\")) | \"#\" + (.number | tostring)") || { echo "gh could not list the sub-issues of $CREW_ISSUE_REF"; exit 1; }
     [ -z "$parts" ] || { echo "the split of $CREW_ISSUE_REF did not finish: its parts $(printf '%s\n' "$parts" | paste -sd ' ' -) exist, but it is still in crew:refinement:in progress"; exit 1; }
-  # Fails an lfg action whose session says it is still waiting on work it
-  # started (tests, CI, reviewers, a watcher) or stopped without doing the
-  # work, as TypeSafe's Jev judges from the session's prompt and last
-  # message. It sends both to TypeSafe, in one request that asks one Choice
-  # twice, its options in opposite orders, and averages the two answers.
-  # Unfinished and stopped together at fail_at or more fail the action;
-  # otherwise it passes, saying needs a person when that clears person_at,
-  # or done. It passes without a judgment when the last message is empty
-  # or TypeSafe cannot answer, and fails when TYPESAFE_API_KEY is not set.
-  # It echoes only an outcome and its probability, never what the session
-  # or TypeSafe said, so the status comment shows nothing of the session.
-  # The model is pinned to the version the thresholds were measured on.
-  session-finished: |-
-    model=jev-1.13.0 fail_at=0.55 person_at=0.7
-    [ -n "$TYPESAFE_API_KEY" ] || { echo "TYPESAFE_API_KEY is not set: the judge cannot ask Jev"; exit 1; }
-    command -v jq >/dev/null && command -v curl >/dev/null || { echo "the judge needs jq and curl on the PATH"; exit 1; }
-    grep -q '[^[:space:]]' "$CREW_LAST_MESSAGE_FILE" || { echo "not judged: the session's last message is empty"; exit 0; }
-    dir=$(mktemp -d) || { echo "not judged: no temporary directory"; exit 0; }
-    trap 'rm -rf "$dir"' EXIT
-    jq -n --arg model "$model" --arg action "$CREW_ACTION" --rawfile prompt "$CREW_PROMPT_FILE" --rawfile last "$CREW_LAST_MESSAGE_FILE" '
-      {
-        done: "The work is finished; what is left is a routine decision such as merging.",
-        unfinished: "The session says it is still waiting on work it started, such as reviewers, tests, CI or a watcher, and will continue.",
-        needs_person: "The session did its part, but a person must act before the result can be used.",
-        stopped: "The session stopped without doing the work, and says why."
-      } as $options
-      | {type: "choice", instructions: "`prompt` is the task a coding agent was given for the action `action`, and `last_message` is the last thing the agent said when its session ended. How did the session end?"} as $question
-      | {model: $model, state: {action: $action, prompt: $prompt, last_message: $last},
-         questions: {a: ($question + {criteria: $options}), b: ($question + {criteria: ($options | to_entries | reverse | from_entries)})}}
-    ' > "$dir/request" || { echo "not judged: jq could not write the request"; exit 0; }
-    tries=0
-    while :; do
-      tries=$((tries + 1))
-      code=$(printf 'Authorization: Bearer %s\n' "$TYPESAFE_API_KEY" | curl -sS --max-time 60 -o "$dir/answer" -w '%{http_code}' -H @- -H 'Content-Type: application/json' --data-binary @"$dir/request" https://api.typesafe.ai/v1/systemone 2>/dev/null) || code=000
+  # Judges an lfg session from its prompt and last message, as TypeSafe's
+  # Jev reads them: it fails when the session says it is still waiting on
+  # work it started (tests, CI, reviewers, a watcher) or stopped without
+  # doing the work, and exits 3, which gives the verdict needs_person, when
+  # the session did its part but a person must act before the result can be
+  # used. It sends both texts to TypeSafe, in one request that asks one
+  # Choice twice, its options in opposite orders, and averages the two
+  # answers. Unfinished and stopped together at fail_at or more fail it;
+  # otherwise needs a person at person_at or more exits 3, and done passes.
+  # It passes without a judgment when the last message is empty or TypeSafe
+  # cannot answer, and fails when TYPESAFE_API_KEY is not set or jq or curl
+  # is missing. CREW_ACTION names the session it judges. It echoes only an
+  # outcome and its probability, never what the session or TypeSafe said,
+  # so the status comment shows nothing of the session. The model is pinned
+  # to the version the thresholds were measured on.
+  session-finished:
+    verdicts:
+      3: needs_person
+    script: |-
+      model=jev-1.13.0 fail_at=0.55 person_at=0.7
+      [ -n "$TYPESAFE_API_KEY" ] || { echo "TYPESAFE_API_KEY is not set: the judge cannot ask Jev"; exit 1; }
+      command -v jq >/dev/null && command -v curl >/dev/null || { echo "the judge needs jq and curl on the PATH"; exit 1; }
+      grep -q '[^[:space:]]' "$CREW_LAST_MESSAGE_FILE" || { echo "not judged: the session's last message is empty"; exit 0; }
+      dir=$(mktemp -d) || { echo "not judged: no temporary directory"; exit 0; }
+      trap 'rm -rf "$dir"' EXIT
+      jq -n --arg model "$model" --arg action "$CREW_ACTION" --rawfile prompt "$CREW_PROMPT_FILE" --rawfile last "$CREW_LAST_MESSAGE_FILE" '
+        {
+          done: "The work is finished; what is left is a routine decision such as merging.",
+          unfinished: "The session says it is still waiting on work it started, such as reviewers, tests, CI or a watcher, and will continue.",
+          needs_person: "The session did its part, but a person must act before the result can be used.",
+          stopped: "The session stopped without doing the work, and says why."
+        } as $options
+        | {type: "choice", instructions: "`prompt` is the task a coding agent was given for the action `action`, and `last_message` is the last thing the agent said when its session ended. How did the session end?"} as $question
+        | {model: $model, state: {action: $action, prompt: $prompt, last_message: $last},
+           questions: {a: ($question + {criteria: $options}), b: ($question + {criteria: ($options | to_entries | reverse | from_entries)})}}
+      ' > "$dir/request" || { echo "not judged: jq could not write the request"; exit 0; }
+      tries=0
+      while :; do
+        tries=$((tries + 1))
+        code=$(printf 'Authorization: Bearer %s\n' "$TYPESAFE_API_KEY" | curl -sS --max-time 60 -o "$dir/answer" -w '%{http_code}' -H @- -H 'Content-Type: application/json' --data-binary @"$dir/request" https://api.typesafe.ai/v1/systemone 2>/dev/null) || code=000
+        case $code in
+        429 | 5?? | 000) [ "$tries" -lt 3 ] || break; sleep $((tries * 2)) ;;
+        *) break ;;
+        esac
+      done
       case $code in
-      429 | 5?? | 000) [ "$tries" -lt 3 ] || break; sleep $((tries * 2)) ;;
-      *) break ;;
+      200) ;;
+      000) echo "not judged: TypeSafe could not be reached"; exit 0 ;;
+      *) echo "not judged: TypeSafe answered HTTP $code"; exit 0 ;;
       esac
-    done
-    case $code in
-    200) ;;
-    000) echo "not judged: TypeSafe could not be reached"; exit 0 ;;
-    *) echo "not judged: TypeSafe answered HTTP $code"; exit 0 ;;
-    esac
-    verdict=$(jq -r --argjson fail_at "$fail_at" --argjson person_at "$person_at" '
-      def p($k): [.answers.a.probabilities[$k], .answers.b.probabilities[$k]] | if all(type == "number") then add / 2 else error("no \($k)") end;
-      def said($outcome): (. * 100 | round) as $c | "\($outcome) (\($c / 100 | floor).\($c % 100 | tostring | if length < 2 then "0" + . else . end))";
-      p("unfinished") as $u | p("stopped") as $s | p("needs_person") as $n | p("done") as $d
-      | if $u + $s >= $fail_at then "fail " + (if $s > $u then $s | said("stopped") else $u | said("unfinished") end)
-        elif $n >= $person_at then "pass " + ($n | said("needs a person"))
-        else "pass " + ($d | said("done")) end
-    ' "$dir/answer" 2>/dev/null)
-    case $verdict in
-    "fail "*) echo "${verdict#fail }"; exit 1 ;;
-    "pass "*) echo "${verdict#pass }"; exit 0 ;;
-    *) echo "not judged: TypeSafe's answer could not be read"; exit 0 ;;
-    esac
+      verdict=$(jq -r --argjson fail_at "$fail_at" --argjson person_at "$person_at" '
+        def p($k): [.answers.a.probabilities[$k], .answers.b.probabilities[$k]] | if all(type == "number") then add / 2 else error("no \($k)") end;
+        def said($outcome): (. * 100 | round) as $c | "\($outcome) (\($c / 100 | floor).\($c % 100 | tostring | if length < 2 then "0" + . else . end))";
+        p("unfinished") as $u | p("stopped") as $s | p("needs_person") as $n | p("done") as $d
+        | if $u + $s >= $fail_at then "fail " + (if $s > $u then $s | said("stopped") else $u | said("unfinished") end)
+          elif $n >= $person_at then "person " + ($n | said("needs a person"))
+          else "pass " + ($d | said("done")) end
+      ' "$dir/answer" 2>/dev/null)
+      case $verdict in
+      "fail "*) echo "${verdict#fail }"; exit 1 ;;
+      "person "*) echo "${verdict#person }"; exit 3 ;;
+      "pass "*) echo "${verdict#pass }"; exit 0 ;;
+      *) echo "not judged: TypeSafe's answer could not be read"; exit 0 ;;
+      esac
 rules:
   promote brainstorm:
     queue: clerk
     labels:
       ready: "crew:brainstorm:done"
       running: "crew:brainstorm:promoting"
-      success: "crew:refinement:ready"
+    routes:
+      passed: "crew:refinement:ready"
   refinement:
     queue: product-manager
     labels:
       ready: "crew:refinement:ready"
       running: "crew:refinement:in progress"
-      success: "crew:refinement:done"
-      failure: "crew:refinement:failed"
     actions:
-      refine:
-        agent: product-manager
-        check: split-finished
+      - agent: product-manager
+        name: refine
         prompt: |-
           {{.Issue.Ref}} is a brainstormed feature. Refine it: split its plan when it is large, then find which open issues block each issue that came out and which it blocks. You run headless: nobody answers questions, so decide and report.
 
@@ -169,40 +180,53 @@ rules:
           8. Add or remove no other label that starts with `crew:`, on any issue. Open, close or edit no issue beyond what `/cw-split-plan` and step 7 do.
           9. Do not change code, push a branch or open a pull request.
           10. End with one comment on {{.Issue.Ref}}: the outcome of `/cw-split-plan`, with why on `kept whole`, and on `split` the parts, the links between them, Jev's answers, and that crew's given-up move of {{.Issue.Ref}} is expected; for each issue you refined, whether its shortlist from `/cw-rank-blockers` was used or unavailable, quoting the script's error line when unavailable, what blocks it and what it blocks, marking the dependencies you recorded and why; each dependency you removed or moved and why; whether an open issue still blocks it, in which case crew starts its development only once every blocker is closed; the issues it likely duplicates; and every command that failed or was denied, with its error.
+      - split-finished
+    routes:
+      passed: "crew:refinement:done"
+      failed:
+        - report
+        - move: "crew:refinement:failed"
   promote refinement:
     queue: clerk
     labels:
       ready: "crew:refinement:done"
       running: "crew:refinement:promoting"
-      success: "crew:development:ready"
+    routes:
+      passed: "crew:development:ready"
   development:
     queue: developer
     labels:
       ready: "crew:development:ready"
       running: "crew:development:in progress"
-      success: "crew:development:waiting review"
-      failure: "crew:development:failed"
     actions:
-      lfg:
-        agent: developer
-        check: [session-finished, pr-closes-issue]
+      - agent: developer
+        name: lfg
         prompt: |-
           /compound-engineering:lfg {{.Issue.Ref}}
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
+      - session-finished:
+        on:
+          needs_person: needs-person
+      - pr-closes-issue
+    routes:
+      passed: "crew:development:waiting review"
+      failed:
+        - report
+        - move: "crew:development:failed"
+      needs-person:
+        - comment: "{{.Issue.Ref}} needs a person: `{{.Action}}` ended with `{{.Verdict}}`. See the session's comments above."
+        - move: "crew:development:needs person"
   fix:
     queue: developer
     labels:
       ready: "crew:fix:ready"
       running: "crew:fix:in progress"
-      success: "crew:fix:waiting review"
-      failure: "crew:fix:failed"
     actions:
-      lfg:
-        agent: developer
-        check: [session-finished, pr-closes-issue]
+      - agent: developer
+        name: lfg
         prompt: |-
           /compound-engineering:lfg {{.Issue.Ref}}
 
@@ -211,17 +235,27 @@ rules:
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
+      - session-finished:
+        on:
+          needs_person: needs-person
+      - pr-closes-issue
+    routes:
+      passed: "crew:fix:waiting review"
+      failed:
+        - report
+        - move: "crew:fix:failed"
+      needs-person:
+        - comment: "{{.Issue.Ref}} needs a person: `{{.Action}}` ended with `{{.Verdict}}`. See the session's comments above."
+        - move: "crew:fix:needs person"
   # Turned off: uncomment a rule to run it again.
   # audit ci:
   #   queue: developer
   #   labels:
   #     ready: "crew:ci audit:ready"
   #     running: "crew:ci audit:in progress"
-  #     success: "crew:ci audit:done"
-  #     failure: "crew:ci audit:failed"
   #   actions:
-  #     audit:
-  #       agent: developer
+  #     - agent: developer
+  #       name: audit
   #       prompt: |-
   #         Review this repository's GitHub Actions and find what to improve. You run headless: nobody answers questions, so decide and report.
   #
@@ -231,16 +265,19 @@ rules:
   #         4. Never add or remove a label that starts with `crew:`, on any issue.
   #         5. Do not change code, push a branch or open a pull request.
   #         6. End with one comment on {{.Issue.Ref}}: the issues you opened, what you checked and found fine, and anything you could not check, with the error.
+  #   routes:
+  #     passed: "crew:ci audit:done"
+  #     failed:
+  #       - report
+  #       - move: "crew:ci audit:failed"
   # knowledge base:
   #   queue: developer
   #   labels:
   #     ready: "crew:knowledge base:ready"
   #     running: "crew:knowledge base:in progress"
-  #     success: "crew:knowledge base:done"
-  #     failure: "crew:knowledge base:failed"
   #   actions:
-  #     compound:
-  #       agent: developer
+  #     - agent: developer
+  #       name: compound
   #       prompt: |-
   #         /compound-engineering:ce-compound mode:non-interactive {{.Issue.Ref}} ({{.Issue.URL}})
   #
@@ -249,3 +286,8 @@ rules:
   #         When you write or update a learning, open a pull request with it through /compound-engineering:ce-commit-push-pr mode:pipeline, which asks nothing and does not stay to watch the pull request. The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
   #
   #         When no learning qualifies, write nothing, open no pull request, and comment on {{.Issue.Ref}} saying why.
+  #   routes:
+  #     passed: "crew:knowledge base:done"
+  #     failed:
+  #       - report
+  #       - move: "crew:knowledge base:failed"

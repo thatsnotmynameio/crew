@@ -227,13 +227,14 @@ func (m *Model) botsView() []BotView {
 	})
 }
 
-// pairs returns the "rule/action" pairs, in rule order, of the actions
-// whose bot is.
+// pairs returns the "rule/action" pairs, in rule order, of the session
+// actions whose bot is. A shell action has no bot of its own: it acts as
+// its run's latest session (KTD13).
 func (m *Model) pairs(is func(bot crew.BotName) bool) []string {
 	var out []string
 	for _, rule := range m.rules {
 		for _, a := range rule.Actions {
-			if is(a.Bot.Name) {
+			if spec, ok := a.Kind.(crew.SessionSpec); ok && is(spec.Bot.Name) {
 				out = append(out, string(rule.Name)+"/"+string(a.Name))
 			}
 		}
@@ -241,13 +242,17 @@ func (m *Model) pairs(is func(bot crew.BotName) bool) []string {
 	return out
 }
 
-// runningAs returns the actions running as identity now: from their
-// session's start until their spend lands (KTD5).
+// runningAs returns the actions running as identity now: each session from
+// its start until it ends, and each shell action while its script runs, as
+// its run's latest session, or as you before any (KTD5, KTD13, KTD-S11).
 func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	var out []RunningAction
 	for _, h := range m.issues {
+		if m.bots.identity(h.run.Bot().Name) != identity {
+			continue
+		}
 		for _, a := range h.run.Actions() {
-			if spending(a.State()) && m.bots.identity(m.rules[h.rule].Action(a.Name()).Bot.Name) == identity {
+			if spending(a.State()) {
 				out = append(out, RunningAction{IssueRef: h.run.Issue().Ref(), Rule: h.run.Rule(), Action: a.Name()})
 			}
 		}
@@ -255,13 +260,14 @@ func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	return out
 }
 
-// spending reports whether an action run in state is between its session's
-// start and its spend landing: in its session, in its checks, or finishing.
+// spending reports whether an action run in state acts on the tracker now:
+// its session or its script runs. The run's latest session is then the
+// running session, so the run's bot is the action's.
 func spending(state crew.ActionRunState) bool {
 	switch state.(type) {
-	case crew.InSession, crew.InChecks, crew.Finishing:
+	case crew.InSession, crew.InShell:
 		return true
-	case crew.AwaitingTake, crew.CreatingWorkspace, crew.ReopeningWorkspace, crew.StartingSession, crew.Finished:
+	case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.StartingSession, crew.Finished, crew.NotRun:
 	}
 	return false
 }

@@ -40,49 +40,54 @@ func lookups(cmds []core.Command) []core.FindPullRequest {
 	return out
 }
 
-// phaseOf returns the phase of the named action of key, from the view.
-func phaseOf(t *testing.T, m *core.Model, key string, action crew.ActionName) core.Phase {
-	t.Helper()
-	for _, iv := range m.View().Issues {
-		for _, a := range iv.Actions {
-			if iv.Issue.ID().Key == key && a.Name == action {
-				return a.Phase
-			}
+// ends returns the action runs' ends the Record commands in cmds carry.
+func ends(cmds []core.Command) []crew.ActionEnded {
+	var out []crew.ActionEnded
+	for _, e := range records(cmds) {
+		if ended, ok := e.(crew.ActionEnded); ok {
+			out = append(out, ended)
 		}
 	}
-	t.Fatalf("no action %s of %s", action, key)
-	return 0
+	return out
 }
 
-func TestAE1AnEndedSessionLooksUpItsPullRequestAndRecordsItWithItsUsage(t *testing.T) {
+// reasonOf returns the reason of the action run's end e.
+func reasonOf(e crew.ActionEnded) string { return e.End.Outcome().Reason.String() }
+
+// Covers KTD-S6: the run looks up its pull requests once, when it chose its
+// route, and its first step waits for the answer.
+func TestAE1ARunLooksUpItsPullRequestsOnceItChoseItsRoute(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("31", 1, ready))
-	ready := d.m.View().Issues[0].Actions[1]
-
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("31"), Action: "development", Outcome: succeeded, Usage: spent})
-	got := lookups(cmds)
-	ws := space("31", "development")
-	if len(got) != 1 || got[0].Branch != ws.Branch || got[0].IssueID != issueID("31") || got[0].Action != "development" {
-		t.Fatalf("lookups = %#v, want one from %s", got, ws.Branch)
+	made := d.m.View().Issues[0].Actions[0].Started
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("31"), Action: "acceptance", Outcome: succeeded})
+	if len(lookups(cmds)) != 0 {
+		t.Fatalf("looked up after acceptance, which went on to the next: %#v", cmds)
 	}
-	if len(ends(cmds)) != 0 || phaseOf(t, d.m, "31", "development") != core.PhaseFinishing {
-		t.Fatalf("the action ended before its lookup: %#v", cmds)
-	}
+	d.settle(cmds)
+	started := d.m.View().Issues[0].Actions[1].Started
 
-	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("31"), Action: "development", PullRequest: pr45})
+	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("31"), Action: "development", Outcome: succeeded, Usage: spent})
+	w := space("31", "implement")
+	if got := lookups(cmds); len(got) != 1 || got[0].Branch != w.Branch || got[0].Run != d.run(issueID("31")) ||
+		got[0].Since.After(made) {
+		t.Fatalf("lookups = %#v, want one from %s", got, w.Branch)
+	}
 	end := ends(cmds)
-	if len(end) != 1 || !end[0].End.Outcome().Succeeded ||
-		!reflect.DeepEqual(end[0].Usage, spent) || end[0].PullRequest != pr45 ||
-		end[0].SessionStarted != crew.Some(ready.Started) {
-		t.Fatalf("ends = %#v, want the end with the usage, #45 and the session's start", end)
+	if len(end) != 1 || !end[0].End.Outcome().Succeeded || !reflect.DeepEqual(end[0].Usage, spent) ||
+		end[0].SessionStarted != crew.Some(started) {
+		t.Fatalf("ends = %#v, want development's end with its usage and its session's start", end)
+	}
+	if _, moved := unrecorded(cmds)[0].(core.Move); moved || claimOf(t, d.m, "31") != core.ClaimRouting {
+		t.Fatalf("the route's move did not wait for the lookup: %#v", cmds)
 	}
 
-	d.send(core.SessionEnded{IssueID: issueID("31"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("31"), Action: "acceptance", PullRequest: noPR})
-	d.send(core.CallResult{ID: moveID(t, ending, "31"), Result: core.ResultDone})
+	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("31"), PullRequest: pr45})
+	wantCommands(t, unrecorded(ending), core.Move{IssueID: issueID("31"), From: inProgress, To: readyToReview})
+	d.settle(ending)
 	entry := onlyEntry(t, d)
 	want := []core.HandledAction{
-		{Name: "acceptance", Spend: crew.Spend{Sessions: 1}, PullRequest: noPR},
+		{Name: "acceptance", Spend: crew.Spend{Sessions: 1}, PullRequest: pr45},
 		{Name: "development", Spend: spent.Spend(), PullRequest: pr45},
 	}
 	if !reflect.DeepEqual(entry.Actions, want) {
@@ -93,72 +98,30 @@ func TestAE1AnEndedSessionLooksUpItsPullRequestAndRecordsItWithItsUsage(t *testi
 	}
 }
 
-func TestALookupThatAnswersFirstWaitsForTheCheck(t *testing.T) {
-	d := usageDriver(t, checked())
-	d.running(issue("74", 1, ready))
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded, Usage: spent})
-	if len(lookups(cmds)) != 1 {
-		t.Fatalf("commands = %#v, want a lookup next to the check", cmds)
-	}
-	wantPhase := func(want core.Phase) {
-		t.Helper()
-		if got := phaseOf(t, d.m, "74", "development"); got != want {
-			t.Fatalf("phase = %v, want %v", got, want)
-		}
-	}
-
-	d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: pr45})
-	wantPhase(core.PhaseChecking)
-	cmds, _ = d.send(core.CheckEnded{
-		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
-	})
-	wantPhase(core.PhaseEnded)
-	if end := ends(cmds); len(end) != 1 || end[0].End.Outcome().Succeeded || end[0].PullRequest != pr45 ||
-		end[0].Usage.Cost != spent.Cost {
-		t.Fatalf("ends = %#v, want a failed end keeping the session's usage and #45", end)
-	}
-}
-
-func TestACheckThatEndsFirstWaitsForTheLookup(t *testing.T) {
-	d := usageDriver(t, checked())
-	d.running(issue("74", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
-
-	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
-	if len(ends(cmds)) != 0 || phaseOf(t, d.m, "74", "development") != core.PhaseFinishing {
-		t.Fatalf("the action ended before its lookup: %#v", cmds)
-	}
-	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: pr45})
-	if end := ends(cmds); len(end) != 1 || !end[0].End.Outcome().Succeeded || end[0].PullRequest != pr45 {
-		t.Fatalf("ends = %#v, want a succeeded end with #45", end)
-	}
-}
-
 func TestAStopDuringTheLookupKeepsTheSessionsOwnFailure(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("9", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("9"), Action: "development", Outcome: failed("tests fail")})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "acceptance", Outcome: failed("tests fail")})
+	if end := ends(cmds); len(end) != 1 || reasonOf(end[0]) != "tests fail" || len(lookups(cmds)) != 1 {
+		t.Fatalf("commands = %#v, want acceptance's own failure, then the lookup", cmds)
+	}
 
-	cmds, _ := d.send(core.StopRequested{})
+	cmds, _ = d.send(core.StopRequested{})
 	for _, c := range cmds {
-		if s, ok := c.(core.StopSession); ok && s.Action == "development" {
+		if _, ok := c.(core.StopSession); ok {
 			t.Fatalf("stopped a session that already ended: %#v", c)
 		}
 	}
-	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
-	end := ends(cmds)
-	if len(end) != 1 || reasonOf(end[0]) != "tests fail" || end[0].PullRequest != noPR {
-		t.Fatalf("ends = %#v, want the session's own failure with no pull request", end)
-	}
+	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("9"), PullRequest: noPR})
+	wantCommands(t, unrecorded(cmds), failureOf("9", "implement", "acceptance"))
 }
 
 func TestAE5AStoppedSessionIsRecordedWithoutUsage(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("9", 1, ready))
 	d.send(core.StopRequested{})
-	d.send(core.SessionEnded{IssueID: issueID("9"), Action: "development", Outcome: failed("stopped by crew")})
 
-	cmds, _ := d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "acceptance", Outcome: failed("stopped by crew")})
 	end := ends(cmds)
 	if len(end) != 1 || !reflect.DeepEqual(end[0].Usage, crew.Usage{}) || reasonOf(end[0]) != "stopped by crew" {
 		t.Fatalf("ends = %#v, want a stopped end with no usage", end)
@@ -169,11 +132,21 @@ func TestWithoutAFinderNothingIsLookedUp(t *testing.T) {
 	d := &driver{t: t, m: core.New(draft(), 2, core.Journaling(nil)), now: t0}
 	d.running(issue("9", 1, ready))
 
-	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "development", Outcome: succeeded, Usage: spent})
-	end := ends(cmds)
-	if len(lookups(cmds)) != 0 || len(end) != 1 || end[0].PullRequest != nil {
-		t.Fatalf("commands = %#v, want an end at once, not looked up", cmds)
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "acceptance", Outcome: failed("broke")})
+	if len(lookups(cmds)) != 0 {
+		t.Fatalf("commands = %#v, want the route's first step at once, not looked up", cmds)
 	}
+	wantCommands(t, unrecorded(cmds), failureOf("9", "implement", "acceptance"))
+}
+
+func TestARunWithoutASessionLooksNothingUp(t *testing.T) {
+	rules := draft()
+	rules[0].Actions = []crew.Action{shellAction("lint", "make lint")}
+	d := usageDriver(t, rules)
+	d.running(issue("9", 1, ready))
+
+	cmds, _ := d.send(core.ShellEnded{IssueID: issueID("9"), Action: "lint", Outcome: exited(0)})
+	wantCommands(t, unrecorded(cmds), core.Move{IssueID: issueID("9"), From: inProgress, To: readyToReview})
 }
 
 func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testing.T) {
@@ -181,36 +154,44 @@ func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testi
 		d := usageDriver(t, draft())
 		cmds, _ := d.poll(issue("9", 1, ready))
 		d.send(core.CallResult{ID: moveID(t, cmds, "9"), Result: core.ResultDone})
-		d.send(space("9", "acceptance"))
+		d.ready("9")
 		made := d.now
 		d.send(core.SessionStarted{IssueID: issueID("9"), Action: "acceptance"})
-		cmds, _ = d.send(core.SessionEnded{IssueID: issueID("9"), Action: "acceptance", Outcome: succeeded})
+		cmds, _ = d.send(core.SessionEnded{IssueID: issueID("9"), Action: "acceptance", Outcome: failed("broke")})
 		if got := lookups(cmds); len(got) != 1 || !got[0].Since.Equal(made) {
 			t.Fatalf("lookups = %#v, want since %v", got, made)
 		}
 	})
 	t.Run("resumed", func(t *testing.T) {
-		past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
+		past := failedRun(t, "broke")
 		d := &driver{t: t, m: core.New(crewRules(), 2,
-			core.Journaling([]crew.RunEvent{past}), core.Reopening(), core.FindingPullRequests()), now: t0}
+			core.Journaling(past), core.Reopening(), core.FindingPullRequests()), now: t0, inputs: 1000}
 		d.takeIssue(issue("9", 1, readyForDev))
-		d.send(reopened("9", "lfg", "lfg"))
+		d.send(reopened("9", "development"))
 		d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
 		cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: succeeded})
-		if got := lookups(cmds); len(got) != 1 || !got[0].Since.IsZero() || got[0].Branch != "crew/issue-9-lfg" {
-			t.Fatalf("lookups = %#v, want one from crew/issue-9-lfg with no since", got)
+		if got := lookups(cmds); len(got) != 1 || !got[0].Since.IsZero() || got[0].Branch != "crew/issue-9-development" {
+			t.Fatalf("lookups = %#v, want one from crew/issue-9-development with no since", got)
 		}
 	})
+}
+
+// endWith ends the session of action on key with usage, answers the lookup
+// it asks, if any, with no pull request, and settles what follows.
+func (d *driver) endWith(key string, action crew.ActionName, usage crew.Usage) {
+	d.t.Helper()
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID(key), Action: action, Outcome: succeeded, Usage: usage})
+	if len(lookups(cmds)) > 0 {
+		cmds, _ = d.send(core.PullRequestFound{IssueID: issueID(key), PullRequest: noPR})
+	}
+	d.settle(cmds)
 }
 
 func TestAE4ARuleMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("5", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "acceptance", Outcome: failed("killed")})
-	d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "acceptance", PullRequest: noPR})
-	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "development", Outcome: succeeded, Usage: spent})
-	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
-	d.settle(ending)
+	d.endWith("5", "acceptance", crew.Usage{})
+	d.endWith("5", "development", spent)
 
 	if got := onlyEntry(t, d).Spend(); got != partialSpend {
 		t.Fatalf("handled spend = %#v, want the known cost of two sessions, %#v", got, partialSpend)
@@ -218,15 +199,15 @@ func TestAE4ARuleMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
 }
 
 func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) {
-	d := usageDriver(t, draft())
-	cmds, _ := d.poll(issue("5", 1, ready))
-	d.send(core.CallResult{ID: moveID(t, cmds, "5"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueID: issueID("5"), Action: "acceptance", Reason: crew.NewSessionText("no space left")})
-	d.send(space("5", "development"))
-	d.send(core.SessionStarted{IssueID: issueID("5"), Action: "development"})
-	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "development", Outcome: succeeded, Usage: spent})
-	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
-	d.settle(ending)
+	rules := draft()
+	rules[0].Actions[0] = shellAction("install", "make deps")
+	d := usageDriver(t, rules)
+	d.running(issue("5", 1, ready))
+	d.settle(func() []core.Command {
+		cmds, _ := d.send(core.ShellEnded{IssueID: issueID("5"), Action: "install", Outcome: exited(0)})
+		return cmds
+	}())
+	d.endWith("5", "development", spent)
 
 	if got, want := onlyEntry(t, d).Spend(), spent.Spend(); got != want {
 		t.Fatalf("handled spend = %#v, want only the session's, %#v", got, want)
@@ -239,16 +220,11 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("7", 1, ready))
-	for _, action := range []crew.ActionName{"acceptance", "development"} {
-		d.send(core.SessionEnded{IssueID: issueID("7"), Action: action, Outcome: succeeded, Usage: spent})
-		ending, _ := d.send(core.PullRequestFound{IssueID: issueID("7"), Action: action, PullRequest: noPR})
-		d.settle(ending)
-	}
+	d.endWith("7", "acceptance", spent)
+	d.endWith("7", "development", spent)
 
 	d.running(issue("7", 1, readyToReview))
-	d.send(core.SessionEnded{IssueID: issueID("7"), Action: "custom_review", Outcome: succeeded, Usage: tokens})
-	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("7"), Action: "custom_review", PullRequest: noPR})
-	d.settle(ending)
+	d.endWith("7", "custom_review", tokens)
 
 	if got := onlyEntry(t, d).Rule; got != "review" {
 		t.Fatalf("handled shows %q, want only the review rule", got)
@@ -266,29 +242,24 @@ func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 // entry's spend, and its own earlier spend, in Earlier.
 func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T) {
 	rules := append(draft(), crew.Rule{
-		Name:    "merge",
-		Labels:  crew.Labels{Ready: readyToMerge, Running: "merging", Success: "merged", Failure: needsAttention},
-		Actions: []crew.Action{{Name: "merge_it", Prompt: parsedPrompt("merge_it", "Merge issue {{.Issue.Ref}}")}},
+		Name: "merge", Labels: crew.Labels{Ready: readyToMerge, Running: "merging"},
+		Actions: []crew.Action{sessionAction("merge_it", "Merge issue {{.Issue.Ref}}")},
+		Routes:  routes("merged", needsAttention),
 	})
 	d := usageDriver(t, rules)
 	cost := func(dollars float64, output int64) crew.Usage {
 		return crew.Usage{Cost: crew.Some(dollars), Tokens: crew.Some(crew.Tokens{Output: output})}
 	}
-	end := func(action crew.ActionName, u crew.Usage) {
-		d.send(core.SessionEnded{IssueID: issueID("8"), Action: action, Outcome: succeeded, Usage: u})
-		ending, _ := d.send(core.PullRequestFound{IssueID: issueID("8"), Action: action, PullRequest: noPR})
-		d.settle(ending)
-	}
 
 	d.running(issue("8", 1, ready))
-	end("acceptance", cost(1, 10))
-	end("development", cost(2, 20))
+	d.endWith("8", "acceptance", cost(1, 10))
+	d.endWith("8", "development", cost(2, 20))
 	if got := onlyEntry(t, d); got.Rule != "implement" || got.Earlier != (crew.Spend{}) {
 		t.Fatalf("entry after implement: rule %q, earlier %#v; want implement with no earlier spend", got.Rule, got.Earlier)
 	}
 
 	d.running(issue("8", 1, readyToReview))
-	end("custom_review", cost(4, 40))
+	d.endWith("8", "custom_review", cost(4, 40))
 	implement := crew.Spend{Sessions: 2, Cost: 3, WithCost: 2, Tokens: crew.Tokens{Output: 30}, WithTokens: 2}
 	if got := onlyEntry(t, d); got.Rule != "review" || got.Earlier != implement {
 		t.Fatalf("entry after review: rule %q, earlier %#v; want review with implement's spend %#v",
@@ -296,7 +267,7 @@ func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T)
 	}
 
 	d.running(issue("8", 1, readyToMerge))
-	end("merge_it", cost(8, 80))
+	d.endWith("8", "merge_it", cost(8, 80))
 	both := crew.Spend{Sessions: 3, Cost: 7, WithCost: 3, Tokens: crew.Tokens{Output: 70}, WithTokens: 3}
 	if got := onlyEntry(t, d); got.Rule != "merge" || got.Earlier != both {
 		t.Fatalf("entry after merge: rule %q, earlier %#v; want merge with implement's and review's spend %#v",
@@ -310,35 +281,33 @@ func TestStatusShowsAnEndedActionsSpendOnlyWhenSetTo(t *testing.T) {
 		opts = append([]core.Option{core.ReportingStatus()}, opts...)
 		d := usageDriver(t, draft(), opts...)
 		d.runAll(d.take(issue("1", 1, ready)))
-		d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded, Usage: spent})
-		d.send(core.PullRequestFound{IssueID: issueID("1"), Action: "acceptance", PullRequest: pr45})
+		d.endWith("1", "acceptance", spent)
 		cmds, _ := d.send(core.Tick{})
 		return statusOf(t, cmds, "1")
 	}
 
 	off := run()
-	if got := off.Actions()[0].State; got != (crew.ActionSucceeded{}) {
+	if got := off.Actions()[0].State; got != (crew.ActionSucceeded{Verdict: crew.Passed}) {
 		t.Fatalf("status without the setting holds %#v", got)
 	}
 	on := run(core.ReportingUsage())
-	shown := crew.Some(crew.ShownUsage{Spend: spent.Spend(), PullRequest: pr45})
-	if got := on.Actions()[0].State; got != (crew.ActionSucceeded{Usage: shown}) {
-		t.Fatalf("ended action's status = %#v, want its spend and #45", got)
+	shown := crew.Some(crew.ShownUsage{Spend: spent.Spend()})
+	if got := on.Actions()[0].State; got != (crew.ActionSucceeded{Verdict: crew.Passed, Usage: shown}) {
+		t.Fatalf("ended action's status = %#v, want its spend, with no pull request looked up yet", got)
 	}
 	if got, running := on.Actions()[1].State.(crew.ActionRunning); !running {
 		t.Fatalf("running action's status = %#v, want no spend", got)
 	}
 }
 
-func TestRunningAndFinishingActionsShowNoSpend(t *testing.T) {
+func TestARunningActionShowsNoSpend(t *testing.T) {
 	d := usageDriver(t, draft(), core.ReportingStatus(), core.ReportingUsage())
 	d.runAll(d.take(issue("1", 1, ready)))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded, Usage: spent})
 
 	cmds, _ := d.send(core.Tick{})
 	st := statusOf(t, cmds, "1")
-	if got := st.Actions()[0].State; got != (crew.ActionPending{}) {
-		t.Fatalf("finishing action's status = %#v, want pending with no spend", got)
+	if got, running := st.Actions()[0].State.(crew.ActionRunning); !running {
+		t.Fatalf("running action's status = %#v, want running with no spend", got)
 	}
 	if got := d.m.View().Spent; got != (crew.Spend{}) {
 		t.Fatalf("run spend = %#v before any action ended", got)

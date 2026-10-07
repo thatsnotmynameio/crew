@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -10,8 +9,8 @@ import (
 
 // journal is what the model knows of the rule runs' past, when it journals
 // them (KTD12): their History, replayed from the run journal and folded
-// live, with each workspace's earlier action runs retired once another
-// action starts in it (KTD9).
+// live, with each past run whose worktree's name another run opens retired
+// (KTD18).
 type journal struct {
 	history crew.History
 }
@@ -29,19 +28,21 @@ func Journaling(past []crew.RunEvent) Option {
 	}
 }
 
-// Reopening has the model reopen a failed run's workspace, through
-// ReopenWorkspace commands, for a workspace that can (KTD4). It takes effect
-// only with Journaling, which tells the model which runs failed.
+// Reopening has the model reopen the worktree of the run a new run
+// continues, through ReopenWorkspace commands, for a workspace that can
+// (KTD4, KTD19). It takes effect only with Journaling, which tells the
+// model where each run stopped. Without it, a run that would resume starts
+// fresh, and the passed route alone runs without a worktree.
 func Reopening() Option {
 	return func(m *Model) { m.reopening = true }
 }
 
-// fold adds e to the past. An action run's start in a workspace retires
-// every other action whose last action run is in it, which the workspace no
-// longer holds (KTD5, KTD9).
+// fold adds e to the past. A run's worktree that opens retires every other
+// past run that would reopen a worktree of its name, which no longer holds
+// that run's work (KTD18).
 func (j *journal) fold(e crew.RunEvent) {
-	if opened, ok := e.(crew.ActionOpened); ok {
-		j.history.Retire(opened.Workspace.Name, opened.IssueID, opened.Rule, opened.Action)
+	if opened, ok := e.(crew.WorkspaceOpened); ok {
+		j.history.Retire(opened.Workspace.Name, opened.IssueID, opened.Rule)
 	}
 	j.history.Fold(e)
 }
@@ -58,73 +59,63 @@ func (s *step) record(e crew.RunEvent) {
 }
 
 // continued returns the id of the last run of rule on the issue identified
-// by id, which a new run of it continues, and the resume points of its
-// actions when the model can reopen their workspaces (R1, R2, KTD12).
-func (m *Model) continued(
-	id crew.IssueID, rule crew.RuleName,
-) (crew.Optional[crew.RuleRunID], map[crew.ActionName]crew.ResumePoint) {
+// by id, which a new run of it continues, and how the new run starts from
+// it (R22, KTD19): fresh without a journal, and without the worktree to
+// reopen when the model cannot reopen worktrees.
+func (m *Model) continued(id crew.IssueID, rule crew.Rule) (crew.Optional[crew.RuleRunID], crew.Start) {
 	if m.journal == nil {
-		return crew.Optional[crew.RuleRunID]{}, nil
+		return crew.Optional[crew.RuleRunID]{}, crew.StartFresh{}
 	}
 	var continues crew.Optional[crew.RuleRunID]
-	if last, ok := m.journal.history.LastRun(id, rule); ok {
+	if last, ok := m.journal.history.LastRun(id, rule.Name); ok {
 		continues = crew.Some(last.ID())
 	}
+	start := m.journal.history.Start(id, rule)
 	if !m.reopening {
-		return continues, nil
+		start = crew.WithoutWorktree(start)
 	}
-	return continues, m.journal.history.ResumePoints(id, rule)
+	return continues, start
 }
 
 // notRecorded returns the event that says e, a run event the engine could
-// not append, was not recorded, and false for an event of which today's
-// journal wrote no line: only an action's start and end say so (KTD-P6).
+// not append, was not recorded, and false for an event no resume depends
+// on (KTD18).
 func notRecorded(e crew.RunEvent, at time.Time, reason string) (RunNotRecorded, bool) {
-	action, ok := recordedAction(e)
+	action, what, ok := unrecorded(e)
 	if !ok {
 		return RunNotRecorded{}, false
 	}
 	h := e.Head()
 	return RunNotRecorded{
-		At: at, IssueID: h.IssueID, IssueRef: h.IssueRef, Rule: h.Rule, Action: action, Reason: reason,
+		At: at, IssueID: h.IssueID, IssueRef: h.IssueRef, Rule: h.Rule, Action: action, What: what, Reason: reason,
 	}, true
 }
 
-// recordedAction returns the action whose start or end e is, and false when
-// e is neither.
-func recordedAction(e crew.RunEvent) (crew.ActionName, bool) {
-	if opened, ok := e.(crew.ActionOpened); ok {
-		return opened.Action, true
+// unrecorded returns, for e, an event a resume depends on, the action it is
+// about and what it is in crew's words: the run's worktree, an action's
+// start or end, its session's start, the route it chose, a step's outcome
+// or its release. It returns false for any other event.
+func unrecorded(e crew.RunEvent) (crew.ActionName, string, bool) {
+	switch e := e.(type) {
+	case crew.WorkspaceOpened:
+		return "", "its worktree " + string(e.Workspace.Name), true
+	case crew.ActionSessionAsked:
+		return e.Action, "the start of " + string(e.Action), true
+	case crew.ActionShellAsked:
+		return e.Action, "the start of " + string(e.Action), true
+	case crew.ActionSessionStarted:
+		return e.Action, "the start of " + string(e.Action) + "'s session", true
+	case crew.ActionEnded:
+		return e.Action, "the end of " + string(e.Action), true
+	case crew.RouteChosen:
+		return e.Action, "the route " + string(e.Route) + " it chose", true
+	case crew.StepEnded:
+		return "", fmt.Sprintf("the outcome of step %d of its route", e.Step+1), true
+	case crew.RunReleased:
+		return "", "its release", true
+	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
+		crew.WorkspaceMissing, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellStopAsked,
+		crew.ActionShellEnded, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked:
 	}
-	if ended, ok := e.(crew.ActionEnded); ok {
-		return ended.Action, true
-	}
-	return "", false
-}
-
-// resumeParagraph is what crew appends to a resumed session's prompt (R5,
-// KTD7): that the session continues a failed run in this workspace, why
-// that run failed (reason), and where its output is. log is the
-// repository-relative path of the log, and logFromDir the same path from
-// the workspace; branch is the workspace's branch.
-func resumeParagraph(reason crew.SessionText, branch, log, logFromDir string) string {
-	var b strings.Builder
-	b.WriteString("crew: this session continues the work of an earlier session on this action, in this worktree")
-	if branch != "" {
-		fmt.Fprintf(&b, ", on branch `%s`", branch)
-	}
-	fmt.Fprintf(&b, ". That run failed: %q.", oneLine(reason.String()))
-	fmt.Fprintf(&b, " Its output is in the log `%s` of the repository's main checkout", log)
-	if logFromDir != "" {
-		fmt.Fprintf(&b, " (`%s` from this worktree)", logFromDir)
-	}
-	b.WriteString(", above the line crew wrote there when this session started. ")
-	b.WriteString("Check the worktree's state with `git status` and `git log` before you go on, ")
-	b.WriteString("and continue from where it stopped instead of starting over.")
-	return b.String()
-}
-
-// oneLine joins the words of s with single spaces.
-func oneLine(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	return "", "", false
 }

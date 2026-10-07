@@ -32,7 +32,7 @@ func TestANewRunWaitingToStartShowsNoneOfTheLastRunsWords(t *testing.T) {
 
 	again := runningSnapshot()
 	again.Snapshot.Issues[0].Claim = core.ClaimTaking
-	again.Snapshot.Issues[0].Actions = []core.ActionView{{Name: "code", Phase: core.PhaseWaiting}}
+	again.Snapshot.Issues[0].Actions = []core.ActionView{{Name: "code", Phase: core.PhaseTaking}}
 	h.send(updateMsg(again))
 	h.send(enterKey)
 

@@ -3,25 +3,38 @@ package crew
 import "time"
 
 // Status returns the run's status as it stands at at: running while it
-// takes the issue or runs its actions, and ended once it ended, with its
-// ending's state and how the ending move stands. said holds what each
-// running session last said, by action. With showUsage, each ended action
-// whose session started carries what it spent and its pull request.
+// takes the issue or runs its actions, and ended once it chose its route,
+// with the route, the state it moves the issue to or its close, how that
+// final step stands, and how each of its steps settled. said holds what
+// each running session last said, by action. With showUsage, each ended
+// action whose session started carries what it spent and its pull request.
 func (r RuleRun) Status(at time.Time, said map[ActionName]Said, showUsage bool) Status {
 	return NewStatus(StatusData{
 		IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), Rule: r.rule, Progress: r.progress(),
-		Actions: r.actionStatuses(said, showUsage), Updated: at, Run: r.id,
+		Actions: r.actionStatuses(said, showUsage), Steps: r.stepStatuses(), Updated: at, Run: r.id,
 	})
 }
 
-// FailureReport returns the report of the run's failed actions, once it
-// ended in failure.
+// FailureReport returns the report a report step of the run's route posts,
+// once the run chose its route: the rule, the route, and the action at the
+// run's cursor, whose verdict ended the sequence, with that verdict, the
+// run's workspace and its log (KTD5). A run without actions names no
+// action.
 func (r RuleRun) FailureReport() (FailureReport, bool) {
-	v, ok := r.ending()
-	if !ok || !v.Failed() {
+	route, routed := r.route()
+	if !routed {
 		return FailureReport{}, false
 	}
-	return FailureReport{IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), Failures: v.clone().Failures}, true
+	report := FailureReport{IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), Rule: r.rule, Route: route.Route}
+	if a, ok := r.Cursor(); ok {
+		w, _ := r.Workspace().Get()
+		f := ActionFailure{Action: a.name, Workspace: w.Workspace.Name, Log: w.Log}
+		if ended, ok := a.state.(Finished); ok {
+			f.Verdict = ended.Verdict
+		}
+		report.Failures = []ActionFailure{f}
+	}
+	return report, true
 }
 
 // TakeReport returns the pull request report that follows the run's take
@@ -32,72 +45,84 @@ func (r RuleRun) TakeReport(to State) PullRequestReport {
 	})
 }
 
-// EndingReport returns the pull request report that follows the run's
-// ending move, once it ended. It carries how the rule ended, unless
-// the rule has no actions: nobody watched anything, so there is nothing to
-// tell. With showUsage, its ended actions carry what they spent and their
-// pull requests, as the run's status does.
+// EndingReport returns the pull request report that follows the final move
+// or close of the run's route, once it chose a route. It carries how the
+// rule ended, unless the rule has no actions: nobody watched anything, so
+// there is nothing to tell, and a rule without actions whose route closes
+// the issue has no report at all. After a close it carries no state: the
+// close took crew's labels off the pull requests (R51). With showUsage, its
+// ended actions carry what they spent and their pull requests, as the run's
+// status does.
 func (r RuleRun) EndingReport(showUsage bool) (PullRequestReport, bool) {
-	v, ok := r.ending()
-	if !ok {
+	route, routed := r.route()
+	end, ok := route.End()
+	if !routed || !ok || end.Kind == StepClose && len(r.actions) == 0 {
 		return PullRequestReport{}, false
 	}
-	d := PullRequestReportData{ID: r.id.EndingReport(), IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), State: v.To}
+	d := PullRequestReportData{ID: r.id.EndingReport(), IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), State: end.To}
 	if len(r.actions) > 0 {
-		d.End = Some(NewRuleEnd(r.rule, r.actionStatuses(nil, showUsage)))
+		d.End = Some(NewRuleEnd(r.rule, route.Route, r.actionStatuses(nil, showUsage)))
 	}
 	return NewPullRequestReport(d), true
 }
 
-// ending returns how the run ended, once it ended.
-func (r RuleRun) ending() (RunEnding, bool) {
-	switch p := r.phase.(type) {
-	case EndingPhase:
-		return p.Ending, true
-	case ReleasedPhase:
-		if v, ok := p.Ending.Get(); ok {
-			return v.Ending, true
-		}
-	case TakingPhase, RunningPhase:
-	}
-	return RunEnding{}, false
-}
-
-// progress returns whether the run's status shows it running or ended.
+// progress returns whether the run's status shows it running or ended: it
+// ended once it chose its route, and the final step's outcome says how its
+// move or close stands. A route that closes the issue moves it to no state.
 func (r RuleRun) progress() StatusProgress {
-	switch p := r.phase.(type) {
-	case EndingPhase:
-		move := MovePending
-		if m, ok := p.Move.Get(); ok {
-			move = moveProgress(m)
-		}
-		return StatusEnded{To: p.Ending.To, Move: move}
-	case ReleasedPhase:
-		if v, ok := p.Ending.Get(); ok {
-			return StatusEnded{To: v.Ending.To, Move: moveProgress(v.Move)}
-		}
-	case TakingPhase, RunningPhase:
+	route, ok := r.route()
+	if !ok {
+		return StatusRunning{}
 	}
-	return StatusRunning{}
+	end, _ := route.End()
+	move := MovePending
+	if final, settled := route.Final(); settled {
+		move = moveProgress(final)
+	}
+	return StatusEnded{Route: route.Route, To: end.To, Move: move}
 }
 
-// moveProgress returns how a settled ending move stands.
-func moveProgress(m EndingMove) MoveProgress {
-	if _, givenUp := m.(EndingGivenUp); givenUp {
-		return MoveDropped
+// moveProgress returns how a final step that settled as o stands.
+func moveProgress(o StepOutcome) MoveProgress {
+	switch o.(type) {
+	case StepLanded:
+		return MoveDone
+	case StepGivenUp, StepDropped, StepRan, StepFailed, StepSkipped, StepStopped:
 	}
-	return MoveDone
+	return MoveDropped
+}
+
+// stepStatuses returns the steps of the run's route, each with how it
+// settled, once it chose a route; nil before.
+func (r RuleRun) stepStatuses() []StepStatus {
+	route, ok := r.route()
+	if !ok {
+		return nil
+	}
+	out := make([]StepStatus, 0, len(route.Steps))
+	for i, step := range route.Steps {
+		s := StepStatus{Step: step}
+		if i < len(route.Settled) {
+			s.Outcome = route.Settled[i]
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // actionStatuses returns the run's actions as a status shows them: each
-// one's state and how its checks that ran so far ended. Only a check's
-// reason goes with them: a session's or a tool's own words never do. An
-// action that resumed also names its workspace.
+// one's state, and a shell action's line once its script ended. A
+// session's or a tool's own words never go with them. When the run
+// resumed, each action that ran in it names its workspace.
 func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []ActionStatus {
 	out := make([]ActionStatus, 0, len(r.actions))
-	for _, a := range r.actions {
-		s := ActionStatus{Name: a.name, State: a.status(said[a.name], showUsage), Checks: a.Checks()}
-		if w, ok := a.workspace.Get(); ok && w.Resumed {
+	w, _ := r.Workspace().Get()
+	for i, a := range r.actions {
+		s := ActionStatus{Name: a.name, State: r.actionState(i, said[a.name], showUsage)}
+		if o, ok := a.shell.Get(); ok {
+			s.Shell = o.Reason
+		}
+		if w.Resumed && ran(s.State) {
 			s.Workspace = w.Workspace.Name
 		}
 		out = append(out, s)
@@ -105,35 +130,54 @@ func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []Acti
 	return out
 }
 
-// status returns how a stands in a status. An action whose check runs is
-// still running, since its session started; its session's last words are
-// no longer current. A failed action carries its cause and log.
-func (a ActionRun) status(said Said, showUsage bool) ActionState {
-	started, _ := a.session.Get()
+// ran reports whether an action that stands at state ran in its run.
+func ran(state ActionState) bool {
+	switch state.(type) {
+	case ActionRunning, ActionSucceeded, ActionFailed:
+		return true
+	case ActionPending, ActionAwaitingTurn, ActionNotRun, ActionDoneInEarlierRun:
+	}
+	return false
+}
+
+// actionState returns how the action at index i stands in a status. A
+// session or a script that runs is running. The action at the cursor that
+// has none running yet is pending, and those after it await their turn. A
+// failed action carries its cause and the run's log.
+func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
+	a := r.actions[i]
 	switch s := a.state.(type) {
 	case InSession:
+		started, _ := a.session.Get()
 		return ActionRunning{Started: started, Said: said}
-	case InChecks:
-		return ActionRunning{Started: started}
+	case InShell:
+		return ActionRunning{Started: s.Started}
 	case Finished:
-		return a.endState(s.End, showUsage)
-	case AwaitingTake, CreatingWorkspace, ReopeningWorkspace, StartingSession, Finishing:
-		// No session runs: the action has no start time to report.
+		return r.endState(a, s, showUsage)
+	case DoneInEarlierRun:
+		return ActionDoneInEarlierRun{}
+	case NotRun:
+		return ActionNotRun{}
+	case AwaitingTurn:
+		if i != r.cursor {
+			return ActionAwaitingTurn{}
+		}
+	case StartingSession:
 	}
 	return ActionPending{}
 }
 
-// endState returns how a, which ended with end, stands in a status: with
-// showUsage and a session that started, with what it spent and its pull
-// request.
-func (a ActionRun) endState(end ActionEnd, showUsage bool) ActionState {
+// endState returns how a, which ended as f says, stands in a status: with
+// showUsage and a session that started, with what it spent and the run's
+// pull request.
+func (r RuleRun) endState(a ActionRun, f Finished, showUsage bool) ActionState {
 	var usage Optional[ShownUsage]
 	if _, started := a.session.Get(); showUsage && started {
-		usage = Some(ShownUsage{Spend: a.Spend(), PullRequest: a.PullRequest()})
+		usage = Some(ShownUsage{Spend: a.Spend(), PullRequest: r.PullRequest()})
 	}
-	if failed, ok := end.(EndFailed); ok {
-		w, _ := a.workspace.Get()
+	if failed, ok := f.End.(EndFailed); ok {
+		w, _ := r.Workspace().Get()
 		return ActionFailed{Cause: failed.Cause, Log: w.Log, Usage: usage}
 	}
-	return ActionSucceeded{Usage: usage}
+	return ActionSucceeded{Verdict: f.Verdict, Usage: usage}
 }

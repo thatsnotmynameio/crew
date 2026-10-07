@@ -1,7 +1,7 @@
 // Package jsonl is the run journal's file adapter: one JSON line per rule
 // run event, appended to a file under the repository's .crew/logs/ and
-// never rewritten (KTD12). It writes version 2 lines and reads versions 1
-// and 2, so a run that failed before crew wrote events still resumes.
+// never rewritten (KTD12). It writes and reads version 3 lines and skips
+// the lines of earlier versions, whose runs start over.
 package jsonl
 
 import (
@@ -39,12 +39,13 @@ func New(root, path, run string) *Journal {
 }
 
 // Load implements port.Journal: it returns the events of the journal's
-// version 1 and 2 lines, in the order they were written, each issue in
+// version 3 lines, in the order they were written, each issue in
 // repository, as the journal belongs to one checkout. A missing journal
 // holds none, and so does a file where its directory goes; the session
 // logs that cannot be created there are reported as they fail. A line
 // that does not parse, such as one cut short by a crash, of another
-// version or of a type this crew does not know, is skipped.
+// version, such as the version 1 and 2 lines of earlier crews, or of a
+// type this crew does not know, is skipped.
 func (j *Journal) Load(repository crew.RepositoryID) ([]crew.RunEvent, error) {
 	data, err := os.ReadFile(j.file())
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
@@ -54,31 +55,26 @@ func (j *Journal) Load(repository crew.RepositoryID) ([]crew.RunEvent, error) {
 		return nil, fmt.Errorf("read the run journal %s: %w", j.path, err)
 	}
 	var events []crew.RunEvent
+	decoders := decoders()
 	for text := range bytes.Lines(data) {
 		var l line
 		if err := json.Unmarshal(text, &l); err != nil {
 			continue
 		}
-		if e, ok := l.event(repository); ok {
+		if e, ok := l.event(decoders, repository); ok {
 			events = append(events, e)
 		}
 	}
 	return events, nil
 }
 
-// event returns the event l holds, its issue in repository, or false when l
-// is not a line this crew understands.
-func (l line) event(repository crew.RepositoryID) (crew.RunEvent, bool) {
-	if l.Issue == "" {
+// event returns the event l holds, its issue in repository, by decoders,
+// or false when l is not a line this crew understands.
+func (l line) event(decoders map[string]decoder, repository crew.RepositoryID) (crew.RunEvent, bool) {
+	if l.Issue == "" || l.Version != version {
 		return nil, false
 	}
-	switch l.Version {
-	case version1:
-		return l.v1Event(repository)
-	case version:
-		return l.decode(l.eventHead(repository))
-	}
-	return nil, false
+	return l.decode(decoders, l.eventHead(repository))
 }
 
 // Append implements port.Journal: it appends e as a line of its own,

@@ -346,7 +346,7 @@ func TestAE1HeldCardsComeFirstInTheirColumn(t *testing.T) {
 // Covers AE2 and R3 of #231: a card is held whatever its issue's claim.
 func TestAE2EveryClaimKeepsACardHeld(t *testing.T) {
 	for _, claim := range []core.Claim{
-		core.ClaimTaking, core.ClaimRunning, core.ClaimStopping, core.ClaimJudging, core.ClaimOwed,
+		core.ClaimTaking, core.ClaimRunning, core.ClaimStopping, core.ClaimRouting, core.ClaimOwed,
 	} {
 		h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
@@ -533,7 +533,7 @@ func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
 // through its icon.
 func TestEachClaimReadsThroughItsIcon(t *testing.T) {
 	for claim, want := range map[core.Claim]string{
-		core.ClaimRunning: "run  ⠋ running", core.ClaimJudging: "run  ⠋ judging", core.ClaimTaking: "run  ◌ taking",
+		core.ClaimRunning: "run  ⠋ running", core.ClaimRouting: "run  ⠋ routing", core.ClaimTaking: "run  ◌ taking",
 		core.ClaimOwed: "run  ! owed", core.ClaimStopping: "run  ■ stopping",
 	} {
 		h := newBoardHarness(t, 120, crewNotify, crewBoard)

@@ -94,19 +94,24 @@ func TestTheExampleSetsEveryKey(t *testing.T) {
 	}
 }
 
-// exampleKeys adds to set the key path of each key below the mapping n,
-// whose own path is path, as schemaWalk names it: config.AnyName for a name
-// the code owner chooses.
+// exampleKeys adds to set the key path of each key below n, whose own path
+// is path, as schemaWalk names it: config.AnyName for a name the code owner
+// chooses, and config.ListItem for an item of a list.
 func exampleKeys(n *yaml.Node, path string, schema []string, set *[]string) {
-	if n.Kind != yaml.MappingNode {
-		return
-	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		key := schemaKey(path, n.Content[i].Value)
-		if !slices.Contains(schema, key) {
-			key = schemaKey(path, config.AnyName)
+	switch n.Kind {
+	case yaml.SequenceNode:
+		for _, item := range n.Content {
+			exampleKeys(item, path+config.ListItem, schema, set)
 		}
-		*set = append(*set, key)
-		exampleKeys(n.Content[i+1], key, schema, set)
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := schemaKey(path, n.Content[i].Value)
+			if !slices.Contains(schema, key) {
+				key = schemaKey(path, config.AnyName)
+			}
+			*set = append(*set, key)
+			exampleKeys(n.Content[i+1], key, schema, set)
+		}
+	default:
 	}
 }

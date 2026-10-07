@@ -12,29 +12,48 @@ import (
 // a rule's or an agent's.
 const AnyName = "*"
 
+// ListItem stands, in a key path, after a key whose value is a list, for
+// any of its items: rules.*.actions[].prompt is the prompt of any item of a
+// rule's actions.
+const ListItem = "[]"
+
 // section says how a key whose value stays a raw yaml.Node is decoded: by
-// item, the struct each value is decoded into, or nil for a scalar or a list
-// of scalars; named, whether its keys are names, each value an item; and
-// open, whether its keys besides item's go to an adapter.
+// items, the structs each value or list item may be decoded into, none for
+// a scalar or a list of scalars; named, whether its keys are names, each
+// value an item; list, whether each value may be a list, each of its items
+// an item; free, whether an item also takes one key the code owner names;
+// and open, whether its keys besides the items' go to an adapter.
 type section struct {
-	item  reflect.Type
+	items []reflect.Type
 	named bool
+	list  bool
+	free  bool
 	open  bool
 }
 
 // sections are the keys of the document that stay raw nodes, each with how
 // the config package decodes it, by key path.
 var sections = map[string]section{
-	"queues":                  {named: true},
-	"tracker":                 {item: reflect.TypeFor[trackerDoc](), open: true},
-	"agents":                  {item: reflect.TypeFor[agentDoc](), named: true},
-	"agents.*.harness":        {item: reflect.TypeFor[harnessDoc](), open: true},
-	"checks":                  {named: true},
-	"board":                   {named: true},
-	"rules":                   {item: reflect.TypeFor[ruleDoc](), named: true},
-	"rules.*.labels":          {item: reflect.TypeFor[labelsDoc]()},
-	"rules.*.actions":         {item: reflect.TypeFor[actionDoc](), named: true},
-	"rules.*.actions.*.check": {},
+	"queues":               {named: true},
+	"tracker":              {items: item[trackerDoc](), open: true},
+	"agents":               {items: item[agentDoc](), named: true},
+	"agents.*.harness":     {items: item[harnessDoc](), open: true},
+	"actions":              {items: item[shellDoc](), named: true},
+	"actions.*.verdicts":   {named: true},
+	"board":                {named: true},
+	"rules":                {items: item[ruleDoc](), named: true},
+	"rules.*.labels":       {items: item[labelsDoc]()},
+	"rules.*.actions":      {items: types[sessionDoc, referenceDoc](), list: true, free: true},
+	"rules.*.actions[].on": {named: true},
+	"rules.*.routes":       {items: item[stepDoc](), named: true, list: true, free: true},
+}
+
+// item returns the type T, an item's only shape.
+func item[T any]() []reflect.Type { return []reflect.Type{reflect.TypeFor[T]()} }
+
+// types returns the types A and B, an item's two shapes.
+func types[A, B any]() []reflect.Type {
+	return []reflect.Type{reflect.TypeFor[A](), reflect.TypeFor[B]()}
 }
 
 // AcceptedKeys returns every key path the config accepts, read from the
@@ -48,7 +67,7 @@ func AcceptedKeys() ([]string, []string, error) {
 	}
 	slices.Sort(w.keys)
 	slices.Sort(w.open)
-	return w.keys, w.open, nil
+	return slices.Compact(w.keys), w.open, nil
 }
 
 type keyWalk struct {
@@ -89,8 +108,16 @@ func (w *keyWalk) section(path string) error {
 		path = join(path, AnyName)
 		w.keys = append(w.keys, path)
 	}
-	if s.item == nil {
-		return nil
+	if s.list {
+		path += ListItem
 	}
-	return w.fields(s.item, path)
+	if s.free {
+		w.keys = append(w.keys, join(path, AnyName))
+	}
+	for _, item := range s.items {
+		if err := w.fields(item, path); err != nil {
+			return err
+		}
+	}
+	return nil
 }

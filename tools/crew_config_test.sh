@@ -1,18 +1,19 @@
 #!/bin/sh
-# Tests the prompts and checks of this repository's own .crew/config.yaml:
-# the refine prompt agrees with the /cw-split-plan and /cw-rank-blockers
-# skills it runs, and the session-finished check judges a session as it
-# should, against stub curl and sleep commands first on PATH, so it runs
+# Tests the prompts and shell actions of this repository's own
+# .crew/config.yaml: the refine prompt agrees with the /cw-split-plan and
+# /cw-rank-blockers skills it runs, the rules run the shell actions after
+# their sessions, and the session-finished shell action judges a session as
+# it should, against stub curl and sleep commands first on PATH, so it runs
 # without TypeSafe. crew's own tests never read this config, so a change to
 # it runs this by hand, from anywhere:
 #
-#   sh .crew/config_test.sh
+#   sh tools/crew_config_test.sh
 #
 # It needs jq, as session-finished does.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-config=$here/config.yaml
+config=$here/../.crew/config.yaml
 skills=$here/../.agents/skills
 
 command -v jq >/dev/null || {
@@ -29,40 +30,81 @@ fail() {
 	failures=$((failures + 1))
 }
 
-# check NAME prints the script of the check NAME, a block under checks.
-check() {
-	awk -v key="  $1: |-" '
-		$0 == key { on = 1; next }
+# definition NAME prints the definition of the shell action NAME under the
+# config's top-level actions, its keys unindented: "script: |-" and the
+# script for a definition given as a string, or the keys of a map.
+definition() {
+	awk -v key="  $1:" '
+		/^[^ #]/ { if (on) exit; top = ($0 == "actions:"); next }
+		top && $0 == key " |-" { on = 3; print "script: |-"; next }
+		top && $0 == key { on = 5; next }
+		on && /^    / { print substr($0, on); next }
+		on && /^$/ { print ""; next }
+		on { exit }
+	' "$config"
+}
+
+# rule NAME prints the rule NAME under the config's rules, its keys
+# unindented.
+rule() {
+	awk -v key="  $1:" '
+		/^[^ #]/ { if (on) exit; top = ($0 == "rules:"); next }
+		top && $0 == key { on = 1; next }
 		on && /^    / { print substr($0, 5); next }
 		on && /^$/ { print ""; next }
 		on { exit }
 	' "$config"
 }
 
-# action RULE NAME prints the action NAME of the rule RULE, its keys
-# unindented.
-action() {
-	awk -v rule="  $1:" -v name="      $2:" '
-		$0 == rule { in_rule = 1; next }
-		in_rule && $0 == name { on = 1; next }
-		on && /^        / { print substr($0, 9); next }
-		on && /^$/ { print ""; next }
-		on { exit }
-	' "$config"
-}
-
-# refine prints the refine action of the refinement rule.
-refine() {
-	action refinement refine
-}
-
-# refine_prompt prints the refine action's prompt.
-refine_prompt() {
-	refine | awk '
-		$0 == "prompt: |-" { on = 1; next }
+# block KEY prints the block under the line KEY of its input, unindented.
+block() {
+	awk -v key="$1" '
+		$0 == key { on = 1; next }
 		on && /^  / { print substr($0, 3); next }
 		on && /^$/ { print ""; next }
 		on { exit }
+	'
+}
+
+# shell NAME prints the script of the shell action NAME.
+shell() {
+	definition "$1" | block "script: |-"
+}
+
+# sequence RULE prints the actions of the rule RULE in order, one a line:
+# "session NAME" or "shell NAME", followed by " VERDICT=ROUTE" for each
+# entry of its on.
+sequence() {
+	rule "$1" | block "actions:" | awk '
+		function flush() {
+			if (kind != "") print kind " " name on
+			kind = ""; name = ""; on = ""; in_on = 0
+		}
+		/^- / {
+			flush()
+			rest = substr($0, 3)
+			if (rest !~ /^[a-z_]+: /) { kind = "shell"; name = rest; sub(/:$/, "", name); next }
+			kind = "session"; $0 = "  " rest
+		}
+		/^  name: / { name = substr($0, 9) }
+		$0 == "  on:" { in_on = 1; next }
+		in_on && /^    [^ ]/ { entry = substr($0, 5); sub(/: /, "=", entry); on = on " " entry; next }
+		/^  [^ ]/ { in_on = 0 }
+		END { flush() }
+	'
+}
+
+# prompt RULE NAME prints the prompt of the session NAME of the rule RULE.
+prompt() {
+	rule "$1" | block "actions:" | awk -v name="$2" '
+		function flush() { if (this == name) printf "%s", text; this = ""; text = ""; on = 0 }
+		/^- / { flush(); $0 = "  " substr($0, 3) }
+		$0 == "  name: " name { this = name; on = 0; next }
+		$0 == "  prompt: |-" { on = 1; next }
+		on && /^    / { text = text substr($0, 5) "\n"; next }
+		on && /^$/ { text = text "\n"; next }
+		{ on = 0 }
+		END { flush() }
 	'
 }
 
@@ -99,14 +141,14 @@ split_outcomes='`not split`
 part_marker='<!-- cw-split-plan: part of '
 record_marker='<!-- cw-split-plan: split record -->'
 
-prompt=$(refine_prompt)
-[ -n "$prompt" ] || fail "the refinement rule has no refine action with a prompt"
+prompt=$(prompt refinement refine)
+[ -n "$prompt" ] || fail "the refinement rule has no refine session with a prompt"
 split_skill=$(cat "$skills/cw-split-plan/SKILL.md")
 rank_skill=$(cat "$skills/cw-rank-blockers/SKILL.md")
 
-# The refine action splits a large plan before it finds blockers, finishes
+# The refine session splits a large plan before it finds blockers, finishes
 # the split by labelling the parts and taking the parent out of crew, and
-# its check fails a split that stopped before that (#160).
+# the shell action after it fails a split that stopped before that (#160).
 split=$(at '/cw-split-plan {{.Issue.Ref}}' "$prompt")
 if [ "$split" -lt 0 ] || [ "$split" -gt "$(at 'dependencies/blocked_by' "$prompt")" ]; then
 	fail "the refine prompt does not run /cw-split-plan before it reads dependencies"
@@ -114,8 +156,11 @@ fi
 for want in '--add-label "crew:refinement:done"' '--remove-label "crew:refinement:in progress"' "$record_marker"; do
 	has "$prompt" "$want" "the refine prompt"
 done
-refine | grep -qx 'check: split-finished' || fail "the refine action does not run split-finished"
-finished=$(check split-finished)
+want='session refine
+shell split-finished'
+got=$(sequence refinement)
+[ "$got" = "$want" ] || fail "the refinement rule runs \"$got\", want \"$want\""
+finished=$(shell split-finished)
 for want in '"crew:refinement:in progress"' "${part_marker}\$CREW_ISSUE_REF -->" /sub_issues; do
 	has "$finished" "$want" "split-finished"
 done
@@ -150,11 +195,19 @@ done
 # request it was given, then writes $STUB_DIR/body to its -o file and prints
 # $STUB_CODE, as curl's -w '%{http_code}' would; 000 is no answer. sleep
 # records how long the judge waited instead of waiting.
-judge=$(check session-finished)
-[ -n "$judge" ] || fail "the config has no session-finished check"
-for rule in development fix; do
-	action "$rule" lfg | grep '^check:' | grep -q session-finished ||
-		fail "the lfg action of $rule does not run session-finished"
+# development and fix judge their lfg session, send the judge's exit 3 to
+# a needs-person route, then check the pull request (AE2 of #254).
+judge=$(shell session-finished)
+[ -n "$judge" ] || fail "the config has no session-finished shell action"
+verdicts=$(definition session-finished | block "verdicts:")
+[ "$verdicts" = "3: needs_person" ] || fail "session-finished's verdicts are \"$verdicts\", want \"3: needs_person\""
+want='session lfg
+shell session-finished needs_person=needs-person
+shell pr-closes-issue'
+for name in development fix; do
+	got=$(sequence "$name")
+	[ "$got" = "$want" ] || fail "the $name rule runs \"$got\", want \"$want\""
+	rule "$name" | block "routes:" | grep -qx 'needs-person:' || fail "the $name rule has no needs-person route"
 done
 mkdir "$root/bin"
 cat >"$root/bin/curl" <<'EOF'
@@ -234,8 +287,9 @@ p() {
 	printf '{"done":%s,"unfinished":%s,"needs_person":%s,"stopped":%s}' "$1" "$2" "$3" "$4"
 }
 
-# R7, R8: the judge fails on unfinished or stopped and passes otherwise,
-# echoing the outcome and its probability averaged over both orders.
+# R7, R8: the judge fails on unfinished or stopped, exits 3 when the session
+# needs a person, and passes otherwise, echoing the outcome and its
+# probability averaged over both orders.
 verdict() {
 	run_judge "$key" 'PR #20 is open.
 Merging is yours.' 200 "$2"
@@ -243,7 +297,7 @@ Merging is yours.' 200 "$2"
 }
 verdict "unfinished (AE1)" "$(both "$(p 0 1 0 0)")" 1 "unfinished (1.00)"
 verdict "done (AE2)" "$(both "$(p 0.97 0.01 0.01 0.01)")" 0 "done (0.97)"
-verdict "needs a person (AE4)" "$(both "$(p 0.03 0.01 0.95 0.01)")" 0 "needs a person (0.95)"
+verdict "needs a person (AE4)" "$(both "$(p 0.03 0.01 0.95 0.01)")" 3 "needs a person (0.95)"
 verdict "needs a person below its threshold" "$(both "$(p 0.4 0.05 0.5 0.05)")" 0 "done (0.40)"
 verdict "stopped" "$(both "$(p 0.3 0.1 0 0.6)")" 1 "stopped (0.60)"
 verdict "unfinished and stopped reach the threshold together" "$(both "$(p 0.4 0.3 0 0.3)")" 1 "unfinished (0.30)"

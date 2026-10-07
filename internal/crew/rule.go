@@ -3,16 +3,16 @@ package crew
 import "slices"
 
 // Rule is one of the config's rules. It takes an item of its Takes kind in
-// its Labels.Ready state, moves it to Labels.Running while its actions run,
-// and moves it to Labels.Success once every action has succeeded, or to
-// Labels.Failure when any failed.
+// its Labels.Ready state and moves it to Labels.Running while its actions
+// run, one at a time in one workspace. Each action's verdict leads to the
+// next action or to one of its Routes, which ends the run.
 type Rule struct {
 	// Name identifies the rule in events and the TUI.
 	Name RuleName
 	// Labels are the states the rule takes an item from and moves it to.
 	Labels Labels
-	// Actions run in parallel, each in its own workspace and session. A
-	// rule may have none.
+	// Actions run one at a time, in this order, in the run's one
+	// workspace. A rule may have none.
 	Actions []Action
 	// Queue is the queue the rule runs in: the share of the global limit
 	// its issues may hold. The zero Queue is no queue: the rule is limited
@@ -21,6 +21,10 @@ type Rule struct {
 	// Takes is the kind of item the rule takes: it takes only the items of
 	// that kind in its Labels.Ready state. The zero Kind takes issues.
 	Takes Kind
+	// Routes are the rule's ways to end a run, in the config's order. A
+	// rule with actions declares PassedRoute and FailedRoute; a rule
+	// without actions declares only PassedRoute.
+	Routes []Route
 }
 
 // Action returns the definition of r's action named name, or the zero
@@ -32,18 +36,46 @@ func (r Rule) Action(name ActionName) Action {
 	return Action{}
 }
 
+// Route returns r's route named name, and whether r has one.
+func (r Rule) Route(name RouteName) (Route, bool) {
+	if i := slices.IndexFunc(r.Routes, func(route Route) bool { return route.Name == name }); i >= 0 {
+		return r.Routes[i], true
+	}
+	return Route{}, false
+}
+
+// WaitingStates returns the states r's waiting routes move the item to, in
+// route order, each once: the final move of each route an action's On
+// sends Waiting to. An item there waits for an answer, and r never takes
+// it from there.
+func (r Rule) WaitingStates() []State {
+	var out []State
+	for _, route := range r.Routes {
+		if !r.waitsThrough(route.Name) || len(route.Steps) == 0 {
+			continue
+		}
+		if m, ok := route.Steps[len(route.Steps)-1].(MoveStep); ok && !slices.Contains(out, m.To) {
+			out = append(out, m.To)
+		}
+	}
+	return out
+}
+
+// waitsThrough reports whether an action of r's On sends Waiting to the
+// route named name.
+func (r Rule) waitsThrough(name RouteName) bool {
+	return slices.ContainsFunc(r.Actions, func(a Action) bool {
+		t, ok := a.On[Waiting].(ToRoute)
+		return ok && t.Route == name
+	})
+}
+
 // Labels are a rule's states, one for each point of its run.
 type Labels struct {
 	// Ready is the state an item must be in for the rule to take it.
 	Ready State
 	// Running is the state the item is in while the rule's actions run.
 	Running State
-	// Success is the state the item moves to after every action succeeded.
-	Success State
-	// Failure is the state the item moves to when any action failed, with
-	// a failure report. It is empty only on a rule without actions, which
-	// never fails.
-	Failure State
 }
 
 // DefaultQueue gets the slots the other queues leave, and runs every rule
@@ -62,45 +94,18 @@ type Queue struct {
 	Slots int
 }
 
-// Action is one session a rule runs for an issue.
+// Action is one action a rule runs for an issue: a session, or a shell
+// script when its Kind says so.
 type Action struct {
 	// Name identifies the action within its rule, in workspace names, logs
 	// and failure reports.
 	Name ActionName
-	// Prompt is the action's prompt, parsed when the config loaded.
-	Prompt Prompt
-	// Agent is the agent whose harness runs the action's session.
-	Agent Agent
-	// Checks run in the action's workspace once its session succeeded, one
-	// after another in this order, until one does not pass; empty when the
-	// action has none. A check that does not pass fails the action.
-	Checks []Check
-	// Bot is the bot that acts for the action's session and check on the
-	// tracker: its agent's, or the tracker's when the agent names none. The
-	// zero Bot is you.
-	Bot Bot
-}
-
-// Check is one of an action's checks.
-type Check struct {
-	// Name is the check's name in the config's checks.
-	Name CheckName
-	// Script is a shell command. It is never a template: it reads the
-	// issue, the session's prompt and its last message from environment
-	// variables and the files they name, so no issue or session text
-	// becomes part of the command.
-	Script string
-}
-
-// CheckResult is how one check of an action ended.
-type CheckResult struct {
-	// Name is the check's name.
-	Name CheckName
-	// Passed is true when the check exited 0.
-	Passed bool
-	// Reason is crew's one line on how it ended, naming the check, followed
-	// by the last line the check printed when it printed one.
-	Reason CheckReason
+	// Kind is what the action runs: a session, named after its agent
+	// unless the config names it, or one of the config's shell actions,
+	// named as the config's actions key it.
+	Kind ActionKind
+	// On maps the action's verdicts to their targets.
+	On On
 }
 
 // Outcome is how an action's session ended, as its harness reported it.
@@ -111,25 +116,42 @@ type Outcome struct {
 	Reason SessionText
 }
 
-// FailureReport is what the engine asks a tracker to post on an issue whose
-// rule had failed actions. The tracker adapter formats it in its own markup.
-// It carries no reason: an outcome's reason is a session's or a tool's last
-// words, which a tracker comment must not show.
+// FailureReport is what a route's report step asks a tracker to post on an
+// issue: the action whose verdict ended the rule's sequence, that verdict,
+// the route the rule ends through and the log (R17, KTD5). The tracker
+// adapter formats it in its own markup. It carries no reason: an outcome's
+// reason is a session's or a tool's last words, which a tracker comment
+// must not show.
 type FailureReport struct {
 	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
 	IssueID  IssueID
 	IssueRef string
-	// Failures lists each failed action, in the rule's action order.
+	// Rule is the rule that ran, and Route the route it ends through.
+	Rule  RuleName
+	Route RouteName
+	// Failures holds the action at the run's cursor, whose verdict ended
+	// the sequence; none for a rule without actions.
 	Failures []ActionFailure
 }
 
-// ActionFailure is one failed action in a FailureReport: where to read why
-// it failed, never the reason itself.
+// ActionFailure is the action that ended a rule's sequence, in a
+// FailureReport: its verdict and where to read why, never the reason
+// itself.
 type ActionFailure struct {
 	// Action is the action's name.
 	Action ActionName
+	// Verdict is the verdict the action ended with.
+	Verdict Verdict
 	// Workspace is the workspace the action ran in.
 	Workspace WorkspaceName
 	// Log is the repository-relative path of the session's log file.
 	Log string
+}
+
+// hasSession reports whether any of r's actions is a session.
+func (r Rule) hasSession() bool {
+	return slices.ContainsFunc(r.Actions, func(a Action) bool {
+		_, ok := a.Kind.(SessionSpec)
+		return ok
+	})
 }

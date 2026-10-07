@@ -21,7 +21,7 @@ func (s *step) tick(said []Said) {
 	}
 	for _, x := range said {
 		if h := m.findRun(x.Run); h != nil {
-			h.said(x.Action, x.Text)
+			h.keepSaid(x.Action, x.Text)
 		}
 	}
 	s.readBoard()
@@ -45,7 +45,9 @@ func (s *step) tick(said []Said) {
 
 // listIssues asks for the items in every rule's ready and running labels,
 // of both kinds, each once, and starts the count of skipped listings again
-// (R6). Only the ready labels are taken from; the running ones fill the
+// (R6). For a board filled from the listings, it also asks for the labels
+// each rule's waiting routes move to, so a paused issue stays on the board
+// (KTD17). Only the ready labels are taken from; the others fill the
 // default board (KTD10).
 func (s *step) listIssues() {
 	m := s.m
@@ -54,10 +56,17 @@ func (s *step) listIssues() {
 	m.skipped = 0
 	m.listingAsked()
 	var states []crew.State
+	add := func(st crew.State) {
+		if !slices.Contains(states, st) {
+			states = append(states, st)
+		}
+	}
 	for _, r := range m.rules {
-		for _, st := range []crew.State{r.Labels.Ready, r.Labels.Running} {
-			if !slices.Contains(states, st) {
-				states = append(states, st)
+		add(r.Labels.Ready)
+		add(r.Labels.Running)
+		if m.board != nil && m.board.listed {
+			for _, st := range r.WaitingStates() {
+				add(st)
 			}
 		}
 	}
@@ -74,16 +83,17 @@ func (s *step) freed() {
 }
 
 // stop starts nothing new from now on, hands every held run the stop, which
-// stops its running sessions and checks, and gives each owed call, status
-// and pull request report not in flight its final try (R9). Runs whose
-// actions have all ended are already ending, so their ending moves go on.
+// stops its running session or script and its route's running shell step
+// and skips the shell steps after it (R53), and gives each owed call,
+// status and pull request report not in flight its final try (R9). Routing
+// runs go on with their tracker steps.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {
 		return
 	}
 	m.stopping = true
-	for _, h := range m.issues {
+	for _, h := range slices.Clone(m.issues) {
 		s.decide(h, crew.StopReached{FactHead: s.head(h)})
 		s.retryRun(h.id(), true)
 	}
@@ -91,9 +101,10 @@ func (s *step) stop() {
 	s.retryPullRequests()
 }
 
-// timeUp ends the run time (R2): from now on nothing new is taken, while the
-// held issues, a take in flight or owed included, run and end as
-// usual (R4). windDown stops once they have all ended.
+// timeUp ends the run time (R2, R52): from now on nothing new is taken, and
+// every held run learns it, so the action that runs finishes and none
+// starts after it, while the routes the runs reach run all their steps.
+// windDown stops once no run holds crew (KTD12).
 func (s *step) timeUp(limit time.Duration) {
 	m := s.m
 	if m.stopping || m.timeUp {
@@ -101,6 +112,9 @@ func (s *step) timeUp(limit time.Duration) {
 	}
 	m.timeUp = true
 	s.emit(WindingDown{At: s.at, Limit: limit})
+	for _, h := range slices.Clone(m.issues) {
+		s.decide(h, crew.TimeUp{FactHead: s.head(h)})
+	}
 }
 
 // listed marks the handled entries whose issue left its state (KTD4), fills
@@ -200,23 +214,19 @@ func comparePriority(a, b int) int {
 }
 
 // take holds issue for rule si, as a new rule run that continues the last
-// run of the rule on the issue and inherits its actions' resume points
-// (KTD12), and moves it to the rule's running label.
+// run of the rule on the issue and starts where that run says (R22,
+// KTD19), and moves it to the rule's running label.
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
 	s.runs++
-	continues, resume := m.continued(issue.ID(), rule.Name)
+	continues, start := m.continued(issue.ID(), rule)
 	taken := crew.RunTaken{
 		Run: crew.NewRuleRunID(s.seed, s.runs), At: s.at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule.Name,
-		Issue: issue.Data(), Continues: continues, From: rule.Labels.Ready, To: rule.Labels.Running,
+		Issue: issue.Data(), Continues: continues, From: rule.Labels.Ready, To: rule.Labels.Running, Start: start,
 	}
 	for _, a := range rule.Actions {
-		t := crew.ActionTaken{Name: a.Name}
-		if p, ok := resume[a.Name]; ok {
-			t.Resume = crew.Some(p)
-		}
-		taken.Actions = append(taken.Actions, t)
+		taken.Actions = append(taken.Actions, a.Name)
 	}
 	// Applied to the zero run, a RunTaken event is never refused.
 	run, _ := crew.Apply(crew.RuleRun{}, taken)

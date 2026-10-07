@@ -49,18 +49,20 @@ type Config struct {
 	// the gh login crew runs as. Its spelling is not checked here.
 	Bot crew.Bot
 	// Bots is every bot crew makes act, each once: Bot first, then the
-	// bots of the agents some action names, in rule order. It is empty when
+	// bots of the agents some session names, in rule order. It is empty when
 	// no bot is named.
 	Bots []crew.Bot
-	// Agents are the agents in file order, including those no action names
+	// Agents are the agents in file order, including those no session names
 	// (see Agent.Used).
 	Agents []Agent
 	// Rules are the rules in file order. Every state is non-empty text,
 	// spelled everywhere as it is first written, since labels that differ
 	// only in case are one label. No two rules take the same label, no rule
-	// takes back what it moved, and every prompt renders. Every rule has its
-	// queue, the one it names or default, with the queue's slots, and every
-	// action its agent, check script and bot.
+	// takes back what it moved, and every prompt and comment renders. Every
+	// rule has its queue, the one it names or default, with the queue's
+	// slots, its actions in the order they run and its routes. Every session
+	// has its agent and bot, every shell action its script from actions, and
+	// every on leads to one of its rule's routes.
 	Rules []crew.Rule
 	// Notify tells, for each rule by name, whether the live view sends a
 	// desktop notification when the rule ends for an item: the rule's
@@ -90,7 +92,7 @@ type document struct {
 	Queues              yaml.Node     `yaml:"queues"`
 	Tracker             yaml.Node     `yaml:"tracker"`
 	Agents              yaml.Node     `yaml:"agents"`
-	Checks              yaml.Node     `yaml:"checks"`
+	Actions             yaml.Node     `yaml:"actions"`
 	Board               yaml.Node     `yaml:"board"`
 	Rules               yaml.Node     `yaml:"rules"`
 }
@@ -123,9 +125,6 @@ func Load(root, global string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseOldKeys(sources); err != nil {
-		return nil, err
-	}
 	top, o := merge(sources)
 	cfg, err := parse(top)
 	if err != nil {
@@ -156,11 +155,11 @@ func parse(top *yaml.Node) (*Config, error) {
 	var err error
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
 	errs = append(errs, err)
-	scripts, err := checks(&doc.Checks)
+	shellActions, err := shells(&doc.Actions)
 	errs = append(errs, err)
 	cfg.Agents, err = agents(&doc.Agents)
 	errs = append(errs, err)
-	env := ruleEnv{queues: table, agents: cfg.Agents, checks: scripts, bot: cfg.Bot}
+	env := ruleEnv{queues: table, agents: cfg.Agents, actions: shellActions, bot: cfg.Bot}
 	cfg.Rules, cfg.Notify, err = rules(&doc.Rules, env)
 	errs = append(errs, err, agentsInUse(cfg.Agents, cfg.Rules))
 	cfg.Bots = namedBots(cfg.Bot, cfg.Rules)
@@ -194,7 +193,7 @@ func engineSettings(doc *document, cfg *Config) []error {
 }
 
 // namedBots lists the bot def, tracker.bot, when set, and then each
-// action's bot in rule order, each once.
+// session's bot in rule order, each once.
 func namedBots(def crew.Bot, rules []crew.Rule) []crew.Bot {
 	var out []crew.Bot
 	if def.Name != "" {
@@ -202,8 +201,8 @@ func namedBots(def crew.Bot, rules []crew.Rule) []crew.Bot {
 	}
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			if a.Bot.Name != "" && !slices.Contains(out, a.Bot) {
-				out = append(out, a.Bot)
+			if s, ok := a.Kind.(crew.SessionSpec); ok && s.Bot.Name != "" && !slices.Contains(out, s.Bot) {
+				out = append(out, s.Bot)
 			}
 		}
 	}

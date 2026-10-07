@@ -51,7 +51,7 @@ func board(n *yaml.Node, rules []crew.Rule) ([]crew.BoardColumn, bool, error) {
 // one or more, none empty.
 func columnLabels(e entry) ([]crew.State, error) {
 	var labels located[[]string]
-	if e.value.Kind == yaml.ScalarNode && e.value.ShortTag() != "!!null" {
+	if e.value.Kind == yaml.ScalarNode && e.value.ShortTag() != nullTag {
 		var label located[string]
 		if err := decodeValue(e.value, e.path, reflect.ValueOf(&label).Elem()); err != nil {
 			return nil, err
@@ -76,8 +76,20 @@ func columnLabels(e entry) ([]crew.State, error) {
 
 // defaultBoard is the board without board: one column per rule that has
 // actions, in rule order, named after the rule, with its ready and running
-// labels, showing the items of the rule's kind.
+// labels, showing the items of the rule's kind. After a rule's column comes
+// one for each label its waiting routes move to (KTD17), named after the
+// label, unless the board already shows that label for that kind.
 func defaultBoard(rules []crew.Rule) []crew.BoardColumn {
+	type shown struct {
+		kind  crew.Kind
+		label crew.State
+	}
+	seen := map[shown]bool{}
+	for _, r := range rules {
+		if len(r.Actions) > 0 {
+			seen[shown{r.Takes, r.Labels.Ready}], seen[shown{r.Takes, r.Labels.Running}] = true, true
+		}
+	}
 	var out []crew.BoardColumn
 	for _, r := range rules {
 		if len(r.Actions) == 0 {
@@ -86,6 +98,13 @@ func defaultBoard(rules []crew.Rule) []crew.BoardColumn {
 		out = append(out, crew.BoardColumn{
 			Name: string(r.Name), Labels: []crew.State{r.Labels.Ready, r.Labels.Running}, Takes: r.Takes,
 		})
+		for _, s := range r.WaitingStates() {
+			if seen[shown{r.Takes, s}] {
+				continue
+			}
+			seen[shown{r.Takes, s}] = true
+			out = append(out, crew.BoardColumn{Name: string(s), Labels: []crew.State{s}, Takes: r.Takes})
+		}
 	}
 	return out
 }

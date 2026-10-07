@@ -16,12 +16,12 @@ func queuedRules(queues ...string) string {
 	var b strings.Builder
 	b.WriteString(oneAgent + "rules:\n")
 	for i, queue := range queues {
-		fmt.Fprintf(&b, "  rule %[1]d:\n    labels: {ready: ready %[1]d, running: running %[1]d, "+
-			"success: done %[1]d, failure: failed %[1]d}\n", i)
+		fmt.Fprintf(&b, "  rule %[1]d:\n    labels: {ready: ready %[1]d, running: running %[1]d}\n"+
+			"    routes: {passed: done %[1]d, failed: failed %[1]d}\n", i)
 		if queue != "" {
 			fmt.Fprintf(&b, "    queue: %s\n", queue)
 		}
-		b.WriteString("    actions:\n      development: {prompt: \"Implement {{.Issue.Ref}}\"}\n")
+		b.WriteString("    actions:\n      - {name: development, prompt: \"Implement {{.Issue.Ref}}\"}\n")
 	}
 	return b.String()
 }

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -55,8 +56,8 @@ type Options struct {
 	Registry registry.Registry
 	// Workspace returns the workspace adapter for the repository at root.
 	Workspace func(root string) port.Workspace
-	// Shell runs the actions' checks; nil fails every action that has a
-	// check.
+	// Shell runs the scripts of the shell actions and route steps; with
+	// nil, every script fails to start.
 	Shell port.Shell
 	// Journal returns the run journal of the repository at root, at
 	// engine.JournalPath; nil journals nothing, so no failed run resumes.
@@ -99,15 +100,15 @@ type Options struct {
 // Bots are the bots that act this run, as Options.Bots made them.
 type Bots struct {
 	// Identities are the identities of the bots that act, by name: what
-	// their actions' sessions and checks act as. A bot that cannot act has
-	// none, and its actions act as you.
+	// their sessions and the shell actions after them act as. A bot that
+	// cannot act has none, and its actions act as you.
 	Identities map[crew.BotName]port.Identity
 	// Writer is what crew's own writes on the tracker act as: the default
 	// bot, or the zero Identity, you, when there is none or it cannot act.
 	Writer port.Identity
 	// Logins are the logins of the configured bots crew knows, whether or
 	// not they act this run: crew takes the issues they opened, and every
-	// session and check gets them as CREW_BOTS.
+	// session and script gets them as CREW_BOTS.
 	Logins []string
 	// Warnings say, one line each, which bot cannot act or adds no
 	// co-author, why, and the fix.
@@ -217,7 +218,8 @@ type built struct {
 // agents some action names keep theirs, so an agent in no use is never
 // prepared. A written board needs a tracker that lists issues by any label,
 // a port.BoardLister (KTD3); the default board needs none, since the core
-// fills it from its listings (KTD10).
+// fills it from its listings (KTD10). A route that comments or closes needs
+// a tracker that can, a port.Commenter or a port.Closer (KTD7).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root, o.GlobalConfig)
 	if err != nil {
@@ -239,7 +241,38 @@ func build(o Options) (built, error) {
 	if _, ok := tracker.(port.BoardLister); cfg.BoardWritten && !ok {
 		return built{}, fmt.Errorf("board: tracker %q cannot list issues by any label", cfg.Tracker)
 	}
+	if err := routeSteps(cfg.Tracker, tracker, cfg.Rules); err != nil {
+		return built{}, err
+	}
 	return built{cfg: cfg, tracker: tracker, harnesses: harnesses}, nil
+}
+
+// routeSteps returns an error for each route of rules with a step tracker,
+// named name, cannot take: a comment without a port.Commenter, a close
+// without a port.Closer. Each error names the rule and the route by their
+// key path in the config.
+func routeSteps(name string, tracker port.Tracker, rules []crew.Rule) error {
+	_, comments := tracker.(port.Commenter)
+	_, closes := tracker.(port.Closer)
+	var errs []error
+	for _, r := range rules {
+		for _, route := range r.Routes {
+			path := fmt.Sprintf("rules.%s.routes.%s", r.Name, route.Name)
+			if !comments && slices.ContainsFunc(route.Steps, isStep[crew.CommentStep]) {
+				errs = append(errs, fmt.Errorf("%s: tracker %q cannot comment on issues", path, name))
+			}
+			if !closes && slices.ContainsFunc(route.Steps, isStep[crew.CloseStep]) {
+				errs = append(errs, fmt.Errorf("%s: tracker %q cannot close issues", path, name))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// isStep reports whether s is a step of type T.
+func isStep[T crew.Step](s crew.Step) bool {
+	_, ok := s.(T)
+	return ok
 }
 
 // bots makes the bots the config names act, through Options.Bots, and

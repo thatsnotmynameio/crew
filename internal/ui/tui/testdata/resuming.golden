@@ -6,7 +6,7 @@ Bots ─────────────────────────
  │ ▀ ▀ ▀                          │
  │ ▄▀▄▀▄ no actions yet           │
  │ crew's writes +3               │
- │ ⠋ #9 development/lfg +1        │
+ │ ⠋ #9 development/lfg           │
  ╰────────────────────────────────╯
 
 ▸ Board ─────────────────────────────────────────────────────────────────────────────────────────────────────── 0 issues
@@ -14,14 +14,14 @@ Bots ─────────────────────────
  ──────────────────────────────────  ──────────────────────────────────  ──────────────────────────────────
                                                                          ╭────────────────────────────────╮
                                                                          │ ▸ #9 Add login form            │
-                                                                         │ run  ⠋ docs reopening work… +2 │
+                                                                         │ run  ⠋ lfg 3m · 1 left         │
                                                                          │ bots ■ you                     │
                                                                          │ via  default                   │
                                                                          ╰────────────────────────────────╯
 
 Queues ─── 1 of 2 busy   Events ─────────────────────────────────────────────────────────────────────────────── 2 events
- default  ■□  1/2         14:27:00 #9 development/lfg resumed in worktree issue-9-lfg on branch crew/issue-9-lfg, log .…
-                          14:28:00 #9 development/tests started on branch crew/issue-9-tests, log .crew/logs/issue-9-te…
+ default  ■□  1/2         14:26:59 #9 development resumed in worktree issue-9-development on branch crew/issue-9-develo…
+                          14:27:00 #9 development/lfg started its session
                          
                          
                          

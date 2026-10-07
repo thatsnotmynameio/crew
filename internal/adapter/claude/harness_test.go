@@ -156,9 +156,10 @@ func agent(harness string) string {
     harness: {name: claude` + harness + `}
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      development: {prompt: "Implement {{.Issue.Ref}}"}
+      - {name: development, prompt: "Implement {{.Issue.Ref}}"}
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
 `
 }
 

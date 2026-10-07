@@ -4,8 +4,8 @@ import "time"
 
 // RunEvent is one change of a rule run, which Decide returns and Apply
 // applies. Each carries its run's id, its time, the issue and the rule
-// (Head), so it stands alone in a journal; the start and end of an action
-// run also carry its workspace and log. An event's fields are plain values.
+// (Head), so it stands alone in a journal. An event's fields are plain
+// values.
 //
 //sumtype:decl
 type RunEvent interface {
@@ -45,17 +45,12 @@ type RunTaken struct {
 	// there was one.
 	Continues Optional[RuleRunID]
 	From, To  State
-	// Actions are the rule's actions, in its action order, each with the
-	// resume point it inherited.
-	Actions []ActionTaken
-}
-
-// ActionTaken is one action of a RunTaken.
-type ActionTaken struct {
-	Name ActionName
-	// Resume is where the action resumes a failed run's work: its workspace
-	// is reopened when the take lands.
-	Resume Optional[ResumePoint]
+	// Actions are the rule's actions, in its action order.
+	Actions []ActionName
+	// Start is how the run starts, decided from the run it continues: at
+	// the first action, at a restart point in that run's reopened
+	// worktree, or with PassedRoute alone. Nil counts as StartFresh.
+	Start Start
 }
 
 // TakeMoved is the run's take move that landed: the issue moved from From
@@ -66,61 +61,65 @@ type TakeMoved struct {
 	From, To State
 }
 
-// RunStopped is a stop that reached the run while it was taking or running
-// its actions.
+// RunStopped is a stop that reached the run before it was released.
 type RunStopped struct {
 	EventHead
 }
 
-// ActionWorkspaceAsked is an action's workspace asked for: a new one, or
-// the reopened workspace Reopen.
-type ActionWorkspaceAsked struct {
+// RunOutOfTime is crew's run time that was up while the run was taking or
+// running its actions: the action that runs finishes, and none starts
+// after it.
+type RunOutOfTime struct {
+	EventHead
+}
+
+// WorkspaceAsked is the run's one workspace asked for, before its first
+// action: a new one, or the reopened workspace Reopen.
+type WorkspaceAsked struct {
 	EventHead
 
-	Action ActionName
 	Reopen Optional[Workspace]
 }
 
-// WorkspaceMissing is the workspace an action asked to reopen, which no
-// longer exists.
+// WorkspaceMissing is the workspace the run asked to reopen, which no
+// longer exists. A run that resumed at an action starts fresh at its first
+// action, in a new worktree; the passed route alone runs without one.
 type WorkspaceMissing struct {
 	EventHead
 
-	Action    ActionName
 	Workspace Workspace
 }
 
-// ActionOpened is an action's workspace that is ready: the action run's
-// start, recorded before its session starts.
-type ActionOpened struct {
+// WorkspaceOpened is the run's workspace that is ready, recorded before
+// its first action starts.
+type WorkspaceOpened struct {
 	EventHead
 
-	Action    ActionName
 	Workspace Workspace
-	// Log is the repository-relative path of the session's log file; empty
-	// when a stop reached the run first, as no session will write it.
+	// Log is the repository-relative path of the run's log file; empty
+	// when a stop reached the run first, as no action will write it.
 	Log string
 	// Resumed says whether the workspace is the reopened workspace of the
-	// failed run the action resumes.
+	// run this one resumes.
 	Resumed bool
 }
 
-// ActionSessionAsked is an action's session asked to start.
+// ActionSessionAsked is a session action's start: its session asked to
+// start, at the run's cursor.
 type ActionSessionAsked struct {
 	EventHead
 
 	Action ActionName
 }
 
-// ActionSessionStarted is an action's session that started, in its
-// workspace.
+// ActionSessionStarted is an action's session that started, acting as Bot.
 type ActionSessionStarted struct {
 	EventHead
 
-	Action    ActionName
-	Workspace Workspace
-	Log       string
-	Resumed   bool
+	Action ActionName
+	// Bot is the bot the session acts as; the run's actions that are not
+	// sessions act as it from then on.
+	Bot Bot
 }
 
 // ActionSessionStopAsked is an action's running session asked to stop.
@@ -140,109 +139,103 @@ type ActionSessionEnded struct {
 	Usage   Usage
 }
 
-// ActionLookupAsked is the lookup of the pull request an action opened,
-// asked for.
-type ActionLookupAsked struct {
+// ActionShellAsked is a shell action's start: its script asked to run, at
+// the run's cursor, acting as Bot.
+type ActionShellAsked struct {
+	EventHead
+
+	Action ActionName
+	// Bot is the bot the script acts as: the run's latest session's, or
+	// the zero Bot, the tracker's identity, before any session started.
+	Bot Bot
+}
+
+// ActionShellStopAsked is an action's running script asked to stop.
+type ActionShellStopAsked struct {
 	EventHead
 
 	Action ActionName
 }
 
-// ActionCheckAsked is an action's next check asked to run.
-type ActionCheckAsked struct {
+// ActionShellEnded is an action's script that ended.
+type ActionShellEnded struct {
 	EventHead
 
-	Action ActionName
-	Check  CheckName
+	Action  ActionName
+	Outcome ShellOutcome
 }
 
-// ActionCheckStopAsked is an action's running check asked to stop.
-type ActionCheckStopAsked struct {
-	EventHead
-
-	Action ActionName
-}
-
-// ActionCheckEnded is an action's check that ended.
-type ActionCheckEnded struct {
-	EventHead
-
-	Action ActionName
-	Result CheckResult
-}
-
-// ActionLookupDone is the lookup of an action's pull request that ended,
-// with what it found.
-type ActionLookupDone struct {
-	EventHead
-
-	Action      ActionName
-	PullRequest PullRequest
-}
-
-// ActionFinishing is an action whose outcome is known while the lookup of
-// its pull request is pending: it ends once the lookup does.
-type ActionFinishing struct {
-	EventHead
-
-	Action ActionName
-	End    ActionEnd
-}
-
-// ActionEnded is an action run that ended: the action run's end, with all
-// it recorded.
+// ActionEnded is an action run that ended: the action run's end, with its
+// verdict, where the verdict leads, and all it recorded.
 type ActionEnded struct {
 	EventHead
 
 	Action ActionName
 	End    ActionEnd
-	// Workspace is the workspace its session worked in; none when it never
-	// had one ready.
-	Workspace Optional[OpenedWorkspace]
+	// Verdict is the action's verdict, and Target where it leads: the next
+	// action, or the route the run ends through.
+	Verdict Verdict
+	Target  Target
 	// SessionStarted is when its session started, when one did.
 	SessionStarted Optional[time.Time]
 	// Usage is what its session reported it used, once the session ended.
 	Usage Usage
-	// PullRequest is what the lookup of its pull request found; nil when it
-	// was not looked up.
+}
+
+// RouteChosen is the run's sequence that is over: the run ends through
+// Route.
+type RouteChosen struct {
+	EventHead
+
+	Route RouteName
+	// Action is the action at the run's cursor, whose verdict led to the
+	// route: the action that did not go on to the next, or the last
+	// action; empty for a rule without actions.
+	Action ActionName
+	// Steps are the route's steps, in the order they run.
+	Steps []StepPlan
+}
+
+// RunLookupAsked is the lookup of the pull requests of the run's branch,
+// asked for once the run chose its route.
+type RunLookupAsked struct {
+	EventHead
+}
+
+// RunLookupDone is the lookup of the run's pull requests that ended, with
+// what it found.
+type RunLookupDone struct {
+	EventHead
+
 	PullRequest PullRequest
 }
 
-// RunEnded is a run whose every action ended, and how it ended.
-type RunEnded struct {
+// StepAsked is the route's step at index Step asked: a tracker call to
+// deliver, or a shell action's script to run, acting as the run's bot.
+type StepAsked struct {
 	EventHead
 
-	Ending RunEnding
+	Step int
 }
 
-// EndingMoved is the run's ending move that landed: the issue moved from
-// From to To.
-type EndingMoved struct {
+// StepShellStopAsked is the route's shell step at index Step, whose script
+// runs, asked to stop.
+type StepShellStopAsked struct {
 	EventHead
 
-	From, To State
+	Step int
 }
 
-// EndingDropped is the run's ending move to To, which crew gave up.
-type EndingDropped struct {
+// StepEnded is the route's step at index Step that settled, and how.
+type StepEnded struct {
 	EventHead
 
-	To     State
-	Reason string
+	Step    int
+	Outcome StepOutcome
 }
 
-// FailureReported is the run's failure report that landed.
-type FailureReported struct {
-	EventHead
-}
-
-// FailureReportDropped is the run's failure report, which crew gave up.
-type FailureReportDropped struct {
-	EventHead
-}
-
-// RunReleased is a run crew let go: its ending settled, or its take was
-// given up.
+// RunReleased is a run crew let go: the final step of its route settled,
+// or its take was given up.
 type RunReleased struct {
 	EventHead
 }

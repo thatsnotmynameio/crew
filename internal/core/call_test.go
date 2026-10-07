@@ -8,11 +8,10 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-func TestEndingMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
+func TestAFinalMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	ending := d.endActions("1")
 
 	cmds, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	wantCommands(t, cmds)
@@ -37,27 +36,40 @@ func TestEndingMoveThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.
 	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	hasEvent(t, events, crew.EndingMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
+	hasEvent(t, events, d.stepEnded("1", 0, crew.StepLanded{}))
 	wantHeld(t, d.m)
 	if got := d.m.View().Owed; got != nil {
 		t.Fatalf("owed after the retry succeeded: %#v", got)
 	}
 }
 
-func TestEndingCallMovedMeanwhileOrRefusedIsDroppedAndReported(t *testing.T) {
-	for _, result := range []core.Result{core.ResultMovedMeanwhile, core.ResultRefused} {
-		t.Run(result.String(), func(t *testing.T) {
+// A route's tracker step that cannot work is dropped and recorded, and the
+// route goes on to its next step (R16).
+func TestARouteCallMovedMeanwhileOrRefusedIsDroppedAndTheRouteGoesOn(t *testing.T) {
+	tests := []struct {
+		result core.Result
+		want   crew.StepOutcome
+	}{
+		{result: core.ResultMovedMeanwhile, want: crew.StepDropped{Reason: "nope"}},
+		{result: core.ResultRefused, want: crew.StepGivenUp{Reason: "nope"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.result.String(), func(t *testing.T) {
 			d := newDriver(t, draft(), 2)
-			ending := endedNeedingAttention(d)
+			report := endedNeedingAttention(d)
 
-			_, events := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: result, Reason: "nope"})
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
-				Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: inProgress, To: needsAttention,
-			}})
-			_, events = d.send(core.CallResult{ID: reportID(t, ending, "1"), Result: result, Reason: "nope"})
-			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: "nope", Call: core.Call{
+			moved, events := d.send(core.CallResult{ID: reportID(t, report, "1"), Result: tt.result, Reason: "nope"})
+			hasEvent(t, events, core.CallDropped{At: d.now, Result: tt.result, Reason: "nope", Call: core.Call{
 				Kind: core.CallReport, IssueID: issueID("1"), IssueRef: "#1",
 			}})
+			hasEvent(t, events, d.stepEnded("1", 0, tt.want))
+			wantCommands(t, moved, core.Move{IssueID: issueID("1"), From: inProgress, To: needsAttention})
+
+			_, events = d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: tt.result, Reason: "nope"})
+			hasEvent(t, events, core.CallDropped{At: d.now, Result: tt.result, Reason: "nope", Call: core.Call{
+				Kind: core.CallMove, IssueID: issueID("1"), IssueRef: "#1", From: inProgress, To: needsAttention,
+			}})
+			hasEvent(t, events, d.stepEnded("1", 1, tt.want))
 			wantHeld(t, d.m)
 
 			cmds, _ := d.send(core.Tick{})
@@ -101,8 +113,8 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 		Issues: []core.IssueView{{
 			Issue: i1, Rule: "implement", Claim: core.ClaimOwed,
 			Actions: []core.ActionView{
-				{Name: "acceptance", Phase: core.PhaseWaiting},
-				{Name: "development", Phase: core.PhaseWaiting},
+				{Name: "acceptance", Phase: core.PhaseTaking},
+				{Name: "development", Phase: core.PhaseAwaitingTurn},
 			},
 		}},
 		Queues: []core.QueueView{{Slots: 1, Busy: 1}},
@@ -120,10 +132,7 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 	hasEvent(t, events, core.PollSkipped{At: d.now, Busy: 1, Slots: 1})
 
 	cmds, events = d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "acceptance"},
-		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "development"},
-	)
+	wantCommands(t, cmds, core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Rule: "implement"})
 	hasEvent(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
 	if c := claimOf(t, d.m, "1"); c != core.ClaimRunning {
 		t.Fatalf("claim of #1: got %v, want running", c)

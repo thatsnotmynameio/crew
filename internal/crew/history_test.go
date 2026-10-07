@@ -1,12 +1,412 @@
 package crew
 
 import (
-	"maps"
+	"reflect"
+	"slices"
 	"testing"
 )
 
-// The past of the history tests: runs of the rule implement on issue #9,
-// whose actions run in the workspaces ws and log to logOf.
+// The history tests rebuild a past run of the test rule by deciding its
+// facts, then read the start of the run after it.
+
+// past is a run of the test rule on issue #9: its take, then the facts it
+// decided, with def changed as change says when change is set. Crew
+// crashed before it recorded its last drop events.
+type past struct {
+	take   RunEvent
+	change func(RunDefinition) RunDefinition
+	facts  []Fact
+	drop   int
+}
+
+// events returns the events p recorded.
+func (p past) events(t *testing.T) []RunEvent {
+	t.Helper()
+	def := sequence()
+	if p.change != nil {
+		def = p.change(def)
+	}
+	take := p.take
+	if take == nil {
+		take = taken()
+	}
+	events := []RunEvent{take}
+	run := given(t, events)
+	for _, f := range p.facts {
+		got, err := Decide(run, def, f)
+		if err != nil {
+			t.Fatalf("Decide(%#v) = %v", f, err)
+		}
+		events = append(events, got...)
+		run = given(t, events)
+	}
+	return events[:len(events)-p.drop]
+}
+
+// folded returns the history of events.
+func folded(events ...[]RunEvent) *History {
+	var h History
+	for _, e := range seq(events...) {
+		h.Fold(e)
+	}
+	return &h
+}
+
+// landed is the run's take that landed at minute 1.
+func landed() Fact { return TakeSettled{FactHead: fh(1), Landed: true} }
+
+// toJudge are the facts of a run whose install passed and whose lfg
+// session passed, so judge runs.
+func toJudge() []Fact {
+	return []Fact{
+		landed(), ready(false), shellEnded(3, "install", exited(0, "install passed")),
+		SessionStarted{FactHead: fh(4), Action: "lfg"}, lfgEnded(succeeded("done"), nil),
+	}
+}
+
+// judgeEnds are toJudge's facts, and judge's end after its exit status.
+func judgeEnds(status int, reason string, more ...Fact) []Fact {
+	return slices.Concat(toJudge(), []Fact{shellEnded(6, "judge", exited(status, reason))}, more)
+}
+
+// atAction is the start at action, in the run's workspace, after a run
+// that ended through route for reason, whose latest session was lfg's.
+func atAction(action ActionName, route RouteName, reason string) StartAt {
+	return StartAt{
+		Workspace: runWS(), Log: runLog, Action: action, Route: route, Reason: NewSessionText(reason),
+		Session: Some(lfgLatest),
+	}
+}
+
+func crashedAt(action ActionName) StartAt { return atAction(action, "", crashedReason) }
+
+// passedAlone is the passed route alone, in the run's workspace.
+var passedAlone = StartPassedRoute{Workspace: Some(runWS()), Log: runLog, Session: Some(lfgLatest)}
+
+// judgeResumesSelf makes judge resume at itself.
+func judgeResumesSelf(d RunDefinition) RunDefinition {
+	spec, _ := d.Rule.Actions[2].Kind.(ShellSpec)
+	spec.ResumeSelf = true
+	d.Rule.Actions = slices.Clone(d.Rule.Actions)
+	d.Rule.Actions[2].Kind = spec
+	return d
+}
+
+// withoutJudge drops judge from the test rule.
+func withoutJudge(d RunDefinition) RunDefinition {
+	d.Rule.Actions = d.Rule.Actions[:2]
+	return d
+}
+
+// startCase is a past run and the start of the run after it, for the
+// test rule as rule changes it when rule is set.
+type startCase struct {
+	name string
+	past past
+	rule func(RunDefinition) RunDefinition
+	want Start
+}
+
+// passedStarts are the branches of a run that chose passed.
+func passedStarts() []startCase {
+	return []startCase{
+		{
+			name: "ended through passed: fresh",
+			past: past{facts: judgeEnds(0, "judge passed", settled(7, 0, StepLanded{}))},
+			want: StartFresh{},
+		},
+		{
+			name: "passed, its move dropped as the item moved meanwhile: fresh (KTD-S8)",
+			past: past{facts: judgeEnds(0, "judge passed", settled(7, 0, StepDropped{Reason: "moved"}))},
+			want: StartFresh{},
+		},
+		{
+			name: "AE19: passed, its move given up after its final try: the passed route alone",
+			past: past{facts: judgeEnds(0, "judge passed", settled(7, 0, StepGivenUp{Reason: "refused"}))},
+			want: passedAlone,
+		},
+		{
+			name: "passed, crashed before its move settled: the passed route alone",
+			past: past{facts: judgeEnds(0, "judge passed")},
+			want: passedAlone,
+		},
+		{
+			name: "the last action went next and crew crashed before the route: the passed route alone",
+			past: past{facts: judgeEnds(0, "judge passed"), drop: 2},
+			want: passedAlone,
+		},
+	}
+}
+
+// restartStarts are the branches of a run that chose another route, or
+// none: the action at its cursor decides where the next one restarts.
+func restartStarts() []startCase {
+	install := atAction("install", FailedRoute, "install failed")
+	install.Session = Optional[LatestSession]{}
+	return []startCase{
+		{
+			name: "AE11: needs-person at judge, a shell action after a session: at lfg",
+			past: past{facts: judgeEnds(3, "needs a person", settled(7, 0, StepLanded{}))},
+			want: atAction("lfg", "needs-person", "needs a person"),
+		},
+		{
+			name: "AE6: failed at judge, after install and lfg: at lfg, skipping install",
+			past: past{facts: judgeEnds(1, "no pull request", settled(7, 0, StepLanded{}), settled(8, 1, StepLanded{}))},
+			want: atAction("lfg", FailedRoute, "no pull request"),
+		},
+		{
+			name: "AE23: judge resumes at itself",
+			past: past{change: judgeResumesSelf, facts: judgeEnds(3, "needs a person")},
+			rule: judgeResumesSelf, want: atAction("judge", "needs-person", "needs a person"),
+		},
+		{
+			name: "a shell action with no session before it: at itself",
+			past: past{facts: []Fact{landed(), ready(false), shellEnded(3, "install", exited(1, "install failed"))}},
+			want: install,
+		},
+		{
+			name: "chose failed at lfg and crashed before its move: at lfg",
+			past: past{facts: slices.Concat(toJudge()[:4], []Fact{lfgEnded(failedOutcome("gave up"), nil)})},
+			want: atAction("lfg", FailedRoute, "gave up"),
+		},
+		{
+			name: "crashed during judge, after a session: at judge",
+			past: past{facts: toJudge()},
+			want: crashedAt("judge"),
+		},
+		{
+			name: "time up between lfg and judge: at judge, which never started (KTD-S7)",
+			past: past{facts: slices.Concat(toJudge()[:4], []Fact{TimeUp{FactHead: fh(4)}, lfgEnded(succeeded("done"), nil)})},
+			want: atAction("judge", FailedRoute, timeUpReason),
+		},
+		{
+			name: "stopped while judge ran: at judge (KTD-S7)",
+			past: past{facts: slices.Concat(toJudge(), []Fact{
+				StopReached{FactHead: fh(6)}, shellEnded(7, "judge", ShellOutcome{Reason: NewShellReason("stopped")}),
+			})},
+			want: atAction("judge", FailedRoute, "stopped"),
+		},
+	}
+}
+
+// crashStarts are the branches of a run crew did not live to see end.
+func crashStarts() []startCase {
+	lfg := crashedAt("lfg")
+	lfg.Session = Optional[LatestSession]{}
+	return []startCase{
+		{
+			name: "its last event is lfg's start: at lfg",
+			past: past{facts: toJudge()[:3]},
+			want: lfg,
+		},
+		{
+			name: "install went next and crew crashed before lfg started: at lfg",
+			past: past{facts: toJudge()[:3], drop: 1},
+			want: lfg,
+		},
+		{
+			name: "resumed at judge and crashed during it: at judge, acting as lfg's bot (KTD-S11)",
+			past: past{take: resumedAt("judge"), facts: []Fact{landed(), ready(true)}},
+			want: crashedAt("judge"),
+		},
+		{
+			name: "crashed during judge, which the rule no longer has: fresh, naming judge",
+			past: past{facts: toJudge()},
+			rule: withoutJudge, want: StartWithoutAction{Action: "judge"},
+		},
+	}
+}
+
+// passedOnStarts are the branches of a run that started no action and
+// opened no worktree of its own (KTD-S9).
+func passedOnStarts() []startCase {
+	return []startCase{
+		{
+			name: "stopped at its take: its start",
+			past: past{take: resumedAt("judge"), facts: []Fact{StopReached{FactHead: fh(0)}, landed()}},
+			want: startAt("judge"),
+		},
+		{
+			name: "its take given up: its start",
+			past: past{take: resumedAt("judge"), facts: []Fact{TakeSettled{FactHead: fh(1)}}},
+			want: startAt("judge"),
+		},
+		{
+			name: "its take landed after time-up: its start",
+			past: past{take: resumedAt("judge"), facts: []Fact{TimeUp{FactHead: fh(0)}, landed()}},
+			want: startAt("judge"),
+		},
+		{
+			name: "crashed after its take: its start",
+			past: past{take: resumedAt("judge")},
+			want: startAt("judge"),
+		},
+		{
+			name: "stopped while it reopened its start's worktree: its start",
+			past: past{take: resumedAt("judge"), facts: []Fact{landed(), StopReached{FactHead: fh(1)}, ready(true)}},
+			want: startAt("judge"),
+		},
+	}
+}
+
+// passedOnEdges are the passed-on starts that change on the way, and the
+// run that does not pass its start on as it opened its own worktree.
+func passedOnEdges() []startCase {
+	other := Workspace{Name: "issue-9-implement-2", Branch: "crew/issue-9-implement-2"}
+	fresh := StartAt{
+		Workspace: other, Log: ".crew/logs/issue-9-implement-2.log", Action: "install",
+		Reason: NewSessionText(crashedReason),
+	}
+	return []startCase{
+		{
+			name: "crashed after its take, its start's action no longer in the rule: fresh, naming it",
+			past: past{take: resumedAt("judge")},
+			rule: withoutJudge, want: StartWithoutAction{Action: "judge"},
+		},
+		{
+			name: "crashed after a take that named a lost action: fresh",
+			past: past{take: takenAs(StartWithoutAction{Action: "deploy"})},
+			want: StartFresh{},
+		},
+		{
+			name: "the passed route alone, its take given up: the passed route alone",
+			past: past{take: takenAs(passedAlone), facts: []Fact{TakeSettled{FactHead: fh(1)}}},
+			want: passedAlone,
+		},
+		{
+			name: "a new worktree after its start's was missing is its own: at install in it",
+			past: past{take: resumedAt("judge"), facts: []Fact{
+				landed(), WorkspaceGone{FactHead: fh(2)},
+				WorkspaceReady{FactHead: fh(3), Workspace: other, Log: ".crew/logs/issue-9-implement-2.log"},
+			}},
+			want: fresh,
+		},
+	}
+}
+
+// takenAs is the take of the test rule's three actions, starting as start
+// says.
+func takenAs(start Start) RunEvent {
+	e, _ := taken().(RunTaken)
+	e.Start = start
+	return e
+}
+
+func TestTheStartOfARunFollowsItsLastRun(t *testing.T) {
+	cases := slices.Concat(passedStarts(), restartStarts(), crashStarts(), passedOnStarts(), passedOnEdges())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := sequence()
+			if tc.rule != nil {
+				rule = tc.rule(rule)
+			}
+			h := folded(tc.past.events(t))
+			if got := h.Start(testID, rule.Rule); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Start =\n%#v\nwant\n%#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWithoutALastRunARunStartsFresh(t *testing.T) {
+	var h History
+	if got := h.Start(testID, sequence().Rule); got != (StartFresh{}) {
+		t.Errorf("Start = %#v, want fresh", got)
+	}
+}
+
+func TestTheStartOfTheNextRunPassesTheLatestSessionsBotToJudge(t *testing.T) {
+	h := folded(past{take: resumedAt("judge"), facts: []Fact{landed(), ready(true)}}.events(t))
+	start, _ := h.Start(testID, sequence().Rule).(StartAt)
+	next, _ := taken().(RunTaken)
+	next.Run, next.Start = "run-3", start
+	run := given(t, []RunEvent{next})
+	head := func(n int) FactHead { return FactHead{Run: "run-3", At: at(n)} }
+	events, err := Decide(run, sequence(), TakeSettled{FactHead: head(1), Landed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run = given(t, append([]RunEvent{next}, events...))
+	events, err = Decide(run, sequence(), WorkspaceReady{
+		FactHead: head(2), Workspace: runWS(), Log: runLog, Resumed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked, ok := events[len(events)-1].(ActionShellAsked)
+	if !ok || asked.Action != "judge" || asked.Bot != developer {
+		t.Errorf("events = %#v, want judge asked as lfg's bot", events)
+	}
+}
+
+func TestTheLastRunIsTheOneWhoseEventsCameLast(t *testing.T) {
+	h := folded([]RunEvent{
+		RunTaken{EventHead: hh("run-1", 0), Issue: testIssue(), From: labelReady, To: labelRunning},
+		RunReleased{EventHead: hh("run-1", 1)},
+		taken(), takeMoved(),
+	})
+	run, ok := h.LastRun(testID, "implement")
+	if !ok || run.ID() != testRun || run.Phase() != (RunningPhase{}) || len(run.Actions()) != 3 {
+		t.Errorf("LastRun = %#v, %v, want run-2 running its three actions", run.Snapshot(), ok)
+	}
+	if _, ok := h.LastRun(testID, "fix"); ok {
+		t.Errorf("fix has a last run, want none")
+	}
+}
+
+func TestARunWithGapsFolds(t *testing.T) {
+	h := folded([]RunEvent{
+		WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog},
+		ActionShellAsked{EventHead: eh(5), Action: "judge", Bot: developer},
+	})
+	run, ok := h.LastRun(testID, "implement")
+	if a, _ := run.Action("judge"); !ok || run.ID() != testRun || a.State() != (InShell{Started: at(5)}) {
+		t.Errorf("LastRun = %#v, %v, want run-2 rebuilt with judge running", run.Snapshot(), ok)
+	}
+	want := StartAt{Workspace: runWS(), Log: runLog, Action: "judge", Reason: NewSessionText(crashedReason)}
+	if got := h.Start(testID, sequence().Rule); !reflect.DeepEqual(got, want) {
+		t.Errorf("Start = %#v, want %#v", got, want)
+	}
+	h = folded([]RunEvent{ActionShellAsked{EventHead: eh(5), Action: "judge"}})
+	if got := h.Start(testID, sequence().Rule); got != (StartFresh{}) {
+		t.Errorf("Start after a run without a worktree to reopen = %#v, want fresh", got)
+	}
+}
+
+// A route's step whose end the journal lost settles as given up, so the
+// ends after it still count: a passed route whose final move landed is
+// finished, and the next run starts fresh, not with the passed route alone.
+func TestARouteStepWhoseEndWasNotRecordedLetsTheRouteFinish(t *testing.T) {
+	reportFirst := func(d RunDefinition) RunDefinition {
+		d.Rule.Routes = slices.Clone(d.Rule.Routes)
+		d.Rule.Routes[0] = Route{Name: PassedRoute, Steps: []Step{ReportStep{}, MoveStep{To: labelDone}}}
+		return d
+	}
+	events := past{
+		change: reportFirst,
+		facts:  judgeEnds(0, "judge passed", settled(7, 0, StepLanded{}), settled(8, 1, StepLanded{})),
+	}.events(t)
+	lost := slices.IndexFunc(events, func(e RunEvent) bool {
+		ended, ok := e.(StepEnded)
+		return ok && ended.Step == 0
+	})
+	if lost < 0 {
+		t.Fatalf("events = %#v, want the report's end", events)
+	}
+	events = slices.Delete(events, lost, lost+1)
+
+	h := folded(events)
+	if got := h.Start(testID, reportFirst(sequence()).Rule); got != (StartFresh{}) {
+		t.Errorf("Start = %#v, want fresh", got)
+	}
+	run, _ := h.LastRun(testID, "implement")
+	released, _ := run.Phase().(ReleasedPhase)
+	route, _ := released.Route.Get()
+	want := []StepOutcome{StepGivenUp{Reason: "not recorded"}, StepLanded{}}
+	if !reflect.DeepEqual(route.Settled, want) {
+		t.Errorf("settled = %#v, want %#v", route.Settled, want)
+	}
+}
 
 // hh returns the head of an event of run at minute n, of the rule
 // implement on issue #9.
@@ -16,243 +416,33 @@ func hh(run RuleRunID, n int) EventHead {
 	return h
 }
 
-// opening is action's workspace ws(action) ready at minute n, in run.
-func opening(run RuleRunID, n int, action ActionName) ActionOpened {
-	return ActionOpened{EventHead: hh(run, n), Action: action, Workspace: ws(action), Log: logOf(action)}
-}
-
-// ending is action's end at minute n, in run, in ws(action), after a
-// session that started when session says so.
-func ending(run RuleRunID, n int, action ActionName, end ActionEnd, session bool) ActionEnded {
-	e := ActionEnded{
-		EventHead: hh(run, n), Action: action, End: end,
-		Workspace: Some(OpenedWorkspace{Workspace: ws(action), Log: logOf(action), Opened: at(n - 1)}),
+func TestARunThatOpensAWorktreeNameRetiresAnotherRulesRunThatHeldIt(t *testing.T) {
+	failed := past{facts: judgeEnds(1, "no pull request")}.events(t)
+	h := folded(failed)
+	h.Retire(runWS().Name, testID, "implement")
+	if got := h.Start(testID, sequence().Rule); got == (StartFresh{}) {
+		t.Errorf("Start = fresh after the rule's own run opened its worktree, want the restart at lfg")
 	}
-	if session {
-		e.SessionStarted = Some(at(n - 1))
+	h.Retire(runWS().Name, testID, "fix")
+	if got := h.Start(testID, sequence().Rule); got != (StartFresh{}) {
+		t.Errorf("Start after fix opened issue-9-implement = %#v, want fresh", got)
 	}
-	return e
-}
-
-func failedEnd(reason string) ActionEnd {
-	return EndFailed{Reason: NewSessionText(reason), Cause: CauseSession}
-}
-
-func folded(events ...RunEvent) *History {
-	var h History
-	for _, e := range events {
-		h.Fold(e)
+	if last, ok := h.LastRun(testID, "implement"); !ok || last.ID() != testRun {
+		t.Errorf("LastRun after the retire = %v, want run-2, which the next run still continues", ok)
 	}
-	return &h
-}
-
-// point returns the resume point of action in ws(action) with reason.
-func point(action ActionName, reason string) ResumePoint {
-	return ResumePoint{Workspace: ws(action), Log: logOf(action), Reason: NewSessionText(reason)}
-}
-
-func wantPoints(t *testing.T, h *History, issue IssueID, rule RuleName, want map[ActionName]ResumePoint) {
-	t.Helper()
-	if got := h.ResumePoints(issue, rule); !maps.Equal(got, want) {
-		t.Errorf("ResumePoints(%v, %s) = %+v, want %+v", issue, rule, got, want)
+	h.Fold(RunTaken{EventHead: hh("run-3", 9), Issue: testIssue(), Actions: []ActionName{"install"}})
+	h.Fold(WorkspaceOpened{EventHead: hh("run-3", 9), Workspace: runWS(), Log: runLog})
+	h.Fold(ActionShellAsked{EventHead: hh("run-3", 9), Action: "install"})
+	if got, ok := h.Start(testID, sequence().Rule).(StartAt); !ok || got.Action != "install" {
+		t.Errorf("Start after a new run = %#v, want the new run's restart at install", got)
 	}
 }
 
-func TestAE3AnActionThatStartedAndNeverEndedResumesAsCrashed(t *testing.T) {
-	h := folded(opening("run-1", 3, "implement"))
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{
-		"implement": point("implement", "crew stopped before the run ended: it crashed or was killed"),
-	})
-}
-
-func TestAFailedEndResumesAndASucceededOneDoesNot(t *testing.T) {
-	h := folded(
-		taken(bothActions()...),
-		opening(testRun, 3, "development"), ending(testRun, 6, "development", failedEnd("tests fail"), true),
-		opening(testRun, 3, "review"), ending(testRun, 6, "review", EndSucceeded{Reason: NewSessionText("done")}, true),
-	)
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
-}
-
-func TestAnEndWithoutAWorkspaceKeepsTheFailedRunsResumePoint(t *testing.T) {
-	gone := ActionEnded{EventHead: hh("run-2", 4), Action: "development", End: stopEnd}
-	h := folded(
-		opening("run-1", 3, "development"), ending("run-1", 6, "development", failedEnd("tests fail"), true),
-		gone,
-	)
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
-}
-
-// reasonCase is a past that ends in development's last action run, and the
-// resume point it leaves.
-type reasonCase struct {
-	name   string
-	events []RunEvent
-	want   ResumePoint
-}
-
-// notFound is the end of a session that failed to start.
-var notFound = EndFailed{Reason: NewSessionText("start claude: not found"), Cause: CauseStart}
-
-// afterFailure is development's failed run in ws("development") at
-// minutes 1 and 2, then events.
-func afterFailure(events ...RunEvent) []RunEvent {
-	return append([]RunEvent{
-		opening("run-1", 1, "development"), ending("run-1", 2, "development", failedEnd("the session's reason"), true),
-	}, events...)
-}
-
-// inheritedReasons are the ends without a session that keep an earlier
-// failure's reason.
-func inheritedReasons() []reasonCase {
-	stoppedOpening := opening("run-2", 3, "development")
-	stoppedOpening.Log = ""
-	stoppedEnd := ending("run-2", 3, "development", stopEnd, false)
-	stoppedEnd.Workspace = Some(OpenedWorkspace{Workspace: ws("development"), Opened: at(3)})
-	return []reasonCase{
-		{
-			name:   "failed to start",
-			events: afterFailure(opening("run-2", 3, "development"), ending("run-2", 4, "development", notFound, false)),
-			want:   point("development", "the session's reason"),
-		},
-		{
-			name:   "stopped while reopening",
-			events: afterFailure(stoppedOpening, stoppedEnd),
-			want:   ResumePoint{Workspace: ws("development"), Reason: NewSessionText("the session's reason")},
-		},
-		{
-			name: "after a crash",
-			events: []RunEvent{
-				opening("run-1", 1, "development"),
-				opening("run-2", 3, "development"), ending("run-2", 4, "development", notFound, false),
-			},
-			want: point("development", "crew stopped before the run ended: it crashed or was killed"),
-		},
-		{
-			name:   "with no start since",
-			events: afterFailure(ending("run-2", 4, "development", notFound, false)),
-			want:   point("development", "the session's reason"),
-		},
-	}
-}
-
-// ownReasons are the ends that keep their own reason.
-func ownReasons() []reasonCase {
-	elsewhere := opening("run-2", 3, "development")
-	elsewhere.Workspace = Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
-	return []reasonCase{
-		{
-			name: "a session that started",
-			events: afterFailure(
-				opening("run-2", 3, "development"), ending("run-2", 6, "development", failedEnd("new"), true),
-			),
-			want: point("development", "new"),
-		},
-		{
-			name: "after a success",
-			events: []RunEvent{
-				opening("run-1", 1, "development"),
-				ending("run-1", 2, "development", EndSucceeded{Reason: NewSessionText("done")}, true),
-				opening("run-2", 3, "development"), ending("run-2", 4, "development", notFound, false),
-			},
-			want: point("development", "start claude: not found"),
-		},
-		{
-			name: "in another workspace",
-			events: afterFailure(elsewhere, ActionEnded{
-				EventHead: hh("run-2", 4), Action: "development", End: notFound,
-				Workspace: Some(OpenedWorkspace{Workspace: elsewhere.Workspace, Log: logOf("development"), Opened: at(3)}),
-			}),
-			want: ResumePoint{
-				Workspace: elsewhere.Workspace, Log: logOf("development"), Reason: NewSessionText("start claude: not found"),
-			},
-		},
-	}
-}
-
-func TestAnEndWithoutASessionKeepsTheEarlierFailuresReason(t *testing.T) {
-	for _, tc := range inheritedReasons() {
-		t.Run(tc.name, func(t *testing.T) {
-			wantPoints(t, folded(tc.events...), testID, "implement", map[ActionName]ResumePoint{"development": tc.want})
-		})
-	}
-}
-
-func TestAnEndKeepsItsOwnReasonOtherwise(t *testing.T) {
-	for _, tc := range ownReasons() {
-		t.Run(tc.name, func(t *testing.T) {
-			wantPoints(t, folded(tc.events...), testID, "implement", map[ActionName]ResumePoint{"development": tc.want})
-		})
-	}
-}
-
-func TestEachIssueAndRuleKeepsItsOwnResumePoints(t *testing.T) {
-	other := IssueID{Repository: "R_1", Key: "10"}
-	inOtherIssue := opening("run-3", 3, "development")
-	inOtherIssue.IssueID, inOtherIssue.IssueRef = other, "#10"
-	inFix := opening("run-4", 3, "development")
-	inFix.Rule = "fix"
-	// fix's action starts in implement's workspace: History retires
-	// nothing by itself; the core has it Retire.
-	h := folded(
-		opening("run-1", 3, "development"), ending("run-1", 6, "development", failedEnd("tests fail"), true),
-		inOtherIssue, inFix,
-	)
-	crashed := point("development", "crew stopped before the run ended: it crashed or was killed")
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
-	wantPoints(t, h, testID, "fix", map[ActionName]ResumePoint{"development": crashed})
-	wantPoints(t, h, other, "implement", map[ActionName]ResumePoint{"development": crashed})
-	wantPoints(t, h, other, "fix", map[ActionName]ResumePoint{})
-}
-
-func TestTheLastRunIsTheOneWhoseEventsCameLast(t *testing.T) {
-	second := taken(bothActions()...)
-	h := folded(
-		RunTaken{EventHead: hh("run-1", 0), Issue: testIssue(), From: labelReady, To: labelRunning},
-		RunReleased{EventHead: hh("run-1", 1)},
-		second, takeMoved(),
-	)
-	run, ok := h.LastRun(testID, "implement")
-	if !ok || run.ID() != testRun || run.Phase() != (RunningPhase{}) || len(run.Actions()) != 2 {
-		t.Errorf("LastRun = %#v, %v, want run-2 running both actions", run.Snapshot(), ok)
-	}
-	if _, ok := h.LastRun(testID, "fix"); ok {
-		t.Errorf("fix has a last run, want none")
-	}
-}
-
-func TestARunWithGapsFolds(t *testing.T) {
-	h := folded(ending("run-1", 6, "development", failedEnd("tests fail"), true))
-	run, ok := h.LastRun(testID, "implement")
-	a, _ := run.Action("development")
-	if !ok || run.ID() != "run-1" || !a.Ended() {
-		t.Errorf("LastRun = %#v, %v, want run-1 rebuilt with development ended", run.Snapshot(), ok)
-	}
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
-}
-
-func TestARetiredActionHasNoResumePointAndItsNextStartCarriesNoReason(t *testing.T) {
-	h := folded(afterFailure()...)
-	h.Retire("issue-9-development", testID, "fix", "development")
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{})
-
-	h.Fold(opening("run-2", 3, "development"))
-	h.Fold(ending("run-2", 4, "development", notFound, false))
-	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{
-		"development": point("development", "start claude: not found"),
-	})
-}
-
-func TestRetireKeepsAnActionWhoseLastRunMovedToAnotherWorkspace(t *testing.T) {
-	first := opening("run-1", 3, "development")
-	moved := opening("run-2", 3, "development")
-	moved.Workspace = Workspace{Name: "issue-9-development-2", Branch: "crew/issue-9-development-2"}
-	movedEnd := ending("run-2", 6, "development", failedEnd("still broken"), true)
-	movedEnd.Workspace = Some(OpenedWorkspace{Workspace: moved.Workspace, Log: moved.Log, Opened: at(5)})
-	h := folded(first, ending("run-1", 4, "development", failedEnd("tests fail"), true), moved, movedEnd)
-	h.Retire("issue-9-development", testID, "fix", "development")
-	got := h.ResumePoints(testID, "implement")["development"]
-	if got.Workspace.Name != "issue-9-development-2" || got.Reason.String() != "still broken" {
-		t.Errorf("resume point = %#v, want the failed run in issue-9-development-2", got)
+func TestARetiredPassedRouteRunsAloneWithoutAWorktree(t *testing.T) {
+	h := folded(past{facts: judgeEnds(0, "judge passed", settled(7, 0, StepGivenUp{}))}.events(t))
+	h.Retire(runWS().Name, IssueID{Repository: "R_1", Key: "10"}, "implement")
+	want := StartPassedRoute{Session: Some(lfgLatest)}
+	if got := h.Start(testID, sequence().Rule); !reflect.DeepEqual(got, want) {
+		t.Errorf("Start = %#v, want %#v", got, want)
 	}
 }

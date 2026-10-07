@@ -213,17 +213,17 @@ func TestPreparationReportsItsStepOnlyWhenScripted(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
+func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndRule(t *testing.T) {
 	root := t.TempDir()
 	ws := fake.NewWorkspace(root)
 	ctx := context.Background()
 
-	first, err := ws.Create(ctx, issue("42"), "development")
+	first, err := ws.Create(ctx, issue("42"), "Code Review")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if first.Workspace.Name != "issue-42-development" {
-		t.Errorf("Name = %q, want issue-42-development", first.Workspace.Name)
+	if first.Workspace.Name != "issue-42-code-review" {
+		t.Errorf("Name = %q, want issue-42-code-review", first.Workspace.Name)
 	}
 	if !filepath.IsAbs(first.Dir) || filepath.Dir(first.Dir) != root {
 		t.Errorf("Dir = %q, want an absolute directory under %q", first.Dir, root)
@@ -235,7 +235,7 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 		t.Error("Branch is empty")
 	}
 
-	second, err := ws.Create(ctx, issue("42"), "development")
+	second, err := ws.Create(ctx, issue("42"), "Code Review")
 	if err != nil {
 		t.Fatalf("second Create: %v", err)
 	}
@@ -379,8 +379,8 @@ func TestALookupScriptedToBlockWaitsUntilItsContextEnds(t *testing.T) {
 
 func TestShellRunsEachScriptAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
 	sh := fake.NewShell()
-	sh.Script("crew/fails", fake.CheckScript{Print: "no pull request\n", Exit: 2})
-	sh.Script("crew/no-sh", fake.CheckScript{StartErr: errors.New("sh: not found")})
+	sh.Script("crew/fails", fake.ShellScript{Print: "no pull request\n", Exit: 2})
+	sh.Script("crew/no-sh", fake.ShellScript{StartErr: errors.New("sh: not found")})
 
 	if got, err := sh.Run(context.Background(), port.Script{Branch: "crew/passes"}); err != nil || got.Status != 0 {
 		t.Errorf("unscripted script = %+v, %v, want status 0", got, err)
@@ -403,8 +403,8 @@ func TestShellRunsEachScriptAsScriptedForItsBranchAndRecordsIt(t *testing.T) {
 
 func TestShellRunsAScriptScriptedByNameOverItsBranchsScript(t *testing.T) {
 	sh := fake.NewShell()
-	sh.Script("crew/issue-9-lfg", fake.CheckScript{Exit: 1})
-	sh.ScriptCheck("crew/issue-9-lfg", "judge", fake.CheckScript{Print: "done (0.97)\n"})
+	sh.Script("crew/issue-9-lfg", fake.ShellScript{Exit: 1})
+	sh.ScriptAction("crew/issue-9-lfg", "judge", fake.ShellScript{Print: "done (0.97)\n"})
 
 	var out strings.Builder
 	judge := port.Script{Branch: "crew/issue-9-lfg", Name: "judge", Output: &out}
@@ -447,7 +447,7 @@ func TestHarnessAndShellRecordTheIdentityAndTheLogins(t *testing.T) {
 
 func TestShellScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
 	sh := fake.NewShell()
-	sh.Script("crew/hangs", fake.CheckScript{Block: true})
+	sh.Script("crew/hangs", fake.ShellScript{Block: true})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := sh.Run(ctx, port.Script{Branch: "crew/hangs"}); !errors.Is(err, context.Canceled) {
@@ -469,7 +469,7 @@ func TestJournalLoadsItsPastThenWhatWasAppendedUntilItsAppendsFail(t *testing.T)
 
 	full := errors.New("disk full")
 	j.FailAppends(full)
-	if err := j.Append(crew.FailureReported{EventHead: h}); !errors.Is(err, full) {
+	if err := j.Append(crew.RouteChosen{EventHead: h, Route: crew.FailedRoute}); !errors.Is(err, full) {
 		t.Fatalf("Append = %v, want the failure set", err)
 	}
 

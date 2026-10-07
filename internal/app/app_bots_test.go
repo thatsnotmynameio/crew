@@ -17,8 +17,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// botAction is oneAction with tracker.bot ops, and the development action
-// acting as its agent's bot developer and running a check.
+// botAction is oneAction with tracker.bot ops, and the development session
+// acting as its agent's bot developer, followed by a shell action.
 const botAction = `
 tracker:
   name: fake
@@ -27,19 +27,20 @@ agents:
   developer:
     harness: {name: fake}
     bot: developer
-checks:
+actions:
   pull request: gh pr list
 rules:
   implement:
-    labels: {ready: ready, running: in progress, success: ready to review, failure: needs attention}
+    labels: {ready: ready, running: in progress}
     actions:
-      development:
+      - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
-        check: pull request
+      - pull request
+    routes: {passed: ready to review, failed: [report, move: needs attention]}
 `
 
 // The identities the fake resolver hands out: ops for crew's own writes
-// and developer for the action's session and check.
+// and developer for the session and the shell action after it.
 var (
 	opsWriter = port.Identity{Bot: "ops", Login: "crew-ops[bot]", Env: []string{"GH_CONFIG_DIR=/run/ops/crew"}}
 	opsID     = port.Identity{Bot: "ops", Login: "crew-ops[bot]", Env: []string{"GH_CONFIG_DIR=/run/ops/sessions"}}
@@ -95,8 +96,9 @@ func sameIdentity(got, want port.Identity) bool {
 		slices.Equal(got.Env, want.Env) && slices.Equal(got.Unset, want.Unset)
 }
 
-// Covers F1: crew's writes go as the default bot, and the action's session
-// and check as its own, with the code owners' and the bots' logins.
+// Covers F1: crew's writes go as the default bot, and the session and the
+// shell action after it as the session's bot, with the code owners' and
+// the bots' logins.
 func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewActingTracker(issue("1", ready))
@@ -128,10 +130,10 @@ func TestEachActionActsAsItsBotAndCrewAsTheDefault(t *testing.T) {
 			!slices.Equal(run.Bots, logins) {
 			t.Errorf("session ran as %+v for %q with bots %q, want developer", run.Identity, run.CodeOwners, run.Bots)
 		}
-		checks := sh.Runs()
-		if len(checks) != 1 || !sameIdentity(checks[0].Identity, devID) ||
-			!slices.Equal(checks[0].CodeOwners, []string{"mguilarducci"}) || !slices.Equal(checks[0].Bots, logins) {
-			t.Errorf("checks = %+v, want one as developer", checks)
+		scripts := sh.Runs()
+		if len(scripts) != 1 || !sameIdentity(scripts[0].Identity, devID) ||
+			!slices.Equal(scripts[0].CodeOwners, []string{"mguilarducci"}) || !slices.Equal(scripts[0].Bots, logins) {
+			t.Errorf("scripts = %+v, want one as developer", scripts)
 		}
 		resolved, closes := res.counts()
 		if !slices.EqualFunc(resolved, [][]crew.BotName{{"ops", "ops", "developer"}}, slices.Equal) || closes != 1 {

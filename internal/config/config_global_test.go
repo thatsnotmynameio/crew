@@ -182,15 +182,6 @@ func TestAnErrorNamesTheGlobalFile(t *testing.T) {
 	}
 }
 
-// Covers AE9: an old key of the global file is refused, naming it.
-func TestOldKeysOfTheGlobalFileAreRefused(t *testing.T) {
-	lines, global := loadAllErr(t, "workflow: []\n", oneRule, noFile)
-	want := global + ": workflow (line 1): now rules, which maps each rule's name to the rule"
-	if !reflect.DeepEqual(lines, []string{want}) {
-		t.Errorf("error = %q, want %q", lines, want)
-	}
-}
-
 // Covers AE10: a global file of comments only, or an empty one, changes
 // nothing.
 func TestAnEmptyGlobalFileChangesNothing(t *testing.T) {

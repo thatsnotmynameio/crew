@@ -32,7 +32,7 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsEndingOnThePullRequests(t
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewPullRequestTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 
@@ -41,7 +41,7 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsEndingOnThePullRequests(t
 			t.Errorf("pull request reports = %q, want %q", got, want)
 		}
 		end, _ := tr.PullRequestReports("1")[1].End().Get()
-		if actions := end.Actions(); len(actions) != 1 || actions[0].State != (crew.ActionSucceeded{}) {
+		if actions := end.Actions(); len(actions) != 1 || actions[0].State != (crew.ActionSucceeded{Verdict: crew.Passed}) {
 			t.Errorf("rule end = %+v, want development succeeded", end)
 		}
 
@@ -56,7 +56,7 @@ func TestATrackerWithoutPullRequestReportsGetsNone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewReportingTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 
@@ -74,7 +74,7 @@ func TestAE5AFailedPullRequestReportIsRetriedAtTheNextPollWhileTheIssueKeepsItsM
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewPullRequestTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		synctest.Wait()
 
 		tr.FailPullRequests("1", errors.New("gh: HTTP 502"))
@@ -105,7 +105,7 @@ func TestARefusedPullRequestReportIsNotRetried(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewPullRequestTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		synctest.Wait()
 
 		tr.FailPullRequests("1", fmt.Errorf("pull request is locked: %w", port.ErrRefused))
@@ -128,7 +128,7 @@ func TestStoppingGivesAnOwedPullRequestReportOneFinalTry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewPullRequestTracker(issue(1, ready))
 		r := start(t, config(t, tr, develop))
-		s := r.sessions(1)["issue-1-development"]
+		s := r.sessions(1)["issue-1-implement"]
 		synctest.Wait()
 
 		tr.FailPullRequests("1", errors.New("gh: HTTP 502"))

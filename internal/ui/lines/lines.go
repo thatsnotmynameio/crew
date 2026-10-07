@@ -99,23 +99,24 @@ func runText(e crew.RunEvent) string {
 	switch e := e.(type) {
 	case crew.RunTaken:
 		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Rule, e.IssueRef, e.Issue.Title, e.From, e.To)
-	case crew.ActionSessionStarted:
-		return actionStarted(e)
+	case crew.WorkspaceOpened:
+		return workspaceOpened(e)
 	case crew.WorkspaceMissing:
-		return fmt.Sprintf("%s %s/%s: worktree %s is gone, creating a new one",
-			e.IssueRef, e.Rule, e.Action, e.Workspace.Name)
+		return fmt.Sprintf("%s %s: worktree %s is gone, so it does not resume there", e.IssueRef, e.Rule, e.Workspace.Name)
+	case crew.ActionSessionStarted:
+		return fmt.Sprintf("%s %s/%s started its session", e.IssueRef, e.Rule, e.Action)
+	case crew.ActionShellAsked:
+		return fmt.Sprintf("%s %s/%s started its script", e.IssueRef, e.Rule, e.Action)
 	case crew.ActionEnded:
 		return actionEnded(e)
 	case crew.TakeMoved:
 		return moved(e.IssueRef, e.From, e.To)
-	case crew.EndingMoved:
-		return moved(e.IssueRef, e.From, e.To)
-	case crew.FailureReported:
-		return "reported the failure on " + e.IssueRef
-	case crew.RunStopped, crew.ActionWorkspaceAsked, crew.ActionOpened, crew.ActionSessionAsked,
-		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionLookupAsked, crew.ActionCheckAsked,
-		crew.ActionCheckStopAsked, crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing,
-		crew.RunEnded, crew.EndingDropped, crew.FailureReportDropped, crew.RunReleased:
+	case crew.RouteChosen:
+		return fmt.Sprintf("%s %s ends through %s", e.IssueRef, e.Rule, e.Route)
+	case crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked, crew.ActionSessionAsked,
+		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellStopAsked, crew.ActionShellEnded,
+		crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepEnded,
+		crew.RunReleased:
 	}
 	return ""
 }
@@ -124,8 +125,10 @@ func runText(e crew.RunEvent) string {
 func coreText(e core.Event) string {
 	switch e := e.(type) {
 	case core.RunNotRecorded:
-		return withReason(fmt.Sprintf("could not record %s %s/%s's run, so a restart may not resume it",
-			e.IssueRef, e.Rule, e.Action), e.Reason)
+		return withReason(fmt.Sprintf("%s %s: could not record %s, so a restart may not resume it",
+			e.IssueRef, e.Rule, e.What), e.Reason)
+	case core.RouteStepEnded:
+		return stepEnded(e)
 	case core.IssueSkipped:
 		return issueSkipped(e)
 	case core.IssueOfOtherKind:
@@ -154,30 +157,39 @@ func coreText(e core.Event) string {
 	return fmt.Sprintf("%T", e)
 }
 
-// moved is the line for a move the tracker made, a take or an ending.
+// moved is the line for a move the tracker made, a take or a route's.
 func moved(ref string, from, to crew.State) string {
 	return fmt.Sprintf("%s moved from %s to %s", ref, from, to)
 }
 
-// actionStarted is the line for an action that started.
-func actionStarted(e crew.ActionSessionStarted) string {
-	w := e.Workspace
+// workspaceOpened is the line for the run's workspace that is ready, new
+// or reopened, with its log when an action will write it.
+func workspaceOpened(e crew.WorkspaceOpened) string {
+	verb := "works"
 	if e.Resumed {
-		return fmt.Sprintf("%s %s/%s resumed in worktree %s on branch %s, log %s",
-			e.IssueRef, e.Rule, e.Action, w.Name, w.Branch, e.Log)
+		verb = "resumed"
 	}
-	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Rule, e.Action, w.Branch, e.Log)
+	line := fmt.Sprintf("%s %s %s in worktree %s on branch %s", e.IssueRef, e.Rule, verb, e.Workspace.Name,
+		e.Workspace.Branch)
+	if e.Log == "" {
+		return line
+	}
+	return line + ", log " + e.Log
 }
 
-// actionEnded is the line for an action that ended, with its result.
+// actionEnded is the line for an action that ended, with its verdict and
+// its reason.
 func actionEnded(e crew.ActionEnded) string {
-	// The reason is shown for successes too: without a check, a clean end is
-	// the only success signal, so its last message is what tells you
-	// whether the work was done.
+	// The reason is shown for every verdict: without a script after it, a
+	// session's clean end is the only sign it passed, so its last message is
+	// what tells you whether the work was done.
 	outcome := e.End.Outcome()
-	verdict := "failed"
-	if outcome.Succeeded {
-		verdict = "succeeded"
+	verdict := "ended with " + string(e.Verdict)
+	switch {
+	case e.Verdict == crew.Failed || e.Verdict == "" && !outcome.Succeeded:
+		verdict = "failed"
+	case e.Verdict == crew.Passed || e.Verdict == "":
+		verdict = "passed"
 	}
 	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Rule, e.Action, verdict), outcome.Reason.String())
 }
@@ -206,11 +218,19 @@ func issueOfOtherKind(e core.IssueOfOtherKind) string {
 		e.IssueRef, article, KindName(e.Kind), e.Label, e.Rule, takes)
 }
 
+// call describes c, a tracker call crew owes or gave up.
 func call(c core.Call) string {
 	switch c.Kind {
 	case core.CallReport:
-		return "reporting the failure on " + c.IssueRef
+		return "posting the report on " + c.IssueRef
+	case core.CallComment:
+		return "commenting on " + c.IssueRef
+	case core.CallClose:
+		return "closing " + c.IssueRef
 	case core.CallPullRequests:
+		if c.To == "" {
+			return fmt.Sprintf("telling the pull requests of %s it was closed", c.IssueRef)
+		}
 		return fmt.Sprintf("updating the pull requests of %s to %s", c.IssueRef, c.To)
 	default: // core.CallMove
 		return fmt.Sprintf("moving %s from %s to %s", c.IssueRef, c.From, c.To)

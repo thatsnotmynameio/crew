@@ -34,7 +34,8 @@
 # poll_interval_seconds: 300
 
 ## How many issues crew works on at once, shared by the queues. It counts
-## issues, not sessions: an issue whose rule has two actions takes one slot.
+## issues, not sessions: an issue whose rule runs several actions takes one
+## slot.
 # max_parallel_issues: 2
 
 ## How long crew runs, counted from its first poll, before it winds down.
@@ -61,9 +62,9 @@
 #   ## as the gh login it runs as.
 #   bot: clerk
 
-## Agents by name. An agent is the harness that runs an action's session,
-## its model, and the bot the session acts as. An action names its agent
-## with agent. Required when a rule has actions.
+## Agents by name. An agent is the harness that runs a session, its model,
+## and the bot the session acts as. A session names its agent with agent.
+## Required when a rule has a session.
 # agents:
 #   developer:
 #     harness:
@@ -72,29 +73,45 @@
 #       ## The model the harness runs. Without it, the harness picks its own:
 #       ## the one in its own config, or its default.
 #       model: claude-opus-5-5
-#     ## The bot the agent's sessions and checks act as. Without it, they act
-#     ## as tracker.bot, or as the gh login crew runs as.
+#     ## The bot the agent's sessions, and the shell actions after them, act
+#     ## as. Without it, they act as tracker.bot, or as the gh login crew runs
+#     ## as.
 #     bot: developer
 #   reviewer:
 #     harness:
 #       name: codex
 #       model: gpt-5.5
 
-## Checks by name, each a shell script that decides whether an action
-## succeeded. It runs in the action's worktree after the session succeeded,
-## and passes when it exits 0. The last line it prints reaches the issue's
-## status comment, so print your reason last. It reads:
+## Shell actions by name, each a shell script, defined once and named in the
+## rules' actions and routes. It runs in the rule run's worktree and passes
+## when it exits 0; any other exit status fails it, unless verdicts names
+## the status's verdict. The last line it prints reaches the issue's status
+## comment, so print your reason last. It reads:
 ##   CREW_ISSUE_REF, CREW_ISSUE_KEY, CREW_ISSUE_URL  the issue
 ##   CREW_BRANCH                                     the worktree's branch
-##   CREW_ACTION                                     the action's name
+##   CREW_ACTION                                     the latest session's name
 ##   CREW_CODE_OWNERS, CREW_BOTS                     logins, space-separated
 ##   CREW_PROMPT_FILE                                the session's prompt
 ##   CREW_LAST_MESSAGE_FILE                          the session's last message
-# checks:
+## A name cannot be a word of the rules' grammar: agent, prompt, name, on,
+## wait, resume, script, verdicts, report, close, move, comment or next.
+# actions:
+#   ## A string is the script.
 #   tests: go test ./...
 #   pr-opened: |-
 #     n=$(gh pr list --head "$CREW_BRANCH" --state open --json number --jq length) || exit 1
 #     [ "$n" -gt 0 ] || { echo "no open pull request from $CREW_BRANCH"; exit 1; }
+#   ## A mapping is the script and how it ends.
+#   judge:
+#     script: ./scripts/judge.sh
+#     ## The verdict an exit status gives, by status. A verdict's name is a
+#     ## lowercase letter, then lowercase letters, digits, - or _.
+#     verdicts:
+#       3: needs_person
+#     ## self: a resume that restarts at this action starts at it, not at the
+#     ## latest session before it. For a script that checks something outside
+#     ## the worktree, such as CI.
+#     resume: self
 
 ## The live view's board: columns by name, drawn in file order, each with one
 ## label or a list of labels. A column holds a card for each open issue that
@@ -106,10 +123,12 @@
 #   failed: [failed, review failed]
 
 ## Rules by name. A rule takes the items that carry its ready label, moves
-## each to running, runs its actions, then moves it to success when every
-## action succeeded or to failure when any failed. Rules form no sequence:
-## work moves on only because one rule's success label is another's ready
-## label. Among rules of equal priority, a later rule in the file takes first.
+## each to running, runs its actions one after another in one git worktree
+## and branch, and ends through one of its routes: passed after its last
+## action, or the route an action's verdict leads to. Rules form no
+## sequence: work moves on only because a label one rule's route moves to is
+## another's ready label. Among rules of equal priority, a later rule in the
+## file takes first.
 # rules:
 #   development:
 #     ## The kind of item the rule takes: issues or pull_requests.
@@ -126,44 +145,79 @@
 #       ## The label an item carries while the rule works on it. It cannot be
 #       ## any rule's ready label.
 #       running: in progress
-#       ## The label an item moves to when every action succeeded.
-#       success: in review
-#       ## The label an item moves to when any action failed. Required when
-#       ## the rule has actions.
-#       failure: failed
-#     ## The rule's actions by name, all started together, each a session in
-#     ## its own git worktree and branch.
+#     ## The rule's actions, run one after another. Each ends with a verdict:
+#     ## passed or failed, or another name a session or a shell action's
+#     ## verdicts gives.
 #     actions:
-#       implement:
-#         ## The agent that runs the session: one of agents. It can be left out
-#         ## when agents declares exactly one.
+#       ## The name of one of actions.
+#       - tests
+#       ## A session, in its own coding-agent session.
+#       - ## The agent that runs the session: one of agents. It can be left
+#         ## out when agents declares exactly one.
 #         agent: developer
+#         ## The session's name in the rule: its agent's name by default.
+#         name: implement
 #         ## The session's prompt, a Go template over the item the rule took:
 #         ## {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}}, {{.Issue.URL}}.
 #         prompt: |-
 #           Implement {{.Issue.Ref}}, "{{.Issue.Title}}" ({{.Issue.URL}}).
 #           Open a pull request whose body has the line `Closes {{.Issue.Ref}}`.
-#         ## One check or a list, run in order after the session succeeded. The
-#         ## first that fails fails the action. Without it, the session's own
-#         ## outcome decides.
-#         check: [tests, pr-opened]
+#         ## Where each verdict leads: next, the next action, or one of the
+#         ## rule's routes, which ends the run there. Without an entry, passed
+#         ## leads to next and every other verdict to failed.
+#         on:
+#           blocked: blocked
+#       ## One of actions, with its on and name beside it, and its own key
+#       ## left empty.
+#       - judge:
+#         name: judge
+#         on:
+#           needs_person: needs-person
+#       - pr-opened
+#     ## The rule's routes by name, each a way to end a run. A rule with
+#     ## actions declares passed and failed, and every route an on leads to.
+#     ## A route is a label to move the item to, or a list of steps, run in
+#     ## order, whose last step, and only it, is move or close. No route moves
+#     ## the item to the rule's own ready label or to any rule's running label.
+#     routes:
+#       passed: in review
+#       failed:
+#         ## report posts crew's report: the action that ended the run, and
+#         ## its log.
+#         - report
+#         - move: failed
+#       blocked:
+#         ## comment posts a comment, a Go template over .Issue, .Rule,
+#         ## .Action, .Verdict, .Route and .Log, never what a session or a
+#         ## script printed.
+#         - comment: "{{.Action}} stopped as {{.Verdict}}. Its log is {{.Log}}."
+#         ## close closes the issue.
+#         - close
+#       needs-person:
+#         ## One of actions, by name, or with its own key left empty.
+#         - tests
+#         - pr-opened:
+#         - move: needs person
 #   review:
 #     takes: pull_requests
 #     queue: reviews
 #     labels:
 #       ready: review
 #       running: reviewing
-#       success: reviewed
-#       failure: review failed
 #     actions:
-#       review:
-#         agent: reviewer
+#       - agent: reviewer
 #         prompt: |-
 #           Review the pull request {{.Issue.Ref}} and comment on what to change.
+#     routes:
+#       passed: reviewed
+#       failed:
+#         - report
+#         - move: review failed
 #   ## A rule without actions: crew moves the label itself, without a session,
-#   ## so it spends no tokens and never fails. It needs no failure label.
+#   ## so it spends no tokens and never fails. It declares only passed.
 #   approve:
 #     labels:
 #       ready: approved
 #       running: approving
-#       success: ready
+#     routes:
+#       passed: ready

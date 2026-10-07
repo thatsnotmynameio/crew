@@ -88,9 +88,9 @@ func TestAE1TheLocalFileReplacesItsTopLevelKeys(t *testing.T) {
 	}
 }
 
-// Covers AE2: the local agents replace every agent of config.yaml, so an
-// action of config.yaml naming one the local file left out is an error at
-// that action, in config.yaml.
+// Covers AE2: the local agents replace every agent of config.yaml, so a
+// session of config.yaml naming one the local file left out is an error at
+// that session, in config.yaml.
 func TestAE2TheLocalAgentsReplaceThemAll(t *testing.T) {
 	shared := `agents:
   developer:
@@ -99,18 +99,19 @@ func TestAE2TheLocalAgentsReplaceThemAll(t *testing.T) {
     harness: {name: claude}
 rules:
   refinement:
-    labels: {ready: a, running: b, success: c, failure: d}
+    labels: {ready: a, running: b}
     actions:
-      refine:
-        agent: product-manager
+      - agent: product-manager
+        name: refine
         prompt: Refine
+    routes: {passed: c, failed: d}
 `
 	local := `agents:
   developer:
     harness: {name: codex}
 `
 	lines := loadFilesErr(t, shared, local)
-	want := sharedName + ": rules.refinement.actions.refine.agent (line 11): "
+	want := sharedName + ": rules.refinement.actions[0].agent (line 10): "
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], want) {
 		t.Errorf("error = %q, want one line starting %q", lines, want)
 	}
@@ -134,26 +135,6 @@ func TestAE5AnErrorNamesTheFileOfItsKey(t *testing.T) {
 	lines := loadFilesErr(t, oneRule, "# my settings\npoll_interval_seconds: 60\nboard_columns: 3\n")
 	if want := localName + ": board_columns (line 3): unknown key"; !reflect.DeepEqual(lines, []string{want}) {
 		t.Errorf("error = %q, want %q", lines, want)
-	}
-}
-
-// Covers AE6: an old key in the local file is refused, naming that file.
-func TestAE6OldKeysOfTheLocalFileAreRefused(t *testing.T) {
-	lines := loadFilesErr(t, oneRule, "workflow: []\n")
-	want := localName + ": workflow (line 1): now rules, which maps each rule's name to the rule"
-	if !reflect.DeepEqual(lines, []string{want}) {
-		t.Errorf("error = %q, want %q", lines, want)
-	}
-}
-
-func TestOldKeysOfBothFilesAreRefusedEachWithItsFile(t *testing.T) {
-	lines := loadFilesErr(t, "harness: claude\n"+ruleOnly, "prompts: {}\n")
-	want := []string{
-		sharedName + ": harness (line 1): now agents.<name>.harness, beside the harness's name",
-		localName + ": prompts (line 1): gone; crew never ran them, so keep them in the skills that do",
-	}
-	if !reflect.DeepEqual(lines, want) {
-		t.Errorf("error =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 	}
 }
 

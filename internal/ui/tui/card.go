@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -70,15 +71,26 @@ func (m Model) labelled(label, value string) string {
 	return pad(m.styles.muted.Render(label), cardLabel) + " " + value
 }
 
-// runItems are c's actions not yet ended, in their rule's order, after its
-// claim when it is owed or stopping, or its claim alone when none is left
-// (R2, KTD2).
+// runItems are the action c's run takes the issue for, starts or runs, how
+// many of its actions are left after it, and the route the run ends
+// through once it chose one, after its claim when it is owed or stopping,
+// or its claim alone when it has none of those (R2, KTD2, KTD-S17).
 func (m Model) runItems(c card) []string {
 	var items []string
+	left := 0
 	for _, a := range c.view.Actions {
-		if a.Phase != core.PhaseEnded {
+		switch {
+		case inProgress(a.Phase):
 			items = append(items, m.runItem(a))
+		case a.Phase == core.PhaseAwaitingTurn:
+			left++
 		}
+	}
+	if left > 0 {
+		items = append(items, m.styles.muted.Render(fmt.Sprintf("%d left", left)))
+	}
+	if route := c.view.Route; c.held && route != "" {
+		items = append(items, m.spin()+" "+m.styles.muted.Render("through")+" "+m.styles.text.Render(clean(string(route))))
 	}
 	claim := c.view.Claim
 	if len(items) == 0 || c.held && (claim == core.ClaimOwed || claim == core.ClaimStopping) {
@@ -87,14 +99,14 @@ func (m Model) runItems(c card) []string {
 	return items
 }
 
-// runItem is a's item on its card: ○, its name and waiting while its
-// issue's take is not done, else the spinner, its name and how long it has
-// run, or its phase before its session starts (R2, KTD2).
+// runItem is a's item on its card: ○, its name and taking while its
+// issue's take is not done, else the spinner, its name and how long its
+// session or script has run, or its phase before it starts (R2, KTD2).
 func (m Model) runItem(a core.ActionView) string {
 	s := m.styles
 	name := s.text.Render(clean(string(a.Name)))
 	switch {
-	case a.Phase == core.PhaseWaiting:
+	case a.Phase == core.PhaseTaking:
 		return s.warning.Render("○") + " " + name + " " + s.muted.Render(a.Phase.String())
 	case a.Started.IsZero():
 		return m.spin() + " " + name + " " + s.muted.Render(a.Phase.String())
@@ -113,7 +125,7 @@ func (m Model) claimState(c card) string {
 		return s.warning.Render("⊘ blocked")
 	case !c.held:
 		return s.muted.Render("○ idle")
-	case claim == core.ClaimRunning || claim == core.ClaimJudging:
+	case claim == core.ClaimRunning || claim == core.ClaimRouting:
 		return m.spin() + " " + s.muted.Render(claim.String())
 	case claim == core.ClaimStopping:
 		return s.muted.Render("■ stopping")

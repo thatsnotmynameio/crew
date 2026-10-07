@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
@@ -23,25 +24,27 @@ func promoted() []crew.Rule {
 	return []crew.Rule{
 		{
 			Name:    "triage",
-			Labels:  crew.Labels{Ready: triageReady, Running: triageRunning, Success: triageDone, Failure: triageFailed},
-			Actions: []crew.Action{{Name: "triage", Prompt: parsedPrompt("triage", "Triage {{.Issue.Ref}}")}},
+			Labels:  crew.Labels{Ready: triageReady, Running: triageRunning},
+			Actions: []crew.Action{sessionAction("triage", "Triage {{.Issue.Ref}}")},
+			Routes:  routes(triageDone, triageFailed),
 		},
 		{
 			Name:   "promote triage",
-			Labels: crew.Labels{Ready: triageDone, Running: triagePromoting, Success: developmentReady},
+			Labels: crew.Labels{Ready: triageDone, Running: triagePromoting},
+			Routes: []crew.Route{{Name: crew.PassedRoute, Steps: []crew.Step{crew.MoveStep{To: developmentReady}}}},
 		},
 	}
 }
 
-// promoteMove is #1's move to promote triage's success.
+// promoteMove is #1's move through promote triage's passed route.
 func promoteMove() core.Move {
 	return core.Move{IssueID: issueID("1"), From: triagePromoting, To: developmentReady}
 }
 
-// promoteMoved is the event of #1's move to promote triage's success, in
-// d's run of #1, at d.now.
-func promoteMoved(d *driver) crew.EndingMoved {
-	return crew.EndingMoved{EventHead: d.runHead("1"), From: triagePromoting, To: developmentReady}
+// promoteMoved is the event of #1's move to promote triage's success
+// landing, in d's run of #1, at d.now.
+func promoteMoved(d *driver) core.RouteStepEnded {
+	return d.stepEnded("1", 0, crew.StepLanded{})
 }
 
 // reportOf is #1's pull request report of its move to state, with no end.
@@ -176,15 +179,16 @@ func TestARuleWithoutActionsWritesItsStatusWithNoActionLines(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, takePromoted(d), "1"), Result: core.ResultDone})
 
 	got := statusOf(t, landed, "1")
-	if got.Progress() != (crew.StatusEnded{To: developmentReady, Move: crew.MovePending}) ||
+	if got.Progress() != (crew.StatusEnded{Route: crew.PassedRoute, To: developmentReady, Move: crew.MovePending}) ||
 		got.Rule() != "promote triage" || len(got.Actions()) != 0 {
 		t.Fatalf("status: got %#v, want promote triage's ended status, moving to development, with no actions", got)
 	}
 }
 
-// Its run events are journaled, but none is an action's start or end, so
-// none whose append fails says so.
-func TestARuleWithoutActionsReportsNoRecordNotWritten(t *testing.T) {
+// Its run events are journaled. Of those a resume depends on, it has only
+// the route it chose, its step's outcome and its release, and only those
+// say so when their append fails (KTD18).
+func TestARuleWithoutActionsReportsOnlyItsRouteStepAndReleaseNotWritten(t *testing.T) {
 	d := &driver{t: t, m: core.New(promoted(), 2, core.Journaling(nil)), now: t0}
 	take := takePromoted(d)
 	ending, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
@@ -194,9 +198,19 @@ func TestARuleWithoutActionsReportsNoRecordNotWritten(t *testing.T) {
 	if len(d.recorded) == 0 {
 		t.Fatal("no run event journaled")
 	}
+	want := map[string]string{
+		"crew.RouteChosen": "the route passed it chose", "crew.StepEnded": "the outcome of step 1 of its route",
+		"crew.RunReleased": "its release",
+	}
 	for _, e := range d.recorded {
-		if _, events := d.send(core.RecordFailed{Event: e, Reason: "disk full"}); len(events) != 0 {
-			t.Errorf("%T not written: events %#v, want none", e, events)
+		_, events := d.send(core.RecordFailed{Event: e, Reason: "disk full"})
+		what, says := want[fmt.Sprintf("%T", e)]
+		if !says {
+			wantEvents(t, events)
+			continue
 		}
+		wantEvents(t, events, core.RunNotRecorded{
+			At: d.now, IssueID: issueID("1"), IssueRef: "#1", Rule: "promote triage", What: what, Reason: "disk full",
+		})
 	}
 }

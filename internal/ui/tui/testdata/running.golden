@@ -6,7 +6,7 @@ Bots ─────────────────────────
  │ ▀ ▀ ▀                          │
  │ ▄▀▄▀▄ no actions yet           │
  │ crew's writes +3               │
- │ ⠋ #1 implement/code +1         │
+ │ ⠋ #1 implement/code            │
  ╰────────────────────────────────╯
 
 ▸ Board ─────────────────────────────────────────────────────────────── 2 issues
@@ -14,15 +14,15 @@ Bots ─────────────────────────
  ──────────────────────────────────  ──────────────────────────────────
  ╭────────────────────────────────╮  ╭────────────────────────────────╮
  │ ▸ #1 Add login form            │  │ #2 Fix the flaky stream test   │
- │ run  ⠋ code 5m · ⠋ tests 7m    │  │ run  ○ check waiting           │
+ │ run  ⠋ code 5m · 1 left        │  │ run  ○ check taking            │
  │ bots ■ you                     │  │ bots none                      │
  │ via  default                   │  │ via  clerk                     │
  ╰────────────────────────────────╯  ╰────────────────────────────────╯
 
 Queues ─── 2 of 3 busy   Events ─────────────────────────────────────── 5 events
  default  ■□  1/2         14:22:58 implement took #1 "Add login form" (ready ->…
- clerk    ■   1/1         14:23:00 #1 implement/tests started on branch crew/1-…
-                          14:25:00 #1 implement/code started on branch crew/1-c…
+ clerk    ■   1/1         14:23:00 #1 implement works in worktree 1-code on bra…
+                          14:25:00 #1 implement/code started its session
                           14:29:50 poll: listed 2 issues, took 1
                           14:29:50 review took #2 "Fix the flaky stream test" (…
 

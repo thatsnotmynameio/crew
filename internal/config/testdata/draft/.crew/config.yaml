@@ -1,5 +1,6 @@
-# The code owner's draft config, with #XXX written as a template and
-# labels.success added (KTD5). It is the schema's reference.
+# The code owner's draft config, with #XXX written as a template, in the
+# rules' format of a sequence of actions and routes. It is the schema's
+# reference.
 poll_interval_seconds: 300
 max_parallel_issues: 2
 tracker:
@@ -14,19 +15,25 @@ rules:
     labels:
       ready: ready
       running: in progress
-      success: ready to review
-      failure: needs attention
     actions:
-      acceptance:
+      - name: acceptance
         prompt: "Implement test acceptance for issue {{.Issue.Ref}}"
-      development:
+      - name: development
         prompt: "Implement development for issue {{.Issue.Ref}}"
+    routes:
+      passed: ready to review
+      failed:
+        - report
+        - move: needs attention
   review:
     labels:
       ready: ready to review
       running: in review
-      success: ready to merge
-      failure: needs attention
     actions:
-      custom_review:
+      - name: custom_review
         prompt: "Review implementation for issue {{.Issue.Ref}}"
+    routes:
+      passed: ready to merge
+      failed:
+        - report
+        - move: needs attention
