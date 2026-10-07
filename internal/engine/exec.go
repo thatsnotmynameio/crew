@@ -85,8 +85,8 @@ func (e *Engine) trackerJob(ctx context.Context, cmd core.TrackerCommand) func()
 // runJob returns the goroutine that runs cmd, a command about one rule run,
 // on the command context ctx, or nil when nothing is left to run once the
 // loop has done its part. The loop itself records run events, starts and stops
-// scripts and stops sessions, as it owns the order of the journal, the
-// scripts and the sessions.
+// scripts and functions and stops sessions, as it owns the order of the
+// journal, the scripts, the functions and the sessions.
 func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 	switch c := cmd.(type) {
 	case core.CreateWorkspace:
@@ -117,6 +117,17 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 			return nil
 		}
 		return func() { e.stopSession(ctx, s.session) }
+	case core.RunShell, core.RunStepShell, core.StopShell, core.StopStepShell, core.RunFunction,
+		core.RunStepFunction, core.StopFunction, core.StopStepFunction:
+		return e.scriptJob(ctx, cmd)
+	}
+	return nil
+}
+
+// scriptJob returns the goroutine that runs cmd, a command that starts a
+// script or a function, or nil once the loop stopped one, as runJob does.
+func (e *Engine) scriptJob(ctx context.Context, cmd core.RunCommand) func() {
+	switch c := cmd.(type) {
 	case core.RunShell:
 		return e.runShell(ctx, c)
 	case core.RunStepShell:
@@ -125,6 +136,17 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 		stopScript(e.shells, sessionKey{c.Run, c.Action})
 	case core.StopStepShell:
 		stopScript(e.steps, stepKey{c.Run, c.Step})
+	case core.RunFunction:
+		return e.runFunction(ctx, c)
+	case core.RunStepFunction:
+		return e.runStepFunction(ctx, c)
+	case core.StopFunction:
+		stopScript(e.shells, sessionKey{c.Run, c.Action})
+	case core.StopStepFunction:
+		stopScript(e.steps, stepKey{c.Run, c.Step})
+	case core.CreateWorkspace, core.ReopenWorkspace, core.StartSession, core.FindPullRequest, core.ReadAnswers,
+		core.Record, core.StopSession:
+		// runJob runs these.
 	}
 	return nil
 }

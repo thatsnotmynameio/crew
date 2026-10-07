@@ -36,8 +36,11 @@ type RunDefinition struct {
 // the caller applies the events.
 //
 // It renders the prompt of each session action it starts, from def, only
-// to decide whether the action fails with CausePrompt, and the comment of
-// each comment step it asks, only to decide whether the step fails.
+// to decide whether the action fails with CausePrompt, the text parameters
+// of each function action it starts, only to decide whether the action
+// fails with CauseFunction, and the comment of each comment step and the
+// text parameters of each function step it asks, only to decide whether
+// the step fails.
 func Decide(run RuleRun, def RunDefinition, fact Fact) ([]RunEvent, error) {
 	h := fact.factHead()
 	if run.id == "" || h.Run != run.id {
@@ -94,9 +97,11 @@ func is[T ActionRunState](s ActionRunState) bool {
 }
 
 // start starts the action named name: asks for its session, after
-// rendering its prompt, or for its script, acting as the run's bot. A
-// session whose prompt does not render ends at once, and once a stop or
-// time-up reached the run the action ends without starting.
+// rendering its prompt, or for its script or its function, after rendering
+// its text parameters, acting as the run's bot. A session whose prompt
+// does not render, and a function whose text parameters do not, end at
+// once, and once a stop or time-up reached the run the action ends without
+// starting.
 func (d *decider) start(name ActionName) {
 	if j, halted := d.halted(); halted {
 		d.end(name, j, ToRoute{Route: FailedRoute})
@@ -111,6 +116,12 @@ func (d *decider) start(name ActionName) {
 		d.emit(ActionSessionAsked{EventHead: d.head(), Action: name})
 	case ShellSpec:
 		d.emit(ActionShellAsked{EventHead: d.head(), Action: name, Bot: d.run.Bot()})
+	case FunctionSpec:
+		if _, err := k.RenderTexts(d.run.issue); err != nil {
+			d.finish(name, failedBy(NewSessionText(err.Error()), CauseFunction))
+			return
+		}
+		d.emit(ActionFunctionAsked{EventHead: d.head(), Action: name, Bot: d.run.Bot()})
 	}
 }
 
@@ -218,15 +229,23 @@ func (d *decider) nextStep() {
 }
 
 // unasked returns the outcome of the step at index i of route when it
-// settles without being asked, and whether it does: a shell step once a
-// stop reached the run is skipped, and a comment whose template does not
-// render for the run fails.
+// settles without being asked, and whether it does: a shell or function
+// step once a stop reached the run is skipped, and a function step whose
+// text parameters, or a comment whose template, do not render for the run
+// fails.
 func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 	r, _ := d.def.Rule.Route(route)
 	switch s := r.Steps[i].(type) {
 	case ShellStep:
 		if d.run.stopping {
 			return StepSkipped{}, true
+		}
+	case FunctionStep:
+		if d.run.stopping {
+			return StepSkipped{}, true
+		}
+		if _, err := s.Function.RenderTexts(d.run.issue); err != nil {
+			return StepFailed{Reason: NewShellReason(err.Error())}, true
 		}
 	case CommentStep:
 		if _, err := s.Template.Render(d.run.CommentData()); err != nil {

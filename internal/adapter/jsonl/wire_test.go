@@ -20,10 +20,11 @@ func TestEveryEventKeepsItsWireType(t *testing.T) {
 	want := []any{
 		"run_taken", "take_moved", "run_stopped", "run_out_of_time", "workspace_asked", "workspace_missing",
 		"workspace_asked", "workspace_opened", "action_session_asked", "action_session_started",
-		"action_session_stop_asked", "action_session_ended", "action_ended", "action_shell_asked",
+		"action_session_stop_asked", "action_session_ended", "action_ended", "action_function_asked",
+		"action_function_stop_asked", "action_function_ended", "action_ended", "action_shell_asked",
 		"action_shell_stop_asked", "action_shell_ended", "action_ended", "route_chosen", "lookup_asked",
 		"lookup_done", "step_asked", "step_ended", "step_asked", "step_shell_stop_asked", "step_ended",
-		"run_released",
+		"step_asked", "step_function_stop_asked", "step_ended", "run_released",
 	}
 	got := make([]any, 0, len(want))
 	for _, l := range lines(t, root) {
@@ -74,11 +75,11 @@ func TestARouteKeepsItsWireKeys(t *testing.T) {
 	steps, _ := got[0]["steps"].([]any)
 	want := []any{
 		map[string]any{"kind": "comment"}, map[string]any{"kind": "report"},
-		map[string]any{"kind": "shell", "shell": "notify"}, map[string]any{"kind": "move", "to": "needs attention"},
-		map[string]any{"kind": "close"},
+		map[string]any{"kind": "shell", "shell": "notify"}, map[string]any{"kind": "function", "function": "label"},
+		map[string]any{"kind": "move", "to": "needs attention"}, map[string]any{"kind": "close"},
 	}
 	if got[0]["route"] != "failed" || got[0]["action"] != "judge" || !reflect.DeepEqual(steps, want) {
-		t.Errorf("route_chosen line = %v, want route failed at judge with its five steps", got[0])
+		t.Errorf("route_chosen line = %v, want route failed at judge with its six steps", got[0])
 	}
 	if got[1]["step"] != 2.0 || got[1]["outcome"] != "stopped" || got[1]["reason"] != "stopped" {
 		t.Errorf("step_ended line = %v, want step 2 stopped", got[1])
@@ -102,7 +103,7 @@ func TestEveryFailureCauseKeepsItsWireName(t *testing.T) {
 		crew.CauseSession: "session", crew.CauseStopped: "stopped",
 		crew.CauseWorkspace: "workspace", crew.CauseStart: "start", crew.CausePrompt: "prompt",
 		crew.CauseShell: "shell", crew.CauseVerdict: "verdict", crew.CauseStoppedBeforeStart: "stopped_before_start",
-		crew.CauseTimeUp: "time_up",
+		crew.CauseTimeUp: "time_up", crew.CauseFunction: "function",
 	}
 	for cause, name := range causes {
 		got := wireValues(t, "cause", []crew.RunEvent{crew.ActionEnded{
@@ -142,5 +143,19 @@ func TestEveryStartAndStepOutcomeKeepsItsWireName(t *testing.T) {
 	want := []any{"landed", "ran", "failed", "given_up", "dropped", "skipped", "stopped"}
 	if got := wireValues(t, "outcome", ends); !reflect.DeepEqual(got, want) {
 		t.Errorf("step outcomes = %v, want %v", got, want)
+	}
+}
+
+func TestAFunctionsEndWritesTheVerdictItReturnedOrNone(t *testing.T) {
+	got := wireValues(t, "verdict", []crew.RunEvent{
+		crew.ActionFunctionEnded{EventHead: head(1), Action: "label", Outcome: crew.FunctionOutcome{
+			Verdict: crew.Some(crew.Passed), Reason: crew.NewShellReason("label: passed"),
+		}},
+		crew.ActionFunctionEnded{EventHead: head(2), Action: "label", Outcome: crew.FunctionOutcome{
+			Reason: crew.NewShellReason("label: timed out"),
+		}},
+	})
+	if want := []any{"passed", nil}; !reflect.DeepEqual(got, want) {
+		t.Errorf("verdicts = %v, want %v", got, want)
 	}
 }

@@ -145,7 +145,7 @@ func load(t *testing.T, body string) (*config.Config, error) {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return config.Load(root, "")
+	return config.Load(root, "", nil)
 }
 
 // agent is a config of one agent on claude, whose harness has the keys

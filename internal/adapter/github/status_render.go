@@ -14,10 +14,10 @@ import (
 // its route, the route's steps that did not land and where the issue goes,
 // then the update time in UTC. A session's last words go in a fenced code
 // block, so nothing in them may render, link or mention anyone. A failed
-// action says why in crew's words, from its cause; only a shell action's
-// line shows, in a code span, as no session's or tool's own words may. A
-// route's step shows in crew's words only (R49). An ended action whose
-// status holds what it spent says so, with its pull request.
+// action says why in crew's words, from its cause; only a shell or function
+// action's line shows, in a code span, as no session's or tool's own words
+// may. A route's step shows in crew's words only (R49). An ended action
+// whose status holds what it spent says so, with its pull request.
 func (t *Tracker) renderStatus(s crew.Status) string {
 	var b strings.Builder
 	b.WriteString(markerLine(s) + "\n")
@@ -46,15 +46,21 @@ func writeHeadline(b *strings.Builder, s crew.Status) {
 }
 
 // writeAction writes the paragraph of action a, as of updated: its state
-// and, when it resumed, its worktree, then its shell line, unless its
-// failure already gives it.
+// and, when it resumed, its worktree, then its shell or function line,
+// unless its failure already gives it.
 func writeAction(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 	writeState(b, a, updated)
 	line := a.Shell.String()
-	if failed, ok := a.State.(crew.ActionFailed); line == "" || ok && failed.Cause == crew.CauseShell {
+	if failed, ok := a.State.(crew.ActionFailed); line == "" || ok && givesLine(failed.Cause) {
 		return
 	}
 	b.WriteString("\n- " + codeSpan(line) + "\n")
+}
+
+// givesLine reports whether a failure of cause gives the action's line
+// itself: a script's or a function's failure.
+func givesLine(cause crew.FailureCause) bool {
+	return cause == crew.CauseShell || cause == crew.CauseFunction
 }
 
 // writeState writes the line of action a, as of updated: its state and,
@@ -150,6 +156,8 @@ func stepName(p crew.StepPlan) string {
 		return "report"
 	case crew.StepShell:
 		return "shell step " + codeSpan(string(p.Shell))
+	case crew.StepFunction:
+		return "function step " + codeSpan(string(p.Function))
 	}
 	return "step"
 }
@@ -200,8 +208,8 @@ func failedAction(subject string, failed crew.ActionFailed, line crew.ShellReaso
 }
 
 // failureCause words cause, what made an action fail, after a colon, or
-// returns "" for a cause it does not know. A script failure gives line,
-// the shell action's line, when it is not empty.
+// returns "" for a cause it does not know. A script or function failure
+// gives line, the shell or function action's line, when it is not empty.
 func failureCause(cause crew.FailureCause, line crew.ShellReason) string {
 	switch cause {
 	case crew.CauseSession:
@@ -210,6 +218,12 @@ func failureCause(cause crew.FailureCause, line crew.ShellReason) string {
 		// The line already says how the script ended.
 		if line.String() == "" {
 			return ": its script failed"
+		}
+		return ": " + codeSpan(line.String())
+	case crew.CauseFunction:
+		// The line already says how the function ended.
+		if line.String() == "" {
+			return ": its function failed"
 		}
 		return ": " + codeSpan(line.String())
 	case crew.CauseVerdict:

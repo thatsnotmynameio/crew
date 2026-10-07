@@ -65,8 +65,9 @@ type place struct {
 	To        crew.State         `json:"to,omitempty"`
 }
 
-// outcome is how an action, its session or its script ended: the verdict
-// it gave, where the verdict leads, and a script's exit status.
+// outcome is how an action, its session, its script or its function
+// ended: the verdict it gave or its function returned, where the verdict
+// leads, and a script's exit status.
 type outcome struct {
 	Succeeded  *bool        `json:"succeeded,omitempty"`
 	Reason     string       `json:"reason,omitempty"`
@@ -177,18 +178,20 @@ type route struct {
 }
 
 // step is one step of a route: its kind, the state a move moves the item
-// to, and the shell action a shell step runs.
+// to, the shell action a shell step runs and the function a function step
+// calls.
 type step struct {
-	Kind  string          `json:"kind"`
-	To    crew.State      `json:"to,omitempty"`
-	Shell crew.ActionName `json:"shell,omitempty"`
+	Kind     string          `json:"kind"`
+	To       crew.State      `json:"to,omitempty"`
+	Shell    crew.ActionName `json:"shell,omitempty"`
+	Function crew.ActionName `json:"function,omitempty"`
 }
 
 // stepKinds returns the names of the kinds of a route's steps on the wire.
 func stepKinds() map[crew.StepKind]string {
 	return map[crew.StepKind]string{
 		crew.StepMove: "move", crew.StepClose: "close", crew.StepComment: "comment", crew.StepReport: "report",
-		crew.StepShell: "shell",
+		crew.StepShell: "shell", crew.StepFunction: "function",
 	}
 }
 
@@ -198,7 +201,7 @@ func causes() map[crew.FailureCause]string {
 		crew.CauseSession: "session", crew.CauseStopped: "stopped",
 		crew.CauseWorkspace: "workspace", crew.CauseStart: "start", crew.CausePrompt: "prompt",
 		crew.CauseShell: "shell", crew.CauseVerdict: "verdict", crew.CauseStoppedBeforeStart: "stopped_before_start",
-		crew.CauseTimeUp: "time_up",
+		crew.CauseTimeUp: "time_up", crew.CauseFunction: "function",
 	}
 }
 

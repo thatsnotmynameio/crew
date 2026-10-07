@@ -239,3 +239,36 @@ func TestACommentRendersWhatTheRunKnows(t *testing.T) {
 		t.Errorf("CommentData of a rule without actions = %#v, want only its route", bare)
 	}
 }
+
+func TestJudgeFunctionStep(t *testing.T) {
+	tests := []struct {
+		name     string
+		outcome  FunctionOutcome
+		stopping bool
+		want     StepOutcome
+	}{
+		{"passed ran", returned(Passed, "check returned passed"), false,
+			StepRan{Reason: NewShellReason("check returned passed")}},
+		{"any other verdict failed", returned("blocked", "check returned blocked"), false,
+			StepFailed{Reason: NewShellReason("check returned blocked")}},
+		{"no verdict failed", FunctionOutcome{Reason: NewShellReason("check failed")}, false,
+			StepFailed{Reason: NewShellReason("check failed")}},
+		{"a stop stopped it, whatever it returned", returned(Passed, "check was stopped"), true,
+			StepStopped{Reason: NewShellReason("check was stopped")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := judgeFunctionStep(tt.outcome, tt.stopping); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("judgeFunctionStep = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAFunctionStepPlansItsName(t *testing.T) {
+	step := FunctionStep{Name: "check", Function: FunctionSpec{Function: "check-pr"}}
+	want := []StepPlan{{Kind: StepFunction, Function: "check"}, {Kind: StepShell, Shell: "notify"}}
+	if got := plans(Route{Steps: []Step{step, notify}}); !reflect.DeepEqual(got, want) {
+		t.Errorf("plans = %#v, want %#v", got, want)
+	}
+}

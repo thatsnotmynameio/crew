@@ -256,8 +256,9 @@ func (m *Model) pairs(is func(bot crew.BotName) bool) []string {
 }
 
 // runningAs returns the actions running as identity now: each session from
-// its start until it ends, and each shell action while its script runs, as
-// its run's latest session, or as you before any (KTD5, KTD13, KTD-S11).
+// its start until it ends, and each shell or function action while its
+// script or function runs, as its run's latest session, or as you before
+// any (KTD5, KTD13, KTD-S11).
 func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 	var out []RunningAction
 	for _, h := range m.issues {
@@ -274,11 +275,11 @@ func (m *Model) runningAs(identity crew.BotName) []RunningAction {
 }
 
 // spending reports whether an action run in state acts on the tracker now:
-// its session or its script runs. The run's latest session is then the
-// running session, so the run's bot is the action's.
+// its session, its script or its function runs. The run's latest session
+// is then the running session, so the run's bot is the action's.
 func spending(state crew.ActionRunState) bool {
 	switch state.(type) {
-	case crew.InSession, crew.InShell:
+	case crew.InSession, crew.InShell, crew.InFunction:
 		return true
 	case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.StartingSession, crew.Finished, crew.NotRun:
 	}

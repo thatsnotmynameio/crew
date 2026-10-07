@@ -141,7 +141,7 @@ func section(t *testing.T, tracker string) (port.Decode, []crew.State) {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root, "")
+	cfg, err := config.Load(root, "", nil)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
@@ -408,19 +408,19 @@ func blockedNode(node string, open, total int) string {
 // Covers AE1 and AE6: the move swaps crew's labels, the labels the rules
 // name, and leaves the others, such as bug, paused or a parked idea's
 // crew:brainstorm:ready, which no rule names.
-func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
+func TestMoveAddsTheNewLabelBeforeRemovingTheOtherCrewLabels(t *testing.T) {
 	for name, tc := range map[string]struct {
 		labels string
 		want   []string
 	}{
 		"AE1 one crew label": {`{"name":"ready"},{"name":"bug"}`,
-			[]string{"--remove-label=ready", "--add-label=in progress"}},
+			[]string{"--remove-label=ready"}},
 		"two crew labels": {`{"name":"ready"},{"name":"bug"},{"name":"Needs Attention"}`,
-			[]string{"--remove-label=ready", "--remove-label=Needs Attention", "--add-label=in progress"}},
+			[]string{"--remove-label=ready", "--remove-label=Needs Attention"}},
 		"AE6 a label no rule names": {`{"name":"paused"},{"name":"ready"}`,
-			[]string{"--remove-label=ready", "--add-label=in progress"}},
+			[]string{"--remove-label=ready"}},
 		"AE6 a parked idea's label and bug": {`{"name":"crew:brainstorm:ready"},{"name":"ready"},{"name":"bug"}`,
-			[]string{"--remove-label=ready", "--add-label=in progress"}},
+			[]string{"--remove-label=ready"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr, gh := build(t,
@@ -431,9 +431,12 @@ func TestMoveSwapsTheCrewLabelsInOneEdit(t *testing.T) {
 				t.Fatalf("Move: %v", err)
 			}
 			edits := gh.callsTo("issue", "edit")
-			want := append([]string{"issue", "edit", "3"}, tc.want...)
-			if len(edits) != 1 || !slices.Equal(edits[0], want) {
-				t.Errorf("edits = %q, want one: %q", edits, want)
+			want := [][]string{
+				{"issue", "edit", "3", "--add-label=in progress"},
+				append([]string{"issue", "edit", "3"}, tc.want...),
+			}
+			if !slices.EqualFunc(edits, want, slices.Equal) {
+				t.Errorf("edits = %q, want add then remove: %q", edits, want)
 			}
 		})
 	}
@@ -499,11 +502,11 @@ func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
 		t.Fatalf("Move: %v", err)
 	}
 	edits := gh.callsTo("issue", "edit")
-	if len(edits) != 1 {
-		t.Fatalf("edits = %q, want one", edits)
+	if len(edits) != 2 {
+		t.Fatalf("edits = %q, want add then remove", edits)
 	}
 	want := map[string]string{"--remove-label=": string(blocked), "--add-label=": string(ready)}
-	for _, arg := range edits[0][3:] {
+	for _, arg := range slices.Concat(edits[0][3:], edits[1][3:]) {
 		for flag, label := range want {
 			value, ok := strings.CutPrefix(arg, flag)
 			if !ok {
@@ -522,13 +525,17 @@ func TestMovePassesALabelWithACommaOrQuoteAsOneLabel(t *testing.T) {
 }
 
 func TestMoveToAMissingLabelIsRefused(t *testing.T) {
-	tr, _ := build(t,
+	tr, gh := build(t,
 		reply{prefix: []string{"issue", "view", "3"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
 		reply{prefix: []string{"issue", "edit", "3"}, stderr: "could not add label: 'in progress' not found\n"},
 	)
 	err := tr.Move(context.Background(), issueID("3"), ready, inProgress)
 	if !errors.Is(err, port.ErrRefused) {
 		t.Errorf("Move = %v, want ErrRefused", err)
+	}
+	want := [][]string{{"issue", "edit", "3", "--add-label=in progress"}}
+	if edits := gh.callsTo("issue", "edit"); !slices.EqualFunc(edits, want, slices.Equal) {
+		t.Errorf("edits = %q, want only the refused add: %q", edits, want)
 	}
 }
 

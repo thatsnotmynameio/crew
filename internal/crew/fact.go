@@ -80,9 +80,11 @@ type PullRequestLookedUp struct {
 // chooses PassedRoute at once, after a stop or time-up too, and so does
 // the passed route alone, unless it reopens the continued run's worktree
 // first while crew does not stop; after a stop or time-up, the first
-// action ends without starting; otherwise the run asks for its workspace,
-// the continued run's when its start reopens it. A take given up releases
-// the run.
+// action ends without starting; a rule whose actions need no workspace,
+// only functions, starts its first action without one, unless its start
+// reopens the continued run's worktree; otherwise the run asks for its
+// workspace, the continued run's when its start reopens it. A take given
+// up releases the run.
 func (f TakeSettled) decide(d *decider) error {
 	if _, taking := d.run.phase.(TakingPhase); !taking {
 		return d.refused("its take")
@@ -100,7 +102,7 @@ func (f TakeSettled) decide(d *decider) error {
 	case len(d.run.actions) == 0, passedAlone && (d.run.stopping || !reopen):
 		d.choosePassed()
 		return nil
-	case halted && !passedAlone:
+	case halted && !passedAlone, !reopen && !d.def.Rule.needsWorkspace():
 		d.startAtCursor()
 		return nil
 	}
@@ -113,18 +115,17 @@ func (f TakeSettled) decide(d *decider) error {
 }
 
 // decide marks the run as stopping, once. A run taking or running its
-// actions asks the session or script at its cursor to stop; a routing run
-// asks its shell step in flight to stop, and skips the shell steps after
-// it, while its tracker steps go on.
+// actions asks the session, script or function at its cursor to stop; a
+// routing run asks its shell or function step in flight to stop, and
+// skips the shell and function steps after it, while its tracker steps go
+// on.
 func (StopReached) decide(d *decider) error {
 	if d.run.stopping {
 		return nil
 	}
 	d.emit(RunStopped{EventHead: d.head()})
 	if p, routing := d.run.phase.(RoutingPhase); routing {
-		if i, asked := p.InFlight(); asked && p.Steps[i].Kind == StepShell {
-			d.emit(StepShellStopAsked{EventHead: d.head(), Step: i})
-		}
+		d.stopStep(p)
 		return nil
 	}
 	a, _ := d.run.Cursor()
@@ -133,10 +134,29 @@ func (StopReached) decide(d *decider) error {
 		d.emit(ActionSessionStopAsked{EventHead: d.head(), Action: a.name})
 	case InShell:
 		d.emit(ActionShellStopAsked{EventHead: d.head(), Action: a.name})
+	case InFunction:
+		d.emit(ActionFunctionStopAsked{EventHead: d.head(), Action: a.name})
 	case AwaitingTurn, DoneInEarlierRun, StartingSession, Finished, NotRun:
-		// No session or script runs: the run's next fact sees the stop.
+		// No session, script or function runs: the run's next fact sees
+		// the stop.
 	}
 	return nil
+}
+
+// stopStep asks the shell or function step of p in flight to stop, when
+// one is.
+func (d *decider) stopStep(p RoutingPhase) {
+	i, asked := p.InFlight()
+	if !asked {
+		return
+	}
+	switch p.Steps[i].Kind {
+	case StepShell:
+		d.emit(StepShellStopAsked{EventHead: d.head(), Step: i})
+	case StepFunction:
+		d.emit(StepFunctionStopAsked{EventHead: d.head(), Step: i})
+	case StepMove, StepClose, StepComment, StepReport:
+	}
 }
 
 // decide marks a run taking or running its actions as out of time, once:

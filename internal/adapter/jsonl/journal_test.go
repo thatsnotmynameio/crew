@@ -96,8 +96,8 @@ func takeEvents() []crew.RunEvent {
 // failure is how the judge action fails.
 var failure = crew.EndFailed{Reason: crew.NewSessionText("judge: exit status 1"), Cause: crew.CauseShell}
 
-// actionEvents are the events of a session action and a shell action,
-// from their starts to their ends.
+// actionEvents are the events of a session action, a function action and
+// a shell action, from their starts to their ends.
 func actionEvents() []crew.RunEvent {
 	return []crew.RunEvent{
 		crew.ActionSessionAsked{EventHead: head(6), Action: "lfg"},
@@ -113,6 +113,15 @@ func actionEvents() []crew.RunEvent {
 			EventHead: head(10), Action: "lfg", End: crew.EndSucceeded{Reason: crew.NewSessionText("done")},
 			Verdict: crew.Passed, Target: crew.Next{}, SessionStarted: crew.Some(t0.Add(7 * time.Second)), Usage: usage,
 		},
+		crew.ActionFunctionAsked{EventHead: head(10), Action: "label", Bot: developer},
+		crew.ActionFunctionStopAsked{EventHead: head(10), Action: "label"},
+		crew.ActionFunctionEnded{EventHead: head(10), Action: "label", Outcome: crew.FunctionOutcome{
+			Verdict: crew.Some(crew.Passed), Reason: crew.NewShellReason("label: passed"),
+		}},
+		crew.ActionEnded{
+			EventHead: head(10), Action: "label", End: crew.EndSucceeded{Reason: crew.NewSessionText("label: passed")},
+			Verdict: crew.Passed, Target: crew.Next{},
+		},
 		crew.ActionShellAsked{EventHead: head(11), Action: "judge", Bot: developer},
 		crew.ActionShellStopAsked{EventHead: head(12), Action: "judge"},
 		crew.ActionShellEnded{EventHead: head(13), Action: "judge", Outcome: crew.ShellOutcome{
@@ -126,12 +135,13 @@ func actionEvents() []crew.RunEvent {
 }
 
 // routeEvents are the events of the run's route, one step of each kind,
-// and its release.
+// a shell step and a function step stopped, and its release.
 func routeEvents() []crew.RunEvent {
 	return []crew.RunEvent{
 		crew.RouteChosen{EventHead: head(15), Route: crew.FailedRoute, Action: "judge", Steps: []crew.StepPlan{
 			{Kind: crew.StepComment}, {Kind: crew.StepReport}, {Kind: crew.StepShell, Shell: "notify"},
-			{Kind: crew.StepMove, To: "needs attention"}, {Kind: crew.StepClose},
+			{Kind: crew.StepFunction, Function: "label"}, {Kind: crew.StepMove, To: "needs attention"},
+			{Kind: crew.StepClose},
 		}},
 		crew.RunLookupAsked{EventHead: head(16)},
 		crew.RunLookupDone{EventHead: head(17), PullRequest: pr45},
@@ -140,6 +150,9 @@ func routeEvents() []crew.RunEvent {
 		crew.StepAsked{EventHead: head(20), Step: 2},
 		crew.StepShellStopAsked{EventHead: head(21), Step: 2},
 		crew.StepEnded{EventHead: head(22), Step: 2, Outcome: crew.StepStopped{Reason: crew.NewShellReason("stopped")}},
+		crew.StepAsked{EventHead: head(22), Step: 3},
+		crew.StepFunctionStopAsked{EventHead: head(22), Step: 3},
+		crew.StepEnded{EventHead: head(22), Step: 3, Outcome: crew.StepStopped{Reason: crew.NewShellReason("stopped")}},
 		crew.RunReleased{EventHead: head(23)},
 	}
 }
@@ -216,8 +229,8 @@ func TestEveryLineIsVersion3OfTheCrewRunAndAnActionsLinesMarkItsStartAndEnd(t *t
 			started = append(started, l["action"])
 		}
 	}
-	if want := []any{"lfg", "judge"}; !reflect.DeepEqual(ended, want) || !reflect.DeepEqual(started, want) {
-		t.Errorf("started %v and ended %v, want lfg's then judge's", started, ended)
+	if want := []any{"lfg", "label", "judge"}; !reflect.DeepEqual(ended, want) || !reflect.DeepEqual(started, want) {
+		t.Errorf("started %v and ended %v, want lfg's, label's then judge's", started, ended)
 	}
 }
 

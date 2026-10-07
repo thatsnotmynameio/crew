@@ -157,6 +157,20 @@ type ActionFailure struct {
 	Log string
 }
 
+// needsWorkspace reports whether any of r's actions needs the run's
+// worktree: a session or a shell action. A function needs none (R25); it
+// gets the run's worktree when the run has one.
+func (r Rule) needsWorkspace() bool {
+	return slices.ContainsFunc(r.Actions, func(a Action) bool {
+		switch a.Kind.(type) {
+		case SessionSpec, ShellSpec:
+			return true
+		case FunctionSpec:
+		}
+		return false
+	})
+}
+
 // hasSession reports whether any of r's actions is a session.
 func (r Rule) hasSession() bool {
 	return slices.ContainsFunc(r.Actions, func(a Action) bool {

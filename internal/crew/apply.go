@@ -158,6 +158,24 @@ func (e ActionShellEnded) apply(r RuleRun) RuleRun {
 	})
 }
 
+func (e ActionFunctionAsked) apply(r RuleRun) RuleRun {
+	return r.withAction(e.Action, func(a ActionRun) ActionRun {
+		a.state = InFunction{Started: e.At}
+		return a
+	})
+}
+
+func (e ActionFunctionStopAsked) apply(r RuleRun) RuleRun {
+	return r.withAction(e.Action, func(a ActionRun) ActionRun { return a })
+}
+
+func (e ActionFunctionEnded) apply(r RuleRun) RuleRun {
+	return r.withAction(e.Action, func(a ActionRun) ActionRun {
+		a.function = Some(e.Outcome)
+		return a
+	})
+}
+
 // apply ends the action with what the event recorded, which, for an end
 // Decide returned, is what the action run already holds. A session that
 // started in this run and ended well ends on the open questions at its
@@ -214,6 +232,8 @@ func (e StepAsked) apply(r RuleRun) RuleRun {
 }
 
 func (StepShellStopAsked) apply(r RuleRun) RuleRun { return r }
+
+func (StepFunctionStopAsked) apply(r RuleRun) RuleRun { return r }
 
 // apply settles the step, which is no longer in flight.
 func (e StepEnded) apply(r RuleRun) RuleRun {

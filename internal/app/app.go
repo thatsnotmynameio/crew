@@ -210,6 +210,7 @@ type built struct {
 	cfg       *config.Config
 	tracker   port.Tracker
 	harnesses []engine.AgentHarness
+	functions map[crew.FunctionUse]engine.Function
 }
 
 // build loads the config and builds its adapters: the tracker, and the
@@ -221,9 +222,11 @@ type built struct {
 // fills it from its listings (KTD10). A route that comments or closes needs
 // a tracker that can, a port.Commenter or a port.Closer (KTD7), and a
 // session that may wait for answers one that lists comments, a
-// port.CommentLister (KTD-W5).
+// port.CommentLister (KTD-W5). Every function use is built once, from its
+// parameters, so a parameter its function refuses stops crew before it
+// polls (R28).
 func build(o Options) (built, error) {
-	cfg, err := config.Load(o.Root, o.GlobalConfig)
+	cfg, err := config.Load(o.Root, o.GlobalConfig, o.Registry.Functions())
 	if err != nil {
 		return built{}, err
 	}
@@ -237,6 +240,8 @@ func build(o Options) (built, error) {
 			harnesses = append(harnesses, engine.AgentHarness{Agent: a.Name, Harness: harness})
 		}
 	}
+	functions, err := buildFunctions(o.Registry, cfg.Functions)
+	errs = append(errs, err)
 	if err := errors.Join(errs...); err != nil {
 		return built{}, err
 	}
@@ -247,7 +252,30 @@ func build(o Options) (built, error) {
 		waitingSessions(cfg.Tracker, tracker, cfg.Rules)); err != nil {
 		return built{}, err
 	}
-	return built{cfg: cfg, tracker: tracker, harnesses: harnesses}, nil
+	return built{cfg: cfg, tracker: tracker, harnesses: harnesses, functions: functions}, nil
+}
+
+// buildFunctions builds the function of each use through r, from the use's
+// parameters as they render for a sample issue, and returns them by use
+// with the binding that renders the parameters for each call (KTD-F7). A
+// parameter the function refuses is an error at that parameter's line; any
+// other error is at the use's (KTD-F11).
+func buildFunctions(r registry.Registry, uses []config.FunctionUse) (map[crew.FunctionUse]engine.Function, error) {
+	out := make(map[crew.FunctionUse]engine.Function, len(uses))
+	var errs []error
+	for _, use := range uses {
+		f, err := r.Function(string(use.Use), string(use.Function), use.Section)
+		if refused, ok := errors.AsType[port.RefusedParameterError](err); ok {
+			errs = append(errs, use.Refused(refused.Parameter, refused.Reason))
+			continue
+		}
+		if err != nil {
+			errs = append(errs, use.Failed(err))
+			continue
+		}
+		out[use.Use] = engine.Function{Function: f, Bind: use.Bind}
+	}
+	return out, errors.Join(errs...)
 }
 
 // bots makes the bots the config names act, through Options.Bots, and
@@ -283,6 +311,7 @@ func (b built) engineConfig(o Options, bots Bots) engine.Config {
 		UsageInStatus:     b.cfg.UsageInStatus,
 		Tracker:           b.tracker,
 		Harnesses:         b.harnesses,
+		Functions:         b.functions,
 		Workspace:         o.Workspace(o.Root),
 		Shell:             o.Shell,
 		Journal:           o.journal(),

@@ -16,9 +16,14 @@ import (
 // tests, so they pin crew's behaviour and never a real repository's setup.
 const translation = "testdata/translation"
 
+// translationFunctions registers translation's invented function.
+func translationFunctions() map[string][]crew.Verdict {
+	return map[string][]crew.Verdict{"word-count": {"too_long"}}
+}
+
 // ruleSummary is how a rule loads, its actions summed up as "session S:
-// agent A, bot B, wait W" or "shell S", each followed by its on as "; verdict to
-// target", and its routes as "route: step, step".
+// agent A, bot B, wait W", "shell S" or "function S: F", each followed by
+// its on as "; verdict to target", and its routes as "route: step, step".
 type ruleSummary struct {
 	name    crew.RuleName
 	labels  crew.Labels
@@ -33,9 +38,10 @@ type ruleSummary struct {
 // action by name, each action's on, each route's steps in order; its
 // tracker's bot and every agent's; its board, one column per rule with
 // actions when it sets none; its shell actions' scripts, verdicts and
-// resume; and its prompts as they are written.
+// resume; its function uses with their parameters; and its prompts as they
+// are written.
 func TestAFullConfigLoads(t *testing.T) {
-	cfg, err := config.Load(translation, "")
+	cfg, err := config.Load(translation, "", translationFunctions())
 	if err != nil {
 		t.Fatalf("Load(%s) = %v", translation, err)
 	}
@@ -75,11 +81,34 @@ func TestAFullConfigLoads(t *testing.T) {
 	if got := sessionNamed(t, translationRule, "draft").Prompt.Text(); got != wantPrompt {
 		t.Errorf("draft's prompt = %q, want %q", got, wantPrompt)
 	}
+	pageLength(t, cfg)
+}
+
+// pageLength checks translation's function uses: the page-length action,
+// whose use replaces its preset's most, and the word-count step.
+func pageLength(t *testing.T, cfg *config.Config) {
+	t.Helper()
+	uses := make([]crew.FunctionUse, len(cfg.Functions))
+	for i, u := range cfg.Functions {
+		uses[i] = u.Use
+	}
+	want := []crew.FunctionUse{"rules.translation.actions[3]", "rules.proofreading.routes.rejected[2]"}
+	if !reflect.DeepEqual(uses, want) {
+		t.Fatalf("function uses = %q, want %q", uses, want)
+	}
+	var params struct {
+		Page string `yaml:"page"`
+		Most int    `yaml:"most"`
+	}
+	if err := cfg.Functions[0].Section(&params); err != nil || params.Page != "https://example.com/issues/42" ||
+		params.Most != 1500 {
+		t.Errorf("page-length's parameters = %+v, %v; want the sample issue's URL and 1500", params, err)
+	}
 }
 
 // A full config loads its answering list as written (R38).
 func TestAFullConfigLoadsItsAnsweringApps(t *testing.T) {
-	cfg, err := config.Load(translation, "")
+	cfg, err := config.Load(translation, "", translationFunctions())
 	if err != nil {
 		t.Fatalf("Load(%s) = %v", translation, err)
 	}
@@ -105,6 +134,7 @@ func wantTranslationRules() []ruleSummary {
 				"session draft: agent translator, bot linguist, wait 30m0s",
 				"shell glossary-kept",
 				"shell draft-pushed; unpushed to unpushed",
+				"function page-length: word-count",
 			},
 			routes: []string{
 				"passed: move translation:drafted",
@@ -124,7 +154,7 @@ func wantTranslationRules() []ruleSummary {
 			routes: []string{
 				"passed: move translation:published",
 				"failed: report, move translation:rejected",
-				"rejected: comment {{.Issue.Ref}} was rejected in {{.Rule}}., glossary-kept, close",
+				"rejected: comment {{.Issue.Ref}} was rejected in {{.Rule}}., glossary-kept, function word-count, close",
 			},
 		},
 		{
@@ -168,6 +198,8 @@ func summarize(rules []crew.Rule, notify map[crew.RuleName]bool) []ruleSummary {
 				action = fmt.Sprintf("session %s: agent %s, bot %s, wait %v", a.Name, k.Agent.Name, k.Bot.Name, k.Wait)
 			case crew.ShellSpec:
 				action = fmt.Sprintf("shell %s", a.Name)
+			case crew.FunctionSpec:
+				action = fmt.Sprintf("function %s: %s", a.Name, k.Function)
 			}
 			if on := onNames(a.On); on != "" {
 				action += "; " + on
@@ -196,6 +228,8 @@ func stepNames(steps []crew.Step) string {
 			names[i] = "comment " + s.Template.Text()
 		case crew.ShellStep:
 			names[i] = string(s.Name)
+		case crew.FunctionStep:
+			names[i] = "function " + string(s.Name)
 		}
 	}
 	return strings.Join(names, ", ")

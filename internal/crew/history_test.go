@@ -293,7 +293,9 @@ func takenAs(start Start) RunEvent {
 }
 
 func TestTheStartOfARunFollowsItsLastRun(t *testing.T) {
-	cases := slices.Concat(passedStarts(), restartStarts(), crashStarts(), passedOnStarts(), passedOnEdges())
+	cases := slices.Concat(
+		passedStarts(), restartStarts(), functionStarts(), crashStarts(), passedOnStarts(), passedOnEdges(),
+	)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rule := sequence()

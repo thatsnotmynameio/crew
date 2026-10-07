@@ -201,10 +201,10 @@ func passesOn(last RuleRun) bool {
 	return reopen && w.Name == opened.Workspace.Name
 }
 
-// started reports whether the action run started: its session or script
-// was asked for. An action that ended without starting failed before it
-// could: a stop or time-up kept it from starting, its workspace could not
-// be made, or its prompt did not render.
+// started reports whether the action run started: its session, script or
+// function was asked for. An action that ended without starting failed
+// before it could: a stop or time-up kept it from starting, its workspace
+// could not be made, or its prompt did not render.
 func (a ActionRun) started() bool {
 	switch s := a.state.(type) {
 	case AwaitingTurn, DoneInEarlierRun, NotRun:
@@ -217,7 +217,7 @@ func (a ActionRun) started() bool {
 			default:
 			}
 		}
-	case StartingSession, InSession, InShell:
+	case StartingSession, InSession, InShell, InFunction:
 	}
 	return true
 }
@@ -251,9 +251,9 @@ func worktreeOf(last RuleRun) (Workspace, string, bool) {
 // other than PassedRoute or never chose one, restarts at, and whether rule
 // still has it; the action rule lost otherwise. It is the action at last's
 // cursor, or the action after it when that action went on to the next and
-// crew did not live to start it. A shell action that ran and gave a
-// verdict of its own after a session restarts at the latest session before
-// it, unless its definition resumes at itself.
+// crew did not live to start it. A shell or function action that ran and
+// gave a verdict of its own after a session restarts at the latest session
+// before it, unless its definition resumes at itself.
 func restartPoint(last RuleRun, rule Rule) (ActionName, bool) {
 	a, _ := last.Cursor()
 	if f, ok := a.state.(Finished); ok && last.cursor+1 < len(last.actions) {
@@ -265,27 +265,49 @@ func restartPoint(last RuleRun, rule Rule) (ActionName, bool) {
 	if !rule.has(a.name) {
 		return a.name, false
 	}
-	spec, shell := rule.Action(a.name).Kind.(ShellSpec)
-	if !shell || spec.ResumeSelf || !a.judgedItself() {
+	if !judges(rule.Action(a.name).Kind) || !a.judgedItself() {
 		return a.name, true
 	}
 	return rule.sessionBefore(a.name), true
 }
 
-// judgedItself reports whether the shell action run ran its script to its
-// end and ended with the verdict its exit status gave: not one that never
-// ran, could not finish, or that crew stopped.
+// judges reports whether an action of kind judges the session before it,
+// so a resume after it restarts at that session: a shell or function
+// action whose definition does not resume at itself.
+func judges(kind ActionKind) bool {
+	switch k := kind.(type) {
+	case ShellSpec:
+		return !k.ResumeSelf
+	case FunctionSpec:
+		return !k.ResumeSelf
+	case SessionSpec:
+	}
+	return false
+}
+
+// judgedItself reports whether the shell or function action run ran to its
+// end and ended with the verdict it gave itself, its script's exit status
+// or its function's returned verdict: not one that never ran, could not
+// finish, or that crew stopped.
 func (a ActionRun) judgedItself() bool {
 	f, ok := a.state.(Finished)
-	if !ok {
-		return false
-	}
-	shell, ran := a.shell.Get()
-	if _, exited := shell.Status.Get(); !ran || !exited {
+	if !ok || !a.gaveVerdict() {
 		return false
 	}
 	failed, isFailed := f.End.(EndFailed)
 	return !isFailed || failed.Cause != CauseStopped
+}
+
+// gaveVerdict reports whether the action run's script exited, or its
+// function returned a verdict.
+func (a ActionRun) gaveVerdict() bool {
+	if shell, ran := a.shell.Get(); ran {
+		_, exited := shell.Status.Get()
+		return exited
+	}
+	function, ran := a.function.Get()
+	_, returned := function.Verdict.Get()
+	return ran && returned
 }
 
 // has reports whether r has an action named name.

@@ -24,7 +24,7 @@ It holds a slot of its queue while its route runs, ends through `passed` even wh
 
 ### Action
 
-One step of a rule's sequence: a session, an unattended coding-agent session written in the rule with its prompt and run on its agent's harness, or a shell action, which the config defines once by name. A session is named after its agent unless the rule names it, and no two actions of a rule share a name.
+One step of a rule's sequence: a session, an unattended coding-agent session written in the rule with its prompt and run on its agent's harness, a shell action, which the config defines once by name, or a function, which crew registers. A session is named after its agent unless the rule names it, and no two actions of a rule share a name.
 
 A rule's actions run one at a time, in the listed order, in the rule run's one workspace. Each ends with a verdict, which its `on:` sends to the next action or to one of the rule's routes.
 
@@ -46,19 +46,25 @@ A named shell script the config defines once, under its top-level `actions`, and
 
 It reads the issue from environment variables, and the run's latest session's name, prompt and last message from a variable and the files it names, so it can judge that session. It acts as that session's bot. As a route's step it has no verdict: one that does not exit 0 is recorded as failed, and the route goes on.
 
+### Function
+
+Go code built into crew that a rule calls by name, as an action of its sequence or as a step of a route, with parameters written where it is called or preset by a top-level action under `actions`, whose `name` is the function. A use's parameters replace its preset's key by key. Each parameter is text, a number or a boolean, and text is a template over the issue, filled just before each call. crew checks every use's parameters when it loads the config.
+
+A function declares the verdicts it can return, beyond `passed` and `failed`. It runs in crew's process, in the run's workspace when there is one, and never makes crew create one. It writes into the run's log, acts as the run's latest session's bot, and has a shell action's time limit. As a route's step, one that does not return `passed` is recorded as failed, and the route goes on. crew registers no function yet.
+
 ### Check
 
 The former name of a shell action that judged a session, run after it; see Shell action. The config no longer has checks.
 
 ### Verdict
 
-An action's result: `passed`, `failed`, or another name the action's `on:` maps. A session gives `passed` or `failed` by how it ended, or the verdict it wrote to the file crew gave it; a shell action gives one by its exit status. A stop, an action that cannot start, and a verdict the action's `on:` does not name give `failed`.
+An action's result: `passed`, `failed`, or another name the action's `on:` maps. A session gives `passed` or `failed` by how it ended, or the verdict it wrote to the file crew gave it; a shell action gives one by its exit status; a function gives the one it returns. A stop, an action that cannot start, a verdict the action's `on:` does not name, and a verdict a function returns without declaring it give `failed`.
 
 The action's `on:` maps each verdict to `next`, the next action, or to a route. Without an entry, `passed` goes to `next` and every other verdict to `failed`.
 
 ### Route
 
-A named way to end a rule run: steps that run in order and end by moving the item to a label or closing the issue. A step is a move, a close, a comment from a template that names only what crew knows of the run, the failure report, or a shell action.
+A named way to end a rule run: steps that run in order and end by moving the item to a label or closing the issue. A step is a move, a close, a comment from a template that names only what crew knows of the run, the failure report, a shell action or a function.
 
 A rule with actions declares `passed`, which its run takes after its last action, and `failed`; a rule without actions declares `passed` alone. A step that fails is recorded and the route goes on, so its final move or close still happens. A route is finished once its final move or close landed, or was dropped because the item moved meanwhile.
 
@@ -76,7 +82,7 @@ One attempt at an action on an issue, within a rule run, from the moment it star
 
 ### Workspace
 
-The isolated checkout a rule run works in: a git worktree on its own branch, `issue-<key>-<rule>`, shared by every action of the run and its route's shell steps, and kept after the run ends. Only a rule with actions gets one. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
+The isolated checkout a rule run works in: a git worktree on its own branch, `issue-<key>-<rule>`, shared by every action of the run and its route's shell and function steps, and kept after the run ends. Only a rule with a session or a shell action gets one; a function needs none. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
 
 ### Priority
 
@@ -108,7 +114,7 @@ An entry needs you when its run ended through any route other than `passed`, or 
 
 ### Resume
 
-What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action that judged a session before it, the new run starts at that session instead, unless the shell action's definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through. When an earlier session at its action asked a question, it is told instead that a question was asked, and gets the answers that count.
+What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action or a function that judged a session before it, the new run starts at that session instead, unless its definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through. When an earlier session at its action asked a question, it is told instead that a question was asked, and gets the answers that count.
 
 When the last run chose `passed` and its final move or close never landed, crew runs only the `passed` route again, in that run's workspace when it still exists. When the workspace to reopen is gone, the run starts over at the first action in a new one, since the actions before the resume point would not have run there. A run that started no action and opened no workspace, such as one stopped at its take, passes its own start on to the next run. A run that finished its `passed` route is never resumed.
 
@@ -170,7 +176,7 @@ crew identifies an issue by its repository and its key, so two repositories' iss
 
 A GitHub identity of crew's own: a private GitHub App created with `crew bots create`, owned by the account that owns the repository, whose private key stays on the machine that created it. It acts on GitHub as `<slug>[bot]`, such as `crew-tester[bot]`.
 
-You can have many bots, and a bot is only an identity: it carries no model, prompt or settings. `tracker.bot` names the bot crew's own writes on GitHub act as, and the default bot of every agent; an agent's `bot` names the one its sessions act as. A shell action, as an action or a route's step, acts as the run's latest session's bot, or as `tracker.bot` before any session. Commits stay yours, with the bot as co-author. Without a bot, crew and its sessions act as your `gh` login.
+You can have many bots, and a bot is only an identity: it carries no model, prompt or settings. `tracker.bot` names the bot crew's own writes on GitHub act as, and the default bot of every agent; an agent's `bot` names the one its sessions act as. A shell action or a function, as an action or a route's step, acts as the run's latest session's bot, or as `tracker.bot` before any session. Commits stay yours, with the bot as co-author. Without a bot, crew and its sessions act as your `gh` login.
 
 A bot acts when crew could make it act at startup. One that cannot act then stays that way until crew restarts, and its actions act as you. A bot that acts can stop acting while crew runs: when crew's own writes as `tracker.bot` go back to you, which lasts until restart, or when its token fails to renew, which lasts until a renewal succeeds. An action's cost counts on the identity it acted as.
 

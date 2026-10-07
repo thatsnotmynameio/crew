@@ -253,3 +253,124 @@ func given(tb testing.TB, events []RunEvent) RuleRun {
 func failure(action ActionName) ActionFailure {
 	return ActionFailure{Action: action, Workspace: runWS().Name, Log: runLog}
 }
+
+// The function fixtures: the test rule with check, a call of the function
+// check-pr whose text parameter title renders the issue's ref and which
+// declares blocked, in place of judge, sending blocked to the route
+// blocked.
+
+// mustParameter returns the text parameter name, parsed from text, which
+// must parse.
+func mustParameter(name, text string) TextParameter {
+	tmpl, err := ParseParameterTemplate(name, text)
+	if err != nil {
+		panic(err)
+	}
+	return TextParameter{Name: name, Template: tmpl}
+}
+
+// checkSpec is check's call.
+func checkSpec() FunctionSpec {
+	return FunctionSpec{
+		Function: "check-pr", Use: "rules.implement.actions[2]",
+		Texts: []TextParameter{mustParameter("title", "Fixes {{.Issue.Ref}}")}, Verdicts: []Verdict{"blocked"},
+	}
+}
+
+// badCheckSpec is check's call with a title that renders for the sample
+// issue's title, and fails on the shorter "Issue 9".
+func badCheckSpec() FunctionSpec {
+	s := checkSpec()
+	s.Texts = []TextParameter{mustParameter("title", "{{slice .Issue.Title 0 10}}")}
+	return s
+}
+
+// checkError returns the reason a text that does not render gives.
+func checkError() string {
+	_, err := badCheckSpec().RenderTexts(NewIssue(testIssue()))
+	if err == nil {
+		panic("the bad text rendered")
+	}
+	return err.Error()
+}
+
+// checkAction is the action check, calling spec.
+func checkAction(spec FunctionSpec) Action {
+	return Action{Name: "check", Kind: spec, On: On{"blocked": ToRoute{Route: "blocked"}}}
+}
+
+// withCheck replaces judge with check.
+func withCheck(d RunDefinition) RunDefinition {
+	d.Rule.Actions = slices.Clone(d.Rule.Actions)
+	d.Rule.Actions[2] = checkAction(checkSpec())
+	return d
+}
+
+// withBadCheck replaces judge with check, whose text does not render for
+// the test issue.
+func withBadCheck(d RunDefinition) RunDefinition {
+	d = withCheck(d)
+	d.Rule.Actions[2] = checkAction(badCheckSpec())
+	return d
+}
+
+// checkResumesSelf makes check resume at itself.
+func checkResumesSelf(d RunDefinition) RunDefinition {
+	d = withCheck(d)
+	spec := checkSpec()
+	spec.ResumeSelf = true
+	d.Rule.Actions[2] = checkAction(spec)
+	return d
+}
+
+// onlyCheck makes check the test rule's only action.
+func onlyCheck(d RunDefinition) RunDefinition {
+	d.Rule.Actions = []Action{checkAction(checkSpec())}
+	return d
+}
+
+// checkTake is the take of install, lfg and check at minute 0.
+func checkTake() RunEvent {
+	e, _ := taken().(RunTaken)
+	e.Actions = []ActionName{"install", "lfg", "check"}
+	return e
+}
+
+// onlyCheckTake is the take of check alone at minute 0.
+func onlyCheckTake() RunEvent {
+	e, _ := taken().(RunTaken)
+	e.Actions = []ActionName{"check"}
+	return e
+}
+
+// checked returns events, a run of the test rule, with its take naming
+// check in place of judge.
+func checked(events []RunEvent) []RunEvent {
+	events = slices.Clone(events)
+	events[0] = checkTake()
+	return events
+}
+
+// checking is lfg passed at minute 5, and check asked as crew-developer.
+func checking() []RunEvent {
+	return append(checked(inSession()),
+		ActionSessionEnded{EventHead: eh(5), Action: "lfg", Outcome: succeeded("done"), Usage: usage},
+		lfgPassed(),
+		ActionFunctionAsked{EventHead: eh(5), Action: "check", Bot: developer},
+	)
+}
+
+// functionEnded is the fact of action's function that ended as outcome
+// says at minute n.
+func functionEnded(n int, action ActionName, outcome FunctionOutcome) Fact {
+	return FunctionEnded{FactHead: fh(n), Action: action, Outcome: outcome}
+}
+
+// checkStep is check's call as a route's step.
+var checkStep = FunctionStep{Name: "check", Function: checkSpec()}
+
+// functionStepEnded is the fact of the route's function step at index
+// step that ended as o says at minute n.
+func functionStepEnded(n, step int, o FunctionOutcome) Fact {
+	return StepFunctionEnded{FactHead: fh(n), Step: step, Outcome: o}
+}

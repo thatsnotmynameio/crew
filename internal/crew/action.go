@@ -6,16 +6,18 @@ import (
 )
 
 // ActionRun is one run of an action inside a rule run: the action's name,
-// its session, how its shell script ended, and where it stands. The
+// its session, how its shell script or its function ended, and where it
+// stands. The
 // workspace, log and pull requests belong to the rule run, which all its
 // actions share. It cannot be changed once built: a rule run's events make
 // new ones.
 type ActionRun struct {
-	name    ActionName
-	session Optional[time.Time]
-	usage   Usage
-	shell   Optional[ShellOutcome]
-	state   ActionRunState
+	name     ActionName
+	session  Optional[time.Time]
+	usage    Usage
+	shell    Optional[ShellOutcome]
+	function Optional[FunctionOutcome]
+	state    ActionRunState
 }
 
 // newActionRun returns the run of the action named name, which its rule run
@@ -46,6 +48,10 @@ func (a ActionRun) Spend() Spend {
 // ended.
 func (a ActionRun) Shell() Optional[ShellOutcome] { return a.shell }
 
+// Function returns how its function ended, once a function action's
+// function ended.
+func (a ActionRun) Function() Optional[FunctionOutcome] { return a.function }
+
 // State returns where the action run stands.
 func (a ActionRun) State() ActionRunState { return a.state }
 
@@ -55,11 +61,11 @@ func (a ActionRun) Ended() bool {
 	return ended
 }
 
-// running reports whether the action run has a session or a script that
-// was asked for and has not ended.
+// running reports whether the action run has a session, a script or a
+// function that was asked for and has not ended.
 func (a ActionRun) running() bool {
 	switch a.state.(type) {
-	case StartingSession, InSession, InShell:
+	case StartingSession, InSession, InShell, InFunction:
 		return true
 	case AwaitingTurn, DoneInEarlierRun, NotRun, Finished:
 	}
@@ -67,8 +73,8 @@ func (a ActionRun) running() bool {
 }
 
 // ActionRunState is where an action run stands: AwaitingTurn,
-// DoneInEarlierRun, StartingSession, InSession, InShell, Finished or
-// NotRun.
+// DoneInEarlierRun, StartingSession, InSession, InShell, InFunction,
+// Finished or NotRun.
 //
 //sumtype:decl
 type ActionRunState interface {
@@ -97,6 +103,12 @@ type InShell struct {
 	Started time.Time
 }
 
+// InFunction is an action run whose function runs.
+type InFunction struct {
+	// Started is when crew asked for the function to run.
+	Started time.Time
+}
+
 // Finished is an action run that ended, with its verdict and where the
 // verdict leads.
 type Finished struct {
@@ -114,6 +126,7 @@ func (DoneInEarlierRun) actionRunState() {}
 func (StartingSession) actionRunState()  {}
 func (InSession) actionRunState()        {}
 func (InShell) actionRunState()          {}
+func (InFunction) actionRunState()       {}
 func (Finished) actionRunState()         {}
 func (NotRun) actionRunState()           {}
 
@@ -177,13 +190,15 @@ type ActionRunSnapshot struct {
 	SessionStarted Optional[time.Time]
 	Usage          Usage
 	Shell          Optional[ShellOutcome]
+	Function       Optional[FunctionOutcome]
 	State          ActionRunState
 }
 
 // snapshot returns a as plain data, sharing no memory with it.
 func (a ActionRun) snapshot() ActionRunSnapshot {
 	return ActionRunSnapshot{
-		Name: a.name, SessionStarted: a.session, Usage: cloneUsage(a.usage), Shell: a.shell, State: a.state,
+		Name: a.name, SessionStarted: a.session, Usage: cloneUsage(a.usage), Shell: a.shell, Function: a.function,
+		State: a.state,
 	}
 }
 
@@ -191,7 +206,8 @@ func (a ActionRun) snapshot() ActionRunSnapshot {
 // it.
 func restoreAction(s ActionRunSnapshot) ActionRun {
 	return ActionRun{
-		name: s.Name, session: s.SessionStarted, usage: cloneUsage(s.Usage), shell: s.Shell, state: s.State,
+		name: s.Name, session: s.SessionStarted, usage: cloneUsage(s.Usage), shell: s.Shell, function: s.Function,
+		state: s.State,
 	}
 }
 

@@ -2,7 +2,8 @@ package crew
 
 import "time"
 
-// ActionKind is what an action runs: SessionSpec or ShellSpec.
+// ActionKind is what an action runs: SessionSpec, ShellSpec or
+// FunctionSpec.
 //
 //sumtype:decl
 type ActionKind interface {
@@ -41,5 +42,31 @@ type ShellSpec struct {
 	ResumeSelf bool
 }
 
-func (SessionSpec) actionKind() {}
-func (ShellSpec) actionKind()   {}
+// FunctionName is the name a crew function is registered under, which a
+// rule's action or a route's step calls it by.
+type FunctionName string
+
+// FunctionUse identifies one place of the config that calls a function: its
+// key path, such as rules.development.actions[2], unique across the config.
+type FunctionUse string
+
+// FunctionSpec is an action that calls one of crew's functions.
+type FunctionSpec struct {
+	// Function is the function's registered name.
+	Function FunctionName
+	// Use is the place of the config this call was built for.
+	Use FunctionUse
+	// Texts are the use's text parameters, as templates over the issue, in
+	// the order the config writes them.
+	Texts []TextParameter
+	// Verdicts are the verdicts the function declares it can return, beside
+	// Passed and Failed, which any function can.
+	Verdicts []Verdict
+	// ResumeSelf is true when a resume that restarts at the action starts
+	// at the action itself rather than at the latest session before it.
+	ResumeSelf bool
+}
+
+func (SessionSpec) actionKind()  {}
+func (ShellSpec) actionKind()    {}
+func (FunctionSpec) actionKind() {}

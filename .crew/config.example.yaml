@@ -102,7 +102,8 @@
 ##   CREW_PROMPT_FILE                                the session's prompt
 ##   CREW_LAST_MESSAGE_FILE                          the session's last message
 ## A name cannot be a word of the rules' grammar: agent, prompt, name, on,
-## wait, resume, script, verdicts, report, close, move, comment or next.
+## wait, resume, script, verdicts, report, close, move, comment or next, nor
+## the name of a function crew registers.
 # actions:
 #   ## A string is the script.
 #   tests: go test ./...
@@ -120,6 +121,16 @@
 #     ## latest session before it. For a script that checks something outside
 #     ## the worktree, such as CI.
 #     resume: self
+#   ## A mapping with name presets a function: Go code inside crew that a
+#   ## rule calls by name, as an action or a route's step. crew registers no
+#   ## function yet, so this file sets none. A preset's name is the
+#   ## function, resume: self works as for a shell action, and every other
+#   ## key is one of the function's parameters: text, a number or a boolean.
+#   ## Text is a Go template over {{.Issue.Ref}}, {{.Issue.Key}},
+#   ## {{.Issue.Title}} and {{.Issue.URL}}. A rule's action or a route's step
+#   ## names a preset, or a function by its own name, alone or as a mapping's
+#   ## one key whose value holds parameters, which replace the preset's key
+#   ## by key. crew checks every parameter when it loads the config.
 
 ## The live view's board: columns by name, drawn in file order, each with one
 ## label or a list of labels. A column holds a card for each open issue that

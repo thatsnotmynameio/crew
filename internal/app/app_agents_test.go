@@ -46,7 +46,7 @@ func withHarnesses(r *crewRun, tracker port.Tracker, harnesses map[string]port.H
 	for name, h := range harnesses {
 		factories[name] = fake.HarnessFactory(h)
 	}
-	r.opts.Registry = registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)}, factories)
+	r.opts.Registry = registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)}, factories, nil)
 }
 
 // Covers AE4: actions on two harnesses run at once, each on its agent's.

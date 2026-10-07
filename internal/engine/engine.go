@@ -70,6 +70,10 @@ type Config struct {
 	// Shell runs the scripts of the shell actions and route steps. Without
 	// one, every script fails to start, saying crew has no shell.
 	Shell port.Shell
+	// Functions are the functions the rules' function actions and route
+	// steps call, by the use each was built for (KTD-F7). A call whose use
+	// is not among them fails to start.
+	Functions map[crew.FunctionUse]Function
 	// Journal is the run journal, at JournalPath: Prepare loads the past
 	// rule runs from it, and the engine appends each run event to it, so a
 	// failed run resumes after a restart (KTD12). Without one, nothing is
@@ -181,8 +185,8 @@ type Engine struct {
 	inflight int // command goroutines whose final message is still due
 	wg       sync.WaitGroup
 	sessions map[sessionKey]liveSession
-	shells   map[sessionKey]context.CancelFunc // ends each running shell action's script
-	steps    map[stepKey]context.CancelFunc    // ends each running route step's script
+	shells   map[sessionKey]context.CancelFunc // ends each running shell action's script or function
+	steps    map[stepKey]context.CancelFunc    // ends each running route step's script or function
 	recent   []core.Published
 	lastSaid []core.Said      // what the sessions last said, as of the latest said refresh
 	lastBots core.BotsChecked // the bots' live state, as of the last reading that changed it
@@ -499,7 +503,7 @@ func (e *Engine) receive(ctx context.Context, m message) {
 }
 
 // ran keeps the session a SessionStarted started, s, by its rule run and
-// action, and forgets a session or a script once it ended.
+// action, and forgets a session, a script or a function once it ended.
 func (e *Engine) ran(in core.RunInput, s port.Session) {
 	switch in := in.(type) {
 	case core.SessionStarted:
@@ -509,6 +513,10 @@ func (e *Engine) ran(in core.RunInput, s port.Session) {
 	case core.ShellEnded:
 		delete(e.shells, sessionKey{in.Run, in.Action})
 	case core.StepShellEnded:
+		delete(e.steps, stepKey{in.Run, in.Step})
+	case core.FunctionEnded:
+		delete(e.shells, sessionKey{in.Run, in.Action})
+	case core.StepFunctionEnded:
 		delete(e.steps, stepKey{in.Run, in.Step})
 	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
 		core.PullRequestFound, core.AnswersRead:

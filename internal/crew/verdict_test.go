@@ -289,3 +289,80 @@ func TestActionMayWait(t *testing.T) {
 		})
 	}
 }
+
+// returned returns how a function that returned v ended, saying reason.
+func returned(v Verdict, reason string) FunctionOutcome {
+	return FunctionOutcome{Verdict: Some(v), Reason: NewShellReason(reason)}
+}
+
+// functionJudgments are the verdicts of a check function that declares
+// blocked, needs_person, waiting and too-big, with blockedOn its targets.
+var functionJudgments = []struct {
+	name     string
+	outcome  FunctionOutcome
+	stopping bool
+	want     Judged
+}{
+	{
+		name: "a declared verdict its on names is its verdict", outcome: returned("blocked", "check returned blocked"),
+		want: Judged{Verdict: "blocked", End: EndSucceeded{Reason: NewSessionText("check returned blocked")}},
+	},
+	{
+		name: "passed counts, though not declared", outcome: returned(Passed, "check returned passed"),
+		want: Judged{Verdict: Passed, End: EndSucceeded{Reason: NewSessionText("check returned passed")}},
+	},
+	{
+		name:    "failed counts, though not declared, and fails by its function",
+		outcome: returned(Failed, "check returned failed"),
+		want: Judged{Verdict: Failed, End: EndFailed{
+			Reason: NewSessionText("check returned failed"), Cause: CauseFunction,
+		}},
+	},
+	{
+		name: "a declared waiting counts, though its on does not name it", outcome: returned(Waiting, "check waits"),
+		want: Judged{Verdict: Waiting, End: EndSucceeded{Reason: NewSessionText("check waits")}},
+	},
+	{
+		name: "a verdict it does not declare fails, in crew's words", outcome: returned("odd", "check returned odd"),
+		want: Judged{Verdict: Failed, End: EndFailed{
+			Reason: NewSessionText(`the function returned the verdict "odd", which it does not declare`),
+			Cause:  CauseVerdict,
+		}},
+	},
+	{
+		name:    "a declared verdict its on does not name fails, in crew's words",
+		outcome: returned("too-big", "check returned too-big"),
+		want: Judged{Verdict: Failed, End: EndFailed{
+			Reason: NewSessionText(`the function returned the verdict "too-big", which its on: does not name`),
+			Cause:  CauseVerdict,
+		}},
+	},
+	{
+		name:    "a function that returned no verdict fails by its function",
+		outcome: FunctionOutcome{Reason: NewShellReason("check failed: no token")},
+		want: Judged{Verdict: Failed, End: EndFailed{
+			Reason: NewSessionText("check failed: no token"), Cause: CauseFunction,
+		}},
+	},
+	{
+		name: "a stop fails a function, whatever it returned", outcome: returned("blocked", "check was stopped"),
+		stopping: true,
+		want:     Judged{Verdict: Failed, End: EndFailed{Reason: NewSessionText("check was stopped"), Cause: CauseStopped}},
+	},
+	{
+		name:    "a stop fails a function that returned no verdict, as stopped",
+		outcome: FunctionOutcome{Reason: NewShellReason("check was stopped")}, stopping: true,
+		want: Judged{Verdict: Failed, End: EndFailed{Reason: NewSessionText("check was stopped"), Cause: CauseStopped}},
+	},
+}
+
+func TestJudgeFunction(t *testing.T) {
+	check := FunctionSpec{Function: "check", Verdicts: []Verdict{"blocked", "needs_person", Waiting, "too-big"}}
+	for _, tt := range functionJudgments {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := judgeFunction(check, blockedOn, tt.outcome, tt.stopping); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("judgeFunction = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}

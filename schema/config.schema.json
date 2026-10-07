@@ -101,7 +101,7 @@
       }
     },
     "actions": {
-      "description": "Shell actions by name, each defined once and named in rules' actions and routes. A name cannot be a word of the rules' grammar: agent, prompt, name, on, wait, resume, script, verdicts, report, close, move, comment or next.",
+      "description": "Shell actions and function presets by name, each defined once and named in rules' actions and routes. A name cannot be a word of the rules' grammar: agent, prompt, name, on, wait, resume, script, verdicts, report, close, move, comment or next, nor the name of a function crew registers.",
       "type": "object",
       "propertyNames": {
         "not": {
@@ -109,7 +109,7 @@
         }
       },
       "additionalProperties": {
-        "description": "The shell action: its script, or a mapping with its script and how it ends.",
+        "description": "The shell action: its script, or a mapping with its script and how it ends. Or a function preset: a mapping with name, the function, and its parameters.",
         "oneOf": [
           { "type": "string", "minLength": 1 },
           {
@@ -136,6 +136,26 @@
                 "description": "self: a resume that restarts at this action starts at it, rather than at the latest session before it, for a script that checks something outside the worktree, such as CI.",
                 "enum": ["self"]
               }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["name"],
+            "not": { "required": ["script"] },
+            "properties": {
+              "name": {
+                "description": "The function the preset calls: one of the functions crew registers. Every other key besides resume is one of its parameters, which a rule's use replaces key by key, so a preset cannot set a parameter called name, resume or script.",
+                "type": "string",
+                "minLength": 1
+              },
+              "resume": {
+                "description": "self: a resume that restarts at this action starts at it, rather than at the latest session before it.",
+                "enum": ["self"]
+              }
+            },
+            "additionalProperties": {
+              "description": "A parameter of the function: text, a Go template over {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}} and {{.Issue.URL}}, a number or a boolean.",
+              "type": ["string", "number", "boolean"]
             }
           }
         ]
@@ -196,7 +216,7 @@
             }
           },
           "actions": {
-            "description": "The rule's actions, run one after another in one worktree and branch: the name of one of actions, a session with its agent and prompt, or a mapping whose one key names one of actions, with its on and name beside it. Without actions, crew moves the item to running and on through its passed route itself, without a session, so the rule spends no tokens.",
+            "description": "The rule's actions, run one after another in one worktree and branch: the name of one of actions or of a function crew registers, a session with its agent and prompt, or a mapping whose one key names one of actions or a function, with its on and name beside it. Without actions, crew moves the item to running and on through its passed route itself, without a session, so the rule spends no tokens.",
             "type": "array",
             "items": {
               "oneOf": [
@@ -260,8 +280,17 @@
                     }
                   },
                   "additionalProperties": {
-                    "description": "The name of one of actions, with an empty value: a shell action takes no parameters.",
-                    "type": "null"
+                    "description": "The name of one of actions or of a function crew registers. A shell action takes no parameters, so its value is empty; a function's is empty or its parameters, which replace its preset's key by key.",
+                    "oneOf": [
+                      { "type": "null" },
+                      {
+                        "type": "object",
+                        "additionalProperties": {
+                          "description": "A parameter of the function: text, a Go template over {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}} and {{.Issue.URL}}, a number or a boolean.",
+                          "type": ["string", "number", "boolean"]
+                        }
+                      }
+                    ]
                   }
                 }
               ]
@@ -282,7 +311,7 @@
                   "items": {
                     "oneOf": [
                       {
-                        "description": "report, which posts crew's report naming the action that ended the run and its log; close, which closes the issue; or the name of one of actions.",
+                        "description": "report, which posts crew's report naming the action that ended the run and its log; close, which closes the issue; or the name of one of actions or of a function crew registers.",
                         "type": "string",
                         "minLength": 1
                       },
@@ -315,8 +344,17 @@
                         "minProperties": 1,
                         "maxProperties": 1,
                         "additionalProperties": {
-                          "description": "The name of one of actions, with an empty value.",
-                          "type": "null"
+                          "description": "The name of one of actions or of a function crew registers. A shell action's value is empty; a function's is empty or its parameters, which replace its preset's key by key.",
+                          "oneOf": [
+                            { "type": "null" },
+                            {
+                              "type": "object",
+                              "additionalProperties": {
+                                "description": "A parameter of the function: text, a Go template over {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}} and {{.Issue.URL}}, a number or a boolean.",
+                                "type": ["string", "number", "boolean"]
+                              }
+                            }
+                          ]
                         }
                       }
                     ]
