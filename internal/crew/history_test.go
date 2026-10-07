@@ -373,6 +373,41 @@ func TestARunWithGapsFolds(t *testing.T) {
 	}
 }
 
+// A route's step whose end the journal lost settles as given up, so the
+// ends after it still count: a passed route whose final move landed is
+// finished, and the next run starts fresh, not with the passed route alone.
+func TestARouteStepWhoseEndWasNotRecordedLetsTheRouteFinish(t *testing.T) {
+	reportFirst := func(d RunDefinition) RunDefinition {
+		d.Rule.Routes = slices.Clone(d.Rule.Routes)
+		d.Rule.Routes[0] = Route{Name: PassedRoute, Steps: []Step{ReportStep{}, MoveStep{To: labelDone}}}
+		return d
+	}
+	events := past{
+		change: reportFirst,
+		facts:  judgeEnds(0, "judge passed", settled(7, 0, StepLanded{}), settled(8, 1, StepLanded{})),
+	}.events(t)
+	lost := slices.IndexFunc(events, func(e RunEvent) bool {
+		ended, ok := e.(StepEnded)
+		return ok && ended.Step == 0
+	})
+	if lost < 0 {
+		t.Fatalf("events = %#v, want the report's end", events)
+	}
+	events = slices.Delete(events, lost, lost+1)
+
+	h := folded(events)
+	if got := h.Start(testID, reportFirst(sequence()).Rule); got != (StartFresh{}) {
+		t.Errorf("Start = %#v, want fresh", got)
+	}
+	run, _ := h.LastRun(testID, "implement")
+	released, _ := run.Phase().(ReleasedPhase)
+	route, _ := released.Route.Get()
+	want := []StepOutcome{StepGivenUp{Reason: "not recorded"}, StepLanded{}}
+	if !reflect.DeepEqual(route.Settled, want) {
+		t.Errorf("settled = %#v, want %#v", route.Settled, want)
+	}
+}
+
 // hh returns the head of an event of run at minute n, of the rule
 // implement on issue #9.
 func hh(run RuleRunID, n int) EventHead {

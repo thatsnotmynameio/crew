@@ -200,6 +200,9 @@ func TestAReleasedRunKeepsItsRouteAndHowItsStepsSettled(t *testing.T) {
 	}
 }
 
+// A route asks its steps in order, one at a time. An event of a step that
+// already settled, or past the route, changes nothing; one of a later step
+// means the journal lost the ends before it, which settle as not recorded.
 func TestARouteStepsInOrderAndOneAtATime(t *testing.T) {
 	run := given(t, lfgFailed())
 	p, _ := run.Phase().(RoutingPhase)
@@ -210,9 +213,16 @@ func TestARouteStepsInOrderAndOneAtATime(t *testing.T) {
 	if i, inFlight := p.InFlight(); !reflect.DeepEqual(p, want) || i != 0 || !inFlight {
 		t.Errorf("phase = %#v, in flight %d %v, want the report alone in flight", p, i, inFlight)
 	}
-	stale := given(t, append(lfgFailed(), stepEnded(6, 1, StepLanded{}), asked(6, 2)))
-	if !reflect.DeepEqual(stale.Phase(), want) {
-		t.Errorf("events of steps not in turn changed the phase: %#v", stale.Phase())
+	reported := want
+	reported.Settled, reported.Asked = []StepOutcome{StepLanded{}}, false
+	stale := given(t, append(lfgFailed(), stepEnded(6, 0, StepLanded{}), stepEnded(7, 0, StepGivenUp{}), asked(7, 2)))
+	if !reflect.DeepEqual(stale.Phase(), reported) {
+		t.Errorf("events of settled steps or past the route changed the phase: %#v", stale.Phase())
+	}
+	lost := want
+	lost.Settled, lost.Asked = []StepOutcome{StepGivenUp{Reason: "not recorded"}, StepLanded{}}, false
+	if ahead := given(t, append(lfgFailed(), stepEnded(6, 1, StepLanded{}))); !reflect.DeepEqual(ahead.Phase(), lost) {
+		t.Errorf("phase after a later step's end = %#v, want the report not recorded and the move landed", ahead.Phase())
 	}
 }
 

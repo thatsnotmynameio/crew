@@ -245,11 +245,22 @@ func (r RuleRun) withAction(name ActionName, change func(ActionRun) ActionRun) R
 }
 
 // whileRouting returns r with change applied to its phase, when it is
-// routing and its next step to settle is the one at index step, a step of
-// its route.
+// routing and step, a step of its route, is its next step to settle or one
+// after it. The steps before step that have not settled are steps whose end
+// the journal lost: they settle as given up, not recorded, so a later
+// step's end, the final move's among them, still counts.
 func (r RuleRun) whileRouting(step int, change func(RoutingPhase) RoutingPhase) RuleRun {
-	if p, ok := r.phase.(RoutingPhase); ok && len(p.Settled) == step && step < len(p.Steps) {
-		r.phase = change(p)
+	p, ok := r.phase.(RoutingPhase)
+	if !ok || step < len(p.Settled) || step >= len(p.Steps) {
+		return r
 	}
+	if lost := step - len(p.Settled); lost > 0 {
+		p.Settled = append(slices.Clone(p.Settled), slices.Repeat([]StepOutcome{StepGivenUp{Reason: notRecorded}}, lost)...)
+		p.Asked = false
+	}
+	r.phase = change(p)
 	return r
 }
+
+// notRecorded is the reason of a route's step whose end the journal lost.
+const notRecorded = "not recorded"

@@ -150,3 +150,20 @@ func TestWordsThatCannotBeKeptClearTheEarlierOnes(t *testing.T) {
 		t.Errorf("prompt kept after a failed write: %v, want it gone", err)
 	}
 }
+
+// The words of a session that crew kept but cannot read are an error, not
+// words a script would take as the session's.
+func TestKeptWordsThatCannotBeReadAreAnError(t *testing.T) {
+	for _, name := range []string{"issue-9-lfg.prompt", "issue-9-lfg.last-message"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			e := &Engine{cfg: Config{Root: root}}
+			if err := os.MkdirAll(filepath.Join(root, ".crew", "logs", name), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if prompt, last, err := e.session(keptLog, "lfg"); err == nil {
+				t.Errorf("session = %q, %q, nil, want an error", prompt, last)
+			}
+		})
+	}
+}

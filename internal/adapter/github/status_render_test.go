@@ -362,6 +362,24 @@ func TestARoutesStepsThatDidNotLandShowInCrewsWords(t *testing.T) {
 	}
 }
 
+// A route's step is named by its kind; a move names its label. Only the
+// final step moves or closes, and writeMove words it, but a step's name
+// stays right for every kind.
+func TestARoutesStepIsNamedByItsKind(t *testing.T) {
+	steps := map[string]crew.StepPlan{
+		"move to `needs attention`": {Kind: crew.StepMove, To: needsAttention},
+		"close":                     {Kind: crew.StepClose},
+		"comment":                   {Kind: crew.StepComment},
+		"report":                    {Kind: crew.StepReport},
+		"shell step `notify`":       {Kind: crew.StepShell, Shell: "notify"},
+	}
+	for want, step := range steps {
+		if got := stepName(step); got != want {
+			t.Errorf("stepName(%#v) = %q, want %q", step, got, want)
+		}
+	}
+}
+
 // fenced returns the content of each fenced code block in markdown, checking
 // that each closes with exactly its own opening fence.
 func fenced(t *testing.T, markdown string) []string {
