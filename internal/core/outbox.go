@@ -105,11 +105,13 @@ func (s *step) attempt(d *delivery) {
 // landed although it failed, so releasing its issue could strand it in the
 // running label with no session, and the tracker makes the retry idempotent.
 // A landed take never releases its run; any other settled delivery releases
-// it once its run lane is empty.
+// it once its run lane is empty. A result for no delivery in flight, or for
+// an issue no longer held, changes nothing.
 func (s *step) callResult(r CallResult) {
 	m := s.m
 	id, d := m.outbox.find(r.ID)
-	if d == nil || !d.inFlight {
+	h := m.held(id)
+	if d == nil || !d.inFlight || h == nil {
 		return
 	}
 	d.inFlight = false
@@ -117,7 +119,6 @@ func (s *step) callResult(r CallResult) {
 	if !settled {
 		return
 	}
-	h := m.held(id)
 	s.received(h, out)
 	if out.purpose == purposeTake && out.landed {
 		return

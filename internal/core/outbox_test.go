@@ -271,3 +271,25 @@ func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 		t.Fatal("not stopped once the verdict calls settled")
 	}
 }
+
+// A result that answers no delivery in flight changes nothing: one with an
+// id the outbox never issued, and a second one for a delivery already owed.
+func TestAResultForNoDeliveryInFlightChangesNothing(t *testing.T) {
+	d := newDriver(t, draft(), 1)
+	take, _ := d.poll(issue("1", 1, ready))
+	failedTake := core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"}
+	d.send(failedTake)
+	before := d.m.View()
+
+	for _, r := range []core.CallResult{
+		{ID: moveID(t, take, "1") + 100, Result: core.ResultDone},
+		failedTake,
+	} {
+		cmds, events := d.send(r)
+		wantCommands(t, cmds)
+		wantEvents(t, events)
+		if after := d.m.View(); !reflect.DeepEqual(after, before) {
+			t.Fatalf("view after %#v:\n got %#v\nwant %#v", r, after, before)
+		}
+	}
+}
