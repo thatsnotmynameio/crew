@@ -9,7 +9,7 @@ import (
 func TestEveryFailureCauseLoadsBackAsItself(t *testing.T) {
 	causes := []crew.FailureCause{
 		crew.CauseSession, crew.CauseStopped, crew.CauseWorkspace, crew.CauseStart, crew.CausePrompt,
-		crew.CauseShell, crew.CauseVerdict, crew.CauseStoppedBeforeStart, crew.CauseTimeUp,
+		crew.CauseShell, crew.CauseVerdict, crew.CauseStoppedBeforeStart, crew.CauseTimeUp, crew.CauseFunction,
 	}
 	want := make([]crew.RunEvent, 0, len(causes))
 	for i, cause := range causes {
@@ -86,5 +86,28 @@ func TestEveryLookupLoadsBackAsItself(t *testing.T) {
 		crew.RunLookupDone{EventHead: head(1), PullRequest: pr45},
 		crew.RunLookupDone{EventHead: head(2), PullRequest: crew.PullRequestNone{}},
 		crew.RunLookupDone{EventHead: head(3), PullRequest: crew.PullRequestNotLookedUp{}},
+	})
+}
+
+func TestEveryFunctionEventLoadsBackAsItselfWithOrWithoutAVerdict(t *testing.T) {
+	roundTrip(t, []crew.RunEvent{
+		crew.ActionFunctionAsked{EventHead: head(1), Action: "label"},
+		crew.ActionFunctionStopAsked{EventHead: head(2), Action: "label"},
+		crew.ActionFunctionEnded{
+			EventHead: head(3), Action: "label", Outcome: crew.FunctionOutcome{Reason: crew.NewShellReason("stopped")},
+		},
+		crew.ActionFunctionEnded{EventHead: head(4), Action: "label", Outcome: crew.FunctionOutcome{
+			Verdict: crew.Some(crew.Verdict("needs-review")), Reason: crew.NewShellReason("label: needs-review"),
+		}},
+		crew.ActionEnded{
+			EventHead: head(5), Action: "label", Verdict: crew.Failed, Target: crew.ToRoute{Route: crew.FailedRoute},
+			End: crew.EndFailed{Reason: crew.NewSessionText("label: stopped"), Cause: crew.CauseFunction},
+		},
+		crew.RouteChosen{EventHead: head(6), Route: crew.FailedRoute, Action: "label", Steps: []crew.StepPlan{
+			{Kind: crew.StepFunction, Function: "notify"},
+		}},
+		crew.StepAsked{EventHead: head(7), Step: 0},
+		crew.StepFunctionStopAsked{EventHead: head(8), Step: 0},
+		crew.StepEnded{EventHead: head(9), Step: 0, Outcome: crew.StepFailed{Reason: crew.NewShellReason("notify: failed")}},
 	})
 }

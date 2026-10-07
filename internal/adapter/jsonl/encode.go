@@ -19,12 +19,16 @@ const (
 	typeShellAsked       = "action_shell_asked"
 	typeShellStopAsked   = "action_shell_stop_asked"
 	typeShellEnded       = "action_shell_ended"
+	typeFunctionAsked    = "action_function_asked"
+	typeFunctionStop     = "action_function_stop_asked"
+	typeFunctionEnded    = "action_function_ended"
 	typeActionEnded      = "action_ended"
 	typeRouteChosen      = "route_chosen"
 	typeLookupAsked      = "lookup_asked"
 	typeLookupDone       = "lookup_done"
 	typeStepAsked        = "step_asked"
 	typeStepShellStop    = "step_shell_stop_asked"
+	typeStepFunctionStop = "step_function_stop_asked"
 	typeStepEnded        = "step_ended"
 )
 
@@ -50,8 +54,10 @@ func encode(e crew.RunEvent, run string) line {
 	case crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
 		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded:
 		return encodeAction(e, run)
+	case crew.ActionFunctionAsked, crew.ActionFunctionStopAsked, crew.ActionFunctionEnded:
+		return encodeFunction(e, run)
 	case crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
-		crew.StepEnded:
+		crew.StepFunctionStopAsked, crew.StepEnded:
 		return encodeRoute(e, run)
 	}
 	return line{}
@@ -129,9 +135,10 @@ func encodeWorkspace(e crew.RunEvent, run string) line {
 		return l
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
-		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded,
-		crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
-		crew.StepEnded:
+		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked,
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionEnded, crew.RouteChosen,
+		crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
+		crew.StepFunctionStopAsked, crew.StepEnded:
 		// Not of the worktree: encode words them.
 	}
 	return line{}
@@ -173,9 +180,36 @@ func encodeAction(e crew.RunEvent, run string) line {
 	case crew.ActionEnded:
 		return endedLine(e, run)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
-		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.RouteChosen, crew.RunLookupAsked,
-		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepEnded:
-		// Not of one action: encode words them.
+		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionFunctionAsked,
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.RouteChosen, crew.RunLookupAsked,
+		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded:
+		// Not of a session or shell action: encode words them.
+	}
+	return line{}
+}
+
+// encodeFunction returns the line of e, an event of one function action.
+// Its ask is marked started, and its end holds the verdict the function
+// returned, left out when it returned none.
+func encodeFunction(e crew.RunEvent, run string) line {
+	switch e := e.(type) {
+	case crew.ActionFunctionAsked:
+		l := actionLine(e.EventHead, typeFunctionAsked, run, e.Action)
+		l.Event, l.Bot = eventStarted, e.Bot.Name
+		return l
+	case crew.ActionFunctionStopAsked:
+		return actionLine(e.EventHead, typeFunctionStop, run, e.Action)
+	case crew.ActionFunctionEnded:
+		l := actionLine(e.EventHead, typeFunctionEnded, run, e.Action)
+		l.Reason = e.Outcome.Reason.String()
+		l.Verdict, _ = e.Outcome.Verdict.Get()
+		return l
+	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
+		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked,
+		crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellAsked,
+		crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded, crew.RouteChosen, crew.RunLookupAsked,
+		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded:
+		// Not of a function action: encode words them.
 	}
 	return line{}
 }
@@ -209,7 +243,7 @@ func encodeRoute(e crew.RunEvent, run string) line {
 		l := actionLine(e.EventHead, typeRouteChosen, run, e.Action)
 		l.Route = e.Route
 		for _, s := range e.Steps {
-			l.Steps = append(l.Steps, step{Kind: stepKinds()[s.Kind], To: s.To, Shell: s.Shell})
+			l.Steps = append(l.Steps, step{Kind: stepKinds()[s.Kind], To: s.To, Shell: s.Shell, Function: s.Function})
 		}
 		return l
 	case crew.RunLookupAsked:
@@ -222,6 +256,8 @@ func encodeRoute(e crew.RunEvent, run string) line {
 		return stepLine(e.EventHead, typeStepAsked, run, e.Step)
 	case crew.StepShellStopAsked:
 		return stepLine(e.EventHead, typeStepShellStop, run, e.Step)
+	case crew.StepFunctionStopAsked:
+		return stepLine(e.EventHead, typeStepFunctionStop, run, e.Step)
 	case crew.StepEnded:
 		l := stepLine(e.EventHead, typeStepEnded, run, e.Step)
 		l.Settled, l.Reason = settledOf(e.Outcome)
@@ -229,7 +265,8 @@ func encodeRoute(e crew.RunEvent, run string) line {
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked,
 		crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellAsked,
-		crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded:
+		crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked, crew.ActionFunctionStopAsked,
+		crew.ActionFunctionEnded, crew.ActionEnded:
 		// Not of the route: encode words them.
 	}
 	return line{}

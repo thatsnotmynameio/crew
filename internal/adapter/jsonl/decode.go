@@ -46,6 +46,9 @@ func decoders() map[string]decoder {
 		typeStepShellStop: func(l line, h crew.EventHead) crew.RunEvent {
 			return crew.StepShellStopAsked{EventHead: h, Step: deref(l.Step)}
 		},
+		typeStepFunctionStop: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.StepFunctionStopAsked{EventHead: h, Step: deref(l.Step)}
+		},
 		typeStepEnded: line.stepEnded,
 	}
 	maps.Copy(d, actionDecoders())
@@ -73,8 +76,15 @@ func actionDecoders() map[string]decoder {
 		typeShellStopAsked: func(l line, h crew.EventHead) crew.RunEvent {
 			return crew.ActionShellStopAsked{EventHead: h, Action: l.Action}
 		},
-		typeShellEnded:  line.shellEnded,
-		typeActionEnded: line.ended,
+		typeShellEnded: line.shellEnded,
+		typeFunctionAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionFunctionAsked{EventHead: h, Action: l.Action, Bot: crew.Bot{Name: l.Bot}}
+		},
+		typeFunctionStop: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionFunctionStopAsked{EventHead: h, Action: l.Action}
+		},
+		typeFunctionEnded: line.functionEnded,
+		typeActionEnded:   line.ended,
 	}
 }
 
@@ -152,6 +162,16 @@ func (l line) shellEnded(h crew.EventHead) crew.RunEvent {
 	return crew.ActionShellEnded{EventHead: h, Action: l.Action, Outcome: outcome}
 }
 
+// functionEnded returns the ActionFunctionEnded l holds, with head h: no
+// verdict when the line holds none.
+func (l line) functionEnded(h crew.EventHead) crew.RunEvent {
+	outcome := crew.FunctionOutcome{Reason: crew.NewShellReason(l.Reason)}
+	if l.Verdict != "" {
+		outcome.Verdict = crew.Some(l.Verdict)
+	}
+	return crew.ActionFunctionEnded{EventHead: h, Action: l.Action, Outcome: outcome}
+}
+
 // ended returns the ActionEnded l holds, with head h. A target that names
 // neither the next action nor a route is left out.
 func (l line) ended(h crew.EventHead) crew.RunEvent {
@@ -171,7 +191,7 @@ func (l line) routeChosen(h crew.EventHead) crew.RunEvent {
 	e := crew.RouteChosen{EventHead: h, Route: l.Route, Action: l.Action}
 	for _, s := range l.Steps {
 		kind, _ := named(stepKinds(), s.Kind)
-		e.Steps = append(e.Steps, crew.StepPlan{Kind: kind, To: s.To, Shell: s.Shell})
+		e.Steps = append(e.Steps, crew.StepPlan{Kind: kind, To: s.To, Shell: s.Shell, Function: s.Function})
 	}
 	return e
 }
