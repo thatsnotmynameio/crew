@@ -163,7 +163,7 @@ func TestTakenIssueGetsItsFirstStatusOnceItsTakeLands(t *testing.T) {
 		IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Progress: crew.StatusRunning{}, Updated: d.now,
 		Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionPending{}},
-			{Name: "development", State: crew.ActionPending{}},
+			{Name: "development", State: crew.ActionAwaitingTurn{}},
 		},
 	})
 }
@@ -182,7 +182,7 @@ func TestAE2RunningStatusShowsTheSessionsStartAndLastWords(t *testing.T) {
 		Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionRunning{Started: started(t, d.m, "acceptance"),
 				Said: crew.NewSaid("U1 committed: 168 tests pass. Starting U2.")}},
-			{Name: "development", State: crew.ActionPending{}},
+			{Name: "development", State: crew.ActionAwaitingTurn{}},
 		},
 	})
 	d.wrote("74")
@@ -213,7 +213,7 @@ func TestAE3EndedStatusSaysWhereTheIssueGoesThenThatItMoved(t *testing.T) {
 	wantStatus(t, statusOf(t, cmds, "74"), crew.StatusData{
 		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Progress: crew.StatusRunning{}, Updated: d.now,
 		Actions: []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionSucceeded{}},
+			{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 			{Name: "development", State: crew.ActionRunning{Started: devStarted}},
 		},
 	})
@@ -221,22 +221,33 @@ func TestAE3EndedStatusSaysWhereTheIssueGoesThenThatItMoved(t *testing.T) {
 
 	report, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("tests fail")})
 	final := []crew.ActionStatus{
-		{Name: "acceptance", State: crew.ActionSucceeded{}},
+		{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 		{Name: "development", State: crew.ActionFailed{Cause: crew.CauseSession, Log: space("74", "implement").Log}},
 	}
+	reportStep := crew.StepPlan{Kind: crew.StepReport}
+	moveStep := crew.StepPlan{Kind: crew.StepMove, To: needsAttention}
+	ended := crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MovePending}
 	wantStatus(t, statusOf(t, report, "74"), crew.StatusData{
 		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Updated: d.now,
-		Actions: final, Progress: crew.StatusEnded{To: needsAttention, Move: crew.MovePending},
+		Actions: final, Progress: ended, Steps: []crew.StepStatus{{Step: reportStep}, {Step: moveStep}},
 	})
 	d.wrote("74")
 
-	// The failure report is the route's first step; the move waits for it.
+	// The failure report is the route's first step; the move waits for it,
+	// and the status says the report landed (KTD-S17).
 	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
-	noStatusOf(t, moved, "74")
+	wantStatus(t, statusOf(t, moved, "74"), crew.StatusData{
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Updated: d.now, Actions: final, Progress: ended,
+		Steps: []crew.StepStatus{{Step: reportStep, Outcome: crew.StepLanded{}}, {Step: moveStep}},
+	})
+	d.wrote("74")
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
+	ended.Move = crew.MoveDone
 	wantStatus(t, statusOf(t, cmds, "74"), crew.StatusData{
-		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Updated: d.now,
-		Actions: final, Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Updated: d.now, Actions: final, Progress: ended,
+		Steps: []crew.StepStatus{
+			{Step: reportStep, Outcome: crew.StepLanded{}}, {Step: moveStep, Outcome: crew.StepLanded{}},
+		},
 	})
 }
 
@@ -248,7 +259,7 @@ func TestEndedStatusSaysWhenTheMoveWasDropped(t *testing.T) {
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultMovedMeanwhile})
 	got := statusOf(t, cmds, "74")
-	if got.Progress() != (crew.StatusEnded{To: readyToReview, Move: crew.MoveDropped}) {
+	if got.Progress() != (crew.StatusEnded{Route: crew.PassedRoute, To: readyToReview, Move: crew.MoveDropped}) {
 		t.Fatalf("status after a dropped move: %#v", got)
 	}
 }
@@ -265,20 +276,25 @@ func TestAE4StopWhileASessionRunsEndsWithTheMoveOnTheComment(t *testing.T) {
 
 	report, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("stopped")})
 	got := statusOf(t, report, "74")
-	if got.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MovePending}) {
+	if got.Progress() != (crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MovePending}) {
 		t.Fatalf("status at the ending: %#v", got)
 	}
 	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
+	d.wrote("74")
 	d.wrote("74")
 
 	cmds, events := d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
 	wantStatus(t, statusOf(t, cmds, "74"), crew.StatusData{
 		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Updated: d.now,
 		Actions: []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionSucceeded{}},
+			{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStopped, Log: space("74", "implement").Log}},
 		},
-		Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
+		Progress: crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MoveDone},
+		Steps: []crew.StepStatus{
+			{Step: crew.StepPlan{Kind: crew.StepReport}, Outcome: crew.StepLanded{}},
+			{Step: crew.StepPlan{Kind: crew.StepMove, To: needsAttention}, Outcome: crew.StepLanded{}},
+		},
 	})
 	if d.m.Stopped() || containsStopped(events) {
 		t.Fatal("stopped with the last status write in flight")

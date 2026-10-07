@@ -27,6 +27,10 @@ type StatusData struct {
 	Progress StatusProgress
 	// Actions are the rule's actions, in its action order.
 	Actions []ActionStatus
+	// Steps are the steps of the route the run ends through, in the order
+	// they run, each with how it settled; nil while the run takes the
+	// issue or runs its actions.
+	Steps []StepStatus
 	// Updated is when crew computed this status.
 	Updated time.Time
 	// Run identifies the status comment's entry this status belongs to: the
@@ -38,17 +42,17 @@ type StatusData struct {
 }
 
 // NewStatus returns the status d describes. The status keeps its own copy
-// of d's Actions and their Checks.
+// of d's Actions and Steps.
 func NewStatus(d StatusData) Status {
-	d.Actions = cloneActions(d.Actions)
+	d.Actions, d.Steps = slices.Clone(d.Actions), slices.Clone(d.Steps)
 	return Status{data: d}
 }
 
 // Data returns the status's fields as plain data, with its own copy of the
-// Actions and their Checks.
+// Actions and Steps.
 func (s Status) Data() StatusData {
 	d := s.data
-	d.Actions = cloneActions(d.Actions)
+	d.Actions, d.Steps = slices.Clone(d.Actions), slices.Clone(d.Steps)
 	return d
 }
 
@@ -64,9 +68,12 @@ func (s Status) Rule() RuleName { return s.data.Rule }
 // Progress returns whether the rule runs or ended.
 func (s Status) Progress() StatusProgress { return s.data.Progress }
 
-// Actions returns a copy of the rule's actions, in its action order, each
-// with its own Checks.
-func (s Status) Actions() []ActionStatus { return cloneActions(s.data.Actions) }
+// Actions returns a copy of the rule's actions, in its action order.
+func (s Status) Actions() []ActionStatus { return slices.Clone(s.data.Actions) }
+
+// Steps returns a copy of the steps of the route the run ends through, in
+// the order they run, or nil while it runs its actions.
+func (s Status) Steps() []StepStatus { return slices.Clone(s.data.Steps) }
 
 // Updated returns when crew computed the status.
 func (s Status) Updated() time.Time { return s.data.Updated }
@@ -86,9 +93,11 @@ type StatusProgress interface {
 // actions run.
 type StatusRunning struct{}
 
-// StatusEnded is the progress of a rule whose run chose its route: the
-// route's final step moves the issue to To, or closes it.
+// StatusEnded is the progress of a rule whose run chose its route, Route,
+// whose final step moves the issue to To, or closes it.
 type StatusEnded struct {
+	// Route is the route the run ends through.
+	Route RouteName
 	// To is the state the issue moves to; empty when the route closes it.
 	To State
 	// Move says whether the route's final move or close is under way,
@@ -99,68 +108,74 @@ type StatusEnded struct {
 func (StatusRunning) statusProgress() {}
 func (StatusEnded) statusProgress()   {}
 
+// StepStatus is one step of the route a Status's run ends through.
+type StepStatus struct {
+	// Step is what the step does.
+	Step StepPlan
+	// Outcome is how the step settled; nil while it has not.
+	Outcome StepOutcome
+}
+
 // ActionStatus is one action in a Status.
 type ActionStatus struct {
 	// Name is the action's name.
 	Name ActionName
 	// State is how the action stands.
 	State ActionState
-	// Checks are how its checks that ran so far ended, in the order they
-	// ran; when it failed by a check, the last is the one that did not
-	// pass. Only a check's reason goes in a status: a session's or a tool's
-	// own words never do, since a tracker may show it in public, and those
-	// words can hold commands, output and secrets.
-	Checks []CheckResult
+	// Shell is how a shell action's script ended: crew's one line, followed
+	// by the last line the script printed, without control characters;
+	// empty for a session, or before the script ended. Only a script's
+	// line goes in a status: a session's or a tool's own words never do,
+	// since a tracker may show it in public, and those words can hold
+	// commands, output and secrets.
+	Shell CheckReason
 	// Workspace is the workspace the action resumed in; empty when it did
 	// not resume.
 	Workspace WorkspaceName
 }
 
-// FailedCheck returns the reason of the check that failed a, when a failed
-// by a check (CauseCheck), or an empty CheckReason.
-func (a ActionStatus) FailedCheck() CheckReason {
-	failed, ok := a.State.(ActionFailed)
-	if !ok || failed.Cause != CauseCheck || len(a.Checks) == 0 {
-		return CheckReason{}
-	}
-	return a.Checks[len(a.Checks)-1].Reason
-}
-
-// cloneActions returns a copy of actions, each with its own Checks.
-func cloneActions(actions []ActionStatus) []ActionStatus {
-	out := slices.Clone(actions)
-	for i := range out {
-		out[i].Checks = slices.Clone(out[i].Checks)
-	}
-	return out
-}
-
 // ActionState is how an action in a Status stands: ActionPending,
-// ActionRunning, ActionSucceeded or ActionFailed.
+// ActionAwaitingTurn, ActionRunning, ActionSucceeded, ActionFailed,
+// ActionNotRun or ActionDoneInEarlierRun.
 //
 //sumtype:decl
 type ActionState interface {
 	actionState()
 }
 
-// ActionPending is an action that has no session to time: its workspace is
-// created or its session starts, or its outcome waits for its pull request.
+// ActionPending is the action the run is about to start, with no session
+// or script to time yet: the run's take or workspace is under way, or its
+// session starts.
 type ActionPending struct{}
 
-// ActionRunning is an action whose session started and whose session or
-// checks run.
+// ActionAwaitingTurn is an action after the one the run is about to start
+// or runs: it starts once the actions before it went on to the next.
+type ActionAwaitingTurn struct{}
+
+// ActionNotRun is an action the run never reached: an action before it
+// ended the sequence through a route.
+type ActionNotRun struct{}
+
+// ActionDoneInEarlierRun is an action before the one the run resumed at:
+// it went on to the next action in the run this one continues.
+type ActionDoneInEarlierRun struct{}
+
+// ActionRunning is an action whose session or shell script runs.
 type ActionRunning struct {
-	// Started is when its session started.
+	// Started is when its session started, or crew asked for its script.
 	Started time.Time
 	// Said is the last thing its running session said, on one line with
 	// local paths shortened and without control characters; empty when it
 	// said nothing yet, said only control characters, its harness cannot
-	// tell, or its checks run.
+	// tell, or it is a shell action.
 	Said Said
 }
 
-// ActionSucceeded is an action that ended well.
+// ActionSucceeded is an action that ended with a verdict other than
+// Failed: Passed, or one its on: names.
 type ActionSucceeded struct {
+	// Verdict is the action's verdict; empty counts as Passed.
+	Verdict Verdict
 	// Usage is what its session spent and the pull request it opened, when
 	// its session started and crew is set to show them.
 	Usage Optional[ShownUsage]
@@ -178,10 +193,13 @@ type ActionFailed struct {
 	Usage Optional[ShownUsage]
 }
 
-func (ActionPending) actionState()   {}
-func (ActionRunning) actionState()   {}
-func (ActionSucceeded) actionState() {}
-func (ActionFailed) actionState()    {}
+func (ActionPending) actionState()          {}
+func (ActionAwaitingTurn) actionState()     {}
+func (ActionRunning) actionState()          {}
+func (ActionSucceeded) actionState()        {}
+func (ActionFailed) actionState()           {}
+func (ActionNotRun) actionState()           {}
+func (ActionDoneInEarlierRun) actionState() {}
 
 // ShownUsage is what an ended action's session spent and the pull request
 // it opened, as a status shows them.

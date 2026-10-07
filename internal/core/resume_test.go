@@ -270,8 +270,8 @@ func TestAResumeSkipsTheActionsThatWentOnToTheNext(t *testing.T) {
 		t.Fatalf("start = %#v, want development resumed", s)
 	}
 	wantResumeReason(t, cmds, "tests fail")
-	if got := d.m.View().Issues[0].Actions[0].Phase; got != core.PhaseWaiting {
-		t.Fatalf("acceptance's phase = %v, want it waiting, done in an earlier run", got)
+	if got := d.m.View().Issues[0].Actions[0].Phase; got != core.PhaseDoneInEarlierRun {
+		t.Fatalf("acceptance's phase = %v, want it done in an earlier run", got)
 	}
 }
 

@@ -20,9 +20,10 @@ type handledEntry struct {
 }
 
 // handle keeps the handled entry of h's run, which replaces the issue's
-// earlier one, when it ended through a route. A rule without actions that ended
-// well keeps an earlier entry that ended well too, marked Gone: its move
-// took the issue out of the entry's To (#109, R10, KTD6).
+// earlier one, when it ended through a route. A rule without actions that
+// ended through passed, its final move landed, keeps an earlier entry that
+// ended so too, marked Gone: its move took the issue out of the entry's To
+// (#109, R10, KTD6, KTD-S17).
 func (m *Model) handle(h *heldRun) {
 	entry := handledEntry{run: h.run, landed: h.landed}
 	view, ok := entry.view()
@@ -50,9 +51,11 @@ func (e handledEntry) ending() (crew.RoutingPhase, bool) {
 }
 
 // view returns e as the view shows it, built from its run, and false when
-// the run was released without a route. A run that ended through a route
-// other than passed carries the action that ended its sequence as its
-// failure; a final move or close that did not land is given up.
+// the run was released without a route: the route it ended through, the
+// state its final move moved the issue to, or none for a close, and how
+// that final step settled. A run that ended through a route other than
+// passed carries the action that ended its sequence as its failure; a
+// final move or close given up or dropped did not land.
 func (e handledEntry) view() (HandledView, bool) {
 	route, ok := e.ending()
 	if !ok {
@@ -61,8 +64,8 @@ func (e handledEntry) view() (HandledView, bool) {
 	run := e.run
 	end, _ := route.End()
 	view := HandledView{
-		Issue: run.Issue(), Rule: run.Rule(), To: end.To, Move: crew.MoveDone, Gone: e.gone, Taken: run.Taken(),
-		Ended: route.Chosen, Earlier: e.earlier,
+		Issue: run.Issue(), Rule: run.Rule(), Route: route.Route, To: end.To, Move: crew.MoveDone, Gone: e.gone,
+		Taken: run.Taken(), Ended: route.Chosen, Earlier: e.earlier,
 	}
 	if report, ok := run.FailureReport(); ok && route.Route != crew.PassedRoute {
 		view.Failures = report.Failures

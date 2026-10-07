@@ -60,7 +60,7 @@ func TestAE5ARuleEndNotifiesWhileUnfocusedButAMutedRulesDoesNot(t *testing.T) {
 
 	notes := raws(h.send(updateMsg(ended("triage", "crew:triage:done", 3))))
 	if len(notes) != 1 || !strings.HasPrefix(notes[0], "\x1b]9;") ||
-		!strings.Contains(notes[0], "triage ended on #12 Rule labels; moved to crew:triage:done") {
+		!strings.Contains(notes[0], "triage ended through passed on #12 Rule labels; moved to crew:triage:done") {
 		t.Errorf("notifications = %q, want one OSC 9 for triage on #12", notes)
 	}
 
@@ -143,14 +143,29 @@ func TestANotificationIsCleanedOfControlCharacters(t *testing.T) {
 	}
 }
 
-func TestFailuresAndGivenUpMovesSayHowTheRuleEnded(t *testing.T) {
-	failed := failedEntry("5", "Parse", 10, 1, "lfg")
-	if got := noteText(failed); got != "crew: implement failed on #5 Parse; moved to needs attention" {
-		t.Errorf("failed note = %q", got)
-	}
-	dropped := givenUpEntry(entry("6", "Drop", "implement", "ready to review", 10, 1), "closed")
-	if got := noteText(dropped); got != "crew: implement ended on #6 Drop; its move to ready to review was given up" {
-		t.Errorf("given-up note = %q", got)
+// KTD23: a note names the route the rule ended through, and the label it
+// moved the issue to or its close.
+func TestANoteSaysTheRouteAndWhereTheIssueWent(t *testing.T) {
+	closed := entry("7", "Dupe", "triage", "", 10, 1)
+	closed.Route = "duplicate"
+	for _, tt := range []struct {
+		entry core.HandledView
+		want  string
+	}{
+		{
+			failedEntry("5", "Parse", 10, 1, "lfg"),
+			"crew: implement ended through failed on #5 Parse; moved to needs attention",
+		},
+		{
+			givenUpEntry(entry("6", "Drop", "implement", "ready to review", 10, 1), "closed"),
+			"crew: implement ended through passed on #6 Drop; its move to ready to review was given up",
+		},
+		{closed, "crew: triage ended through duplicate on #7 Dupe; closed it"},
+		{givenUpEntry(closed, "refused"), "crew: triage ended through duplicate on #7 Dupe; its close was given up"},
+	} {
+		if got := noteText(tt.entry); got != tt.want {
+			t.Errorf("note = %q, want %q", got, tt.want)
+		}
 	}
 }
 
@@ -163,7 +178,7 @@ func TestTheWindowTitleSaysCrewsState(t *testing.T) {
 
 	u := handledSnapshot()
 	h.send(updateMsg(u))
-	if got, want := h.model.View().WindowTitle, "crew · 2 running · 1 waiting · 2 needs attention"; got != want {
+	if got, want := h.model.View().WindowTitle, "crew · 1 running · 1 taking · 2 needs attention"; got != want {
 		t.Errorf("title = %q, want %q", got, want)
 	}
 
@@ -183,7 +198,7 @@ func windingDown() updateMsg { return updateMsg(windingDownSnapshot()) }
 func TestAMutedRulesFailureCountsAsNeedingAttention(t *testing.T) {
 	h := newBoardHarness(t, 80, crewNotify, crewBoard)
 	u := ended("promote triage", "crew:triage:failed", 1)
-	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "promote"}}
+	u.Snapshot.Handled[0] = failing(u.Snapshot.Handled[0], "promote")
 
 	h.send(updateMsg(u))
 
@@ -244,8 +259,7 @@ func TestAFailureHeldAgainDoesNotCountAsNeedingAttention(t *testing.T) {
 	h := newBoardHarness(t, 80, crewNotify, crewBoard)
 	u := held(twelve, "development", "lfg", core.ClaimRunning)
 	e := handledBy(twelve, "fix", "crew:fix:failed").Snapshot.Handled[0]
-	e.Failures = []crew.ActionFailure{{Action: "lfg"}}
-	u.Snapshot.Handled = []core.HandledView{e}
+	u.Snapshot.Handled = []core.HandledView{failing(e, "lfg")}
 
 	h.send(updateMsg(u))
 	if got := h.model.View().WindowTitle; got != "crew · 1 running · 1 needs attention" {
@@ -272,7 +286,7 @@ func TestNotifyDecidesWhetherARulesEndNotifies(t *testing.T) {
 	h.send(tea.BlurMsg{})
 
 	u := ended("review", "needs attention", 3)
-	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "review"}}
+	u.Snapshot.Handled[0] = failing(u.Snapshot.Handled[0], "review")
 	if notes := raws(h.send(updateMsg(u))); len(notes) != 0 {
 		t.Errorf("review's failure notified with notify off: %q", notes)
 	}

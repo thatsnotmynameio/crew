@@ -70,7 +70,7 @@ func TestAnOwedStepShowsOwedUntilItSettles(t *testing.T) {
 
 	moved, _ := d.send(core.CallResult{ID: reportID(t, retry, "1"), Result: core.ResultDone})
 	wantHeld(t, d.m, "1")
-	wantClaim(t, d.m, "1", core.ClaimJudging)
+	wantClaim(t, d.m, "1", core.ClaimRouting)
 	wantOwed(t, d.m)
 
 	d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
@@ -160,8 +160,8 @@ func TestOwedCallsListRunCallsInTakenOrderThenReports(t *testing.T) {
 }
 
 // A rule without actions whose owed take lands chooses passed at once and
-// shows judging while its route's move is in flight.
-func TestARuleWithoutActionsWhoseOwedTakeLandsShowsJudging(t *testing.T) {
+// shows routing while its route's move is in flight.
+func TestARuleWithoutActionsWhoseOwedTakeLandsShowsRouting(t *testing.T) {
 	d := newDriver(t, promoted(), 2)
 	take := takePromoted(d)
 	d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
@@ -169,20 +169,20 @@ func TestARuleWithoutActionsWhoseOwedTakeLandsShowsJudging(t *testing.T) {
 
 	ending, _ := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
 	wantCommands(t, ending, promoteMove())
-	wantClaim(t, d.m, "1", core.ClaimJudging)
+	wantClaim(t, d.m, "1", core.ClaimRouting)
 	wantOwed(t, d.m)
 }
 
 // An owed take whose final try lands after a stop ends its first action
-// unstarted and shows judging while its route's steps are in flight.
-func TestAnOwedTakeLandingOnItsFinalTryShowsJudging(t *testing.T) {
+// unstarted and shows routing while its route's steps are in flight.
+func TestAnOwedTakeLandingOnItsFinalTryShowsRouting(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	take, _ := d.poll(issue("1", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	final, _ := d.send(core.StopRequested{})
 
 	d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultDone})
-	wantClaim(t, d.m, "1", core.ClaimJudging)
+	wantClaim(t, d.m, "1", core.ClaimRouting)
 	wantOwed(t, d.m)
 }
 
@@ -250,14 +250,17 @@ func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 	report := d.ended("74", "acceptance", failed("stopped"))
 
 	cmds, _ := d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
-	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MovePending}) {
+	pending := crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MovePending}
+	if st := statusOf(t, cmds, "74"); st.Progress() != pending {
 		t.Fatalf("final try: got %#v, want the ended status with the move pending", st)
 	}
 	d.wrote("74")
 
 	moved, _ := d.send(core.CallResult{ID: reportID(t, report, "74"), Result: core.ResultDone})
+	d.wrote("74")
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
-	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MoveDone}) {
+	done := crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MoveDone}
+	if st := statusOf(t, cmds, "74"); st.Progress() != done {
 		t.Fatalf("after the move landed: got %#v, want the ended status with the move done", st)
 	}
 	cmds, _ = d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})

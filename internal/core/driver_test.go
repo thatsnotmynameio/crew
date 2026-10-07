@@ -478,22 +478,50 @@ func endedNeedingAttention(d *driver) []core.Command {
 	return cmds
 }
 
-// failureOf is the failure report of issue key's run of rule, ended by
-// action in the run's one workspace.
+// failureOf is the report of issue key's run of rule through failed, ended
+// by action's failed verdict in the run's one workspace.
 func failureOf(key string, rule crew.RuleName, action crew.ActionName) core.ReportFailure {
 	name := "issue-" + key + "-" + string(rule)
 	return core.ReportFailure{Report: crew.FailureReport{
-		IssueID: issueID(key), IssueRef: "#" + key, Failures: []crew.ActionFailure{{
-			Action: action, Workspace: crew.WorkspaceName(name), Log: ".crew/logs/" + name + ".log",
+		IssueID: issueID(key), IssueRef: "#" + key, Rule: rule, Route: crew.FailedRoute,
+		Failures: []crew.ActionFailure{{
+			Action: action, Verdict: crew.Failed, Workspace: crew.WorkspaceName(name), Log: ".crew/logs/" + name + ".log",
 		}},
 	}}
 }
 
 // stepEnded is the event of the step at index step of issue key's last run
-// settling as outcome, at d.now.
-func (d *driver) stepEnded(key string, step int, outcome crew.StepOutcome) crew.StepEnded {
+// settling as outcome, at d.now: the step of the route its published
+// RouteChosen named, taking the issue from the running label its take
+// moved it to when the step moves or closes it.
+func (d *driver) stepEnded(key string, step int, outcome crew.StepOutcome) core.RouteStepEnded {
 	d.t.Helper()
-	return crew.StepEnded{EventHead: d.runHead(key), Step: step, Outcome: outcome}
+	h := d.runHead(key)
+	var taken crew.RunTaken
+	var chosen crew.RouteChosen
+	for _, e := range d.events {
+		switch e := e.(type) {
+		case crew.RunTaken:
+			if e.Run == h.Run {
+				taken = e
+			}
+		case crew.RouteChosen:
+			if e.Run == h.Run {
+				chosen = e
+			}
+		}
+	}
+	if step >= len(chosen.Steps) {
+		d.t.Fatalf("no step %d of #%s's route in %#v", step, key, d.events)
+	}
+	ended := core.RouteStepEnded{
+		At: h.At, IssueID: h.IssueID, IssueRef: h.IssueRef, Rule: h.Rule, Route: chosen.Route, Step: step,
+		Plan: chosen.Steps[step], Outcome: outcome,
+	}
+	if kind := ended.Plan.Kind; kind == crew.StepMove || kind == crew.StepClose {
+		ended.From = taken.To
+	}
+	return ended
 }
 
 func wantEvents(t *testing.T, got []core.Published, want ...core.Published) {

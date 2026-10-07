@@ -157,3 +157,33 @@ func TestAnIssueTakenAgainKeepsItsEntryAndItsNextEntryStartsNotGone(t *testing.T
 		t.Fatalf("new entry gone after a listing requested before its move landed: %#v", got)
 	}
 }
+
+// implementClosing is the draft rules with implement's passed route
+// closing the issue.
+func implementClosing() []crew.Rule {
+	rules := draft()
+	rules[0].Routes = append([]crew.Route(nil), rules[0].Routes...)
+	rules[0].Routes[0] = crew.Route{Name: crew.PassedRoute, Steps: []crew.Step{crew.CloseStep{}}}
+	return rules
+}
+
+// Covers R50, KTD23: a closed entry goes gone at the next listing, which
+// cannot find a closed issue; one whose close was given up stays.
+func TestAClosedEntryGoesGoneAtTheNextListing(t *testing.T) {
+	for _, result := range []core.Result{core.ResultDone, core.ResultRefused} {
+		t.Run(result.String(), func(t *testing.T) {
+			d := newDriver(t, implementClosing(), 2)
+			ending := implemented(d, succeeded)
+			d.send(core.CallResult{ID: closeID(t, ending), Result: result, Reason: "nope"})
+			if got := onlyEntry(t, d); got.Gone || got.To != "" {
+				t.Fatalf("entry before any listing: %#v, want to no state, not gone", got)
+			}
+
+			d.poll()
+
+			if got := onlyEntry(t, d); got.Gone != (result == core.ResultDone) {
+				t.Fatalf("entry after the next listing: gone %v, want %v", got.Gone, result == core.ResultDone)
+			}
+		})
+	}
+}

@@ -43,7 +43,7 @@ func promoteMove() core.Move {
 
 // promoteMoved is the event of #1's move to promote triage's success
 // landing, in d's run of #1, at d.now.
-func promoteMoved(d *driver) crew.StepEnded {
+func promoteMoved(d *driver) core.RouteStepEnded {
 	return d.stepEnded("1", 0, crew.StepLanded{})
 }
 
@@ -179,7 +179,7 @@ func TestARuleWithoutActionsWritesItsStatusWithNoActionLines(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, takePromoted(d), "1"), Result: core.ResultDone})
 
 	got := statusOf(t, landed, "1")
-	if got.Progress() != (crew.StatusEnded{To: developmentReady, Move: crew.MovePending}) ||
+	if got.Progress() != (crew.StatusEnded{Route: crew.PassedRoute, To: developmentReady, Move: crew.MovePending}) ||
 		got.Rule() != "promote triage" || len(got.Actions()) != 0 {
 		t.Fatalf("status: got %#v, want promote triage's ended status, moving to development, with no actions", got)
 	}

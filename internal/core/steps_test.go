@@ -215,5 +215,7 @@ func TestAReportStepOfARunWithoutActionsNamesNoAction(t *testing.T) {
 	cmds, _ := d.poll(issue("1", 1, triageDone))
 
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-	wantCommands(t, cmds, core.ReportFailure{Report: crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1"}})
+	wantCommands(t, cmds, core.ReportFailure{Report: crew.FailureReport{
+		IssueID: issueID("1"), IssueRef: "#1", Rule: "promote triage", Route: crew.PassedRoute,
+	}})
 }

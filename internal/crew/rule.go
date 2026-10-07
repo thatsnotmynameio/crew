@@ -137,17 +137,6 @@ type Check struct {
 	Script string
 }
 
-// CheckResult is how one check of an action ended.
-type CheckResult struct {
-	// Name is the check's name.
-	Name CheckName
-	// Passed is true when the check exited 0.
-	Passed bool
-	// Reason is crew's one line on how it ended, naming the check, followed
-	// by the last line the check printed when it printed one.
-	Reason CheckReason
-}
-
 // Outcome is how an action's session ended, as its harness reported it.
 type Outcome struct {
 	// Succeeded is true when the session ended cleanly.
@@ -156,23 +145,32 @@ type Outcome struct {
 	Reason SessionText
 }
 
-// FailureReport is what the engine asks a tracker to post on an issue whose
-// rule had failed actions. The tracker adapter formats it in its own markup.
-// It carries no reason: an outcome's reason is a session's or a tool's last
-// words, which a tracker comment must not show.
+// FailureReport is what a route's report step asks a tracker to post on an
+// issue: the action whose verdict ended the rule's sequence, that verdict,
+// the route the rule ends through and the log (R17, KTD5). The tracker
+// adapter formats it in its own markup. It carries no reason: an outcome's
+// reason is a session's or a tool's last words, which a tracker comment
+// must not show.
 type FailureReport struct {
 	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
 	IssueID  IssueID
 	IssueRef string
-	// Failures lists each failed action, in the rule's action order.
+	// Rule is the rule that ran, and Route the route it ends through.
+	Rule  RuleName
+	Route RouteName
+	// Failures holds the action at the run's cursor, whose verdict ended
+	// the sequence; none for a rule without actions.
 	Failures []ActionFailure
 }
 
-// ActionFailure is one failed action in a FailureReport: where to read why
-// it failed, never the reason itself.
+// ActionFailure is the action that ended a rule's sequence, in a
+// FailureReport: its verdict and where to read why, never the reason
+// itself.
 type ActionFailure struct {
 	// Action is the action's name.
 	Action ActionName
+	// Verdict is the verdict the action ended with.
+	Verdict Verdict
 	// Workspace is the workspace the action ran in.
 	Workspace WorkspaceName
 	// Log is the repository-relative path of the session's log file.

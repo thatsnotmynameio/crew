@@ -80,16 +80,16 @@ func TestTheLastSnapshotListsAFailedIssueAsHandledWithItsFailedAction(t *testing
 	})
 }
 
-// Covers KTD-P6: a failed run publishes its take, its take move, its
-// session's start, its action's end, the route it chose and its steps'
-// outcomes, and none of its silent run events, in the updates or in the
-// snapshot's recent events.
+// Covers KTD-P6, KTD23: a failed run publishes its take, its take move,
+// its workspace, its session's start, its action's end, the route it chose
+// and its steps' outcomes, as the core's RouteStepEnded, and none of its
+// silent run events, in the updates or in the snapshot's recent events.
 func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, final := failOneRun(t)
 		worded := []string{
-			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.RouteChosen",
-			"crew.StepEnded",
+			"crew.RunTaken", "crew.TakeMoved", "crew.WorkspaceOpened", "crew.ActionSessionStarted", "crew.ActionEnded",
+			"crew.RouteChosen", "core.RouteStepEnded",
 		}
 		published := runEventKinds(slices.Concat(r.events(), final.Snapshot.Recent))
 		for _, kind := range published {
@@ -125,7 +125,8 @@ func failOneRun(t *testing.T) (*rig, engine.Update) {
 func runEventKinds(events []core.Published) []string {
 	var kinds []string
 	for _, e := range events {
-		if _, ok := e.(crew.RunEvent); ok {
+		switch e.(type) {
+		case crew.RunEvent, core.RouteStepEnded:
 			kinds = append(kinds, fmt.Sprintf("%T", e))
 		}
 	}

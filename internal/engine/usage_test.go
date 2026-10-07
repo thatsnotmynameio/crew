@@ -194,9 +194,11 @@ func TestAE8UsageInStatusPutsTheSpendAndPullRequestOnTheEndedStatus(t *testing.T
 			}
 
 			got := lastStatus(t, tr.ReportingTracker).Actions()[0]
-			want := crew.ActionStatus{Name: "development", State: crew.ActionSucceeded{}}
+			want := crew.ActionStatus{Name: "development", State: crew.ActionSucceeded{Verdict: crew.Passed}}
 			if on {
-				want.State = crew.ActionSucceeded{Usage: crew.Some(crew.ShownUsage{Spend: used.Spend(), PullRequest: pr})}
+				want.State = crew.ActionSucceeded{
+					Verdict: crew.Passed, Usage: crew.Some(crew.ShownUsage{Spend: used.Spend(), PullRequest: pr}),
+				}
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("usage_in_status %v: action status = %#v, want %#v", on, got, want)

@@ -95,9 +95,9 @@ func (d *driver) succeededRule() []core.Command {
 }
 
 // allSucceeded is the end of implement when both its actions succeeded.
-var allSucceeded = crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
-	{Name: "acceptance", State: crew.ActionSucceeded{}},
-	{Name: "development", State: crew.ActionSucceeded{}},
+var allSucceeded = crew.Some(crew.NewRuleEnd("implement", crew.PassedRoute, []crew.ActionStatus{
+	{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
+	{Name: "development", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 }))
 
 func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
@@ -153,8 +153,8 @@ func TestAFailedRuleReportsOnFailureWithTheActionThatEndedIt(t *testing.T) {
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
-		End: crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionSucceeded{}},
+		End: crew.Some(crew.NewRuleEnd("implement", crew.FailedRoute, []crew.ActionStatus{
+			{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseSession, Log: space("74", "implement").Log}},
 		})),
 	})
@@ -173,8 +173,8 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, moved, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReportData{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
-		End: crew.Some(crew.NewRuleEnd("implement", []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionSucceeded{}},
+		End: crew.Some(crew.NewRuleEnd("implement", crew.FailedRoute, []crew.ActionStatus{
+			{Name: "acceptance", State: crew.ActionSucceeded{Verdict: crew.Passed}},
 			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStopped, Log: space("74", "implement").Log}},
 		})),
 	})

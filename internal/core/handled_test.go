@@ -45,7 +45,8 @@ func TestASucceededRuleIsHandledOnceItsFinalMoveIsDone(t *testing.T) {
 
 	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	want := core.HandledView{
-		Issue: i1, Rule: "implement", To: readyToReview, Move: crew.MoveDone, Taken: taken, Ended: ended,
+		Issue: i1, Rule: "implement", Route: crew.PassedRoute, To: readyToReview, Move: crew.MoveDone, Taken: taken,
+		Ended: ended,
 		Actions: []core.HandledAction{
 			{Name: "acceptance", Spend: crew.Spend{Sessions: 1}},
 			{Name: "development", Spend: crew.Spend{Sessions: 1}},
@@ -287,5 +288,36 @@ func TestARuleWithActionsThatSucceedsReplacesAnEarlierEntryThatEndedWell(t *test
 
 	if got := onlyEntry(t, d); got.Rule != "review" || got.To != readyToMerge || got.Gone {
 		t.Fatalf("entry after review: got %#v, want review's, not gone", got)
+	}
+}
+
+// Covers R50: an entry needs attention when its run ended through a route
+// other than passed, or when its final move was given up or dropped.
+func TestAHandledEntryNeedsAttentionUnlessItEndedThroughPassedAndItsMoveLanded(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		result core.Result
+		route  crew.RouteName
+		want   bool
+	}{
+		{name: "needs-person", status: 3, result: core.ResultDone, route: "needs-person", want: true},
+		{name: "passed", status: 0, result: core.ResultDone, route: crew.PassedRoute},
+		{name: "passed, its move dropped", status: 0, result: core.ResultMovedMeanwhile, route: crew.PassedRoute, want: true},
+		{name: "passed, its move given up", status: 0, result: core.ResultRefused, route: crew.PassedRoute, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newDriver(t, judging(), 2)
+			d.judged()
+			move, _ := d.send(core.ShellEnded{IssueID: issueID("1"), Action: "judge", Outcome: exited(tt.status)})
+			d.send(core.CallResult{ID: moveID(t, move, "1"), Result: tt.result, Reason: "nope"})
+
+			got := onlyEntry(t, d)
+			if got.Route != tt.route || got.NeedsAttention() != tt.want {
+				t.Fatalf("entry: got route %q, needs attention %v; want %q, %v", got.Route, got.NeedsAttention(),
+					tt.route, tt.want)
+			}
+		})
 	}
 }

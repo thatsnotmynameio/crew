@@ -113,8 +113,8 @@ func TestTakeThatFailsTransientlyIsOwedAndRetriedAtTheNextTick(t *testing.T) {
 		Issues: []core.IssueView{{
 			Issue: i1, Rule: "implement", Claim: core.ClaimOwed,
 			Actions: []core.ActionView{
-				{Name: "acceptance", Phase: core.PhaseWaiting},
-				{Name: "development", Phase: core.PhaseWaiting},
+				{Name: "acceptance", Phase: core.PhaseTaking},
+				{Name: "development", Phase: core.PhaseAwaitingTurn},
 			},
 		}},
 		Queues: []core.QueueView{{Slots: 1, Busy: 1}},

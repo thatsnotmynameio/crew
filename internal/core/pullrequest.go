@@ -37,10 +37,11 @@ func (s *step) reportPullRequests(report crew.PullRequestReport) {
 	s.pumpPullRequests(sl)
 }
 
-// reportEnding queues the report that follows the final move of h's
-// route, which landed. It carries how the rule ended, unless the rule has
-// no actions: nobody stopped watching anything, so there is nothing to tell
-// (KTD5). A route that closes the issue reports nothing.
+// reportEnding queues the report that follows the final move or close of
+// h's route, which landed. It carries how the rule ended, unless the rule
+// has no actions: nobody stopped watching anything, so there is nothing to
+// tell (KTD5). After a close it puts the pull requests in no state, and a
+// rule without actions that closes the issue reports nothing (R51).
 func (s *step) reportEnding(h *heldRun) {
 	if report, ok := h.run.EndingReport(s.m.statusUsage); ok {
 		s.reportPullRequests(report)

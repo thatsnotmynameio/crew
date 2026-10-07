@@ -68,7 +68,7 @@ func checkTemporaryDir(t *testing.T, root string, sh *dirShell) {
 func (r *rig) stepOutcomes() []crew.StepOutcome {
 	var out []crew.StepOutcome
 	for _, e := range r.events() {
-		if ended, ok := e.(crew.StepEnded); ok {
+		if ended, ok := e.(core.RouteStepEnded); ok {
 			out = append(out, ended.Outcome)
 		}
 	}

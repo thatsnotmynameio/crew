@@ -3,8 +3,8 @@ package core
 import "github.com/thatsnotmynameio/crew/internal/crew"
 
 // onRoute issues the commands e, an event about the route of h's run,
-// calls for, and publishes e when the views word it: the route chosen, or
-// a step that settled (KTD9).
+// calls for, and publishes e when the views word it: the route chosen, and
+// a step that settled as a RouteStepEnded (KTD9).
 func (s *step) onRoute(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.RouteChosen:
@@ -54,7 +54,8 @@ func (s *step) askStep(h *heldRun, i int) {
 		d.body, _ = st.Template.Render(h.run.CommentData())
 		d.call = Call{Kind: CallComment, IssueID: issue.ID(), IssueRef: issue.Ref()}
 	case crew.ReportStep:
-		d.report = h.failureReport()
+		// The run chose its route, so it has a report.
+		d.report, _ = h.run.FailureReport()
 		d.call = Call{Kind: CallReport, IssueID: issue.ID(), IssueRef: issue.Ref()}
 	case crew.ShellStep:
 		s.command(RunStepShell{
@@ -65,25 +66,25 @@ func (s *step) askStep(h *heldRun, i int) {
 	s.deliver(h, d)
 }
 
-// failureReport returns the report a report step of h's route posts: the
-// one its run computes, or, for a run without actions, a report naming no
-// action.
-func (h *heldRun) failureReport() crew.FailureReport {
-	if report, ok := h.run.FailureReport(); ok {
-		return report
-	}
-	issue := h.run.Issue()
-	return crew.FailureReport{IssueID: issue.ID(), IssueRef: issue.Ref()}
-}
-
 // stepEnded publishes the step that settled and reports h's run anew
 // (KTD-S17). Once the route's final step settled, it applies a move or
-// close that landed to the board (KTD4), reports a landed move on h's pull
-// requests, and keeps the listing generation from which a listing may
-// find the issue gone.
+// close that landed to the board (KTD4), reports a landed move or close on
+// h's pull requests, and keeps the listing generation from which a listing
+// may find the issue gone.
 func (s *step) stepEnded(h *heldRun, e crew.StepEnded) {
-	s.emit(e)
 	p, _ := h.run.Phase().(crew.RoutingPhase)
+	var plan crew.StepPlan
+	if e.Step < len(p.Steps) {
+		plan = p.Steps[e.Step]
+	}
+	ended := RouteStepEnded{
+		At: e.At, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Route: p.Route, Step: e.Step, Plan: plan,
+		Outcome: e.Outcome,
+	}
+	if plan.Kind == crew.StepMove || plan.Kind == crew.StepClose {
+		ended.From = s.m.rules[h.rule].Labels.Running
+	}
+	s.emit(ended)
 	_, final := p.Final()
 	_, landed := e.Outcome.(crew.StepLanded)
 	end, _ := p.End()

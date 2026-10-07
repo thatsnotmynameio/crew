@@ -220,7 +220,8 @@ func TestAnActionThatFailsToStartEndsTheSequenceThroughFailed(t *testing.T) {
 				return cmds
 			},
 			want: core.ReportFailure{Report: crew.FailureReport{
-				IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{{Action: "acceptance"}},
+				IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Route: crew.FailedRoute,
+				Failures: []crew.ActionFailure{{Action: "acceptance", Verdict: crew.Failed}},
 			}},
 		},
 		{
@@ -373,7 +374,7 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 				Name: "acceptance", Phase: core.PhaseRunning, Workspace: w.Workspace, Branch: w.Branch, Log: w.Log,
 				Started: started,
 			},
-			{Name: "development", Phase: core.PhaseWaiting, Workspace: w.Workspace, Branch: w.Branch, Log: w.Log},
+			{Name: "development", Phase: core.PhaseAwaitingTurn, Workspace: w.Workspace, Branch: w.Branch, Log: w.Log},
 		},
 	}}, Queues: []core.QueueView{{Slots: 2, Busy: 1}}, Bots: []core.BotView{{
 		Name: "you", You: true, Writes: true, Pairs: draftPairs,

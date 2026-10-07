@@ -243,3 +243,20 @@ func TestTheBoardIsOldestFirstAndSharesNoMemory(t *testing.T) {
 
 	wantBoard(t, d, onBoard("7", 1, ready), onBoard("8", 1, bug), onBoard("9", 9, bug))
 }
+
+// Covers KTD23: a close takes the issue off the board at once, labels that
+// are not crew's included, as no later read lists a closed issue.
+func TestACloseTakesTheIssueOffTheBoard(t *testing.T) {
+	d := newBoardDriver(t, implementClosing(), 2, boardLabels...)
+	d.send(core.Tick{})
+	d.send(core.BoardListed{Issues: []crew.BoardIssue{onBoard("1", 1, bug, ready)}})
+	take, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
+	d.settle(take)
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	wantBoard(t, d, onBoard("1", 1, bug, inProgress))
+
+	d.send(core.CallResult{ID: closeID(t, ending), Result: core.ResultDone})
+
+	wantBoard(t, d)
+}

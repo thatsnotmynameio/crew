@@ -17,19 +17,22 @@ func TestAE5AFailedReviewIsTheSameFailureInTheStatusTheHandledEntryAndTheEvents(
 	d, run := reviewing(t)
 	cmds, events := d.send(core.SessionEnded{IssueID: issueID("7"), Action: "review", Outcome: failed("found a bug")})
 
-	review := crew.ActionFailure{Action: "review", Workspace: "issue-7-implement", Log: ".crew/logs/issue-7-implement.log"}
+	review := crew.ActionFailure{
+		Action: "review", Verdict: crew.Failed, Workspace: "issue-7-implement", Log: ".crew/logs/issue-7-implement.log",
+	}
 	hasEnd(t, events, end{head: d.runHead("7"), action: "review", outcome: failed("found a bug")})
 
 	status := statusOf(t, cmds, "7")
 	if status.Run() != run || status.Rule() != "implement" {
 		t.Fatalf("status of run %q of %q, want run %q of implement", status.Run(), status.Rule(), run)
 	}
-	if want := (crew.StatusEnded{To: needsAttention, Move: crew.MovePending}); status.Progress() != want {
+	want := crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MovePending}
+	if status.Progress() != want {
 		t.Fatalf("status progress = %#v, want %#v", status.Progress(), want)
 	}
 	actions := status.Actions()
 	wantStates := []crew.ActionState{
-		crew.ActionSucceeded{}, crew.ActionFailed{Cause: crew.CauseSession, Log: review.Log},
+		crew.ActionSucceeded{Verdict: crew.Passed}, crew.ActionFailed{Cause: crew.CauseSession, Log: review.Log},
 	}
 	if len(actions) != 2 || !reflect.DeepEqual([]crew.ActionState{actions[0].State, actions[1].State}, wantStates) {
 		t.Fatalf("status actions = %#v, want implement succeeded and review failed by its session", actions)

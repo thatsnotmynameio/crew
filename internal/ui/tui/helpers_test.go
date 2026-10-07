@@ -37,20 +37,25 @@ func titledOnBoard(b crew.BoardIssue, title string) crew.BoardIssue {
 	return crew.NewBoardIssue(titled(b.Issue(), title), b.Labels())
 }
 
-// entry is #key handled by rule into to, taken and ended the given minutes
-// before start.
+// entry is #key handled by rule through passed into to, taken and ended the
+// given minutes before start.
 func entry(key, title string, rule crew.RuleName, to crew.State, taken, ended int) core.HandledView {
 	return core.HandledView{
-		Issue: titledIssue(key, title), Rule: rule, To: to, Move: crew.MoveDone,
+		Issue: titledIssue(key, title), Rule: rule, Route: crew.PassedRoute, To: to, Move: crew.MoveDone,
 		Taken: start.Add(-time.Duration(taken) * time.Minute), Ended: start.Add(-time.Duration(ended) * time.Minute),
 	}
 }
 
-// failedEntry is entry with actions failed.
-func failedEntry(key, title string, taken, ended int, actions ...string) core.HandledView {
-	e := entry(key, title, "implement", "needs attention", taken, ended)
+// failedEntry is entry through failed with actions failed.
+func failedEntry(key, title string, taken, ended int, actions ...crew.ActionName) core.HandledView {
+	return failing(entry(key, title, "implement", "needs attention", taken, ended), actions...)
+}
+
+// failing is e ended through failed with actions failed.
+func failing(e core.HandledView, actions ...crew.ActionName) core.HandledView {
+	e.Route = crew.FailedRoute
 	for _, a := range actions {
-		e.Failures = append(e.Failures, crew.ActionFailure{Action: crew.ActionName(a)})
+		e.Failures = append(e.Failures, crew.ActionFailure{Action: a, Verdict: crew.Failed})
 	}
 	return e
 }

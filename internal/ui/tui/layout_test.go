@@ -191,7 +191,7 @@ func TestWithoutColourSectionsAndStatesStillReadApart(t *testing.T) {
 
 	contains(t, view,
 		"Board ─", "Queues ─", "Events ─",
-		"⠋ code 5m", "○ check waiting", "○ idle",
+		"⠋ code 5m", "○ check taking", "○ idle",
 	)
 }
 

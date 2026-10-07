@@ -71,8 +71,8 @@ type StepLanded struct{}
 
 // StepRan is a shell step whose script exited 0.
 type StepRan struct {
-	// Reason is crew's one line on how the script ended, followed by the
-	// last line it printed.
+	// Reason is crew's one line on how the script ended, in crew's words
+	// only: a route's step never carries what its script printed (R49).
 	Reason CheckReason
 }
 
@@ -80,8 +80,9 @@ type StepRan struct {
 // did not run to its end, or a comment step whose comment did not render
 // for the run, so crew never posted it.
 type StepFailed struct {
-	// Reason is crew's one line on how the script ended, followed by the
-	// last line it printed, or why the comment did not render.
+	// Reason is crew's one line on how the script ended, in crew's words
+	// only, or why the comment did not render: a route's step never
+	// carries what its script printed (R49).
 	Reason CheckReason
 }
 

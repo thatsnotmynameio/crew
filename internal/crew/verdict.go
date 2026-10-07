@@ -147,8 +147,9 @@ type ShellOutcome struct {
 	// send killed it; none when it did not run to its end: it could not
 	// start, ran out of time, or crew stopped it.
 	Status Optional[int]
-	// Reason is crew's one line on how it ended, followed by the last line
-	// the script printed when it printed one.
+	// Reason is crew's one line on how it ended, followed, for a shell
+	// action whose script printed a line, by the last line it printed; a
+	// route's shell step has crew's line alone (R49).
 	Reason CheckReason
 }
 

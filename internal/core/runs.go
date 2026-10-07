@@ -174,21 +174,21 @@ func (s *step) apply(h *heldRun, events []crew.RunEvent) {
 }
 
 // on issues the commands e calls for, once applied to h's run, and
-// publishes e when the views word it: the take that landed or a missing
-// workspace. A run event about one action goes to onAction, and one about
-// the route to onRoute.
+// publishes e when the views word it: the take that landed, or a missing
+// or ready workspace. A run event about one action goes to onAction, and
+// one about the route to onRoute.
 func (s *step) on(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.TakeMoved:
 		s.takeMoved(h, e)
 	case crew.WorkspaceAsked:
 		s.workspaceAsked(h, e)
-	case crew.WorkspaceMissing:
+	case crew.WorkspaceMissing, crew.WorkspaceOpened:
 		s.emit(e)
 	case crew.RunReleased:
 		s.m.release(h)
 		s.freed()
-	case crew.RunTaken, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceOpened:
+	case crew.RunTaken, crew.RunStopped, crew.RunOutOfTime:
 		// Nothing to do outside the run.
 	case crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
 		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded:

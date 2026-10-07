@@ -72,8 +72,8 @@ func TestAE1AndAE2ALiveCardReadsItsActionsBotsAndQueue(t *testing.T) {
 	board := boardOf(t, h.view())
 
 	for ref, want := range map[string][]string{
-		"#1": {"#1 Add login form", "run  ⠋ code 5m · ⠋ tests 7m", "bots ■ crew-dev ■ crew-qa", "via  default"},
-		"#2": {"#2 Fix the flaky stream test", "run  ○ check waiting", "bots none", "via  clerk"},
+		"#1": {"#1 Add login form", "run  ⠋ code 5m · 1 left", "bots ■ crew-dev ■ crew-qa", "via  default"},
+		"#2": {"#2 Fix the flaky stream test", "run  ○ check taking", "bots none", "via  clerk"},
 	} {
 		if got := faceOf(t, board, ref); !slices.Equal(got, want) {
 			t.Errorf("%s's card = %q, want %q:\n%s", ref, got, want, board)
@@ -95,7 +95,8 @@ func TestARunRowReadsAStartingActionAndAnOwedClaim(t *testing.T) {
 		want  string
 	}{
 		{core.ClaimRunning, core.PhaseStarting, "run  ⠋ triage starting"},
-		{core.ClaimOwed, core.PhaseWaiting, "run  ! owed · ○ triage waiting"},
+		{core.ClaimRunning, core.PhaseReopening, "run  ⠋ triage reopening works…"},
+		{core.ClaimOwed, core.PhaseTaking, "run  ! owed · ○ triage taking"},
 	} {
 		h := newBoardHarness(t, 150, crewNotify, crewBoard)
 		u := held(twelve, "triage", "triage", tt.claim)

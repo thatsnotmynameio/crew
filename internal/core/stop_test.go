@@ -10,7 +10,8 @@ import (
 // unstartedReport is the failure report of #1 whose first action,
 // acceptance, a stop kept from starting before its run had a workspace.
 var unstartedReport = core.ReportFailure{Report: crew.FailureReport{
-	IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{{Action: "acceptance"}},
+	IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Route: crew.FailedRoute,
+	Failures: []crew.ActionFailure{{Action: "acceptance", Verdict: crew.Failed}},
 }}
 
 func TestAE9StopLetsRoutingRunsEndAndStopsRunningOnes(t *testing.T) {
@@ -135,8 +136,8 @@ func TestStopWhileTheWorkspaceIsMadeStartsNothing(t *testing.T) {
 	// The workspace names no log: no action will write it.
 	cmds = d.ready("1")
 	wantCommands(t, cmds, core.ReportFailure{Report: crew.FailureReport{
-		IssueID: issueID("1"), IssueRef: "#1",
-		Failures: []crew.ActionFailure{{Action: "acceptance", Workspace: "issue-1-implement"}},
+		IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Route: crew.FailedRoute,
+		Failures: []crew.ActionFailure{{Action: "acceptance", Verdict: crew.Failed, Workspace: "issue-1-implement"}},
 	}})
 	d.wantReason("1", "acceptance", "crew stopped")
 }

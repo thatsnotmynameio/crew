@@ -64,17 +64,21 @@ func (m Model) muted(name crew.RuleName) bool {
 	return !m.cfg.Notify[name]
 }
 
-// noteText says which rule ended on which issue and how (R25), cleaned and
-// capped, since the title comes from outside crew (KTD14).
+// noteText says which rule ended on which issue, through which route and
+// where that left the issue (R25), cleaned and capped, since the title
+// comes from outside crew (KTD14).
 func noteText(e core.HandledView) string {
-	verb, how := "ended", "moved to "+string(e.To)
+	how := "moved to " + string(e.To)
 	switch {
+	case e.To == "" && e.Move == crew.MoveDropped:
+		how = "its close was given up"
+	case e.To == "":
+		how = "closed it"
 	case e.Move == crew.MoveDropped:
 		how = fmt.Sprintf("its move to %s was given up", e.To)
-	case len(e.Failures) > 0:
-		verb = "failed"
 	}
-	return capped(fmt.Sprintf("crew: %s %s on %s %s; %s", e.Rule, verb, e.Issue.Ref(), e.Issue.Title(), how))
+	return capped(fmt.Sprintf("crew: %s ended through %s on %s %s; %s", e.Rule, e.Route, e.Issue.Ref(),
+		e.Issue.Title(), how))
 }
 
 // attention counts the Handled entries that need you, muted rules
@@ -97,12 +101,12 @@ func (m Model) windowTitle() string {
 	case m.snap.TimeUp:
 		return "crew · winding down"
 	}
-	running, waiting := m.actionCounts()
+	running, taking := m.actionCounts()
 	var parts []string
 	for _, p := range []struct {
 		n    int
 		what string
-	}{{running, "running"}, {waiting, "waiting"}, {m.attention(), "needs attention"}} {
+	}{{running, "running"}, {taking, "taking"}, {m.attention(), "needs attention"}} {
 		if p.n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", p.n, p.what))
 		}

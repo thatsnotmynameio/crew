@@ -78,7 +78,7 @@ func TestAE1ARunLooksUpItsPullRequestsOnceItChoseItsRoute(t *testing.T) {
 		end[0].SessionStarted != crew.Some(started) {
 		t.Fatalf("ends = %#v, want development's end with its usage and its session's start", end)
 	}
-	if _, moved := unrecorded(cmds)[0].(core.Move); moved || claimOf(t, d.m, "31") != core.ClaimJudging {
+	if _, moved := unrecorded(cmds)[0].(core.Move); moved || claimOf(t, d.m, "31") != core.ClaimRouting {
 		t.Fatalf("the route's move did not wait for the lookup: %#v", cmds)
 	}
 
@@ -287,12 +287,12 @@ func TestStatusShowsAnEndedActionsSpendOnlyWhenSetTo(t *testing.T) {
 	}
 
 	off := run()
-	if got := off.Actions()[0].State; got != (crew.ActionSucceeded{}) {
+	if got := off.Actions()[0].State; got != (crew.ActionSucceeded{Verdict: crew.Passed}) {
 		t.Fatalf("status without the setting holds %#v", got)
 	}
 	on := run(core.ReportingUsage())
 	shown := crew.Some(crew.ShownUsage{Spend: spent.Spend()})
-	if got := on.Actions()[0].State; got != (crew.ActionSucceeded{Usage: shown}) {
+	if got := on.Actions()[0].State; got != (crew.ActionSucceeded{Verdict: crew.Passed, Usage: shown}) {
 		t.Fatalf("ended action's status = %#v, want its spend, with no pull request looked up yet", got)
 	}
 	if got, running := on.Actions()[1].State.(crew.ActionRunning); !running {

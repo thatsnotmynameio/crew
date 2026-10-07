@@ -79,10 +79,15 @@ func taken(state crew.State) crew.PullRequestReport {
 }
 
 // ended is report p1 of #42 moving to state at the end of development, whose
-// actions are actions.
+// actions are actions: through failed when state is crewFailed, and through
+// passed otherwise.
 func ended(state crew.State, actions ...crew.ActionStatus) crew.PullRequestReport {
+	route := crew.PassedRoute
+	if state == crewFailed {
+		route = crew.FailedRoute
+	}
 	return crew.NewPullRequestReport(crew.PullRequestReportData{ID: "p1", IssueID: issueID("42"), IssueRef: "#42",
-		State: state, End: crew.Some(crew.NewRuleEnd("development", actions))})
+		State: state, End: crew.Some(crew.NewRuleEnd("development", route, actions))})
 }
 
 // comments returns the body of each comment posted on number, failed posts
@@ -123,7 +128,8 @@ func TestAReportMirrorsTheLabelAndPostsTheStopComment(t *testing.T) {
 	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
 		t.Errorf("edits = %q, want one: %q", edits, want)
 	}
-	body := "crew: `development` succeeded on #42, which moved to `crew:waiting review`, as did this pull request.\n" +
+	body := "crew: `development` ended through `passed` on #42, which moved to `crew:waiting review`, " +
+		"as did this pull request.\n" +
 		"\n" + nobodyWatches + "\n" +
 		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n"
 	if got := comments(t, gh, 50); !slices.Equal(got, []string{body}) {
@@ -148,7 +154,8 @@ func TestAStoppedRuleSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
 	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
 		t.Errorf("edits = %q, want one: %q", edits, want)
 	}
-	body := "crew: `development` failed on #42, which moved to `crew:failed`, as did this pull request.\n" +
+	body := "crew: `development` ended through `failed` on #42, which moved to `crew:failed`, " +
+		"as did this pull request.\n" +
 		"\n**`lfg`** failed: crew stopped it. Its log is `.crew/logs/issue-42-lfg.log`.\n" +
 		"\n" + nobodyWatches + "\n" +
 		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n"
@@ -201,7 +208,8 @@ func TestAnIssueWithoutAPullRequestGetsOnlyTheQuery(t *testing.T) {
 func TestAPullRequestsReportWritesToNoOtherPullRequest(t *testing.T) {
 	for name, end := range map[string]crew.Optional[crew.RuleEnd]{
 		"taken": {},
-		"ended": crew.Some(crew.NewRuleEnd("development", []crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded{}}})),
+		"ended": crew.Some(crew.NewRuleEnd("development", crew.PassedRoute,
+			[]crew.ActionStatus{{Name: "lfg", State: crew.ActionSucceeded{}}})),
 	} {
 		t.Run(name, func(t *testing.T) {
 			// GitHub resolves #90 to a pull request, which the Issue
@@ -428,9 +436,9 @@ func TestTheQuerysErrorsAreClassified(t *testing.T) {
 	}
 }
 
-// A failed check's reason may hold backticks; it renders in a code span it
-// cannot close, as in the status comment.
-func TestACheckReasonWithBackticksStaysInItsCodeSpan(t *testing.T) {
+// R49: a shell action's line shows only on the status comment; the stop
+// comment words a script failure without it.
+func TestAShellActionsLineStaysOffTheStopComment(t *testing.T) {
 	tr, gh := prTracker(t,
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewInProgress))},
 		reply{prefix: prEdit},
@@ -438,14 +446,46 @@ func TestACheckReasonWithBackticksStaysInItsCodeSpan(t *testing.T) {
 	)
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
 	report := ended(crewFailed, crew.ActionStatus{Name: "lfg",
-		State:  crew.ActionFailed{Cause: crew.CauseCheck, Log: ".crew/logs/issue-42-lfg.log"},
-		Checks: []crew.CheckResult{{Name: "pr", Reason: crew.NewCheckReason("`gh` found no @someone **pull request**")}}})
+		State: crew.ActionFailed{Cause: crew.CauseShell, Log: ".crew/logs/issue-42-lfg.log"},
+		Shell: crew.NewCheckReason("`gh` found no @someone **pull request**")})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
-	want := "**`lfg`** failed: `` `gh` found no @someone **pull request** ``. Its log is `.crew/logs/issue-42-lfg.log`."
+	want := "**`lfg`** failed: its script failed. Its log is `.crew/logs/issue-42-lfg.log`."
 	got := comments(t, gh, 50)
-	if len(got) != 1 || !slices.Contains(strings.Split(got[0], "\n"), want) {
-		t.Errorf("comments on 50 = %q, want one with the line %q", got, want)
+	if len(got) != 1 || !slices.Contains(strings.Split(got[0], "\n"), want) || strings.Contains(got[0], "@someone") {
+		t.Errorf("comments on 50 = %q, want one with the line %q and nothing the script printed", got, want)
+	}
+}
+
+// R51: after a route closed the issue, the report edits no label, as the
+// close took crew's labels off the pull request, and its stop comment says
+// the issue was closed, with the action whose verdict ended the sequence.
+func TestAReportAfterACloseEditsNoLabelAndSaysTheIssueWasClosed(t *testing.T) {
+	tr, gh := prTracker(t,
+		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r"))},
+		reply{prefix: commentOn(50), stdout: "900\n"},
+	)
+	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
+	report := crew.NewPullRequestReport(crew.PullRequestReportData{
+		ID: "p1", IssueID: issueID("42"), IssueRef: "#42",
+		End: crew.Some(crew.NewRuleEnd("development", "duplicate", []crew.ActionStatus{
+			{Name: "lfg", State: crew.ActionSucceeded{Verdict: "duplicate"}},
+			{Name: "judge", State: crew.ActionNotRun{}},
+		})),
+	})
+	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
+		t.Fatalf("ReportPullRequests: %v", err)
+	}
+	if edits := gh.callsTo(prEdit...); len(edits) != 0 {
+		t.Errorf("edits = %q, want none", edits)
+	}
+	body := "crew: `development` ended through `duplicate` on #42, which crew closed. " +
+		"crew took its labels off this pull request, which stays open.\n" +
+		"\n**`lfg`** ended with `duplicate`.\n" +
+		"\n" + nobodyWatches + "\n" +
+		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n"
+	if got := comments(t, gh, 50); !slices.Equal(got, []string{body}) {
+		t.Errorf("comments on 50 = %q, want one:\n%s", got, body)
 	}
 }

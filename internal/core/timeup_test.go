@@ -89,7 +89,8 @@ func TestAE3AnIssueThatFailsWhileWindingDownEndsThroughFailedAsUsual(t *testing.
 // timeUpReport is the failure report of #42 whose first action time-up kept
 // from starting, before its run had a workspace.
 var timeUpReport = core.ReportFailure{Report: crew.FailureReport{
-	IssueID: issueID("42"), IssueRef: "#42", Failures: []crew.ActionFailure{{Action: "acceptance"}},
+	IssueID: issueID("42"), IssueRef: "#42", Rule: "implement", Route: crew.FailedRoute,
+	Failures: []crew.ActionFailure{{Action: "acceptance", Verdict: crew.Failed}},
 }}
 
 func TestATakeThatLandsAfterTimeUpStartsNoActionAndEndsThroughFailed(t *testing.T) {

@@ -9,11 +9,6 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// checkResult is how the check name ended: passed or not, for reason.
-func checkResult(name crew.CheckName, passed bool, reason string) crew.CheckResult {
-	return crew.CheckResult{Name: name, Passed: passed, Reason: crew.NewCheckReason(reason)}
-}
-
 // changed returns s with change made to its data.
 func changed(s crew.Status, change func(*crew.StatusData)) crew.Status {
 	d := s.Data()
@@ -110,24 +105,35 @@ func TestElapsedTimeIsInWholeMinutes(t *testing.T) {
 	}
 }
 
-// Covers AE3 and AE4.
-func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
+// Covers AE3 and AE4: an ended status names the route, then says where the
+// issue moves or that it is closed, and how far that went.
+func TestAnEndedStatusShowsEachActionTheRouteAndTheMoveOrClose(t *testing.T) {
 	tr, _ := build(t)
-	for move, want := range map[crew.MoveProgress]string{
-		crew.MovePending: "moving to `needs attention`",
-		crew.MoveDone:    "moved to `needs attention`",
-		crew.MoveDropped: "could not move it to `needs attention`",
+	for _, tt := range []struct {
+		to   crew.State
+		move crew.MoveProgress
+		want string
+	}{
+		{needsAttention, crew.MovePending, "\n#74 is moving to `needs attention`.\n"},
+		{needsAttention, crew.MoveDone, "\n#74 moved to `needs attention`.\n"},
+		{needsAttention, crew.MoveDropped, "\ncrew could not move it to `needs attention`.\n"},
+		{"", crew.MovePending, "\n#74 is being closed.\n"},
+		{"", crew.MoveDone, "\n#74 was closed.\n"},
+		{"", crew.MoveDropped, "\ncrew could not close it.\n"},
 	} {
+		move, want := tt.move, tt.want
 		body := tr.renderStatus(crew.NewStatus(crew.StatusData{
 			IssueID: issueID("74"), IssueRef: "#74", Rule: "implement",
-			Progress: crew.StatusEnded{To: needsAttention, Move: move},
+			Progress: crew.StatusEnded{Route: crew.FailedRoute, To: tt.to, Move: move},
 			Actions: []crew.ActionStatus{
 				{Name: "development", State: crew.ActionFailed{}},
 				{Name: "acceptance", State: crew.ActionSucceeded{}},
 			},
 			Updated: updated,
 		}))
-		for _, want := range []string{"`implement`", "**`development`** failed", "**`acceptance`** succeeded", want} {
+		for _, want := range []string{
+			"crew: `implement` ended on #74 through `failed`.\n", "**`development`** failed", "**`acceptance`** succeeded", want,
+		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("move %d: body does not contain %q:\n%s", move, want, body)
 			}
@@ -199,8 +205,9 @@ func resumed(s crew.Status) crew.Status {
 // state.
 func lfgEnded(state crew.ActionState) crew.Status {
 	return crew.NewStatus(crew.StatusData{
-		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Progress: crew.StatusEnded{To: needsAttention},
-		Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, Updated: updated,
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement",
+		Progress: crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention},
+		Actions:  []crew.ActionStatus{{Name: "lfg", State: state}}, Updated: updated,
 	})
 }
 
@@ -254,30 +261,30 @@ func TestAResumedActionNamesItsWorktree(t *testing.T) {
 	}
 }
 
-// R12: each failed action says why in crew's words; only a check's reason
-// shows, in a code span.
+// R12: each failed action says why in crew's words; only a shell action's
+// line shows, in a code span, as no session's or tool's own words may.
 func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	tr, _ := build(t)
 	const log = " Its log is `.crew/logs/issue-74-lfg.log`."
 	for cause, want := range map[crew.FailureCause]string{
-		crew.CauseSession:   "**`lfg`** failed: its session failed." + log,
-		crew.CauseCheck:     "**`lfg`** failed: `` `gh` found no @someone **pull request** ``." + log,
-		crew.CauseStopped:   "**`lfg`** failed: crew stopped it." + log,
-		crew.CauseWorkspace: "**`lfg`** failed: its workspace could not be created." + log,
-		crew.CauseStart:     "**`lfg`** failed: its session could not start." + log,
-		crew.CausePrompt:    "**`lfg`** failed: its prompt did not render." + log,
+		crew.CauseSession:            "**`lfg`** failed: its session failed." + log,
+		crew.CauseCheck:              "**`lfg`** failed: its check failed." + log,
+		crew.CauseShell:              "**`lfg`** failed: `` `gh` found no @someone **pull request** ``." + log,
+		crew.CauseVerdict:            "**`lfg`** failed: it ended with a verdict it may not end with." + log,
+		crew.CauseStopped:            "**`lfg`** failed: crew stopped it." + log,
+		crew.CauseStoppedBeforeStart: "**`lfg`** failed: crew stopped before it started." + log,
+		crew.CauseTimeUp:             "**`lfg`** failed: crew's run time was up before it started." + log,
+		crew.CauseWorkspace:          "**`lfg`** failed: its workspace could not be created." + log,
+		crew.CauseStart:              "**`lfg`** failed: its session could not start." + log,
+		crew.CausePrompt:             "**`lfg`** failed: its prompt did not render." + log,
 	} {
 		s := changed(developmentEnded(), func(d *crew.StatusData) {
 			d.Actions[0].State = crew.ActionFailed{Cause: cause, Log: ".crew/logs/issue-74-lfg.log"}
-			// Only a check's reason may show; any other reason must not.
-			d.Actions[0].Checks = []crew.CheckResult{checkResult("pr", false, "`gh` found no @someone **pull request**")}
+			d.Actions[0].Shell = crew.NewCheckReason("`gh` found no @someone **pull request**")
 		})
 		body := tr.renderStatus(s)
 		if !slices.Contains(strings.Split(body, "\n"), want) {
 			t.Errorf("cause %d: body has no line %q:\n%s", cause, want, body)
-		}
-		if cause != crew.CauseCheck && strings.Contains(body, "@someone") {
-			t.Errorf("cause %d: body carries the reason:\n%s", cause, body)
 		}
 	}
 
@@ -287,6 +294,72 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	want := "**`lfg`** failed: its workspace could not be created. It failed before it had a log."
 	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
 		t.Errorf("body has no line %q:\n%s", want, body)
+	}
+	s = changed(developmentEnded(), func(d *crew.StatusData) { d.Actions[0].Shell = crew.CheckReason{} })
+	want = "**`lfg`** failed: its script failed. Its log is `.crew/logs/issue-74-lfg.log`."
+	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
+		t.Errorf("a script failure without a line: body has no line %q:\n%s", want, body)
+	}
+}
+
+// KTD23: an action that ended says its verdict, and one that has not run
+// says whether it waits for its turn, never ran or ran in an earlier run.
+func TestAnActionSaysItsVerdictOrWhyItHasNotRun(t *testing.T) {
+	tr, _ := build(t)
+	tests := []struct {
+		state crew.ActionState
+		want  string
+	}{
+		{crew.ActionSucceeded{Verdict: crew.Passed}, "**`lfg`** succeeded.\n"},
+		{crew.ActionSucceeded{Verdict: "blocked"}, "**`lfg`** ended with `blocked`.\n"},
+		{crew.ActionAwaitingTurn{}, "**`lfg`** waits for its turn.\n"},
+		{crew.ActionNotRun{}, "**`lfg`** did not run.\n"},
+		{crew.ActionDoneInEarlierRun{}, "**`lfg`** was done in an earlier run.\n"},
+	}
+	for _, tt := range tests {
+		got, _, _ := strings.Cut(actionLines(t, tr, lfgEnded(tt.state)), "\n#74 ")
+		if got != tt.want {
+			t.Errorf("%#v: action lines = %q, want %q", tt.state, got, tt.want)
+		}
+	}
+}
+
+// R16, R49: a route's step that did not land shows in crew's words; the
+// steps that landed or ran, and the final move, say nothing of their own.
+func TestARoutesStepsThatDidNotLandShowInCrewsWords(t *testing.T) {
+	tr, _ := build(t)
+	notify := crew.StepPlan{Kind: crew.StepShell, Shell: "notify"}
+	const exitedOne = "the route's shell step notify exited with status 1"
+	s := changed(developmentEnded(), func(d *crew.StatusData) {
+		d.Steps = []crew.StepStatus{
+			{Step: crew.StepPlan{Kind: crew.StepComment}, Outcome: crew.StepFailed{
+				Reason: crew.NewCheckReason("the comment did not render: no .Foo"),
+			}},
+			{Step: notify, Outcome: crew.StepFailed{Reason: crew.NewCheckReason(exitedOne)}},
+			{Step: notify, Outcome: crew.StepStopped{Reason: crew.NewCheckReason("the route's shell step notify was stopped")}},
+			{Step: notify, Outcome: crew.StepSkipped{}},
+			{Step: crew.StepPlan{Kind: crew.StepReport}, Outcome: crew.StepGivenUp{Reason: "gh: HTTP 403 @someone"}},
+			{Step: crew.StepPlan{Kind: crew.StepComment}, Outcome: crew.StepDropped{Reason: "gh: HTTP 404"}},
+			{Step: crew.StepPlan{Kind: crew.StepReport}, Outcome: crew.StepLanded{}},
+			{Step: notify, Outcome: crew.StepRan{Reason: crew.NewCheckReason("the route's shell step notify exited 0")}},
+			{Step: crew.StepPlan{Kind: crew.StepMove, To: needsAttention}, Outcome: crew.StepGivenUp{Reason: "gh: HTTP 403"}},
+		}
+	})
+	body := tr.renderStatus(s)
+	want := "\nThe route's comment failed: `the comment did not render: no .Foo`.\n" +
+		"\nThe route's shell step `notify` failed: `the route's shell step notify exited with status 1`.\n" +
+		"\ncrew stopped the route's shell step `notify`.\n" +
+		"\ncrew skipped the route's shell step `notify`, as it was stopping.\n" +
+		"\ncrew gave up the route's report.\n" +
+		"\ncrew dropped the route's comment, as the issue was closed or moved meanwhile.\n" +
+		"\n#74 moved to `needs attention`.\n"
+	if !strings.Contains(body, want) {
+		t.Errorf("body does not contain the steps:\n%s\nwant\n%s", body, want)
+	}
+	for _, never := range []string{"@someone", "HTTP", "exited 0"} {
+		if strings.Contains(body, never) {
+			t.Errorf("body carries %q:\n%s", never, body)
+		}
 	}
 }
 
@@ -313,17 +386,13 @@ func fenced(t *testing.T, markdown string) []string {
 	return blocks
 }
 
-// R6: an action's line is followed by the reasons of its checks that
-// passed, one item each; a failed check's reason is on the action's line.
-func TestAnActionListsTheReasonsOfItsChecks(t *testing.T) {
+// R49: a shell action's line is followed by the last line its script
+// printed, stripped, as crew's line gives it; a script failure's line is on
+// the action's line instead.
+func TestAShellActionShowsItsLastLine(t *testing.T) {
 	tr, _ := build(t)
-	judged := checkResult("judge", true, "the check judge passed: done (0.97)")
-	person := checkResult("judge", true, "the check judge passed: needs a person (0.95)")
-	closes := checkResult("pr-closes-issue", true, "the check pr-closes-issue passed")
-	unfinished := checkResult("judge", false, "the check judge failed: unfinished (1.00)")
-	noPR := checkResult("pr-closes-issue", false, "the check pr-closes-issue failed: no open pull request")
-	withChecks := func(s crew.Status, checks ...crew.CheckResult) crew.Status {
-		return changed(s, func(d *crew.StatusData) { d.Actions[0].Checks = checks })
+	withLine := func(s crew.Status, line string) crew.Status {
+		return changed(s, func(d *crew.StatusData) { d.Actions[0].Shell = crew.NewCheckReason(line) })
 	}
 	const log = " Its log is `.crew/logs/issue-9-lfg.log`.\n"
 	tests := []struct {
@@ -332,38 +401,26 @@ func TestAnActionListsTheReasonsOfItsChecks(t *testing.T) {
 		want   string
 	}{
 		{
-			// Covers AE2.
-			"both passed", withChecks(lfgEnded(crew.ActionSucceeded{}), judged, closes),
-			"**`lfg`** succeeded.\n\n- `the check judge passed: done (0.97)`\n- `the check pr-closes-issue passed`\n",
+			"passed", withLine(lfgEnded(crew.ActionSucceeded{}), "judge exited with status 0: done (0.97)"),
+			"**`lfg`** succeeded.\n\n- `judge exited with status 0: done (0.97)`\n",
 		},
 		{
-			// Covers AE4.
-			"needs a person", withChecks(lfgEnded(crew.ActionSucceeded{}), person, closes),
-			"**`lfg`** succeeded.\n\n- `the check judge passed: needs a person (0.95)`\n" +
-				"- `the check pr-closes-issue passed`\n",
+			"needs a person", withLine(lfgEnded(crew.ActionSucceeded{Verdict: "needs_person"}),
+				"judge exited with status 3: \x1b[31mneeds a person\x1b[0m (0.95)"),
+			"**`lfg`** ended with `needs_person`.\n\n- `judge exited with status 3: needs a person (0.95)`\n",
 		},
 		{
-			// Covers AE1.
-			"the first failed", withChecks(lfgFailed(crew.CauseCheck), unfinished),
-			"**`lfg`** failed: `the check judge failed: unfinished (1.00)`." + log,
+			"failed", withLine(lfgFailed(crew.CauseShell), "judge exited with status 1: unfinished (1.00)"),
+			"**`lfg`** failed: `judge exited with status 1: unfinished (1.00)`." + log,
 		},
 		{
-			// Covers AE3.
-			"the second failed", withChecks(lfgFailed(crew.CauseCheck), judged, noPR),
-			"**`lfg`** failed: `the check pr-closes-issue failed: no open pull request`." + log +
-				"\n- `the check judge passed: done (0.97)`\n",
-		},
-		{
-			"the second runs", withChecks(running74(updated.Add(-5*time.Minute), ""), judged),
-			"**`lfg`** has been running for 5 minutes.\n\n- `the check judge passed: done (0.97)`\n",
+			"stopped", withLine(lfgFailed(crew.CauseStopped), "the shell action judge was stopped"),
+			"**`lfg`** failed: crew stopped it." + log + "\n- `the shell action judge was stopped`\n",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := actionLines(t, tr, tt.status)
-			if isEnded(tt.status) {
-				got, _, _ = strings.Cut(got, "\n#74 ")
-			}
+			got, _, _ := strings.Cut(actionLines(t, tr, tt.status), "\n#74 ")
 			if got != tt.want {
 				t.Errorf("action lines:\n got %q\nwant %q", got, tt.want)
 			}

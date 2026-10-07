@@ -97,11 +97,15 @@ func TestAE3AE4StopLeavesTheMoveOnTheStatusAndTheFailureReportApart(t *testing.T
 
 		want := crew.StatusData{
 			IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
-			Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
+			Progress: crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MoveDone},
 			Actions: []crew.ActionStatus{{
 				Name:  "development",
 				State: crew.ActionFailed{Cause: crew.CauseStopped, Log: ".crew/logs/issue-1-implement.log"},
 			}},
+			Steps: []crew.StepStatus{
+				{Step: crew.StepPlan{Kind: crew.StepReport}, Outcome: crew.StepLanded{}},
+				{Step: crew.StepPlan{Kind: crew.StepMove, To: needsAttention}, Outcome: crew.StepLanded{}},
+			},
 		}
 		got := lastStatus(t, tr).Data()
 		if got.Run == "" {

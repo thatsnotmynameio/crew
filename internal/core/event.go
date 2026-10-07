@@ -9,9 +9,9 @@ import (
 // Published is an event the core publishes for subscribers (R16, R13): the
 // TUI and the line renderer. It is either a crew.RunEvent, one of a rule
 // run's events that the views word (the take, its landed move, a missing
-// workspace, a started session or script, an ended action, the route
-// chosen, a step that settled), or an Event of the core's own. The rule runs' other events are not
-// published.
+// or ready workspace, a started session or script, an ended action, the
+// route chosen), or an Event of the core's own, a step of the route that
+// settled among them. The rule runs' other events are not published.
 type Published interface {
 	// Time returns when the event happened.
 	Time() time.Time
@@ -45,6 +45,25 @@ type RunNotRecorded struct {
 	// "the start of lfg" or "the route failed it chose".
 	What   string
 	Reason string
+}
+
+// RouteStepEnded is a step of the route a rule run ends through that
+// settled (crew.StepEnded), with what the step does, for the views to word
+// it (R16, KTD23).
+type RouteStepEnded struct {
+	At       time.Time
+	IssueID  crew.IssueID
+	IssueRef string
+	Rule     crew.RuleName
+	// Route is the route the run ends through.
+	Route crew.RouteName
+	// Step is the step's index in the route, and Plan what it does.
+	Step int
+	Plan crew.StepPlan
+	// From is the state a move or close took the issue from, the rule's
+	// running label; empty for the other steps.
+	From    crew.State
+	Outcome crew.StepOutcome
 }
 
 // IssueSkipped is a listed issue found in two or more crew states. It is not
@@ -219,6 +238,9 @@ type Call struct {
 func (e RunNotRecorded) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e RouteStepEnded) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e IssueSkipped) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -255,6 +277,7 @@ func (e BotStopped) Time() time.Time { return e.At }
 func (e BotActsAgain) Time() time.Time { return e.At }
 
 func (RunNotRecorded) event()   {}
+func (RouteStepEnded) event()   {}
 func (IssueSkipped) event()     {}
 func (IssueOfOtherKind) event() {}
 func (PollDone) event()         {}
