@@ -19,9 +19,10 @@ type shellDoc struct {
 	Resume   located[string] `yaml:"resume"`
 }
 
-// shellShape is what a shell action of actions must be, said when it is
-// neither.
-const shellShape = "must be a shell script, or a mapping with script, and optionally verdicts and resume"
+// shellShape is what an action of actions must be, said when it is none of
+// its forms.
+const shellShape = "must be a shell script, or a mapping with script, and optionally verdicts and resume, " +
+	"or a function preset: a mapping with name, the function, and optionally resume and the function's parameters"
 
 // resumeSelf is the one value of a shell action's resume: a resume that
 // restarts at the action starts at the action itself.
@@ -39,28 +40,41 @@ func reservedNames() []string {
 
 // shells decodes actions: a mapping from a shell action's name to its
 // script, or to a mapping with its script, the verdicts its exit statuses
-// give and where a resume starts. Each script is non-empty and is never a
-// template: it reads the issue from environment variables. It returns every
-// action by name, even one with an error, so a rule that names it is not
-// reported again, and every error it finds.
-func shells(n *yaml.Node) (map[crew.ActionName]crew.ShellSpec, error) {
+// give and where a resume starts, or from a function preset's name to a
+// mapping with its function's name, where a resume starts and the
+// function's parameters. Each script is non-empty and is never a template:
+// it reads the issue from environment variables. No action is named like
+// one of functions (R32). It returns every shell action and every preset by
+// name, even one with an error, so a rule that names it is not reported
+// again, and every error it finds.
+func shells(n *yaml.Node, functions map[string][]crew.Verdict,
+) (map[crew.ActionName]crew.ShellSpec, map[crew.ActionName]preset, error) {
 	section, err := named(n, "actions")
 	errs := append(make([]error, 0, len(section)+1), err)
 	out := make(map[crew.ActionName]crew.ShellSpec, len(section))
+	presets := map[crew.ActionName]preset{}
 	for _, e := range section {
+		name := crew.ActionName(e.key.Value)
+		if err := definedName(e, functions); err != nil {
+			out[name] = crew.ShellSpec{}
+			errs = append(errs, err)
+			continue
+		}
+		if isPreset(e) {
+			p, err := parsePreset(e, functions)
+			presets[name] = p
+			errs = append(errs, err)
+			continue
+		}
 		spec, err := parseShell(e)
-		out[crew.ActionName(e.key.Value)] = spec
+		out[name] = spec
 		errs = append(errs, err)
 	}
-	return out, errors.Join(errs...)
+	return out, presets, errors.Join(errs...)
 }
 
 // parseShell decodes the shell action e.
 func parseShell(e entry) (crew.ShellSpec, error) {
-	if slices.Contains(reservedNames(), e.key.Value) {
-		return crew.ShellSpec{}, keyError(e.path, e.key.Line, fmt.Sprintf(
-			"%q is a word of the rules' grammar, so it cannot name an action", e.key.Value))
-	}
 	value := resolve(e.value)
 	var doc shellDoc
 	var scriptErr error

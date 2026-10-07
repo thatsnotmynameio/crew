@@ -21,7 +21,8 @@ const ListItem = "[]"
 // items, the structs each value or list item may be decoded into, none for
 // a scalar or a list of scalars; named, whether its keys are names, each
 // value an item; list, whether each value may be a list, each of its items
-// an item; free, whether an item also takes one key the code owner names;
+// an item; free, whether an item also takes keys the code owner names,
+// whose own keys sections describes at that key's path when they have any;
 // and open, whether its keys besides the items' go to an adapter.
 type section struct {
 	items []reflect.Type
@@ -38,14 +39,16 @@ var sections = map[string]section{
 	"tracker":              {items: item[trackerDoc](), open: true},
 	"agents":               {items: item[agentDoc](), named: true},
 	"agents.*.harness":     {items: item[harnessDoc](), open: true},
-	"actions":              {items: item[shellDoc](), named: true},
+	"actions":              {items: types[shellDoc, presetDoc](), named: true, free: true},
 	"actions.*.verdicts":   {named: true},
 	"board":                {named: true},
 	"rules":                {items: item[ruleDoc](), named: true},
 	"rules.*.labels":       {items: item[labelsDoc]()},
 	"rules.*.actions":      {items: types[sessionDoc, referenceDoc](), list: true, free: true},
 	"rules.*.actions[].on": {named: true},
+	"rules.*.actions[].*":  {named: true},
 	"rules.*.routes":       {items: item[stepDoc](), named: true, list: true, free: true},
+	"rules.*.routes.*[].*": {named: true},
 }
 
 // item returns the type T, an item's only shape.
@@ -112,7 +115,13 @@ func (w *keyWalk) section(path string) error {
 		path += ListItem
 	}
 	if s.free {
-		w.keys = append(w.keys, join(path, AnyName))
+		free := join(path, AnyName)
+		w.keys = append(w.keys, free)
+		if _, ok := sections[free]; ok {
+			if err := w.section(free); err != nil {
+				return err
+			}
+		}
 	}
 	for _, item := range s.items {
 		if err := w.fields(item, path); err != nil {

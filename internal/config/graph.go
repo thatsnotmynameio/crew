@@ -110,7 +110,7 @@ func ends(step crew.Step) bool {
 	switch step.(type) {
 	case crew.MoveStep, crew.CloseStep:
 		return true
-	case crew.CommentStep, crew.ReportStep, crew.ShellStep:
+	case crew.CommentStep, crew.ReportStep, crew.ShellStep, crew.FunctionStep:
 	}
 	return false
 }

@@ -63,7 +63,7 @@ func TestTheExampleLoadsUncommented(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(uncommented(t)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(root, "")
+	cfg, err := config.Load(root, "", nil)
 	if err != nil {
 		t.Fatalf("Load(uncommented %s) = %v", exampleConfig, err)
 	}
@@ -76,8 +76,13 @@ func TestTheExampleLoadsUncommented(t *testing.T) {
 	}
 }
 
+// functionKeys are the keys only a function's preset or a function's
+// parameters set. crew registers no function, so the example, which must
+// load uncommented, describes them in its comments instead of setting them.
+var functionKeys = []string{"actions.*.*", "actions.*.name", "rules.*.actions[].*.*", "rules.*.routes.*[].*.*"}
+
 // The example is the reference of every key: it sets each key the schema
-// describes at least once.
+// describes at least once, but those only a function sets.
 func TestTheExampleSetsEveryKey(t *testing.T) {
 	var w schemaWalk
 	w.object(readSchema(t), "")
@@ -88,7 +93,7 @@ func TestTheExampleSetsEveryKey(t *testing.T) {
 	var set []string
 	exampleKeys(doc.Content[0], "", w.keys, &set)
 	for _, k := range w.keys {
-		if !slices.Contains(set, k) {
+		if !slices.Contains(set, k) && !slices.Contains(functionKeys, k) {
 			t.Errorf("%s does not set %s", exampleConfig, k)
 		}
 	}

@@ -112,10 +112,10 @@ var invalidShellActions = []rejectCase{
 		wants: []string{"actions.test", "line 2", "must be a shell script, or a mapping with script"},
 	},
 	{
-		// A function's preset arrives with #256.
-		name:  "a function's preset",
+		// A preset is of a registered function, and Load here registers none.
+		name:  "a preset of a function not registered",
 		body:  "actions:\n  greet:\n    name: comment\n    text: hi\n" + oneRule,
-		wants: []string{"actions.greet.name", "line 3", "unknown key"},
+		wants: []string{"actions.greet.name", "line 3", `no function is named "comment"; the registered functions are none`},
 	},
 	{
 		name:  "two shell actions share a name",

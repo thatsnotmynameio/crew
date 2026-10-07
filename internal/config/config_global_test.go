@@ -34,7 +34,7 @@ func writeGlobal(t *testing.T, body string) string {
 // repository's files, leaving out each whose body is noFile.
 func loadAll(t *testing.T, global, shared, local string) *config.Config {
 	t.Helper()
-	cfg, err := config.Load(writeFiles(t, shared, local), writeGlobal(t, global))
+	cfg, err := config.Load(writeFiles(t, shared, local), writeGlobal(t, global), nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -46,7 +46,7 @@ func loadAll(t *testing.T, global, shared, local string) *config.Config {
 func loadAllErr(t *testing.T, global, shared, local string) ([]string, string) {
 	t.Helper()
 	path := writeGlobal(t, global)
-	cfg, err := config.Load(writeFiles(t, shared, local), path)
+	cfg, err := config.Load(writeFiles(t, shared, local), path, nil)
 	if err == nil {
 		t.Fatalf("Load succeeded with %+v, want an error", cfg)
 	}
@@ -92,7 +92,7 @@ func TestTheRepositorysAgentsReplaceTheGlobalAgents(t *testing.T) {
 
 // Covers AE4: the global file alone is a config.
 func TestTheGlobalFileAloneIsAConfig(t *testing.T) {
-	cfg, err := config.Load(t.TempDir(), writeGlobal(t, oneRule))
+	cfg, err := config.Load(t.TempDir(), writeGlobal(t, oneRule), nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestTheGlobalFileAloneIsAConfig(t *testing.T) {
 // points to the example.
 func TestNoFileNamesAllThree(t *testing.T) {
 	root, global := t.TempDir(), writeGlobal(t, noFile)
-	_, err := config.Load(root, global)
+	_, err := config.Load(root, global, nil)
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("error %v is not fs.ErrNotExist", err)
 	}
@@ -119,7 +119,7 @@ func TestNoFileNamesAllThree(t *testing.T) {
 // Without a global path, the missing-config error says crew reads no
 // global file and why, rather than naming a file it would not read.
 func TestNoFileAndNoGlobalPathSaysWhy(t *testing.T) {
-	_, err := config.Load(t.TempDir(), "")
+	_, err := config.Load(t.TempDir(), "", nil)
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("error %v is not fs.ErrNotExist", err)
 	}
@@ -165,7 +165,7 @@ func TestApplicationSupportIsNeverRead(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(library, "config.yaml"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(writeFiles(t, oneRule, noFile), config.GlobalFile("", home))
+	cfg, err := config.Load(writeFiles(t, oneRule, noFile), config.GlobalFile("", home), nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestAnEmptyGlobalFileChangesNothing(t *testing.T) {
 // file.
 func TestAGlobalDirectoryIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	_, err := config.Load(writeFiles(t, oneRule, noFile), dir)
+	_, err := config.Load(writeFiles(t, oneRule, noFile), dir, nil)
 	if err == nil || errors.Is(err, fs.ErrNotExist) || !strings.HasPrefix(err.Error(), "read crew config:") {
 		t.Errorf("error = %v, want a read error that is not fs.ErrNotExist", err)
 	}
@@ -231,7 +231,7 @@ func TestAMissingKeyNamesAllThreeFiles(t *testing.T) {
 // came from it.
 func TestASectionOfTheGlobalFileNamesIt(t *testing.T) {
 	path := writeGlobal(t, "tracker:\n  name: github\n  hots: example.com\n")
-	cfg, err := config.Load(writeFiles(t, oneRule, noFile), path)
+	cfg, err := config.Load(writeFiles(t, oneRule, noFile), path, nil)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

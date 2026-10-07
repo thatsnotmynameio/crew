@@ -221,7 +221,7 @@ type built struct {
 // fills it from its listings (KTD10). A route that comments or closes needs
 // a tracker that can, a port.Commenter or a port.Closer (KTD7).
 func build(o Options) (built, error) {
-	cfg, err := config.Load(o.Root, o.GlobalConfig)
+	cfg, err := config.Load(o.Root, o.GlobalConfig, o.Registry.Functions())
 	if err != nil {
 		return built{}, err
 	}

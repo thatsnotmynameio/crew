@@ -19,7 +19,7 @@ type stepDoc struct {
 // What a route and its steps must be, said when one is none of its forms.
 const (
 	routeShape = "must be a label to move the item to, or a list of steps"
-	stepShape  = "must be report, close, move: <label>, comment: <text>, or the name of one of actions"
+	stepShape  = "must be report, close, move: <label>, comment: <text>, or the name of one of actions or of a function"
 )
 
 // The steps' words: report and close are written alone, move and comment
@@ -107,8 +107,12 @@ func parseStep(e entry, route crew.RouteName, env ruleEnv) (crew.Step, keyAt, er
 	case n.Kind == yaml.ScalarNode && n.Value == closeWord:
 		return crew.CloseStep{}, at, nil
 	case n.Kind == yaml.ScalarNode:
-		name, spec, err := env.shell(n, e.path)
-		return crew.ShellStep{Name: name, Shell: spec}, at, err
+		c, err := env.callee(n, e.path)
+		if err != nil {
+			return nil, at, err
+		}
+		step, err := env.step(c, nil, e.path, n.Line)
+		return step, at, err
 	case n.Kind != yaml.MappingNode || len(n.Content) != nodesPerEntry:
 		return nil, at, keyError(e.path, n.Line, stepShape)
 	}
@@ -117,11 +121,12 @@ func parseStep(e entry, route crew.RouteName, env ruleEnv) (crew.Step, keyAt, er
 	case moveWord, commentWord:
 		return effectStep(key, route, at)
 	}
-	name, spec, err := env.shell(key.key, key.path)
-	if err == nil {
-		err = noParameters(key)
+	c, err := env.callee(key.key, key.path)
+	if err != nil {
+		return nil, at, err
 	}
-	return crew.ShellStep{Name: name, Shell: spec}, at, err
+	step, err := env.step(c, &key, e.path, n.Line)
+	return step, at, err
 }
 
 // effectStep decodes the move or the comment e, a step of the route called
