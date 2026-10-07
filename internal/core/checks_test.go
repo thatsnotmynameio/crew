@@ -32,13 +32,13 @@ func judging(d *driver, lastMessage string) {
 	cmds, _ := d.send(core.SessionEnded{
 		IssueID: issueID("74"), Action: "development", Outcome: succeeded, LastMessage: lastMessage,
 	})
-	wantCommands(d.t, cmds, judgeRun(lastMessage))
+	wantCommands(d.t, cmds, judgeRun(d, lastMessage))
 }
 
-// judgeRun is the RunCheck of development's judge, after a session whose
-// last message was lastMessage.
-func judgeRun(lastMessage string) core.RunCheck {
-	c := runCheck()
+// judgeRun is the RunCheck of development's judge in d's last run of issue
+// 74, after a session whose last message was lastMessage.
+func judgeRun(d *driver, lastMessage string) core.RunCheck {
+	c := d.runCheck()
 	c.Name, c.Command, c.LastMessage = "judge", judgeCheck, lastMessage
 	return c
 }
@@ -51,7 +51,7 @@ func TestAPassingCheckStartsTheNextWhichDecidesTheAction(t *testing.T) {
 
 	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development",
 		Passed: true, Reason: crew.NewCheckReason("the check judge passed: done (0.97)")})
-	next := runCheck()
+	next := d.runCheck()
 	next.LastMessage = "PR #20 is open.\nMerging is yours."
 	wantCommands(t, cmds, next)
 
@@ -118,7 +118,7 @@ func TestAStopWhileTheFirstCheckRunsEndsTheActionWithoutTheSecond(t *testing.T) 
 	judging(d, "")
 
 	cmds, _ := d.send(core.StopRequested{})
-	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Action: "development"})
+	wantCommands(t, cmds, core.StopCheck{IssueID: issueID("74"), Run: d.run(issueID("74")), Action: "development"})
 	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
 	for _, c := range cmds {
 		if _, ok := c.(core.RunCheck); ok {
@@ -147,10 +147,10 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
 	want := []crew.ActionStatus{
-		{Name: "acceptance", State: crew.ActionSucceeded},
-		{Name: "development", State: crew.ActionRunning, Started: devStarted, Checks: []crew.CheckResult{judged}},
+		{Name: "acceptance", State: crew.ActionSucceeded{}},
+		{Name: "development", State: crew.ActionRunning{Started: devStarted}, Checks: []crew.CheckResult{judged}},
 	}
-	if got.Kind != crew.StatusRunning || !reflect.DeepEqual(got.Actions, want) {
+	if got.Progress() != (crew.StatusRunning{}) || !reflect.DeepEqual(got.Actions(), want) {
 		t.Fatalf("status while the second check runs: %#v\nwant actions %#v", got, want)
 	}
 
@@ -160,8 +160,8 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	}
 	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: closes.Reason})
 	ended := statusOf(t, cmds, "74")
-	dev := ended.Actions[1]
-	if dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
+	dev := ended.Actions()[1]
+	if dev.State != (crew.ActionSucceeded{}) || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
 		t.Fatalf("development once ended: %#v", dev)
 	}
 }

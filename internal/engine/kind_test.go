@@ -29,8 +29,9 @@ func (r *rig) otherKinds() []core.IssueOfOtherKind {
 // rule that takes issues gets one notice over several polls, and no session.
 func TestAPullRequestInAnIssueRulesLabelIsNoticedOnceAcrossPolls(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		pr := issue(90, ready)
-		pr.Kind = crew.KindPullRequest
+		d := issue(90, ready).Data()
+		d.Kind = crew.KindPullRequest
+		pr := crew.NewIssue(d)
 		r := start(t, config(t, fake.NewTracker(pr), develop))
 
 		time.Sleep(2*poll + time.Second) // the polls at 0s, 300s and 600s

@@ -1,5 +1,5 @@
-// Package lines is crew's headless renderer (R18): it prints each domain
-// event of the engine's ordered subscription as one timestamped line,
+// Package lines is crew's headless renderer (R18): it prints each event
+// of the engine's ordered subscription as one timestamped line,
 // "HH:MM:SS crew: <text>". It never imports bubbletea, so the headless mode
 // stays free of the TUI.
 package lines
@@ -83,60 +83,57 @@ func Line(w io.Writer, at time.Time, text string) error {
 
 // Text describes e as one English sentence, without a timestamp. The TUI
 // uses it for its recent events too.
-func Text(e core.Event) string {
-	if text, ok := issueText(e); ok {
-		return text
+func Text(e core.Published) string {
+	switch e := e.(type) {
+	case crew.RunEvent:
+		return runText(e)
+	case core.Event:
+		return coreText(e)
 	}
-	if text, ok := botText(e); ok {
-		return text
-	}
-	return loopText(e)
+	return fmt.Sprintf("%T", e)
 }
 
-// botText describes the events about crew's bots, and reports false for
-// any other event.
-func botText(e core.Event) (string, bool) {
+// runText describes the run events the core publishes. The core publishes
+// none of the others, which have no line.
+func runText(e crew.RunEvent) string {
 	switch e := e.(type) {
-	case core.BotStopped:
-		return fmt.Sprintf("bot %s stopped acting: %s", e.Bot, e.Warning), true
-	case core.BotActsAgain:
-		return fmt.Sprintf("bot %s acts again: its token renewed", e.Bot), true
-	}
-	return "", false
-}
-
-// issueText describes the events about one issue and its actions, and
-// reports false for any other event.
-func issueText(e core.Event) (string, bool) {
-	switch e := e.(type) {
-	case core.IssueTaken:
-		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Rule, e.Issue.Ref, e.Issue.Title, e.From, e.To), true
-	case core.ActionStarted:
-		return actionStarted(e), true
-	case core.WorkspaceMissing:
+	case crew.RunTaken:
+		return fmt.Sprintf("%s took %s %q (%s -> %s)", e.Rule, e.IssueRef, e.Issue.Title, e.From, e.To)
+	case crew.ActionSessionStarted:
+		return actionStarted(e)
+	case crew.WorkspaceMissing:
 		return fmt.Sprintf("%s %s/%s: worktree %s is gone, creating a new one",
-			e.IssueRef, e.Rule, e.Action, e.Workspace), true
+			e.IssueRef, e.Rule, e.Action, e.Workspace.Name)
+	case crew.ActionEnded:
+		return actionEnded(e)
+	case crew.TakeMoved:
+		return moved(e.IssueRef, e.From, e.To)
+	case crew.VerdictMoved:
+		return moved(e.IssueRef, e.From, e.To)
+	case crew.FailureReported:
+		return "reported the failure on " + e.IssueRef
+	case crew.RunStopped, crew.ActionWorkspaceAsked, crew.ActionOpened, crew.ActionSessionAsked,
+		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionLookupAsked, crew.ActionCheckAsked,
+		crew.ActionCheckStopAsked, crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing,
+		crew.RunJudged, crew.VerdictDropped, crew.FailureReportDropped, crew.RunReleased:
+	}
+	return ""
+}
+
+// coreText describes the core's own events.
+func coreText(e core.Event) string {
+	switch e := e.(type) {
 	case core.RunNotRecorded:
 		return withReason(fmt.Sprintf("could not record %s %s/%s's run, so a restart may not resume it",
-			e.IssueRef, e.Rule, e.Action), e.Reason), true
-	case core.ActionEnded:
-		return actionEnded(e), true
-	case core.IssueMoved:
-		return fmt.Sprintf("%s moved from %s to %s", e.IssueRef, e.From, e.To), true
-	case core.FailureReported:
-		return "reported the failure on " + e.IssueRef, true
+			e.IssueRef, e.Rule, e.Action), e.Reason)
 	case core.IssueSkipped:
-		return issueSkipped(e), true
+		return issueSkipped(e)
 	case core.IssueOfOtherKind:
-		return issueOfOtherKind(e), true
-	}
-	return "", false
-}
-
-// loopText describes the events of the engine's loop and its tracker calls,
-// and names the type of any event it does not know.
-func loopText(e core.Event) string {
-	switch e := e.(type) {
+		return issueOfOtherKind(e)
+	case core.BotStopped:
+		return fmt.Sprintf("bot %s stopped acting: %s", e.Bot, e.Warning)
+	case core.BotActsAgain:
+		return fmt.Sprintf("bot %s acts again: its token renewed", e.Bot)
 	case core.PollDone:
 		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
 	case core.PollSkipped:
@@ -157,25 +154,32 @@ func loopText(e core.Event) string {
 	return fmt.Sprintf("%T", e)
 }
 
+// moved is the line for a move the tracker made, a take or a verdict.
+func moved(ref string, from, to crew.State) string {
+	return fmt.Sprintf("%s moved from %s to %s", ref, from, to)
+}
+
 // actionStarted is the line for an action that started.
-func actionStarted(e core.ActionStarted) string {
+func actionStarted(e crew.ActionSessionStarted) string {
+	w := e.Workspace
 	if e.Resumed {
 		return fmt.Sprintf("%s %s/%s resumed in worktree %s on branch %s, log %s",
-			e.IssueRef, e.Rule, e.Action, e.Workspace, e.Branch, e.Log)
+			e.IssueRef, e.Rule, e.Action, w.Name, w.Branch, e.Log)
 	}
-	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Rule, e.Action, e.Branch, e.Log)
+	return fmt.Sprintf("%s %s/%s started on branch %s, log %s", e.IssueRef, e.Rule, e.Action, w.Branch, e.Log)
 }
 
 // actionEnded is the line for an action that ended, with its result.
-func actionEnded(e core.ActionEnded) string {
+func actionEnded(e crew.ActionEnded) string {
 	// The reason is shown for successes too: without a check, a clean end is
 	// the only success signal, so its last message is what tells you
 	// whether the work was done.
+	outcome := e.End.Outcome()
 	verdict := "failed"
-	if e.Outcome.Succeeded {
+	if outcome.Succeeded {
 		verdict = "succeeded"
 	}
-	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Rule, e.Action, verdict), e.Outcome.Reason.String())
+	return withReason(fmt.Sprintf("%s %s/%s %s", e.IssueRef, e.Rule, e.Action, verdict), outcome.Reason.String())
 }
 
 // issueSkipped is the line for an issue crew left alone, and why.

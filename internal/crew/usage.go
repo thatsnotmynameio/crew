@@ -1,19 +1,15 @@
 package crew
 
 // Usage is what a harness reported a session used. Each value is optional:
-// a harness that cannot tell leaves its Has field false, so the value reads
-// as not reported, never as zero.
+// a harness that cannot tell leaves it out, so the value reads as not
+// reported, never as zero.
 type Usage struct {
-	// Cost is the session's cost in US dollars, as the harness reports it;
-	// set when HasCost.
-	Cost    float64
-	HasCost bool
-	// Tokens is the session's token usage; set when HasTokens.
-	Tokens    Tokens
-	HasTokens bool
-	// Turns is how many turns the session took; set when HasTurns.
-	Turns    int
-	HasTurns bool
+	// Cost is the session's cost in US dollars, as the harness reports it.
+	Cost Optional[float64]
+	// Tokens is the session's token usage.
+	Tokens Optional[Tokens]
+	// Turns is how many turns the session took.
+	Turns Optional[int]
 	// Models names the models the session used, sorted; empty when the
 	// harness does not tell.
 	Models []string
@@ -58,11 +54,11 @@ type Spend struct {
 // Spend returns u as the spend of one session.
 func (u Usage) Spend() Spend {
 	s := Spend{Sessions: 1}
-	if u.HasCost {
-		s.Cost, s.WithCost = u.Cost, 1
+	if cost, ok := u.Cost.Get(); ok {
+		s.Cost, s.WithCost = cost, 1
 	}
-	if u.HasTokens {
-		s.Tokens, s.WithTokens = u.Tokens, 1
+	if tokens, ok := u.Tokens.Get(); ok {
+		s.Tokens, s.WithTokens = tokens, 1
 	}
 	return s
 }
@@ -76,27 +72,30 @@ func (s Spend) Add(t Spend) Spend {
 	}
 }
 
-// PullRequestLookup is what came of looking up the pull request an action
-// opened.
-type PullRequestLookup int
-
-// The outcomes of a pull request lookup. The zero value means crew did not
-// look it up: its tracker cannot, or the lookup failed.
-const (
-	PullRequestNotLookedUp PullRequestLookup = iota
-	// PullRequestNone: the tracker found no pull request from the branch.
-	PullRequestNone
-	// PullRequestFound: Ref and URL name the pull request.
-	PullRequestFound
-)
-
 // PullRequest is the pull request an action opened, as its tracker found
-// it from the action's branch.
-type PullRequest struct {
-	Lookup PullRequestLookup
-	// Ref is how the tracker refers to it, such as #45; set when Lookup is
-	// PullRequestFound.
+// it from the action's branch: PullRequestNotLookedUp, PullRequestNone or
+// PullRequestFound. A nil PullRequest is one crew did not look up.
+//
+//sumtype:decl
+type PullRequest interface {
+	pullRequest()
+}
+
+// PullRequestNotLookedUp is a pull request crew did not look up: its
+// tracker cannot, or the lookup failed.
+type PullRequestNotLookedUp struct{}
+
+// PullRequestNone is a lookup that found no pull request from the branch.
+type PullRequestNone struct{}
+
+// PullRequestFound is the pull request a lookup found.
+type PullRequestFound struct {
+	// Ref is how the tracker refers to it, such as #45.
 	Ref string
-	// URL is its web address; set when Lookup is PullRequestFound.
+	// URL is its web address.
 	URL string
 }
+
+func (PullRequestNotLookedUp) pullRequest() {}
+func (PullRequestNone) pullRequest()        {}
+func (PullRequestFound) pullRequest()       {}

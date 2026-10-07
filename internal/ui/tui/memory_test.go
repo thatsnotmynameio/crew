@@ -74,7 +74,7 @@ func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 
 	u := gone(entry("1", "Add login form", "implement", "ready to review", 7, 0))
 	u.Snapshot.Board = append(u.Snapshot.Board,
-		crew.BoardIssue{Issue: u.Snapshot.Handled[0].Issue, Labels: []crew.State{"ready to review"}})
+		crew.NewBoardIssue(u.Snapshot.Handled[0].Issue, []crew.State{"ready to review"}))
 	h.send(updateMsg(u))
 	wantCode(t, h, "1", "running the tests now", "crew/1-code")
 
@@ -102,14 +102,14 @@ func TestTwoIssuesKeepTheirMessagesApart(t *testing.T) {
 		core.Said{IssueID: issueID("1"), Action: "code", Text: crew.NewSaid("adding the form")},
 		core.Said{IssueID: issueID("3"), Action: "code", Text: crew.NewSaid("dropping the flag")},
 	)
-	three := crew.Issue{ID: issueID("3"), Ref: "#3", Title: "Drop the old flag"}
+	three := crew.NewIssue(crew.IssueData{ID: issueID("3"), Ref: "#3", Title: "Drop the old flag"})
 	u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{
 		Issue: three, Rule: "implement", Queue: crew.DefaultQueue, Claim: core.ClaimRunning,
 		Actions: []core.ActionView{
 			{Name: "code", Phase: core.PhaseRunning, Branch: "crew/3-code", Started: start.Add(-time.Minute)},
 		},
 	})
-	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: three, Labels: []crew.State{"in progress"}})
+	u.Snapshot.Board = append(u.Snapshot.Board, crew.NewBoardIssue(three, []crew.State{"in progress"}))
 
 	h.send(updateMsg(u))
 

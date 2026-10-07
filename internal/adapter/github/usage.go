@@ -10,23 +10,27 @@ import (
 
 // usage words what an ended action's session spent and the pull request it
 // opened, after a space, as in " Usage: $12.40, 17.2M tokens. Pull request:
-// [#45](url).", or returns "" when its status holds no session's spend.
-// These are crew's own figures and the tracker's link, never the session's
-// words.
-func usage(a crew.ActionStatus) string {
-	if a.Spend.Sessions == 0 {
+// [#45](url).", or returns "" when its status shows none. These are crew's
+// own figures and the tracker's link, never the session's words.
+func usage(shown crew.Optional[crew.ShownUsage]) string {
+	u, ok := shown.Get()
+	if !ok {
 		return ""
 	}
-	var pr string
-	switch a.PullRequest.Lookup {
+	return " Usage: " + spendText(u.Spend) + ". Pull request: " + pullRequestText(u.PullRequest) + "."
+}
+
+// pullRequestText words the pull request an action opened for the usage
+// sentence: a link to it, "none", or "not looked up".
+func pullRequestText(pr crew.PullRequest) string {
+	switch pr := pr.(type) {
 	case crew.PullRequestFound:
-		pr = "[" + a.PullRequest.Ref + "](" + a.PullRequest.URL + ")"
+		return "[" + pr.Ref + "](" + pr.URL + ")"
 	case crew.PullRequestNone:
-		pr = "none"
-	default:
-		pr = "not looked up"
+		return "none"
+	case crew.PullRequestNotLookedUp:
 	}
-	return " Usage: " + spendText(a.Spend) + ". Pull request: " + pr + "."
+	return "not looked up"
 }
 
 // spendText words a spend for the usage sentence: the cost, then the

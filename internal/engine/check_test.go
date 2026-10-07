@@ -311,7 +311,7 @@ func TestEachCheckReadsThePromptAndTheLastMessageAndAPassSaysItsLastLine(t *test
 			{Name: "judge", Passed: true, Reason: crew.NewCheckReason("the check judge passed: done (0.97)")},
 			{Name: "pr-closes-issue", Passed: true, Reason: crew.NewCheckReason("the check pr-closes-issue passed")},
 		}
-		if got := lastStatus(t, tr).Actions[0].Checks; !reflect.DeepEqual(got, wantChecks) {
+		if got := lastStatus(t, tr).Actions()[0].Checks; !reflect.DeepEqual(got, wantChecks) {
 			t.Errorf("status checks = %+v, want %+v", got, wantChecks)
 		}
 		wantLog(t, cfg.Root, "\ncrew: running the check judge: ./judge\nasking Jev\ndone (0.97)\n"+

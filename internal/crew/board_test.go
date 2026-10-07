@@ -34,12 +34,15 @@ func TestBoardLabels(t *testing.T) {
 	}
 }
 
-func TestBoardIssueClone(t *testing.T) {
-	b := BoardIssue{Issue: Issue{ID: IssueID{Key: "20"}, States: []State{"crew:fix:in progress"}}, Labels: []State{"bug"}}
-	c := b.Clone()
-	c.Labels[0] = "changed"
-	c.Issue.States[0] = "changed"
-	if b.Labels[0] != "bug" || b.Issue.States[0] != "crew:fix:in progress" {
-		t.Errorf("Clone shares memory: %+v", b)
+func TestABoardIssueKeepsItsLabels(t *testing.T) {
+	labels := []State{"bug"}
+	b := NewBoardIssue(NewIssue(IssueData{ID: IssueID{Key: "20"}}), labels)
+	labels[0] = "changed"
+	b.Labels()[0] = "changed"
+	if got := b.Labels(); !slices.Equal(got, []State{"bug"}) {
+		t.Errorf("Labels() = %q after changing the given and returned labels, want [bug]", got)
+	}
+	if got := b.Issue().ID(); got != (IssueID{Key: "20"}) {
+		t.Errorf("Issue().ID() = %v, want 20", got)
 	}
 }

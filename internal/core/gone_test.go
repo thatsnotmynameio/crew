@@ -59,10 +59,8 @@ func (c goneCase) run(t *testing.T) {
 }
 
 func TestAHandledEntryIsGoneWhenTheNextListingDoesNotFindItAloneInARulesLabel(t *testing.T) {
-	blocked := in(readyToReview)
-	blocked.Blocked = true
-	blockedInReady := in(ready)
-	blockedInReady.Blocked = true
+	blocked := blockedIssue(in(readyToReview))
+	blockedInReady := blockedIssue(in(ready))
 	tests := []goneCase{
 		{
 			name: "found alone in the next rule's label", rules: reviewClosed(), outcome: succeeded,

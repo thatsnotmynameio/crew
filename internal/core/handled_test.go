@@ -33,7 +33,7 @@ func TestASucceededRuleIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
 	i1 := issue("1", 1, ready)
 	take, events := d.poll(i1)
 	taken := d.now
-	hasEvent(t, events, core.IssueTaken{At: taken, Issue: i1, Rule: "implement", From: ready, To: inProgress})
+	hasEvent(t, events, d.taken(1, i1, "implement", ready, inProgress, "acceptance", "development"))
 	d.settle(take)
 
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
@@ -247,7 +247,7 @@ func TestEntriesAreInTheOrderTheirIssuesWereReleased(t *testing.T) {
 	entries := handled(d)
 	got := make([]string, 0, len(entries))
 	for _, e := range entries {
-		got = append(got, e.Issue.ID.Key)
+		got = append(got, e.Issue.ID().Key)
 	}
 	if !reflect.DeepEqual(got, []string{"2", "1"}) {
 		t.Fatalf("handled order: got %v, want [2 1]", got)
@@ -268,8 +268,8 @@ func TestAViewsHandledEntriesShareNoMemoryWithTheModel(t *testing.T) {
 
 	first := d.m.View()
 	first.Handled[0].Failures[0].Log = "changed"
-	first.Handled[0].Issue.States[0] = "changed"
-	if got := onlyEntry(t, d); got.Failures[0].Log != failure("1", "acceptance").Log || got.Issue.States[0] != ready {
+	first.Handled[0].Issue.States()[0] = "changed"
+	if got := onlyEntry(t, d); got.Failures[0].Log != failure("1", "acceptance").Log || got.Issue.States()[0] != ready {
 		t.Fatalf("entry after changing a view: %#v", got)
 	}
 }

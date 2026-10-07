@@ -2,7 +2,6 @@ package core_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -39,14 +38,15 @@ func promoteMove() core.Move {
 	return core.Move{IssueID: issueID("1"), From: triagePromoting, To: developmentReady}
 }
 
-// promoteMoved is the event of #1's move to promote triage's success at at.
-func promoteMoved(at time.Time) core.IssueMoved {
-	return core.IssueMoved{At: at, IssueID: issueID("1"), IssueRef: "#1", From: triagePromoting, To: developmentReady}
+// promoteMoved is the event of #1's move to promote triage's success, in
+// d's run of #1, at d.now.
+func promoteMoved(d *driver) crew.VerdictMoved {
+	return crew.VerdictMoved{EventHead: d.runHead("1"), From: triagePromoting, To: developmentReady}
 }
 
-// reportOf is #1's pull request report of its move to state, with no End.
-func reportOf(state crew.State) crew.PullRequestReport {
-	return crew.PullRequestReport{IssueID: issueID("1"), IssueRef: "#1", State: state}
+// reportOf is #1's pull request report of its move to state, with no end.
+func reportOf(state crew.State) crew.PullRequestReportData {
+	return crew.PullRequestReportData{IssueID: issueID("1"), IssueRef: "#1", State: state}
 }
 
 // triaged runs #1 through triage with outcome and settles every call.
@@ -60,7 +60,7 @@ func triaged(d *driver, outcome crew.Outcome) {
 func takePromoted(d *driver) []core.Command {
 	d.t.Helper()
 	cmds, _ := d.poll(issue("1", 1, triageDone))
-	wantCommands(d.t, cmds, core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
+	wantCommands(d.t, unrecorded(cmds), core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
 	return cmds
 }
 
@@ -74,7 +74,7 @@ func TestAE2ARuleWithoutActionsMovesTheLabelWithoutASessionAndKeepsTriagesEntry(
 	wantCommands(t, verdict, promoteMove())
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	hasEvent(t, events, promoteMoved(d.now))
+	hasEvent(t, events, promoteMoved(d))
 	wantHeld(t, d.m)
 	if got := onlyEntry(t, d); got.Rule != "triage" || got.To != triageDone || !got.Gone {
 		t.Fatalf("entry after promote triage: got %#v, want triage's, gone", got)
@@ -136,7 +136,7 @@ func TestTheRunTimeLimitWithOnlyARuleWithoutActionsHeldStopsAfterItsMove(t *test
 	}
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
-	wantEvents(t, events, promoteMoved(d.now), core.Stopped{At: d.now})
+	wantEvents(t, events, promoteMoved(d), core.Stopped{At: d.now})
 }
 
 func TestARuleWithoutActionsHoldsASlotOfItsQueue(t *testing.T) {
@@ -176,22 +176,27 @@ func TestARuleWithoutActionsWritesItsStatusWithNoActionLines(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, takePromoted(d), "1"), Result: core.ResultDone})
 
 	got := statusOf(t, landed, "1")
-	if got.Kind != crew.StatusEnded || got.Rule != "promote triage" || got.To != developmentReady ||
-		got.Move != crew.MovePending || got.Actions != nil {
+	if got.Progress() != (crew.StatusEnded{To: developmentReady, Move: crew.MovePending}) ||
+		got.Rule() != "promote triage" || len(got.Actions()) != 0 {
 		t.Fatalf("status: got %#v, want promote triage's ended status, moving to development, with no actions", got)
 	}
 }
 
-func TestARuleWithoutActionsWritesNoJournalLine(t *testing.T) {
-	d := &driver{t: t, m: core.New(promoted(), 2, core.RecordingRuns(nil)), now: t0}
+// Its run events are journaled, but none is an action's start or end, so
+// none whose append fails says so.
+func TestARuleWithoutActionsReportsNoRecordNotWritten(t *testing.T) {
+	d := &driver{t: t, m: core.New(promoted(), 2, core.Journaling(nil)), now: t0}
 	take := takePromoted(d)
 	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	released, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	wantHeld(t, d.m)
 
-	for _, c := range append(verdict, released...) {
-		if r, ok := c.(core.RecordRun); ok {
-			t.Fatalf("journal line written: %#v", r)
+	if len(d.recorded) == 0 {
+		t.Fatal("no run event journaled")
+	}
+	for _, e := range d.recorded {
+		if _, events := d.send(core.RecordFailed{Event: e, Reason: "disk full"}); len(events) != 0 {
+			t.Errorf("%T not written: events %#v, want none", e, events)
 		}
 	}
-	wantHeld(t, d.m)
 }

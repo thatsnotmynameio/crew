@@ -39,8 +39,8 @@ Handled showed an issue only until a later stage took it again. On a workflow th
 
 ## Solution
 
-- `View` keeps every handled entry and sets `HandledView.HeldBy` to the name of the rule that holds the issue again (`internal/core/model.go:504`).
-- `release` replaces the issue's entry. The one exception: when the ended rule has no actions and both its verdict and the earlier entry ended well, it keeps the earlier entry and marks it `Gone`, because the rule's move took the issue out of that entry's `To` (`release` in `internal/core/update.go`). Later listings decide `Gone` anew, as for any entry. Without an earlier good entry, the rule without actions leaves its own entry.
+- `View` keeps every handled entry and sets `HandledView.HeldBy` to the name of the rule that holds the issue again (`View` in `internal/core/view.go`).
+- `release` replaces the issue's entry. The one exception: when the ended rule has no actions and both its verdict and the earlier entry ended well, it keeps the earlier entry and marks it `Gone`, because the rule's move took the issue out of that entry's `To` (`handle` in `internal/core/handled.go`, which `release` calls). Later listings decide `Gone` anew, as for any entry. Without an earlier good entry, the rule without actions leaves its own entry.
 - `needsAttention` is `NeedsAttention() && HeldBy == ""` (`internal/ui/tui/band.go:108`). The tab title, the error progress and the attention-first order use it. A held-again failure shows the last part of its label in the error style instead of `NEEDS ATTENTION`, and its details end in `now in <rule>`.
 - Desktop notifications come from new Handled entries, muted per rule by its `notify` key, looked up among the rules by name (`internal/ui/tui/outside.go:63`). A rule without actions has `notify` off by default, so the earlier entry it keeps sends nothing, and an entry it adds sends nothing either unless the config turns `notify` on.
 

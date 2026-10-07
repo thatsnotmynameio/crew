@@ -17,8 +17,9 @@ const recentEvents = 100
 // also get an update without events whenever what the running sessions last
 // said changes (KTD5).
 type Update struct {
-	// Events are the domain events of this step, in order.
-	Events []core.Event
+	// Events are the events the core published in this step, in order: the
+	// run events the views word and the core's own.
+	Events []core.Published
 	// Snapshot is the engine's view after this step.
 	Snapshot Snapshot
 }
@@ -31,7 +32,7 @@ type Snapshot struct {
 	core.View
 
 	// Recent are the last recentEvents events, oldest first.
-	Recent []core.Event
+	Recent []core.Published
 	// Started is when the first poll ran, where the run time limit counts
 	// from; zero before it.
 	Started time.Time

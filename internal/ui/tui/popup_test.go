@@ -181,10 +181,10 @@ func TestThePopupWalksTheHeldCardsFirst(t *testing.T) {
 }
 
 // headerIssue is #3, with everything the popup's header shows.
-var headerIssue = crew.Issue{
+var headerIssue = crew.NewIssue(crew.IssueData{
 	ID: issueID("3"), Ref: "#3", Title: "Speed up the poll", URL: "https://github.com/o/r/issues/3",
 	Priority: 2, Blocked: true, States: []crew.State{"in progress"},
-}
+})
 
 // Covers R15 and KTD8 of #151, and AE3, AE4, R3 and R4 of #229: the
 // header shows the rule, the crew state and board labels as chips, each
@@ -198,7 +198,7 @@ func TestThePopupHeaderShowsTheIssuesFields(t *testing.T) {
 
 	rows := popupRows(t, h)
 	for label, want := range map[string]string{
-		"rule": "implement", "kind": "issue", "priority": "P2", "url": headerIssue.URL,
+		"rule": "implement", "kind": "issue", "priority": "P2", "url": headerIssue.URL(),
 	} {
 		if got := field(t, rows, label); got != want {
 			t.Errorf("%s = %q, want %q", label, got, want)
@@ -215,8 +215,7 @@ func TestThePopupHeaderShowsTheIssuesFields(t *testing.T) {
 	}
 	noBlockedRow(t, rows)
 
-	plain := headerIssue
-	plain.Priority, plain.Blocked = 0, false
+	plain := edited(headerIssue, func(d *crew.IssueData) { d.Priority, d.Blocked = 0, false })
 	h.send(updateMsg(onBoard(held(plain, "implement", "code", core.ClaimRunning), labeled(plain, "in progress"))))
 	rows = popupRows(t, h)
 	if got := field(t, rows, "priority"); got != "none" {
@@ -247,8 +246,7 @@ func noBlockedRow(t *testing.T, rows []string) {
 // Covers R3 and KTD2 of #229: a blocked issue with no labels shows the
 // blocked chip alone, not none.
 func TestABlockedIssueWithNoLabelsShowsTheBlockedChipAlone(t *testing.T) {
-	bare := headerIssue
-	bare.States = nil
+	bare := edited(headerIssue, func(d *crew.IssueData) { d.States = nil })
 	h := newHarness(t, 120)
 	h.send(updateMsg(held(bare, "implement", "code", core.ClaimRunning)))
 	h.send(enterKey)
@@ -275,8 +273,7 @@ func TestALabelNamedBlockedGivesWayToTheBlockedChip(t *testing.T) {
 		t.Error("the one blocked is not the blocked chip")
 	}
 
-	free := headerIssue
-	free.Blocked = false
+	free := edited(headerIssue, func(d *crew.IssueData) { d.Blocked = false })
 	h.send(updateMsg(onBoard(held(free, "implement", "code", core.ClaimRunning),
 		labeled(free, "blocked", "bug"))))
 	got = strings.Fields(field(t, popupRows(t, h), "labels"))
@@ -292,8 +289,7 @@ func TestALabelNamedBlockedGivesWayToTheBlockedChip(t *testing.T) {
 // core took it, unblocked, while its board item is blocked; its popup
 // shows the blocked chip.
 func TestAE5AHeldIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
-	taken := headerIssue
-	taken.Blocked = false
+	taken := edited(headerIssue, func(d *crew.IssueData) { d.Blocked = false })
 	h := newHarness(t, 120)
 	h.send(updateMsg(onBoard(held(taken, "implement", "code", core.ClaimRunning),
 		labeled(headerIssue, "in progress"))))
@@ -315,8 +311,8 @@ func TestAnIssueWhoseRuleEndedAndIsBlockedOnTheBoardShowsTheBlockedChip(t *testi
 	h.send(downKey)
 
 	blocked := item("22", "crew:triage:done")
-	blocked.Issue.Blocked = true
-	u := handledBy(crew.Issue{ID: issueID("22"), Ref: "#22", Title: "Bug"}, "fix", "crew:triage:done")
+	blocked = crew.NewBoardIssue(edited(blocked.Issue(), func(d *crew.IssueData) { d.Blocked = true }), blocked.Labels())
+	u := handledBy(crew.NewIssue(crew.IssueData{ID: issueID("22"), Ref: "#22", Title: "Bug"}), "fix", "crew:triage:done")
 	h.send(updateMsg(onBoard(u, item("20", "bug"), blocked)))
 	wantLit(t, h, "#22", 2)
 	h.send(enterKey)
@@ -442,12 +438,13 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 	h := newHarness(t, 120)
 	u := runningSnapshot()
 	one, two := u.Snapshot.Issues[0].Issue, u.Snapshot.Issues[1].Issue
-	u.Snapshot.Recent = []core.Event{
-		core.IssueTaken{At: start.Add(-7 * time.Minute), Issue: one, Rule: "implement", From: "ready", To: "in progress"},
-		core.ActionStarted{At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
-			Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
-		core.IssueTaken{At: start.Add(-5 * time.Minute), Issue: two, Rule: "review",
-			From: "ready to review", To: "in review"},
+	u.Snapshot.Recent = []core.Published{
+		taken(start.Add(-7*time.Minute), one, "implement", "ready", "in progress"),
+		crew.ActionSessionStarted{
+			At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
+			Action: "tests", Workspace: crew.Workspace{Branch: "crew/1-tests"}, Log: ".crew/logs/1-tests.log",
+		},
+		taken(start.Add(-5*time.Minute), two, "review", "ready to review", "in review"),
 		core.CallOwed{At: start.Add(-4 * time.Minute), Call: core.Call{Kind: core.CallMove, IssueID: issueID("1"),
 			IssueRef: "#1", From: "ready", To: "done"}, Reason: "rate limited"},
 		core.PollDone{At: start.Add(-3 * time.Minute), Listed: 2},
@@ -461,7 +458,7 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 		t.Fatalf("the popup has no Events row:\n%s", strings.Join(rows, "\n"))
 	}
 	var want []string
-	for _, e := range []core.Event{u.Snapshot.Recent[0], u.Snapshot.Recent[1], u.Snapshot.Recent[3]} {
+	for _, e := range []core.Published{u.Snapshot.Recent[0], u.Snapshot.Recent[1], u.Snapshot.Recent[3]} {
 		want = append(want, e.Time().In(zone).Format(time.TimeOnly)+" "+lines.Text(e))
 	}
 	if got := rows[at+1:]; !slices.Equal(got, want) {
@@ -544,7 +541,7 @@ func TestAE6ThePopupFollowsItsIssueAndClosesWhenItLeaves(t *testing.T) {
 
 	failed := runningSnapshot()
 	failed.Snapshot.Issues = failed.Snapshot.Issues[1:]
-	failed.Snapshot.Board[0].Labels = []crew.State{"ready to review"}
+	failed.Snapshot.Board[0] = crew.NewBoardIssue(failed.Snapshot.Board[0].Issue(), []crew.State{"ready to review"})
 	failed.Snapshot.Handled = []core.HandledView{failedEntry("1", "Add login form", 10, 0, "code")}
 	h.send(updateMsg(failed))
 	if got := popupRows(t, h)[0]; got != "#1 Add login form" {

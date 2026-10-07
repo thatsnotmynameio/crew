@@ -4,8 +4,8 @@ import "testing"
 
 func TestSpendSumsSessions(t *testing.T) {
 	tokens := Tokens{Input: 100, Output: 200, CacheRead: 17_000_000, CacheWrite: 300_000}
-	withAll := Usage{Cost: 1.20, HasCost: true, Tokens: tokens, HasTokens: true}
-	noCost := Usage{Tokens: tokens, HasTokens: true}
+	withAll := Usage{Cost: Some(1.20), Tokens: Some(tokens)}
+	noCost := Usage{Tokens: Some(tokens)}
 
 	tests := []struct {
 		name string
@@ -18,7 +18,8 @@ func TestSpendSumsSessions(t *testing.T) {
 				Input: 200, Output: 400, CacheRead: 34_000_000, CacheWrite: 600_000,
 			}, WithTokens: 2}},
 		{"nothing reported", Usage{}.Spend(), Spend{Sessions: 1}},
-		{"a reported zero", Usage{HasCost: true, HasTokens: true}.Spend(), Spend{Sessions: 1, WithCost: 1, WithTokens: 1}},
+		{"a reported zero", Usage{Cost: Some(0.0), Tokens: Some(Tokens{})}.Spend(),
+			Spend{Sessions: 1, WithCost: 1, WithTokens: 1}},
 		{"an action without a session adds nothing", withAll.Spend().Add(Spend{}), withAll.Spend()},
 	}
 	for _, tt := range tests {

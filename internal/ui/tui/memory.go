@@ -40,7 +40,7 @@ func newMessageMemory() *messageMemory {
 func (mm *messageMemory) record(snap engine.Snapshot, cards []card) {
 	for _, iv := range snap.Issues {
 		for _, a := range iv.Actions {
-			mm.held(iv.Issue.ID, a)
+			mm.held(iv.Issue.ID(), a)
 		}
 	}
 	for _, s := range snap.Said {
@@ -72,7 +72,7 @@ func (mm *messageMemory) held(issue crew.IssueID, a core.ActionView) {
 func (mm *messageMemory) forget(cards []card) {
 	carded := map[crew.IssueID]bool{}
 	for _, c := range cards {
-		carded[c.issue.ID] = true
+		carded[c.issue.ID()] = true
 	}
 	for k := range mm.actions {
 		if !carded[k.issue] {

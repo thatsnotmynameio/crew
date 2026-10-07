@@ -38,8 +38,8 @@ Nothing was tried and dropped. Two facts had to be checked before the fix, and b
 The fix has three parts:
 
 - The GitHub `List` query asks for one more field per issue, `issueDependenciesSummary { blockedBy }` (`internal/adapter/github/tracker.go:49`), and sets `Blocked: n.Dependencies.BlockedBy > 0` (`internal/adapter/github/tracker.go:136`).
-- `crew.Issue` has a `Blocked` field (`internal/crew/issue.go:29`). A tracker that knows no dependencies leaves it false.
-- `core.listed` leaves blocked issues out of each stage's candidates (`internal/core/update.go:192`). A blocked issue is neither taken nor reported as queued, and a later poll takes it once nothing blocks it.
+- `crew.Issue` carries `Blocked` (`IssueData.Blocked`, read through `Issue.Blocked`, in `internal/crew/issue.go`). A tracker that knows no dependencies leaves it false.
+- `core.listed` leaves blocked issues out of each stage's candidates (`waiting` in `internal/core/scheduler.go`). A blocked issue is neither taken nor reported as queued, and a later poll takes it once nothing blocks it.
 
 The tests are `TestBlockedIssueIsNotTakenUntilNothingBlocksIt` (core) and `TestListMarksAnIssueBlockedOnlyWhileAnOpenIssueBlocksIt` (github adapter).
 

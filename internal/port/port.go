@@ -1,6 +1,7 @@
 // Package port holds the interfaces the engine reaches the outside world
-// through: a Tracker for issues, a Harness for coding-agent sessions and a
-// Workspace for each action's checkout. A Captain answers a session's next
+// through: a Tracker for issues, a Harness for coding-agent sessions, a
+// Workspace for each action's checkout and a Journal for the rule runs'
+// events. A Captain answers a session's next
 // task. Each port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
@@ -157,17 +158,28 @@ type Workspace interface {
 	Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (Space, error)
 }
 
-// Space is a created workspace.
+// Journal is the run journal: the rule runs' events, kept so a later crew
+// process knows how its runs ended and resumes the failed ones. The engine
+// calls it from one goroutine.
+type Journal interface {
+	// Load returns the stored run events in the order they were appended,
+	// each issue in repository. A journal that holds none returns none and
+	// no error; an error means the stored events could not be read.
+	Load(repository crew.RepositoryID) ([]crew.RunEvent, error)
+	// Append stores e after the events stored before it.
+	Append(e crew.RunEvent) error
+}
+
+// Space is a created workspace on this machine: the workspace and its
+// directory.
 type Space struct {
-	// Name is unique among the workspaces that exist, and safe in a file
-	// name: the session's log is named after it, so a reopened workspace
-	// keeps its log, and a name reused once its workspace is gone reuses
-	// the log too.
-	Name crew.WorkspaceName
+	// Workspace is the workspace's name and branch. Its name is safe in a
+	// file name: the session's log is named after it, so a reopened
+	// workspace keeps its log, and a name reused once its workspace is gone
+	// reuses the log too.
+	Workspace crew.Workspace
 	// Dir is the workspace's absolute directory.
 	Dir string
-	// Branch is the branch the action's work goes on.
-	Branch string
 }
 
 // Preparer is an optional interface of any port's adapter: it checks the
@@ -213,12 +225,12 @@ type StatusReporter interface {
 // writes nothing to pull requests, and crew works as it does without them.
 type PullRequestReporter interface {
 	// ReportPullRequests puts each open pull request that closes report's
-	// issue in report.State, as Move puts the issue, removing every other
+	// issue in report.State(), as Move puts the issue, removing every other
 	// crew state it carries without touching what is not crew's.
-	// When report.End is set, it also posts a new comment on each saying
+	// When the report has an end, it also posts a new comment on each saying
 	// that the rule ended and nobody watches the pull request any more. An
 	// issue without such a pull request gets nothing. A retry of the same
-	// report, by its ID, posts no comment twice. The engine never has two
+	// report, by its ID(), posts no comment twice. The engine never has two
 	// calls for one issue in flight. Its errors are classified as
 	// Tracker.Move's are.
 	ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error
@@ -291,12 +303,12 @@ type BoardLister interface {
 // it created before, so a failed action can resume where it stopped. A
 // workspace without it creates a fresh workspace for every action.
 type Reopener interface {
-	// Reopen returns the workspace space names, as it is now, without
-	// changing what it holds: space carries the Name and Branch crew
-	// recorded, and the returned Space the current Dir and Branch. It
-	// returns an error wrapping ErrWorkspaceGone when the workspace no
-	// longer exists, and any other error when it cannot be reopened.
-	Reopen(ctx context.Context, space Space) (Space, error)
+	// Reopen returns the workspace w, as crew recorded it, as it is now,
+	// without changing what it holds: the returned Space has its current
+	// directory and branch. It returns an error wrapping ErrWorkspaceGone
+	// when the workspace no longer exists, and any other error when it
+	// cannot be reopened.
+	Reopen(ctx context.Context, w crew.Workspace) (Space, error)
 }
 
 // Narrator is an optional interface of a harness's Session: it tells what

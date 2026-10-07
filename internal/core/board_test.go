@@ -32,7 +32,7 @@ func newBoardDriver(t *testing.T, rules []crew.Rule, maxParallel int, labels ...
 
 // onBoard returns key on the board with labels.
 func onBoard(key string, minute int, labels ...crew.State) crew.BoardIssue {
-	return crew.BoardIssue{Issue: issue(key, minute), Labels: labels}
+	return crew.NewBoardIssue(issue(key, minute), labels)
 }
 
 // listBoard returns the ListBoard commands in cmds.
@@ -138,11 +138,11 @@ func TestAVerdictMovePutsTheIssueOnTheBoardAtOnceAndAStaleReadKeepsIt(t *testing
 	}
 
 	d.settle(verdict)
-	moved := crew.BoardIssue{Issue: held, Labels: []crew.State{readyToReview}}
+	moved := crew.NewBoardIssue(held, []crew.State{readyToReview})
 	wantBoard(t, d, moved)
 
 	d.send(core.BoardListed{Issues: []crew.BoardIssue{onBoard("12", 12, inProgress)}})
-	wantBoard(t, d, crew.BoardIssue{Issue: issue("12", 12), Labels: []crew.State{readyToReview}})
+	wantBoard(t, d, crew.NewBoardIssue(issue("12", 12), []crew.State{readyToReview}))
 
 	d.tick()
 	d.send(core.BoardListed{})
@@ -239,7 +239,7 @@ func TestTheBoardIsOldestFirstAndSharesNoMemory(t *testing.T) {
 	}})
 
 	v := d.m.View()
-	v.Board[0].Labels[0] = "changed"
+	v.Board[0].Labels()[0] = "changed"
 
 	wantBoard(t, d, onBoard("7", 1, ready), onBoard("8", 1, bug), onBoard("9", 9, bug))
 }

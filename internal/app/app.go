@@ -58,6 +58,9 @@ type Options struct {
 	// Checker runs the actions' checks; nil fails every action that has a
 	// check.
 	Checker port.Checker
+	// Journal returns the run journal of the repository at root, at
+	// engine.JournalPath; nil journals nothing, so no failed run resumes.
+	Journal func(root string) port.Journal
 	// Root is the repository's absolute root, where .crew/ lives.
 	Root string
 	// GlobalConfig is the path of the user's global config file, read
@@ -268,6 +271,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Harnesses:         b.harnesses,
 		Workspace:         o.Workspace(o.Root),
 		Checker:           o.Checker,
+		Journal:           o.journal(),
 		Root:              o.Root,
 		Home:              o.Home,
 		ActAs:             len(b.cfg.Bots) > 0,
@@ -281,6 +285,15 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Board:             b.cfg.Board,
 		BoardWritten:      b.cfg.BoardWritten,
 	})
+}
+
+// journal returns the run journal of the repository at Root, through
+// Journal; nil without one.
+func (o Options) journal() port.Journal {
+	if o.Journal == nil {
+		return nil
+	}
+	return o.Journal(o.Root)
 }
 
 // run runs the engine and the renderer until both have returned, and handles

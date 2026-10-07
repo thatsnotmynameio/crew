@@ -83,27 +83,29 @@ func TestListBoardKeepsTheAskedLabelsEachIssueCarries(t *testing.T) {
 	}
 
 	want := []crew.BoardIssue{
-		{Issue: crew.Issue{ID: issueID("9"), Ref: "#9", Title: "Issue 9", URL: "https://github.com/o/r/issues/9",
-			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}, Labels: []crew.State{"Idea"}},
-		{Issue: crew.Issue{ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
-			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, Labels: []crew.State{"bug", "Idea"}},
-		{Issue: crew.Issue{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
-			Created: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC), States: []crew.State{inProgress}},
-			Labels: []crew.State{"bug"}},
+		crew.NewBoardIssue(crew.NewIssue(crew.IssueData{
+			ID: issueID("9"), Ref: "#9", Title: "Issue 9", URL: "https://github.com/o/r/issues/9",
+			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}), []crew.State{"Idea"}),
+		crew.NewBoardIssue(crew.NewIssue(crew.IssueData{
+			ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
+			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}), []crew.State{"bug", "Idea"}),
+		crew.NewBoardIssue(crew.NewIssue(crew.IssueData{
+			ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+			Created: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC), States: []crew.State{inProgress}}), []crew.State{"bug"}),
 	}
 	if len(got) != len(want) {
 		t.Fatalf("ListBoard = %+v, want %+v", got, want)
 	}
 	issues := make([]crew.Issue, len(got))
 	for i, b := range got {
-		issues[i] = b.Issue
-		if !slices.Equal(b.Labels, want[i].Labels) {
-			t.Errorf("issue %d labels = %q, want %q", i, b.Labels, want[i].Labels)
+		issues[i] = b.Issue()
+		if !slices.Equal(b.Labels(), want[i].Labels()) {
+			t.Errorf("issue %d labels = %q, want %q", i, b.Labels(), want[i].Labels())
 		}
 	}
 	wantIssues := make([]crew.Issue, len(want))
 	for i, b := range want {
-		wantIssues[i] = b.Issue
+		wantIssues[i] = b.Issue()
 	}
 	wantItems(t, issues, wantIssues)
 }

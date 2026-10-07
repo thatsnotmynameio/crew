@@ -8,30 +8,32 @@ import (
 
 func TestUsageWordsWhatTheSessionsSpent(t *testing.T) {
 	tokens := crew.Tokens{Input: 100, Output: 200, CacheRead: 17_000_000, CacheWrite: 300_000}
-	withAll := crew.Usage{Cost: 1.20, HasCost: true, Tokens: tokens, HasTokens: true}
-	noCost := crew.Usage{Tokens: tokens, HasTokens: true}
-	costOnly := crew.Usage{Cost: 3.05, HasCost: true}
-	none := crew.PullRequest{Lookup: crew.PullRequestNone}
+	withAll := crew.Usage{Cost: crew.Some(1.20), Tokens: crew.Some(tokens)}
+	noCost := crew.Usage{Tokens: crew.Some(tokens)}
+	costOnly := crew.Usage{Cost: crew.Some(3.05)}
+	none := crew.PullRequestNone{}
 
 	tests := []struct {
 		name  string
 		spend crew.Spend
 		want  string
 	}{
-		{"no session", crew.Spend{}, ""},
 		{"one session", withAll.Spend(), " Usage: $1.20, 17.3M tokens. Pull request: none."},
 		{"both partial", withAll.Spend().Add(noCost.Spend()).Add(costOnly.Spend()),
 			" Usage: $4.25 (partial), 34.6M tokens (partial). Pull request: none."},
 		{"no cost at all", noCost.Spend(), " Usage: cost not reported, 17.3M tokens. Pull request: none."},
 		{"no tokens at all", costOnly.Spend(), " Usage: $3.05, tokens not reported. Pull request: none."},
 		{"nothing reported", crew.Usage{}.Spend(), " Usage: cost and tokens not reported. Pull request: none."},
-		{"a reported zero", crew.Usage{HasCost: true, HasTokens: true}.Spend(),
+		{"a reported zero", crew.Usage{Cost: crew.Some(0.0), Tokens: crew.Some(crew.Tokens{})}.Spend(),
 			" Usage: $0.00, 0 tokens. Pull request: none."},
 	}
 	for _, tt := range tests {
-		if got := usage(crew.ActionStatus{Spend: tt.spend, PullRequest: none}); got != tt.want {
+		if got := usage(crew.Some(crew.ShownUsage{Spend: tt.spend, PullRequest: none})); got != tt.want {
 			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
 		}
+	}
+	if got := usage(crew.Optional[crew.ShownUsage]{}); got != "" {
+		t.Errorf("not shown: %q, want nothing", got)
 	}
 }
 
@@ -44,9 +46,9 @@ func TestUsageWordsTokenCountsCompactly(t *testing.T) {
 		{17_213_000, "17.2M"}, {129_000_000, "129M"},
 	}
 	for _, tt := range tests {
-		spend := crew.Usage{Cost: 0.004, HasCost: true, Tokens: crew.Tokens{Output: tt.n}, HasTokens: true}.Spend()
+		spend := crew.Usage{Cost: crew.Some(0.004), Tokens: crew.Some(crew.Tokens{Output: tt.n})}.Spend()
 		want := " Usage: $0.00, " + tt.want + " tokens. Pull request: not looked up."
-		if got := usage(crew.ActionStatus{Spend: spend}); got != want {
+		if got := usage(crew.Some(crew.ShownUsage{Spend: spend})); got != want {
 			t.Errorf("%d tokens: %q, want %q", tt.n, got, want)
 		}
 	}

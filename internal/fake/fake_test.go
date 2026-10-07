@@ -27,13 +27,13 @@ const (
 )
 
 func issue(key string, states ...crew.State) crew.Issue {
-	return crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, States: states}
+	return crew.NewIssue(crew.IssueData{ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, States: states})
 }
 
 func keys(issues []crew.Issue) []string {
 	out := make([]string, 0, len(issues))
 	for _, i := range issues {
-		out = append(out, i.ID.Key)
+		out = append(out, i.ID().Key)
 	}
 	return out
 }
@@ -222,8 +222,8 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if first.Name != "issue-42-development" {
-		t.Errorf("Name = %q, want issue-42-development", first.Name)
+	if first.Workspace.Name != "issue-42-development" {
+		t.Errorf("Name = %q, want issue-42-development", first.Workspace.Name)
 	}
 	if !filepath.IsAbs(first.Dir) || filepath.Dir(first.Dir) != root {
 		t.Errorf("Dir = %q, want an absolute directory under %q", first.Dir, root)
@@ -231,7 +231,7 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	if info, err := os.Stat(first.Dir); err != nil || !info.IsDir() {
 		t.Errorf("Dir %q is not a directory: %v", first.Dir, err)
 	}
-	if first.Branch == "" {
+	if first.Workspace.Branch == "" {
 		t.Error("Branch is empty")
 	}
 
@@ -239,7 +239,8 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Create: %v", err)
 	}
-	if second.Name == first.Name || second.Dir == first.Dir || second.Branch == first.Branch {
+	if second.Workspace.Name == first.Workspace.Name || second.Workspace.Branch == first.Workspace.Branch ||
+		second.Dir == first.Dir {
 		t.Errorf("second workspace %+v repeats the first %+v", second, first)
 	}
 }
@@ -260,7 +261,7 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			names[s.Name] = true
+			names[s.Workspace.Name] = true
 		})
 	}
 	wg.Wait()
@@ -302,7 +303,7 @@ func TestUsageHarnessSessionsReportWhatTheTestSets(t *testing.T) {
 	if got := r.Usage(); !reflect.DeepEqual(got, crew.Usage{}) {
 		t.Errorf("Usage before SetUsage = %+v, want nothing reported", got)
 	}
-	want := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{Input: 10, Output: 20}, HasTokens: true,
+	want := crew.Usage{Cost: crew.Some(12.4), Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20}),
 		Models: []string{"claude-opus"}}
 	h.Sessions()[0].SetUsage(want)
 	if got := r.Usage(); !reflect.DeepEqual(got, want) {
@@ -337,7 +338,7 @@ func TestMessagingHarnessSessionsReportTheLastMessageTheTestSets(t *testing.T) {
 func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T) {
 	tr := fake.NewFindingTracker()
 	var finder port.PullRequestFinder = tr
-	pr45 := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.com/pull/45"}
+	pr45 := crew.PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
 	tr.ScriptLookup("crew/issue-31-lfg", fake.LookupScript{Found: pr45})
 	tr.ScriptLookup("crew/issue-32-lfg", fake.LookupScript{Err: errors.New("HTTP 502")})
 	since := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
@@ -350,7 +351,7 @@ func TestPullRequestsFindAsScriptedForTheBranchAndRecordEachLookup(t *testing.T)
 		t.Error("failing lookup = nil error, want the scripted error")
 	}
 	none, err := finder.FindPullRequest(ctx, "crew/issue-9-lfg", since)
-	if err != nil || none.Lookup != crew.PullRequestNone {
+	if err != nil || none != (crew.PullRequestNone{}) {
 		t.Errorf("unscripted lookup = %+v, %v; want no pull request", none, err)
 	}
 	want := []fake.Lookup{
@@ -457,3 +458,27 @@ func TestCheckerScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
 
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
+
+func TestJournalLoadsItsPastThenWhatWasAppendedUntilItsAppendsFail(t *testing.T) {
+	h := crew.EventHead{Run: "run-1", IssueID: issueID("1"), IssueRef: "#1", Rule: "implement"}
+	past := crew.RunStopped{EventHead: h}
+	j := fake.NewJournal(past)
+	appended := crew.RunReleased{EventHead: h}
+	if err := j.Append(appended); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	full := errors.New("disk full")
+	j.FailAppends(full)
+	if err := j.Append(crew.FailureReported{EventHead: h}); !errors.Is(err, full) {
+		t.Fatalf("Append = %v, want the failure set", err)
+	}
+
+	if got := j.Appended(); !reflect.DeepEqual(got, []crew.RunEvent{appended}) {
+		t.Errorf("Appended = %#v, want the one append that did not fail", got)
+	}
+	got, err := j.Load("repo")
+	if want := []crew.RunEvent{past, appended}; err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Load = %#v, %v, want the past then the append", got, err)
+	}
+}

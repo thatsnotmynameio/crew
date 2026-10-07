@@ -42,15 +42,19 @@ func TestAE2AE6RunningStatusCarriesTheSessionsWordsWithLocalPathsShortened(t *te
 		synctest.Wait()
 
 		got := lastStatus(t, tr)
-		if got.Kind != crew.StatusRunning || len(got.Actions) != 1 {
+		actions := got.Actions()
+		if got.Progress() != (crew.StatusRunning{}) || len(actions) != 1 {
 			t.Fatalf("status = %#v, want development running", got)
 		}
-		a := got.Actions[0]
+		a, ok := actions[0].State.(crew.ActionRunning)
+		if !ok {
+			t.Fatalf("development = %#v, want running", actions[0])
+		}
 		if want := "Edited ./internal/core/update.go for @someone"; a.Said.String() != want {
 			t.Errorf("Said = %q, want %q", a.Said, want)
 		}
-		if !a.Started.Equal(begun) || !got.Updated.Equal(begun.Add(poll)) {
-			t.Errorf("started %v and updated %v, want %v and a poll later", a.Started, got.Updated, begun)
+		if !a.Started.Equal(begun) || !got.Updated().Equal(begun.Add(poll)) {
+			t.Errorf("started %v and updated %v, want %v and a poll later", a.Started, got.Updated(), begun)
 		}
 
 		r.engine.Stop()
@@ -69,7 +73,7 @@ func TestR9SessionThatCannotNarrateGivesAStatusWithoutWords(t *testing.T) {
 		synctest.Wait()
 
 		got := lastStatus(t, tr)
-		if a := got.Actions[0]; a.State != crew.ActionRunning || a.Started.IsZero() || a.Said.String() != "" {
+		if a, ok := got.Actions()[0].State.(crew.ActionRunning); !ok || a.Started.IsZero() || a.Said.String() != "" {
 			t.Errorf("action = %#v, want running with a start time and no words", a)
 		}
 
@@ -91,15 +95,15 @@ func TestAE3AE4StopLeavesTheMoveOnTheStatusAndTheFailureReportApart(t *testing.T
 			t.Fatalf("Run: %v", err)
 		}
 
-		want := crew.Status{
-			IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Kind: crew.StatusEnded,
+		want := crew.StatusData{
+			IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
+			Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
 			Actions: []crew.ActionStatus{{
-				Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped,
-				Log: ".crew/logs/issue-1-development.log",
+				Name:  "development",
+				State: crew.ActionFailed{Cause: crew.CauseStopped, Log: ".crew/logs/issue-1-development.log"},
 			}},
-			To: needsAttention, Move: crew.MoveDone,
 		}
-		got := lastStatus(t, tr)
+		got := lastStatus(t, tr).Data()
 		if got.Run == "" {
 			t.Errorf("last status has no run: %#v", got)
 		}
@@ -153,7 +157,7 @@ func TestARefusedEndedStatusIsNotRetriedAndStopDoesNotWaitForIt(t *testing.T) {
 			t.Errorf("%d status writes after the next tick, want still %d", got, writes)
 		}
 		for _, st := range tr.Statuses("1") {
-			if st.Kind == crew.StatusEnded {
+			if _, ended := st.Progress().(crew.StatusEnded); ended {
 				t.Errorf("an ended status was written: %#v", st)
 			}
 		}
@@ -183,7 +187,8 @@ func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
 		time.Sleep(poll)
 		synctest.Wait()
 
-		got := lastStatus(t, tr).Actions[0].Said.String()
+		running, _ := lastStatus(t, tr).Actions()[0].State.(crew.ActionRunning)
+		got := running.Said.String()
 		if want := "…" + string([]rune("." + tail)[len([]rune("."+tail))-199:]); got != want {
 			t.Errorf("Said = %q, want %q", got, want)
 		}
@@ -215,9 +220,9 @@ func TestRunsTakenByTwoListingsGetIDsOfTheirOwnSeeds(t *testing.T) {
 			if len(got) == 0 {
 				t.Fatalf("no status written for issue %s", key)
 			}
-			seed, n, _ := strings.Cut(string(got[0].Run), ".")
+			seed, n, _ := strings.Cut(string(got[0].Run()), ".")
 			if _, err := uuid.Parse(seed); err != nil || n != "1" {
-				t.Fatalf("run of #%s = %q, want a seed and 1", key, got[0].Run)
+				t.Fatalf("run of #%s = %q, want a seed and 1", key, got[0].Run())
 			}
 			seeds[seed] = true
 		}

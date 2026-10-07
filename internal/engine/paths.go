@@ -8,17 +8,16 @@ import (
 	"strings"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/fileline"
 )
 
 // logDir is where session logs go, relative to the repository root (KTD12).
 const logDir = ".crew/logs"
 
-// The permissions of the log directory and of the files in it: logs hold
-// what sessions printed, so only you read them.
-const (
-	logDirPerm  = 0o700
-	logFilePerm = 0o600
-)
+// JournalPath is where the run journal goes, relative to the repository
+// root, with slashes (KTD12). It sits with the logs its events point to,
+// under a directory crew's ignore rules already cover.
+const JournalPath = logDir + "/runs.jsonl"
 
 // logPath returns the repository-relative path of the log of the sessions
 // running in workspace. A log holds every session of its workspace: a
@@ -51,17 +50,7 @@ func (e *Engine) openLog(rel string) (*os.File, error) {
 // openAppend opens the file at the repository-relative path rel for reading
 // and appending, creating it and its directory as needed.
 func (e *Engine) openAppend(rel string) (*os.File, error) {
-	path := filepath.Join(e.cfg.Root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), logDirPerm); err != nil {
-		return nil, fmt.Errorf("create the log directory: %w", err)
-	}
-	//nolint:gosec // crew builds the path under .crew/logs
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, logFilePerm)
-
-	if err != nil {
-		return nil, fmt.Errorf("open for appending: %w", err)
-	}
-	return f, nil
+	return fileline.Open(filepath.Join(e.cfg.Root, filepath.FromSlash(rel)))
 }
 
 // scrub shortens the local paths in text before it enters the core: the

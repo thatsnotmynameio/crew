@@ -14,8 +14,10 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/thatsnotmynameio/crew/internal/adapter/jsonl"
 	"github.com/thatsnotmynameio/crew/internal/app"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
@@ -86,9 +88,9 @@ rules:
 var success = port.Verdict{Succeeded: true, Reason: "opened a pull request"}
 
 func issue(key string, states ...crew.State) crew.Issue {
-	return crew.Issue{
+	return crew.NewIssue(crew.IssueData{
 		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key, States: states,
-	}
+	})
 }
 
 // listCounter is a fake tracker that counts its listings.
@@ -131,6 +133,9 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
+// testRun is the crew run the tests' run journals name on every line.
+const testRun = "2026-10-07T09:00:00Z"
+
 // crewRun is one run of app.Run against the fakes.
 type crewRun struct {
 	opts    app.Options
@@ -161,6 +166,7 @@ func options(t *testing.T, body string, tracker port.Tracker, harness port.Harne
 		Workspace: func(root string) port.Workspace {
 			return fake.NewWorkspace(filepath.Join(root, ".crew", "worktrees"))
 		},
+		Journal: func(root string) port.Journal { return jsonl.New(root, engine.JournalPath, testRun) },
 		Root:    root,
 		Home:    filepath.Dir(root),
 		Stdout:  r.stdout,
@@ -195,7 +201,7 @@ func states(t *testing.T, tr *fake.Tracker) []crew.State {
 	if !ok {
 		t.Fatal("issue 1 is gone")
 	}
-	return i.States
+	return i.States()
 }
 
 var stamped = regexp.MustCompile(`^\d\d:\d\d:\d\d crew: `)

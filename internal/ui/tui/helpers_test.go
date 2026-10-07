@@ -15,11 +15,33 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
+// titledIssue is #key with the title title.
+func titledIssue(key, title string) crew.Issue {
+	return crew.NewIssue(crew.IssueData{ID: issueID(key), Ref: "#" + key, Title: title})
+}
+
+// edited returns i with edit applied to its fields.
+func edited(i crew.Issue, edit func(*crew.IssueData)) crew.Issue {
+	d := i.Data()
+	edit(&d)
+	return crew.NewIssue(d)
+}
+
+// titled returns i with the title title.
+func titled(i crew.Issue, title string) crew.Issue {
+	return edited(i, func(d *crew.IssueData) { d.Title = title })
+}
+
+// titledOnBoard returns b with its issue titled title.
+func titledOnBoard(b crew.BoardIssue, title string) crew.BoardIssue {
+	return crew.NewBoardIssue(titled(b.Issue(), title), b.Labels())
+}
+
 // entry is #key handled by rule into to, taken and ended the given minutes
 // before start.
 func entry(key, title string, rule crew.RuleName, to crew.State, taken, ended int) core.HandledView {
 	return core.HandledView{
-		Issue: crew.Issue{ID: issueID(key), Ref: "#" + key, Title: title}, Rule: rule, To: to, Move: crew.MoveDone,
+		Issue: titledIssue(key, title), Rule: rule, To: to, Move: crew.MoveDone,
 		Taken: start.Add(-time.Duration(taken) * time.Minute), Ended: start.Add(-time.Duration(ended) * time.Minute),
 	}
 }
@@ -46,10 +68,8 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 // acted as you.
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
-	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{
-		Issue:  crew.Issue{ID: issueID("7"), Ref: "#7", Title: "Log the poll interval"},
-		Labels: []crew.State{"ready to review"},
-	})
+	u.Snapshot.Board = append(u.Snapshot.Board,
+		crew.NewBoardIssue(titledIssue("7", "Log the poll interval"), []crew.State{"ready to review"}))
 	u.Snapshot.Handled = []core.HandledView{
 		acted(
 			failedEntry("5", "Parse the config once", 40, 30, "tests", "code"),
@@ -91,7 +111,7 @@ func manySnapshot() engine.Update {
 	}
 	for _, e := range u.Snapshot.Handled {
 		u.Snapshot.Spent = u.Snapshot.Spent.Add(e.Spend())
-		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: e.Issue, Labels: []crew.State{"ready to review"}})
+		u.Snapshot.Board = append(u.Snapshot.Board, crew.NewBoardIssue(e.Issue, []crew.State{"ready to review"}))
 	}
 	u.Snapshot.Bots[0].Spend = u.Snapshot.Spent
 	return u
@@ -136,15 +156,15 @@ func checkFits(t *testing.T, h *harness, width, height int) string {
 
 // spent is one session that reported cost dollars and tokens tokens.
 func spent(cost float64, tokens int64) crew.Spend {
-	return crew.Usage{Cost: cost, HasCost: true, Tokens: crew.Tokens{Output: tokens}, HasTokens: true}.Spend()
+	return crew.Usage{Cost: crew.Some(cost), Tokens: crew.Some(crew.Tokens{Output: tokens})}.Spend()
 }
 
 // found is the pull request ref, as a lookup found it.
 func found(ref string) crew.PullRequest {
-	return crew.PullRequest{Lookup: crew.PullRequestFound, Ref: ref, URL: "https://github.com/o/r/pull/" + ref[1:]}
+	return crew.PullRequestFound{Ref: ref, URL: "https://github.com/o/r/pull/" + ref[1:]}
 }
 
-var noPullRequest = crew.PullRequest{Lookup: crew.PullRequestNone}
+var noPullRequest = crew.PullRequestNone{}
 
 // acted is e with its rule's actions.
 func acted(e core.HandledView, actions ...core.HandledAction) core.HandledView {
@@ -175,3 +195,11 @@ func nextCard(l, prefix string) int {
 
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
+
+// taken is the event of rule taking issue at at, moving it from one state to
+// another.
+func taken(at time.Time, issue crew.Issue, rule crew.RuleName, from, to crew.State) crew.RunTaken {
+	return crew.RunTaken{
+		At: at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule, Issue: issue.Data(), From: from, To: to,
+	}
+}

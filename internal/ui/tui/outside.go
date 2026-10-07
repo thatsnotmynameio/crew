@@ -44,7 +44,7 @@ func newOutsideState() *outsideState {
 func (m Model) notifications() []tea.Cmd {
 	var out []tea.Cmd
 	for _, e := range m.snap.Handled {
-		k := noteKey{issue: e.Issue.ID, rule: e.Rule, ended: e.Ended}
+		k := noteKey{issue: e.Issue.ID(), rule: e.Rule, ended: e.Ended}
 		if m.outside.seen[k] {
 			continue
 		}
@@ -74,7 +74,7 @@ func noteText(e core.HandledView) string {
 	case len(e.Failures) > 0:
 		verb = "failed"
 	}
-	return capped(fmt.Sprintf("crew: %s %s on %s %s; %s", e.Rule, verb, e.Issue.Ref, e.Issue.Title, how))
+	return capped(fmt.Sprintf("crew: %s %s on %s %s; %s", e.Rule, verb, e.Issue.Ref(), e.Issue.Title(), how))
 }
 
 // attention counts the Handled entries that need you, muted rules

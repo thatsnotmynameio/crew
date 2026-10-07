@@ -26,14 +26,12 @@ func withFixReview() []crew.Rule {
 
 // pr90 returns pull request #90, opened minute minutes after t0.
 func pr90(minute int, states ...crew.State) crew.Issue {
-	pr := issue("90", minute, states...)
-	pr.Kind = crew.KindPullRequest
-	return pr
+	return pullRequest(issue("90", minute, states...))
 }
 
 // otherKinds returns the IssueOfOtherKind events in events.
-func otherKinds(events []core.Event) []core.Event {
-	var out []core.Event
+func otherKinds(events []core.Published) []core.Published {
+	var out []core.Published
 	for _, e := range events {
 		if _, ok := e.(core.IssueOfOtherKind); ok {
 			out = append(out, e)
@@ -61,10 +59,7 @@ func TestARuleThatTakesPullRequestsTakesAPullRequestInItsLabel(t *testing.T) {
 
 	cmds, events := d.poll(pr90(1, fixReviewReady))
 	wantCommands(t, cmds, core.Move{IssueID: issueID("90"), From: fixReviewReady, To: fixing})
-	hasEvent(t, events, core.IssueTaken{
-		At: d.now, Issue: pr90(1, fixReviewReady), Rule: "fix review",
-		From: fixReviewReady, To: fixing,
-	})
+	hasEvent(t, events, d.taken(1, pr90(1, fixReviewReady), "fix review", fixReviewReady, fixing, "fix"))
 	if n := otherKinds(events); n != nil {
 		t.Fatalf("notices for a pull request of the rule's kind: %#v", n)
 	}
@@ -175,8 +170,7 @@ func TestAnItemWithTwoCrewLabelsGetsOnlyTheTwoLabelSkip(t *testing.T) {
 
 func TestABlockedIssueInTheLabelOfARuleThatTakesPullRequestsGetsTheNotice(t *testing.T) {
 	d := newDriver(t, withFixReview(), 2)
-	blocked := issue("42", 1, fixReviewReady)
-	blocked.Blocked = true
+	blocked := blockedIssue(issue("42", 1, fixReviewReady))
 
 	_, events := d.poll(blocked)
 	wantEvents(t, otherKinds(events), core.IssueOfOtherKind{
@@ -187,10 +181,8 @@ func TestABlockedIssueInTheLabelOfARuleThatTakesPullRequestsGetsTheNotice(t *tes
 
 func TestAnItemOfTheOtherKindTakesNoSlot(t *testing.T) {
 	d := newDriver(t, draft(), 1)
-	urgent := pr90(1, ready)
-	urgent.Priority = 1
-	later := issue("42", 2, ready)
-	later.Priority = 2
+	urgent := prioritized(pr90(1, ready), 1)
+	later := prioritized(issue("42", 2, ready), 2)
 
 	cmds, _ := d.poll(urgent, later)
 	wantCommands(t, cmds, core.Move{IssueID: issueID("42"), From: ready, To: inProgress})

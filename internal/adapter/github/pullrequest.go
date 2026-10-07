@@ -47,39 +47,40 @@ type pullRequest struct {
 // finds the open pull requests in the issue's repository that GitHub links
 // as closing it; a pull request crew moved closes none, so it gets only the
 // query. Each, in number order, gets the swap Move makes, through gh pr edit,
-// unless its only crew label is already report.State's; then, when
-// report.End is set, the stop comment, unless this report's ID already
+// unless its only crew label is already report.State()'s; then, when the
+// report has an end, the stop comment, unless this report's ID already
 // posted it there. It writes every pull request even when one fails, and
 // returns a transient error when any write failed transiently, so the report
 // is retried, and otherwise the first refusal or moved-meanwhile error. A
 // number GitHub cannot resolve is port.ErrMovedMeanwhile, and gh saying a
 // label does not exist is a refusal, as in Move.
 func (t *Tracker) ReportPullRequests(ctx context.Context, report crew.PullRequestReport) error {
-	what := fmt.Sprintf("update the pull requests of issue #%s to %s", report.IssueID.Key, report.State)
-	issueURL, prs, err := t.pullRequests(ctx, report.IssueID.Key)
+	what := fmt.Sprintf("update the pull requests of issue #%s to %s", report.IssueID().Key, report.State())
+	issueURL, prs, err := t.pullRequests(ctx, report.IssueID().Key)
 	if err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
 	var errs writeErrors
 	link := ""
+	end, ended := report.End().Get()
 	for _, pr := range prs {
-		errs.add(t.mirror(ctx, pr, report.State))
-		if report.End == nil || t.commented(report.ID, pr.number) {
+		errs.add(t.mirror(ctx, pr, report.State()))
+		if !ended || t.commented(report.ID(), pr.number) {
 			continue
 		}
 		var err error
 		if link == "" {
-			link, err = t.statusLink(ctx, report.IssueID.Key, report.IssueRef, issueURL)
+			link, err = t.statusLink(ctx, report.IssueID().Key, report.IssueRef(), issueURL)
 		}
 		if err == nil {
-			err = t.postStop(ctx, report, pr.number, link)
+			err = t.postStop(ctx, report, end, pr.number, link)
 		}
 		errs.add(err)
 	}
 	if len(errs.transient) > 0 {
 		return fmt.Errorf("%s: %w", what, errors.Join(errs.transient...))
 	}
-	t.forgetStops(report.ID)
+	t.forgetStops(report.ID())
 	if errs.final != nil {
 		return fmt.Errorf("%s: %w", what, errs.final)
 	}
@@ -190,15 +191,17 @@ func (t *Tracker) statusLink(ctx context.Context, issueKey, issueRef, issueURL s
 	return fmt.Sprintf("%s's [status comment](%s#issuecomment-%d) has the details.", issueRef, issueURL, c.id), nil
 }
 
-// postStop posts report's stop comment on the pull request number, ending
-// with link, and remembers it under the report's ID.
-func (t *Tracker) postStop(ctx context.Context, report crew.PullRequestReport, number int, link string) error {
-	if _, _, err := t.postComment(ctx, strconv.Itoa(number), renderStop(report, link)); err != nil {
+// postStop posts the stop comment of report, which has end, on the pull
+// request number, ending with link, and remembers it under the report's ID.
+func (t *Tracker) postStop(
+	ctx context.Context, report crew.PullRequestReport, end crew.RuleEnd, number int, link string,
+) error {
+	if _, _, err := t.postComment(ctx, strconv.Itoa(number), renderStop(report, end, link)); err != nil {
 		return fmt.Errorf("comment on pull request #%d: %w", number, err)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.stopped[report.ID] = append(t.stopped[report.ID], number)
+	t.stopped[report.ID()] = append(t.stopped[report.ID()], number)
 	return nil
 }
 

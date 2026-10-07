@@ -333,8 +333,8 @@ func TestFinishedSessionReportsItsTokensAndTurnsButNoCost(t *testing.T) {
 	got := usageOf(t, s)
 
 	want := crew.Usage{
-		Tokens: crew.Tokens{Input: 315, Output: 122, CacheRead: 24448}, HasTokens: true,
-		Turns: 1, HasTurns: true,
+		Tokens: crew.Some(crew.Tokens{Input: 315, Output: 122, CacheRead: 24448}),
+		Turns:  crew.Some(1),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usage = %+v, want %+v", got, want)

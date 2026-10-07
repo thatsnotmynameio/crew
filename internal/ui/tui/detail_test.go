@@ -11,14 +11,16 @@ import (
 // issue's popup, and one about no issue to none.
 func TestEachEventAboutAnIssueIsThatIssues(t *testing.T) {
 	id := issueID("1")
-	for _, e := range []core.Event{
-		core.IssueTaken{Issue: crew.Issue{ID: id}},
-		core.ActionStarted{IssueID: id},
-		core.WorkspaceMissing{IssueID: id},
+	head := crew.EventHead{IssueID: id}
+	for _, e := range []core.Published{
+		crew.RunTaken{EventHead: head, Issue: crew.IssueData{ID: id}},
+		crew.ActionSessionStarted{EventHead: head},
+		crew.WorkspaceMissing{EventHead: head},
 		core.RunNotRecorded{IssueID: id},
-		core.ActionEnded{IssueID: id},
-		core.IssueMoved{IssueID: id},
-		core.FailureReported{IssueID: id},
+		crew.ActionEnded{EventHead: head},
+		crew.TakeMoved{EventHead: head},
+		crew.VerdictMoved{EventHead: head},
+		crew.FailureReported{EventHead: head},
 		core.IssueSkipped{IssueID: id},
 		core.IssueOfOtherKind{IssueID: id},
 		core.StatusFailed{IssueID: id},

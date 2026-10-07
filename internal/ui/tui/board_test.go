@@ -39,10 +39,12 @@ var ideasBugsDone = []crew.BoardColumn{
 }
 
 var (
-	twelve    = crew.Issue{ID: issueID("12"), Ref: "#12", Title: "Rule labels", URL: "https://github.com/o/r/issues/12"}
-	twenty    = crew.Issue{ID: issueID("20"), Ref: "#20", Title: "Crash on start"}
-	twentyOne = crew.Issue{ID: issueID("21"), Ref: "#21", Title: "Retry the poll"}
-	twentyTwo = crew.Issue{ID: issueID("22"), Ref: "#22", Title: "Typo in help"}
+	twelve = crew.NewIssue(crew.IssueData{
+		ID: issueID("12"), Ref: "#12", Title: "Rule labels", URL: "https://github.com/o/r/issues/12",
+	})
+	twenty    = crew.NewIssue(crew.IssueData{ID: issueID("20"), Ref: "#20", Title: "Crash on start"})
+	twentyOne = crew.NewIssue(crew.IssueData{ID: issueID("21"), Ref: "#21", Title: "Retry the poll"})
+	twentyTwo = crew.NewIssue(crew.IssueData{ID: issueID("22"), Ref: "#22", Title: "Typo in help"})
 )
 
 // held is a snapshot of issue held by rule in claim, with one running
@@ -56,7 +58,7 @@ func held(issue crew.Issue, rule crew.RuleName, action crew.ActionName, claim co
 
 // handledBy is a snapshot of issue handled by rule, moved to to.
 func handledBy(issue crew.Issue, rule crew.RuleName, to crew.State) engine.Update {
-	e := entry(issue.ID.Key, issue.Title, rule, to, 10, 1)
+	e := entry(issue.ID().Key, issue.Title(), rule, to, 10, 1)
 	e.Issue = issue
 	return engine.Update{Snapshot: engine.Snapshot{View: core.View{Handled: []core.HandledView{e}}}}
 }
@@ -70,7 +72,7 @@ func onBoard(u engine.Update, issues ...crew.BoardIssue) engine.Update {
 
 // labeled is issue carrying the board labels labels.
 func labeled(issue crew.Issue, labels ...crew.State) crew.BoardIssue {
-	return crew.BoardIssue{Issue: issue, Labels: labels}
+	return crew.NewBoardIssue(issue, labels)
 }
 
 // boardOf returns the Board section of view: its rule up to the blank
@@ -213,7 +215,7 @@ func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
 func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
 	board := append(slices.Clone(crewBoard[1:2]),
 		crew.BoardColumn{Name: "fix review", Labels: []crew.State{"crew:fix-review:ready"}, Takes: crew.KindPullRequest})
-	pr := crew.Issue{ID: issueID("90"), Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
+	pr := crew.NewIssue(crew.IssueData{ID: issueID("90"), Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest})
 	h := newBoardHarness(t, 120, crewNotify, board)
 
 	h.send(updateMsg(onBoard(engine.Update{},
@@ -279,8 +281,8 @@ func TestTheColumnsShowInBoardOrder(t *testing.T) {
 func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 	issues := make([]crew.BoardIssue, 0, 8)
 	for n := 1; n <= 8; n++ {
-		issues = append(issues, labeled(crew.Issue{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
-			Title: "Bug"}, "bug"))
+		issues = append(issues, labeled(crew.NewIssue(crew.IssueData{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
+			Title: "Bug"}), "bug"))
 	}
 	h := newBoardHarness(t, 80, crewNotify, ideasBugsDone)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -306,7 +308,7 @@ func holding(claim core.Claim, keys ...string) engine.Update {
 	var u engine.Update
 	for _, k := range keys {
 		u.Snapshot.Issues = append(u.Snapshot.Issues,
-			held(crew.Issue{ID: issueID(k), Ref: "#" + k, Title: "Bug"}, "fix", "lfg", claim).Snapshot.Issues...)
+			held(titledIssue(k, "Bug"), "fix", "lfg", claim).Snapshot.Issues...)
 	}
 	return u
 }
@@ -397,8 +399,8 @@ func TestNotOnBoardKeepsItsOrder(t *testing.T) {
 func elevenBugs() []crew.BoardIssue {
 	issues := make([]crew.BoardIssue, 0, 11)
 	for n := 1; n <= 11; n++ {
-		issues = append(issues, labeled(crew.Issue{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
-			Title: "Bug"}, "bug"))
+		issues = append(issues, labeled(crew.NewIssue(crew.IssueData{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
+			Title: "Bug"}), "bug"))
 	}
 	return issues
 }
@@ -447,8 +449,8 @@ func eightColumns() []crew.BoardColumn {
 // Covers AE4.
 func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 	u := onBoard(engine.Update{},
-		labeled(crew.Issue{ID: issueID("1"), Ref: "#1", Title: "One"}, "l2"),
-		labeled(crew.Issue{ID: issueID("2"), Ref: "#2", Title: "Two"}, "l6"))
+		labeled(crew.NewIssue(crew.IssueData{ID: issueID("1"), Ref: "#1", Title: "One"}), "l2"),
+		labeled(crew.NewIssue(crew.IssueData{ID: issueID("2"), Ref: "#2", Title: "Two"}), "l6"))
 
 	h := newBoardHarness(t, 80, crewNotify, eightColumns())
 	h.send(updateMsg(u))
@@ -481,7 +483,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 		for k := range n {
 			key := fmt.Sprintf("%d-%d", col, k)
 			label := crew.State(fmt.Sprintf("l%d", col+1))
-			issues = append(issues, labeled(crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Card"}, label))
+			issues = append(issues, labeled(titledIssue(key, "Card"), label))
 		}
 	}
 	u := onBoard(engine.Update{}, issues...)

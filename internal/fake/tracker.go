@@ -99,6 +99,13 @@ type trackedIssue struct {
 	closed bool
 }
 
+// setStates puts the issue in states.
+func (ti *trackedIssue) setStates(states []crew.State) {
+	d := ti.issue.Data()
+	d.States = states
+	ti.issue = crew.NewIssue(d)
+}
+
 // NewTracker returns a tracker holding issues, all open.
 func NewTracker(issues ...crew.Issue) *Tracker {
 	t := &Tracker{}
@@ -113,8 +120,7 @@ func NewTracker(issues ...crew.Issue) *Tracker {
 func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	issue = issue.Clone()
-	if ti := t.find(issue.ID.Key); ti != nil {
+	if ti := t.find(issue.ID().Key); ti != nil {
 		ti.issue, ti.labels, ti.closed = issue, nil, false
 		return
 	}
@@ -127,7 +133,7 @@ func (t *Tracker) SetStates(key string, states ...crew.State) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
-		ti.issue.States = slices.Clone(states)
+		ti.setStates(states)
 	}
 }
 
@@ -169,7 +175,7 @@ func (t *Tracker) Issue(key string) (crew.Issue, bool) {
 	if ti == nil {
 		return crew.Issue{}, false
 	}
-	return ti.issue.Clone(), true
+	return ti.issue, true
 }
 
 // FailMoves makes the next moves of the issue with key fail, one error per
@@ -219,8 +225,8 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 		if ti.closed {
 			continue
 		}
-		if slices.ContainsFunc(ti.issue.States, func(s crew.State) bool { return slices.Contains(states, s) }) {
-			out = append(out, ti.issue.Clone())
+		if slices.ContainsFunc(ti.issue.States(), func(s crew.State) bool { return slices.Contains(states, s) }) {
+			out = append(out, ti.issue)
 		}
 	}
 	return out, nil
@@ -241,13 +247,13 @@ func (t *Tracker) Move(_ context.Context, id crew.IssueID, from, to crew.State) 
 	if ti == nil || ti.closed {
 		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, port.ErrMovedMeanwhile)
 	}
-	if !slices.Contains(ti.issue.States, from) {
-		if slices.Equal(ti.issue.States, []crew.State{to}) {
+	if !slices.Contains(ti.issue.States(), from) {
+		if slices.Equal(ti.issue.States(), []crew.State{to}) {
 			return nil
 		}
 		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, port.ErrMovedMeanwhile)
 	}
-	ti.issue.States = []crew.State{to}
+	ti.setStates([]crew.State{to})
 	t.moves = append(t.moves, Move{Key: id.Key, From: from, To: to})
 	return nil
 }
@@ -267,7 +273,7 @@ func (t *Tracker) ReportFailure(_ context.Context, report crew.FailureReport) er
 
 func (t *Tracker) find(key string) *trackedIssue {
 	for _, ti := range t.issues {
-		if ti.issue.ID.Key == key {
+		if ti.issue.ID().Key == key {
 			return ti
 		}
 	}
@@ -371,13 +377,14 @@ type StatusBoard struct {
 func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.errs.pop(status.IssueID.Key); err != nil {
-		return fmt.Errorf("report status on issue %s: %w", status.IssueID.Key, err)
+	key := status.IssueID().Key
+	if err := b.errs.pop(key); err != nil {
+		return fmt.Errorf("report status on issue %s: %w", key, err)
 	}
 	if b.statuses == nil {
 		b.statuses = map[string][]crew.Status{}
 	}
-	b.statuses[status.IssueID.Key] = append(b.statuses[status.IssueID.Key], status.Clone())
+	b.statuses[key] = append(b.statuses[key], status)
 	return nil
 }
 
@@ -393,11 +400,7 @@ func (b *StatusBoard) FailStatuses(key string, errs ...error) {
 func (b *StatusBoard) Statuses(key string) []crew.Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]crew.Status, len(b.statuses[key]))
-	for i, s := range b.statuses[key] {
-		out[i] = s.Clone()
-	}
-	return out
+	return slices.Clone(b.statuses[key])
 }
 
 // ReportingTracker is a PreparingTracker that also implements
@@ -422,9 +425,8 @@ type Lookup struct {
 
 // LookupScript is how a fake pull request lookup goes.
 type LookupScript struct {
-	// Found is what the lookup returns; its zero value, not looked up, is
-	// returned as no pull request, as a tracker that looked finds one or
-	// none.
+	// Found is what the lookup returns; nil or not looked up is returned
+	// as no pull request, as a tracker that looked finds one or none.
 	Found crew.PullRequest
 	// Err, when set, makes the lookup fail with it.
 	Err error
@@ -469,13 +471,16 @@ func (p *PullRequests) FindPullRequest(ctx context.Context, branch string, since
 	switch {
 	case s.Block:
 		<-ctx.Done()
-		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, ctx.Err())
+		return nil, fmt.Errorf("find the pull request from %s: %w", branch, ctx.Err())
 	case s.Err != nil:
-		return crew.PullRequest{}, fmt.Errorf("find the pull request from %s: %w", branch, s.Err)
-	case s.Found.Lookup == crew.PullRequestNotLookedUp:
-		return crew.PullRequest{Lookup: crew.PullRequestNone}, nil
+		return nil, fmt.Errorf("find the pull request from %s: %w", branch, s.Err)
 	}
-	return s.Found, nil
+	switch s.Found.(type) {
+	case crew.PullRequestFound, crew.PullRequestNone:
+		return s.Found, nil
+	case crew.PullRequestNotLookedUp:
+	}
+	return crew.PullRequestNone{}, nil
 }
 
 // FindingTracker is a ReportingTracker that also implements
@@ -508,13 +513,14 @@ type PullRequestBoard struct {
 func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.PullRequestReport) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.errs.pop(report.IssueID.Key); err != nil {
-		return fmt.Errorf("report pull requests of issue %s: %w", report.IssueID.Key, err)
+	key := report.IssueID().Key
+	if err := b.errs.pop(key); err != nil {
+		return fmt.Errorf("report pull requests of issue %s: %w", key, err)
 	}
 	if b.reports == nil {
 		b.reports = map[string][]crew.PullRequestReport{}
 	}
-	b.reports[report.IssueID.Key] = append(b.reports[report.IssueID.Key], report.Clone())
+	b.reports[key] = append(b.reports[key], report)
 	return nil
 }
 
@@ -532,11 +538,7 @@ func (b *PullRequestBoard) FailPullRequests(key string, errs ...error) {
 func (b *PullRequestBoard) PullRequestReports(key string) []crew.PullRequestReport {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]crew.PullRequestReport, len(b.reports[key]))
-	for i, r := range b.reports[key] {
-		out[i] = r.Clone()
-	}
-	return out
+	return slices.Clone(b.reports[key])
 }
 
 // PullRequestTracker is a ReportingTracker that also implements
@@ -677,10 +679,10 @@ func (b BoardTracker) ListBoard(_ context.Context, labels []crew.State) ([]crew.
 	defer b.mu.Unlock()
 	var out []crew.BoardIssue
 	for _, ti := range b.issues {
-		if ti.closed || ti.issue.Kind != crew.KindIssue {
+		if ti.closed || ti.issue.Kind() != crew.KindIssue {
 			continue
 		}
-		carries := slices.Concat(ti.labels, ti.issue.States)
+		carries := slices.Concat(ti.labels, ti.issue.States())
 		var matched []crew.State
 		for _, l := range labels {
 			if slices.ContainsFunc(carries, func(c crew.State) bool { return strings.EqualFold(string(c), string(l)) }) {
@@ -688,9 +690,9 @@ func (b BoardTracker) ListBoard(_ context.Context, labels []crew.State) ([]crew.
 			}
 		}
 		if len(matched) > 0 {
-			out = append(out, crew.BoardIssue{Issue: ti.issue.Clone(), Labels: matched})
+			out = append(out, crew.NewBoardIssue(ti.issue, matched))
 		}
 	}
-	slices.SortStableFunc(out, func(x, y crew.BoardIssue) int { return x.Issue.Created.Compare(y.Issue.Created) })
+	slices.SortStableFunc(out, func(x, y crew.BoardIssue) int { return x.Issue().Created().Compare(y.Issue().Created()) })
 	return out, nil
 }

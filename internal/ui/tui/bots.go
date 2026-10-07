@@ -318,8 +318,8 @@ func (s styles) items(items []string, sep string, width int) string {
 // issueURL is the URL of the held issue whose reference is ref, or "".
 func (m Model) issueURL(ref string) string {
 	for _, iv := range m.snap.Issues {
-		if iv.Issue.Ref == ref {
-			return iv.Issue.URL
+		if iv.Issue.Ref() == ref {
+			return iv.Issue.URL()
 		}
 	}
 	return ""

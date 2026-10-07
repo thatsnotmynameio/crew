@@ -20,38 +20,31 @@ type pendingReport struct {
 	final  bool // its current or last attempt is its one try after stop
 }
 
-// reportPullRequests queues the report that follows h's move to to, which
-// landed, unless pull request reports are off (KTD2). ended is set when the
-// move ended h's rule, so the report carries how it ended, unless the rule
-// has no actions: nobody stopped watching anything, so there is nothing to
-// tell (KTD5). The report's ID comes from h's run and the move, so it is
-// fixed for its life (KTD7).
-func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
+// reportPullRequests queues report, which follows a move of its issue that
+// landed, unless pull request reports are off (KTD2). Its ID comes from the
+// rule run and the move, so it is fixed for its life (KTD7).
+func (s *step) reportPullRequests(report crew.PullRequestReport) {
 	m := s.m
 	if m.outbox.pullRequests == nil {
 		return
 	}
-	id := h.run.TakeReport()
-	if ended {
-		id = h.run.VerdictReport()
-	}
-	r := crew.PullRequestReport{ID: id, IssueID: h.issue.ID, IssueRef: h.issue.Ref, State: to}
-	if ended && len(h.actions) > 0 {
-		r.End = s.ruleEnd(h)
-	}
-	sl := m.outbox.pullRequests[r.IssueID]
+	sl := m.outbox.pullRequests[report.IssueID()]
 	if sl == nil {
 		sl = &pullRequestLane{}
-		m.outbox.pullRequests[r.IssueID] = sl
+		m.outbox.pullRequests[report.IssueID()] = sl
 	}
-	sl.reports = append(sl.reports, &pendingReport{report: r})
+	sl.reports = append(sl.reports, &pendingReport{report: report})
 	s.pumpPullRequests(sl)
 }
 
-// ruleEnd returns how h's rule ended, with each action as its ended status
-// shows it.
-func (s *step) ruleEnd(h *heldIssue) *crew.RuleEnd {
-	return &crew.RuleEnd{Rule: s.m.rules[h.rule].Name, Actions: s.status(h, crew.StatusEnded).Actions}
+// reportVerdict queues the report that follows the verdict move of h's run,
+// which landed. It carries how the rule ended, unless the rule has no
+// actions: nobody stopped watching anything, so there is nothing to tell
+// (KTD5).
+func (s *step) reportVerdict(h *heldRun) {
+	if report, ok := h.run.VerdictReport(s.m.statusUsage); ok {
+		s.reportPullRequests(report)
+	}
 }
 
 // pumpPullRequests sends the lane's oldest report, unless a report is in
@@ -66,7 +59,7 @@ func (s *step) pumpPullRequests(sl *pullRequestLane) {
 // sendPullRequests issues the lane's oldest report.
 func (s *step) sendPullRequests(sl *pullRequestLane) {
 	sl.sending = true
-	s.command(ReportPullRequests{Report: sl.reports[0].report.Clone()})
+	s.command(ReportPullRequests{Report: sl.reports[0].report})
 }
 
 // pullRequestsResult settles the report in flight for r's issue and sends the
@@ -130,5 +123,5 @@ func (o *outbox) owedPullRequests() []Call {
 
 // describe returns p as a Call.
 func (p *pendingReport) describe() Call {
-	return Call{Kind: CallPullRequests, IssueID: p.report.IssueID, IssueRef: p.report.IssueRef, To: p.report.State}
+	return Call{Kind: CallPullRequests, IssueID: p.report.IssueID(), IssueRef: p.report.IssueRef(), To: p.report.State()}
 }

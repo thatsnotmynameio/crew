@@ -10,8 +10,8 @@ import (
 
 func TestSpendPartsWordCostAndTokens(t *testing.T) {
 	tokens := crew.Tokens{Input: 100, Output: 200, CacheRead: 17_000_000, CacheWrite: 300_000}
-	withAll := crew.Usage{Cost: 1.20, HasCost: true, Tokens: tokens, HasTokens: true}
-	noCost := crew.Usage{Tokens: tokens, HasTokens: true}
+	withAll := crew.Usage{Cost: crew.Some(1.20), Tokens: crew.Some(tokens)}
+	noCost := crew.Usage{Tokens: crew.Some(tokens)}
 
 	tests := []struct {
 		name string
@@ -20,13 +20,14 @@ func TestSpendPartsWordCostAndTokens(t *testing.T) {
 	}{
 		{"no session", crew.Spend{}, nil},
 		{"one session", withAll.Spend(), []string{"$1.20", "17.3M tokens"}},
-		{"one tokens missing", withAll.Spend().Add(crew.Usage{Cost: 3.05, HasCost: true}.Spend()),
+		{"one tokens missing", withAll.Spend().Add(crew.Usage{Cost: crew.Some(3.05)}.Spend()),
 			[]string{"$4.25", "17.3M tokens (partial)"}},
 		{"one cost missing", withAll.Spend().Add(noCost.Spend()), []string{"$1.20 (partial)", "34.6M tokens"}},
 		{"no cost at all", noCost.Spend(), []string{"cost not reported", "17.3M tokens"}},
-		{"no tokens at all", crew.Usage{Cost: 1.20, HasCost: true}.Spend(), []string{"$1.20", "tokens not reported"}},
+		{"no tokens at all", crew.Usage{Cost: crew.Some(1.20)}.Spend(), []string{"$1.20", "tokens not reported"}},
 		{"nothing reported", crew.Usage{}.Spend(), []string{"cost and tokens not reported"}},
-		{"a reported zero", crew.Usage{HasCost: true, HasTokens: true}.Spend(), []string{"$0.00", "0 tokens"}},
+		{"a reported zero", crew.Usage{Cost: crew.Some(0.0), Tokens: crew.Some(crew.Tokens{})}.Spend(),
+			[]string{"$0.00", "0 tokens"}},
 	}
 	for _, tt := range tests {
 		if got := lines.SpendParts(tt.sum); !slices.Equal(got, tt.want) {
@@ -44,7 +45,7 @@ func TestSpendPartsWordTokenCountsCompactly(t *testing.T) {
 		{17_213_000, "17.2M"}, {129_000_000, "129M"},
 	}
 	for _, tt := range tests {
-		spend := crew.Usage{Tokens: crew.Tokens{Input: tt.n}, HasTokens: true}.Spend()
+		spend := crew.Usage{Tokens: crew.Some(crew.Tokens{Input: tt.n})}.Spend()
 		if got := lines.SpendParts(spend)[1]; got != tt.want+" tokens" {
 			t.Errorf("%d tokens: %q, want %q", tt.n, got, tt.want+" tokens")
 		}
@@ -53,7 +54,7 @@ func TestSpendPartsWordTokenCountsCompactly(t *testing.T) {
 
 func TestSpendPartsWordCostsInDollarsAndCents(t *testing.T) {
 	for usd, want := range map[float64]string{12.4: "$12.40", 0.004: "$0.00", 46.9905864: "$46.99", 0: "$0.00"} {
-		spend := crew.Usage{Cost: usd, HasCost: true}.Spend()
+		spend := crew.Usage{Cost: crew.Some(usd)}.Spend()
 		if got := lines.SpendParts(spend)[0]; got != want {
 			t.Errorf("cost %v: %q, want %q", usd, got, want)
 		}

@@ -47,10 +47,24 @@ func draft() []crew.Rule {
 
 // issue returns an issue keyed key, opened minute minutes after t0.
 func issue(key string, minute int, states ...crew.State) crew.Issue {
-	return crew.Issue{
+	return crew.NewIssue(crew.IssueData{
 		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
 		Created: t0.Add(time.Duration(minute) * time.Minute), States: states,
-	}
+	})
+}
+
+// blockedIssue returns i blocked by an open issue.
+func blockedIssue(i crew.Issue) crew.Issue {
+	d := i.Data()
+	d.Blocked = true
+	return crew.NewIssue(d)
+}
+
+// pullRequest returns i as a pull request.
+func pullRequest(i crew.Issue) crew.Issue {
+	d := i.Data()
+	d.Kind = crew.KindPullRequest
+	return crew.NewIssue(d)
 }
 
 // parsedPrompt parses text as the prompt of the action named action, and
@@ -67,7 +81,8 @@ func parsedPrompt(action crew.ActionName, text string) crew.Prompt {
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
 
-// space is the workspace an engine would create for key and action.
+// space is the workspace an engine would create for key and action. It
+// names no run: the driver fills in the run that holds the issue.
 func space(key string, action crew.ActionName) core.WorkspaceReady {
 	name := "issue-" + key + "-" + string(action)
 	return core.WorkspaceReady{
@@ -88,7 +103,10 @@ type driver struct {
 	// listed is the seed stamped on the last IssuesListed sent, from which
 	// the runs it took got their ids.
 	listed uuid.UUID
-	events []core.Event
+	events []core.Published
+	// recorded holds the events of every Record the model issued, in
+	// order: the run journal a healthy engine would have written.
+	recorded []crew.RunEvent
 }
 
 // seed returns the nth sequential seed: a UUID whose last bytes encode n.
@@ -103,7 +121,11 @@ func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 	return &driver{t: t, m: core.New(rules, maxParallel), now: t0}
 }
 
-func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
+// send stamps in and feeds it to the model. A run input, or a said of a
+// tick, that names no run is filled in with the last run that took its
+// issue, the run whose command an engine's answer would carry.
+func (d *driver) send(in core.Input) ([]core.Command, []core.Published) {
+	in = d.named(in)
 	d.now = d.now.Add(time.Second)
 	d.inputs++
 	stamp := seed(d.inputs)
@@ -112,7 +134,63 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 	}
 	cmds, events := d.m.Update(in.Stamped(d.now, stamp))
 	d.events = append(d.events, events...)
+	d.recorded = append(d.recorded, records(cmds)...)
 	return cmds, events
+}
+
+// run returns the id of the last run that took the issue identified by id,
+// as its published take named it; empty when no run took it.
+func (d *driver) run(id crew.IssueID) crew.RuleRunID {
+	for _, e := range slices.Backward(d.events) {
+		if taken, ok := e.(crew.RunTaken); ok && taken.IssueID == id {
+			return taken.Run
+		}
+	}
+	return ""
+}
+
+// named returns in with its run filled in, when it names none, as send
+// does.
+func (d *driver) named(in core.Input) core.Input {
+	fill := func(run *crew.RuleRunID, id crew.IssueID) {
+		if *run == "" {
+			*run = d.run(id)
+		}
+	}
+	switch in := in.(type) {
+	case core.WorkspaceReady:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.WorkspaceGone:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.WorkspaceFailed:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.SessionStarted:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.SessionFailedToStart:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.SessionEnded:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.CheckEnded:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.PullRequestFound:
+		fill(&in.Run, in.IssueID)
+		return in
+	case core.Tick:
+		in.Said = slices.Clone(in.Said)
+		for i := range in.Said {
+			fill(&in.Said[i].Run, in.Said[i].IssueID)
+		}
+		return in
+	case core.SchedulerInput:
+	}
+	return in
 }
 
 // wantReason fails the test unless the last ActionEnded of action on issue
@@ -120,8 +198,8 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 func (d *driver) wantReason(key string, action crew.ActionName, reason string) {
 	d.t.Helper()
 	for _, e := range slices.Backward(d.events) {
-		if ended, ok := e.(core.ActionEnded); ok && ended.IssueID == issueID(key) && ended.Action == action {
-			if got := ended.Outcome.Reason.String(); got != reason {
+		if ended, ok := e.(crew.ActionEnded); ok && ended.IssueID == issueID(key) && ended.Action == action {
+			if got := ended.End.Outcome().Reason.String(); got != reason {
 				d.t.Errorf("%s of #%s ended with reason %q, want %q", action, key, got, reason)
 			}
 			return
@@ -144,9 +222,14 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ReportFailure:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
-				out, _ = d.send(space(c.Issue.ID.Key, c.Action))
+				ready := space(c.Issue.ID().Key, c.Action)
+				ready.Run = c.Run
+				out, _ = d.send(ready)
 			case core.StartSession:
-				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Action: c.Action})
+				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
+			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
+				core.Record, core.StopSession, core.RunCheck, core.FindPullRequest, core.StopCheck:
+				// Left unanswered.
 			}
 			next = append(next, out...)
 		}
@@ -155,7 +238,7 @@ func (d *driver) settle(cmds []core.Command) {
 }
 
 // poll ticks and answers the listing with issues.
-func (d *driver) poll(issues ...crew.Issue) ([]core.Command, []core.Event) {
+func (d *driver) poll(issues ...crew.Issue) ([]core.Command, []core.Published) {
 	d.t.Helper()
 	cmds, _ := d.send(core.Tick{})
 	if len(cmds) == 0 {
@@ -175,16 +258,18 @@ func (d *driver) running(issues ...crew.Issue) {
 func noIDs(cmds []core.Command) []core.Command {
 	out := make([]core.Command, 0, len(cmds))
 	for _, c := range cmds {
-		switch c := c.(type) {
+		switch call := c.(type) {
 		case core.Move:
-			c.ID = 0
-			out = append(out, c)
+			call.ID = 0
+			c = call
 		case core.ReportFailure:
-			c.ID = 0
-			out = append(out, c)
-		default:
-			out = append(out, c)
+			call.ID = 0
+			c = call
+		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
+			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunCheck,
+			core.FindPullRequest, core.StopCheck:
 		}
+		out = append(out, c)
 	}
 	return out
 }
@@ -223,7 +308,66 @@ func wantCommands(t *testing.T, got []core.Command, want ...core.Command) {
 	}
 }
 
-func hasEvent(t *testing.T, events []core.Event, want core.Event) {
+// runHead returns the head of the events of issue key's last run at d.now:
+// its run, issue and rule, as its published take named them.
+func (d *driver) runHead(key string) crew.EventHead {
+	d.t.Helper()
+	for _, e := range slices.Backward(d.events) {
+		if taken, ok := e.(crew.RunTaken); ok && taken.IssueID == issueID(key) {
+			head := taken.EventHead
+			head.At = d.now
+			return head
+		}
+	}
+	d.t.Fatalf("no take of #%s in %#v", key, d.events)
+	return crew.EventHead{}
+}
+
+// taken is the event of rule taking it at d.now, as the nth run of d's last
+// listing, from one state to another; none of its actions resumes.
+func (d *driver) taken(n int, it crew.Issue, rule crew.RuleName, from, to crew.State,
+	actions ...crew.ActionName,
+) crew.RunTaken {
+	e := crew.RunTaken{
+		Run: crew.NewRuleRunID(d.listed, n), At: d.now, IssueID: it.ID(), IssueRef: it.Ref(), Rule: rule,
+		Issue: it.Data(), From: from, To: to,
+	}
+	for _, a := range actions {
+		e.Actions = append(e.Actions, crew.ActionTaken{Name: a})
+	}
+	return e
+}
+
+// end is an action's end as its line shows it: its head, its action, its
+// outcome, and the workspace and log it worked in.
+type end struct {
+	head      crew.EventHead
+	action    crew.ActionName
+	outcome   crew.Outcome
+	workspace crew.WorkspaceName
+	log       string
+}
+
+// hasEnd fails the test unless events hold the end of an action that shows
+// as want.
+func hasEnd(t *testing.T, events []core.Published, want end) {
+	t.Helper()
+	for _, e := range events {
+		if ended, ok := e.(crew.ActionEnded); ok {
+			w, _ := ended.Workspace.Get()
+			got := end{
+				head: ended.EventHead, action: ended.Action, outcome: ended.End.Outcome(),
+				workspace: w.Workspace.Name, log: w.Log,
+			}
+			if got == want {
+				return
+			}
+		}
+	}
+	t.Fatalf("no end %#v in %#v", want, events)
+}
+
+func hasEvent(t *testing.T, events []core.Published, want core.Published) {
 	t.Helper()
 	for _, e := range events {
 		if reflect.DeepEqual(e, want) {
@@ -236,7 +380,7 @@ func hasEvent(t *testing.T, events []core.Event, want core.Event) {
 func claimOf(t *testing.T, m *core.Model, key string) core.Claim {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.ID.Key == key {
+		if iv.Issue.ID().Key == key {
 			return iv.Claim
 		}
 	}
@@ -249,7 +393,7 @@ func wantHeld(t *testing.T, m *core.Model, keys ...string) {
 	issues := m.View().Issues
 	got := make([]string, 0, len(issues))
 	for _, iv := range issues {
-		got = append(got, iv.Issue.ID.Key)
+		got = append(got, iv.Issue.ID().Key)
 	}
 	if !slices.Equal(got, keys) {
 		t.Fatalf("held issues: got %v, want %v", got, keys)
@@ -270,11 +414,13 @@ func issueKey(c core.Command) string {
 	case core.ReportFailure:
 		return c.Report.IssueID.Key
 	case core.CreateWorkspace:
-		return c.Issue.ID.Key
+		return c.Issue.ID().Key
 	case core.StartSession:
 		return c.IssueID.Key
 	case core.StopSession:
 		return c.IssueID.Key
+	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
+		core.Record, core.RunCheck, core.FindPullRequest, core.StopCheck:
 	}
 	return ""
 }
@@ -288,7 +434,7 @@ func judgedNeedingAttention(d *driver) []core.Command {
 	return cmds
 }
 
-func wantEvents(t *testing.T, got []core.Event, want ...core.Event) {
+func wantEvents(t *testing.T, got []core.Published, want ...core.Published) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("events:\n got %#v\nwant %#v", got, want)

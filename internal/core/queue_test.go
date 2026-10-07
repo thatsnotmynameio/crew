@@ -46,11 +46,11 @@ var clerk = crew.Queue{Name: "clerk", Slots: 1}
 func defaultQueue(slots int) crew.Queue { return crew.Queue{Name: crew.DefaultQueue, Slots: slots} }
 
 // takenKeys returns the keys of the issues events say were taken, in order.
-func takenKeys(events []core.Event) []string {
+func takenKeys(events []core.Published) []string {
 	var keys []string
 	for _, e := range events {
-		if taken, ok := e.(core.IssueTaken); ok {
-			keys = append(keys, taken.Issue.ID.Key)
+		if taken, ok := e.(crew.RunTaken); ok {
+			keys = append(keys, taken.IssueID.Key)
 		}
 	}
 	return keys
@@ -60,7 +60,7 @@ func takenKeys(events []core.Event) []string {
 func keysOf(issues []crew.Issue) []string {
 	keys := make([]string, 0, len(issues))
 	for _, i := range issues {
-		keys = append(keys, i.ID.Key)
+		keys = append(keys, i.ID().Key)
 	}
 	return keys
 }
@@ -309,7 +309,7 @@ func queuesOf(t *testing.T, m *core.Model, free ...int) []core.QueueView {
 func queueOf(t *testing.T, m *core.Model, key string) crew.QueueName {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.ID.Key == key {
+		if iv.Issue.ID().Key == key {
 			return iv.Queue
 		}
 	}

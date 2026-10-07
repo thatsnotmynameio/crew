@@ -100,7 +100,7 @@ func TestR18TheLatestSubscriberGetsTheSessionsScrubbedWordsBeforeAnyPoll(t *test
 		u := n.refreshed(t)
 
 		want := []core.Said{{
-			IssueID: issueID("1"), Action: "development",
+			IssueID: issueID("1"), Run: takenRun(t, u.Snapshot, "1"), Action: "development",
 			Text: crew.NewSaid("Pushed with [redacted token] from ./internal/core in ~"),
 		}}
 		if !reflect.DeepEqual(u.Snapshot.Said, want) {
@@ -114,6 +114,63 @@ func TestR18TheLatestSubscriberGetsTheSessionsScrubbedWordsBeforeAnyPoll(t *test
 		}
 		if q := n.queued(); len(q) != 0 {
 			t.Errorf("the ordered queue got %d updates on the said refresh, want none", len(q))
+		}
+
+		n.finish(t)
+	})
+}
+
+// takenRun returns the id of the rule run that took issue key, as the
+// snapshot's recent take names it.
+func takenRun(t *testing.T, s engine.Snapshot, key string) crew.RuleRunID {
+	t.Helper()
+	for _, e := range s.Recent {
+		if taken, ok := e.(crew.RunTaken); ok && taken.IssueID.Key == key {
+			return taken.Run
+		}
+	}
+	t.Fatalf("no take of #%s in %#v", key, s.Recent)
+	return ""
+}
+
+// The said refresh lists the sessions by issue, then action, whatever
+// order their rule runs took the issues in.
+func TestR18TheSessionsWordsComeByIssueThenAction(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		urgent := issue(2, ready).Data()
+		urgent.Priority = 1
+		cfg := config(t, fake.NewTracker(issue(1, ready), crew.NewIssue(urgent)), implement)
+		cfg.Harnesses = harnesses(fake.NewNarratingHarness())
+		e := engine.New(cfg)
+		latest := e.SubscribeLatest()
+		r := run(t, cfg, e)
+		for name, s := range r.sessions(4) {
+			s.Say("in " + name)
+		}
+		time.Sleep(saidEvery)
+		synctest.Wait()
+		n := &narrating{rig: r, latest: latest}
+		u, ok := n.next()
+		if !ok {
+			t.Fatal("the said refresh published no update")
+		}
+
+		one, two := takenRun(t, u.Snapshot, "1"), takenRun(t, u.Snapshot, "2")
+		if two >= one {
+			t.Fatalf("run of #2 = %q, run of #1 = %q, want #2 taken first", two, one)
+		}
+		said := func(key string, run crew.RuleRunID, action crew.ActionName) core.Said {
+			return core.Said{
+				IssueID: issueID(key), Run: run, Action: action,
+				Text: crew.NewSaid("in issue-" + key + "-" + string(action)),
+			}
+		}
+		want := []core.Said{
+			said("1", one, "acceptance"), said("1", one, "development"),
+			said("2", two, "acceptance"), said("2", two, "development"),
+		}
+		if !reflect.DeepEqual(u.Snapshot.Said, want) {
+			t.Errorf("Said = %#v, want %#v", u.Snapshot.Said, want)
 		}
 
 		n.finish(t)
@@ -153,7 +210,7 @@ func TestR18AStepAfterARefreshCarriesTheSameWords(t *testing.T) {
 			t.Fatal("the poll published no update to the ordered queue")
 		}
 		last := q[len(q)-1]
-		polled := slices.ContainsFunc(last.Events, func(e core.Event) bool {
+		polled := slices.ContainsFunc(last.Events, func(e core.Published) bool {
 			_, ok := e.(core.PollDone)
 			return ok
 		})
@@ -225,10 +282,15 @@ func saidInStatus(t *testing.T, text string) string {
 	if _, err := r.wait(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got.Kind != crew.StatusRunning || len(got.Actions) != 1 {
+	actions := got.Actions()
+	if got.Progress() != (crew.StatusRunning{}) || len(actions) != 1 {
 		t.Fatalf("status = %#v, want development running", got)
 	}
-	return got.Actions[0].Said.String()
+	running, ok := actions[0].State.(crew.ActionRunning)
+	if !ok {
+		t.Fatalf("development = %#v, want running", actions[0])
+	}
+	return running.Said.String()
 }
 
 func TestR23TheStatusShowsWhatTheSessionSaidWithoutItsEscapeSequences(t *testing.T) {

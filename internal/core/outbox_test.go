@@ -52,10 +52,10 @@ func TestAE2ATakeOwedTwiceStartsItsActionsOnceItLands(t *testing.T) {
 
 	retry, _ = d.send(core.Tick{})
 	cmds, events := d.send(core.CallResult{ID: moveID(t, retry, "1"), Result: core.ResultDone})
-	wantEvents(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: ready, To: inProgress})
+	wantEvents(t, events, crew.TakeMoved{EventHead: d.runHead("1"), From: ready, To: inProgress})
 	wantCommands(t, cmds,
-		core.CreateWorkspace{Issue: i1, Action: "acceptance"},
-		core.CreateWorkspace{Issue: i1, Action: "development"},
+		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "acceptance"},
+		core.CreateWorkspace{Issue: i1, Run: d.run(i1.ID()), Action: "development"},
 	)
 	wantClaim(t, d.m, "1", core.ClaimRunning)
 	wantOwed(t, d.m)
@@ -122,7 +122,7 @@ func TestATickRetriesAndReportsIssueByIssueInTakenOrder(t *testing.T) {
 		t.Fatalf("tick: got %#v, want the retry of #1 then the status of #2", cmds)
 	}
 	wantCommands(t, cmds[:1], core.Move{IssueID: issueID("1"), From: ready, To: inProgress})
-	if st := statusOf(t, cmds[1:], "2"); st.Kind != crew.StatusRunning {
+	if st := statusOf(t, cmds[1:], "2"); st.Progress() != (crew.StatusRunning{}) {
 		t.Fatalf("status of #2: got %#v, want running", st)
 	}
 }
@@ -140,8 +140,8 @@ func TestAStopTriesOwedCallsAndStopsSessionsInTakenOrder(t *testing.T) {
 	cmds, _ = d.send(core.StopRequested{})
 	wantCommands(t, cmds,
 		core.Move{IssueID: issueID("1"), From: ready, To: inProgress},
-		core.StopSession{IssueID: issueID("2"), Action: "acceptance"},
-		core.StopSession{IssueID: issueID("2"), Action: "development"},
+		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "acceptance"},
+		core.StopSession{IssueID: issueID("2"), Run: d.run(issueID("2")), Action: "development"},
 	)
 	wantClaim(t, d.m, "1", core.ClaimOwed)
 	wantClaim(t, d.m, "2", core.ClaimStopping)
@@ -239,8 +239,8 @@ func TestTwoRunsOfARuleWithoutActionsEditOneStatusEntry(t *testing.T) {
 	}
 
 	first, second := runOnce(), runOnce()
-	if second.Run != first.Run {
-		t.Fatalf("second run's entry = %q, want the first's, %q", second.Run, first.Run)
+	if second.Run() != first.Run() {
+		t.Fatalf("second run's entry = %q, want the first's, %q", second.Run(), first.Run())
 	}
 }
 
@@ -254,13 +254,13 @@ func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
 	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("stopped")})
 
 	cmds, _ := d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
-	if st := statusOf(t, cmds, "74"); st.Move != crew.MovePending {
+	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MovePending}) {
 		t.Fatalf("final try: got %#v, want the ended status with the move pending", st)
 	}
 	d.wrote("74")
 
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
-	if st := statusOf(t, cmds, "74"); st.Move != crew.MoveDone {
+	if st := statusOf(t, cmds, "74"); st.Progress() != (crew.StatusEnded{To: needsAttention, Move: crew.MoveDone}) {
 		t.Fatalf("after the move landed: got %#v, want the ended status with the move done", st)
 	}
 	cmds, _ = d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})

@@ -48,7 +48,7 @@ issueFieldValues(first: 25) {
 ```
 
 - `priority` (`internal/adapter/github/tracker.go:187`) takes the value whose field is named `Priority` (ignoring case) and returns the position of its `optionId` among the field's `options` ids, plus one. Anything else gives 0, meaning no priority.
-- The rank travels as `crew.Issue.Priority` (`internal/crew/issue.go:27`), as `Blocked` does. The core's `listed` (`internal/core/update.go:191`) sorts every stage's candidates together by priority, then later stage, then age.
+- The rank travels as `crew.Issue.Priority` (`internal/crew/issue.go`), as `Blocked` does. The core's `listed` (`internal/core/scheduler.go`) sorts every stage's candidates together by priority, then later stage, then age.
 - `TestListReadsEachIssuesPriorityFromItsIssueField` (`internal/adapter/github/tracker_test.go:318`) fails if the query ever contains `totalCount`.
 
 ## Why This Works

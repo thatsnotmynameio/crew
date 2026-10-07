@@ -1,5 +1,7 @@
 package crew
 
+import "slices"
+
 // Rule is one of the config's rules. It takes an item of its Takes kind in
 // its Labels.Ready state, moves it to Labels.Running while its actions run,
 // and moves it to Labels.Success once every action has succeeded, or to
@@ -19,6 +21,15 @@ type Rule struct {
 	// Takes is the kind of item the rule takes: it takes only the items of
 	// that kind in its Labels.Ready state. The zero Kind takes issues.
 	Takes Kind
+}
+
+// Action returns the definition of r's action named name, or the zero
+// Action when r has none of that name.
+func (r Rule) Action(name ActionName) Action {
+	if i := slices.IndexFunc(r.Actions, func(a Action) bool { return a.Name == name }); i >= 0 {
+		return r.Actions[i]
+	}
+	return Action{}
 }
 
 // Labels are a rule's states, one for each point of its run.

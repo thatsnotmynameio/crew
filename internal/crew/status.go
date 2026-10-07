@@ -8,22 +8,25 @@ import (
 // Status is where an issue crew took stands, for the tracker to show you
 // in one place it edits in place. The tracker adapter formats it in its own
 // markup and computes elapsed times from Updated.
+//
+// A Status cannot be changed once built: NewStatus copies what it is given,
+// and its accessors return copies.
 type Status struct {
+	data StatusData
+}
+
+// StatusData is a status's fields as plain data, to build a Status from
+// (NewStatus) or read one back whole (Status.Data).
+type StatusData struct {
 	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
 	IssueID  IssueID
 	IssueRef string
 	// Rule is the rule that runs or ran on the issue.
 	Rule RuleName
-	// Kind says which of the fields below apply.
-	Kind StatusKind
+	// Progress says whether the rule runs or ended.
+	Progress StatusProgress
 	// Actions are the rule's actions, in its action order.
 	Actions []ActionStatus
-	// To is the state the issue moves to once the rule ended; set when Kind
-	// is StatusEnded.
-	To State
-	// Move says whether the move to To is under way, landed or was given up;
-	// set when Kind is StatusEnded.
-	Move MoveProgress
 	// Updated is when crew computed this status.
 	Updated time.Time
 	// Run identifies the status comment's entry this status belongs to: the
@@ -34,16 +37,66 @@ type Status struct {
 	Run RuleRunID
 }
 
-// StatusKind is the kind of a Status.
-type StatusKind int
+// NewStatus returns the status d describes. The status keeps its own copy
+// of d's Actions and their Checks.
+func NewStatus(d StatusData) Status {
+	d.Actions = cloneActions(d.Actions)
+	return Status{data: d}
+}
 
-// The kinds of status.
-const (
-	// StatusRunning: the rule took the issue and its actions run.
-	StatusRunning StatusKind = iota
-	// StatusEnded: every action of the rule ended.
-	StatusEnded
-)
+// Data returns the status's fields as plain data, with its own copy of the
+// Actions and their Checks.
+func (s Status) Data() StatusData {
+	d := s.data
+	d.Actions = cloneActions(d.Actions)
+	return d
+}
+
+// IssueID returns the identity of the issue.
+func (s Status) IssueID() IssueID { return s.data.IssueID }
+
+// IssueRef returns how humans write the issue, such as "#42".
+func (s Status) IssueRef() string { return s.data.IssueRef }
+
+// Rule returns the rule that runs or ran on the issue.
+func (s Status) Rule() RuleName { return s.data.Rule }
+
+// Progress returns whether the rule runs or ended.
+func (s Status) Progress() StatusProgress { return s.data.Progress }
+
+// Actions returns a copy of the rule's actions, in its action order, each
+// with its own Checks.
+func (s Status) Actions() []ActionStatus { return cloneActions(s.data.Actions) }
+
+// Updated returns when crew computed the status.
+func (s Status) Updated() time.Time { return s.data.Updated }
+
+// Run returns the id of the status comment's entry the status belongs to.
+func (s Status) Run() RuleRunID { return s.data.Run }
+
+// StatusProgress is whether the rule of a Status runs or ended:
+// StatusRunning or StatusEnded.
+//
+//sumtype:decl
+type StatusProgress interface {
+	statusProgress()
+}
+
+// StatusRunning is the progress of a rule that took the issue and whose
+// actions run.
+type StatusRunning struct{}
+
+// StatusEnded is the progress of a rule whose every action ended: the issue
+// moves to To.
+type StatusEnded struct {
+	// To is the state the issue moves to.
+	To State
+	// Move says whether the move to To is under way, landed or was given up.
+	Move MoveProgress
+}
+
+func (StatusRunning) statusProgress() {}
+func (StatusEnded) statusProgress()   {}
 
 // ActionStatus is one action in a Status.
 type ActionStatus struct {
@@ -51,31 +104,87 @@ type ActionStatus struct {
 	Name ActionName
 	// State is how the action stands.
 	State ActionState
-	// Started is when its session started; zero while its workspace is
-	// created or its session starts, and once it ended.
-	Started time.Time
-	// Said is the last thing its running session said, on one line with
-	// local paths shortened and without control characters; empty when it
-	// said nothing yet, said only control characters or its harness cannot
-	// tell.
-	Said Said
-	// Cause says what made a failed action fail; set when State is
-	// ActionFailed.
-	Cause FailureCause
 	// Checks are how its checks that ran so far ended, in the order they
-	// ran; when Cause is CauseCheck, the last is the one that did not pass.
-	// Only a check's reason goes in a status: a session's or a tool's own
-	// words never do, since a tracker may show it in public, and those
+	// ran; when it failed by a check, the last is the one that did not
+	// pass. Only a check's reason goes in a status: a session's or a tool's
+	// own words never do, since a tracker may show it in public, and those
 	// words can hold commands, output and secrets.
 	Checks []CheckResult
-	// Log is the repository-relative path of its log, once it has one.
-	Log string
 	// Workspace is the workspace the action resumed in; empty when it did
 	// not resume.
 	Workspace WorkspaceName
-	// Spend is what its session used, and PullRequest the pull request it
-	// opened; set only for an ended action whose session started, when crew
-	// is set to show them.
+}
+
+// FailedCheck returns the reason of the check that failed a, when a failed
+// by a check (CauseCheck), or an empty CheckReason.
+func (a ActionStatus) FailedCheck() CheckReason {
+	failed, ok := a.State.(ActionFailed)
+	if !ok || failed.Cause != CauseCheck || len(a.Checks) == 0 {
+		return CheckReason{}
+	}
+	return a.Checks[len(a.Checks)-1].Reason
+}
+
+// cloneActions returns a copy of actions, each with its own Checks.
+func cloneActions(actions []ActionStatus) []ActionStatus {
+	out := slices.Clone(actions)
+	for i := range out {
+		out[i].Checks = slices.Clone(out[i].Checks)
+	}
+	return out
+}
+
+// ActionState is how an action in a Status stands: ActionPending,
+// ActionRunning, ActionSucceeded or ActionFailed.
+//
+//sumtype:decl
+type ActionState interface {
+	actionState()
+}
+
+// ActionPending is an action that has no session to time: its workspace is
+// created or its session starts, or its outcome waits for its pull request.
+type ActionPending struct{}
+
+// ActionRunning is an action whose session started and whose session or
+// checks run.
+type ActionRunning struct {
+	// Started is when its session started.
+	Started time.Time
+	// Said is the last thing its running session said, on one line with
+	// local paths shortened and without control characters; empty when it
+	// said nothing yet, said only control characters, its harness cannot
+	// tell, or its checks run.
+	Said Said
+}
+
+// ActionSucceeded is an action that ended well.
+type ActionSucceeded struct {
+	// Usage is what its session spent and the pull request it opened, when
+	// its session started and crew is set to show them.
+	Usage Optional[ShownUsage]
+}
+
+// ActionFailed is an action that ended in a failure.
+type ActionFailed struct {
+	// Cause says what made it fail.
+	Cause FailureCause
+	// Log is the repository-relative path of its log; empty when it failed
+	// before it had one.
+	Log string
+	// Usage is what its session spent and the pull request it opened, when
+	// its session started and crew is set to show them.
+	Usage Optional[ShownUsage]
+}
+
+func (ActionPending) actionState()   {}
+func (ActionRunning) actionState()   {}
+func (ActionSucceeded) actionState() {}
+func (ActionFailed) actionState()    {}
+
+// ShownUsage is what an ended action's session spent and the pull request
+// it opened, as a status shows them.
+type ShownUsage struct {
 	Spend       Spend
 	PullRequest PullRequest
 }
@@ -83,12 +192,10 @@ type ActionStatus struct {
 // FailureCause is what made an action fail, for a tracker to word itself.
 type FailureCause int
 
-// The causes of a failed action. The zero value means the action did not
-// fail.
+// The causes of a failed action.
 const (
-	CauseNone FailureCause = iota
 	// CauseSession: its session ended in a failure.
-	CauseSession
+	CauseSession FailureCause = iota
 	// CauseCheck: its check failed, ran out of time or could not start.
 	CauseCheck
 	// CauseStopped: crew stopped before the action could end on its own.
@@ -99,17 +206,6 @@ const (
 	CauseStart
 	// CausePrompt: its prompt did not render.
 	CausePrompt
-)
-
-// ActionState is how an action in a Status stands.
-type ActionState int
-
-// The states of an action in a Status. An action whose session has not
-// started yet is running.
-const (
-	ActionRunning ActionState = iota
-	ActionSucceeded
-	ActionFailed
 )
 
 // MoveProgress is how the move that ends a rule stands.
@@ -125,28 +221,3 @@ const (
 	// meanwhile, the tracker refused it, or its last try after a stop failed.
 	MoveDropped
 )
-
-// Clone returns a copy of s with its own Actions, so the copy shares no
-// slice with s.
-func (s Status) Clone() Status {
-	s.Actions = cloneActions(s.Actions)
-	return s
-}
-
-// cloneActions returns a copy of actions, each with its own Checks.
-func cloneActions(actions []ActionStatus) []ActionStatus {
-	out := slices.Clone(actions)
-	for i := range out {
-		out[i].Checks = slices.Clone(out[i].Checks)
-	}
-	return out
-}
-
-// FailedCheck returns the reason of the check that failed a, when its Cause
-// is CauseCheck, or an empty CheckReason.
-func (a ActionStatus) FailedCheck() CheckReason {
-	if a.Cause != CauseCheck || len(a.Checks) == 0 {
-		return CheckReason{}
-	}
-	return a.Checks[len(a.Checks)-1].Reason
-}

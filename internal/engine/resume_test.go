@@ -20,8 +20,8 @@ import (
 )
 
 // events returns every event r's engine published, once Run has returned.
-func (r *rig) events() []core.Event {
-	var out []core.Event
+func (r *rig) events() []core.Published {
+	var out []core.Published
 	for u := range r.queue.Updates() {
 		out = append(out, u.Events...)
 	}
@@ -34,8 +34,8 @@ func (r *rig) lastReason() string {
 	r.t.Helper()
 	reason, found := "", false
 	for _, e := range r.events() {
-		if ended, ok := e.(core.ActionEnded); ok {
-			reason, found = ended.Outcome.Reason.String(), true
+		if ended, ok := e.(crew.ActionEnded); ok {
+			reason, found = ended.End.Outcome().Reason.String(), true
 		}
 	}
 	if !found {
@@ -135,29 +135,28 @@ func checkResumedLog(t *testing.T, root string) {
 	}
 }
 
-// writeJournal writes lines, each a JSON object, as the run journal of cfg.
-func writeJournal(t *testing.T, root string, lines ...string) {
-	t.Helper()
-	dir := filepath.Join(root, ".crew", "logs")
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "runs.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-const startedLine = `{"v":1,"event":"started","time":"2026-01-01T10:00:00Z",` +
-	`"issue":"1","ref":"#1","stage":"implement",` +
-	`"action":"development","workspace":"issue-1-development","branch":"crew/issue-1-development",` +
-	`"log":".crew/logs/issue-1-development.log"}`
-
-func TestAE5ARunKilledWithCrewResumesAfterARestart(t *testing.T) {
+// Covers AE3: the journal of a killed crew holds the start of the action
+// run of development and no end.
+func TestAE3AnActionThatStartedAndNeverEndedContinuesInItsWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
-		// The journal a killed crew left: the run's start and no end.
-		writeJournal(t, cfg.Root, startedLine)
+		h := crew.EventHead{
+			Run: "killed", At: time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC), IssueID: issueID("1"), IssueRef: "#1",
+			Rule: "implement",
+		}
+		space := crew.Workspace{Name: "issue-1-development", Branch: "crew/issue-1-development"}
+		cfg.Journal = fake.NewJournal(
+			crew.RunTaken{
+				EventHead: h, Issue: issue(1, ready).Data(), From: ready, To: inProgress,
+				Actions: []crew.ActionTaken{{Name: "development"}},
+			},
+			crew.TakeMoved{EventHead: h, From: ready, To: inProgress},
+			crew.ActionWorkspaceAsked{EventHead: h, Action: "development"},
+			crew.ActionOpened{
+				EventHead: h, Action: "development", Workspace: space, Log: ".crew/logs/issue-1-development.log",
+			},
+		)
 		if err := os.Mkdir(filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-development"), 0o750); err != nil {
 			t.Fatal(err)
 		}
@@ -174,28 +173,11 @@ func TestAE5ARunKilledWithCrewResumesAfterARestart(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-	})
-}
-
-func TestAResumedRunsPromptQuotesItsJournalReasonWithoutControlBytes(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		// A journal an older crew wrote, its reason holding a NUL.
-		ended := strings.Replace(startedLine, `"event":"started"`, `"event":"ended"`, 1)
-		ended = strings.TrimSuffix(ended, "}") + `,"succeeded":false,"reason":"bo\u0000om"}`
-		writeJournal(t, cfg.Root, startedLine, ended)
-		if err := os.Mkdir(filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-development"), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		r := start(t, cfg)
-
-		if p := r.session().Run().Prompt; !strings.Contains(p, `That run failed: "bo om".`) {
-			t.Errorf("prompt does not quote the stripped reason:\n%s", p)
-		}
-		r.engine.Stop()
-		if _, err := r.wait(); err != nil {
-			t.Fatalf("Run: %v", err)
+		if !slices.ContainsFunc(r.events(), func(e core.Published) bool {
+			taken, ok := e.(crew.RunTaken)
+			return ok && taken.Continues == crew.Some[crew.RuleRunID]("killed")
+		}) {
+			t.Errorf("no take continuing the killed run")
 		}
 	})
 }
@@ -225,9 +207,9 @@ func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 		if n := len(fakeWorkspace(t, cfg).Spaces()); n != 2 {
 			t.Errorf("the workspace created %d spaces, want 2", n)
 		}
-		if !slices.ContainsFunc(r.events(), func(e core.Event) bool {
-			m, ok := e.(core.WorkspaceMissing)
-			return ok && m.Workspace == "issue-1-development"
+		if !slices.ContainsFunc(r.events(), func(e core.Published) bool {
+			m, ok := e.(crew.WorkspaceMissing)
+			return ok && m.Workspace.Name == "issue-1-development"
 		}) {
 			t.Errorf("no WorkspaceMissing event for issue-1-development")
 		}
@@ -238,10 +220,10 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
-		writeJournal(t, cfg.Root)
-		if err := os.Chmod(filepath.Join(cfg.Root, ".crew", "logs", "runs.jsonl"), 0o400); err != nil {
-			t.Fatal(err)
-		}
+		journal := fake.NewJournal()
+		journal.FailAppends(fmt.Errorf("open the run journal: open %s: permission denied",
+			filepath.Join(cfg.Root, ".crew", "logs", "runs.jsonl")))
+		cfg.Journal = journal
 		r := start(t, cfg)
 
 		r.session().End(port.Verdict{Succeeded: true, Reason: "done"})
@@ -299,7 +281,7 @@ func TestAWorkspaceThatCannotReopenStartsAFailedRunFresh(t *testing.T) {
 // port.ErrWorkspaceGone.
 type brokenReopen struct{ createOnly }
 
-func (brokenReopen) Reopen(context.Context, port.Space) (port.Space, error) {
+func (brokenReopen) Reopen(context.Context, crew.Workspace) (port.Space, error) {
 	return port.Space{}, errors.New("disk full")
 }
 
@@ -319,8 +301,8 @@ func TestAWorkspaceThatFailsToReopenFailsTheRunWithItsReason(t *testing.T) {
 
 		var reasons []string
 		for _, e := range r.events() {
-			if a, ok := e.(core.ActionEnded); ok {
-				reasons = append(reasons, a.Outcome.Reason.String())
+			if a, ok := e.(crew.ActionEnded); ok {
+				reasons = append(reasons, a.End.Outcome().Reason.String())
 			}
 		}
 		if len(reasons) != 2 || !strings.Contains(reasons[1], "disk full") {

@@ -46,17 +46,17 @@ type card struct {
 func (m Model) cards() []card {
 	views := map[crew.IssueID]core.IssueView{}
 	for _, iv := range m.snap.Issues {
-		views[iv.Issue.ID] = iv
+		views[iv.Issue.ID()] = iv
 	}
 	var held, idle []card
 	for _, bi := range m.snap.Board {
-		view, isHeld := views[bi.Issue.ID]
+		view, isHeld := views[bi.Issue().ID()]
 		for i, c := range m.cfg.Board {
-			carries := slices.ContainsFunc(c.Labels, func(l crew.State) bool { return slices.Contains(bi.Labels, l) })
-			if !carries || c.Takes != bi.Issue.Kind {
+			carries := slices.ContainsFunc(c.Labels, func(l crew.State) bool { return slices.Contains(bi.Labels(), l) })
+			if !carries || c.Takes != bi.Issue().Kind() {
 				continue
 			}
-			cd := card{issue: bi.Issue, column: i, held: isHeld, view: view}
+			cd := card{issue: bi.Issue(), column: i, held: isHeld, view: view}
 			if isHeld {
 				held = append(held, cd)
 			} else {
@@ -79,11 +79,11 @@ func (m Model) notOnBoard() int { return len(m.cfg.Board) }
 func (m Model) unboardedCards(boarded []card) []card {
 	shown := map[crew.IssueID]bool{}
 	for _, c := range boarded {
-		shown[c.issue.ID] = true
+		shown[c.issue.ID()] = true
 	}
 	var out []card
 	for _, iv := range m.snap.Issues {
-		if !shown[iv.Issue.ID] && len(iv.Actions) > 0 {
+		if !shown[iv.Issue.ID()] && len(iv.Actions) > 0 {
 			out = append(out, card{issue: iv.Issue, column: m.notOnBoard(), held: true, view: iv})
 		}
 	}
@@ -164,7 +164,7 @@ func (m Model) boardSummary(cards []card, l boardLayout) string {
 	issues := map[crew.IssueID]bool{}
 	for _, c := range cards {
 		if c.column < m.notOnBoard() {
-			issues[c.issue.ID] = true
+			issues[c.issue.ID()] = true
 		}
 	}
 	summary := fmt.Sprintf("%d %s", len(issues), lines.Plural(len(issues), "issue", "issues"))

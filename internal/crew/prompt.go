@@ -29,7 +29,9 @@ type promptIssue struct {
 // so a bad template stops crew before polling rather than when an issue is
 // taken.
 func sampleIssue() Issue {
-	return Issue{ID: IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
+	return NewIssue(IssueData{
+		ID: IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42",
+	})
 }
 
 // ParsePrompt parses text, the prompt of the action named action, and
@@ -53,7 +55,9 @@ func (p Prompt) Render(issue Issue) (string, error) {
 	if p.tmpl == nil {
 		return "", nil
 	}
-	data := struct{ Issue promptIssue }{promptIssue{Ref: issue.Ref, Key: issue.ID.Key, Title: issue.Title, URL: issue.URL}}
+	data := struct{ Issue promptIssue }{
+		promptIssue{Ref: issue.Ref(), Key: issue.ID().Key, Title: issue.Title(), URL: issue.URL()},
+	}
 	var out strings.Builder
 	if err := p.tmpl.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("render prompt of action %q: %w", p.action, err)

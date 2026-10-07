@@ -23,28 +23,28 @@ func TestAE1TakesUpToMaxParallelIssuesAndStartsEveryAction(t *testing.T) {
 	)
 	at := d.now
 	wantEvents(t, events,
-		core.IssueTaken{At: at, Issue: i1, Rule: "implement", From: ready, To: inProgress},
-		core.IssueTaken{At: at, Issue: i2, Rule: "implement", From: ready, To: inProgress},
+		d.taken(1, i1, "implement", ready, inProgress, "acceptance", "development"),
+		d.taken(2, i2, "implement", ready, inProgress, "acceptance", "development"),
 		core.PollDone{At: at, Listed: 3, Taken: 2},
 	)
 
 	var all []core.Command
 	for _, it := range []crew.Issue{i1, i2} {
-		created, events := d.send(core.CallResult{ID: moveID(t, cmds, it.ID.Key), Result: core.ResultDone})
+		created, events := d.send(core.CallResult{ID: moveID(t, cmds, it.ID().Key), Result: core.ResultDone})
 		wantCommands(t, created,
-			core.CreateWorkspace{Issue: it, Action: "acceptance"},
-			core.CreateWorkspace{Issue: it, Action: "development"},
+			core.CreateWorkspace{Issue: it, Run: d.run(it.ID()), Action: "acceptance"},
+			core.CreateWorkspace{Issue: it, Run: d.run(it.ID()), Action: "development"},
 		)
-		hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: it.ID, IssueRef: it.Ref, From: ready, To: inProgress})
+		hasEvent(t, events, crew.TakeMoved{EventHead: d.runHead(it.ID().Key), From: ready, To: inProgress})
 		all = append(all, created...)
 	}
 
 	sessions := d.workspacesReady("1", "2")
 	wantCommands(t, sessions,
-		session("1", "acceptance", "Implement test acceptance for issue #1"),
-		session("1", "development", "Implement development for issue #1"),
-		session("2", "acceptance", "Implement test acceptance for issue #2"),
-		session("2", "development", "Implement development for issue #2"),
+		d.session("1", "acceptance", "Implement test acceptance for issue #1"),
+		d.session("1", "development", "Implement development for issue #1"),
+		d.session("2", "acceptance", "Implement test acceptance for issue #2"),
+		d.session("2", "development", "Implement development for issue #2"),
 	)
 
 	// #3 waits: no command concerns it and the core does not hold it.
@@ -71,11 +71,12 @@ func (d *driver) workspacesReady(keys ...string) []core.Command {
 }
 
 // session is the StartSession for prompt in the workspace space gives key
-// and action.
-func session(key string, action crew.ActionName, prompt string) core.StartSession {
+// and action, in the last run of key.
+func (d *driver) session(key string, action crew.ActionName, prompt string) core.StartSession {
 	return core.StartSession{
-		IssueID: issueID(key), Action: action, Dir: "/repo/.crew/worktrees/issue-" + key + "-" + string(action),
-		Prompt: prompt, Log: ".crew/logs/issue-" + key + "-" + string(action) + ".log",
+		IssueID: issueID(key), Run: d.run(issueID(key)), Action: action,
+		Dir: "/repo/.crew/worktrees/issue-" + key + "-" + string(action), Prompt: prompt,
+		Log: ".crew/logs/issue-" + key + "-" + string(action) + ".log",
 	}
 }
 
@@ -88,8 +89,8 @@ func TestEverySessionStartsOnItsActionsAgent(t *testing.T) {
 	cmds, _ := d.send(core.IssuesListed{Issues: []crew.Issue{issue("1", 1, ready)}})
 	d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 
-	acceptance, development := session("1", "acceptance", "Implement test acceptance for issue #1"),
-		session("1", "development", "Implement development for issue #1")
+	acceptance, development := d.session("1", "acceptance", "Implement test acceptance for issue #1"),
+		d.session("1", "development", "Implement development for issue #1")
 	acceptance.Agent, development.Agent = "tester", "developer"
 	wantCommands(t, d.workspacesReady("1"), acceptance, development)
 }
@@ -100,9 +101,9 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 
 	cmds, events := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
 	wantCommands(t, cmds)
-	hasEvent(t, events, core.ActionEnded{
-		At: d.now, IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "acceptance", Outcome: succeeded,
-		Workspace: "issue-1-acceptance", Log: ".crew/logs/issue-1-acceptance.log",
+	hasEnd(t, events, end{
+		head: d.runHead("1"), action: "acceptance", outcome: succeeded,
+		workspace: "issue-1-acceptance", log: ".crew/logs/issue-1-acceptance.log",
 	})
 
 	// A poll meanwhile leaves #1 in progress: only the listing is issued.
@@ -116,8 +117,7 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-	hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
-		To: readyToReview})
+	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 	wantHeld(t, d.m)
 }
 
@@ -148,11 +148,10 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 			d.wantReason("1", "development", tt.outcome.Reason.String())
 
 			_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-			hasEvent(t, events, core.IssueMoved{At: d.now, IssueID: issueID("1"), IssueRef: "#1", From: inProgress,
-				To: needsAttention})
+			hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: needsAttention})
 			wantHeld(t, d.m, "1") // its report is still in flight
 			_, events = d.send(core.CallResult{ID: reportID(t, cmds, "1"), Result: core.ResultDone})
-			hasEvent(t, events, core.FailureReported{At: d.now, IssueID: issueID("1"), IssueRef: "#1"})
+			hasEvent(t, events, crew.FailureReported{EventHead: d.runHead("1")})
 			wantHeld(t, d.m)
 		})
 	}
@@ -208,8 +207,7 @@ func TestAE8IssueInTwoStatesIsSkippedUntilItIsInOne(t *testing.T) {
 
 func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
 	d := newDriver(t, draft(), 1)
-	blocked := issue("4", 1, ready)
-	blocked.Blocked = true
+	blocked := blockedIssue(issue("4", 1, ready))
 
 	cmds, _ := d.poll(blocked, issue("5", 2, ready))
 	wantCommands(t, cmds, core.Move{IssueID: issueID("5"), From: ready, To: inProgress})
@@ -263,8 +261,9 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 			wantCommands(t, tt.fail(d))
 			cmds, _ = d.send(space("1", "development"))
 			wantCommands(t, cmds, core.StartSession{
-				IssueID: issueID("1"), Action: "development", Dir: "/repo/.crew/worktrees/issue-1-development",
-				Prompt: "Implement development for issue #1", Log: ".crew/logs/issue-1-development.log",
+				IssueID: issueID("1"), Run: d.run(issueID("1")), Action: "development",
+				Dir: "/repo/.crew/worktrees/issue-1-development", Prompt: "Implement development for issue #1",
+				Log: ".crew/logs/issue-1-development.log",
 			})
 			d.send(core.SessionStarted{IssueID: issueID("1"), Action: "development"})
 
@@ -288,12 +287,14 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	cmds, _ := d.poll(issue("1", 1, ready))
 
 	cmds, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
+	wantCommands(t, cmds, core.CreateWorkspace{
+		Issue: issue("1", 1, ready), Run: d.run(issueID("1")), Action: "development",
+	})
 	for _, e := range events {
-		if ended, ok := e.(core.ActionEnded); ok && ended.Action == "acceptance" {
-			reason := ended.Outcome.Reason.String()
-			if ended.Outcome.Succeeded || !strings.Contains(reason, `render prompt of action "acceptance"`) {
-				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", ended.Outcome)
+		if ended, ok := e.(crew.ActionEnded); ok && ended.Action == "acceptance" {
+			outcome := ended.End.Outcome()
+			if outcome.Succeeded || !strings.Contains(outcome.Reason.String(), `render prompt of action "acceptance"`) {
+				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", outcome)
 			}
 			return
 		}
@@ -303,8 +304,9 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 
 // prioritized returns i with priority p, 1 the highest.
 func prioritized(i crew.Issue, p int) crew.Issue {
-	i.Priority = p
-	return i
+	d := i.Data()
+	d.Priority = p
+	return crew.NewIssue(d)
 }
 
 func TestPicksTheHighestPriorityThenLaterRulesThenTheOldestIssue(t *testing.T) {
@@ -412,7 +414,7 @@ func TestViewShowsRunningActionsAndSharesNoMemory(t *testing.T) {
 		t.Fatalf("view:\n got %#v\nwant %#v", v, want)
 	}
 
-	v.Issues[0].Issue.States[0] = "done"
+	v.Issues[0].Issue.States()[0] = "done"
 	v.Issues[0].Actions[0].Name = "changed"
 	v.Queues[0].Busy = 9
 	v.Bots[0].Pairs[0] = "changed"

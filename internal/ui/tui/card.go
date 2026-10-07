@@ -52,7 +52,7 @@ func (m Model) liveCard(c card, width int) ([]string, lipgloss.Style) {
 	s := m.styles
 	value := width - cardFrame - cardLabel - 1
 	rows := []string{
-		s.link(c.issue.Ref, c.issue.URL) + " " + s.text.Render(clean(c.issue.Title)),
+		s.link(c.issue.Ref(), c.issue.URL()) + " " + s.text.Render(clean(c.issue.Title())),
 		m.labelled("run", s.items(m.runItems(c), s.muted.Render(" · "), value)),
 		m.labelled("bots", m.cardBots(c, value)),
 		m.labelled("via", m.cardQueue(c)),
@@ -109,7 +109,7 @@ func (m Model) claimState(c card) string {
 	s := m.styles
 	claim := c.view.Claim
 	switch {
-	case !c.held && c.issue.Blocked:
+	case !c.held && c.issue.Blocked():
 		return s.warning.Render("⊘ blocked")
 	case !c.held:
 		return s.muted.Render("○ idle")
@@ -129,7 +129,7 @@ func (m Model) cardBots(c card, width int) string {
 	s := m.styles
 	var items []string
 	for _, e := range m.snap.Bots {
-		if slices.ContainsFunc(e.Running, func(r core.RunningAction) bool { return r.IssueRef == c.issue.Ref }) {
+		if slices.ContainsFunc(e.Running, func(r core.RunningAction) bool { return r.IssueRef == c.issue.Ref() }) {
 			items = append(items, s.botName(e))
 		}
 	}

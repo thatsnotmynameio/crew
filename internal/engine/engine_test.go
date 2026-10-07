@@ -69,10 +69,10 @@ var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 // issue is the issue keyed n as a tracker lists it, without its repository.
 func issue(n int, states ...crew.State) crew.Issue {
 	key := strconv.Itoa(n)
-	return crew.Issue{
+	return crew.NewIssue(crew.IssueData{
 		ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key,
 		Created: epoch.Add(time.Duration(n) * time.Minute), States: states,
-	}
+	})
 }
 
 // rig is an engine running in its own goroutine, with fake adapters.
@@ -88,8 +88,8 @@ type rig struct {
 	queue *engine.Queue
 }
 
-// config returns a config over tracker for rules, with a fake harness and
-// workspace, rooted in a fresh repository directory.
+// config returns a config over tracker for rules, with a fake harness,
+// workspace and run journal, rooted in a fresh repository directory.
 func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Config {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "home", "repo")
@@ -104,6 +104,7 @@ func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Confi
 		Tracker:           tracker,
 		Harnesses:         harnesses(fake.NewHarness()),
 		Workspace:         fake.NewWorkspace(worktrees),
+		Journal:           fake.NewJournal(),
 		Root:              root,
 		Home:              filepath.Dir(root),
 	}
@@ -177,7 +178,7 @@ func states(t *testing.T, tr interface {
 	if !ok {
 		t.Fatalf("issue %s is gone", key)
 	}
-	return i.States
+	return i.States()
 }
 
 // fakeWorkspace returns cfg's workspace, the fake one config made.
@@ -328,7 +329,7 @@ func TestPollTakesTwoIssuesAndStartsFourSessionsEachWithItsOwnWorkspaceAndLog(t 
 		if logs := reportedLogs(tr); !reflect.DeepEqual(logs, wantLogs) {
 			t.Errorf("failure reports name logs %v, want %v", logs, wantLogs)
 		}
-		if !slices.ContainsFunc(final.Events, func(e core.Event) bool { _, ok := e.(core.Stopped); return ok }) {
+		if !slices.ContainsFunc(final.Events, func(e core.Published) bool { _, ok := e.(core.Stopped); return ok }) {
 			t.Errorf("last update's events = %#v, want a Stopped event", final.Events)
 		}
 	})
@@ -406,7 +407,7 @@ func TestAListingThatNeverReturnsTimesOutAndALaterTickListsAgain(t *testing.T) {
 		if got := spans[1].start.Sub(t0); got != 14*time.Minute {
 			t.Errorf("second listing started at %v, want at the 14m tick", got)
 		}
-		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Event) bool {
+		failed := slices.ContainsFunc(final.Snapshot.Recent, func(e core.Published) bool {
 			f, ok := e.(core.ListingFailed)
 			return ok && f.At.Sub(t0) == 10*time.Minute
 		})

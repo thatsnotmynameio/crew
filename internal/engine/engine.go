@@ -10,6 +10,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -68,6 +69,11 @@ type Config struct {
 	// Checker runs the actions' checks. Without one, an action with a
 	// check fails, saying crew has no check runner.
 	Checker port.Checker
+	// Journal is the run journal, at JournalPath: Prepare loads the past
+	// rule runs from it, and the engine appends each run event to it, so a
+	// failed run resumes after a restart (KTD12). Without one, nothing is
+	// journaled and nothing resumes.
+	Journal port.Journal
 	// UsageInStatus has each issue's status show what its ended actions
 	// spent and the pull requests they opened, when the tracker reports
 	// statuses (KTD11).
@@ -151,7 +157,7 @@ type Engine struct {
 	// none, and crew's writes then never go back to you mid-run.
 	writes port.WriterReporter
 	// opts are the core's options; Prepare builds the core with them once it
-	// has read the run journal (KTD2).
+	// has loaded the run journal (KTD2).
 	opts []core.Option
 	// codeOwners are the code owners' logins, as the tracker's
 	// port.CodeOwnerFinder found them in Prepare; none without one.
@@ -164,13 +170,12 @@ type Engine struct {
 	inbox    chan message
 	inflight int // command goroutines whose final message is still due
 	wg       sync.WaitGroup
-	sessions map[sessionKey]port.Session
+	sessions map[sessionKey]liveSession
 	checks   map[sessionKey]context.CancelFunc // ends each running check
-	recent   []core.Event
+	recent   []core.Published
 	lastSaid []core.Said      // what the sessions last said, as of the latest said refresh
 	lastBots core.BotsChecked // the bots' live state, as of the last reading that changed it
 	started  time.Time        // when the first poll ran
-	run      string           // this crew run's id in the run journal: started, in RFC 3339
 }
 
 // New returns an engine for cfg. It starts nothing until Run. When the
@@ -224,7 +229,7 @@ func New(cfg Config) *Engine {
 		writes:       writes,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
-		sessions:     map[sessionKey]port.Session{},
+		sessions:     map[sessionKey]liveSession{},
 		checks:       map[sessionKey]context.CancelFunc{},
 	}
 }
@@ -285,7 +290,6 @@ func (e *Engine) Run(ctx context.Context) error {
 		timeUp = timer.C
 	}
 	e.started = time.Now()
-	e.run = e.started.UTC().Format(time.RFC3339Nano)
 	e.checkBots(cmdCtx)
 	e.step(cmdCtx, core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
@@ -338,7 +342,7 @@ func (e *Engine) SubscribeQueue(capacity int) *Queue {
 }
 
 // Prepare runs, once, the Preparer of each adapter that implements
-// port.Preparer, with the rules' states, then reads the run journal. It
+// port.Preparer, with the rules' states, then loads the run journal. It
 // stops at the first that fails and returns its error, naming its port or the
 // journal, so the last step reported on ctx is the one that failed. These are
 // environment checks (R2), so a caller can run them before starting a
@@ -356,9 +360,10 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // Preparer of the tracker, of each agent's harness in config order and of the
 // workspace with crew.RuleStates, the states the rules name, asks the
 // tracker who the code owners are and which login it acts as, reads the
-// repository it works on, then reads the run journal and builds the core
-// from it, with the bots. It returns the first error, naming its port, a
-// harness's agent, or the journal, without running what comes after it (R6).
+// repository it works on, then loads the run journal and builds the core
+// from its events, with the bots. It returns the first error, naming its
+// port, a harness's agent, or the journal, without running what comes after
+// it (R6).
 // The core is then left unbuilt, which is safe because Run returns the error
 // before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
@@ -385,12 +390,16 @@ func (e *Engine) prepare(ctx context.Context) error {
 	}
 	bots := e.withBots()
 	e.repository = e.findRepository()
-	port.Step(ctx, "reading the run journal")
-	past, err := e.readJournal(e.repository.ID)
-	if err != nil {
-		return err
+	opts := slices.Concat(e.opts, []core.Option{bots})
+	if e.cfg.Journal != nil {
+		port.Step(ctx, "reading the run journal")
+		past, err := e.cfg.Journal.Load(e.repository.ID)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, core.Journaling(past))
 	}
-	e.model = core.New(e.cfg.Rules, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past), bots)...)
+	e.model = core.New(e.cfg.Rules, e.cfg.MaxParallelIssues, opts...)
 	return nil
 }
 
@@ -424,16 +433,27 @@ func (e *Engine) withBots() core.Option {
 // reaching the tracker. Only the loop calls it, as it owns the sessions.
 func (e *Engine) said() []core.Said {
 	var out []core.Said
-	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), sessionKey.compare) {
-		n, ok := e.sessions[k].(port.Narrator)
+	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), e.compareSessions) {
+		s := e.sessions[k]
+		n, ok := s.session.(port.Narrator)
 		if !ok {
 			continue
 		}
 		if text := e.scrubAndStrip(n.Said()); text != "" {
-			out = append(out, core.Said{IssueID: k.issue, Action: k.action, Text: crew.NewSaid(lastWords(text))})
+			out = append(out, core.Said{
+				IssueID: s.issue, Run: k.run, Action: k.action, Text: crew.NewSaid(lastWords(text)),
+			})
 		}
 	}
 	return out
+}
+
+// compareSessions orders the running sessions of keys a and b by their
+// issue's repository and key, then by action, then by rule run.
+func (e *Engine) compareSessions(a, b sessionKey) int {
+	return cmp.Or(
+		e.sessions[a].issue.Compare(e.sessions[b].issue), cmp.Compare(a.action, b.action), cmp.Compare(a.run, b.run),
+	)
 }
 
 // receive handles a message from a command goroutine; ctx is the command
@@ -445,14 +465,26 @@ func (e *Engine) receive(ctx context.Context, m message) {
 	switch in := m.input.(type) {
 	case nil:
 		return
-	case core.SessionStarted:
-		e.sessions[sessionKey{in.IssueID, in.Action}] = m.session
-	case core.SessionEnded:
-		delete(e.sessions, sessionKey{in.IssueID, in.Action})
-	case core.CheckEnded:
-		delete(e.checks, sessionKey{in.IssueID, in.Action})
+	case core.RunInput:
+		e.ran(in, m.session)
+	case core.SchedulerInput:
 	}
 	e.step(ctx, m.input)
+}
+
+// ran keeps the session a SessionStarted started, s, by its rule run and
+// action, and forgets a session or a check once it ended.
+func (e *Engine) ran(in core.RunInput, s port.Session) {
+	switch in := in.(type) {
+	case core.SessionStarted:
+		e.sessions[sessionKey{in.Run, in.Action}] = liveSession{issue: in.IssueID, session: s}
+	case core.SessionEnded:
+		delete(e.sessions, sessionKey{in.Run, in.Action})
+	case core.CheckEnded:
+		delete(e.checks, sessionKey{in.Run, in.Action})
+	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
+		core.PullRequestFound:
+	}
 }
 
 // step feeds in to the core, stamped with the time now and a fresh seed,

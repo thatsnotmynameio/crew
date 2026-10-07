@@ -80,13 +80,15 @@ func TestCreateFetchesThenAddsWorktreeFromOriginDefault(t *testing.T) {
 	git := &scripted{}
 	w, root := scriptedWorkspace(t, git)
 
-	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7"), Ref: "#7"}, "development")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7"), Ref: "#7"}), "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	dir := filepath.Join(root, ".crew", "worktrees", "issue-7-development")
-	want := port.Space{Name: "issue-7-development", Dir: dir, Branch: "crew/issue-7-development"}
+	want := port.Space{
+		Workspace: crew.Workspace{Name: "issue-7-development", Branch: "crew/issue-7-development"}, Dir: dir,
+	}
 	if space != want {
 		t.Errorf("space = %+v, want %+v", space, want)
 	}
@@ -137,7 +139,7 @@ func TestCreateReportsNoStep(t *testing.T) {
 	var steps []string
 	ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
 
-	if _, err := w.Create(ctx, crew.Issue{ID: issueID("7")}, "development"); err != nil {
+	if _, err := w.Create(ctx, crew.NewIssue(crew.IssueData{ID: issueID("7")}), "development"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if len(steps) != 0 {
@@ -174,11 +176,11 @@ func TestCreateNames(t *testing.T) {
 				}
 			}
 
-			space, err := w.Create(t.Context(), crew.Issue{ID: issueID(tt.key)}, tt.action)
+			space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID(tt.key)}), tt.action)
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			if string(space.Name) != tt.want || space.Branch != "crew/"+tt.want ||
+			if string(space.Workspace.Name) != tt.want || space.Workspace.Branch != "crew/"+tt.want ||
 				space.Dir != filepath.Join(root, ".crew", "worktrees", tt.want) {
 				t.Errorf("space = %+v, want name %s", space, tt.want)
 			}
@@ -191,7 +193,7 @@ func TestCreateFailingWorktreeAddCarriesGitStderr(t *testing.T) {
 	git := &scripted{fail: map[string]string{"worktree add": stderr}}
 	w, _ := scriptedWorkspace(t, git)
 
-	_, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
+	_, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "development")
 	if err == nil || !strings.Contains(err.Error(), stderr) {
 		t.Fatalf("err = %v, want it to carry %q", err, stderr)
 	}
@@ -269,10 +271,10 @@ func (r remote) clone(t *testing.T) string {
 func checkFromLatest(t *testing.T, space port.Space, latest string) {
 	t.Helper()
 	if head := gitIn(t, space.Dir, "rev-parse", "HEAD"); head != latest {
-		t.Errorf("%s: HEAD = %s, want the latest origin/trunk %s", space.Name, head, latest)
+		t.Errorf("%s: HEAD = %s, want the latest origin/trunk %s", space.Workspace.Name, head, latest)
 	}
-	if branch := gitIn(t, space.Dir, "branch", "--show-current"); branch != space.Branch {
-		t.Errorf("%s: on branch %q, want %q", space.Name, branch, space.Branch)
+	if branch := gitIn(t, space.Dir, "branch", "--show-current"); branch != space.Workspace.Branch {
+		t.Errorf("%s: on branch %q, want %q", space.Workspace.Name, branch, space.Workspace.Branch)
 	}
 }
 
@@ -285,12 +287,14 @@ func TestCreateFromOriginDefaultBranchInRealRepository(t *testing.T) {
 	if err := w.Prepare(t.Context(), nil); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	want := port.Space{Name: "issue-7-development", Branch: "crew/issue-7-development",
-		Dir: filepath.Join(root, ".crew", "worktrees", "issue-7-development")}
+	want := port.Space{
+		Workspace: crew.Workspace{Name: "issue-7-development", Branch: "crew/issue-7-development"},
+		Dir:       filepath.Join(root, ".crew", "worktrees", "issue-7-development"),
+	}
 	if space != want {
 		t.Errorf("space = %+v, want %+v", space, want)
 	}
@@ -308,7 +312,7 @@ func TestConcurrentCreationsAfterOriginAdvanced(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range spaces {
 		wg.Go(func() {
-			spaces[i], errs[i] = w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
+			spaces[i], errs[i] = w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "development")
 		})
 	}
 	wg.Wait()
@@ -318,7 +322,7 @@ func TestConcurrentCreationsAfterOriginAdvanced(t *testing.T) {
 			t.Fatalf("creation %d: %v", i, err)
 		}
 	}
-	names := []crew.WorkspaceName{spaces[0].Name, spaces[1].Name}
+	names := []crew.WorkspaceName{spaces[0].Workspace.Name, spaces[1].Workspace.Name}
 	slices.Sort(names)
 	if want := []crew.WorkspaceName{"issue-7-development", "issue-7-development-2"}; !slices.Equal(names, want) {
 		t.Errorf("names = %q, want %q", names, want)
@@ -335,7 +339,7 @@ func TestCreateFindsDefaultBranchThroughLsRemoteWhenOriginAddedByHand(t *testing
 	gitIn(t, root, "remote", "add", "origin", r.bare)
 
 	w := New(&proc.Group{}, root)
-	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -370,17 +374,11 @@ func reopenable(t *testing.T) (remote, string, *Workspace, port.Space) {
 	r := newRemote(t)
 	root := r.clone(t)
 	w := New(&proc.Group{}, root)
-	space, err := w.Create(t.Context(), crew.Issue{ID: issueID("7")}, "development")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "development")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	return r, root, w, space
-}
-
-// recorded is what crew records of a space: its name and branch, not its
-// directory.
-func recorded(space port.Space) port.Space {
-	return port.Space{Name: space.Name, Branch: space.Branch}
 }
 
 func TestReopenLeavesWorktreeAsItWasAfterOriginMovedOn(t *testing.T) {
@@ -394,7 +392,7 @@ func TestReopenLeavesWorktreeAsItWasAfterOriginMovedOn(t *testing.T) {
 	fetched := gitIn(t, root, "rev-parse", "origin/trunk")
 	r.advance(t)
 
-	got, err := w.Reopen(t.Context(), recorded(space))
+	got, err := w.Reopen(t.Context(), space.Workspace)
 	if err != nil {
 		t.Fatalf("Reopen: %v", err)
 	}
@@ -433,7 +431,7 @@ func TestReopenGoneWorktree(t *testing.T) {
 			_, root, w, space := reopenable(t)
 			tt.remove(t, root, space)
 
-			_, err := w.Reopen(t.Context(), recorded(space))
+			_, err := w.Reopen(t.Context(), space.Workspace)
 			if !errors.Is(err, port.ErrWorkspaceGone) {
 				t.Fatalf("err = %v, want it to wrap port.ErrWorkspaceGone", err)
 			}
@@ -450,7 +448,7 @@ func TestReopenFolderGitDoesNotListNamesFolder(t *testing.T) {
 	}
 
 	_, err := New(&proc.Group{}, root).Reopen(t.Context(),
-		port.Space{Name: "issue-7-development", Branch: "crew/issue-7-development"})
+		crew.Workspace{Name: "issue-7-development", Branch: "crew/issue-7-development"})
 	if err == nil || errors.Is(err, port.ErrWorkspaceGone) {
 		t.Fatalf("err = %v, want an error that is not port.ErrWorkspaceGone", err)
 	}
@@ -469,14 +467,15 @@ func TestReopenAfterTheRepositoryMovedSaysToRepairTheWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := New(&proc.Group{}, moved).Reopen(t.Context(), recorded(space))
+	_, err := New(&proc.Group{}, moved).Reopen(t.Context(), space.Workspace)
 	if err == nil || errors.Is(err, port.ErrWorkspaceGone) {
 		t.Fatalf("err = %v, want an error that is not port.ErrWorkspaceGone", err)
 	}
 	if !strings.Contains(err.Error(), "git worktree repair") {
 		t.Errorf("err = %v, want it to offer git worktree repair, which keeps the work", err)
 	}
-	if _, err := os.Stat(filepath.Join(moved, ".crew", "worktrees", string(space.Name), "notes.txt")); err != nil {
+	notes := filepath.Join(moved, ".crew", "worktrees", string(space.Workspace.Name), "notes.txt")
+	if _, err := os.Stat(notes); err != nil {
 		t.Errorf("the worktree's uncommitted file: %v", err)
 	}
 }
@@ -496,11 +495,11 @@ func TestReopenReturnsBranchCheckedOut(t *testing.T) {
 			_, _, w, space := reopenable(t)
 			gitIn(t, space.Dir, tt.checkout...)
 
-			got, err := w.Reopen(t.Context(), recorded(space))
+			got, err := w.Reopen(t.Context(), space.Workspace)
 			if err != nil {
 				t.Fatalf("Reopen: %v", err)
 			}
-			if got.Branch != tt.want || got.Dir != space.Dir || got.Name != space.Name {
+			if got.Workspace.Branch != tt.want || got.Dir != space.Dir || got.Workspace.Name != space.Workspace.Name {
 				t.Errorf("space = %+v, want %+v on branch %s", got, space, tt.want)
 			}
 		})
@@ -514,12 +513,14 @@ func TestReopenThroughSymlinkedRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := New(&proc.Group{}, link).Reopen(t.Context(), recorded(space))
+	got, err := New(&proc.Group{}, link).Reopen(t.Context(), space.Workspace)
 	if err != nil {
 		t.Fatalf("Reopen: %v", err)
 	}
-	want := port.Space{Name: space.Name, Branch: space.Branch,
-		Dir: filepath.Join(link, ".crew", "worktrees", string(space.Name))}
+	want := port.Space{
+		Workspace: space.Workspace,
+		Dir:       filepath.Join(link, ".crew", "worktrees", string(space.Workspace.Name)),
+	}
 	if got != want {
 		t.Errorf("space = %+v, want %+v", got, want)
 	}

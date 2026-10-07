@@ -83,7 +83,7 @@ func (m Model) walk(delta int) Model {
 		top = m.sel.top
 	}
 	m.sel = selection{
-		id: cs[next.row].issue.ID, column: next.column, row: next.row,
+		id: cs[next.row].issue.ID(), column: next.column, row: next.row,
 		top: shownFrom(top, next.row, len(cs), m.budget().cards),
 	}
 	m.popupOffset = 0
@@ -189,7 +189,7 @@ func (m Model) scrollBorder(width int) string {
 // popupTitle is the popup's first row: the issue's reference, linked,
 // and its title (R13).
 func (m Model) popupTitle(c card) string {
-	return m.styles.link(c.issue.Ref, c.issue.URL) + " " + m.styles.title.Render(clean(c.issue.Title))
+	return m.styles.link(c.issue.Ref(), c.issue.URL()) + " " + m.styles.title.Render(clean(c.issue.Title()))
 }
 
 // popupBody is the popup's rows under its title, inner cells wide: its

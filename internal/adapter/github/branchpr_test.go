@@ -42,7 +42,7 @@ func find(t *testing.T, branch string, since time.Time, prs ...string) (crew.Pul
 
 func TestAnOpenPullRequestFromTheBranchIsFound(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "OPEN", "2026-10-02T12:30:00Z", false))
-	want := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://github.com/o/r/pull/45"}
+	want := crew.PullRequestFound{Ref: "#45", URL: "https://github.com/o/r/pull/45"}
 	if pr != want {
 		t.Errorf("FindPullRequest = %+v, want %+v", pr, want)
 	}
@@ -50,7 +50,7 @@ func TestAnOpenPullRequestFromTheBranchIsFound(t *testing.T) {
 
 func TestNoPullRequestFromTheBranchIsNone(t *testing.T) {
 	pr, _ := find(t, "crew/issue-9-lfg", worktreeMade)
-	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
+	if pr != (crew.PullRequestNone{}) {
 		t.Errorf("FindPullRequest = %+v, want none", pr)
 	}
 }
@@ -78,7 +78,7 @@ func TestAnOpenPullRequestWinsOverANewerMergedOne(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade,
 		prJSON(46, "MERGED", "2026-10-02T14:00:00Z", false),
 		prJSON(45, "OPEN", "2026-10-02T13:00:00Z", false))
-	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#45" {
+	if found, _ := pr.(crew.PullRequestFound); found.Ref != "#45" {
 		t.Errorf("FindPullRequest = %+v, want the open #45", pr)
 	}
 }
@@ -88,14 +88,14 @@ func TestTheNewestOpenPullRequestWins(t *testing.T) {
 		prJSON(45, "OPEN", "2026-10-02T13:00:00Z", false),
 		prJSON(47, "OPEN", "2026-10-02T15:00:00Z", false),
 		prJSON(46, "OPEN", "2026-10-02T14:00:00Z", false))
-	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#47" {
+	if found, _ := pr.(crew.PullRequestFound); found.Ref != "#47" {
 		t.Errorf("FindPullRequest = %+v, want the newest open #47", pr)
 	}
 }
 
 func TestOnlyAPullRequestMergedBeforeTheWorktreeIsNone(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(12, "MERGED", "2026-09-20T10:00:00Z", false))
-	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
+	if pr != (crew.PullRequestNone{}) {
 		t.Errorf("FindPullRequest = %+v, want none", pr)
 	}
 }
@@ -105,7 +105,7 @@ func TestTheNewestClosedOrMergedPullRequestSinceTheWorktreeIsFound(t *testing.T)
 		prJSON(12, "MERGED", "2026-09-20T10:00:00Z", false),
 		prJSON(45, "CLOSED", "2026-10-02T12:00:00Z", false),
 		prJSON(46, "MERGED", "2026-10-02T13:00:00Z", false))
-	want := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#46", URL: "https://github.com/o/r/pull/46"}
+	want := crew.PullRequestFound{Ref: "#46", URL: "https://github.com/o/r/pull/46"}
 	if pr != want {
 		t.Errorf("FindPullRequest = %+v, want %+v", pr, want)
 	}
@@ -113,14 +113,14 @@ func TestTheNewestClosedOrMergedPullRequestSinceTheWorktreeIsFound(t *testing.T)
 
 func TestAResumedWorktreeAcceptsAnyMergedPullRequest(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", time.Time{}, prJSON(12, "MERGED", "2026-09-20T10:00:00Z", false))
-	if pr.Lookup != crew.PullRequestFound || pr.Ref != "#12" {
+	if found, _ := pr.(crew.PullRequestFound); found.Ref != "#12" {
 		t.Errorf("FindPullRequest = %+v, want #12", pr)
 	}
 }
 
 func TestACrossRepositoryPullRequestIsNotFromTheBranch(t *testing.T) {
 	pr, _ := find(t, "crew/issue-31-lfg", worktreeMade, prJSON(45, "OPEN", "2026-10-02T13:00:00Z", true))
-	if pr != (crew.PullRequest{Lookup: crew.PullRequestNone}) {
+	if pr != (crew.PullRequestNone{}) {
 		t.Errorf("FindPullRequest = %+v, want none", pr)
 	}
 }
@@ -131,8 +131,8 @@ func TestAFailedLookupIsAnError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "HTTP 502: Bad Gateway") {
 		t.Errorf("FindPullRequest = %v, want an error carrying gh's stderr", err)
 	}
-	if pr != (crew.PullRequest{}) {
-		t.Errorf("FindPullRequest = %+v, want not looked up", pr)
+	if pr != nil {
+		t.Errorf("FindPullRequest = %+v, want nil", pr)
 	}
 	if len(gh.calls) != 1 {
 		t.Errorf("gh calls = %q, want exactly one", gh.calls)

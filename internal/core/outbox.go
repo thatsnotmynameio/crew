@@ -65,25 +65,16 @@ type delivery struct {
 	final    bool // its current or last attempt is its one try after stop
 }
 
-// outcome is what a run receives once one of its deliveries settled: it
-// landed, or crew gave it up.
-type outcome struct {
-	purpose purpose
-	landed  bool
-	call    Call
-	reason  string
-}
-
 // deliver enqueues d on the run lane of h's issue under a new CallID and
 // makes its first attempt.
-func (s *step) deliver(h *heldIssue, d *delivery) {
+func (s *step) deliver(h *heldRun, d *delivery) {
 	o := &s.m.outbox
 	o.lastID++
 	d.id = o.lastID
-	lane := o.runs[h.issue.ID]
+	lane := o.runs[h.id()]
 	if lane == nil {
 		lane = &runLane{}
-		o.runs[h.issue.ID] = lane
+		o.runs[h.id()] = lane
 	}
 	lane.deliveries = append(lane.deliveries, d)
 	s.attempt(d)
@@ -100,13 +91,15 @@ func (s *step) attempt(d *delivery) {
 }
 
 // callResult settles, owes or retries the delivery r answers, and hands the
-// run of its issue the outcome of one that settled. A take and a
+// run of its issue the outcome of one that settled, as a fact. A take and a
 // verdict call are owed alike when they fail transiently: a take may have
 // landed although it failed, so releasing its issue could strand it in the
 // running label with no session, and the tracker makes the retry idempotent.
-// A landed take never releases its run; any other settled delivery releases
-// it once its run lane is empty. A result for no delivery in flight, or for
-// an issue no longer held, changes nothing.
+// A landed take starts the run's actions, and the core reports the run
+// running unless they all ended already; the run releases itself once its
+// verdict move and failure report settled, or its take was given up. A
+// result for no delivery in flight, or for an issue no longer held, changes
+// nothing.
 func (s *step) callResult(r CallResult) {
 	m := s.m
 	id, d := m.outbox.find(r.ID)
@@ -115,26 +108,23 @@ func (s *step) callResult(r CallResult) {
 		return
 	}
 	d.inFlight = false
-	out, settled := s.settleDelivery(id, d, r)
+	fact, settled := s.settleDelivery(h, d, r)
 	if !settled {
 		return
 	}
-	s.received(h, out)
-	if out.purpose == purposeTake && out.landed {
-		return
-	}
-	if m.outbox.runs[id] == nil {
-		m.release(h)
-		s.freed()
+	s.decide(h, fact)
+	if _, running := h.run.Phase().(crew.RunningPhase); running && d.purpose == purposeTake {
+		s.reportRun(h)
 	}
 }
 
-// settleDelivery applies r to d, a delivery of the issue identified by id,
-// and returns its outcome when it settled. A transient failure makes d owed,
-// and after a stop gives it its final try at once; a failure on its final
-// try, or a call that cannot work, gives it up.
-func (s *step) settleDelivery(id crew.IssueID, d *delivery, r CallResult) (outcome, bool) {
+// settleDelivery applies r to d, a delivery of h's issue, and returns the
+// fact that tells h's run how it settled, when it did. A transient failure
+// makes d owed, and after a stop gives it its final try at once; a failure
+// on its final try, or a call that cannot work, gives it up.
+func (s *step) settleDelivery(h *heldRun, d *delivery, r CallResult) (crew.Fact, bool) {
 	o := &s.m.outbox
+	id := h.id()
 	switch {
 	case r.Result == ResultDone:
 	case r.Result == ResultFailed && (!s.m.stopping || !d.final):
@@ -145,12 +135,12 @@ func (s *step) settleDelivery(id crew.IssueID, d *delivery, r CallResult) (outco
 			d.final = true
 			s.attempt(d)
 		}
-		return outcome{}, false
+		return nil, false
 	default:
 		s.emit(CallDropped{At: s.at, Call: d.call, Result: r.Result, Reason: r.Reason})
 	}
 	o.settle(id, d)
-	return outcome{purpose: d.purpose, landed: r.Result == ResultDone, call: d.call, reason: r.Reason}, true
+	return s.settled(h, d.purpose, r.Result == ResultDone, r.Reason), true
 }
 
 // retryRun attempts the owed deliveries not in flight of the issue
