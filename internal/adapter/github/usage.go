@@ -52,19 +52,24 @@ func reported(what, value string, with, sessions int) string {
 	return value
 }
 
-// tokenSteps are the units tokenCount words a count in, largest first.
-var tokenSteps = []struct {
-	size float64
-	unit string
-}{{1e6, "M"}, {1e3, "K"}}
+// kilo and mega are the sizes of tokenCount's K and M.
+const (
+	kilo = 1_000
+	mega = 1_000_000
+)
 
 // tokenCount words a token count compactly, with at most one decimal: 950,
 // 48.2K, 17.2M.
 func tokenCount(n int64) string {
-	for _, step := range tokenSteps {
-		if float64(n) >= step.size {
-			return strings.TrimSuffix(strconv.FormatFloat(float64(n)/step.size, 'f', 1, 64), ".0") + step.unit
-		}
+	var size int64
+	var unit string
+	switch {
+	case n >= mega:
+		size, unit = mega, "M"
+	case n >= kilo:
+		size, unit = kilo, "K"
+	default:
+		return strconv.FormatInt(n, 10)
 	}
-	return strconv.FormatInt(n, 10)
+	return strings.TrimSuffix(strconv.FormatFloat(float64(n)/float64(size), 'f', 1, 64), ".0") + unit
 }

@@ -25,7 +25,8 @@ func TestUsageWordsWhatTheSessionsSpent(t *testing.T) {
 		{"no cost at all", noCost.Spend(), " Usage: cost not reported, 17.3M tokens. Pull request: none."},
 		{"no tokens at all", costOnly.Spend(), " Usage: $3.05, tokens not reported. Pull request: none."},
 		{"nothing reported", crew.Usage{}.Spend(), " Usage: cost and tokens not reported. Pull request: none."},
-		{"a reported zero", crew.Usage{HasCost: true, HasTokens: true}.Spend(), " Usage: $0.00, 0 tokens. Pull request: none."},
+		{"a reported zero", crew.Usage{HasCost: true, HasTokens: true}.Spend(),
+			" Usage: $0.00, 0 tokens. Pull request: none."},
 	}
 	for _, tt := range tests {
 		if got := usage(crew.ActionStatus{Spend: tt.spend, PullRequest: none}); got != tt.want {
