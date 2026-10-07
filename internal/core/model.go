@@ -5,9 +5,11 @@
 // is its only caller, from one goroutine.
 //
 // Each issue the core holds moves through claim states kept apart from the
-// tracker's states: Taking, then Running (or Stopping), then Judging, and
-// Owed while its take or a verdict call waits for a retry. An issue is
-// released when its verdict calls are settled, or when its take is given up.
+// tracker's states: Taking, then Running (or Stopping), then Judging. The
+// core's outbox delivers the tracker writes a held issue's rule decides on,
+// and the view shows the issue Owed while one of them waits for a retry
+// (KTD8). An issue is released when its verdict calls are settled, or when
+// its take is given up.
 package core
 
 import (
@@ -30,7 +32,8 @@ type Model struct {
 	requested   bool         // a stop was requested
 	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
 	stopped     bool         // the Stopped event was emitted
-	lastID      CallID
+	// outbox delivers the tracker writes the rules decide on (KTD8).
+	outbox outbox
 	// queueOf holds the queue each rule runs in, by rule index, as an
 	// index into queues (KTD2). maxParallel caps every queue together.
 	queueOf []int
@@ -39,13 +42,6 @@ type Model struct {
 	// slots is what the rules can use: the queues' slots summed, at most
 	// maxParallel (KTD4).
 	slots int
-	// statuses holds each issue's status slot, by issue id; nil when
-	// status reporting is off (KTD3).
-	statuses map[crew.IssueID]*statusSlot
-	// pullRequests holds each issue's pull request slot, by issue id, while
-	// it has a report not settled; nil when pull request reports are off
-	// (KTD3).
-	pullRequests map[crew.IssueID]*pullRequestSlot
 	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
@@ -81,7 +77,6 @@ type heldIssue struct {
 	run     crew.RuleRunID // minted at take, from the listing's seed (KTD5)
 	claim   Claim
 	actions []*actionRun // in the rule's action order
-	calls   []*call      // the take move, then the verdict calls
 	taken   time.Time    // when the rule took the issue
 	// verdict is the issue's handled entry, set once every action ended and
 	// completed by its verdict move's result; nil before.
@@ -148,18 +143,6 @@ func (a *actionRun) spend() crew.Spend {
 	return a.usage.Spend()
 }
 
-// call is a tracker call the core made and has not settled.
-type call struct {
-	id       CallID
-	kind     CallKind
-	take     bool
-	from, to crew.State
-	report   crew.FailureReport
-	inFlight bool
-	owed     bool // failed transiently; retried at the next tick
-	final    bool // its current or last attempt is its one try after stop
-}
-
 // New returns a model for rules, whose rules are in config order and
 // already validated, taking at most maxParallelIssues issues at once (R6),
 // and for each rule at most its queue's slots (R6, KTD2).
@@ -169,7 +152,7 @@ func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
 		r.Actions = slices.Clone(r.Actions)
 		own[i] = r
 	}
-	m := &Model{rules: own, maxParallel: maxParallelIssues}
+	m := &Model{rules: own, maxParallel: maxParallelIssues, outbox: outbox{runs: map[crew.IssueID]*runLane{}}}
 	m.queueOf, m.queues, m.slots = queues(own, maxParallelIssues)
 	for _, o := range opts {
 		o(m)
@@ -224,14 +207,14 @@ func ReportingUsage() Option {
 // ReportingStatus has the model report each issue's status through
 // ReportStatus commands, for a tracker that keeps status comments (KTD1).
 func ReportingStatus() Option {
-	return func(m *Model) { m.statuses = map[crew.IssueID]*statusSlot{} }
+	return func(m *Model) { m.outbox.statuses = map[crew.IssueID]*statusLane{} }
 }
 
 // ReportingPullRequests has the model follow each move that landed with a
 // ReportPullRequests command, for a tracker that reports on pull requests
 // (KTD1, KTD2).
 func ReportingPullRequests() Option {
-	return func(m *Model) { m.pullRequests = map[crew.IssueID]*pullRequestSlot{} }
+	return func(m *Model) { m.outbox.pullRequests = map[crew.IssueID]*pullRequestLane{} }
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has
@@ -239,7 +222,7 @@ func ReportingPullRequests() Option {
 // flight or owed and no pull request report not settled. The engine returns
 // once Stopped is true and none of its commands is still running.
 func (m *Model) Stopped() bool {
-	return m.stopping && len(m.issues) == 0 && !m.statusesBusy() && len(m.pullRequests) == 0
+	return m.stopping && len(m.issues) == 0 && m.outbox.idle()
 }
 
 // unknownName is what String gives for a value outside its enumeration.
@@ -261,7 +244,9 @@ const (
 	ClaimJudging
 	// ClaimOwed: the take move or a verdict call failed transiently and
 	// waits for a retry. With an owed take, no action has started yet: they
-	// stay PhaseWaiting until the retried take is done.
+	// stay PhaseWaiting until the retried take is done. A held issue never
+	// stores it: the view shows it over any other claim from the first
+	// transient failure until every call of the issue's run lane settled.
 	ClaimOwed
 )
 
@@ -491,6 +476,9 @@ func (m *Model) View() View {
 			Issue: h.issue.Clone(), Rule: m.rules[h.rule].Name,
 			Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim,
 		}
+		if m.outbox.owing(h.issue.ID) {
+			iv.Claim = ClaimOwed
+		}
 		for _, a := range h.actions {
 			iv.Actions = append(iv.Actions, ActionView{
 				Name: a.name, Phase: a.phase, Workspace: a.workspace, Branch: a.branch,
@@ -498,13 +486,9 @@ func (m *Model) View() View {
 			})
 		}
 		v.Issues = append(v.Issues, iv)
-		for _, c := range h.calls {
-			if c.owed {
-				v.Owed = append(v.Owed, h.describe(c))
-			}
-		}
+		v.Owed = append(v.Owed, m.outbox.owedRun(h.issue.ID)...)
 	}
-	v.Owed = append(v.Owed, m.owedPullRequests()...)
+	v.Owed = append(v.Owed, m.outbox.owedPullRequests()...)
 	for _, e := range m.handled {
 		hv := e.view.clone()
 		if h := m.held(hv.Issue.ID); h != nil {
@@ -517,9 +501,4 @@ func (m *Model) View() View {
 	}
 	v.Bots = m.botsView()
 	return v
-}
-
-// describe returns c as a Call of h.
-func (h *heldIssue) describe(c *call) Call {
-	return Call{Kind: c.kind, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to}
 }

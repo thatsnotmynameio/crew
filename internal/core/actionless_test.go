@@ -34,9 +34,9 @@ func promoted() []crew.Rule {
 	}
 }
 
-// promoteMove is #key's move to promote triage's success.
-func promoteMove(key string) core.Move {
-	return core.Move{IssueID: issueID(key), From: triagePromoting, To: developmentReady}
+// promoteMove is #1's move to promote triage's success.
+func promoteMove() core.Move {
+	return core.Move{IssueID: issueID("1"), From: triagePromoting, To: developmentReady}
 }
 
 // promoteMoved is the event of #1's move to promote triage's success at at.
@@ -71,7 +71,7 @@ func TestAE2ARuleWithoutActionsMovesTheLabelWithoutASessionAndKeepsTriagesEntry(
 
 	take := takePromoted(d)
 	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove("1"))
+	wantCommands(t, verdict, promoteMove())
 
 	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
 	hasEvent(t, events, promoteMoved(d.now))
@@ -114,7 +114,7 @@ func TestARuleWithoutActionsTakenWhileCrewStopsMovesToSuccessAndStops(t *testing
 	}
 
 	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove("1"))
+	wantCommands(t, verdict, promoteMove())
 	if d.m.Stopped() {
 		t.Fatal("stopped while the verdict move is in flight")
 	}
@@ -130,7 +130,7 @@ func TestTheRunTimeLimitWithOnlyARuleWithoutActionsHeldStopsAfterItsMove(t *test
 	d.send(core.TimeUp{Limit: limit})
 
 	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	wantCommands(t, verdict, promoteMove("1"))
+	wantCommands(t, verdict, promoteMove())
 	if d.m.Stopped() {
 		t.Fatal("stopped while the verdict move is in flight")
 	}

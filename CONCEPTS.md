@@ -116,6 +116,12 @@ The comment crew posts when a rule run ends with a failed action, naming each fa
 
 It is a new comment, so the tracker notifies the people who watch the issue, and it never quotes what a session or a tool said.
 
+### Owed call
+
+A tracker write crew decided on whose last attempt failed transiently, and which crew tries again at each poll: an issue's take or verdict move, its failure report, or a pull request report.
+
+An issue shows owed from the first such failure of its move or failure report until all of them settle, and keeps its slot meanwhile; an owed pull request report or status comment write holds no slot. After a stop, each owed call gets one final try, and crew gives it up if that fails.
+
 ### Mirrored label
 
 The rule label an issue's pull requests carry, which crew sets to the issue's own rule label each time it moves the issue. An issue's pull requests are the open ones in its own repository that are linked as closing it; merged and closed ones, and those in other repositories, are not.
