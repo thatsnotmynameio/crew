@@ -146,10 +146,10 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 		t.Fatalf("ReportFailure: %v", err)
 	}
 	writes := checkWritesAsOps(t, gh)
-	// The missing label, the move, the status comment and its edit, and the
-	// report.
-	if writes != 5 || renewed.Load() != 0 {
-		t.Errorf("wrote %d times as ops, renewed %d times; want 5 and 0", writes, renewed.Load())
+	// The missing label, the move's add and removal, the status comment
+	// and its edit, and the report.
+	if writes != 6 || renewed.Load() != 0 {
+		t.Errorf("wrote %d times as ops, renewed %d times; want 6 and 0", writes, renewed.Load())
 	}
 	wantWriterLost(t, tr, "")
 }
@@ -224,8 +224,8 @@ func TestABotRefusedAPermissionHandsEveryLaterWriteToYou(t *testing.T) {
 			t.Fatalf("Move: %v", err)
 		}
 	}
-	if bot, you := countAs(gh, asBot, "issue", "edit"), countAs(gh, asYou, "issue", "edit"); bot != 1 || you != 2 {
-		t.Errorf("edited %d times as ops and %d as you, want 1 and 2", bot, you)
+	if bot, you := countAs(gh, asBot, "issue", "edit"), countAs(gh, asYou, "issue", "edit"); bot != 1 || you != 4 {
+		t.Errorf("edited %d times as ops and %d as you, want 1 and 4", bot, you)
 	}
 	if renewed.Load() != 0 {
 		t.Errorf("renewed %d times, want none for a permission", renewed.Load())

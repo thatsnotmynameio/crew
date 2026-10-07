@@ -124,9 +124,12 @@ func TestAReportMirrorsTheLabelAndPostsTheStopComment(t *testing.T) {
 			t.Errorf("query field %s = %q, want %q", key, got, want)
 		}
 	}
-	want := []string{"pr", "edit", "50", "--remove-label=crew:in progress", "--add-label=crew:waiting review"}
-	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
-		t.Errorf("edits = %q, want one: %q", edits, want)
+	want := [][]string{
+		{"pr", "edit", "50", "--add-label=crew:waiting review"},
+		{"pr", "edit", "50", "--remove-label=crew:in progress"},
+	}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Errorf("edits = %q, want add then remove: %q", edits, want)
 	}
 	body := "crew: `development` ended through `passed` on #42, which moved to `crew:waiting review`, " +
 		"as did this pull request.\n" +
@@ -150,9 +153,12 @@ func TestAStoppedRuleSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
-	want := []string{"pr", "edit", "50", "--remove-label=crew:in progress", "--add-label=crew:failed"}
-	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
-		t.Errorf("edits = %q, want one: %q", edits, want)
+	want := [][]string{
+		{"pr", "edit", "50", "--add-label=crew:failed"},
+		{"pr", "edit", "50", "--remove-label=crew:in progress"},
+	}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Errorf("edits = %q, want add then remove: %q", edits, want)
 	}
 	body := "crew: `development` ended through `failed` on #42, which moved to `crew:failed`, " +
 		"as did this pull request.\n" +
@@ -181,8 +187,8 @@ func TestOnlyTheOpenPullRequestsOfTheIssuesRepositoryAreWritten(t *testing.T) {
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
-	if edits := gh.callsTo(prEdit...); len(edits) != 1 || edits[0][2] != "50" {
-		t.Errorf("edits = %q, want one of 50", edits)
+	if edits := gh.callsTo(prEdit...); len(edits) != 2 || edits[0][2] != "50" || edits[1][2] != "50" {
+		t.Errorf("edits = %q, want two of 50", edits)
 	}
 	for _, n := range []int{47, 48, 51} {
 		if got := comments(t, gh, n); len(got) != 0 {
@@ -246,10 +252,53 @@ func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
-	want := []string{"pr", "edit", "50", "--remove-label=crew:waiting review", "--remove-label=crew:ready for fix",
-		"--add-label=crew:in progress"}
-	if edits := gh.callsTo(prEdit...); len(edits) != 1 || !slices.Equal(edits[0], want) {
-		t.Errorf("edits = %q, want one: %q", edits, want)
+	want := [][]string{
+		{"pr", "edit", "50", "--add-label=crew:in progress"},
+		{"pr", "edit", "50", "--remove-label=crew:waiting review", "--remove-label=crew:ready for fix"},
+	}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Errorf("edits = %q, want add then remove: %q", edits, want)
+	}
+}
+
+func TestTheMirrorRetriesOnlyRemovalAfterTheAddLands(t *testing.T) {
+	tr, gh := prTracker(t,
+		reply{prefix: prQuery, once: true, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewReadyForFix))},
+		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewReadyForFix, crewInProgress))},
+		reply{prefix: []string{"pr", "edit", "50", "--add-label=crew:in progress"}},
+		reply{prefix: []string{"pr", "edit", "50", "--remove-label=crew:ready for fix"}, once: true,
+			stderr: "Something went wrong while executing your query"},
+		reply{prefix: []string{"pr", "edit", "50", "--remove-label=crew:ready for fix"}},
+	)
+	report := taken(crewInProgress)
+	err := tr.ReportPullRequests(context.Background(), report)
+	if err == nil || errors.Is(err, port.ErrMovedMeanwhile) || errors.Is(err, port.ErrRefused) {
+		t.Fatalf("ReportPullRequests = %v, want a transient error", err)
+	}
+	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	want := [][]string{
+		{"pr", "edit", "50", "--add-label=crew:in progress"},
+		{"pr", "edit", "50", "--remove-label=crew:ready for fix"},
+		{"pr", "edit", "50", "--remove-label=crew:ready for fix"},
+	}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Errorf("edits = %q, want one add and a retried removal: %q", edits, want)
+	}
+}
+
+func TestTheMirrorAddsTheLabelWhenNoCrewLabelIsPresent(t *testing.T) {
+	tr, gh := prTracker(t,
+		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", "bug"))},
+		reply{prefix: prEdit},
+	)
+	if err := tr.ReportPullRequests(context.Background(), taken(crewInProgress)); err != nil {
+		t.Fatalf("ReportPullRequests: %v", err)
+	}
+	want := [][]string{{"pr", "edit", "50", "--add-label=crew:in progress"}}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Errorf("edits = %q, want only the add: %q", edits, want)
 	}
 }
 
@@ -331,8 +380,13 @@ func TestARetryAfterAFailedEditDoesNotCommentTwice(t *testing.T) {
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if edits := gh.callsTo(prEdit...); len(edits) != 2 {
-		t.Errorf("edits = %q, want two", edits)
+	want := [][]string{
+		{"pr", "edit", "50", "--add-label=crew:waiting review"},
+		{"pr", "edit", "50", "--add-label=crew:waiting review"},
+		{"pr", "edit", "50", "--remove-label=crew:in progress"},
+	}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+		t.Errorf("edits = %q, want the retried add then remove: %q", edits, want)
 	}
 	if got := comments(t, gh, 50); len(got) != 1 {
 		t.Errorf("comments on 50 = %q, want one", got)
@@ -360,8 +414,8 @@ func TestARetryCommentsOnlyWhereTheCommentFailed(t *testing.T) {
 	for _, e := range edits {
 		numbers = append(numbers, e[2])
 	}
-	if !slices.Equal(numbers, []string{"50", "51"}) {
-		t.Errorf("edited %q, want 50 then 51", numbers)
+	if !slices.Equal(numbers, []string{"50", "50", "51", "51"}) {
+		t.Errorf("edited %q, want add then remove for 50 then 51", numbers)
 	}
 	if got := comments(t, gh, 50); len(got) != 1 {
 		t.Errorf("comments on 50 = %q, want one", got)

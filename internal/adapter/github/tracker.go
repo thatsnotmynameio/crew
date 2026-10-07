@@ -397,8 +397,8 @@ func priority(values []fieldValue) int {
 // to's, whatever other labels it carries, is already moved, as when an earlier
 // attempt landed although gh reported an error, so Move returns nil without
 // an edit and a retry is safe (KTD8). Any other issue without from's label
-// moved meanwhile. Otherwise one gh issue edit removes every other crew label
-// the issue carries and adds to's, leaving the labels that are not crew's,
+// moved meanwhile. Otherwise it adds to's label before removing every other
+// crew label the issue carries, leaving the labels that are not crew's,
 // those no rule names, alone. gh saying a label does not exist is a refusal: the
 // label must be created, which retrying cannot do.
 func (t *Tracker) Move(ctx context.Context, id crew.IssueID, from, to crew.State) error {
@@ -420,7 +420,7 @@ func (t *Tracker) Move(ctx context.Context, id crew.IssueID, from, to crew.State
 		}
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
-	if err := t.editLabels(ctx, "issue", id.Key, remove, to); err != nil {
+	if err := t.editLabels(ctx, "issue", id.Key, remove, to, slices.Contains(states, to)); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	return nil
@@ -525,17 +525,24 @@ func (t *Tracker) issue(n listNode) crew.Issue {
 	return crew.NewIssue(issue)
 }
 
-// editLabels runs one gh <kind> edit of number, an issue's or a pull
-// request's, that removes the labels remove names, as swap returns them, and
-// adds to's. gh saying to's label does not exist is a refusal: the label must
-// be created, which retrying cannot do.
-func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []string, to crew.State) error {
-	target := string(to)
-	args := slices.Concat([]string{kind, "edit", number}, remove, []string{"--add-label=" + labelArg(target)})
-	if out, _, err := t.gh.write(ctx, args...); err != nil {
-		if missingLabel(string(out.Stderr), target) {
-			return fmt.Errorf("%w: %w", port.ErrRefused, err)
+// editLabels adds to's label before removing the labels remove names, as
+// swap returns them. If to's label is already present, only the removal
+// runs. Separate edits keep the source labels when the add fails, and the
+// target label when removal fails, so a partial move is safe to retry.
+// gh saying to's label does not exist is a refusal: the label must be
+// created, which retrying cannot do.
+func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []string, to crew.State, present bool) error {
+	if !present {
+		target := string(to)
+		if out, _, err := t.gh.write(ctx, kind, "edit", number, "--add-label="+labelArg(target)); err != nil {
+			if missingLabel(string(out.Stderr), target) {
+				return fmt.Errorf("%w: %w", port.ErrRefused, err)
+			}
+			return err
 		}
+	}
+	if len(remove) > 0 {
+		_, _, err := t.gh.write(ctx, slices.Concat([]string{kind, "edit", number}, remove)...)
 		return err
 	}
 	return nil
