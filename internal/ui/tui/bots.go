@@ -191,7 +191,7 @@ func (m Model) botState(e core.BotView) string {
 func (m Model) botTotals(sp crew.Spend, width int) string {
 	s := m.styles
 	parts := lines.SpendParts(sp)
-	if sp.Sessions == 0 || len(parts) == 0 {
+	if len(parts) == 0 {
 		return s.subtle.Render(fit("no actions yet", width))
 	}
 	count := "1 action"
