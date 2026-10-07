@@ -15,46 +15,15 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/engine"
 )
 
-// crewRules is this repository's rules, both promote rules muted, as rules
-// without actions are by default.
-var crewRules = []crew.Rule{
-	{
-		Name: "promote brainstorm",
-		Labels: crew.Labels{
-			Ready: "crew:brainstorm:done", Running: "crew:brainstorm:promoting", Success: "crew:triage:ready",
-		},
-	},
-	{
-		Name: "triage",
-		Labels: crew.Labels{
-			Ready: "crew:triage:ready", Running: "crew:triage:in progress", Success: "crew:triage:done",
-			Failure: "crew:triage:failed",
-		},
-		Notify: true,
-	},
-	{
-		Name: "promote triage",
-		Labels: crew.Labels{
-			Ready: "crew:triage:done", Running: "crew:triage:promoting", Success: "crew:development:ready",
-		},
-	},
-	{
-		Name: "development",
-		Labels: crew.Labels{
-			Ready: "crew:development:ready", Running: "crew:development:in progress",
-			Failure: "crew:development:failed",
-		},
-		Notify: true,
-	},
-	{
-		Name:   "fix",
-		Labels: crew.Labels{Ready: "crew:fix:ready", Running: "crew:fix:in progress", Failure: "crew:fix:failed"},
-		Notify: true,
-	},
+// crewNotify is which of this repository's rules notify: triage,
+// development and fix; both promote rules are muted, as rules without
+// actions are by default.
+var crewNotify = map[crew.RuleName]bool{
+	"promote brainstorm": false, "triage": true, "promote triage": false, "development": true, "fix": true,
 }
 
-// crewBoard is the default board of crewRules, as config builds it: a
-// column per rule with actions, triage, development and fix, each with
+// crewBoard is the default board of this repository's rules, as config
+// builds it: a column per rule with actions, triage, development and fix, each with
 // its ready and running labels (R22).
 var crewBoard = []crew.BoardColumn{
 	{Name: "triage", Labels: []crew.State{"crew:triage:ready", "crew:triage:in progress"}},
@@ -191,7 +160,7 @@ func schedulesSlideTick(cmd tea.Cmd) bool {
 // development has two columns, triage then development, and an issue the
 // rule without actions holds has no card, not even in Not on board.
 func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, crewBoard[:2])
+	h := newBoardHarness(t, 120, crewNotify, crewBoard[:2])
 	u := held(twelve, "promote triage", "promote", core.ClaimRunning)
 	u.Snapshot.Issues[0].Actions = nil
 
@@ -212,7 +181,7 @@ func TestAE5TheDefaultBoardHasAColumnPerRuleWithActionsInRuleOrder(t *testing.T)
 // Covers KTD10: an item left in a rule's running label that crew does not
 // hold shows in that rule's column as idle.
 func TestAnItemInARunningLabelCrewDoesNotHoldHasAnIdleCard(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h := newBoardHarness(t, 120, crewNotify, crewBoard)
 
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twelve, "crew:development:in progress"))))
 	board := boardOf(t, h.view())
@@ -226,7 +195,7 @@ func TestAnItemInARunningLabelCrewDoesNotHoldHasAnIdleCard(t *testing.T) {
 // Covers R23 and R28, and R7 of #230: an issue whose rule ended in a label
 // no column names has no card, and no card waits for the next rule.
 func TestAnIssueMovedToALabelNoColumnNamesHasNoCard(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h := newBoardHarness(t, 120, crewNotify, crewBoard)
 	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
 		labeled(twelve, "crew:triage:in progress"))))
 
@@ -245,7 +214,7 @@ func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
 	board := append(slices.Clone(crewBoard[1:2]),
 		crew.BoardColumn{Name: "fix review", Labels: []crew.State{"crew:fix-review:ready"}, Takes: crew.KindPullRequest})
 	pr := crew.Issue{ID: issueID("90"), Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
-	h := newBoardHarness(t, 120, crewRules, board)
+	h := newBoardHarness(t, 120, crewNotify, board)
 
 	h.send(updateMsg(onBoard(engine.Update{},
 		labeled(twelve, "crew:development:in progress"),
@@ -262,7 +231,7 @@ func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
 
 // Covers AE1: a held issue has one card, in the column of its board label.
 func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning), labeled(twenty, "bug"))))
 	board := boardOf(t, h.view())
@@ -278,7 +247,7 @@ func TestAE1AHeldIssueHasOneCardInTheColumnOfItsBoardLabel(t *testing.T) {
 
 // Covers AE2 and R23: an issue with two columns' labels has a card in each.
 func TestAE2AnIssueWithTwoColumnsLabelsHasACardInEach(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"))))
 	board := boardOf(t, h.view())
@@ -296,7 +265,7 @@ func TestTheColumnsShowInBoardOrder(t *testing.T) {
 		{Name: "ideas", Labels: []crew.State{"crew:brainstorm:ready"}},
 		{Name: "bugs", Labels: []crew.State{"bug"}},
 	}
-	h := newBoardHarness(t, 120, crewRules, board)
+	h := newBoardHarness(t, 120, crewNotify, board)
 	h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "bug"))))
 
 	got := boardOf(t, h.view())
@@ -313,7 +282,7 @@ func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 		issues = append(issues, labeled(crew.Issue{ID: issueID(strconv.Itoa(n)), Ref: fmt.Sprintf("#%d", n),
 			Title: "Bug"}, "bug"))
 	}
-	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 80, crewNotify, ideasBugsDone)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.send(updateMsg(onBoard(engine.Update{}, issues...)))
 
@@ -361,7 +330,7 @@ func cardOrder(board string, refs ...string) []string {
 // Covers AE1, R1 and R2 of #231: a column lists the cards of the items
 // crew holds first, then the others, each group in board order.
 func TestAE1HeldCardsComeFirstInTheirColumn(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "15", "12"),
 		item("10", "bug"), item("12", "bug"), item("15", "bug"))))
@@ -377,7 +346,7 @@ func TestAE2EveryClaimKeepsACardHeld(t *testing.T) {
 	for _, claim := range []core.Claim{
 		core.ClaimTaking, core.ClaimRunning, core.ClaimStopping, core.ClaimJudging, core.ClaimOwed,
 	} {
-		h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+		h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 		h.send(updateMsg(onBoard(holding(claim, "15"),
 			item("10", "bug"), item("12", "bug"), item("15", "bug"))))
@@ -392,7 +361,7 @@ func TestAE2EveryClaimKeepsACardHeld(t *testing.T) {
 // Covers R1 of #231: a held issue with cards in two columns comes first
 // in both.
 func TestAHeldIssueComesFirstInEachOfItsColumns(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "21"),
 		labeled(twenty, "crew:brainstorm:ready", "bug"), labeled(twentyOne, "crew:brainstorm:ready", "bug"))))
@@ -411,7 +380,7 @@ func TestAHeldIssueComesFirstInEachOfItsColumns(t *testing.T) {
 // Covers R4 of #231: the Not on board column keeps the order crew holds
 // its issues in, after the configured columns.
 func TestNotOnBoardKeepsItsOrder(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "31", "30"), item("10", "bug"))))
 	board := boardOf(t, h.view())
@@ -437,7 +406,7 @@ func elevenBugs() []crew.BoardIssue {
 // A column shows at most maxCards cards, however tall the window, and
 // "+N more" counts the rest.
 func TestAColumnShowsAtMostFiveCards(t *testing.T) {
-	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 80, crewNotify, ideasBugsDone)
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 200})
 	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
 
@@ -451,7 +420,7 @@ func TestAColumnShowsAtMostFiveCards(t *testing.T) {
 // A window two rows short of five cards takes one card off a column past
 // maxCards: its "+N more" row is already drawn.
 func TestAShortWindowTakesOneCardOffACappedColumn(t *testing.T) {
-	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 80, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, elevenBugs()...)))
 	least := budget{events: minScroll, cards: maxCards, botCards: true}
 	height := len(h.current().rows(least)) - cardRows
@@ -481,7 +450,7 @@ func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 		labeled(crew.Issue{ID: issueID("1"), Ref: "#1", Title: "One"}, "l2"),
 		labeled(crew.Issue{ID: issueID("2"), Ref: "#2", Title: "Two"}, "l6"))
 
-	h := newBoardHarness(t, 80, crewRules, eightColumns())
+	h := newBoardHarness(t, 80, crewNotify, eightColumns())
 	h.send(updateMsg(u))
 	board := boardOf(t, h.view())
 	contains(t, board, "6 empty columns not shown")
@@ -489,7 +458,7 @@ func TestEmptyColumnsDropThenTheBoardScrollsSideways(t *testing.T) {
 		t.Errorf("columns = %q, want c2 c6:\n%s", got, board)
 	}
 
-	h = newBoardHarness(t, 30, crewRules, eightColumns())
+	h = newBoardHarness(t, 30, crewNotify, eightColumns())
 	h.send(updateMsg(u))
 	board = boardOf(t, h.view())
 	contains(t, board, "c2", "1 ▸", "#1")
@@ -519,7 +488,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 	// The two lowest heights that fit: a cap counting the scrolled-off
 	// column of 6 would leave both cut.
 	for _, height := range []int{21, 22} {
-		h := newBoardHarness(t, 80, crewRules, eightColumns()[:5])
+		h := newBoardHarness(t, 80, crewNotify, eightColumns()[:5])
 		h.send(tea.WindowSizeMsg{Width: 80, Height: height})
 		h.send(updateMsg(u))
 
@@ -531,7 +500,7 @@ func TestTheCardCapCountsOnlyTheDrawnColumns(t *testing.T) {
 
 // Covers KTD5 and KTD8.
 func TestTheSummaryCountsIssuesAndSaysWhenTheBoardWasNotRead(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	contains(t, boardOf(t, h.view()), "Board ", " 0 issues")
 
 	u := onBoard(engine.Update{}, labeled(twentyOne, "crew:brainstorm:ready", "bug"), labeled(twentyTwo, "bug"))
@@ -565,7 +534,7 @@ func TestEachClaimReadsThroughItsIcon(t *testing.T) {
 		core.ClaimRunning: "run  ⠋ running", core.ClaimJudging: "run  ⠋ judging", core.ClaimTaking: "run  ◌ taking",
 		core.ClaimOwed: "run  ! owed", core.ClaimStopping: "run  ■ stopping",
 	} {
-		h := newBoardHarness(t, 120, crewRules, crewBoard)
+		h := newBoardHarness(t, 120, crewNotify, crewBoard)
 		u := held(twelve, "triage", "triage", claim)
 		u.Snapshot.Issues[0].Actions[0].Phase = core.PhaseEnded
 		h.send(updateMsg(onBoard(u, labeled(twelve, "crew:triage:in progress"))))
@@ -577,7 +546,7 @@ func TestEachClaimReadsThroughItsIcon(t *testing.T) {
 
 // Covers #126: an unheld card reads ○ idle, no bots and no queue.
 func TestAnUnheldCardShowsIdle(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 
 	h.send(updateMsg(onBoard(held(twenty, "fix", "lfg", core.ClaimRunning),
 		labeled(twenty, "bug"), labeled(twentyTwo, "bug"))))

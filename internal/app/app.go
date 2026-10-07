@@ -224,7 +224,7 @@ func build(o Options) (built, error) {
 	errs := []error{err}
 	var harnesses []engine.AgentHarness
 	for _, a := range cfg.Agents {
-		harness, err := o.Registry.Harness(a.HarnessKey(), a.Harness, a.HarnessSection)
+		harness, err := o.Registry.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
 		errs = append(errs, err)
 		if err == nil && a.Used {
 			harnesses = append(harnesses, engine.AgentHarness{Agent: a.Name, Harness: harness})
@@ -248,7 +248,7 @@ func (b built) bots(ctx context.Context, o Options) (Bots, error) {
 	if o.Bots == nil {
 		return Bots{}, errors.New("the config names bots, and crew cannot make them act here")
 	}
-	m, err := o.Bots(ctx, b.cfg.Bot, b.cfg.Bots)
+	m, err := o.Bots(ctx, b.cfg.Bot.Name, b.cfg.BotNames())
 	if err != nil {
 		return Bots{}, fmt.Errorf("make the bots act: %w", err)
 	}
@@ -274,8 +274,8 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Writer:            bots.Writer,
 		Identities:        bots.Identities,
 		BotLogins:         bots.Logins,
-		DefaultBot:        b.cfg.Bot,
-		Bots:              b.cfg.Bots,
+		DefaultBot:        b.cfg.Bot.Name,
+		Bots:              b.cfg.BotNames(),
 		Unable:            bots.Unable,
 		BotFailures:       bots.Failing,
 		Board:             b.cfg.Board,
@@ -290,7 +290,7 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 func run(
 	ctx context.Context, eng *engine.Engine, o Options, stopping bool, b built, warnings []string,
 ) int {
-	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, rules: b.cfg.Rules, board: b.cfg.Board}
+	r := &runner{eng: eng, o: o, code: ExitClean, warnings: warnings, notify: b.cfg.Notify, board: b.cfg.Board}
 	render := r.renderer()
 	if stopping {
 		r.stop()
@@ -333,8 +333,8 @@ type runner struct {
 	code int
 	// warnings are the startup warnings the renderer shows.
 	warnings []string
-	// rules are the configured rules, for the live view's notifications.
-	rules []crew.Rule
+	// notify tells which rules' ends the live view notifies.
+	notify map[crew.RuleName]bool
 	// board is the live view's board: the columns the config writes, or
 	// its default columns.
 	board []crew.BoardColumn
@@ -346,7 +346,7 @@ func (r *runner) renderer() func() error {
 	if r.o.Terminal && !r.o.Plain {
 		model := tui.New(tui.Config{
 			Updates: r.eng.SubscribeLatest(), Stop: r.eng.Stop, Force: r.force, Now: time.Now, Location: time.Local,
-			Rules: r.rules, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
+			Notify: r.notify, Board: r.board, Repository: filepath.Base(r.o.Root), Warnings: r.warnings,
 		})
 		program := tui.NewProgram(model, r.o.Stdin, r.o.Stdout)
 		r.quit = program.Quit

@@ -333,7 +333,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	}
 	for _, a := range rule.Actions {
 		h.actions = append(h.actions, &actionRun{
-			name: a.Name, prompt: a.Prompt, checks: a.Checks, agent: a.Agent, bot: a.Bot,
+			name: a.Name, checks: a.Checks, agent: a.Agent.Name, bot: a.Bot.Name,
 		})
 	}
 	m.issues = append(m.issues, h)
@@ -374,7 +374,7 @@ func (s *step) start(h *heldIssue) {
 	m := s.m
 	h.claim = ClaimRunning
 	for _, a := range h.actions {
-		prompt, err := crew.Action{Name: a.name, Prompt: a.prompt}.Render(h.issue)
+		prompt, err := m.prompt(h, a).Render(h.issue)
 		if err != nil {
 			s.end(h, a, crew.Outcome{Reason: crew.NewSessionText(err.Error())}, crew.CausePrompt)
 			continue
@@ -392,6 +392,14 @@ func (s *step) start(h *heldIssue) {
 	if h.claim == ClaimRunning {
 		s.running(h)
 	}
+}
+
+// prompt returns the parsed prompt of a's definition in h's rule, found by
+// the action's name.
+func (m *Model) prompt(h *heldIssue, a *actionRun) crew.Prompt {
+	actions := m.rules[h.rule].Actions
+	i := slices.IndexFunc(actions, func(d crew.Action) bool { return d.Name == a.name })
+	return actions[i].Prompt
 }
 
 // judge moves h to its rule's success label when every action succeeded,

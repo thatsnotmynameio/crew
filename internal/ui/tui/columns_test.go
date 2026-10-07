@@ -19,7 +19,7 @@ func topBorder(width int) string { return "╭" + strings.Repeat("─", width-2)
 // a label a column shows leaves the issue one card, in that column, which
 // slides there, and the board draws no Handled column.
 func TestAE6AnIssueWhoseRuleEndedHasOneCardWhereItsLabelsPutIt(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h := newBoardHarness(t, 120, crewNotify, crewBoard)
 	h.send(updateMsg(inTriage()))
 	h.send(updateMsg(onBoard(handledBy(twelve, "triage", "crew:development:ready"),
 		labeled(twelve, "crew:development:ready"))))
@@ -41,7 +41,7 @@ func TestAE6AnIssueWhoseRuleEndedHasOneCardWhereItsLabelsPutIt(t *testing.T) {
 // a label no column shows sends its notification and writes its event, and
 // the issue gets no card.
 func TestAE7AFailedRuleNotifiesAndLeavesNoHandledCard(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h := newBoardHarness(t, 120, crewNotify, crewBoard)
 	h.send(updateMsg(inTriage()))
 	h.send(tea.BlurMsg{})
 
@@ -79,7 +79,7 @@ func TestAE8TheHeaderShowsTheRunsCostAndNoHandledCount(t *testing.T) {
 // running label, a held issue shows as a live card in Not on board,
 // after the configured columns.
 func TestAHeldIssueNoColumnShowsIsInNotOnBoard(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(held(twelve, "development", "lfg", core.ClaimRunning))))
 	board := boardOf(t, h.view())
 
@@ -98,7 +98,7 @@ func TestAHeldIssueNoColumnShowsIsInNotOnBoard(t *testing.T) {
 // written board of issues, so it shows in Not on board.
 func TestAHeldPullRequestShowsInNotOnBoard(t *testing.T) {
 	pr := crew.Issue{ID: issueID("90"), Ref: "#90", Title: "Fix the review", Kind: crew.KindPullRequest}
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(held(pr, "fix review", "review", core.ClaimRunning), labeled(pr, "bug"))))
 	board := boardOf(t, h.view())
 
@@ -110,7 +110,7 @@ func TestAHeldPullRequestShowsInNotOnBoard(t *testing.T) {
 // Covers KTD13 of #151: a board that shows every held issue never draws
 // Not on board, even with room for every column.
 func TestNotOnBoardIsNotDrawnWhileEveryHeldIssueHasACard(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, crewBoard)
+	h := newBoardHarness(t, 120, crewNotify, crewBoard)
 	h.send(updateMsg(inTriage()))
 	board := boardOf(t, h.view())
 

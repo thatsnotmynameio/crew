@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -60,10 +59,9 @@ func (m Model) notifications() []tea.Cmd {
 
 // muted reports whether the rule named name sends no notification: it is
 // not in the rules, or its notify is off (R9). It looks the name up among
-// the rules, never among the board's columns.
+// the rules' notify, never among the board's columns.
 func (m Model) muted(name crew.RuleName) bool {
-	i := slices.IndexFunc(m.cfg.Rules, func(r crew.Rule) bool { return r.Name == name })
-	return i < 0 || !m.cfg.Rules[i].Notify
+	return !m.cfg.Notify[name]
 }
 
 // noteText says which rule ended on which issue and how (R25), cleaned and

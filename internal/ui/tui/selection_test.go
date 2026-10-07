@@ -60,7 +60,7 @@ func item(n string, lab crew.State) crew.BoardIssue {
 // and the first snapshot highlights the first card of the first column
 // holding cards.
 func TestTheFirstSnapshotHighlightsTheFirstCardOfTheFirstColumnHoldingCards(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	if row := rowsOf(h.view())[titleRow(h.view(), "Board")]; !strings.HasPrefix(row, focusMark+"Board ") {
 		t.Errorf("the board's rule is %q before any snapshot, want it focused", row)
 	}
@@ -73,7 +73,7 @@ func TestTheFirstSnapshotHighlightsTheFirstCardOfTheFirstColumnHoldingCards(t *t
 // Covers R10 and KTD6 of #151: ↑ on a column's first card and ↓ on its
 // last change nothing.
 func TestUpAndDownStopAtTheColumnsEnds(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("21", "bug"))))
 	first := h.view()
 
@@ -94,7 +94,7 @@ func TestUpAndDownStopAtTheColumnsEnds(t *testing.T) {
 // card at the same shown slot, or on the last card of a shorter column,
 // and does nothing past the last column holding cards.
 func TestLeftAndRightMoveBetweenColumnsHoldingCards(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, eightColumns()[:4])
+	h := newBoardHarness(t, 120, crewNotify, eightColumns()[:4])
 	h.send(updateMsg(onBoard(engine.Update{},
 		item("1", "l1"), item("2", "l1"), item("3", "l3"), item("4", "l3"), item("5", "l4"))))
 
@@ -122,7 +122,7 @@ func TestLeftAndRightMoveBetweenColumnsHoldingCards(t *testing.T) {
 // edge scrolls the board just enough to draw it, and ← back past the left
 // edge scrolls it back.
 func TestRightOntoAColumnOffTheEdgeScrollsTheBoard(t *testing.T) {
-	h := newBoardHarness(t, 80, crewRules, eightColumns())
+	h := newBoardHarness(t, 80, crewNotify, eightColumns())
 	h.send(updateMsg(threeBotsOnABoard()))
 
 	h.send(rightKey)
@@ -190,7 +190,7 @@ func TestTabBAndEMoveFocusAndEscReturnsToTheBoard(t *testing.T) {
 // Covers KTD6 of #151: with Bots focused ←→ scroll the Bots cards, and
 // with Events focused ↑↓ scroll Events, while the highlight stays.
 func TestTheHighlightStaysWhileBotsOrEventsScroll(t *testing.T) {
-	h := newBoardHarness(t, 80, crewRules, eightColumns())
+	h := newBoardHarness(t, 80, crewNotify, eightColumns())
 	u := threeBotsOnABoard()
 	u.Snapshot.Recent = withEvents(30).Snapshot.Recent
 	h.send(updateMsg(u))
@@ -239,7 +239,7 @@ func TestTheHighlightedCardIsDrawnInTheHighlightColourWithAMarker(t *testing.T) 
 // Covers AE3 and R5 of #231: when crew takes the highlighted issue, its
 // card moves to the top of the held cards and keeps the highlight.
 func TestAE3ATakenIssueMovesUpAndKeepsItsHighlight(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	bugs := []crew.BoardIssue{item("10", "bug"), item("12", "bug"), item("15", "bug")}
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), bugs...)))
 	h.send(downKey)
@@ -258,7 +258,7 @@ func TestAE3ATakenIssueMovesUpAndKeepsItsHighlight(t *testing.T) {
 // column taller than it shows, the column scrolls to the card's new place,
 // so ↓ then moves the highlight without scrolling the card out of sight.
 func TestATakenCardFromDeepInAColumnStaysDrawnAfterDown(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(tea.WindowSizeMsg{Width: 120, Height: 200})
 	bugs := make([]crew.BoardIssue, 0, 10)
 	for n := 1; n <= 10; n++ {
@@ -283,7 +283,7 @@ func TestATakenCardFromDeepInAColumnStaysDrawnAfterDown(t *testing.T) {
 // and it keeps its label, its card returns to its board-order place among
 // the cards crew does not hold and keeps the highlight.
 func TestAE4ALetGoIssueReturnsToItsPlaceAndKeepsItsHighlight(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	bugs := []crew.BoardIssue{item("10", "bug"), item("12", "bug")}
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), bugs...)))
 	wantLit(t, h, "#12", 1)
@@ -300,7 +300,7 @@ func TestAE4ALetGoIssueReturnsToItsPlaceAndKeepsItsHighlight(t *testing.T) {
 // Covers R21 and KTD5 of #151: the highlighted issue's card moving to
 // another column keeps the highlight.
 func TestAnIssueMovingColumnsKeepsItsHighlight(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("22", "bug"))))
 	h.send(downKey)
 
@@ -313,7 +313,7 @@ func TestAnIssueMovingColumnsKeepsItsHighlight(t *testing.T) {
 // board, the card at its row in its column takes the highlight, or the
 // column's last card when it is shorter.
 func TestAnIssueLeavingTheBoardHighlightsTheCardAtItsRow(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, item("1", "bug"), item("2", "bug"), item("3", "bug"))))
 	h.send(downKey)
 
@@ -328,7 +328,7 @@ func TestAnIssueLeavingTheBoardHighlightsTheCardAtItsRow(t *testing.T) {
 // nearest column holding cards takes the highlight at the same row, the
 // left one on a tie.
 func TestAnEmptiedColumnHandsTheHighlightToTheNearestColumn(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	ideas := []crew.BoardIssue{
 		item("4", "crew:brainstorm:ready"), item("5", "crew:brainstorm:ready"), item("6", "crew:brainstorm:ready"),
 	}
@@ -353,7 +353,7 @@ func TestAnEmptiedColumnHandsTheHighlightToTheNearestColumn(t *testing.T) {
 // Covers KTD5 of #151: an empty board highlights nothing, and its first
 // card takes the highlight once cards arrive.
 func TestAnEmptyBoardHighlightsNothing(t *testing.T) {
-	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 120, crewNotify, ideasBugsDone)
 	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"))))
 
 	h.send(updateMsg(engine.Update{}))

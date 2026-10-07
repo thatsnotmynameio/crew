@@ -105,8 +105,8 @@ func endOf(t *testing.T, events []core.Event, action crew.ActionName) crew.Outco
 // Each action's session and check act as the action's own bot (KTD9).
 func TestSessionAndCheckCarryTheActionsBot(t *testing.T) {
 	w := checked()
-	w[0].Actions[0].Bot = "ops"
-	w[0].Actions[1].Bot = "developer"
+	w[0].Actions[0].Bot = crew.Bot{Name: "ops"}
+	w[0].Actions[1].Bot = crew.Bot{Name: "developer"}
 	d := newDriver(t, w, 2)
 	cmds, _ := d.poll(issue("74", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
@@ -242,7 +242,7 @@ var failedCauseCases = []struct {
 }{
 	{
 		name:   "session",
-		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		action: crew.Action{Name: "development", Prompt: parsedPrompt("development", "Do {{.Issue.Ref}}")},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
 			cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("token=secret")})
@@ -253,7 +253,8 @@ var failedCauseCases = []struct {
 	{
 		name: "check",
 		action: crew.Action{
-			Name: "development", Prompt: "Do {{.Issue.Ref}}", Checks: []crew.Check{{Name: "never", Script: "false"}},
+			Name: "development", Prompt: parsedPrompt("development", "Do {{.Issue.Ref}}"),
+			Checks: []crew.Check{{Name: "never", Script: "false"}},
 		},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
@@ -270,7 +271,7 @@ var failedCauseCases = []struct {
 	},
 	{
 		name:   "stopped",
-		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		action: crew.Action{Name: "development", Prompt: parsedPrompt("development", "Do {{.Issue.Ref}}")},
 		end: func(d *driver, landed []core.Command) []core.Command {
 			d.runAll(landed)
 			d.send(core.StopRequested{})
@@ -282,7 +283,7 @@ var failedCauseCases = []struct {
 	},
 	{
 		name:   "workspace",
-		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		action: crew.Action{Name: "development", Prompt: parsedPrompt("development", "Do {{.Issue.Ref}}")},
 		end: func(d *driver, _ []core.Command) []core.Command {
 			cmds, _ := d.send(core.WorkspaceFailed{
 				IssueID: issueID("74"), Action: "development", Reason: crew.NewSessionText("git: no origin"),
@@ -293,7 +294,7 @@ var failedCauseCases = []struct {
 	},
 	{
 		name:   "start",
-		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
+		action: crew.Action{Name: "development", Prompt: parsedPrompt("development", "Do {{.Issue.Ref}}")},
 		end: func(d *driver, _ []core.Command) []core.Command {
 			d.send(devSpace)
 			cmds, _ := d.send(core.SessionFailedToStart{
@@ -319,7 +320,10 @@ func TestEndedStatusGivesEachFailedActionsCauseNotItsWords(t *testing.T) {
 
 func TestPromptThatFailsToRenderGivesItsCause(t *testing.T) {
 	w := draft()
-	w[0].Actions = []crew.Action{{Name: "development", Prompt: "Do {{.Issue.Numbr}}"}}
+	// Renders for the sample issue's title, and fails on the shorter "Issue 74".
+	w[0].Actions = []crew.Action{
+		{Name: "development", Prompt: parsedPrompt("development", "Do {{index .Issue.Title 11}}")},
+	}
 	d := newStatusDriver(t, w, 2)
 	cmds, _ := d.poll(issue("74", 1, ready))
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})

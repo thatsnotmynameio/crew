@@ -47,11 +47,11 @@ type Config struct {
 	// Bot is tracker.bot: the bot crew's own writes on the tracker act as,
 	// and the bot of every agent that names none. Empty, the default, means
 	// the gh login crew runs as. Its spelling is not checked here.
-	Bot crew.BotName
+	Bot crew.Bot
 	// Bots is every bot crew makes act, each once: Bot first, then the
 	// bots of the agents some action names, in rule order. It is empty when
 	// no bot is named.
-	Bots []crew.BotName
+	Bots []crew.Bot
 	// Agents are the agents in file order, including those no action names
 	// (see Agent.Used).
 	Agents []Agent
@@ -62,6 +62,10 @@ type Config struct {
 	// queue, the one it names or default, with the queue's slots, and every
 	// action its agent, check script and bot.
 	Rules []crew.Rule
+	// Notify tells, for each rule by name, whether the live view sends a
+	// desktop notification when the rule ends for an item: the rule's
+	// notify, or by default whether it has actions.
+	Notify map[crew.RuleName]bool
 	// Board is the live view's board: board's columns in file order, which
 	// show issues, or without board one column per rule that has actions,
 	// in file order, with the rule's ready and running labels and its kind.
@@ -156,7 +160,8 @@ func parse(top *yaml.Node) (*Config, error) {
 	errs = append(errs, err)
 	cfg.Agents, err = agents(&doc.Agents)
 	errs = append(errs, err)
-	cfg.Rules, err = rules(&doc.Rules, ruleEnv{queues: table, agents: cfg.Agents, checks: scripts, bot: cfg.Bot})
+	env := ruleEnv{queues: table, agents: cfg.Agents, checks: scripts, bot: cfg.Bot}
+	cfg.Rules, cfg.Notify, err = rules(&doc.Rules, env)
 	errs = append(errs, err, agentsInUse(cfg.Agents, cfg.Rules))
 	cfg.Bots = namedBots(cfg.Bot, cfg.Rules)
 	cfg.Board, cfg.BoardWritten, err = board(&doc.Board, cfg.Rules)
@@ -190,19 +195,29 @@ func engineSettings(doc *document, cfg *Config) []error {
 
 // namedBots lists the bot def, tracker.bot, when set, and then each
 // action's bot in rule order, each once.
-func namedBots(def crew.BotName, rules []crew.Rule) []crew.BotName {
-	var out []crew.BotName
-	if def != "" {
+func namedBots(def crew.Bot, rules []crew.Rule) []crew.Bot {
+	var out []crew.Bot
+	if def.Name != "" {
 		out = append(out, def)
 	}
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			if a.Bot != "" && !slices.Contains(out, a.Bot) {
+			if a.Bot.Name != "" && !slices.Contains(out, a.Bot) {
 				out = append(out, a.Bot)
 			}
 		}
 	}
 	return out
+}
+
+// BotNames returns the names of Bots, in order: the engine and the bots'
+// runtime refer to bots by name.
+func (c *Config) BotNames() []crew.BotName {
+	names := make([]crew.BotName, 0, len(c.Bots))
+	for _, bot := range c.Bots {
+		names = append(names, bot.Name)
+	}
+	return names
 }
 
 // positive reports msg for the key at path when it is set and not above zero.
@@ -232,7 +247,7 @@ func trackerSection(n *yaml.Node, cfg *Config) (Decode, error) {
 	if err := decodeFields(own, reflect.ValueOf(&engine).Elem()); err != nil {
 		return nil, err
 	}
-	cfg.Tracker, cfg.Bot = engine.Name, crew.BotName(engine.Bot)
+	cfg.Tracker, cfg.Bot = engine.Name, crew.Bot{Name: crew.BotName(engine.Bot)}
 	return bind("tracker", rest), nil
 }
 

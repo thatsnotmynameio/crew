@@ -97,7 +97,7 @@ type handledEntry struct {
 // actionRun is one action of a held issue.
 type actionRun struct {
 	name      crew.ActionName
-	prompt    string
+	prompt    string // its prompt rendered for the issue, once it starts
 	phase     Phase
 	workspace crew.WorkspaceName
 	dir       string

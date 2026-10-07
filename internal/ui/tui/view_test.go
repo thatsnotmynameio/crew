@@ -42,7 +42,7 @@ func TestDurationsFormatInWholeSecondsMinutesAndHours(t *testing.T) {
 // A written board (KTD9): #20 held and running in bugs, #21 unheld in
 // ideas and bugs, #22 in done, while the last board read failed.
 func TestAWrittenBoardRendersTheGoldenView(t *testing.T) {
-	h := newBoardHarness(t, 80, crewRules, ideasBugsDone)
+	h := newBoardHarness(t, 80, crewNotify, ideasBugsDone)
 	u := onBoard(held(twenty, "fix", "lfg", core.ClaimRunning),
 		labeled(twentyOne, "crew:brainstorm:ready", "bug"), labeled(twenty, "bug"),
 		labeled(twentyTwo, "crew:triage:done"))

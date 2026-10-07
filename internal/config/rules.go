@@ -1,7 +1,6 @@
 package config
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -50,6 +49,7 @@ type parsedRule struct {
 
 	path   string
 	labels labelsDoc
+	notify bool
 }
 
 // ruleEnv is what the rules' names resolve against: the queues, the agents,
@@ -58,21 +58,22 @@ type ruleEnv struct {
 	queues queueTable
 	agents []Agent
 	checks map[crew.CheckName]string
-	bot    crew.BotName
+	bot    crew.Bot
 }
 
 // rules decodes and validates rules:, resolving each rule's queue and each
-// action's agent, check and bot in env. It reports every error it finds.
-func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, error) {
+// action's agent, check and bot in env. It returns the rules, and whether
+// each notifies, by name. It reports every error it finds.
+func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, map[crew.RuleName]bool, error) {
 	if n.Kind == 0 {
-		return nil, errors.New("rules: missing; write at least one rule")
+		return nil, nil, errors.New("rules: missing; write at least one rule")
 	}
 	section, err := named(n, "rules")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(section) == 0 {
-		return nil, keyError("rules", n.Line, "write at least one rule")
+		return nil, nil, keyError("rules", n.Line, "write at least one rule")
 	}
 	var errs []error
 	parsed := make([]parsedRule, 0, len(section))
@@ -85,17 +86,18 @@ func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, error) {
 		parsed = append(parsed, rule)
 	}
 	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+		return nil, nil, errors.Join(errs...)
 	}
 	spellOnce(parsed)
 	if err := checkGraph(parsed); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make([]crew.Rule, len(parsed))
+	notify := make(map[crew.RuleName]bool, len(parsed))
 	for i, p := range parsed {
-		out[i] = p.Rule
+		out[i], notify[p.Name] = p.Rule, p.notify
 	}
-	return out, nil
+	return out, notify, nil
 }
 
 // parseRule decodes and checks the rule e, reporting every error it finds.
@@ -112,9 +114,9 @@ func parseRule(e entry, env ruleEnv) (parsedRule, error) {
 	p.Queue, queueErr = ruleQueue(doc.Queue, e.path, env.queues)
 	p.Takes, takesErr = ruleTakes(doc.Takes, e.path)
 	p.Actions, actionsErr = actions(&doc.Actions, e.path+".actions", env)
-	p.Notify = hasActions
+	p.notify = hasActions
 	if doc.Notify.line != 0 {
-		p.Notify = doc.Notify.value
+		p.notify = doc.Notify.value
 	}
 	return p, errors.Join(labelsErr, queueErr, takesErr, actionsErr)
 }
@@ -188,23 +190,25 @@ func parseAction(e entry, env ruleEnv) (crew.Action, error) {
 	if err := decodeItem(e.value, e.path, actionShape, &doc); err != nil {
 		return crew.Action{}, err
 	}
-	prompt, promptErr := required(doc.Prompt, e.path+".prompt", e.key.Line)
+	text, promptErr := required(doc.Prompt, e.path+".prompt", e.key.Line)
 	agent, agentErr := env.agent(doc.Agent, e.path+".agent", e.key.Line)
 	checks, checkErr := env.resolveChecks(&doc.Check, e.path+".check")
 	if err := errors.Join(promptErr, agentErr, checkErr); err != nil {
 		return crew.Action{}, err
 	}
-	action := crew.Action{
-		Name: crew.ActionName(e.key.Value), Prompt: prompt, Agent: agent.Name, Checks: checks,
-		Bot: cmp.Or(agent.Bot, env.bot),
-	}
-	if _, err := action.Render(sampleIssue()); err != nil {
+	name := crew.ActionName(e.key.Value)
+	prompt, err := crew.ParsePrompt(name, text)
+	if err != nil {
 		return crew.Action{}, keyError(e.path+".prompt", doc.Prompt.line, err.Error())
 	}
-	if err := retiredVariables(prompt, e.path+".prompt", doc.Prompt.line); err != nil {
+	if err := retiredVariables(text, e.path+".prompt", doc.Prompt.line); err != nil {
 		return crew.Action{}, err
 	}
-	return action, nil
+	bot := env.bot
+	if agent.Bot != "" {
+		bot = crew.Bot{Name: agent.Bot}
+	}
+	return crew.Action{Name: name, Prompt: prompt, Agent: agent.Agent, Checks: checks, Bot: bot}, nil
 }
 
 // agent returns the agent an action names in l, at path, whose key is on
@@ -289,12 +293,6 @@ func (env ruleEnv) check(n *yaml.Node, path string) (crew.Check, error) {
 	}
 	return crew.Check{}, keyError(path, n.Line, fmt.Sprintf("check %q does not exist; the checks are %s",
 		n.Value, strings.Join(sortedKeys(env.checks), ", ")))
-}
-
-// sampleIssue is the issue every prompt is rendered for at load, so a bad
-// template stops crew before polling rather than when an issue is taken.
-func sampleIssue() crew.Issue {
-	return crew.Issue{ID: crew.IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
 }
 
 // spellOnce gives every label the spelling it first has in the rules, in

@@ -55,11 +55,11 @@ type ownRule struct {
 // replaced triage in #160, while no issue was in a triage state.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadOwn(t)
-	if got, want := ownRules(cfg.Rules), wantOwnRules(); !reflect.DeepEqual(got, want) {
+	if got, want := ownRules(cfg.Rules, cfg.Notify), wantOwnRules(); !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
 	wantBots := []crew.BotName{"clerk", "product-manager", "developer"}
-	if cfg.Bot != "clerk" || !reflect.DeepEqual(cfg.Bots, wantBots) {
+	if cfg.Bot.Name != "clerk" || !reflect.DeepEqual(cfg.BotNames(), wantBots) {
 		t.Errorf("Bot = %q, Bots = %q; want clerk, %q", cfg.Bot, cfg.Bots, wantBots)
 	}
 	columns := make([]string, 0, len(cfg.Board))
@@ -91,7 +91,7 @@ const (
 // its check fails a split that stopped before that (#160).
 func TestTheRefineActionSplitsBeforeFindingBlockers(t *testing.T) {
 	refine := loadOwn(t).Rules[1].Actions[0]
-	prompt := refine.Prompt
+	prompt := refine.Prompt.Text()
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	if split < 0 || split > strings.Index(prompt, "dependencies/blocked_by") {
 		t.Errorf("the prompt does not run /cw-split-plan before it reads dependencies:\n%s", prompt)
@@ -119,7 +119,7 @@ func TestTheRefinePromptAndTheSplitSkillAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt := loadOwn(t).Rules[1].Actions[0].Prompt
+	prompt := loadOwn(t).Rules[1].Actions[0].Prompt.Text()
 	for _, want := range splitOutcomes {
 		if !strings.Contains(string(skill), want) || !strings.Contains(prompt, want) {
 			t.Errorf("the skill and the refine prompt do not both name the outcome %s", want)
@@ -144,7 +144,7 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	if !strings.Contains(string(skill), "name: cw-rank-blockers") {
 		t.Errorf("the skill the refine prompt runs is not cw-rank-blockers")
 	}
-	prompt := loadOwn(t).Rules[1].Actions[0].Prompt
+	prompt := loadOwn(t).Rules[1].Actions[0].Prompt.Text()
 	split := strings.Index(prompt, "/cw-split-plan {{.Issue.Ref}}")
 	rank := strings.Index(prompt, "/cw-rank-blockers")
 	record := strings.Index(prompt, "dependencies/blocked_by -F")
@@ -219,14 +219,14 @@ func checkNames(checks []crew.Check) string {
 	return fmt.Sprint(names)
 }
 
-// ownRules sums rules up as ownRule.
-func ownRules(rules []crew.Rule) []ownRule {
+// ownRules sums rules up as ownRule, with each rule's notify.
+func ownRules(rules []crew.Rule, notify map[crew.RuleName]bool) []ownRule {
 	out := make([]ownRule, len(rules))
 	for i, r := range rules {
-		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: r.Notify}
+		out[i] = ownRule{name: r.Name, labels: r.Labels, queue: r.Queue, notify: notify[r.Name]}
 		for _, a := range r.Actions {
 			out[i].actions = append(out[i].actions,
-				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent, a.Bot, checkNames(a.Checks)))
+				fmt.Sprintf("%s: agent %s, bot %s, checks %s", a.Name, a.Agent.Name, a.Bot.Name, checkNames(a.Checks)))
 		}
 	}
 	return out
