@@ -48,15 +48,15 @@ A check runs only after a successful session, never after a failed one. It reads
 
 ### Rule run
 
-One pass of an issue through one rule, from the first time crew reports the issue queued for that rule or takes it, until the next rule run of that issue starts.
+One pass of an issue through one rule, from the moment crew takes the issue for that rule until the next rule run of that issue starts.
 
-An issue that is retried in the same rule starts a new rule run. A rule run belongs to one crew process: a rule run cut short by a crash is never continued, and the next one is new, even when its actions resume.
+An issue that the same rule takes again starts a new rule run, with its own id, which continues that issue and rule's last rule run: crew rebuilds that run from the run journal, even when an earlier crew process left it. A rule run never goes on in another crew process: one cut short by a crash stays as the journal left it, and the next one can resume its failed actions.
 
 Each rule run has an id that no other rule run has, in any repository or crew process. The status comment entry a rule run opens carries that id.
 
 ### Action run
 
-One attempt at an action on an issue, from the moment its workspace is ready until the action ends, its check included. An action run succeeds or fails; one that never recorded its end, because crew crashed or was killed, counts as failed.
+One attempt at an action on an issue, within a rule run, from the moment its workspace is ready until the action ends, its check included. An action run succeeds or fails; one that never recorded its end, because crew crashed or was killed, counts as failed.
 
 ### Workspace
 
@@ -98,9 +98,9 @@ Resuming is triggered only by the rule's ready label going back on the issue; cr
 
 ### Run journal
 
-crew's local, append-only record of every action run's start and end, which lets crew know after a restart which action runs failed and so which actions resume.
+crew's local, append-only record of every rule run's events, one line each, such as its take, its actions' starts and ends and its verdict. After a restart it tells crew how each issue's last rule run in each rule went, which action runs failed and so which actions resume.
 
-Its lines keep the key `stage` for the rule's name, the wire name of earlier versions, so their journals still resume.
+It still reads the lines older versions wrote, which recorded only each action run's start and end, so an action that failed before an upgrade still resumes. Its lines keep the key `stage` for the rule's name, the wire name of earlier versions.
 
 ## Reporting
 
@@ -182,7 +182,7 @@ A new use of TypeSafe is a new question in the bank. Any change to a question's 
 
 The judge's local, append-only record, one per repository and written only by its service, of every question asked, every answer, what the caller did with it and what really happened.
 
-It replays the first recorded answer when the same question version and state are asked again. Unlike the run journal, it records judgments, not action runs.
+It replays the first recorded answer when the same question version and state are asked again. Unlike the run journal, it records judgments, not rule runs.
 
 ### Question stage
 

@@ -39,7 +39,7 @@ The engine reads both right after the core is built and on every said tick, and 
 
 **Send the change through the core as events.** The core keeps each mate's problems and emits `MateStopped` or `MateActsAgain` only on a change of state. `--plain` reads the ordered queue, and only `e.step` publishes to it. `refreshSaid`'s `publishLatest` (`internal/engine/engine.go:432`) reaches the TUI alone. The board's read failure stays out of Events on purpose, so `--plain` never prints it. A mate that stops acting must be an event, because `--plain` must print it.
 
-**Credit per-identity totals where the run total is credited.** `step.end` adds an action's spend to its identity on the line after `m.spent` (`internal/core/action.go:186`), so the Mates entries always sum to the header. Summing from `View.Handled` would undercount, because a later stage run replaces an issue's entry (see `docs/solutions/logic-errors/handled-drops-issue-a-stage-holds-again.md`).
+**Credit per-identity totals where the run total is credited.** `actionEnded` adds an action's spend to its identity beside `m.spent` (`internal/core/runs.go`), so the Mates entries always sum to the header. Summing from `View.Handled` would undercount, because a later stage run replaces an issue's entry (see `docs/solutions/logic-errors/handled-drops-issue-a-stage-holds-again.md`).
 
 ## Why This Matters
 
