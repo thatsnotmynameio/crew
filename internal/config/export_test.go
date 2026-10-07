@@ -35,6 +35,7 @@ type section struct {
 // the config package decodes it, by key path.
 var sections = map[string]section{
 	"queues":               {named: true},
+	"answering_apps":       {},
 	"tracker":              {items: item[trackerDoc](), open: true},
 	"agents":               {items: item[agentDoc](), named: true},
 	"agents.*.harness":     {items: item[harnessDoc](), open: true},

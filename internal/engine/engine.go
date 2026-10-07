@@ -98,6 +98,10 @@ type Config struct {
 	// or not they act: the tracker takes the items they opened, and every
 	// session and script gets them as CREW_BOTS.
 	BotLogins []string
+	// AnsweringApps are the logins of the Apps whose comments answer a
+	// session's question: the config's answering_apps, or BotLogins when
+	// it writes none (R38, KTD-W4).
+	AnsweringApps []string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
 	DefaultBot crew.BotName

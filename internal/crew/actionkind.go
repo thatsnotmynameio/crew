@@ -1,5 +1,7 @@
 package crew
 
+import "time"
+
 // ActionKind is what an action runs: SessionSpec or ShellSpec.
 //
 //sumtype:decl
@@ -16,6 +18,10 @@ type SessionSpec struct {
 	// Bot is the bot the session acts as on the tracker: its agent's, or
 	// the tracker's when the agent names none. The zero Bot is you.
 	Bot Bot
+	// Wait is how long the session waits for an answer to a question it
+	// asks on the issue before it ends as Waiting: its wait, 10 minutes by
+	// default (R20).
+	Wait time.Duration
 }
 
 // ShellSpec is an action that runs one shell script.

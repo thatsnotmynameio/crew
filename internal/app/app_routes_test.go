@@ -71,14 +71,12 @@ func TestARouteStepTheTrackerCanTakeStarts(t *testing.T) {
 }
 
 // R14: the labels a route moves to are crew's states, which the tracker
-// prepares, as it does the rules' ready and running labels.
+// prepares, as it does the rules' ready and running labels. A session that
+// may wait needs a tracker that lists comments (KTD-W5).
 func TestTheTrackerPreparesTheLabelsTheRoutesMoveTo(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tr := fake.NewPreparingTracker()
-		body := strings.Replace(oneAction, `{{.Issue.Ref}}"`+"\n",
-			`{{.Issue.Ref}}"`+"\n        on: {waiting: waiting-answer}\n", 1) +
-			"      waiting-answer: waiting answer\n"
-		r := options(t, body, tr, fake.NewHarness())
+		tr := fake.NewRoutingTracker()
+		r := options(t, mayWait(), tr, fake.NewHarness())
 		r.start()
 		synctest.Wait()
 		r.signals <- syscall.SIGTERM

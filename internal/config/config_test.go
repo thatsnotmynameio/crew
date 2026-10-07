@@ -101,10 +101,12 @@ func passedRoute(label crew.State) crew.Route {
 }
 
 // session is the session action name runs on agent with text as its prompt,
-// acting as no bot.
+// acting as no bot and waiting the default 10 minutes.
 func session(t *testing.T, name crew.ActionName, agent crew.Agent, text string) crew.Action {
 	t.Helper()
-	return crew.Action{Name: name, Kind: crew.SessionSpec{Agent: agent, Prompt: parsedPrompt(t, name, text)}}
+	return crew.Action{Name: name, Kind: crew.SessionSpec{
+		Agent: agent, Prompt: parsedPrompt(t, name, text), Wait: 10 * time.Minute,
+	}}
 }
 
 // draftRules are the rules testdata/draft's config loads into.

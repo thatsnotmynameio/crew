@@ -28,6 +28,16 @@
       "type": "boolean",
       "default": false
     },
+    "answering_apps": {
+      "description": "The Apps whose comments answer a question a session asks on its issue, by login, <slug>[bot]: GitHub lets an App comment only where it is installed. The code owners always answer; collaborators and other Apps do not. Without it, crew's own bots answer; a list replaces them, and [] has no App answer. github-actions[bot] never answers, since any workflow can post anyone's text as it, and crew refuses a list that names it.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^.+\\[[bB][oO][tT]\\]$",
+        "not": { "pattern": "^[gG][iI][tT][hH][uU][bB]-[aA][cC][tT][iI][oO][nN][sS]\\[[bB][oO][tT]\\]$" }
+      },
+      "examples": [["claude[bot]"]]
+    },
     "queues": {
       "description": "Queues by name, each with its slots. A queue's slots are only for the rules that name it, so a long session never holds up a quick rule of another queue. The default queue, which crew always has, gets the slots max_parallel_issues leaves, and runs every rule that names no queue. A queue cannot be called default.",
       "type": "object",
@@ -210,6 +220,12 @@
                       "description": "The action's name in the rule, unique there: in its log, its workspace and its reports. By default, a session's agent's name, or the name of the action it names.",
                       "type": "string",
                       "minLength": 1
+                    },
+                    "wait": {
+                      "description": "How long the session waits for an answer to a question it asks on the issue, as a Go duration such as 10m or 1h30m, before it ends as waiting. Must be positive. 10m by default.",
+                      "type": "string",
+                      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                      "default": "10m"
                     },
                     "on": {
                       "description": "The action's verdicts, each to next, which runs the next action, or to the name of one of the rule's routes, which ends the run there. Without an entry, passed goes to next and every other verdict to failed.",

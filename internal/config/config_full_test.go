@@ -17,7 +17,7 @@ import (
 const translation = "testdata/translation"
 
 // ruleSummary is how a rule loads, its actions summed up as "session S:
-// agent A, bot B" or "shell S", each followed by its on as "; verdict to
+// agent A, bot B, wait W" or "shell S", each followed by its on as "; verdict to
 // target", and its routes as "route: step, step".
 type ruleSummary struct {
 	name    crew.RuleName
@@ -29,11 +29,11 @@ type ruleSummary struct {
 }
 
 // A full config loads its rules with their labels, queues, notify, actions
-// and routes: each session with its agent and its bot, each shell action by
-// name, each action's on, each route's steps in order; its tracker's bot and
-// every agent's; its board, one column per rule with actions when it sets
-// none; its shell actions' scripts, verdicts and resume; and its prompts as
-// they are written.
+// and routes: each session with its agent, its bot and its wait, each shell
+// action by name, each action's on, each route's steps in order; its
+// tracker's bot and every agent's; its board, one column per rule with
+// actions when it sets none; its shell actions' scripts, verdicts and
+// resume; and its prompts as they are written.
 func TestAFullConfigLoads(t *testing.T) {
 	cfg, err := config.Load(translation, "")
 	if err != nil {
@@ -77,6 +77,18 @@ func TestAFullConfigLoads(t *testing.T) {
 	}
 }
 
+// A full config loads its answering list as written (R38).
+func TestAFullConfigLoadsItsAnsweringApps(t *testing.T) {
+	cfg, err := config.Load(translation, "")
+	if err != nil {
+		t.Fatalf("Load(%s) = %v", translation, err)
+	}
+	want := []string{"glossary-keeper[bot]", "linguist[bot]"}
+	if !reflect.DeepEqual(cfg.AnsweringApps, want) || !cfg.AnsweringAppsWritten {
+		t.Errorf("AnsweringApps = %q (written %v), want %q", cfg.AnsweringApps, cfg.AnsweringAppsWritten, want)
+	}
+}
+
 // wantTranslationRules are the rules testdata/translation's config loads
 // into, in file order.
 func wantTranslationRules() []ruleSummary {
@@ -90,7 +102,7 @@ func wantTranslationRules() []ruleSummary {
 			name: "translation", queue: crew.Queue{Name: "translators", Slots: 2}, notify: true,
 			labels: crew.Labels{Ready: "translation:to do", Running: "translation:drafting"},
 			actions: []string{
-				"session draft: agent translator, bot linguist",
+				"session draft: agent translator, bot linguist, wait 30m0s",
 				"shell glossary-kept",
 				"shell draft-pushed; unpushed to unpushed",
 			},
@@ -105,9 +117,9 @@ func wantTranslationRules() []ruleSummary {
 			name: "proofreading", queue: crew.Queue{Name: "default", Slots: 1},
 			labels: crew.Labels{Ready: "translation:drafted", Running: "translation:proofreading"},
 			actions: []string{
-				"session proofread: agent proofreader, bot concierge; failed to rejected",
+				"session proofread: agent proofreader, bot concierge, wait 10m0s; failed to rejected, waiting to next",
 				"shell glossary-kept",
-				"session translator: agent translator, bot linguist",
+				"session translator: agent translator, bot linguist, wait 10m0s",
 			},
 			routes: []string{
 				"passed: move translation:published",
@@ -153,7 +165,7 @@ func summarize(rules []crew.Rule, notify map[crew.RuleName]bool) []ruleSummary {
 			var action string
 			switch k := a.Kind.(type) {
 			case crew.SessionSpec:
-				action = fmt.Sprintf("session %s: agent %s, bot %s", a.Name, k.Agent.Name, k.Bot.Name)
+				action = fmt.Sprintf("session %s: agent %s, bot %s, wait %v", a.Name, k.Agent.Name, k.Bot.Name, k.Wait)
 			case crew.ShellSpec:
 				action = fmt.Sprintf("shell %s", a.Name)
 			}
