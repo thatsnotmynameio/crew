@@ -457,3 +457,27 @@ func TestCheckerScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
 
 // issueID returns the id of the issue keyed key, in no repository.
 func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
+
+func TestJournalLoadsItsPastThenWhatWasAppendedUntilItsAppendsFail(t *testing.T) {
+	h := crew.EventHead{Run: "run-1", IssueID: issueID("1"), IssueRef: "#1", Rule: "implement"}
+	past := crew.RunStopped{EventHead: h}
+	j := fake.NewJournal(past)
+	appended := crew.RunReleased{EventHead: h}
+	if err := j.Append(appended); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	full := errors.New("disk full")
+	j.FailAppends(full)
+	if err := j.Append(crew.FailureReported{EventHead: h}); !errors.Is(err, full) {
+		t.Fatalf("Append = %v, want the failure set", err)
+	}
+
+	if got := j.Appended(); !reflect.DeepEqual(got, []crew.RunEvent{appended}) {
+		t.Errorf("Appended = %#v, want the one append that did not fail", got)
+	}
+	got, err := j.Load("repo")
+	if want := []crew.RunEvent{past, appended}; err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Load = %#v, %v, want the past then the append", got, err)
+	}
+}

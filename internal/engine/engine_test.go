@@ -88,8 +88,8 @@ type rig struct {
 	queue *engine.Queue
 }
 
-// config returns a config over tracker for rules, with a fake harness and
-// workspace, rooted in a fresh repository directory.
+// config returns a config over tracker for rules, with a fake harness,
+// workspace and run journal, rooted in a fresh repository directory.
 func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Config {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "home", "repo")
@@ -104,6 +104,7 @@ func config(t *testing.T, tracker port.Tracker, rules ...crew.Rule) engine.Confi
 		Tracker:           tracker,
 		Harnesses:         harnesses(fake.NewHarness()),
 		Workspace:         fake.NewWorkspace(worktrees),
+		Journal:           fake.NewJournal(),
 		Root:              root,
 		Home:              filepath.Dir(root),
 	}

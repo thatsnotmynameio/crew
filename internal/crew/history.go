@@ -7,8 +7,9 @@ const crashedReason = "crew stopped before the run ended: it crashed or was kill
 // History is the past of the rule runs, folded from their events in the
 // order they happened, replayed from a journal or live: for each issue and
 // rule its last run, rebuilt with Apply, and for each of their actions the
-// last action run that had a workspace. It retires nothing: which workspace
-// another action has since started in is the core's to know.
+// last action run that had a workspace. It retires nothing by itself:
+// which workspace another action has since started in is the core's to
+// know, and the core has it Forget the action run that workspace held.
 //
 // The zero History holds no past. Fold changes it, so the one that holds it
 // is the one that folds every event; its accessors return copies.
@@ -84,6 +85,14 @@ func (h *History) ResumePoints(issue IssueID, rule RuleName) map[ActionName]Resu
 		}
 	}
 	return points
+}
+
+// Forget drops the last action run of action, in rule on issue: another
+// action has since started in its workspace, which no longer holds its
+// work. The action then has no resume point, and its next start carries no
+// reason from before.
+func (h *History) Forget(issue IssueID, rule RuleName, action ActionName) {
+	delete(h.actions[ruleKey{issue: issue, rule: rule}], action)
 }
 
 // opened makes e's action run its action's last one. It carries the reason

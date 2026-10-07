@@ -101,12 +101,13 @@ type ReopenWorkspace struct {
 	Branch    string
 }
 
-// RecordRun asks the engine to append Record to the run journal (KTD1). The
-// engine writes records in the order the core asks for them; a write that
-// fails comes back as RecordFailed. The core asks only when it records runs
-// (RecordingRuns).
-type RecordRun struct {
-	Record RunRecord
+// Record asks the engine to append Event, a run event, to the run journal
+// (KTD12). It comes before the commands Event calls for, so an action's
+// start is in the journal before its session starts. The engine appends
+// events in the order the core asks for them; an append that fails comes
+// back as RecordFailed. The core asks only when it journals (Journaling).
+type Record struct {
+	Event crew.RunEvent
 }
 
 // StartSession asks the harness to start the session of Action of the rule
@@ -208,7 +209,7 @@ func (ReportStatus) command()       {}
 func (ReportPullRequests) command() {}
 func (CreateWorkspace) command()    {}
 func (ReopenWorkspace) command()    {}
-func (RecordRun) command()          {}
+func (Record) command()             {}
 func (StartSession) command()       {}
 func (StopSession) command()        {}
 func (RunCheck) command()           {}
@@ -224,7 +225,7 @@ func (ReportPullRequests) trackerCommand() {}
 
 func (CreateWorkspace) runCommand() {}
 func (ReopenWorkspace) runCommand() {}
-func (RecordRun) runCommand()       {}
+func (Record) runCommand()          {}
 func (StartSession) runCommand()    {}
 func (StopSession) runCommand()     {}
 func (RunCheck) runCommand()        {}

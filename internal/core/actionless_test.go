@@ -60,7 +60,7 @@ func triaged(d *driver, outcome crew.Outcome) {
 func takePromoted(d *driver) []core.Command {
 	d.t.Helper()
 	cmds, _ := d.poll(issue("1", 1, triageDone))
-	wantCommands(d.t, cmds, core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
+	wantCommands(d.t, unrecorded(cmds), core.Move{IssueID: issueID("1"), From: triageDone, To: triagePromoting})
 	return cmds
 }
 
@@ -182,16 +182,21 @@ func TestARuleWithoutActionsWritesItsStatusWithNoActionLines(t *testing.T) {
 	}
 }
 
-func TestARuleWithoutActionsWritesNoJournalLine(t *testing.T) {
-	d := &driver{t: t, m: core.New(promoted(), 2, core.RecordingRuns(nil)), now: t0}
+// Its run events are journaled, but none is an action's start or end, so
+// none whose append fails says so.
+func TestARuleWithoutActionsReportsNoRecordNotWritten(t *testing.T) {
+	d := &driver{t: t, m: core.New(promoted(), 2, core.Journaling(nil)), now: t0}
 	take := takePromoted(d)
 	verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
-	released, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+	wantHeld(t, d.m)
 
-	for _, c := range append(verdict, released...) {
-		if r, ok := c.(core.RecordRun); ok {
-			t.Fatalf("journal line written: %#v", r)
+	if len(d.recorded) == 0 {
+		t.Fatal("no run event journaled")
+	}
+	for _, e := range d.recorded {
+		if _, events := d.send(core.RecordFailed{Event: e, Reason: "disk full"}); len(events) != 0 {
+			t.Errorf("%T not written: events %#v, want none", e, events)
 		}
 	}
-	wantHeld(t, d.m)
 }

@@ -14,8 +14,10 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/thatsnotmynameio/crew/internal/adapter/jsonl"
 	"github.com/thatsnotmynameio/crew/internal/app"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
@@ -131,6 +133,9 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
+// testRun is the crew run the tests' run journals name on every line.
+const testRun = "2026-10-07T09:00:00Z"
+
 // crewRun is one run of app.Run against the fakes.
 type crewRun struct {
 	opts    app.Options
@@ -161,6 +166,7 @@ func options(t *testing.T, body string, tracker port.Tracker, harness port.Harne
 		Workspace: func(root string) port.Workspace {
 			return fake.NewWorkspace(filepath.Join(root, ".crew", "worktrees"))
 		},
+		Journal: func(root string) port.Journal { return jsonl.New(root, engine.JournalPath, testRun) },
 		Root:    root,
 		Home:    filepath.Dir(root),
 		Stdout:  r.stdout,

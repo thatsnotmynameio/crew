@@ -9,17 +9,13 @@ import (
 // plumbing is what one live action run's session and checks need that is
 // neither run state nor in any run event (KTD-P5): the workspace's
 // directory and the log's path from it, the rendered prompt, the session's
-// last message and what it last said, and its key's run record from before
-// its workspace was ready.
+// last message and what it last said.
 type plumbing struct {
 	dir         string
 	logFromDir  string
 	prompt      string
 	lastMessage string
 	said        crew.Said
-	// prev is the key's last run record when the action's workspace was
-	// ready; nil when there was none.
-	prev *RunRecord
 }
 
 // plumb returns the plumbing of h's action named name, made on first use.
@@ -147,8 +143,9 @@ func (s *step) decisions(h *heldIssue, fact crew.Fact) ([]crew.RunEvent, bool) {
 	return events, err == nil
 }
 
-// apply applies events to h's run, in order, and after each issues the
-// commands it calls for and publishes it when the views word it (KTD-P6).
+// apply applies events to h's run, in order, and after each records it,
+// then issues the commands it calls for and publishes it when the views
+// word it (KTD-P6).
 func (s *step) apply(h *heldIssue, events []crew.RunEvent) {
 	for _, e := range events {
 		run, err := crew.Apply(h.run, e)
@@ -157,6 +154,7 @@ func (s *step) apply(h *heldIssue, events []crew.RunEvent) {
 			return
 		}
 		h.run = run
+		s.record(e)
 		s.on(h, e)
 	}
 }
@@ -203,8 +201,6 @@ func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
 		s.workspaceAsked(h, e)
 	case crew.WorkspaceMissing:
 		s.emit(e)
-	case crew.ActionOpened:
-		s.recordOpened(h, e)
 	case crew.ActionSessionAsked:
 		s.startSession(h, e.Action)
 	case crew.ActionSessionStarted:
@@ -219,9 +215,9 @@ func (s *step) onAction(h *heldIssue, e crew.RunEvent) {
 		s.command(StopCheck{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.ActionSessionEnded, crew.ActionCheckEnded,
-		crew.ActionLookupDone, crew.ActionFinishing, crew.RunJudged, crew.VerdictMoved, crew.VerdictDropped,
-		crew.FailureReported, crew.FailureReportDropped, crew.RunReleased:
+	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.ActionOpened, crew.ActionSessionEnded,
+		crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing, crew.RunJudged, crew.VerdictMoved,
+		crew.VerdictDropped, crew.FailureReported, crew.FailureReportDropped, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }
@@ -293,14 +289,12 @@ func (s *step) runCheck(h *heldIssue, name crew.ActionName) {
 }
 
 // actionEnded credits what the action's session spent to the run's total
-// and its identity's (R14, KTD4), records the action run's end and
-// publishes it.
+// and its identity's (R14, KTD4) and publishes the action run's end.
 func (s *step) actionEnded(h *heldIssue, e crew.ActionEnded) {
 	m := s.m
 	a, _ := h.run.Action(e.Action)
 	m.spent = m.spent.Add(a.Spend())
 	m.bots.credit(m.bots.identity(m.action(h, e.Action).Bot.Name), a.Spend())
-	s.recordEnded(h, e)
 	s.emit(e)
 }
 

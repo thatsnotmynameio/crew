@@ -29,8 +29,9 @@ type Event interface {
 	event()
 }
 
-// RunNotRecorded is a run record the engine could not write to the run
-// journal. After a restart, crew may not know how that run ended.
+// RunNotRecorded is an action run's start or end the engine could not
+// append to the run journal. After a restart, crew may not know how that
+// action run ended.
 type RunNotRecorded struct {
 	At       time.Time
 	IssueID  crew.IssueID

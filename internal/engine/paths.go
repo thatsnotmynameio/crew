@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +14,11 @@ import (
 
 // logDir is where session logs go, relative to the repository root (KTD12).
 const logDir = ".crew/logs"
+
+// JournalPath is where the run journal goes, relative to the repository
+// root, with slashes (KTD12). It sits with the logs its events point to,
+// under a directory crew's ignore rules already cover.
+const JournalPath = logDir + "/runs.jsonl"
 
 // The permissions of the log directory and of the files in it: logs hold
 // what sessions printed, so only you read them.
@@ -170,4 +177,40 @@ func nameByte(c byte) bool {
 // pathByte reports whether c can appear inside a path.
 func pathByte(c byte) bool {
 	return c == '/' || nameByte(c)
+}
+
+// appendLine appends data to f, a file opened for reading and appending, as
+// a line of its own.
+func appendLine(f *os.File, data []byte) error {
+	if err := startLine(f); err != nil {
+		return err
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("append the line: %w", err)
+	}
+	return nil
+}
+
+// startLine makes the next write to f, a file opened for reading and
+// appending, start on a line of its own: when f ends in the middle of a
+// line, as after a crash during a write, it writes a newline first.
+func startLine(f *os.File) error {
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("find the end of the last line: %w", err)
+	}
+	if info.Size() == 0 {
+		return nil
+	}
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, info.Size()-1); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("find the end of the last line: %w", err)
+	}
+	if last[0] == '\n' {
+		return nil
+	}
+	if _, err := f.Write([]byte{'\n'}); err != nil {
+		return fmt.Errorf("end the last line: %w", err)
+	}
+	return nil
 }

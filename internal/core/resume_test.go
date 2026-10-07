@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -43,27 +44,41 @@ func crewRules() []crew.Rule {
 	}
 }
 
-// resumeDriver drives a model that records runs, starting from past, and
+// resumeDriver drives a model that journals runs, starting from past, and
 // can reopen workspaces.
-func resumeDriver(t *testing.T, past ...core.RunRecord) *driver {
+func resumeDriver(t *testing.T, past ...crew.RunEvent) *driver {
 	t.Helper()
-	return &driver{t: t, m: core.New(crewRules(), 2, core.RecordingRuns(past), core.Reopening()), now: t0}
+	return &driver{t: t, m: core.New(crewRules(), 2, core.Journaling(past), core.Reopening()), now: t0}
 }
 
-// startedRun is the start record of a run of action in rule on issue key,
-// in the workspace the engine would name issue-<key>-<workspace>.
-func startedRun(key string, rule crew.RuleName, action crew.ActionName, workspace string) core.RunRecord {
+// pastRun is the id of the past run of rule on issue key.
+func pastRun(key string, rule crew.RuleName) crew.RuleRunID {
+	return crew.RuleRunID("past-" + string(rule) + "-" + key)
+}
+
+// startedRun is the start of an action run of action in rule on issue key,
+// in the past run of the rule on the issue, in the workspace the engine
+// would name issue-<key>-<workspace>.
+func startedRun(key string, rule crew.RuleName, action crew.ActionName, workspace string) crew.ActionOpened {
 	name := "issue-" + key + "-" + workspace
-	return core.RunRecord{
-		Event: core.RunStarted, At: t0, IssueID: issueID(key), IssueRef: "#" + key, Rule: rule, Action: action,
-		Workspace: crew.WorkspaceName(name), Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
+	return crew.ActionOpened{
+		Run: pastRun(key, rule), At: t0, IssueID: issueID(key), IssueRef: "#" + key, Rule: rule,
+		Action: action, Workspace: crew.Workspace{Name: crew.WorkspaceName(name), Branch: "crew/" + name},
+		Log: ".crew/logs/" + name + ".log",
 	}
 }
 
-func endedRun(r core.RunRecord, outcome crew.Outcome) core.RunRecord {
-	r.Event = core.RunEnded
-	r.Succeeded, r.Reason = outcome.Succeeded, outcome.Reason
-	return r
+// endedRun is the end of the action run r started, after a session, with
+// outcome.
+func endedRun(r crew.ActionOpened, outcome crew.Outcome) crew.ActionEnded {
+	var end crew.ActionEnd = crew.EndFailed{Reason: outcome.Reason}
+	if outcome.Succeeded {
+		end = crew.EndSucceeded{Reason: outcome.Reason}
+	}
+	return crew.ActionEnded{
+		EventHead: r.EventHead, Action: r.Action, End: end, SessionStarted: crew.Some(r.At),
+		Workspace: crew.Some(crew.OpenedWorkspace{Workspace: r.Workspace, Log: r.Log, Opened: r.At}),
+	}
 }
 
 // take lists iss, answers its take move and returns the commands that
@@ -105,23 +120,45 @@ func startOf(t *testing.T, cmds []core.Command) core.StartSession {
 	return core.StartSession{}
 }
 
-// records returns the records the RecordRun commands in cmds carry.
-func records(cmds []core.Command) []core.RunRecord {
-	var out []core.RunRecord
+// records returns the events the Record commands in cmds carry.
+func records(cmds []core.Command) []crew.RunEvent {
+	var out []crew.RunEvent
 	for _, c := range cmds {
-		if r, ok := c.(core.RecordRun); ok {
-			out = append(out, r.Record)
+		if r, ok := c.(core.Record); ok {
+			out = append(out, r.Event)
 		}
 	}
 	return out
 }
+
+// ends returns the action runs' ends the Record commands in cmds carry.
+func ends(cmds []core.Command) []crew.ActionEnded {
+	var out []crew.ActionEnded
+	for _, e := range records(cmds) {
+		if ended, ok := e.(crew.ActionEnded); ok {
+			out = append(out, ended)
+		}
+	}
+	return out
+}
+
+// unrecorded returns cmds without their Record commands.
+func unrecorded(cmds []core.Command) []core.Command {
+	return slices.DeleteFunc(slices.Clone(cmds), func(c core.Command) bool {
+		_, ok := c.(core.Record)
+		return ok
+	})
+}
+
+// reasonOf returns the reason of the action run's end e.
+func reasonOf(e crew.ActionEnded) string { return e.End.Outcome().Reason.String() }
 
 func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 	failedRun := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("no pull request was found"))
 	d := resumeDriver(t, startedRun("9", "development", "lfg", "lfg"), failedRun)
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, cmds, core.ReopenWorkspace{
+	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
 		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 	if got := claimOf(t, d.m, "9"); got != core.ClaimRunning {
@@ -138,10 +175,14 @@ func TestAE1AFailedRunResumesInItsWorkspaceWithTheParagraph(t *testing.T) {
 		"(`../../logs/issue-9-lfg.log` from this worktree), above the line crew wrote there when this session started. " +
 		"Check the worktree's state with `git status` and `git log` before you go on, " +
 		"and continue from where it stopped instead of starting over."
-	started := startedRun("9", "development", "lfg", "lfg")
-	started.At = d.now
+	opened := crew.ActionOpened{
+		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
+		Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
+	}
+	// The action run's start is recorded before its session starts.
 	wantCommands(t, cmds,
-		core.RecordRun{Record: started},
+		core.Record{Event: opened},
+		core.Record{Event: crew.ActionSessionAsked{EventHead: d.runHead("9"), Action: "lfg"}},
 		core.StartSession{
 			IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Dir: "/repo/.crew/worktrees/issue-9-lfg",
 			Prompt: want, Log: ".crew/logs/issue-9-lfg.log", Resumed: true,
@@ -161,7 +202,8 @@ func TestAE2ASucceededRunStartsFresh(t *testing.T) {
 	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), succeeded))
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
+	wantCommands(t, unrecorded(cmds),
+		core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
 	cmds, _ = d.send(created("9", "lfg", "lfg-2"))
 	if s := startOf(t, cmds); s.Prompt != "/lfg #9" || s.Resumed {
 		t.Fatalf("start = %#v, want the bare prompt, not resumed", s)
@@ -176,7 +218,8 @@ func TestAE3AGoneWorkspaceGetsAFreshOneWithoutTheParagraph(t *testing.T) {
 	hasEvent(t, events, crew.WorkspaceMissing{
 		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
 	})
-	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
+	wantCommands(t, unrecorded(cmds),
+		core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
 
 	cmds, _ = d.send(created("9", "lfg", "lfg-2"))
 	if s := startOf(t, cmds); s.Prompt != "/lfg #9" || s.Resumed {
@@ -188,14 +231,15 @@ func TestAE4AnotherRulesActionOfTheSameNameStartsFresh(t *testing.T) {
 	d := resumeDriver(t, endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke")))
 
 	cmds := d.takeIssue(issue("9", 1, readyForFix))
-	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForFix), Run: d.run(issueID("9")), Action: "lfg"})
+	wantCommands(t, unrecorded(cmds),
+		core.CreateWorkspace{Issue: issue("9", 1, readyForFix), Run: d.run(issueID("9")), Action: "lfg"})
 }
 
 func TestAE5ARunThatNeverRecordedItsEndResumesAsCrashed(t *testing.T) {
 	d := resumeDriver(t, startedRun("9", "development", "lfg", "lfg"))
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, cmds, core.ReopenWorkspace{
+	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
 		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
@@ -212,7 +256,7 @@ func TestAE6EachActionOfARuleIsDecidedOnItsOwn(t *testing.T) {
 	)
 
 	cmds := d.takeIssue(issue("5", 1, ready))
-	wantCommands(t, cmds,
+	wantCommands(t, unrecorded(cmds),
 		core.ReopenWorkspace{
 			IssueID: issueID("5"), Run: d.run(issueID("5")), Action: "acceptance",
 			Workspace: "issue-5-acceptance", Branch: "crew/issue-5-acceptance",
@@ -228,15 +272,15 @@ func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) 
 	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
 
 	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: failed("second reason")})
-	got := records(cmds)
-	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason.String() != "second reason" ||
-		got[0].Workspace != "issue-9-lfg" {
-		t.Fatalf("records = %#v, want one failed end in issue-9-lfg with the second reason", got)
+	got := ends(cmds)
+	if len(got) != 1 || got[0].End.Outcome().Succeeded || reasonOf(got[0]) != "second reason" ||
+		workspaceOf(got[0]) != "issue-9-lfg" {
+		t.Fatalf("ends = %#v, want one failed end in issue-9-lfg with the second reason", got)
 	}
 	d.settle(cmds)
 
 	cmds = d.takeIssue(issue("9", 2, readyForDev))
-	wantCommands(t, cmds, core.ReopenWorkspace{
+	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
 		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 	cmds, _ = d.send(reopened("9", "lfg", "lfg"))
@@ -247,10 +291,11 @@ func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) 
 
 func TestAModelThatCannotReopenCreatesForAFailedRun(t *testing.T) {
 	past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
-	d := &driver{t: t, m: core.New(crewRules(), 2, core.RecordingRuns([]core.RunRecord{past})), now: t0}
+	d := &driver{t: t, m: core.New(crewRules(), 2, core.Journaling([]crew.RunEvent{past})), now: t0}
 
 	cmds := d.takeIssue(issue("9", 1, readyForDev))
-	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
+	wantCommands(t, unrecorded(cmds),
+		core.CreateWorkspace{Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg"})
 }
 
 func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
@@ -261,7 +306,7 @@ func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
 	t.Run("in the journal", func(t *testing.T) {
 		d := resumeDriver(t, devFailed, fixStarted, endedRun(fixStarted, succeeded))
 		cmds := d.takeIssue(issue("9", 1, readyForDev))
-		wantCommands(t, cmds, core.CreateWorkspace{
+		wantCommands(t, unrecorded(cmds), core.CreateWorkspace{
 			Issue: issue("9", 1, readyForDev), Run: d.run(issueID("9")), Action: "lfg",
 		})
 	})
@@ -277,9 +322,22 @@ func TestANewerStartInAWorkspaceRetiresAnotherKeysRecordOfIt(t *testing.T) {
 		d.settle(cmds)
 
 		cmds = d.takeIssue(issue("9", 2, readyForDev))
-		wantCommands(t, cmds, core.CreateWorkspace{
+		wantCommands(t, unrecorded(cmds), core.CreateWorkspace{
 			Issue: issue("9", 2, readyForDev), Run: d.run(issueID("9")), Action: "lfg",
 		})
+	})
+
+	// Development's failed run no longer resumes, so its fresh workspace,
+	// which gets the old name again, carries no reason from it.
+	t.Run("a fresh start in the name again", func(t *testing.T) {
+		d := resumeDriver(t, devFailed, fixStarted, endedRun(fixStarted, succeeded))
+		d.takeIssue(issue("9", 1, readyForDev))
+		d.send(created("9", "lfg", "lfg"))
+		cmds, _ := d.send(core.SessionFailedToStart{
+			IssueID: issueID("9"), Action: "lfg", Reason: crew.NewSessionText("start claude: not found"),
+		})
+		d.settle(cmds)
+		wantResumeReason(t, d, issue("9", 2, readyForDev), "start claude: not found")
 	})
 }
 
@@ -293,17 +351,13 @@ func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 		cmds, _ := d.send(core.SessionFailedToStart{
 			IssueID: issueID("9"), Action: "lfg", Reason: crew.NewSessionText("start claude: not found"),
 		})
-		got := records(cmds)
-		if len(got) != 1 || got[0].Reason.String() != "the session's reason" || got[0].Succeeded {
-			t.Fatalf("records = %#v, want a failed end keeping the session's reason", got)
-		}
+		// The end shows and records how it failed; the resume quotes more.
+		d.wantReason("9", "lfg", "start claude: not found")
 		d.settle(cmds)
-
-		d.takeIssue(issue("9", 2, readyForDev))
-		cmds, _ = d.send(reopened("9", "lfg", "lfg"))
-		if p := startOf(t, cmds).Prompt; !strings.Contains(p, `"the session's reason"`) {
-			t.Fatalf("prompt does not quote the session's reason:\n%s", p)
-		}
+		journal := append([]crew.RunEvent{past}, d.recorded...)
+		wantResumeReason(t, d, issue("9", 2, readyForDev), "the session's reason")
+		// So does a crew that starts from the journal.
+		wantResumeReason(t, resumeDriver(t, journal...), issue("9", 2, readyForDev), "the session's reason")
 	})
 
 	t.Run("stopped while reopening", func(t *testing.T) {
@@ -311,11 +365,30 @@ func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 		d.takeIssue(issue("9", 1, readyForDev))
 		d.send(core.StopRequested{})
 		cmds, _ := d.send(reopened("9", "lfg", "lfg"))
-		got := records(cmds)
-		if len(got) != 2 || got[1].Event != core.RunEnded || got[1].Reason.String() != "the session's reason" {
-			t.Fatalf("records = %#v, want a start then a failed end keeping the session's reason", got)
+		if got := ends(cmds); len(got) != 1 || reasonOf(got[0]) != "crew stopped" || workspaceOf(got[0]) != "issue-9-lfg" {
+			t.Fatalf("ends = %#v, want a stopped end in issue-9-lfg", got)
 		}
+		wantResumeReason(t, resumeDriver(t, append([]crew.RunEvent{past}, d.recorded...)...),
+			issue("9", 2, readyForDev), "the session's reason")
 	})
+}
+
+// wantResumeReason fails the test unless d, taking iss, reopens its lfg
+// action's workspace with a prompt that quotes reason.
+func wantResumeReason(t *testing.T, d *driver, iss crew.Issue, reason string) {
+	t.Helper()
+	d.takeIssue(iss)
+	cmds, _ := d.send(reopened(iss.ID().Key, "lfg", "lfg"))
+	if p := startOf(t, cmds).Prompt; !strings.Contains(p, `That run failed: "`+reason+`".`) {
+		t.Fatalf("prompt does not quote %q:\n%s", reason, p)
+	}
+}
+
+// workspaceOf returns the name of the workspace the action run's end e
+// names; empty when it names none.
+func workspaceOf(e crew.ActionEnded) crew.WorkspaceName {
+	w, _ := e.Workspace.Get()
+	return w.Workspace.Name
 }
 
 func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T) {
@@ -326,14 +399,13 @@ func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T
 	cmds, _ := d.send(core.WorkspaceFailed{
 		IssueID: issueID("9"), Action: "lfg", Reason: crew.NewSessionText("git worktree list failed"),
 	})
-	if got := records(cmds); len(got) != 1 || got[0].Event != core.RunEnded || got[0].Workspace != "" ||
-		got[0].Reason.String() != "git worktree list failed" {
-		t.Fatalf("records = %#v, want one end without a workspace", got)
+	if got := ends(cmds); len(got) != 1 || workspaceOf(got[0]) != "" || reasonOf(got[0]) != "git worktree list failed" {
+		t.Fatalf("ends = %#v, want one end without a workspace", got)
 	}
 	d.settle(cmds)
 
 	cmds = d.takeIssue(issue("9", 2, readyForDev))
-	wantCommands(t, cmds, core.ReopenWorkspace{
+	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
 		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 }
@@ -350,8 +422,8 @@ func TestAStopThenAGoneWorkspaceCreatesNothing(t *testing.T) {
 			t.Fatalf("got %#v after a stop, want no workspace", c)
 		}
 	}
-	if got := records(cmds); len(got) != 1 || got[0].Workspace != "" || got[0].Reason.String() != "crew stopped" {
-		t.Fatalf("records = %#v, want one stopped end without a workspace", got)
+	if got := ends(cmds); len(got) != 1 || workspaceOf(got[0]) != "" || reasonOf(got[0]) != "crew stopped" {
+		t.Fatalf("ends = %#v, want one stopped end without a workspace", got)
 	}
 	if a := d.m.View().Issues[0].Actions[0]; a.Phase != core.PhaseEnded || a.Outcome.Reason.String() != "crew stopped" {
 		t.Fatalf("action = %#v, want ended with crew stopped", a)
@@ -364,33 +436,50 @@ func TestAFreshRunIsRecordedFromItsWorkspaceToItsEnd(t *testing.T) {
 
 	cmds, _ := d.send(space("9", "lfg"))
 	start := records(cmds)
+	opened := d.now
+	wantStart := crew.ActionOpened{
+		EventHead: d.runHead("9"), Action: "lfg", Workspace: crew.Workspace{Name: "issue-9-lfg", Branch: "crew/issue-9-lfg"},
+		Log: ".crew/logs/issue-9-lfg.log",
+	}
 	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
+	sessionStarted := d.now
 	cmds, _ = d.send(core.SessionEnded{IssueID: issueID("9"), Action: "lfg", Outcome: succeeded})
-	end := records(cmds)
+	end := ends(cmds)
 
-	wantStart := startedRun("9", "development", "lfg", "lfg")
-	wantStart.At = t0.Add(4 * time.Second)
-	wantEnd := endedRun(wantStart, succeeded)
-	wantEnd.At = t0.Add(6 * time.Second)
-	wantEnd.SessionStarted = t0.Add(5 * time.Second)
-	if len(start) != 1 || !reflect.DeepEqual(start[0], wantStart) || len(end) != 1 || !reflect.DeepEqual(end[0], wantEnd) {
+	wantEnd := crew.ActionEnded{
+		EventHead: d.runHead("9"), Action: "lfg", End: crew.EndSucceeded{Reason: succeeded.Reason},
+		Workspace: crew.Some(crew.OpenedWorkspace{
+			Workspace: wantStart.Workspace, Log: wantStart.Log, Opened: opened,
+		}),
+		SessionStarted: crew.Some(sessionStarted),
+	}
+	if len(start) == 0 || !reflect.DeepEqual(start[0], crew.RunEvent(wantStart)) || len(end) != 1 ||
+		!reflect.DeepEqual(end[0], wantEnd) {
 		t.Fatalf("records = %#v then %#v, want %#v then %#v", start, end, wantStart, wantEnd)
 	}
 }
 
-func TestARecordThatFailsToWriteIsReported(t *testing.T) {
+// A RecordFailed reaches no run, so it is reported even after its run was
+// released, as the past run these events belong to was.
+func TestAnActionsStartOrEndThatFailsToWriteIsReported(t *testing.T) {
 	d := resumeDriver(t)
-	r := startedRun("9", "development", "lfg", "lfg")
+	started := startedRun("9", "development", "lfg", "lfg")
 
-	_, events := d.send(core.RecordFailed{Record: r, Reason: "disk full"})
-	wantEvents(t, events, core.RunNotRecorded{
-		At: d.now, IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg", Reason: "disk full",
+	for _, e := range []crew.RunEvent{started, endedRun(started, failed("broke"))} {
+		_, events := d.send(core.RecordFailed{Event: e, Reason: "disk full"})
+		wantEvents(t, events, core.RunNotRecorded{
+			At: d.now, IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg", Reason: "disk full",
+		})
+	}
+	_, events := d.send(core.RecordFailed{
+		Event: crew.TakeMoved{EventHead: started.EventHead, From: readyForDev, To: crewRunning}, Reason: "disk full",
 	})
+	wantEvents(t, events)
 }
 
 func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 	past := endedRun(startedRun("5", "implement", "acceptance", "acceptance"), failed("tests fail"))
-	m := core.New(crewRules(), 2, core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.ReportingStatus())
+	m := core.New(crewRules(), 2, core.Journaling([]crew.RunEvent{past}), core.Reopening(), core.ReportingStatus())
 	d := &driver{t: t, m: m, now: t0}
 	// last answers every status write and keeps the newest status.
 	var last crew.Status
@@ -423,7 +512,7 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 	wf := crewRules()
 	wf[0].Actions[0].Checks = []crew.Check{{Name: "pr-open", Script: "gh pr view --json url"}}
-	d := &driver{t: t, m: core.New(wf, 2, core.RecordingRuns(nil), core.Reopening()), now: t0}
+	d := &driver{t: t, m: core.New(wf, 2, core.Journaling(nil), core.Reopening()), now: t0}
 	d.takeIssue(issue("9", 1, readyForDev))
 	d.send(created("9", "lfg", "lfg"))
 	d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})
@@ -431,14 +520,14 @@ func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 
 	reason := "the check failed: no pull requests found for branch \"crew/issue-9-lfg\""
 	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("9"), Action: "lfg", Reason: crew.NewCheckReason(reason)})
-	got := records(cmds)
-	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason.String() != reason {
-		t.Fatalf("records = %#v, want one failed end with the check's reason", got)
+	got := ends(cmds)
+	if len(got) != 1 || got[0].End.Outcome().Succeeded || reasonOf(got[0]) != reason {
+		t.Fatalf("ends = %#v, want one failed end with the check's reason", got)
 	}
 	d.settle(cmds)
 
 	cmds = d.takeIssue(issue("9", 2, readyForDev))
-	wantCommands(t, cmds, core.ReopenWorkspace{
+	wantCommands(t, unrecorded(cmds), core.ReopenWorkspace{
 		IssueID: issueID("9"), Run: d.run(issueID("9")), Action: "lfg", Workspace: "issue-9-lfg", Branch: "crew/issue-9-lfg",
 	})
 	cmds, _ = d.send(reopened("9", "lfg", "lfg"))

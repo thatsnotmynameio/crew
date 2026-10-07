@@ -104,6 +104,9 @@ type driver struct {
 	// the runs it took got their ids.
 	listed uuid.UUID
 	events []core.Published
+	// recorded holds the events of every Record the model issued, in
+	// order: the run journal a healthy engine would have written.
+	recorded []crew.RunEvent
 }
 
 // seed returns the nth sequential seed: a UUID whose last bytes encode n.
@@ -131,6 +134,7 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Published) {
 	}
 	cmds, events := d.m.Update(in.Stamped(d.now, stamp))
 	d.events = append(d.events, events...)
+	d.recorded = append(d.recorded, records(cmds)...)
 	return cmds, events
 }
 
@@ -224,7 +228,7 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.StartSession:
 				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
 			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
-				core.RecordRun, core.StopSession, core.RunCheck, core.FindPullRequest, core.StopCheck:
+				core.Record, core.StopSession, core.RunCheck, core.FindPullRequest, core.StopCheck:
 				// Left unanswered.
 			}
 			next = append(next, out...)
@@ -262,7 +266,7 @@ func noIDs(cmds []core.Command) []core.Command {
 			call.ID = 0
 			c = call
 		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
-			core.ReopenWorkspace, core.RecordRun, core.StartSession, core.StopSession, core.RunCheck,
+			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunCheck,
 			core.FindPullRequest, core.StopCheck:
 		}
 		out = append(out, c)
@@ -416,7 +420,7 @@ func issueKey(c core.Command) string {
 	case core.StopSession:
 		return c.IssueID.Key
 	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
-		core.RecordRun, core.RunCheck, core.FindPullRequest, core.StopCheck:
+		core.Record, core.RunCheck, core.FindPullRequest, core.StopCheck:
 	}
 	return ""
 }

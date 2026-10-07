@@ -230,3 +230,15 @@ func TestARunWithGapsFolds(t *testing.T) {
 	}
 	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{"development": point("development", "tests fail")})
 }
+
+func TestAForgottenActionHasNoResumePointAndItsNextStartCarriesNoReason(t *testing.T) {
+	h := folded(afterFailure()...)
+	h.Forget(testID, "implement", "development")
+	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{})
+
+	h.Fold(opening("run-2", 3, "development"))
+	h.Fold(ending("run-2", 4, "development", notFound, false))
+	wantPoints(t, h, testID, "implement", map[ActionName]ResumePoint{
+		"development": point("development", "start claude: not found"),
+	})
+}

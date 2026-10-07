@@ -236,12 +236,12 @@ type WorkspaceGone struct {
 	Action  crew.ActionName
 }
 
-// RecordFailed is a RecordRun the engine could not write. Record is the
-// record that was not written. It is a SchedulerInput: it can arrive after
-// the record's run was released, so it never reaches a run.
+// RecordFailed is a Record the engine could not append. Event is the run
+// event that was not appended. It is a SchedulerInput: it can arrive after
+// the event's run was released, so it never reaches a run.
 type RecordFailed struct {
 	At     time.Time
-	Record RunRecord
+	Event  crew.RunEvent
 	Reason string
 }
 

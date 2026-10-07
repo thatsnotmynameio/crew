@@ -81,7 +81,7 @@ func (e *Engine) trackerJob(ctx context.Context, cmd core.TrackerCommand) func()
 
 // runJob returns the goroutine that runs cmd, a command about one rule run,
 // on the command context ctx, or nil when nothing is left to run once the
-// loop has done its part. The loop itself records runs, starts and stops
+// loop has done its part. The loop itself records run events, starts and stops
 // checks and stops sessions, as it owns the order of the journal, the
 // checks and the sessions.
 func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
@@ -94,14 +94,15 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 		return func() { e.startSession(ctx, c) }
 	case core.FindPullRequest:
 		return func() { e.findPullRequest(ctx, c) }
-	case core.RecordRun:
-		// Written here, in the loop, so records land in the order the core
-		// asked for them: a run's end never before its start (KTD3).
-		err := e.appendJournal(c.Record)
+	case core.Record:
+		// Appended here, in the loop, so events land in the order the core
+		// asked for them: an action's start before its session starts and
+		// its end never before its start (KTD3).
+		err := e.cfg.Journal.Append(c.Event)
 		if err == nil {
 			return nil
 		}
-		failure := core.RecordFailed{Record: c.Record, Reason: e.scrub(err.Error())}
+		failure := core.RecordFailed{Event: c.Event, Reason: e.scrub(err.Error())}
 		return func() { e.post(failure) }
 	case core.StopSession:
 		s, ok := e.sessions[sessionKey{c.Run, c.Action}]

@@ -1,6 +1,7 @@
 // Package port holds the interfaces the engine reaches the outside world
-// through: a Tracker for issues, a Harness for coding-agent sessions and a
-// Workspace for each action's checkout. A Captain answers a session's next
+// through: a Tracker for issues, a Harness for coding-agent sessions, a
+// Workspace for each action's checkout and a Journal for the rule runs'
+// events. A Captain answers a session's next
 // task. Each port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
@@ -155,6 +156,18 @@ type Workspace interface {
 	// Create creates a fresh workspace for action on issue. Each call gets
 	// its own workspace, even for an issue and action seen before.
 	Create(ctx context.Context, issue crew.Issue, action crew.ActionName) (Space, error)
+}
+
+// Journal is the run journal: the rule runs' events, kept so a later crew
+// process knows how its runs ended and resumes the failed ones. The engine
+// calls it from one goroutine.
+type Journal interface {
+	// Load returns the stored run events in the order they were appended,
+	// each issue in repository. A journal that holds none returns none and
+	// no error; an error means the stored events could not be read.
+	Load(repository crew.RepositoryID) ([]crew.RunEvent, error)
+	// Append stores e after the events stored before it.
+	Append(e crew.RunEvent) error
 }
 
 // Space is a created workspace.

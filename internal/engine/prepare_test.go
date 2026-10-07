@@ -198,3 +198,32 @@ func TestPrepareReadsTheRepository(t *testing.T) {
 		})
 	}
 }
+
+// unreadableJournal is a run journal whose events cannot be loaded.
+type unreadableJournal struct{ *fake.Journal }
+
+func (unreadableJournal) Load(crew.RepositoryID) ([]crew.RunEvent, error) {
+	return nil, errors.New("read the run journal .crew/logs/runs.jsonl: is a directory")
+}
+
+func TestAJournalThatCannotBeReadFailsPrepareNamingIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := &listCounter{PreparingTracker: fake.NewPreparingTracker()}
+		cfg := config(t, tr, develop)
+		cfg.Journal = unreadableJournal{fake.NewJournal()}
+		var steps []string
+		ctx := port.WithSteps(context.Background(), func(step string) { steps = append(steps, step) })
+
+		err := engine.New(cfg).Run(ctx)
+
+		if err == nil || !strings.Contains(err.Error(), ".crew/logs/runs.jsonl") {
+			t.Fatalf("Run = %v, want an error naming .crew/logs/runs.jsonl", err)
+		}
+		if want := []string{"reading the run journal"}; !reflect.DeepEqual(steps, want) {
+			t.Errorf("steps = %q, want the journal's step before its error", steps)
+		}
+		if tr.lists != 0 {
+			t.Errorf("tracker listed %d times, want none", tr.lists)
+		}
+	})
+}

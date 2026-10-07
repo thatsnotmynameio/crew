@@ -45,9 +45,9 @@ type Model struct {
 	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
-	// lastRuns holds the last run record of each issue, rule and action; nil
-	// when the model records no runs (KTD1, KTD2).
-	lastRuns map[runKey]RunRecord
+	// journal is the rule runs' past; nil when the model journals no runs
+	// (KTD12).
+	journal *journal
 	// reopening is set when the workspace can reopen a failed run's
 	// workspace (KTD4).
 	reopening bool

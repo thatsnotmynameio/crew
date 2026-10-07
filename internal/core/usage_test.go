@@ -12,7 +12,7 @@ import (
 // requests, with opts on top.
 func usageDriver(t *testing.T, rules []crew.Rule, opts ...core.Option) *driver {
 	t.Helper()
-	opts = append([]core.Option{core.RecordingRuns(nil), core.FindingPullRequests()}, opts...)
+	opts = append([]core.Option{core.Journaling(nil), core.FindingPullRequests()}, opts...)
 	return &driver{t: t, m: core.New(rules, 2, opts...), now: t0}
 }
 
@@ -65,16 +65,16 @@ func TestAE1AnEndedSessionLooksUpItsPullRequestAndRecordsItWithItsUsage(t *testi
 	if len(got) != 1 || got[0].Branch != ws.Branch || got[0].IssueID != issueID("31") || got[0].Action != "development" {
 		t.Fatalf("lookups = %#v, want one from %s", got, ws.Branch)
 	}
-	if len(records(cmds)) != 0 || phaseOf(t, d.m, "31", "development") != core.PhaseFinishing {
+	if len(ends(cmds)) != 0 || phaseOf(t, d.m, "31", "development") != core.PhaseFinishing {
 		t.Fatalf("the action ended before its lookup: %#v", cmds)
 	}
 
 	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("31"), Action: "development", PullRequest: pr45})
-	end := records(cmds)
-	if len(end) != 1 || end[0].Event != core.RunEnded || !end[0].Succeeded ||
+	end := ends(cmds)
+	if len(end) != 1 || !end[0].End.Outcome().Succeeded ||
 		!reflect.DeepEqual(end[0].Usage, spent) || end[0].PullRequest != pr45 ||
-		end[0].SessionStarted != ready.Started {
-		t.Fatalf("records = %#v, want the end with the usage, #45 and the session's start", end)
+		end[0].SessionStarted != crew.Some(ready.Started) {
+		t.Fatalf("ends = %#v, want the end with the usage, #45 and the session's start", end)
 	}
 
 	d.send(core.SessionEnded{IssueID: issueID("31"), Action: "acceptance", Outcome: succeeded})
@@ -113,9 +113,9 @@ func TestALookupThatAnswersFirstWaitsForTheCheck(t *testing.T) {
 		IssueID: issueID("74"), Action: "development", Reason: crew.NewCheckReason("no pull request"),
 	})
 	wantPhase(core.PhaseEnded)
-	if end := records(cmds); len(end) != 1 || end[0].Succeeded || end[0].PullRequest != pr45 ||
+	if end := ends(cmds); len(end) != 1 || end[0].End.Outcome().Succeeded || end[0].PullRequest != pr45 ||
 		end[0].Usage.Cost != spent.Cost {
-		t.Fatalf("records = %#v, want a failed end keeping the session's usage and #45", end)
+		t.Fatalf("ends = %#v, want a failed end keeping the session's usage and #45", end)
 	}
 }
 
@@ -125,12 +125,12 @@ func TestACheckThatEndsFirstWaitsForTheLookup(t *testing.T) {
 	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 
 	cmds, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
-	if len(records(cmds)) != 0 || phaseOf(t, d.m, "74", "development") != core.PhaseFinishing {
+	if len(ends(cmds)) != 0 || phaseOf(t, d.m, "74", "development") != core.PhaseFinishing {
 		t.Fatalf("the action ended before its lookup: %#v", cmds)
 	}
 	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: pr45})
-	if end := records(cmds); len(end) != 1 || !end[0].Succeeded || end[0].PullRequest != pr45 {
-		t.Fatalf("records = %#v, want a succeeded end with #45", end)
+	if end := ends(cmds); len(end) != 1 || !end[0].End.Outcome().Succeeded || end[0].PullRequest != pr45 {
+		t.Fatalf("ends = %#v, want a succeeded end with #45", end)
 	}
 }
 
@@ -146,9 +146,9 @@ func TestAStopDuringTheLookupKeepsTheSessionsOwnFailure(t *testing.T) {
 		}
 	}
 	cmds, _ = d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
-	end := records(cmds)
-	if len(end) != 1 || end[0].Reason.String() != "tests fail" || end[0].PullRequest != noPR {
-		t.Fatalf("records = %#v, want the session's own failure with no pull request", end)
+	end := ends(cmds)
+	if len(end) != 1 || reasonOf(end[0]) != "tests fail" || end[0].PullRequest != noPR {
+		t.Fatalf("ends = %#v, want the session's own failure with no pull request", end)
 	}
 }
 
@@ -159,18 +159,18 @@ func TestAE5AStoppedSessionIsRecordedWithoutUsage(t *testing.T) {
 	d.send(core.SessionEnded{IssueID: issueID("9"), Action: "development", Outcome: failed("stopped by crew")})
 
 	cmds, _ := d.send(core.PullRequestFound{IssueID: issueID("9"), Action: "development", PullRequest: noPR})
-	end := records(cmds)
-	if len(end) != 1 || !reflect.DeepEqual(end[0].Usage, crew.Usage{}) || end[0].Reason.String() != "stopped by crew" {
-		t.Fatalf("records = %#v, want a stopped end with no usage", end)
+	end := ends(cmds)
+	if len(end) != 1 || !reflect.DeepEqual(end[0].Usage, crew.Usage{}) || reasonOf(end[0]) != "stopped by crew" {
+		t.Fatalf("ends = %#v, want a stopped end with no usage", end)
 	}
 }
 
 func TestWithoutAFinderNothingIsLookedUp(t *testing.T) {
-	d := &driver{t: t, m: core.New(draft(), 2, core.RecordingRuns(nil)), now: t0}
+	d := &driver{t: t, m: core.New(draft(), 2, core.Journaling(nil)), now: t0}
 	d.running(issue("9", 1, ready))
 
 	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("9"), Action: "development", Outcome: succeeded, Usage: spent})
-	end := records(cmds)
+	end := ends(cmds)
 	if len(lookups(cmds)) != 0 || len(end) != 1 || end[0].PullRequest != nil {
 		t.Fatalf("commands = %#v, want an end at once, not looked up", cmds)
 	}
@@ -192,7 +192,7 @@ func TestAFreshWorkspaceLooksUpFromItsCreationAndAResumedOneFromAnyTime(t *testi
 	t.Run("resumed", func(t *testing.T) {
 		past := endedRun(startedRun("9", "development", "lfg", "lfg"), failed("broke"))
 		d := &driver{t: t, m: core.New(crewRules(), 2,
-			core.RecordingRuns([]core.RunRecord{past}), core.Reopening(), core.FindingPullRequests()), now: t0}
+			core.Journaling([]crew.RunEvent{past}), core.Reopening(), core.FindingPullRequests()), now: t0}
 		d.takeIssue(issue("9", 1, readyForDev))
 		d.send(reopened("9", "lfg", "lfg"))
 		d.send(core.SessionStarted{IssueID: issueID("9"), Action: "lfg"})

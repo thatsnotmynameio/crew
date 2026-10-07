@@ -8,172 +8,118 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// crashedReason is the reason of a run that recorded its start and never its
-// end: crew did not live to see it end.
-const crashedReason = "crew stopped before the run ended: it crashed or was killed"
-
-// RunEvent tells a run's start from its end in a RunRecord.
-type RunEvent int
-
-// The events of a run record.
-const (
-	// RunStarted: the run's workspace is ready and its session is about to
-	// start.
-	RunStarted RunEvent = iota
-	// RunEnded: the run's action ended; see Succeeded and Reason.
-	RunEnded
-)
-
-// RunRecord is one line of the run journal: how a run of Action, in Rule,
-// on the issue, started or ended (KTD1). A run's start is recorded once it
-// has a workspace; its end is recorded whatever happened, and names no
-// workspace when the action never got one.
-type RunRecord struct {
-	Event    RunEvent
-	At       time.Time
-	IssueID  crew.IssueID
-	IssueRef string
-	Rule     crew.RuleName
-	Action   crew.ActionName
-	// Workspace, Branch and Log are the run's workspace name, branch and
-	// repository-relative log path.
-	Workspace crew.WorkspaceName
-	Branch    string
-	Log       string
-	// Succeeded and Reason are the action's outcome; set on RunEnded only.
-	Succeeded bool
-	Reason    crew.SessionText
-	// SessionStarted is when the action's session started, Usage what it
-	// used and PullRequest what its lookup found; set on RunEnded only.
-	// SessionStarted is zero when no session started, and then Usage is
-	// empty too.
-	SessionStarted time.Time
-	Usage          crew.Usage
-	PullRequest    crew.PullRequest
+// journal is what the model knows of the rule runs' past, when it journals
+// them (KTD12): their History, replayed from the run journal and folded
+// live, and which action last worked in each workspace (KTD9).
+type journal struct {
+	history crew.History
+	// claims holds, by workspace name, the issue, rule and action whose
+	// action run last started or ended in it, across issues (KTD9).
+	claims map[crew.WorkspaceName]actionKey
 }
 
-// runKey identifies the runs one record replaces: those of an action, in a
-// rule, on an issue (R3).
-type runKey struct {
+// actionKey identifies the runs of an action, in a rule, on an issue.
+type actionKey struct {
 	issue  crew.IssueID
 	rule   crew.RuleName
 	action crew.ActionName
 }
 
-func keyOf(r RunRecord) runKey { return runKey{r.IssueID, r.Rule, r.Action} }
-
-// failed reports whether the run r records counts as failed (R2): it ended
-// and did not succeed, or it never recorded an end.
-func (r RunRecord) failed() bool {
-	return r.Event == RunStarted || !r.Succeeded
-}
-
-// reason is why the run r records failed: its outcome's reason, or
-// crashedReason when it never recorded an end.
-func (r RunRecord) reason() crew.SessionText {
-	if r.Event == RunStarted {
-		return crew.NewSessionText(crashedReason)
-	}
-	return r.Reason
-}
-
-// RecordingRuns has the model record every run through RecordRun commands,
-// starting from past, the run journal's records in the order they were
-// written (KTD1, KTD2).
-func RecordingRuns(past []RunRecord) Option {
+// Journaling has the model journal every run event through Record
+// commands, starting from past, the run journal's events in the order they
+// were written (KTD12). Replaying past folds the History and the
+// workspaces' claims only: it takes no slot and makes no command, event,
+// status, handled entry or spend.
+func Journaling(past []crew.RunEvent) Option {
 	return func(m *Model) {
-		m.lastRuns = map[runKey]RunRecord{}
-		for _, r := range past {
-			m.remember(r)
+		m.journal = &journal{claims: map[crew.WorkspaceName]actionKey{}}
+		for _, e := range past {
+			m.journal.fold(e)
 		}
 	}
 }
 
 // Reopening has the model reopen a failed run's workspace, through
 // ReopenWorkspace commands, for a workspace that can (KTD4). It takes effect
-// only with RecordingRuns, which tells the model which runs failed.
+// only with Journaling, which tells the model which runs failed.
 func Reopening() Option {
 	return func(m *Model) { m.reopening = true }
 }
 
-// remember makes r its key's last record. A start also retires the record of
-// every other key naming r's workspace: names repeat once a workspace is
-// gone, so that record's workspace now holds another key's work (KTD5).
-func (m *Model) remember(r RunRecord) {
-	if r.Event == RunStarted {
-		for k, other := range m.lastRuns {
-			if k != keyOf(r) && other.Workspace == r.Workspace {
-				delete(m.lastRuns, k)
-			}
+// fold adds e to the past. An action run's start in a workspace another
+// action last worked in retires that action's last action run, which the
+// workspace no longer holds (KTD5, KTD9); the start and an end in a
+// workspace claim it.
+func (j *journal) fold(e crew.RunEvent) {
+	if opened, ok := e.(crew.ActionOpened); ok {
+		key := actionKey{opened.IssueID, opened.Rule, opened.Action}
+		if other, ok := j.claims[opened.Workspace.Name]; ok && other != key {
+			j.history.Forget(other.issue, other.rule, other.action)
+		}
+		j.claims[opened.Workspace.Name] = key
+	}
+	if ended, ok := e.(crew.ActionEnded); ok {
+		if w, ok := ended.Workspace.Get(); ok {
+			j.claims[w.Workspace.Name] = actionKey{ended.IssueID, ended.Rule, ended.Action}
 		}
 	}
-	m.lastRuns[keyOf(r)] = r
+	j.history.Fold(e)
 }
 
-// resumable returns where the action named action, in rule, on the issue
-// identified by id, resumes its failed last run, when the model can reopen
-// that run's workspace (R1, R2): a new rule run inherits it at take.
-func (m *Model) resumable(id crew.IssueID, rule crew.RuleName, action crew.ActionName) crew.Optional[crew.ResumePoint] {
-	r, ok := m.lastRuns[runKey{id, rule, action}]
-	if !m.reopening || !ok || !r.failed() {
-		return crew.Optional[crew.ResumePoint]{}
-	}
-	return crew.Some(crew.ResumePoint{
-		Workspace: crew.Workspace{Name: r.Workspace, Branch: r.Branch}, Log: r.Log, Reason: r.reason(),
-	})
-}
-
-// recordOpened records the start of the action run e opened in its
-// workspace, keeping first its key's last record from before, when the
-// model records runs.
-func (s *step) recordOpened(h *heldIssue, e crew.ActionOpened) {
-	m := s.m
-	if m.lastRuns == nil {
+// record folds e, an event of a live run, into the past and asks the engine
+// to append it to the run journal, before the commands e calls for, when
+// the model journals.
+func (s *step) record(e crew.RunEvent) {
+	if s.m.journal == nil {
 		return
 	}
-	p := h.plumb(e.Action)
-	p.prev = nil
-	if prev, ok := m.lastRuns[runKey{e.IssueID, e.Rule, e.Action}]; ok {
-		p.prev = &prev
-	}
-	s.record(RunRecord{
-		Event: RunStarted, At: e.At, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
-		Workspace: e.Workspace.Name, Branch: e.Workspace.Branch, Log: e.Log,
-	})
+	s.m.journal.fold(e)
+	s.command(Record{Event: e})
 }
 
-// recordEnded records the end of the action run e ended, when the model
-// records runs. An ended run whose session never started keeps the reason
-// of the last session in its workspace, which says more than how this run
-// failed to start (KTD6).
-func (s *step) recordEnded(h *heldIssue, e crew.ActionEnded) {
-	if s.m.lastRuns == nil {
-		return
+// continued returns the id of the last run of rule on the issue identified
+// by id, which a new run of it continues, and the resume points of its
+// actions when the model can reopen their workspaces (R1, R2, KTD12).
+func (m *Model) continued(
+	id crew.IssueID, rule crew.RuleName,
+) (crew.Optional[crew.RuleRunID], map[crew.ActionName]crew.ResumePoint) {
+	if m.journal == nil {
+		return crew.Optional[crew.RuleRunID]{}, nil
 	}
-	outcome := e.End.Outcome()
-	r := RunRecord{
-		Event: RunEnded, At: e.At, IssueID: e.IssueID, IssueRef: e.IssueRef, Rule: e.Rule, Action: e.Action,
-		Succeeded: outcome.Succeeded, Reason: outcome.Reason, PullRequest: e.PullRequest,
+	var continues crew.Optional[crew.RuleRunID]
+	if last, ok := m.journal.history.LastRun(id, rule); ok {
+		continues = crew.Some(last.ID())
 	}
-	if w, ok := e.Workspace.Get(); ok {
-		r.Workspace, r.Branch, r.Log = w.Workspace.Name, w.Workspace.Branch, w.Log
+	if !m.reopening {
+		return continues, nil
 	}
-	if started, ok := e.SessionStarted.Get(); ok {
-		r.SessionStarted, r.Usage = started, e.Usage
-	} else if p := h.live[e.Action]; p != nil && p.prev != nil && p.prev.Workspace == r.Workspace && p.prev.failed() {
-		r.Reason = p.prev.reason()
-	}
-	s.record(r)
+	return continues, m.journal.history.ResumePoints(id, rule)
 }
 
-// record remembers r and asks the engine to write it. The end of a run
-// without a workspace is written but not remembered: it would replace the
-// key's last record, and stop a failed run from resuming.
-func (s *step) record(r RunRecord) {
-	if r.Workspace != "" {
-		s.m.remember(r)
+// notRecorded returns the event that says e, a run event the engine could
+// not append, was not recorded, and false for an event of which today's
+// journal wrote no line: only an action's start and end say so (KTD-P6).
+func notRecorded(e crew.RunEvent, at time.Time, reason string) (RunNotRecorded, bool) {
+	action, ok := recordedAction(e)
+	if !ok {
+		return RunNotRecorded{}, false
 	}
-	s.command(RecordRun{Record: r})
+	h := e.Head()
+	return RunNotRecorded{
+		At: at, IssueID: h.IssueID, IssueRef: h.IssueRef, Rule: h.Rule, Action: action, Reason: reason,
+	}, true
+}
+
+// recordedAction returns the action whose start or end e is, and false when
+// e is neither.
+func recordedAction(e crew.RunEvent) (crew.ActionName, bool) {
+	if opened, ok := e.(crew.ActionOpened); ok {
+		return opened.Action, true
+	}
+	if ended, ok := e.(crew.ActionEnded); ok {
+		return ended.Action, true
+	}
+	return "", false
 }
 
 // resumeParagraph is what crew appends to a resumed session's prompt (R5,

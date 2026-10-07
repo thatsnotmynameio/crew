@@ -37,14 +37,17 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 
 	"github.com/thatsnotmynameio/crew/internal/adapter/git"
+	"github.com/thatsnotmynameio/crew/internal/adapter/jsonl"
 	"github.com/thatsnotmynameio/crew/internal/adapter/shell"
 	"github.com/thatsnotmynameio/crew/internal/app"
 	"github.com/thatsnotmynameio/crew/internal/captain"
 	"github.com/thatsnotmynameio/crew/internal/config"
+	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 	"github.com/thatsnotmynameio/crew/internal/registry"
@@ -139,11 +142,15 @@ func start(plain bool, stdout, stderr *os.File) int {
 		return app.ExitConfig
 	}
 	home, _ := os.UserHomeDir() // without one, nothing is shortened to ~
+	// The crew run's id on every line of the run journal: when this crew
+	// process started, in RFC 3339 and UTC, so runs sort as text.
+	run := time.Now().UTC().Format(time.RFC3339Nano)
 
 	return app.Run(ctx, app.Options{
 		Registry:     registry.Default(&group),
 		Workspace:    func(root string) port.Workspace { return git.New(&group, root) },
 		Checker:      shell.New(&group),
+		Journal:      func(root string) port.Journal { return jsonl.New(root, engine.JournalPath, run) },
 		Root:         root,
 		GlobalConfig: config.GlobalFile(os.Getenv("XDG_CONFIG_HOME"), home),
 		Home:         home,

@@ -62,10 +62,9 @@ func (s *step) schedulerInput(in SchedulerInput) {
 	case PullRequestsResult:
 		s.pullRequestsResult(in)
 	case RecordFailed:
-		r := in.Record
-		s.emit(RunNotRecorded{
-			At: s.at, IssueID: r.IssueID, IssueRef: r.IssueRef, Rule: r.Rule, Action: r.Action, Reason: in.Reason,
-		})
+		if e, ok := notRecorded(in.Event, s.at, in.Reason); ok {
+			s.emit(e)
+		}
 	}
 }
 
@@ -290,25 +289,30 @@ func comparePriority(a, b int) int {
 	return cmp.Compare(a, b)
 }
 
-// take holds issue for rule si, as a new rule run that inherits today's
-// resume points (KTD-P4), and moves it to the rule's running label.
+// take holds issue for rule si, as a new rule run that continues the last
+// run of the rule on the issue and inherits its actions' resume points
+// (KTD12), and moves it to the rule's running label.
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
 	s.runs++
+	continues, resume := m.continued(issue.ID(), rule.Name)
 	taken := crew.RunTaken{
 		Run: crew.NewRuleRunID(s.seed, s.runs), At: s.at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule.Name,
-		Issue: issue.Data(), From: rule.Labels.Ready, To: rule.Labels.Running,
+		Issue: issue.Data(), Continues: continues, From: rule.Labels.Ready, To: rule.Labels.Running,
 	}
 	for _, a := range rule.Actions {
-		taken.Actions = append(taken.Actions, crew.ActionTaken{
-			Name: a.Name, Resume: m.resumable(issue.ID(), rule.Name, a.Name),
-		})
+		t := crew.ActionTaken{Name: a.Name}
+		if p, ok := resume[a.Name]; ok {
+			t.Resume = crew.Some(p)
+		}
+		taken.Actions = append(taken.Actions, t)
 	}
 	// Applied to the zero run, a RunTaken event is never refused.
 	run, _ := crew.Apply(crew.RuleRun{}, taken)
 	h := &heldIssue{run: run, rule: si}
 	m.issues = append(m.issues, h)
+	s.record(taken)
 	s.emit(taken)
 	s.deliver(h, &delivery{purpose: purposeTake, call: h.move(rule.Labels.Ready, rule.Labels.Running)})
 }
