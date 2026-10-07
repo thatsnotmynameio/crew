@@ -163,8 +163,8 @@ func TestThePopupWalksTheCardsInBoardOrderAndStopsAtTheEnds(t *testing.T) {
 	}
 }
 
-// Covers R1 of #231: in the popup → walks a column as it shows, the held
-// cards first.
+// Covers R1 of #231: in the popup → walks a column in the order it shows
+// its cards, the held ones first.
 func TestThePopupWalksTheHeldCardsFirst(t *testing.T) {
 	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
 	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "12"), item("10", "bug"), item("12", "bug"))))

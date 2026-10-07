@@ -341,7 +341,8 @@ func holding(claim core.Claim, keys ...string) engine.Update {
 	return u
 }
 
-// cardOrder returns refs by the board row of their first card, top first.
+// cardOrder returns the refs with a card on board, by the board row of
+// their first card, top first; a ref with no card is left out.
 func cardOrder(board string, refs ...string) []string {
 	row := map[string]int{}
 	for i, l := range strings.Split(board, "\n") {
@@ -351,7 +352,7 @@ func cardOrder(board string, refs ...string) []string {
 			}
 		}
 	}
-	out := slices.Clone(refs)
+	out := slices.DeleteFunc(slices.Clone(refs), func(ref string) bool { _, found := row[ref]; return !found })
 	slices.SortStableFunc(out, func(a, b string) int { return row[a] - row[b] })
 	return out
 }
