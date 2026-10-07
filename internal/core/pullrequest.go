@@ -1,10 +1,6 @@
 package core
 
-import (
-	"strconv"
-
-	"github.com/thatsnotmynameio/crew/internal/crew"
-)
+import "github.com/thatsnotmynameio/crew/internal/crew"
 
 // pullRequestSlot holds one issue's pull request reports not settled yet
 // (KTD3). It is kept apart from the held issues, so a report never holds the
@@ -27,16 +23,18 @@ type pendingReport struct {
 // landed, unless pull request reports are off (KTD2). ended is set when the
 // move ended h's rule, so the report carries how it ended, unless the rule
 // has no actions: nobody stopped watching anything, so there is nothing to
-// tell (KTD5). The report's ID is fixed for its life (KTD7).
+// tell (KTD5). The report's ID comes from h's run and the move, so it is
+// fixed for its life (KTD7).
 func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	m := s.m
 	if m.pullRequests == nil {
 		return
 	}
-	m.lastID++
-	r := crew.PullRequestReport{
-		ID: strconv.FormatUint(uint64(m.lastID), 10), IssueID: h.issue.ID, IssueRef: h.issue.Ref, State: to,
+	id := h.run.TakeReport()
+	if ended {
+		id = h.run.VerdictReport()
 	}
+	r := crew.PullRequestReport{ID: id, IssueID: h.issue.ID, IssueRef: h.issue.Ref, State: to}
 	if ended && len(h.actions) > 0 {
 		r.End = s.ruleEnd(h)
 	}

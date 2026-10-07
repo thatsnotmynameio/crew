@@ -8,9 +8,10 @@ import "slices"
 // rule ended. The tracker adapter finds the pull requests and formats the
 // report in its own markup.
 type PullRequestReport struct {
-	// ID identifies the report across its retries: it is unique within one
-	// crew process and stays the same each time the report is sent again.
-	ID string
+	// ID identifies the report: it is derived from the rule run and the move
+	// it reports, so it stays the same across the report's retries and
+	// across crew processes.
+	ID PullRequestReportID
 	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
 	IssueID  IssueID
 	IssueRef string

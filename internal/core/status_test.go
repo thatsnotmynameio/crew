@@ -472,6 +472,7 @@ func TestWithoutStatusReportingNoStatusIsReported(t *testing.T) {
 func TestStatusesOfOneRuleRunShareItsRun(t *testing.T) {
 	d := newStatusDriver(t, draft(), 1)
 	cmds, _ := d.poll(issue("74", 2, ready))
+	run := crew.NewRuleRunID(d.listed, 1)
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 	running := statusOf(t, landed, "74")
 	d.wrote("74")
@@ -483,8 +484,19 @@ func TestStatusesOfOneRuleRunShareItsRun(t *testing.T) {
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	done := statusOf(t, cmds, "74")
 
-	if running.Run == "" || pending.Run != running.Run || done.Run != running.Run {
-		t.Fatalf("runs of one rule run: running %q, ended %q and %q", running.Run, pending.Run, done.Run)
+	if running.Run != run || pending.Run != run || done.Run != run {
+		t.Fatalf("runs of one rule run: running %q, ended %q and %q, want %q", running.Run, pending.Run, done.Run, run)
+	}
+}
+
+func TestIssuesTakenByOneListingGetRunsOfTheirOwn(t *testing.T) {
+	d := newStatusDriver(t, draft(), 2)
+	cmds, _ := d.poll(issue("1", 1, ready), issue("2", 2, ready))
+	for i, key := range []string{"1", "2"} {
+		landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, key), Result: core.ResultDone})
+		if got, want := statusOf(t, landed, key).Run, crew.NewRuleRunID(d.listed, i+1); got != want {
+			t.Fatalf("run of #%s: got %q, want %q", key, got, want)
+		}
 	}
 }
 
@@ -503,9 +515,10 @@ func TestEachRuleRunAfterAnEndedOneGetsANewRun(t *testing.T) {
 			d.wrote("74")
 
 			cmds, _ := d.poll(issue("74", 1, tt.next))
+			run := crew.NewRuleRunID(d.listed, 1)
 			landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
-			if got := statusOf(t, landed, "74"); got.Run == "" || got.Run == done.Run {
-				t.Fatalf("new rule run's run = %q, the ended one's = %q", got.Run, done.Run)
+			if got := statusOf(t, landed, "74"); got.Run != run || got.Run == done.Run {
+				t.Fatalf("new rule run's run = %q, want %q; the ended one's = %q", got.Run, run, done.Run)
 			}
 		})
 	}

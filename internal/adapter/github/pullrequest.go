@@ -204,7 +204,7 @@ func (t *Tracker) postStop(ctx context.Context, report crew.PullRequestReport, n
 
 // commented reports whether the report with id already posted its stop
 // comment on the pull request number.
-func (t *Tracker) commented(id string, number int) bool {
+func (t *Tracker) commented(id crew.PullRequestReportID, number int) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return slices.Contains(t.stopped[id], number)
@@ -212,7 +212,7 @@ func (t *Tracker) commented(id string, number int) bool {
 
 // forgetStops drops what the report with id posted, once no retry of it
 // will come.
-func (t *Tracker) forgetStops(id string) {
+func (t *Tracker) forgetStops(id crew.PullRequestReportID) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.stopped, id)

@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -454,10 +455,11 @@ func (e *Engine) receive(ctx context.Context, m message) {
 	e.step(ctx, m.input)
 }
 
-// step feeds in to the core, stamped with the time now, launches the
-// commands it returns on the command context ctx and publishes the update.
+// step feeds in to the core, stamped with the time now and a fresh seed,
+// launches the commands it returns on the command context ctx and publishes
+// the update.
 func (e *Engine) step(ctx context.Context, in core.Input) {
-	cmds, events := e.model.Update(in.Stamped(time.Now()))
+	cmds, events := e.model.Update(in.Stamped(time.Now(), uuid.NewV7()))
 	for _, c := range cmds {
 		e.launch(ctx, c)
 	}

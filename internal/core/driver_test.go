@@ -1,10 +1,12 @@
 package core_test
 
 import (
+	"encoding/binary"
 	"reflect"
 	"slices"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -61,11 +63,24 @@ func space(key string, action crew.ActionName) core.WorkspaceReady {
 	}
 }
 
-// driver feeds a model inputs one second apart, as the engine would stamp them.
+// driver feeds a model inputs one second apart, as the engine would stamp
+// them, each with the next sequential seed, so run ids stay deterministic.
 type driver struct {
 	t   *testing.T
 	m   *core.Model
 	now time.Time
+	// inputs counts the inputs sent: the nth gets seed(n).
+	inputs uint64
+	// listed is the seed stamped on the last IssuesListed sent, from which
+	// the runs it took got their ids.
+	listed uuid.UUID
+}
+
+// seed returns the nth sequential seed: a UUID whose last bytes encode n.
+func seed(n uint64) uuid.UUID {
+	var u uuid.UUID
+	binary.BigEndian.PutUint64(u[8:], n)
+	return u
 }
 
 func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
@@ -75,7 +90,12 @@ func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 
 func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 	d.now = d.now.Add(time.Second)
-	return d.m.Update(in.Stamped(d.now))
+	d.inputs++
+	stamp := seed(d.inputs)
+	if _, ok := in.(core.IssuesListed); ok {
+		d.listed = stamp
+	}
+	return d.m.Update(in.Stamped(d.now, stamp))
 }
 
 // settle answers cmds as a healthy engine would: moves succeed, workspaces

@@ -49,8 +49,6 @@ type Model struct {
 	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
-	// runs counts the rule runs statuses were reported for, for their ids.
-	runs int
 	// lastRuns holds the last run record of each issue, rule and action; nil
 	// when the model records no runs (KTD1, KTD2).
 	lastRuns map[runKey]RunRecord
@@ -79,7 +77,8 @@ type Model struct {
 // are settled.
 type heldIssue struct {
 	issue   crew.Issue
-	rule    int // index into Model.rules
+	rule    int            // index into Model.rules
+	run     crew.RuleRunID // minted at take, from the listing's seed (KTD5)
 	claim   Claim
 	actions []*actionRun // in the rule's action order
 	calls   []*call      // the take move, then the verdict calls

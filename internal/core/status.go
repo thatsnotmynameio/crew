@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"reflect"
 	"slices"
 
@@ -32,9 +31,10 @@ type statusSlot struct {
 	// failing is set while writes fail, so failures in a row are reported
 	// once.
 	failing bool
-	// run is the id of the issue's current rule run, and runRule its
-	// rule; runEnded is set once an ended status of it was reported.
-	run      string
+	// run is the id of the comment's current entry: the id of the rule run
+	// whose status opened it. runRule is its rule; runEnded is set once an
+	// ended status of it was reported.
+	run      crew.RuleRunID
 	runRule  crew.RuleName
 	runEnded bool
 }
@@ -82,15 +82,14 @@ func (s *step) report(st crew.Status) {
 	s.pump(sl)
 }
 
-// assignRun gives st the id of its rule run (R10): the issue's current run
-// goes on until it ended and a status of another kind comes, or until a
-// status of another rule comes. An id is the run's start time and a count,
-// so ids differ across crew processes and within one.
-func (s *step) assignRun(sl *statusSlot, st *crew.Status) {
+// assignRun gives st the id of its comment entry (R10): the issue's current
+// entry goes on until it ended and a status of another kind comes, or until
+// a status of another rule comes. A new entry takes the id of the rule run
+// st comes from, which is global (KTD5); every status of the entry carries
+// it.
+func (*step) assignRun(sl *statusSlot, st *crew.Status) {
 	if sl.run == "" || st.Rule != sl.runRule || (sl.runEnded && st.Kind != crew.StatusEnded) {
-		s.m.runs++
-		sl.run = fmt.Sprintf("%s.%d", s.at.UTC().Format("20060102T150405.000000000Z"), s.m.runs)
-		sl.runRule = st.Rule
+		sl.run, sl.runRule = st.Run, st.Rule
 	}
 	sl.runEnded = st.Kind == crew.StatusEnded
 	st.Run = sl.run
@@ -211,7 +210,7 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
 		IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
-		Kind: kind, Updated: s.at,
+		Kind: kind, Updated: s.at, Run: h.run,
 	}
 	for _, a := range h.actions {
 		as := crew.ActionStatus{Name: a.name, State: crew.ActionRunning}

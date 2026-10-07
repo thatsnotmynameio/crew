@@ -203,6 +203,7 @@ func TestADroppedVerdictMoveReportsNothing(t *testing.T) {
 func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
+	run := crew.NewRuleRunID(d.listed, 1)
 	take := pullRequestReportOf(t, landed)
 
 	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
@@ -212,8 +213,9 @@ func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
 	wantReport(t, verdict, crew.PullRequestReport{
 		IssueID: issueID("74"), IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
-	if verdict.ID == take.ID {
-		t.Fatalf("the verdict report has the take report's ID %q", take.ID)
+	if take.ID != run.TakeReport() || verdict.ID != run.VerdictReport() {
+		t.Fatalf("report IDs: take %q and verdict %q, want %q and %q",
+			take.ID, verdict.ID, run.TakeReport(), run.VerdictReport())
 	}
 }
 
@@ -402,8 +404,9 @@ func TestEachReportHasItsOwnIDAndARetryKeepsIt(t *testing.T) {
 	landed1, _ := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 	landed2, _ := d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
 	first, second := pullRequestReportOf(t, landed1), pullRequestReportOf(t, landed2)
-	if first.ID == "" || first.ID == second.ID {
-		t.Fatalf("report IDs %q and %q, want two different ones", first.ID, second.ID)
+	want1, want2 := crew.NewRuleRunID(d.listed, 1).TakeReport(), crew.NewRuleRunID(d.listed, 2).TakeReport()
+	if first.ID != want1 || second.ID != want2 {
+		t.Fatalf("report IDs: got %q and %q, want %q and %q", first.ID, second.ID, want1, want2)
 	}
 
 	d.answerPullRequests("1", core.ResultFailed)

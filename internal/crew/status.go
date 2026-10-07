@@ -26,12 +26,12 @@ type Status struct {
 	Move MoveProgress
 	// Updated is when crew computed this status.
 	Updated time.Time
-	// Run identifies the rule run this status belongs to: it stays the same
+	// Run identifies the status comment's entry this status belongs to: the
+	// id of the rule run that opened it, so it is global. It stays the same
 	// from the issue's first running status for a rule until the status
-	// after that rule ended, and differs between crew processes. A tracker
-	// that keeps a history of rule runs edits the run's entry, or starts a
-	// new one.
-	Run string
+	// after that rule ended. A tracker that keeps a history of rule runs
+	// edits the entry, or starts a new one, and compares it only as text.
+	Run RuleRunID
 }
 
 // StatusKind is the kind of a Status.

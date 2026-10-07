@@ -199,11 +199,11 @@ type Tracker struct {
 	labels labels
 
 	mu         sync.Mutex
-	comments   map[string]cachedStatus // status comments by issue key, as last written or read
-	stopped    map[string][]int        // pull requests given a report's stop comment, by report ID
-	codeOwners []string                // the code owners' logins, once Prepare found them
-	repository crew.Repository         // the repository, once Prepare found it
-	bots       []string                // the logins of the bots the config names
+	comments   map[string]cachedStatus            // status comments by issue key, as last written or read
+	stopped    map[crew.PullRequestReportID][]int // pull requests given a report's stop comment, by report ID
+	codeOwners []string                           // the code owners' logins, once Prepare found them
+	repository crew.Repository                    // the repository, once Prepare found it
+	bots       []string                           // the logins of the bots the config names
 }
 
 // Factory returns the github tracker's factory, which runs gh through group.
@@ -219,7 +219,7 @@ func factory(run proc.Runner) port.TrackerFactory {
 			return nil, err
 		}
 		return &Tracker{gh: &gh{run: run}, labels: newLabels(states),
-			comments: map[string]cachedStatus{}, stopped: map[string][]int{}}, nil
+			comments: map[string]cachedStatus{}, stopped: map[crew.PullRequestReportID][]int{}}, nil
 	}
 }
 

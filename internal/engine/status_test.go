@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/fake"
@@ -188,6 +189,40 @@ func TestALongSaidTextIsCutOnlyAfterItsLocalPathsAreShortened(t *testing.T) {
 		}
 		if strings.Contains(got, filepath.Base(cfg.Root)) || strings.Contains(got, "home") {
 			t.Errorf("Said = %q names part of a local path", got)
+		}
+
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
+// Covers KTD5: the engine stamps each input with a fresh seed, so the rule
+// runs two listings take get ids of two seeds.
+func TestRunsTakenByTwoListingsGetIDsOfTheirOwnSeeds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewReportingTracker(issue(1, ready))
+		r := start(t, config(t, tr, develop))
+		r.sessions(1)
+		tr.Add(issue(2, ready))
+		time.Sleep(poll)
+		r.sessions(1)
+
+		seeds := map[string]bool{}
+		for _, key := range []string{"1", "2"} {
+			got := tr.Statuses(key)
+			if len(got) == 0 {
+				t.Fatalf("no status written for issue %s", key)
+			}
+			seed, n, _ := strings.Cut(string(got[0].Run), ".")
+			if _, err := uuid.Parse(seed); err != nil || n != "1" {
+				t.Fatalf("run of #%s = %q, want a seed and 1", key, got[0].Run)
+			}
+			seeds[seed] = true
+		}
+		if len(seeds) != 2 {
+			t.Errorf("both listings' runs have the seed %v", seeds)
 		}
 
 		r.engine.Stop()

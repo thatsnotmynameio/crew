@@ -38,3 +38,34 @@ func TestAE4IssuesOfTwoRepositoriesWithTheSameKeyAreTwoIssues(t *testing.T) {
 		}
 	}
 }
+
+// runOf lists it alone, lands its take and returns the run of its running
+// status, then the id the listing's seed gives the run it took first.
+func runOf(t *testing.T, d *driver, it crew.Issue) (crew.RuleRunID, crew.RuleRunID) {
+	t.Helper()
+	cmds, _ := d.poll(it)
+	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, it.ID.Key), Result: core.ResultDone})
+	return statusOf(t, landed, it.ID.Key).Run, crew.NewRuleRunID(d.listed, 1)
+}
+
+// Covers AE4.
+func TestAE4RuleRunsOfTwoRepositoriesIssuesKeyed42HaveTheirOwnIDs(t *testing.T) {
+	one, two := issue("42", 1, ready), issue("42", 1, ready)
+	one.ID.Repository, two.ID.Repository = "R_one", "R_two"
+	first, other := newStatusDriver(t, draft(), 2), newStatusDriver(t, draft(), 2)
+	other.inputs = 1000 // another process: other seeds
+
+	run1, want1 := runOf(t, first, one)
+	run2, want2 := runOf(t, other, two)
+	if run1 != want1 || run2 != want2 {
+		t.Fatalf("runs: got %q and %q, want %q and %q", run1, run2, want1, want2)
+	}
+	if run1 == run2 {
+		t.Fatalf("both repositories' runs are %q", run1)
+	}
+
+	// The same inputs with the same seeds give the same ids.
+	if again, _ := runOf(t, newStatusDriver(t, draft(), 2), one); again != run1 {
+		t.Fatalf("run with the same seed: got %q, want %q", again, run1)
+	}
+}

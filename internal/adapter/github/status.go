@@ -253,7 +253,7 @@ func nextStatus(current string, status crew.Status, text string) (string, bool) 
 		latest = &entries[n-1]
 	}
 	switch {
-	case latest != nil && (latest.run == status.Run ||
+	case latest != nil && (latest.run == string(status.Run) ||
 		latest.kind == legacyQueuedKind && latest.rule == status.Rule):
 		latest.text = text
 	default:
@@ -371,7 +371,7 @@ func parseMarker(s string) (entry, bool) {
 // of every comment already posted still parse.
 func markerLine(s crew.Status) string {
 	return fmt.Sprintf("%srun=%s kind=%s stage=%s -->",
-		entryMarker, url.QueryEscape(s.Run), kindName(s.Kind), url.QueryEscape(string(s.Rule)))
+		entryMarker, url.QueryEscape(string(s.Run)), kindName(s.Kind), url.QueryEscape(string(s.Rule)))
 }
 
 // legacyQueuedKind marks the entry of an issue an earlier crew version

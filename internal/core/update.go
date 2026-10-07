@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -42,6 +43,7 @@ func (s *step) runInput(in Input) bool {
 	case TimeUp:
 		s.timeUp(in.Limit)
 	case IssuesListed:
+		s.seed = in.Seed
 		s.listed(in.Issues)
 	case ListFailed:
 		s.m.listing = false
@@ -76,6 +78,10 @@ type step struct {
 	at     time.Time
 	cmds   []Command
 	events []Event
+	// seed is the input's seed, from which the rule runs it takes get their
+	// ids, and runs counts those runs (KTD5).
+	seed uuid.UUID
+	runs int
 }
 
 func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
@@ -328,7 +334,10 @@ func comparePriority(a, b int) int {
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
-	h := &heldIssue{issue: issue.Clone(), rule: si, claim: ClaimTaking, taken: s.at}
+	s.runs++
+	h := &heldIssue{
+		issue: issue.Clone(), rule: si, run: crew.NewRuleRunID(s.seed, s.runs), claim: ClaimTaking, taken: s.at,
+	}
 	for _, a := range rule.Actions {
 		h.actions = append(h.actions, &actionRun{
 			name: a.Name, prompt: a.Prompt, checks: a.Checks, agent: a.Agent, bot: a.Bot,

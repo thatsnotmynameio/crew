@@ -2,6 +2,7 @@ package core
 
 import (
 	"time"
+	"uuid"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -13,8 +14,11 @@ import (
 // The set of inputs is closed: only this package's types implement Input.
 type Input interface {
 	// Stamped returns a copy of the input whose At is at. The engine stamps
-	// each input with this as it takes it from its inbox.
-	Stamped(at time.Time) Input
+	// each input with this as it takes it from its inbox, with a fresh seed
+	// besides the time, so the ids of the rule runs the input takes are
+	// minted outside the core and are global (KTD5). Only IssuesListed
+	// keeps the seed: only a listing takes issues.
+	Stamped(at time.Time, seed uuid.UUID) Input
 	arrival() time.Time
 }
 
@@ -59,6 +63,9 @@ type TimeUp struct {
 type IssuesListed struct {
 	At     time.Time
 	Issues []crew.Issue
+	// Seed is the fresh seed the engine stamped, from which the rule runs
+	// this listing takes get their ids.
+	Seed uuid.UUID
 }
 
 // ListFailed is a ListIssues that failed. The next tick lists again.
@@ -262,64 +269,67 @@ type PullRequestFound struct {
 }
 
 // Stamped implements Input.
-func (i Tick) Stamped(at time.Time) Input { i.At = at; return i }
+func (i Tick) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i StopRequested) Stamped(at time.Time) Input { i.At = at; return i }
+func (i StopRequested) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i TimeUp) Stamped(at time.Time) Input { i.At = at; return i }
+func (i TimeUp) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i IssuesListed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i IssuesListed) Stamped(at time.Time, seed uuid.UUID) Input {
+	i.At, i.Seed = at, seed
+	return i
+}
 
 // Stamped implements Input.
-func (i ListFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i ListFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i BoardListed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BoardListed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i BoardListFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BoardListFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i BotsChecked) Stamped(at time.Time) Input { i.At = at; return i }
+func (i BotsChecked) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i CallResult) Stamped(at time.Time) Input { i.At = at; return i }
+func (i CallResult) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i StatusResult) Stamped(at time.Time) Input { i.At = at; return i }
+func (i StatusResult) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i PullRequestsResult) Stamped(at time.Time) Input { i.At = at; return i }
+func (i PullRequestsResult) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i WorkspaceReady) Stamped(at time.Time) Input { i.At = at; return i }
+func (i WorkspaceReady) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i WorkspaceGone) Stamped(at time.Time) Input { i.At = at; return i }
+func (i WorkspaceGone) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i RecordFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i RecordFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i WorkspaceFailed) Stamped(at time.Time) Input { i.At = at; return i }
+func (i WorkspaceFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i SessionStarted) Stamped(at time.Time) Input { i.At = at; return i }
+func (i SessionStarted) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i SessionFailedToStart) Stamped(at time.Time) Input { i.At = at; return i }
+func (i SessionFailedToStart) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i SessionEnded) Stamped(at time.Time) Input { i.At = at; return i }
+func (i SessionEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i CheckEnded) Stamped(at time.Time) Input { i.At = at; return i }
+func (i CheckEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
-func (i PullRequestFound) Stamped(at time.Time) Input { i.At = at; return i }
+func (i PullRequestFound) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }
