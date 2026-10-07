@@ -125,6 +125,7 @@ func TestAnUnknownFlagIsAViolation(t *testing.T) {
 		"no prompt":        {"-p", "--output-format", "stream-json", "--verbose"},
 		"two prompts":      {"-p", "--output-format", "stream-json", "--verbose", "--", "go", "on"},
 		"flag needs value": {"-p", "--verbose", "--model"},
+		"add-dir no value": {"-p", "--output-format", "stream-json", "--verbose", "--add-dir"},
 	}
 	for name, a := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -138,6 +139,31 @@ func TestAnUnknownFlagIsAViolation(t *testing.T) {
 				t.Fatalf("the script was used up by the refused call: %+v", o)
 			}
 		})
+	}
+}
+
+// A session that may write its verdict file's directory is given it with
+// --add-dir and a value, before another flag, and finds the file in its
+// environment as CREW_VERDICT_FILE.
+func TestAddDirWithAValueIsAccepted(t *testing.T) {
+	c := New(nil)
+	var got Session
+	c.Script("go", func(_ context.Context, s *Session) int {
+		got = *s
+		return 0
+	})
+	a := []string{"-p", "--model", "claude-opus-5-5", "--add-dir", "/tmp/crew-verdict-1",
+		"--permission-mode", "auto", "--output-format", "stream-json", "--verbose", "--", "go"}
+	env := map[string]string{"CREW_VERDICT_FILE": "/tmp/crew-verdict-1/verdict"}
+
+	o, _, _ := run(t, c, Invocation{Args: a, Env: env})
+
+	if o.Code != 0 || o.Violation != "" {
+		t.Fatalf("outcome = %+v, want the script's success", o)
+	}
+	if got.Prompt != "go" || got.PermissionMode != "auto" ||
+		got.Env["CREW_VERDICT_FILE"] != "/tmp/crew-verdict-1/verdict" {
+		t.Fatalf("session = %+v", got)
 	}
 }
 

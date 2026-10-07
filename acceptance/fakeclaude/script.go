@@ -153,14 +153,15 @@ func (c *Claude) take(prompt string) ScriptFunc {
 }
 
 // parseArgs reads claude's headless command line: -p (--print), --verbose,
-// --model, --permission-mode and --output-format stream-json, then the
-// prompt as the one argument after --. It returns the session it describes
-// and what it does not know about args, "" when it knows everything.
+// --model, --permission-mode, --add-dir with one directory the session may
+// write and --output-format stream-json, then the prompt as the one argument
+// after --. It returns the session it describes and what it does not know
+// about args, "" when it knows everything.
 func parseArgs(args []string) (*Session, string) {
 	s := &Session{}
 	values := map[string]*string{"--model": &s.Model, "--permission-mode": &s.PermissionMode}
-	var format string
-	values["--output-format"] = &format
+	var format, dir string
+	values["--output-format"], values["--add-dir"] = &format, &dir
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		a := args[i]

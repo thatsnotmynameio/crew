@@ -197,7 +197,7 @@ An issue or pull request has `number`, `title`, `url`, `createdAt`, `state`, `re
 
 ### Scripting a Claude Code session
 
-`sc.Claude` (a `*fakeclaude.Claude`) answers Claude Code's headless print mode with stream-json output: `-p`, `--verbose`, `--output-format stream-json`, `--model`, `--permission-mode`, and the prompt after `--`. A session prints one JSON event per line and ends with a result event that says whether it succeeded; then the process exits with a code.
+`sc.Claude` (a `*fakeclaude.Claude`) answers Claude Code's headless print mode with stream-json output: `-p`, `--verbose`, `--output-format stream-json`, `--model`, `--permission-mode`, `--add-dir` with one directory, and the prompt after `--`. A session prints one JSON event per line and ends with a result event that says whether it succeeded; then the process exits with a code.
 
 Register one script for every session crew is expected to start:
 
@@ -221,7 +221,7 @@ A script of your own is a `fakeclaude.ScriptFunc`: `func(ctx context.Context, s 
 
 - `Dir`: the directory the session runs in, where the script may write files;
 - `Prompt`, `Model` and `PermissionMode`, as given on the command line;
-- `Env`: the session's `GH_CONFIG_DIR` and `CREW_*` variables;
+- `Env`: the session's `GH_CONFIG_DIR` and `CREW_*` variables; when crew gives the session a verdict file, `Env["CREW_VERDICT_FILE"]` is its path, which the script may write as a session would;
 - `GitHub`: the fake GitHub, which the script may change as a session that runs `gh` would.
 
 Its event builders are `s.Init()` (the system init event that opens a session), `s.Said(text)` (an assistant message; the last one is what a reader shows), `s.Success(result)` and `s.Failure(message)`.

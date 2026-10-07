@@ -108,6 +108,13 @@ type Run struct {
 	// issues crew takes.
 	CodeOwners []string
 	Bots       []string
+	// VerdictFile, when not empty, is the file the session may write its
+	// verdict to, which it finds in CREW_VERDICT_FILE. VerdictDir is the
+	// directory that holds it, which the session may write. Both are
+	// optional and owned by crew, which makes them for one session outside
+	// the worktree and .crew/logs/; the harness only hands them on.
+	VerdictFile string
+	VerdictDir  string
 }
 
 // Identity is who a child process, such as a session or a check, acts as on

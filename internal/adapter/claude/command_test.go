@@ -80,3 +80,27 @@ func TestStartRunsClaudeAsTheRunsIdentity(t *testing.T) {
 		t.Errorf("env = %q, want the identity's GH_CONFIG_DIR", env)
 	}
 }
+
+// A session given a verdict file finds it in CREW_VERDICT_FILE and may write
+// its directory, which --add-dir names before another flag: Claude Code's
+// --add-dir takes several paths, so right before -- it would take the
+// prompt as one. The file's path stays out of the arguments.
+func TestCommandGivesTheSessionItsVerdictFile(t *testing.T) {
+	run := port.Run{
+		Dir: "/work", Prompt: "Implement #4", Identity: developer,
+		VerdictFile: "/tmp/crew-verdict-1/verdict", VerdictDir: "/tmp/crew-verdict-1",
+	}
+
+	got := command(run, "claude-opus-5-5")
+
+	if !slices.Contains(got.Env, "CREW_VERDICT_FILE=/tmp/crew-verdict-1/verdict") {
+		t.Errorf("env = %q, want CREW_VERDICT_FILE=/tmp/crew-verdict-1/verdict", got.Env)
+	}
+	want := []string{
+		"-p", "--model", "claude-opus-5-5", "--add-dir", "/tmp/crew-verdict-1",
+		"--permission-mode", "auto", "--output-format", "stream-json", "--verbose", "--", "Implement #4",
+	}
+	if !slices.Equal(got.Args, want) {
+		t.Errorf("args = %q, want %q", got.Args, want)
+	}
+}

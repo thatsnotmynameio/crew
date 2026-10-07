@@ -31,16 +31,25 @@ const (
 // (a Markdown list, an issue title) is not read as an option. The session acts
 // as run's identity, with its environment added and the variables it unsets
 // removed, and gets the code owners' and the bots' logins as CREW_CODE_OWNERS
-// and CREW_BOTS.
+// and CREW_BOTS. A run with a verdict file gives it to the session as
+// CREW_VERDICT_FILE, in its environment only, and lets it write the file's
+// directory with --add-dir, which comes before another flag: it takes every
+// path that follows it, so right before -- it would take the prompt too.
 func command(run port.Run, model string) proc.Command {
 	env := slices.Concat(
 		[]string{bashDefaultTimeout, bashMaxTimeout},
 		run.Identity.Env,
 		[]string{"CREW_CODE_OWNERS=" + strings.Join(run.CodeOwners, " "), "CREW_BOTS=" + strings.Join(run.Bots, " ")},
 	)
+	if run.VerdictFile != "" {
+		env = append(env, "CREW_VERDICT_FILE="+run.VerdictFile)
+	}
 	args := []string{"-p"}
 	if model != "" {
 		args = append(args, "--model", model)
+	}
+	if run.VerdictDir != "" {
+		args = append(args, "--add-dir", run.VerdictDir)
 	}
 	return proc.Command{
 		Name:  binary,

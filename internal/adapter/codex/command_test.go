@@ -174,3 +174,34 @@ func TestCommandKeepsTheSandboxAndTheUsersConfig(t *testing.T) {
 		}
 	}
 }
+
+// A session given a verdict file finds it in CREW_VERDICT_FILE, through
+// codex's environment only, and may write its directory, which joins the
+// git dirs as a writable root. Neither the file nor crew's logs are in the
+// arguments.
+func TestCommandGivesTheSessionItsVerdictFile(t *testing.T) {
+	run := botRun("Review #4")
+	run.VerdictFile, run.VerdictDir = "/tmp/crew-verdict-1/verdict", "/tmp/crew-verdict-1"
+
+	got := command(run, "", worktreeGitDirs)
+
+	if !slices.Contains(got.Env, "CREW_VERDICT_FILE=/tmp/crew-verdict-1/verdict") {
+		t.Errorf("env = %q, want CREW_VERDICT_FILE=/tmp/crew-verdict-1/verdict", got.Env)
+	}
+	var dirs []string
+	for i, a := range got.Args {
+		if a == "--add-dir" {
+			dirs = append(dirs, got.Args[i+1])
+		}
+	}
+	if want := slices.Concat(worktreeGitDirs, []string{"/tmp/crew-verdict-1"}); !slices.Equal(dirs, want) {
+		t.Errorf("--add-dir %q, want %q", dirs, want)
+	}
+	for _, arg := range got.Args {
+		for _, value := range []string{"CREW_VERDICT_FILE", "/tmp/crew-verdict-1/verdict", ".crew/logs"} {
+			if strings.Contains(arg, value) {
+				t.Errorf("argument %q holds %q", arg, value)
+			}
+		}
+	}
+}
