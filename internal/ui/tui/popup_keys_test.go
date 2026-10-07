@@ -74,7 +74,7 @@ func TestThePopupsKeys(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(runningSnapshot()))
 	h.send(enterKey)
-	if got := rowsOf(h.view())[len(rowsOf(h.view()))-1]; got != "esc close · ←→ card · ↑↓ scroll · q stop" {
+	if got := rowsOf(h.view())[len(rowsOf(h.view()))-1]; got != "esc close · ←→ card · ↑↓ scroll · q q stop" {
 		t.Errorf("the key help reads %q in the popup", got)
 	}
 

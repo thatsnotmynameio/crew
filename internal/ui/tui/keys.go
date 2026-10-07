@@ -28,7 +28,7 @@ type keyMap struct {
 // newKeyMap returns the view's key bindings.
 func newKeyMap() keyMap {
 	return keyMap{
-		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "stop")),
+		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", "stop")),
 		focus:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus")),
 		back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus back")),
 		bots:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bots")),
@@ -167,11 +167,14 @@ func (m Model) keyHelp() string {
 	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, move, open, m.keys.help})
 }
 
-// helpOverlay draws every key in a box over the middle of view (R20), and
-// what a card's labelled rows mean (R12, KTD12 of #151).
+// helpOverlay draws every key in a box over the middle of view (R20), with
+// the stop's two presses and the press that forces (R9 of #266), and what a
+// card's labelled rows mean (R12, KTD12 of #151).
 func (m Model) helpOverlay(view string) string {
+	stop := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", "stop, within 3s"))
+	force := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "force if stopping"))
 	groups := [][]key.Binding{
-		{m.keys.stop, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
+		{stop, force, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
 		{m.keys.up, m.keys.down, m.keys.left, m.keys.right, m.keys.enter},
 		{m.keys.pageUp, m.keys.pageDown, m.keys.top, m.keys.bottom},
 	}
