@@ -1,8 +1,8 @@
 # crew
 
-crew moves your GitHub issues through rules you declare in the repository. Each rule reacts to one label: crew polls for the issues and pull requests that carry it and runs the rule's actions in parallel, each one a headless Claude Code or Codex session in its own git worktree and branch. When every action ends, crew moves the issue to the rule's success label, or to its failure label with a comment saying what failed. You name every label in the rules: crew has no fixed ones.
+crew moves your GitHub issues through rules you declare in the repository. Each rule reacts to one label: crew polls for the issues and pull requests that carry it, moves each to the rule's running label and runs the rule's actions one after another, in one git worktree and branch per run. An action is a headless Claude Code or Codex session, or a shell script. Each action ends with a verdict, which either runs the next action or ends the run through one of the rule's routes. A route may comment on the issue, post crew's report and run scripts, then moves the issue to another label or closes it. You name every label in the rules: crew has no fixed ones.
 
-crew only runs sessions and moves labels. Opening pull requests, reviewing and merging are your prompts' job and yours.
+crew only runs sessions and scripts, comments on issues, moves their labels and closes them. Opening pull requests, reviewing and merging are your prompts' job and yours.
 
 ## Quick start
 
@@ -48,23 +48,79 @@ Keep your own settings, such as `poll_interval_seconds` or a `board`, in `.crew/
 
 Settings you share across repositories, such as your agents, bots or board, can live in one global file outside any repository: `~/.config/crew/config.yaml` on Linux and macOS, or `$XDG_CONFIG_HOME/crew/config.yaml` when `XDG_CONFIG_HOME` is set. crew reads it in every repository it runs in, first: each top-level key of `.crew/config.yaml` replaces that whole key of the global file, and each top-level key of `.crew/config.local.yaml` replaces it in both, so a repository's own files always win. The global file takes every key the other two take, and crew needs at least one of the three, so the global file alone is enough: in a repository with no `.crew/` files, its `rules` act on that repository's issues. A relative `XDG_CONFIG_HOME` or home directory, or none, leaves crew without a global file. Config errors name the global file by its full path.
 
-crew shows a live view of the issues it holds and the sessions it runs; `--plain` prints one line per event instead. You act on issues through their labels on GitHub. Under the header, Bots shows a card for each bot crew acts as, then one for you: whether it can act, what it cost this run, what acts as it and what runs as it now. Below them, the board has a card for each issue in each of its columns: the issue's reference and title, then `run` (its actions and how long each has run, or its state with none: `blocked` when crew does not hold it and an open issue blocks it), `bots` (the bots its running actions act as) and `via` (the queue its actions run in). In each column, the cards of the issues crew holds come first, then the others, each group oldest first. An issue whose rule ended shows only in the columns its labels put it in, and Events says how the rule ended. A held issue that no column shows, such as a pull request, gets a card in a Not on board column after the others. Queues and Events sit under the board. The board has focus when the view opens, with one card highlighted: ↑↓ move the highlight within a column, ←→ move it between columns, and Enter opens a box over the dimmed view with that issue's rule, its labels as chips with a `blocked` chip after them when an open issue blocks it, its kind, priority and URL, its actions with the bot, queue, state and branch of each and the last thing each said or why it failed, and its events. In the box ←→ move to the previous or next card, ↑↓ scroll it, and Esc closes it. Tab cycles the board, Bots and Events, `b` and `e` jump to Bots and Events, and Esc returns to the board; while Bots has focus, ←→ scroll its cards when they do not all fit. `?` lists every key.
+crew shows a live view of the issues it holds and the sessions it runs; `--plain` prints one line per event instead. You act on issues through their labels on GitHub. Under the header, Bots shows a card for each bot crew acts as, then one for you: whether it can act, what it cost this run, what acts as it and what runs as it now. Below them, the board has a card for each issue in each of its columns. Without a `board` in the config, it has one column per rule that has actions, holding the rule's ready and running labels, and a column of its own for each label where the route of a `waiting` verdict leaves the issue, so an issue paused there stays on screen. A card shows the issue's reference and title, then `run` (the action its run is on and how long it has run, how many of the rule's actions are left after it, and the route the run ends through once it chose one, or its state with none: `blocked` when crew does not hold it and an open issue blocks it), `bots` (the bots its running actions act as) and `via` (the queue its actions run in). In each column, the cards of the issues crew holds come first, then the others, each group oldest first. An issue whose rule ended shows only in the columns its labels put it in, and Events says how the rule ended. A held issue that no column shows, such as a pull request, gets a card in a Not on board column after the others. Queues and Events sit under the board. The board has focus when the view opens, with one card highlighted: ↑↓ move the highlight within a column, ←→ move it between columns, and Enter opens a box over the dimmed view with that issue's rule, its labels as chips with a `blocked` chip after them when an open issue blocks it, its kind, priority and URL, its actions with the bot, queue, state and branch of each and the last thing each said or why it failed, and its events. In the box ←→ move to the previous or next card, ↑↓ scroll it, and Esc closes it. Tab cycles the board, Bots and Events, `b` and `e` jump to Bots and Events, and Esc returns to the board; while Bots has focus, ←→ scroll its cards when they do not all fit. `?` lists every key.
+
+## Rules
+
+A rule takes the items that carry its `ready` label, issues by default or pull requests when its `takes` says so, and moves each to its `running` label. It then runs its `actions` one at a time, in the order listed, and ends the run through one of its `routes`:
+
+```yaml
+actions:
+  tests: go test ./...
+  pr-opened: |-
+    n=$(gh pr list --head "$CREW_BRANCH" --state open --json number --jq length) || exit 1
+    [ "$n" -gt 0 ] || { echo "no open pull request from $CREW_BRANCH"; exit 1; }
+
+rules:
+  development:
+    labels:
+      ready: ready
+      running: in progress
+    actions:
+      - agent: developer
+        name: implement
+        prompt: |-
+          Implement {{.Issue.Ref}}. Open a pull request whose body has the line `Closes {{.Issue.Ref}}`.
+        on:
+          blocked: blocked
+      - tests
+      - pr-opened
+    routes:
+      passed: in review
+      failed:
+        - report
+        - move: failed
+      blocked:
+        - comment: "{{.Issue.Ref}} is blocked: `{{.Action}}` ended with `{{.Verdict}}`."
+        - move: blocked
+```
+
+An action is a session or a shell action. A session is written in the rule, with its `prompt` and the `agent` that runs it, which you can leave out when `agents` declares only one. Its prompt is a Go template over the item: `{{.Issue.Ref}}`, `{{.Issue.Key}}`, `{{.Issue.Title}}` and `{{.Issue.URL}}`. A session is named after its agent unless its `name` says otherwise, and no two actions of a rule share a name. A shell action is defined once, under the top-level `actions`, and a rule names it in its list: by its name alone, or as a key left empty, with `on` and `name` beside it. All the actions of a run share one git worktree and branch, `issue-<number>-<rule>`, so each sees what the ones before it left. crew creates the worktree only for a rule with actions.
+
+Every action ends with a verdict. A session that succeeds gives `passed` and one that fails gives `failed`. It may instead end with one of the verdicts its `on` names, by writing it on the first line of the file that `CREW_VERDICT_FILE` names; crew's prompt tells it how, and a first line that is no verdict counts as `failed`. A shell action passes when it exits 0 and fails otherwise, unless its definition's `verdicts` names the verdict of its exit status. A verdict other than `passed`, `failed` and `waiting` that the action's `on` does not name counts as `failed`. A stop, a session or script that cannot start and a prompt that does not render always give `failed`. A verdict's name is a lowercase letter, then lowercase letters, digits, `-` or `_`.
+
+An action's `on` maps each verdict to `next`, which runs the next action, or to one of the rule's routes, which ends the run there: the actions after it do not run. Without an entry, `passed` leads to `next` and every other verdict to `failed`. When the last action's verdict leads to `next`, the run ends through `passed`.
+
+A rule with actions declares the routes `passed` and `failed`, and every route an `on` leads to. A route is a label to move the item to, or a list of steps that run in order:
+
+- `report` posts crew's report on the issue: the action that ended the run, its verdict, the route and the action's log.
+- `comment` posts a comment, a Go template that may name `{{.Issue.Ref}}`, `{{.Issue.Key}}`, `{{.Issue.Title}}`, `{{.Issue.URL}}`, `{{.Rule}}`, `{{.Action}}` (the action that ended the run), `{{.Verdict}}`, `{{.Route}}` and `{{.Log}}`, and nothing else.
+- The name of a shell action of `actions` runs it, as a step.
+- `move` moves the item to a label. `close` closes the issue, takes crew's labels off it and off its pull requests, which stay open, and posts the stop comment on each of them.
+
+The last step, and only it, is a `move` or a `close`. A step that fails shows on the issue's status comment, and the route goes on, so the final move or close still happens. Neither a comment nor a report ever carries what a session or a script printed. A rule without actions declares only `passed`: crew runs it as soon as it takes the item, without a worktree or a session.
+
+crew refuses a config, naming the file, the key and its line, when an `on` names a route the rule does not declare, when nothing leads to a route other than `passed` and `failed`, when a route does not end with `move` or `close` or has one before its last step, when a route moves the item to the rule's own `ready` label or to any rule's `running` label, when two actions of a rule share a name, or when a route is named `next`. A top-level action cannot take a word of the rules' own, such as `agent`, `prompt`, `on`, `move` or `next`, as its name. crew also refuses to start, with exit status 2, when a route comments on or closes issues and the tracker cannot.
+
+When an issue returns to a rule's `ready` label and that rule's last run on it ended through any route other than `passed`, or chose one and never finished it, crew resumes that run: it reopens the run's worktree and starts at the action that ended it. The actions before it do not run again. When that action is a shell action that judged a session before it, crew starts at that session instead, unless the shell action's definition says `resume: self`, as one that checks something outside the worktree, such as CI, would. A resumed session is a new session, whose prompt tells it that it continues an earlier run, which route that run ended through and where its log is. A run that crashed during an action resumes at that action. When the last run chose `passed` but its final move or close never landed, crew runs only the `passed` route again, in that run's worktree when it still exists. When the worktree is gone, crew starts over at the first action in a new one. crew never resumes on its own: only the `ready` label going back on the issue does. Runs that failed under a crew release without routes start over in a new worktree.
 
 ## Stopping crew
 
-Ctrl+C, or `q` in the live view, stops crew, as SIGINT, SIGTERM and SIGHUP do. crew takes nothing new and asks each running session to stop, giving it up to ten seconds before it kills the session. An action whose session crew stopped fails, so its issue moves to the rule's failure label like any failed action. crew exits once it has judged every issue it held. A second Ctrl+C, `q` or signal does not wait: it kills every process crew started and exits at once. `run_time_limit_seconds` ends a run another way: crew winds down, taking nothing new while its running sessions end on their own.
+Ctrl+C, or `q` in the live view, stops crew, as SIGINT, SIGTERM and SIGHUP do. crew takes nothing new, starts no other action, and asks each running session and script to stop, giving it up to ten seconds before it kills it. An action crew stopped gives `failed`, and every run whose action ends while crew stops ends through its `failed` route. In the route of a stopping run, crew stops a running shell step, skips the shell steps that have not started and shows them as skipped, and gives each move, close, comment and report its final try. A rule without actions still ends through `passed`. crew exits once every run it held has ended. A second Ctrl+C, `q` or signal does not wait: it kills every process crew started and exits at once.
+
+`run_time_limit_seconds` ends crew another way. crew takes nothing new, lets each running action finish and starts no other. A run whose action then leads to the next action ends through `failed` instead; one whose action leads to a route ends through that route. Every route runs all its steps, shell steps included, before crew exits. A tracker write that keeps failing does not keep crew past the limit: crew then stops as above.
 
 crew exits 0 after a stop or at its run time limit, 1 when it failed while running or a second stop forced its exit, and 2 on a command line it cannot use or a config or environment error, such as a repository without `.crew/config.yaml`, `.crew/config.local.yaml` or a global config file.
 
-## Checks
+## Shell actions
 
-A check is a shell script you declare under `checks:` and name in an action's `check:`. It runs in the action's worktree after the session succeeded, and decides whether the action succeeded. `check:` takes one name or a list, such as `check: [tests, pr-opened]`. The checks run in that order, each with its own ten minutes. The first that fails, cannot start, runs out of time or is stopped fails the action, and the rest do not run.
+A shell action is a script you define once under the top-level `actions`, by name, and name in a rule's `actions` or in a route's steps. Its definition is the script itself, or a mapping with its `script`, the `verdicts` its exit statuses give, such as `3: needs_person`, and `resume: self`. It runs with `sh -c` in the run's worktree, with ten minutes to finish, or in an empty temporary directory when the run has no worktree, as in a rule without actions. Its output goes to the run's log, `.crew/logs/<worktree>.log`, after a line naming it.
 
-A check reads the issue from `CREW_ISSUE_REF`, `CREW_ISSUE_KEY`, `CREW_ISSUE_URL` and `CREW_BRANCH`, the logins from `CREW_CODE_OWNERS` and `CREW_BOTS`, and the action's name from `CREW_ACTION`. `CREW_PROMPT_FILE` names a file with the prompt the session started with, resume note included. `CREW_LAST_MESSAGE_FILE` names a file with the session's last message as it wrote it, which is empty when it ended without one. crew removes both files once the check ended.
+A shell action reads the issue from `CREW_ISSUE_REF`, `CREW_ISSUE_KEY`, `CREW_ISSUE_URL` and `CREW_BRANCH`, and the logins from `CREW_CODE_OWNERS` and `CREW_BOTS`. `CREW_ACTION` names the run's latest session, so a script that judges a session knows which one. `CREW_PROMPT_FILE` names a file with the prompt that session started with, resume note included, and `CREW_LAST_MESSAGE_FILE` a file with its last message as it wrote it, empty when it ended without one. crew keeps both beside the run's log, as `.crew/logs/<worktree>.prompt` and `.crew/logs/<worktree>.last-message`, so a script resumed after a restart still judges the same session, and hands each script its own copies, which it removes once the script ended. A resumed run starts with the latest session of the run it resumes. In a fresh run, before its first session, `CREW_ACTION` and both files are empty. A shell action acts on GitHub as the latest session's bot, and before any session as crew's own writes do: as `tracker.bot`, or as you.
 
-The issue's status comment shows each check that ran, with crew's words and the last line the check printed, such as `the check pr-opened failed: no open pull request from <branch>`. Make that last line your reason: crew never shows what the session itself said.
+A shell action passes when it exits 0 and fails on any other status, unless its `verdicts` names that status. One that cannot start, runs out of time or is stopped fails. The issue's status comment shows each shell action that ran, with crew's words and the last line it printed, such as `the shell action pr-opened exited with status 1: no open pull request from <branch>`. Make that last line your reason: crew never shows what a session itself said. A shell step of a route shows only crew's words.
 
-In this repository's own config, the lfg actions first run `session-finished`, which asks TypeSafe's Jev whether the session's last message says it is still waiting on work it started or stopped without doing it. It sends the session's prompt and last message to TypeSafe, whose zero data retention is offered only on its enterprise plan. It needs `TYPESAFE_API_KEY` in crew's environment, and `jq` and `curl` on the `PATH`; without the key it fails the action. When the last message is empty or TypeSafe cannot answer, it passes and says it did not judge.
+In this repository's own config, the lfg sessions are followed by `session-finished`, which asks TypeSafe's Jev whether the session's last message says it is still waiting on work it started or stopped without doing it, and fails if so. When the session did its part but a person must act before its result can be used, it exits 3, which its definition maps to the verdict `needs_person`, and the run ends through the `needs-person` route, which comments on the issue and moves it to `crew:<rule>:needs person`. It sends the session's prompt and last message to TypeSafe, whose zero data retention is offered only on its enterprise plan. It needs `TYPESAFE_API_KEY` in crew's environment, and `jq` and `curl` on the `PATH`; without them it fails. When the last message is empty or TypeSafe cannot answer, it passes and says it did not judge.
 
 ## A session's task
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,8 +40,8 @@ func loadOwn(t *testing.T) *config.Config {
 }
 
 // ownRule is how a rule of crew's own config loads, its actions summed up
-// as "session S: agent A, bot B" or "shell S", and its routes as
-// "route: step, step".
+// as "session S: agent A, bot B" or "shell S", each followed by its on as
+// "; verdict to target", and its routes as "route: step, step".
 type ownRule struct {
 	name    crew.RuleName
 	labels  crew.Labels
@@ -54,8 +55,10 @@ type ownRule struct {
 // and keep the rules, sessions, queues, bots and labels it had in the old
 // format (KTD8, KTD-S3): the same names, each check a shell action after
 // its session, each success label the passed route and each failure label
-// a failed route that reports, then moves (N1). refinement replaced triage
-// in #160, while no issue was in a triage state.
+// a failed route that reports, then moves (N1). development and fix send
+// the judge's needs_person to a needs-person route that comments, then
+// moves (AE2). refinement replaced triage in #160, while no issue was in a
+// triage state.
 func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	cfg := loadOwn(t)
 	if got, want := ownRules(cfg.Rules, cfg.Notify), wantOwnRules(); !reflect.DeepEqual(got, want) {
@@ -75,6 +78,10 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 	script := shellScript(t, ownRuleNamed(t, cfg, "development"), "pr-closes-issue")
 	if !strings.Contains(script, `"Closes " + env.CREW_ISSUE_REF`) {
 		t.Errorf("development's pr-closes-issue = %q, want the script of pr-closes-issue", script)
+	}
+	judge, ok := ownRuleNamed(t, cfg, "development").Action("session-finished").Kind.(crew.ShellSpec)
+	if want := map[int]crew.Verdict{3: "needs_person"}; !ok || !reflect.DeepEqual(judge.Verdicts, want) {
+		t.Errorf("session-finished's verdicts = %v, want %v", judge.Verdicts, want)
 	}
 }
 
@@ -162,9 +169,15 @@ func TestTheRefinePromptReadsTheShortlist(t *testing.T) {
 	}
 }
 
-// wantOwnRules are crew's own config's rules, as in the old format: the
-// promote rules, without actions, notify nothing and end only through
-// passed.
+// needsPerson is the comment of the needs-person route of development and
+// fix: it names only what crew knows of the run, never what the session or
+// the judge said (R18).
+const needsPerson = "{{.Issue.Ref}} needs a person: `{{.Action}}` ended with `{{.Verdict}}`. " +
+	"See the session's comments above."
+
+// wantOwnRules are crew's own config's rules, as in the old format, with
+// the needs-person route of development and fix: the promote rules,
+// without actions, notify nothing and end only through passed.
 func wantOwnRules() []ownRule {
 	clerk, developer := crew.Queue{Name: "clerk", Slots: 1}, crew.Queue{Name: "developer", Slots: 2}
 	productManager := crew.Queue{Name: "product-manager", Slots: 1}
@@ -174,7 +187,14 @@ func wantOwnRules() []ownRule {
 	routes := func(rule, passed string) []string {
 		return []string{"passed: move " + passed, "failed: report, move crew:" + rule + ":failed"}
 	}
-	lfg := []string{"session lfg: agent developer, bot developer", "shell session-finished", "shell pr-closes-issue"}
+	lfgRoutes := func(rule, passed string) []string {
+		return append(routes(rule, passed), "needs-person: comment "+needsPerson+", move crew:"+rule+":needs person")
+	}
+	lfg := []string{
+		"session lfg: agent developer, bot developer",
+		"shell session-finished; needs_person to needs-person",
+		"shell pr-closes-issue",
+	}
 	return []ownRule{
 		{
 			name: "promote brainstorm", queue: clerk,
@@ -193,11 +213,11 @@ func wantOwnRules() []ownRule {
 		},
 		{
 			name: "development", queue: developer, notify: true, labels: labels("development"),
-			actions: lfg, routes: routes("development", "crew:development:waiting review"),
+			actions: lfg, routes: lfgRoutes("development", "crew:development:waiting review"),
 		},
 		{
 			name: "fix", queue: developer, notify: true, labels: labels("fix"),
-			actions: lfg, routes: routes("fix", "crew:fix:waiting review"),
+			actions: lfg, routes: lfgRoutes("fix", "crew:fix:waiting review"),
 		},
 	}
 }
@@ -251,6 +271,10 @@ func ownRules(rules []crew.Rule, notify map[crew.RuleName]bool) []ownRule {
 			case crew.ShellSpec:
 				out[i].actions = append(out[i].actions, fmt.Sprintf("shell %s", a.Name))
 			}
+			if on := onNames(a.On); on != "" {
+				last := len(out[i].actions) - 1
+				out[i].actions[last] += "; " + on
+			}
 		}
 		for _, route := range r.Routes {
 			out[i].routes = append(out[i].routes, fmt.Sprintf("%s: %s", route.Name, stepNames(route.Steps)))
@@ -276,5 +300,19 @@ func stepNames(steps []crew.Step) string {
 			names[i] = string(s.Name)
 		}
 	}
+	return strings.Join(names, ", ")
+}
+
+// onNames sums on up, as "verdict to target", sorted by verdict.
+func onNames(on crew.On) string {
+	names := make([]string, 0, len(on))
+	for v, target := range on {
+		to := "next"
+		if r, ok := target.(crew.ToRoute); ok {
+			to = string(r.Route)
+		}
+		names = append(names, fmt.Sprintf("%s to %s", v, to))
+	}
+	slices.Sort(names)
 	return strings.Join(names, ", ")
 }

@@ -156,7 +156,9 @@ type verdictCase struct {
 	line string
 }
 
-// verdictCases are the answers the judge decides on, as R8 has it.
+// verdictCases are the answers the judge decides on, as R8 has it: done
+// exits 0, unfinished or stopped 1, and needs a person 3, which the judge's
+// definition gives the verdict needs_person (AE2 of #254).
 func verdictCases(t *testing.T) []verdictCase {
 	t.Helper()
 	return []verdictCase{
@@ -175,7 +177,7 @@ func verdictCases(t *testing.T) []verdictCase {
 			// Covers AE4.
 			"needs a person",
 			both(t, map[string]float64{"done": 0.03, "unfinished": 0.01, "needs_person": 0.95, "stopped": 0.01}),
-			0, "needs a person (0.95)",
+			3, "needs a person (0.95)",
 		},
 		{
 			"needs a person below its threshold",
@@ -205,8 +207,9 @@ func verdictCases(t *testing.T) []verdictCase {
 	}
 }
 
-// R7, R8: the judge fails on unfinished or stopped and passes otherwise,
-// echoing the outcome and its probability averaged over both orders.
+// R7, R8: the judge fails on unfinished or stopped, says a session needs a
+// person through its own exit status, and passes otherwise, echoing the
+// outcome and its probability averaged over both orders.
 func TestTheJudgeFailsAnUnfinishedOrStoppedSession(t *testing.T) {
 	script := judgeScript(t)
 	for _, tt := range verdictCases(t) {
