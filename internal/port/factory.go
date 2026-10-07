@@ -24,3 +24,18 @@ type TrackerFactory func(decode Decode, states []crew.State) (Tracker, error)
 // key of an agent's harness except name, model included. It validates the
 // section as TrackerFactory does.
 type HarnessFactory func(decode Decode) (Harness, error)
+
+// FunctionFactory builds a function from its parameters, as a use in the
+// config writes them, validated through decode as HarnessFactory validates
+// its section. It returns a RefusedParameterError when it refuses a parameter's
+// value.
+type FunctionFactory func(decode Decode) (Function, error)
+
+// FunctionDefinition is how crew registers a function: the verdicts it can
+// return, known before any use of it is built, and its factory.
+type FunctionDefinition struct {
+	// Verdicts are the verdicts the function's runs can return.
+	Verdicts []crew.Verdict
+	// New builds the function for one use.
+	New FunctionFactory
+}
