@@ -89,10 +89,11 @@ func TestScreenStopOnePressKeepsRunning(t *testing.T) {
 // TestScreenStopTwoPresses checks two presses inside the window.
 //
 // README: "`q` or Ctrl+C stops crew only when pressed twice within 3 seconds,
-// in any mix", and then "crew takes nothing new and asks each running session
-// to stop ... An action whose session crew stopped fails, so its issue moves
-// to the rule's failure label like any failed action. crew exits once it has
-// judged every issue it held", exiting "0 after a stop". Each mix of the two
+// in any mix", and then "crew takes nothing new, starts no other action, and
+// asks each running session and script to stop ... An action crew stopped
+// gives `failed`, and every run whose action ends while crew stops ends
+// through its `failed` route. ... crew exits once every run it held has
+// ended", exiting "0 after a stop". Each mix of the two
 // keys, pressed one after the other, and two q two seconds apart, near the
 // window's end, make crew ask the running session to stop, move the issue to
 // the failure label and exit 0.
@@ -198,9 +199,10 @@ func TestScreenStopForcesAfterSignal(t *testing.T) {
 
 // TestScreenStopWindDown checks presses during a wind-down.
 //
-// README: "`run_time_limit_seconds` ends a run another way: crew winds down,
-// taking nothing new while its running sessions end on their own. A wind-down
-// is not a stop, so stopping it from the live view still takes two presses."
+// README: "`run_time_limit_seconds` ends crew another way. crew takes nothing
+// new, lets each running action finish and starts no other. ... This
+// wind-down is not a stop, so stopping it from the live view still takes two
+// presses."
 // With a run time limit of one second, past it, a single q only changes the
 // footer, which goes back to its usual key help, and crew never asks the
 // running session to stop. Two q then make crew ask the session to stop, move
