@@ -234,6 +234,8 @@ linters:
               desc: the functions import only the domain and the ports
             - pkg: github.com/thatsnotmynameio/crew/internal/captain
               desc: the functions import only the domain and the ports
+            - pkg: github.com/thatsnotmynameio/crew/internal/fileline
+              desc: the functions import only the domain and the ports
         bots-users:
           files:
             - "!**/cmd/crew/**"
