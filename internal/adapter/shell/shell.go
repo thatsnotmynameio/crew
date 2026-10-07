@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
@@ -41,9 +42,11 @@ func New(group *proc.Group) *Shell {
 
 // Run implements port.Shell. The command runs as sh's -c argument,
 // acting as script.Identity, with CREW_ISSUE_REF, CREW_ISSUE_KEY,
-// CREW_ISSUE_URL, CREW_BRANCH, CREW_CODE_OWNERS, CREW_BOTS and CREW_ACTION,
-// the latest session's name, set, and stdout and stderr on one pipe, so its
-// output keeps the order it was printed in. The latest session's prompt and
+// CREW_ISSUE_URL, CREW_BRANCH, CREW_CODE_OWNERS, CREW_BOTS, CREW_ACTION, the
+// latest session's name, and CREW_COMMENT_MARKER, crew's marker
+// (crew.PostedMarker), with which a script marks the comments it posts as
+// crew's, set, and stdout and stderr on one pipe, so its output keeps the
+// order it was printed in. The latest session's prompt and
 // last message are in files that CREW_PROMPT_FILE and
 // CREW_LAST_MESSAGE_FILE name, in a directory only you can read, removed
 // once the script ended: a file has no size limit, where one environment
@@ -71,6 +74,7 @@ func (sh *Shell) Run(ctx context.Context, script port.Script) (port.ShellResult,
 		"CREW_CODE_OWNERS="+strings.Join(script.CodeOwners, " "),
 		"CREW_BOTS="+strings.Join(script.Bots, " "),
 		"CREW_ACTION="+string(script.Session),
+		"CREW_COMMENT_MARKER="+crew.PostedMarker,
 		"CREW_PROMPT_FILE="+prompt,
 		"CREW_LAST_MESSAGE_FILE="+last,
 	)

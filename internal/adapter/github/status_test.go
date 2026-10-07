@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -99,6 +100,59 @@ func TestARestartedTrackerEditsTheViewersNewestStatusComment(t *testing.T) {
 	}
 	if creates := gh.callsTo(createComment...); len(creates) != 0 {
 		t.Errorf("created %d comments, want none", len(creates))
+	}
+}
+
+// wantTrailer fails the test unless body ends with crew's marker line then
+// the status marker line, and holds each marker once.
+func wantTrailer(t *testing.T, body string) {
+	t.Helper()
+	if !strings.HasSuffix(body, "\n\n"+crew.PostedMarker+"\n"+statusMarker+"\n") ||
+		strings.Count(body, crew.PostedMarker) != 1 || strings.Count(body, statusMarker) != 1 {
+		t.Errorf("body =\n%s\nwant crew's marker once, on the line before the status marker, once and last", body)
+	}
+}
+
+// KTD-W2: a new status comment, every edit of it, and the edit after a
+// restart, which finds it by its last line, carry crew's marker once, on the
+// line before the status marker, and the entries parse as before.
+func TestAStatusCommentHoldsCrewsMarkerOnceBeforeTheStatusMarker(t *testing.T) {
+	tr, gh := fresh(t)
+	report(t, tr, fix(run2, "Reading the review."), fix(run2, "Pushing the fix."))
+	written := writes(t, gh)
+	tr, gh = restarted(t, written[len(written)-1])
+	report(t, tr, fix(run3, "Starting over."))
+	if creates := gh.callsTo(createComment...); len(creates) != 0 {
+		t.Errorf("created %d comments after the restart, want the edit of comment 12", len(creates))
+	}
+	written = append(written, writes(t, gh)...)
+	if len(written) != 3 {
+		t.Fatalf("wrote %d bodies, want 3", len(written))
+	}
+	for _, body := range written {
+		wantTrailer(t, body)
+	}
+	_, got := parseStatus(written[2])
+	if len(got) != 2 || got[1].text != tr.renderStatus(fix(run3, "Starting over.")) ||
+		!strings.HasSuffix(got[0].text, "crew stopped following `fix` on #74 before it ended.") {
+		t.Errorf("entries of the edit after the restart = %+v", got)
+	}
+}
+
+// A status comment an earlier crew wrote without crew's marker gains it on
+// its next edit, its entry kept as it was.
+func TestAStatusCommentWithoutCrewsMarkerGainsItOnItsNextEdit(t *testing.T) {
+	older := "crew: an older status."
+	tr, gh := restarted(t, older+"\n\n"+statusMarker+"\n")
+	report(t, tr, running74(time.Time{}, ""))
+	edits := gh.callsTo(editComment...)
+	if len(edits) != 1 {
+		t.Fatalf("edits = %q, want one", edits)
+	}
+	body := statusBody(t, edits[0])
+	wantTrailer(t, body)
+	if !strings.HasPrefix(body, older+separator) {
+		t.Errorf("body =\n%s\nwant the older entry kept first", body)
 	}
 }
 

@@ -103,7 +103,7 @@ func TestScriptReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 
 func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	// The title is not part of port.Script at all, so it cannot reach the
-	// command: the script sees only crew's nine variables, and the command
+	// command: the script sees only crew's ten variables, and the command
 	// runs as written.
 	withoutCrewEnv(t)
 	var out output
@@ -112,14 +112,26 @@ func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
-		case "CREW_ACTION", "CREW_BOTS", "CREW_BRANCH", "CREW_CODE_OWNERS", "CREW_ISSUE_KEY", "CREW_ISSUE_REF",
-			"CREW_ISSUE_URL", "CREW_LAST_MESSAGE_FILE", "CREW_PROMPT_FILE":
+		case "CREW_ACTION", "CREW_BOTS", "CREW_BRANCH", "CREW_CODE_OWNERS", "CREW_COMMENT_MARKER", "CREW_ISSUE_KEY",
+			"CREW_ISSUE_REF", "CREW_ISSUE_URL", "CREW_LAST_MESSAGE_FILE", "CREW_PROMPT_FILE":
 		default:
 			t.Errorf("unexpected variable %q", line)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(c.Dir, "pwned")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("pwned exists: %v", err)
+	}
+}
+
+// R46, KTD-W2: a shell action or a route shell step, which both run through
+// the shell, reads crew's marker from CREW_COMMENT_MARKER, to mark the
+// comments it posts as crew's.
+func TestScriptReadsCrewsCommentMarker(t *testing.T) {
+	withoutCrewEnv(t)
+	var out output
+	exits(t, script(t, `printf '%s' "$CREW_COMMENT_MARKER"`, &out), 0)
+	if got := out.String(); got != crew.PostedMarker {
+		t.Errorf("CREW_COMMENT_MARKER = %q, want %q", got, crew.PostedMarker)
 	}
 }
 

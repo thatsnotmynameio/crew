@@ -20,6 +20,11 @@ import (
 // Markdown, by which ReportStatus finds the comment again after a restart.
 const statusMarker = "<!-- crew:status -->"
 
+// statusTrailer ends every status comment crew writes: crew's marker line
+// (crew.PostedMarker), then the status marker line, which stays last. A
+// status comment an earlier crew wrote ends with the status marker alone.
+const statusTrailer = crew.PostedMarker + "\n" + statusMarker + "\n"
+
 // The status comment holds one entry per rule run, oldest first, each
 // starting with a hidden marker line that names its run, kind and rule.
 // Entries are separated by a horizontal rule, and a marker counts only at
@@ -263,18 +268,20 @@ func continueStatus(status crew.Status, text, why string) string {
 }
 
 // joinStatus returns a status comment's body: the preamble, the entries'
-// texts between separators, then the marker line.
+// texts between separators, then the trailer (statusTrailer).
 func joinStatus(preamble string, texts []string) string {
-	return preamble + strings.Join(texts, entrySeparator) + "\n\n" + statusMarker + "\n"
+	return preamble + strings.Join(texts, entrySeparator) + "\n\n" + statusTrailer
 }
 
 // parseStatus splits a status comment's body into its continuation
 // preamble, if any, and its entries, oldest first. Text before the first
 // entry marker, as in a comment written before entries, is one unmarked
-// entry; the marked entries crew appended after it still split off.
+// entry; the marked entries crew appended after it still split off. The
+// trailer is no entry's text, with or without crew's marker.
 func parseStatus(body string) (string, []entry) {
 	rest := strings.TrimRight(body, " \t\r\n")
 	rest = strings.TrimRight(strings.TrimSuffix(rest, statusMarker), " \t\r\n")
+	rest = strings.TrimRight(strings.TrimSuffix(rest, crew.PostedMarker), " \t\r\n")
 	var preamble string
 	if strings.HasPrefix(rest, continuesMarker+"\n") {
 		if i := strings.Index(rest, "\n\n"); i >= 0 {
