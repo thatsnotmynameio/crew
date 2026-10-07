@@ -34,7 +34,7 @@ Queues ─── 1 of 2 busy   Event│ HH:MM:SS #1 development/implement starte
                           HH:MM:SS #1 development/implement started on branch crew/issue-1-implement, log .crew/logs/issue-1-implement.log
 
 
-esc close · ←→ card · ↑↓ scroll · q stop
+esc close · ←→ card · ↑↓ scroll · q q stop
 
 
 

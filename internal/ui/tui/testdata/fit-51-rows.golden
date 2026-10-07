@@ -48,4 +48,4 @@ Queues ─── 2 of 3 busy   Events ──────────────
  default  ■□  1/2         14:29:58 poll: listed 29 issues, took 0
  clerk    ■   1/1         14:29:59 poll: listed 30 issues, took 0
 
-q stop · tab focus · ←→↑↓ move · enter open · ? help
+q q stop · tab focus · ←→↑↓ move · enter open · ? help

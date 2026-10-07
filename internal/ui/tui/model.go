@@ -32,6 +32,14 @@ type engineStoppedMsg struct{}
 // tickMsg asks for elapsed times to be recomputed.
 type tickMsg struct{}
 
+// armWindow is how long a first q or Ctrl-C keeps the stop armed (R1 of
+// #266).
+const armWindow = 3 * time.Second
+
+// armExpiredMsg ends the stop armed until until, unless a later press armed
+// it again (KTD1 of #266).
+type armExpiredMsg struct{ until time.Time }
+
 // Config is what the TUI needs for a run (KTD1).
 type Config struct {
 	// Updates is a latest-wins subscription (Engine.SubscribeLatest).
@@ -78,6 +86,9 @@ type Model struct {
 	width, height int
 	// stopping is true once you asked to stop.
 	stopping bool
+	// armedUntil is when the stop a first q or Ctrl-C armed ends; zero
+	// when none is armed (KTD1 of #266).
+	armedUntil time.Time
 
 	styles  styles
 	keys    keyMap
@@ -112,9 +123,11 @@ type Model struct {
 
 // New returns a model that renders the updates of cfg.Updates.
 //
-// The first Ctrl-C or q calls Stop and shows that crew is stopping; the
-// model keeps running until Updates is closed, then quits. A second Ctrl-C
-// or q calls Force and quits at once (KTD7). Force is called from Update,
+// The first Ctrl-C or q only arms the stop for armWindow and says so; a
+// second within it calls Stop and shows that crew is stopping, and the
+// model keeps running until Updates is closed, then quits. Once crew is
+// stopping, by a key or by the engine, one more Ctrl-C or q calls Force and
+// quits at once (KTD7; KTD1, KTD2 of #266). Force is called from Update,
 // while the terminal is still in raw mode, so it should kill what must die
 // and return, leaving the exit to the caller after Program.Run returns.
 // Bubble Tea's own signal handler should be disabled
@@ -154,6 +167,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case slideTickMsg:
 		return m, m.memory.advance()
+	case armExpiredMsg:
+		if msg.until.Equal(m.armedUntil) {
+			m.armedUntil = time.Time{}
+		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.BackgroundColorMsg:
