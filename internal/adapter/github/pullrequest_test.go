@@ -128,7 +128,7 @@ func TestAReportMirrorsTheLabelAndPostsTheStopComment(t *testing.T) {
 		{"pr", "edit", "50", "--add-label=crew:waiting review"},
 		{"pr", "edit", "50", "--remove-label=crew:in progress"},
 	}
-	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
 		t.Errorf("edits = %q, want add then remove: %q", edits, want)
 	}
 	body := "crew: `development` ended through `passed` on #42, which moved to `crew:waiting review`, " +
@@ -157,7 +157,7 @@ func TestAStoppedRuleSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
 		{"pr", "edit", "50", "--add-label=crew:failed"},
 		{"pr", "edit", "50", "--remove-label=crew:in progress"},
 	}
-	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
 		t.Errorf("edits = %q, want add then remove: %q", edits, want)
 	}
 	body := "crew: `development` ended through `failed` on #42, which moved to `crew:failed`, " +
@@ -256,7 +256,7 @@ func TestTheMirrorReplacesEveryOtherCrewLabel(t *testing.T) {
 		{"pr", "edit", "50", "--add-label=crew:in progress"},
 		{"pr", "edit", "50", "--remove-label=crew:waiting review", "--remove-label=crew:ready for fix"},
 	}
-	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
 		t.Errorf("edits = %q, want add then remove: %q", edits, want)
 	}
 }
@@ -283,7 +283,7 @@ func TestTheMirrorRetriesOnlyRemovalAfterTheAddLands(t *testing.T) {
 		{"pr", "edit", "50", "--remove-label=crew:ready for fix"},
 		{"pr", "edit", "50", "--remove-label=crew:ready for fix"},
 	}
-	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
 		t.Errorf("edits = %q, want one add and a retried removal: %q", edits, want)
 	}
 }
@@ -297,7 +297,7 @@ func TestTheMirrorAddsTheLabelWhenNoCrewLabelIsPresent(t *testing.T) {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}
 	want := [][]string{{"pr", "edit", "50", "--add-label=crew:in progress"}}
-	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
 		t.Errorf("edits = %q, want only the add: %q", edits, want)
 	}
 }
@@ -385,7 +385,7 @@ func TestARetryAfterAFailedEditDoesNotCommentTwice(t *testing.T) {
 		{"pr", "edit", "50", "--add-label=crew:waiting review"},
 		{"pr", "edit", "50", "--remove-label=crew:in progress"},
 	}
-	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
 		t.Errorf("edits = %q, want the retried add then remove: %q", edits, want)
 	}
 	if got := comments(t, gh, 50); len(got) != 1 {
@@ -434,13 +434,17 @@ func TestARetryCommentsOnlyWhereTheCommentFailed(t *testing.T) {
 }
 
 func TestAMissingLabelIsRefused(t *testing.T) {
-	tr, _ := prTracker(t,
+	tr, gh := prTracker(t,
 		reply{prefix: prQuery, stdout: prsJSON(prNode(50, "OPEN", "o/r", crewInProgress))},
 		reply{prefix: prEdit, stderr: "could not add label: 'crew:waiting review' not found\n"},
 	)
 	report := taken(crewWaitingReview)
 	if err := tr.ReportPullRequests(context.Background(), report); !errors.Is(err, port.ErrRefused) {
 		t.Errorf("ReportPullRequests = %v, want ErrRefused", err)
+	}
+	want := [][]string{{"pr", "edit", "50", "--add-label=crew:waiting review"}}
+	if edits := gh.callsTo(prEdit...); !slices.EqualFunc(edits, want, slices.Equal) {
+		t.Errorf("edits = %q, want only the refused add: %q", edits, want)
 	}
 }
 

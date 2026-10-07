@@ -531,7 +531,9 @@ func (t *Tracker) issue(n listNode) crew.Issue {
 // target label when removal fails, so a partial move is safe to retry.
 // gh saying to's label does not exist is a refusal: the label must be
 // created, which retrying cannot do.
-func (t *Tracker) editLabels(ctx context.Context, kind, number string, remove []string, to crew.State, present bool) error {
+func (t *Tracker) editLabels(
+	ctx context.Context, kind, number string, remove []string, to crew.State, present bool,
+) error {
 	if !present {
 		target := string(to)
 		if out, _, err := t.gh.write(ctx, kind, "edit", number, "--add-label="+labelArg(target)); err != nil {
