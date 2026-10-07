@@ -96,6 +96,8 @@ What crew does when a rule takes an issue whose last action run of one of its ac
 
 Resuming is triggered only by the rule's ready label going back on the issue; crew never resumes on its own. Removing the workspace before that makes the action start over.
 
+What resumes is each action's last action run that had a workspace. When another action later starts in a workspace of the same name, which crew gives out again only once the earlier workspace is gone, no action whose last action run was there resumes any more; an action whose last action run is in another workspace still does.
+
 ### Run journal
 
 crew's local, append-only record of every rule run's events, one line each, such as its take, its actions' starts and ends and its verdict. After a restart it tells crew how each issue's last rule run in each rule went, which action runs failed and so which actions resume.
