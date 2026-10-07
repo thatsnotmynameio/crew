@@ -33,6 +33,7 @@ type recorder struct {
 	used      *tokenUsage // the usage of the last completed turn, or nil
 	lastError string      // the message of the last top-level error event
 	said      string      // the text of the last agent message, on one line
+	message   string      // the text of the last agent message, as codex wrote it
 	errLine   string      // the last non-empty stderr line
 }
 
@@ -111,6 +112,7 @@ func (r *recorder) event(line []byte) {
 		r.lastError = ev.Message
 	case "item.completed":
 		if ev.Item.Type == "agent_message" {
+			r.message = ev.Item.Text
 			r.mu.Lock()
 			r.said = strings.Join(strings.Fields(ev.Item.Text), " ")
 			r.mu.Unlock()

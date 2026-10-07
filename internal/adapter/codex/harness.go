@@ -16,14 +16,15 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// Compile-time guards: the engine finds Preparer, Narrator and
-// UsageReporter by type assertion.
+// Compile-time guards: the engine finds Preparer, Narrator, UsageReporter
+// and LastMessageReporter by type assertion.
 var (
-	_ port.Harness       = (*harness)(nil)
-	_ port.Preparer      = (*harness)(nil)
-	_ port.Session       = (*session)(nil)
-	_ port.Narrator      = (*session)(nil)
-	_ port.UsageReporter = (*session)(nil)
+	_ port.Harness             = (*harness)(nil)
+	_ port.Preparer            = (*harness)(nil)
+	_ port.Session             = (*session)(nil)
+	_ port.Narrator            = (*session)(nil)
+	_ port.UsageReporter       = (*session)(nil)
+	_ port.LastMessageReporter = (*session)(nil)
 )
 
 // settings is the codex adapter's config section: the keys of an agent's
@@ -101,6 +102,7 @@ func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error)
 		rec.end()
 		stopped := s.stopped.Load()
 		s.usage = rec.usage(stopped)
+		s.last = rec.message
 		return rec.sessionEnd(exit, stopped)
 	})
 	go s.end() // settled as soon as codex ends, so a later Stop cannot change it
@@ -114,6 +116,7 @@ type session struct {
 	stopped atomic.Bool
 	end     func() port.SessionEnd // waits for the process once, then settles how it ended
 	usage   crew.Usage             // set by end before it returns
+	last    string                 // the last agent message; set by end before it returns
 	done    chan struct{}          // closed once the session's end is settled
 }
 
@@ -130,6 +133,13 @@ func (s *session) Said() string { return s.rec.lastSaid() }
 func (s *session) Usage() crew.Usage {
 	s.end()
 	return s.usage
+}
+
+// LastMessage implements port.LastMessageReporter: the text of the
+// session's last agent message, as codex wrote it, or "" when it wrote none.
+func (s *session) LastMessage() string {
+	s.end()
+	return s.last
 }
 
 // Stop implements port.Session. proc sends the terminate signal to the
