@@ -40,7 +40,7 @@ func (mm *messageMemory) record(snap engine.Snapshot, cards []card) {
 		}
 	}
 	for _, s := range snap.Said {
-		if text := clean(s.Text); text != "" {
+		if text := clean(s.Text.String()); text != "" {
 			k := actionKey{s.IssueKey, s.Action}
 			r := mm.actions[k]
 			r.message = text

@@ -55,9 +55,10 @@ type ActionStatus struct {
 	// created or its session starts, and once it ended.
 	Started time.Time
 	// Said is the last thing its running session said, on one line with
-	// local paths shortened; empty when it said nothing yet or its harness
-	// cannot tell.
-	Said string
+	// local paths shortened and without control characters; empty when it
+	// said nothing yet, said only control characters or its harness cannot
+	// tell.
+	Said Said
 	// Cause says what made a failed action fail; set when State is
 	// ActionFailed.
 	Cause FailureCause

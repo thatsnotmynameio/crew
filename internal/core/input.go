@@ -33,7 +33,7 @@ type Tick struct {
 type Said struct {
 	IssueKey string
 	Action   string
-	Text     string
+	Text     crew.Said
 }
 
 // StopRequested asks the core to stop (R9). The core starts nothing new,

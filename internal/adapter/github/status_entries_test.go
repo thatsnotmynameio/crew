@@ -101,7 +101,7 @@ func developmentEnded() crew.Status {
 // fix is #74's fix rule in run, running its address action that said said.
 func fix(run, said string) crew.Status {
 	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
-		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: said}},
+		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: crew.NewSaid(said)}},
 		Updated: updated}
 }
 

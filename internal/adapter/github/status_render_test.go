@@ -13,7 +13,7 @@ import (
 // and having said said.
 func running74(started time.Time, said string) crew.Status {
 	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
-		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: said}},
+		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: crew.NewSaid(said)}},
 		Updated: updated}
 }
 

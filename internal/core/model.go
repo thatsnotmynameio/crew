@@ -110,7 +110,7 @@ type actionRun struct {
 	branch    string
 	log       string // set once a session is asked to start
 	started   time.Time
-	said      string // what its running session last said
+	said      crew.Said // what its running session last said
 	outcome   crew.Outcome
 	checks    []crew.Check      // its checks, in the order they run
 	agent     string            // the agent whose harness runs its session

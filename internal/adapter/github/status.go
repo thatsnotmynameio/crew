@@ -515,12 +515,12 @@ func writeState(b *strings.Builder, a crew.ActionStatus, updated time.Time) {
 		fmt.Fprintf(b, "\n%s%s is running.\n", name, and)
 	default:
 		fmt.Fprintf(b, "\n%s%s has been running for %s.", name, and, elapsed(updated.Sub(a.Started)))
-		if a.Said == "" {
+		if a.Said.String() == "" {
 			b.WriteString("\n")
 			return
 		}
-		fence := strings.Repeat("`", max(minFence, longestBacktickRun(a.Said)+1))
-		fmt.Fprintf(b, " It last said:\n\n%stext\n%s\n%s\n", fence, a.Said, fence)
+		fence := strings.Repeat("`", max(minFence, longestBacktickRun(a.Said.String())+1))
+		fmt.Fprintf(b, " It last said:\n\n%stext\n%s\n%s\n", fence, a.Said.String(), fence)
 	}
 }
 

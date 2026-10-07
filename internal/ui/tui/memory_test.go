@@ -30,7 +30,7 @@ func wantCode(t *testing.T, h *harness, issue, message, branch string) {
 // message and branch outlive its session.
 func TestAnEndedActionKeepsItsLastMessage(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "running the tests now"})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
 
 	ended := runningSnapshot()
 	code := &ended.Snapshot.Issues[0].Actions[0]
@@ -44,11 +44,11 @@ func TestAnEndedActionKeepsItsLastMessage(t *testing.T) {
 // leaves it.
 func TestALaterMessageReplacesTheEarlierOneAndAnEmptyOneLeavesIt(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "reading the issue"})))
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "writing the parser"})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("reading the issue")})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("writing the parser")})))
 	wantCode(t, h, "1", "writing the parser", "crew/1-code")
 
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: " \n "})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid(" \n ")})))
 	wantCode(t, h, "1", "writing the parser", "crew/1-code")
 }
 
@@ -66,7 +66,7 @@ func gone(handled ...core.HandledView) engine.Update {
 // card left, and keeps one whose rule ended while it still has a card.
 func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "running the tests now"})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
 
 	u := gone(entry("1", "Add login form", "implement", "ready to review", 7, 0))
 	u.Snapshot.Board = append(u.Snapshot.Board,
@@ -83,7 +83,7 @@ func TestTheMemoryForgetsAnIssueWithNoCardLeft(t *testing.T) {
 func TestAMessageIsRememberedClean(t *testing.T) {
 	h := newHarness(t, 120)
 
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "\x1b[31mtests\x1b[0m\tfail\n"})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("\x1b[31mtests\x1b[0m\tfail\n")})))
 
 	wantCode(t, h, "1", "tests fail", "crew/1-code")
 }
@@ -93,8 +93,8 @@ func TestAMessageIsRememberedClean(t *testing.T) {
 func TestTwoIssuesKeepTheirMessagesApart(t *testing.T) {
 	h := newHarness(t, 120)
 	u := saying(
-		core.Said{IssueKey: "1", Action: "code", Text: "adding the form"},
-		core.Said{IssueKey: "3", Action: "code", Text: "dropping the flag"},
+		core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("adding the form")},
+		core.Said{IssueKey: "3", Action: "code", Text: crew.NewSaid("dropping the flag")},
 	)
 	three := crew.Issue{Key: "3", Ref: "#3", Title: "Drop the old flag"}
 	u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{
@@ -115,7 +115,7 @@ func TestTwoIssuesKeepTheirMessagesApart(t *testing.T) {
 // new run drops the last run's message and branch.
 func TestANewRunDropsTheLastRunsMessage(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "running the tests now"})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
 
 	again := runningSnapshot()
 	code := &again.Snapshot.Issues[0].Actions[0]

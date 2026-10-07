@@ -409,7 +409,7 @@ func TestAnActionWhoseBotCannotActShowsYou(t *testing.T) {
 // check failed shows the check's reason in the error colour.
 func TestAE5AnEndedActionShowsItsLastMessageAndAFailedOneWhy(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "running the tests now"})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid("running the tests now")})))
 	ended := runningSnapshot()
 	actions := &ended.Snapshot.Issues[0].Actions
 	(*actions)[0].Phase, (*actions)[0].Outcome = core.PhaseEnded, crew.Outcome{Succeeded: true}
@@ -501,7 +501,7 @@ func TestThePopupOfAHandledIssueShowsNoCostNorPullRequests(t *testing.T) {
 func TestALongMessageWrapsInsideThePopup(t *testing.T) {
 	h := newHarness(t, 60)
 	long := strings.Repeat("the parser now reads every key once ", 4)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: long})))
+	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: crew.NewSaid(long)})))
 	h.send(enterKey)
 
 	box, _, _ := popupBox(h.view(), popupWidthIn(60))
