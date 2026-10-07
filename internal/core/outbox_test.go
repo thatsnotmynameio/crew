@@ -207,3 +207,67 @@ func TestATakeDroppedAfterAStopReportsOnlyTheDrop(t *testing.T) {
 		t.Fatalf("handled after a dropped take: %#v", got)
 	}
 }
+
+// An owed ended status holds no slot: its issue is released and the next
+// listing takes another issue while the status waits for its retry.
+func TestAnOwedEndedStatusHoldsNoSlot(t *testing.T) {
+	d := newStatusDriver(t, draft(), 1)
+	statusOf(t, ended(d), "74")
+	d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
+	wantHeld(t, d.m)
+
+	_, events := d.poll(issue("75", 2, ready))
+	if got := takenKeys(events); !reflect.DeepEqual(got, []string{"75"}) {
+		t.Fatalf("taken while #74's ended status is owed: got %v, want [75]", got)
+	}
+}
+
+// Two runs of a rule without actions on one issue edit one status entry: a
+// status lane keeps what the comment shows for the whole run.
+func TestTwoRunsOfARuleWithoutActionsEditOneStatusEntry(t *testing.T) {
+	d := newStatusDriver(t, promoted(), 2)
+	runOnce := func() crew.Status {
+		t.Helper()
+		take := takePromoted(d)
+		verdict, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
+		st := statusOf(t, verdict, "1")
+		d.wrote("1")
+		landed, _ := d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultDone})
+		d.settle(landed)
+		d.wrote("1")
+		return st
+	}
+
+	first, second := runOnce(), runOnce()
+	if second.Run != first.Run {
+		t.Fatalf("second run's entry = %q, want the first's, %q", second.Run, first.Run)
+	}
+}
+
+// After a stop, an issue's status lane gets one final try in all (KTD-P6):
+// a later ended status of the issue that fails transiently is given up.
+func TestAfterAStopAnIssuesStatusesGetOneFinalTryInAll(t *testing.T) {
+	d := newStatusDriver(t, draft(), 2)
+	d.runAll(d.take(issue("74", 1, ready)))
+	d.send(core.StopRequested{})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("stopped")})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("stopped")})
+
+	cmds, _ := d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
+	if st := statusOf(t, cmds, "74"); st.Move != crew.MovePending {
+		t.Fatalf("final try: got %#v, want the ended status with the move pending", st)
+	}
+	d.wrote("74")
+
+	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
+	if st := statusOf(t, cmds, "74"); st.Move != crew.MoveDone {
+		t.Fatalf("after the move landed: got %#v, want the ended status with the move done", st)
+	}
+	cmds, _ = d.send(core.StatusResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
+	noStatusOf(t, cmds, "74")
+
+	d.send(core.CallResult{ID: reportID(t, verdict, "74"), Result: core.ResultDone})
+	if !d.m.Stopped() {
+		t.Fatal("not stopped once the verdict calls settled")
+	}
+}

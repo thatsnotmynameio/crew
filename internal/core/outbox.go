@@ -9,14 +9,23 @@ import (
 // outbox delivers the tracker writes the core decides on (KTD8). It owns
 // whether each one is in flight, owed or on its final try, and hands a held
 // run only the outcome of a delivery that settled. Its lanes are kept by
-// issue: the run lane of a held issue lives while the issue has a delivery
-// not settled.
+// issue, each with a life of its own: the run lane of a held issue lives
+// while the issue has a delivery not settled, an issue's status lane for the
+// whole run, and its pull request lane while it has a report not settled.
+// Only the run lane holds a slot: an owed status or report never does.
 type outbox struct {
 	// lastID is the CallID of the last delivery enqueued.
 	lastID CallID
 	// runs holds the run lane of each held issue with a delivery not
 	// settled, by issue id.
 	runs map[crew.IssueID]*runLane
+	// statuses holds each issue's status lane, by issue id; nil when
+	// status reporting is off (KTD3).
+	statuses map[crew.IssueID]*statusLane
+	// pullRequests holds each issue's pull request lane, by issue id, while
+	// it has a report not settled; nil when pull request reports are off
+	// (KTD3).
+	pullRequests map[crew.IssueID]*pullRequestLane
 }
 
 // runLane holds one held issue's take move, or its verdict move and failure
@@ -204,6 +213,18 @@ func (o *outbox) owedRun(id crew.IssueID) []Call {
 		}
 	}
 	return out
+}
+
+// idle reports whether the outbox has no status write in flight, waiting or
+// owed and no pull request report not settled. Run lanes are left out: each
+// belongs to a held issue, which the core waits for anyway.
+func (o *outbox) idle() bool {
+	for _, sl := range o.statuses {
+		if sl.busy() {
+			return false
+		}
+	}
+	return len(o.pullRequests) == 0
 }
 
 // cloneReport copies r, so the copy shares no slice with it.

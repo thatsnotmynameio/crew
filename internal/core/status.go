@@ -7,11 +7,12 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// statusSlot is what the core knows of one issue's status comment (KTD3). It
-// is kept apart from the held issues, so a released issue's last statuses
-// still land and a status write never holds a slot. At most one write is in
-// flight.
-type statusSlot struct {
+// statusLane is the outbox's lane of one issue's status comment, and what
+// the core knows of that comment (KTD3, KTD8). It is kept apart from the
+// held issues, for the whole run, so a released issue's last statuses still
+// land, a status write never holds a slot, and a later rule run of the issue
+// still finds the comment's entry. At most one write is in flight.
+type statusLane struct {
 	ref string
 	// shown is what the comment shows, as far as the core knows; nil when
 	// unknown, as after a failed write.
@@ -39,8 +40,8 @@ type statusSlot struct {
 	runEnded bool
 }
 
-// busy reports whether the slot has a write in flight, waiting or owed.
-func (sl *statusSlot) busy() bool {
+// busy reports whether the lane has a write in flight, waiting or owed.
+func (sl *statusLane) busy() bool {
 	return sl.sending != nil || len(sl.waiting) > 0 || sl.owed != nil
 }
 
@@ -49,13 +50,13 @@ func (sl *statusSlot) busy() bool {
 // owed makes st wait.
 func (s *step) report(st crew.Status) {
 	m := s.m
-	if m.statuses == nil {
+	if m.outbox.statuses == nil {
 		return
 	}
-	sl := m.statuses[st.IssueID]
+	sl := m.outbox.statuses[st.IssueID]
 	if sl == nil {
-		sl = &statusSlot{}
-		m.statuses[st.IssueID] = sl
+		sl = &statusLane{}
+		m.outbox.statuses[st.IssueID] = sl
 	}
 	sl.ref = st.IssueRef
 	s.assignRun(sl, &st)
@@ -87,7 +88,7 @@ func (s *step) report(st crew.Status) {
 // a status of another rule comes. A new entry takes the id of the rule run
 // st comes from, which is global (KTD5); every status of the entry carries
 // it.
-func (*step) assignRun(sl *statusSlot, st *crew.Status) {
+func (*step) assignRun(sl *statusLane, st *crew.Status) {
 	if sl.run == "" || st.Rule != sl.runRule || (sl.runEnded && st.Kind != crew.StatusEnded) {
 		sl.run, sl.runRule = st.Run, st.Rule
 	}
@@ -96,7 +97,7 @@ func (*step) assignRun(sl *statusSlot, st *crew.Status) {
 }
 
 // pump sends the oldest waiting status, unless a write is in flight or owed.
-func (s *step) pump(sl *statusSlot) {
+func (s *step) pump(sl *statusLane) {
 	if sl.sending != nil || sl.owed != nil || len(sl.waiting) == 0 {
 		return
 	}
@@ -105,8 +106,8 @@ func (s *step) pump(sl *statusSlot) {
 	s.send(sl, next)
 }
 
-// send issues the write of st for its slot.
-func (s *step) send(sl *statusSlot, st crew.Status) {
+// send issues the write of st for its lane.
+func (s *step) send(sl *statusLane, st crew.Status) {
 	sl.sending = &st
 	s.command(ReportStatus{Status: st.Clone()})
 }
@@ -117,7 +118,7 @@ func (s *step) send(sl *statusSlot, st crew.Status) {
 // the waiting statuses of later runs until it lands or is given up.
 func (s *step) statusResult(r StatusResult) {
 	m := s.m
-	sl := m.statuses[r.IssueID]
+	sl := m.outbox.statuses[r.IssueID]
 	if sl == nil || sl.sending == nil {
 		return
 	}
@@ -150,8 +151,8 @@ func (s *step) statusResult(r StatusResult) {
 // retryStatuses resends each owed status, in issue id order; after a stop,
 // as its one final try.
 func (s *step) retryStatuses() {
-	for _, key := range sortedIssueIDs(s.m.statuses) {
-		sl := s.m.statuses[key]
+	for _, key := range sortedIssueIDs(s.m.outbox.statuses) {
+		sl := s.m.outbox.statuses[key]
 		if sl.owed == nil || sl.sending != nil {
 			continue
 		}
@@ -162,17 +163,6 @@ func (s *step) retryStatuses() {
 		}
 		s.send(sl, owed)
 	}
-}
-
-// statusesBusy reports whether any status write is in flight, waiting or
-// owed.
-func (m *Model) statusesBusy() bool {
-	for _, sl := range m.statuses {
-		if sl.busy() {
-			return true
-		}
-	}
-	return false
 }
 
 // running reports h's rule and its actions as they stand (R6, R7, R8). An

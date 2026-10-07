@@ -42,13 +42,6 @@ type Model struct {
 	// slots is what the rules can use: the queues' slots summed, at most
 	// maxParallel (KTD4).
 	slots int
-	// statuses holds each issue's status slot, by issue id; nil when
-	// status reporting is off (KTD3).
-	statuses map[crew.IssueID]*statusSlot
-	// pullRequests holds each issue's pull request slot, by issue id, while
-	// it has a report not settled; nil when pull request reports are off
-	// (KTD3).
-	pullRequests map[crew.IssueID]*pullRequestSlot
 	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
@@ -214,14 +207,14 @@ func ReportingUsage() Option {
 // ReportingStatus has the model report each issue's status through
 // ReportStatus commands, for a tracker that keeps status comments (KTD1).
 func ReportingStatus() Option {
-	return func(m *Model) { m.statuses = map[crew.IssueID]*statusSlot{} }
+	return func(m *Model) { m.outbox.statuses = map[crew.IssueID]*statusLane{} }
 }
 
 // ReportingPullRequests has the model follow each move that landed with a
 // ReportPullRequests command, for a tracker that reports on pull requests
 // (KTD1, KTD2).
 func ReportingPullRequests() Option {
-	return func(m *Model) { m.pullRequests = map[crew.IssueID]*pullRequestSlot{} }
+	return func(m *Model) { m.outbox.pullRequests = map[crew.IssueID]*pullRequestLane{} }
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has
@@ -229,7 +222,7 @@ func ReportingPullRequests() Option {
 // flight or owed and no pull request report not settled. The engine returns
 // once Stopped is true and none of its commands is still running.
 func (m *Model) Stopped() bool {
-	return m.stopping && len(m.issues) == 0 && !m.statusesBusy() && len(m.pullRequests) == 0
+	return m.stopping && len(m.issues) == 0 && m.outbox.idle()
 }
 
 // unknownName is what String gives for a value outside its enumeration.
@@ -496,7 +489,7 @@ func (m *Model) View() View {
 		v.Issues = append(v.Issues, iv)
 		v.Owed = append(v.Owed, m.outbox.owedRun(h.issue.ID)...)
 	}
-	v.Owed = append(v.Owed, m.owedPullRequests()...)
+	v.Owed = append(v.Owed, m.outbox.owedPullRequests()...)
 	for _, e := range m.handled {
 		hv := e.view.clone()
 		if h := m.held(hv.Issue.ID); h != nil {
