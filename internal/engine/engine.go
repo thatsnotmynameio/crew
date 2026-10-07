@@ -47,6 +47,9 @@ const (
 	// a few commands) and the loop always drains, so blocking sends cannot
 	// deadlock; the buffer only spares them waiting on a busy step.
 	inboxSize = 64
+	// pauseSize buffers the pause toggles the loop has not read yet, so
+	// TogglePause never waits; a toggle past it is dropped (KTD5 of #282).
+	pauseSize = 8
 )
 
 // Config is what an engine runs: validated rules and their adapters.
@@ -140,6 +143,7 @@ type Engine struct {
 	stream    *stream
 	stop      chan struct{} // closed by Stop
 	stopOnce  sync.Once
+	pause     chan struct{} // one value per TogglePause the loop has not read
 
 	// prepared is set by Prepare, and preparation holds its result, so the
 	// preparers run once whether Run or its caller prepares.
@@ -237,6 +241,7 @@ func New(cfg Config) *Engine {
 		harnesses:    harnesses,
 		stream:       newStream(),
 		stop:         make(chan struct{}),
+		pause:        make(chan struct{}, pauseSize),
 		reporter:     reporter,
 		pullRequests: pullRequests,
 		finder:       finder,
@@ -309,6 +314,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	e.started = time.Now()
 	e.checkBots(cmdCtx)
+	e.pendingPauses(cmdCtx)
 	e.step(cmdCtx, core.Tick{})
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
@@ -326,6 +332,8 @@ func (e *Engine) Run(ctx context.Context) error {
 		case <-timeUp:
 			timeUp = nil
 			e.step(cmdCtx, core.TimeUp{Limit: e.cfg.RunTimeLimit})
+		case <-e.pause:
+			e.step(cmdCtx, core.PauseToggled{})
 		case m := <-e.inbox:
 			e.receive(cmdCtx, m)
 		}
@@ -338,6 +346,30 @@ func (e *Engine) Run(ctx context.Context) error {
 // has completed. Calling it again, or before Run, is safe.
 func (e *Engine) Stop() {
 	e.stopOnce.Do(func() { close(e.stop) })
+}
+
+// TogglePause pauses the taking of new issues, or resumes it (R1, R4 of
+// #282). It returns at once: the loop steps the core with each toggle in
+// the order they came. A toggle before Run applies before the first
+// listing; one after Run returned changes nothing.
+func (e *Engine) TogglePause() {
+	select {
+	case e.pause <- struct{}{}:
+	default:
+	}
+}
+
+// pendingPauses steps the core with each toggle made before Run, so none
+// of them races the first listing's result in the loop (KTD5 of #282).
+func (e *Engine) pendingPauses(ctx context.Context) {
+	for {
+		select {
+		case <-e.pause:
+			e.step(ctx, core.PauseToggled{})
+		default:
+			return
+		}
+	}
 }
 
 // SubscribeLatest returns a latest-wins subscription, for the TUI: it holds
