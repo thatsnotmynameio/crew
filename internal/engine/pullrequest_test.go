@@ -41,7 +41,7 @@ func TestF1ATakenIssueThatSucceedsReportsItsTakeThenItsVerdictOnThePullRequests(
 			t.Errorf("pull request reports = %q, want %q", got, want)
 		}
 		end := tr.PullRequestReports("1")[1].End
-		if len(end.Actions) != 1 || end.Actions[0].State != crew.ActionSucceeded {
+		if len(end.Actions) != 1 || end.Actions[0].State != (crew.ActionSucceeded{}) {
 			t.Errorf("rule end = %+v, want development succeeded", end)
 		}
 

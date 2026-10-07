@@ -377,13 +377,14 @@ type StatusBoard struct {
 func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.errs.pop(status.IssueID.Key); err != nil {
-		return fmt.Errorf("report status on issue %s: %w", status.IssueID.Key, err)
+	key := status.IssueID().Key
+	if err := b.errs.pop(key); err != nil {
+		return fmt.Errorf("report status on issue %s: %w", key, err)
 	}
 	if b.statuses == nil {
 		b.statuses = map[string][]crew.Status{}
 	}
-	b.statuses[status.IssueID.Key] = append(b.statuses[status.IssueID.Key], status.Clone())
+	b.statuses[key] = append(b.statuses[key], status)
 	return nil
 }
 
@@ -399,11 +400,7 @@ func (b *StatusBoard) FailStatuses(key string, errs ...error) {
 func (b *StatusBoard) Statuses(key string) []crew.Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]crew.Status, len(b.statuses[key]))
-	for i, s := range b.statuses[key] {
-		out[i] = s.Clone()
-	}
-	return out
+	return slices.Clone(b.statuses[key])
 }
 
 // ReportingTracker is a PreparingTracker that also implements

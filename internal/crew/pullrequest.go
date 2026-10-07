@@ -36,7 +36,10 @@ type RuleEnd struct {
 
 // Failed reports whether any action of the rule failed.
 func (e RuleEnd) Failed() bool {
-	return slices.ContainsFunc(e.Actions, func(a ActionStatus) bool { return a.State == ActionFailed })
+	return slices.ContainsFunc(e.Actions, func(a ActionStatus) bool {
+		_, failed := a.State.(ActionFailed)
+		return failed
+	})
 }
 
 // Clone returns a copy of r with its own End and Actions, so the copy shares

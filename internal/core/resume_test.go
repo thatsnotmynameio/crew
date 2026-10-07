@@ -393,7 +393,7 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 		for _, c := range cmds {
 			if r, ok := c.(core.ReportStatus); ok {
 				last = r.Status
-				d.send(core.StatusResult{IssueID: r.Status.IssueID, Result: core.ResultDone})
+				d.send(core.StatusResult{IssueID: r.Status.IssueID(), Result: core.ResultDone})
 			}
 		}
 	}
@@ -410,8 +410,8 @@ func TestTheStatusOfAResumedActionNamesItsWorkspace(t *testing.T) {
 		cmds, _ = d.send(in)
 		answer(cmds)
 	}
-	if len(last.Actions) != 2 || last.Actions[0].Workspace != "issue-5-acceptance" || last.Actions[1].Workspace != "" {
-		t.Fatalf("actions = %#v, want the resumed acceptance naming its workspace and development none", last.Actions)
+	if a := last.Actions(); len(a) != 2 || a[0].Workspace != "issue-5-acceptance" || a[1].Workspace != "" {
+		t.Fatalf("actions = %#v, want the resumed acceptance naming its workspace and development none", a)
 	}
 }
 

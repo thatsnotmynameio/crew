@@ -316,15 +316,16 @@ func TestStatusShowsAnEndedActionsSpendOnlyWhenSetTo(t *testing.T) {
 	}
 
 	off := run()
-	if off.Actions[0].Spend != (crew.Spend{}) || off.Actions[0].PullRequest != (crew.PullRequest{}) {
-		t.Fatalf("status without the setting holds %#v", off.Actions[0])
+	if got := off.Actions()[0].State; got != (crew.ActionSucceeded{}) {
+		t.Fatalf("status without the setting holds %#v", got)
 	}
 	on := run(core.ReportingUsage())
-	if on.Actions[0].Spend != spent.Spend() || on.Actions[0].PullRequest != pr45 {
-		t.Fatalf("ended action's status = %#v, want its spend and #45", on.Actions[0])
+	shown := crew.Some(crew.ShownUsage{Spend: spent.Spend(), PullRequest: pr45})
+	if got := on.Actions()[0].State; got != (crew.ActionSucceeded{Usage: shown}) {
+		t.Fatalf("ended action's status = %#v, want its spend and #45", got)
 	}
-	if on.Actions[1].Spend != (crew.Spend{}) || on.Actions[1].PullRequest != (crew.PullRequest{}) {
-		t.Fatalf("running action's status = %#v, want no spend", on.Actions[1])
+	if got, running := on.Actions()[1].State.(crew.ActionRunning); !running {
+		t.Fatalf("running action's status = %#v, want no spend", got)
 	}
 }
 
@@ -335,8 +336,8 @@ func TestRunningAndFinishingActionsShowNoSpend(t *testing.T) {
 
 	cmds, _ := d.send(core.Tick{})
 	st := statusOf(t, cmds, "1")
-	if st.Actions[0].State != crew.ActionRunning || st.Actions[0].Spend != (crew.Spend{}) {
-		t.Fatalf("finishing action's status = %#v, want running with no spend", st.Actions[0])
+	if got := st.Actions()[0].State; got != (crew.ActionPending{}) {
+		t.Fatalf("finishing action's status = %#v, want pending with no spend", got)
 	}
 	if got := d.m.View().Spent; got != (crew.Spend{}) {
 		t.Fatalf("run spend = %#v before any action ended", got)

@@ -51,7 +51,7 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 // ruleEnd returns how h's rule ended, with each action as its ended status
 // shows it.
 func (s *step) ruleEnd(h *heldIssue) *crew.RuleEnd {
-	return &crew.RuleEnd{Rule: s.m.rules[h.rule].Name, Actions: s.status(h, crew.StatusEnded).Actions}
+	return &crew.RuleEnd{Rule: s.m.rules[h.rule].Name, Actions: s.actionStatuses(h)}
 }
 
 // pumpPullRequests sends the lane's oldest report, unless a report is in

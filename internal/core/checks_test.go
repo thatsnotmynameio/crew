@@ -147,10 +147,10 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
 	want := []crew.ActionStatus{
-		{Name: "acceptance", State: crew.ActionSucceeded},
-		{Name: "development", State: crew.ActionRunning, Started: devStarted, Checks: []crew.CheckResult{judged}},
+		{Name: "acceptance", State: crew.ActionSucceeded{}},
+		{Name: "development", State: crew.ActionRunning{Started: devStarted}, Checks: []crew.CheckResult{judged}},
 	}
-	if got.Kind != crew.StatusRunning || !reflect.DeepEqual(got.Actions, want) {
+	if got.Progress() != (crew.StatusRunning{}) || !reflect.DeepEqual(got.Actions(), want) {
 		t.Fatalf("status while the second check runs: %#v\nwant actions %#v", got, want)
 	}
 
@@ -160,8 +160,8 @@ func TestAnActionsStatusShowsEveryCheckThatRan(t *testing.T) {
 	}
 	cmds, _ = d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: closes.Reason})
 	ended := statusOf(t, cmds, "74")
-	dev := ended.Actions[1]
-	if dev.State != crew.ActionSucceeded || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
+	dev := ended.Actions()[1]
+	if dev.State != (crew.ActionSucceeded{}) || !reflect.DeepEqual(dev.Checks, []crew.CheckResult{judged, closes}) {
 		t.Fatalf("development once ended: %#v", dev)
 	}
 }

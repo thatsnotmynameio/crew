@@ -68,8 +68,8 @@ func renderStop(r crew.PullRequestReport, link string) string {
 	fmt.Fprintf(&b, "crew: %s %s on %s, which moved to %s, as did this pull request.\n",
 		codeSpan(string(r.End.Rule)), outcome, r.IssueRef, codeSpan(string(r.State)))
 	for _, a := range r.End.Actions {
-		if a.State == crew.ActionFailed {
-			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(string(a.Name))+"**", a))
+		if failed, ok := a.State.(crew.ActionFailed); ok {
+			fmt.Fprintf(&b, "\n%s\n", failedAction("**"+codeSpan(string(a.Name))+"**", a, failed))
 		}
 	}
 	b.WriteString("\nNobody watches this pull request any more: new review comments and CI failures need a person.\n")

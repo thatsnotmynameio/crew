@@ -14,12 +14,30 @@ func checkResult(name crew.CheckName, passed bool, reason string) crew.CheckResu
 	return crew.CheckResult{Name: name, Passed: passed, Reason: crew.NewCheckReason(reason)}
 }
 
+// changed returns s with change made to its data.
+func changed(s crew.Status, change func(*crew.StatusData)) crew.Status {
+	d := s.Data()
+	change(&d)
+	return crew.NewStatus(d)
+}
+
+// isEnded reports whether s is an ended status.
+func isEnded(s crew.Status) bool {
+	_, ended := s.Progress().(crew.StatusEnded)
+	return ended
+}
+
 // running74 is #74 in implement with one action, lfg, running since started
-// and having said said.
+// and having said said, or pending when started is zero.
 func running74(started time.Time, said string) crew.Status {
-	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
-		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: crew.NewSaid(said)}},
-		Updated: updated}
+	var state crew.ActionState = crew.ActionRunning{Started: started, Said: crew.NewSaid(said)}
+	if started.IsZero() {
+		state = crew.ActionPending{}
+	}
+	return crew.NewStatus(crew.StatusData{
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Progress: crew.StatusRunning{},
+		Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, Updated: updated,
+	})
 }
 
 // Covers AE6: what a session said can neither render nor mention anyone.
@@ -95,19 +113,20 @@ func TestElapsedTimeIsInWholeMinutes(t *testing.T) {
 // Covers AE3 and AE4.
 func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 	tr, _ := build(t)
-	status := crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
-		Actions: []crew.ActionStatus{
-			{Name: "development", State: crew.ActionFailed},
-			{Name: "acceptance", State: crew.ActionSucceeded},
-		},
-		To: needsAttention, Updated: updated}
 	for move, want := range map[crew.MoveProgress]string{
 		crew.MovePending: "moving to `needs attention`",
 		crew.MoveDone:    "moved to `needs attention`",
 		crew.MoveDropped: "could not move it to `needs attention`",
 	} {
-		status.Move = move
-		body := tr.renderStatus(status)
+		body := tr.renderStatus(crew.NewStatus(crew.StatusData{
+			IssueID: issueID("74"), IssueRef: "#74", Rule: "implement",
+			Progress: crew.StatusEnded{To: needsAttention, Move: move},
+			Actions: []crew.ActionStatus{
+				{Name: "development", State: crew.ActionFailed{}},
+				{Name: "acceptance", State: crew.ActionSucceeded{}},
+			},
+			Updated: updated,
+		}))
 		for _, want := range []string{"`implement`", "**`development`** failed", "**`acceptance`** succeeded", want} {
 			if !strings.Contains(body, want) {
 				t.Errorf("move %d: body does not contain %q:\n%s", move, want, body)
@@ -125,34 +144,29 @@ func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
 	tr, _ := build(t)
 	pr45 := crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://github.com/o/r/pull/45"}
 	spent := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{CacheRead: 17_200_000}, HasTokens: true}.Spend()
-	ended := func(a crew.ActionStatus) crew.Status {
-		a.Name = "lfg"
-		return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
-			Actions: []crew.ActionStatus{a}, To: needsAttention, Updated: updated}
-	}
 	tests := []struct {
-		name   string
-		action crew.ActionStatus
-		want   string
+		name  string
+		state crew.ActionState
+		want  string
 	}{
 		{"succeeded with a pull request",
-			crew.ActionStatus{State: crew.ActionSucceeded, Spend: spent, PullRequest: pr45},
+			crew.ActionSucceeded{Usage: crew.Some(crew.ShownUsage{Spend: spent, PullRequest: pr45})},
 			"**`lfg`** succeeded. Usage: $12.40, 17.2M tokens. Pull request: [#45](https://github.com/o/r/pull/45).\n"},
 		{"failed without a pull request",
-			crew.ActionStatus{
-				State: crew.ActionFailed, Cause: crew.CauseSession, Log: ".crew/logs/issue-9-lfg.log",
-				Spend: spent, PullRequest: crew.PullRequest{Lookup: crew.PullRequestNone},
+			crew.ActionFailed{
+				Cause: crew.CauseSession, Log: ".crew/logs/issue-9-lfg.log",
+				Usage: crew.Some(crew.ShownUsage{Spend: spent, PullRequest: crew.PullRequest{Lookup: crew.PullRequestNone}}),
 			},
 			"**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`. " +
 				"Usage: $12.40, 17.2M tokens. Pull request: none.\n"},
 		{"nothing reported, not looked up",
-			crew.ActionStatus{State: crew.ActionSucceeded, Spend: crew.Usage{}.Spend()},
+			crew.ActionSucceeded{Usage: crew.Some(crew.ShownUsage{Spend: crew.Usage{}.Spend()})},
 			"**`lfg`** succeeded. Usage: cost and tokens not reported. Pull request: not looked up.\n"},
-		{"no session", crew.ActionStatus{State: crew.ActionSucceeded}, "**`lfg`** succeeded.\n"},
+		{"no session", crew.ActionSucceeded{}, "**`lfg`** succeeded.\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _, _ := strings.Cut(actionLines(t, tr, ended(tt.action)), "\n#74 ")
+			got, _, _ := strings.Cut(actionLines(t, tr, lfgEnded(tt.state)), "\n#74 ")
 			if got != tt.want {
 				t.Errorf("action lines:\n got %q\nwant %q", got, tt.want)
 			}
@@ -178,22 +192,21 @@ func actionLines(t *testing.T, tr *Tracker, s crew.Status) string {
 
 // resumed is s with its first action resumed in worktree issue-9-lfg.
 func resumed(s crew.Status) crew.Status {
-	s.Actions[0].Workspace = "issue-9-lfg"
-	return s
+	return changed(s, func(d *crew.StatusData) { d.Actions[0].Workspace = "issue-9-lfg" })
 }
 
 // lfgEnded is #74's implement rule, ended with its one action, lfg, in
 // state.
 func lfgEnded(state crew.ActionState) crew.Status {
-	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
-		Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, To: needsAttention, Updated: updated}
+	return crew.NewStatus(crew.StatusData{
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Progress: crew.StatusEnded{To: needsAttention},
+		Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, Updated: updated,
+	})
 }
 
-// lfgFailed is lfgEnded with lfg failed on its session, with a log.
-func lfgFailed() crew.Status {
-	s := lfgEnded(crew.ActionFailed)
-	s.Actions[0].Cause, s.Actions[0].Log = crew.CauseSession, ".crew/logs/issue-9-lfg.log"
-	return s
+// lfgFailed is lfgEnded with lfg failed by cause, with a log.
+func lfgFailed(cause crew.FailureCause) crew.Status {
+	return lfgEnded(crew.ActionFailed{Cause: cause, Log: ".crew/logs/issue-9-lfg.log"})
 }
 
 // R11: a resumed action's line names its worktree, whatever its state, and
@@ -213,10 +226,10 @@ func TestAResumedActionNamesItsWorktree(t *testing.T) {
 			"**`lfg`** resumed in worktree `issue-9-lfg` and has been running for 5 minutes.\n"},
 		{"resumed not started", resumed(running74(time.Time{}, "")),
 			"**`lfg`** resumed in worktree `issue-9-lfg` and is running.\n"},
-		{"resumed failed", resumed(lfgFailed()),
+		{"resumed failed", resumed(lfgFailed(crew.CauseSession)),
 			"**`lfg`** resumed in worktree `issue-9-lfg` and failed: its session failed. " +
 				"Its log is `.crew/logs/issue-9-lfg.log`.\n"},
-		{"resumed succeeded", resumed(lfgEnded(crew.ActionSucceeded)),
+		{"resumed succeeded", resumed(lfgEnded(crew.ActionSucceeded{})),
 			"**`lfg`** resumed in worktree `issue-9-lfg` and succeeded.\n"},
 		{"fresh running with words", running74(updated.Add(-5*time.Minute), said),
 			"**`lfg`** has been running for 5 minutes. It last said:\n\n```text\n" + said + "\n```\n"},
@@ -224,13 +237,14 @@ func TestAResumedActionNamesItsWorktree(t *testing.T) {
 			"**`lfg`** has been running for 5 minutes.\n"},
 		{"fresh not started", running74(time.Time{}, ""),
 			"**`lfg`** is running.\n"},
-		{"fresh failed", lfgFailed(), "**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`.\n"},
-		{"fresh succeeded", lfgEnded(crew.ActionSucceeded), "**`lfg`** succeeded.\n"},
+		{"fresh failed", lfgFailed(crew.CauseSession),
+			"**`lfg`** failed: its session failed. Its log is `.crew/logs/issue-9-lfg.log`.\n"},
+		{"fresh succeeded", lfgEnded(crew.ActionSucceeded{}), "**`lfg`** succeeded.\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := actionLines(t, tr, tt.status)
-			if tt.status.Kind == crew.StatusEnded {
+			if isEnded(tt.status) {
 				got, _, _ = strings.Cut(got, "\n#74 ")
 			}
 			if got != tt.want {
@@ -253,10 +267,11 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 		crew.CauseStart:     "**`lfg`** failed: its session could not start." + log,
 		crew.CausePrompt:    "**`lfg`** failed: its prompt did not render." + log,
 	} {
-		s := developmentEnded()
-		s.Actions[0].Cause = cause
-		// Only a check's reason may show; any other reason must not.
-		s.Actions[0].Checks = []crew.CheckResult{checkResult("pr", false, "`gh` found no @someone **pull request**")}
+		s := changed(developmentEnded(), func(d *crew.StatusData) {
+			d.Actions[0].State = crew.ActionFailed{Cause: cause, Log: ".crew/logs/issue-74-lfg.log"}
+			// Only a check's reason may show; any other reason must not.
+			d.Actions[0].Checks = []crew.CheckResult{checkResult("pr", false, "`gh` found no @someone **pull request**")}
+		})
 		body := tr.renderStatus(s)
 		if !slices.Contains(strings.Split(body, "\n"), want) {
 			t.Errorf("cause %d: body has no line %q:\n%s", cause, want, body)
@@ -266,8 +281,9 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 		}
 	}
 
-	s := developmentEnded()
-	s.Actions[0] = crew.ActionStatus{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseWorkspace}
+	s := changed(developmentEnded(), func(d *crew.StatusData) {
+		d.Actions[0] = crew.ActionStatus{Name: "lfg", State: crew.ActionFailed{Cause: crew.CauseWorkspace}}
+	})
 	want := "**`lfg`** failed: its workspace could not be created. It failed before it had a log."
 	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
 		t.Errorf("body has no line %q:\n%s", want, body)
@@ -306,9 +322,8 @@ func TestAnActionListsTheReasonsOfItsChecks(t *testing.T) {
 	closes := checkResult("pr-closes-issue", true, "the check pr-closes-issue passed")
 	unfinished := checkResult("judge", false, "the check judge failed: unfinished (1.00)")
 	noPR := checkResult("pr-closes-issue", false, "the check pr-closes-issue failed: no open pull request")
-	withChecks := func(s crew.Status, cause crew.FailureCause, checks ...crew.CheckResult) crew.Status {
-		s.Actions[0].Cause, s.Actions[0].Checks = cause, checks
-		return s
+	withChecks := func(s crew.Status, checks ...crew.CheckResult) crew.Status {
+		return changed(s, func(d *crew.StatusData) { d.Actions[0].Checks = checks })
 	}
 	const log = " Its log is `.crew/logs/issue-9-lfg.log`.\n"
 	tests := []struct {
@@ -318,35 +333,35 @@ func TestAnActionListsTheReasonsOfItsChecks(t *testing.T) {
 	}{
 		{
 			// Covers AE2.
-			"both passed", withChecks(lfgEnded(crew.ActionSucceeded), crew.CauseNone, judged, closes),
+			"both passed", withChecks(lfgEnded(crew.ActionSucceeded{}), judged, closes),
 			"**`lfg`** succeeded.\n\n- `the check judge passed: done (0.97)`\n- `the check pr-closes-issue passed`\n",
 		},
 		{
 			// Covers AE4.
-			"needs a person", withChecks(lfgEnded(crew.ActionSucceeded), crew.CauseNone, person, closes),
+			"needs a person", withChecks(lfgEnded(crew.ActionSucceeded{}), person, closes),
 			"**`lfg`** succeeded.\n\n- `the check judge passed: needs a person (0.95)`\n" +
 				"- `the check pr-closes-issue passed`\n",
 		},
 		{
 			// Covers AE1.
-			"the first failed", withChecks(lfgFailed(), crew.CauseCheck, unfinished),
+			"the first failed", withChecks(lfgFailed(crew.CauseCheck), unfinished),
 			"**`lfg`** failed: `the check judge failed: unfinished (1.00)`." + log,
 		},
 		{
 			// Covers AE3.
-			"the second failed", withChecks(lfgFailed(), crew.CauseCheck, judged, noPR),
+			"the second failed", withChecks(lfgFailed(crew.CauseCheck), judged, noPR),
 			"**`lfg`** failed: `the check pr-closes-issue failed: no open pull request`." + log +
 				"\n- `the check judge passed: done (0.97)`\n",
 		},
 		{
-			"the second runs", withChecks(running74(updated.Add(-5*time.Minute), ""), crew.CauseNone, judged),
+			"the second runs", withChecks(running74(updated.Add(-5*time.Minute), ""), judged),
 			"**`lfg`** has been running for 5 minutes.\n\n- `the check judge passed: done (0.97)`\n",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := actionLines(t, tr, tt.status)
-			if tt.status.Kind == crew.StatusEnded {
+			if isEnded(tt.status) {
 				got, _, _ = strings.Cut(got, "\n#74 ")
 			}
 			if got != tt.want {

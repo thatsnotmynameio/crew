@@ -213,10 +213,10 @@ func TestCheckingActionIsRunningInItsStatus(t *testing.T) {
 	cmds, _ := d.send(core.Tick{})
 	got := statusOf(t, cmds, "74")
 	want := []crew.ActionStatus{
-		{Name: "acceptance", State: crew.ActionSucceeded},
-		{Name: "development", State: crew.ActionRunning, Started: devStarted},
+		{Name: "acceptance", State: crew.ActionSucceeded{}},
+		{Name: "development", State: crew.ActionRunning{Started: devStarted}},
 	}
-	if got.Kind != crew.StatusRunning || !reflect.DeepEqual(got.Actions, want) {
+	if got.Progress() != (crew.StatusRunning{}) || !reflect.DeepEqual(got.Actions(), want) {
 		t.Fatalf("status while checking: %#v", got)
 	}
 }
@@ -248,7 +248,7 @@ var failedCauseCases = []struct {
 			cmds, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("token=secret")})
 			return cmds
 		},
-		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseSession, Log: devSpace.Log},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed{Cause: crew.CauseSession, Log: devSpace.Log}},
 	},
 	{
 		name: "check",
@@ -265,7 +265,7 @@ var failedCauseCases = []struct {
 			return cmds
 		},
 		want: crew.ActionStatus{
-			Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: devSpace.Log,
+			Name: "development", State: crew.ActionFailed{Cause: crew.CauseCheck, Log: devSpace.Log},
 			Checks: []crew.CheckResult{{Name: "never", Reason: crew.NewCheckReason("the check failed: no pull request")}},
 		},
 	},
@@ -279,7 +279,7 @@ var failedCauseCases = []struct {
 				Outcome: failed("stopped by crew")})
 			return cmds
 		},
-		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: devSpace.Log},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStopped, Log: devSpace.Log}},
 	},
 	{
 		name:   "workspace",
@@ -290,7 +290,7 @@ var failedCauseCases = []struct {
 			})
 			return cmds
 		},
-		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseWorkspace},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed{Cause: crew.CauseWorkspace}},
 	},
 	{
 		name:   "start",
@@ -302,7 +302,7 @@ var failedCauseCases = []struct {
 			})
 			return cmds
 		},
-		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStart, Log: devSpace.Log},
+		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStart, Log: devSpace.Log}},
 	},
 }
 
@@ -311,7 +311,7 @@ func TestEndedStatusGivesEachFailedActionsCauseNotItsWords(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newStatusDriver(t, draftWith(tt.action), 2)
 			got := statusOf(t, tt.end(d, d.take(issue("74", 1, ready))), "74")
-			if got.Kind != crew.StatusEnded || !reflect.DeepEqual(got.Actions, []crew.ActionStatus{tt.want}) {
+			if !isEnded(got) || !reflect.DeepEqual(got.Actions(), []crew.ActionStatus{tt.want}) {
 				t.Fatalf("ended status: %#v\nwant actions %#v", got, []crew.ActionStatus{tt.want})
 			}
 		})
@@ -328,8 +328,8 @@ func TestPromptThatFailsToRenderGivesItsCause(t *testing.T) {
 	cmds, _ := d.poll(issue("74", 1, ready))
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 	got := statusOf(t, landed, "74")
-	want := []crew.ActionStatus{{Name: "development", State: crew.ActionFailed, Cause: crew.CausePrompt}}
-	if got.Kind != crew.StatusEnded || !reflect.DeepEqual(got.Actions, want) {
+	want := []crew.ActionStatus{{Name: "development", State: crew.ActionFailed{Cause: crew.CausePrompt}}}
+	if !isEnded(got) || !reflect.DeepEqual(got.Actions(), want) {
 		t.Fatalf("ended status: %#v", got)
 	}
 }

@@ -50,7 +50,7 @@ func report(t *testing.T, tr *Tracker, statuses ...crew.Status) {
 	t.Helper()
 	for _, s := range statuses {
 		if err := tr.ReportStatus(context.Background(), s); err != nil {
-			t.Fatalf("ReportStatus(%s %d): %v", s.Rule, s.Kind, err)
+			t.Fatalf("ReportStatus(%s %T): %v", s.Rule(), s.Progress(), err)
 		}
 	}
 }
@@ -100,18 +100,26 @@ const (
 // developmentEnded is #74's development rule, run run1, ended with its lfg
 // action failed on its check.
 func developmentEnded() crew.Status {
-	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: run1,
-		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
+	return crew.NewStatus(crew.StatusData{
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "development", Run: run1,
+		Progress: crew.StatusEnded{To: needsAttention, Move: crew.MoveDone},
+		Actions: []crew.ActionStatus{{
+			Name: "lfg", State: crew.ActionFailed{Cause: crew.CauseCheck, Log: ".crew/logs/issue-74-lfg.log"},
 			Checks: []crew.CheckResult{checkResult("pr-closes-issue", false, "no open pull request closes #74")},
-			Log:    ".crew/logs/issue-74-lfg.log"}},
-		To: needsAttention, Move: crew.MoveDone, Updated: updated}
+		}},
+		Updated: updated,
+	})
 }
 
 // fix is #74's fix rule in run, running its address action that said said.
 func fix(run crew.RuleRunID, said string) crew.Status {
-	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
-		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: crew.NewSaid(said)}},
-		Updated: updated}
+	return crew.NewStatus(crew.StatusData{
+		IssueID: issueID("74"), IssueRef: "#74", Rule: "fix", Run: run, Progress: crew.StatusRunning{},
+		Actions: []crew.ActionStatus{{
+			Name: "address", State: crew.ActionRunning{Started: updated.Add(-5 * time.Minute), Said: crew.NewSaid(said)},
+		}},
+		Updated: updated,
+	})
 }
 
 // legacyQueued is the queued entry an earlier crew version wrote for #74
@@ -137,9 +145,10 @@ func TestTheFirstStatusCreatesACommentWithOneEntry(t *testing.T) {
 
 func TestRunningThenEndedInOneRunEditsOneEntry(t *testing.T) {
 	tr, gh := fresh(t)
-	ended := fix(run2, "")
-	ended.Kind, ended.To, ended.Move = crew.StatusEnded, needsAttention, crew.MoveDone
-	ended.Actions[0] = crew.ActionStatus{Name: "address", State: crew.ActionSucceeded}
+	ended := changed(fix(run2, ""), func(d *crew.StatusData) {
+		d.Progress = crew.StatusEnded{To: needsAttention, Move: crew.MoveDone}
+		d.Actions[0] = crew.ActionStatus{Name: "address", State: crew.ActionSucceeded{}}
+	})
 	report(t, tr, fix(run2, "Reading the review."), ended)
 	edits := gh.callsTo(editComment...)
 	if len(edits) != 1 || !slices.Contains(edits[0], "repos/{owner}/{repo}/issues/comments/101") {
@@ -294,9 +303,7 @@ func TestACommentWithoutEntriesIsKeptAsTheFirstEntry(t *testing.T) {
 
 func TestARuleNameHoldingACommentEndRoundTripsThroughItsMarker(t *testing.T) {
 	running := func(run crew.RuleRunID) crew.Status {
-		s := fix(run, "")
-		s.Rule = "fix --> now"
-		return s
+		return changed(fix(run, ""), func(d *crew.StatusData) { d.Rule = "fix --> now" })
 	}
 	before := commentAfter(t, running(run2))
 	marker, _, _ := strings.Cut(before, "\n")
@@ -370,7 +377,7 @@ func TestAFailedWriteLeavesTheCommentAsItWas(t *testing.T) {
 		fix(run3, "Starting over."),
 	} {
 		if err := tr.ReportStatus(context.Background(), s); err == nil {
-			t.Fatalf("ReportStatus(%s) = nil, want the edit's error", s.Run)
+			t.Fatalf("ReportStatus(%s) = nil, want the edit's error", s.Run())
 		}
 	}
 

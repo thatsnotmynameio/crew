@@ -6,7 +6,7 @@ func TestPullRequestReportCloneSharesNoMemory(t *testing.T) {
 	r := PullRequestReport{
 		ID: "7", IssueID: IssueID{Key: "42"}, IssueRef: "#42", State: "crew:failed",
 		End: &RuleEnd{Rule: "development", Actions: []ActionStatus{
-			{Name: "lfg", State: ActionFailed, Checks: []CheckResult{{Name: "judge", Reason: NewCheckReason("unfinished")}}},
+			{Name: "lfg", State: ActionFailed{}, Checks: []CheckResult{{Name: "judge", Reason: NewCheckReason("unfinished")}}},
 		}},
 	}
 	c := r.Clone()
@@ -26,8 +26,8 @@ func TestPullRequestReportCloneKeepsANilEnd(t *testing.T) {
 }
 
 func TestRuleEndFailedWhenAnyActionFailed(t *testing.T) {
-	ok := RuleEnd{Actions: []ActionStatus{{State: ActionSucceeded}, {State: ActionSucceeded}}}
-	failed := RuleEnd{Actions: []ActionStatus{{State: ActionSucceeded}, {State: ActionFailed}}}
+	ok := RuleEnd{Actions: []ActionStatus{{State: ActionSucceeded{}}, {State: ActionSucceeded{}}}}
+	failed := RuleEnd{Actions: []ActionStatus{{State: ActionSucceeded{}}, {State: ActionFailed{}}}}
 	if ok.Failed() || !failed.Failed() {
 		t.Fatalf("Failed() = %v, %v, want false, true", ok.Failed(), failed.Failed())
 	}

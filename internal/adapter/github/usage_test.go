@@ -18,7 +18,6 @@ func TestUsageWordsWhatTheSessionsSpent(t *testing.T) {
 		spend crew.Spend
 		want  string
 	}{
-		{"no session", crew.Spend{}, ""},
 		{"one session", withAll.Spend(), " Usage: $1.20, 17.3M tokens. Pull request: none."},
 		{"both partial", withAll.Spend().Add(noCost.Spend()).Add(costOnly.Spend()),
 			" Usage: $4.25 (partial), 34.6M tokens (partial). Pull request: none."},
@@ -29,9 +28,12 @@ func TestUsageWordsWhatTheSessionsSpent(t *testing.T) {
 			" Usage: $0.00, 0 tokens. Pull request: none."},
 	}
 	for _, tt := range tests {
-		if got := usage(crew.ActionStatus{Spend: tt.spend, PullRequest: none}); got != tt.want {
+		if got := usage(crew.Some(crew.ShownUsage{Spend: tt.spend, PullRequest: none})); got != tt.want {
 			t.Errorf("%s: %q, want %q", tt.name, got, tt.want)
 		}
+	}
+	if got := usage(crew.Optional[crew.ShownUsage]{}); got != "" {
+		t.Errorf("not shown: %q, want nothing", got)
 	}
 }
 
@@ -46,7 +48,7 @@ func TestUsageWordsTokenCountsCompactly(t *testing.T) {
 	for _, tt := range tests {
 		spend := crew.Usage{Cost: 0.004, HasCost: true, Tokens: crew.Tokens{Output: tt.n}, HasTokens: true}.Spend()
 		want := " Usage: $0.00, " + tt.want + " tokens. Pull request: not looked up."
-		if got := usage(crew.ActionStatus{Spend: spend}); got != want {
+		if got := usage(crew.Some(crew.ShownUsage{Spend: spend})); got != want {
 			t.Errorf("%d tokens: %q, want %q", tt.n, got, want)
 		}
 	}

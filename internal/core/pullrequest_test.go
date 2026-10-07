@@ -97,8 +97,8 @@ func (d *driver) succeededRule() []core.Command {
 
 // allSucceeded is the end of implement when both its actions succeeded.
 var allSucceeded = &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
-	{Name: "acceptance", State: crew.ActionSucceeded},
-	{Name: "development", State: crew.ActionSucceeded},
+	{Name: "acceptance", State: crew.ActionSucceeded{}},
+	{Name: "development", State: crew.ActionSucceeded{}},
 }}
 
 func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
@@ -157,8 +157,8 @@ func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReport{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
 		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionFailed, Cause: crew.CauseSession, Log: space("74", "acceptance").Log},
-			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: space("74", "development").Log,
+			{Name: "acceptance", State: crew.ActionFailed{Cause: crew.CauseSession, Log: space("74", "acceptance").Log}},
+			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseCheck, Log: space("74", "development").Log},
 				Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: crew.NewCheckReason("no pull request")}}},
 		}},
 	})
@@ -178,8 +178,8 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReport{
 		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
 		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
-			{Name: "acceptance", State: crew.ActionSucceeded},
-			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: space("74", "development").Log},
+			{Name: "acceptance", State: crew.ActionSucceeded{}},
+			{Name: "development", State: crew.ActionFailed{Cause: crew.CauseStopped, Log: space("74", "development").Log}},
 		}},
 	})
 }

@@ -176,8 +176,8 @@ func TestARuleWithoutActionsWritesItsStatusWithNoActionLines(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, takePromoted(d), "1"), Result: core.ResultDone})
 
 	got := statusOf(t, landed, "1")
-	if got.Kind != crew.StatusEnded || got.Rule != "promote triage" || got.To != developmentReady ||
-		got.Move != crew.MovePending || got.Actions != nil {
+	if got.Progress() != (crew.StatusEnded{To: developmentReady, Move: crew.MovePending}) ||
+		got.Rule() != "promote triage" || len(got.Actions()) != 0 {
 		t.Fatalf("status: got %#v, want promote triage's ended status, moving to development, with no actions", got)
 	}
 }

@@ -225,10 +225,15 @@ func saidInStatus(t *testing.T, text string) string {
 	if _, err := r.wait(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got.Kind != crew.StatusRunning || len(got.Actions) != 1 {
+	actions := got.Actions()
+	if got.Progress() != (crew.StatusRunning{}) || len(actions) != 1 {
 		t.Fatalf("status = %#v, want development running", got)
 	}
-	return got.Actions[0].Said.String()
+	running, ok := actions[0].State.(crew.ActionRunning)
+	if !ok {
+		t.Fatalf("development = %#v, want running", actions[0])
+	}
+	return running.Said.String()
 }
 
 func TestR23TheStatusShowsWhatTheSessionSaidWithoutItsEscapeSequences(t *testing.T) {

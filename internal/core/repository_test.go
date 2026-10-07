@@ -32,7 +32,7 @@ func TestAE4IssuesOfTwoRepositoriesWithTheSameKeyAreTwoIssues(t *testing.T) {
 			t.Fatalf("not a move: %#v", c)
 		}
 		landed, _ := d.send(core.CallResult{ID: mv.ID, Result: core.ResultDone})
-		if got := statuses(landed); len(got) != 1 || got[0].IssueID != mv.IssueID {
+		if got := statuses(landed); len(got) != 1 || got[0].IssueID() != mv.IssueID {
 			t.Fatalf("statuses once the take of %#v landed: got %#v, want one of it", mv.IssueID, got)
 		}
 	}
@@ -44,7 +44,7 @@ func runOf(t *testing.T, d *driver, it crew.Issue) (crew.RuleRunID, crew.RuleRun
 	t.Helper()
 	cmds, _ := d.poll(it)
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, it.ID().Key), Result: core.ResultDone})
-	return statusOf(t, landed, it.ID().Key).Run, crew.NewRuleRunID(d.listed, 1)
+	return statusOf(t, landed, it.ID().Key).Run(), crew.NewRuleRunID(d.listed, 1)
 }
 
 // Covers AE4.

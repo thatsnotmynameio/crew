@@ -179,7 +179,7 @@ func (e *Engine) reportStatus(ctx context.Context, c core.ReportStatus) {
 	defer cancel()
 	err := e.reporter.ReportStatus(ctx, c.Status)
 	result, reason := e.classify(ctx, err)
-	e.post(core.StatusResult{IssueID: c.Status.IssueID, Result: result, Reason: reason})
+	e.post(core.StatusResult{IssueID: c.Status.IssueID(), Result: result, Reason: reason})
 }
 
 // reportPullRequests shows a report on the issue's pull requests through the
