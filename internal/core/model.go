@@ -67,6 +67,9 @@ type Model struct {
 	board *board
 	// bots is what the model knows of the identities crew acts as (KTD3).
 	bots bots
+	// answerers are who may answer a question a session asks on its
+	// issue (KTD-W4).
+	answerers crew.Answerers
 }
 
 // New returns a model for rules, whose rules are in config order and

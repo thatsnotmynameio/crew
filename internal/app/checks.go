@@ -49,8 +49,7 @@ func waitingSessions(name string, tracker port.Tracker, rules []crew.Rule) error
 	var errs []error
 	for _, r := range rules {
 		for i, a := range r.Actions {
-			_, session := a.Kind.(crew.SessionSpec)
-			if _, waits := a.On[crew.Waiting]; session && waits {
+			if a.MayWait() {
 				errs = append(errs, fmt.Errorf("rules.%s.actions[%d]: session %q may wait for answers, "+
 					"and tracker %q cannot list comments", r.Name, i, a.Name, name))
 			}

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/engine"
@@ -224,6 +225,47 @@ func TestAJournalThatCannotBeReadFailsPrepareNamingIt(t *testing.T) {
 		}
 		if tr.lists != 0 {
 			t.Errorf("tracker listed %d times, want none", tr.lists)
+		}
+	})
+}
+
+// Covers R40, KTD-W4, KTD-W8: a session that may wait is told the code
+// owners the tracker found at Prepare, the answering list without its own
+// login, and the login its bot acts as, from the bot's identity.
+func TestASessionThatMayWaitIsToldTheCodeOwnersTheTrackerFound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewActingTracker(issue(1, ready))
+		tr.SetCodeOwners("alice", "Bob")
+		tr.SetLogin("boss")
+		rule := develop
+		action := sessionAction("development", "Implement development for issue {{.Issue.Ref}}")
+		spec, _ := action.Kind.(crew.SessionSpec)
+		spec.Bot, spec.Wait = crew.Bot{Name: "developer"}, 10*time.Minute
+		action.Kind, action.On = spec, crew.On{crew.Waiting: crew.ToRoute{Route: crew.FailedRoute}}
+		rule.Actions = []crew.Action{action}
+		cfg := config(t, tr, rule)
+		cfg.ActAs, cfg.DefaultBot, cfg.Bots = true, "ops", []crew.BotName{"ops", "developer"}
+		cfg.Identities = map[crew.BotName]port.Identity{
+			"developer": {Bot: "developer", Login: "crew-developer[bot]"},
+		}
+		cfg.AnsweringApps = []string{"crew-developer[bot]", "crew-product-manager[bot]"}
+		r := start(t, cfg)
+
+		prompt := r.sessions(1)["issue-1-implement"].Run().Prompt
+		for _, want := range []string{
+			"Only these may answer: the code owners `alice`, `Bob`, when `user.type` is not `Bot`; " +
+				"and the Apps on crew's answering list other than you, `crew-product-manager[bot]`, " +
+				"only when `user.type` is `Bot`.",
+			"You act as `crew-developer[bot]`.",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("prompt lacks %q:\n%s", want, prompt)
+			}
+		}
+
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
 		}
 	})
 }

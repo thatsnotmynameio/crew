@@ -379,9 +379,9 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // workspace with crew.RuleStates, the states the rules name, asks the
 // tracker who the code owners are and which login it acts as, reads the
 // repository it works on, then loads the run journal and builds the core
-// from its events, with the bots. It returns the first error, naming its
-// port, a harness's agent, or the journal, without running what comes after
-// it (R6).
+// from its events, with the bots and who may answer a session (KTD-W4). It
+// returns the first error, naming its port, a harness's agent, or the
+// journal, without running what comes after it (R6).
 // The core is then left unbuilt, which is safe because Run returns the error
 // before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
@@ -408,7 +408,8 @@ func (e *Engine) prepare(ctx context.Context) error {
 	}
 	bots := e.withBots()
 	e.repository = e.findRepository()
-	opts := slices.Concat(e.opts, []core.Option{bots})
+	answerers := core.WithAnswerers(crew.Answerers{CodeOwners: e.codeOwners, Apps: e.cfg.AnsweringApps})
+	opts := slices.Concat(e.opts, []core.Option{bots, answerers})
 	if e.cfg.Journal != nil {
 		port.Step(ctx, "reading the run journal")
 		past, err := e.cfg.Journal.Load(e.repository.ID)
@@ -433,10 +434,17 @@ func (e *Engine) findRepository() crew.Repository {
 }
 
 // withBots returns the core's option of the configured bots, with the
+// login each acting bot acts as, from its identity (KTD-W8), and the
 // login the tracker acts as when it acts as you, as its
 // port.LoginFinder found it in Prepare; none without one (KTD8).
 func (e *Engine) withBots() core.Option {
 	c := core.BotsConfig{Default: e.cfg.DefaultBot, Names: e.cfg.Bots, Unable: e.cfg.Unable}
+	for name, id := range e.cfg.Identities {
+		if c.Logins == nil {
+			c.Logins = map[crew.BotName]string{}
+		}
+		c.Logins[name] = id.Login
+	}
 	if l, ok := e.cfg.Tracker.(port.LoginFinder); ok {
 		c.Login = l.Login()
 	}

@@ -246,8 +246,9 @@ func (s *step) workspaceAsked(h *heldRun, e crew.WorkspaceAsked) {
 // startSession starts the session of h's action named name, with its
 // prompt rendered for the issue, then crew's paragraphs: the resume
 // paragraph when the action is where the run resumes the work of the run
-// it continues, in that run's reopened workspace (R23), and the verdict
-// paragraph when the action's on: names verdicts (R9).
+// it continues, in that run's reopened workspace (R23), the verdict
+// paragraph when the action's on: names verdicts (R9), and the waiting
+// paragraph when the session may wait for an answer (R19, KTD-W10).
 func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	def := s.m.rules[h.rule].Action(name)
 	spec, _ := def.Kind.(crew.SessionSpec)
@@ -262,6 +263,9 @@ func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	}
 	if verdicts, ok := verdictParagraph(def.On); ok {
 		prompt += "\n\n" + verdicts
+	}
+	if def.MayWait() {
+		prompt += "\n\n" + waitingParagraph(s.m.waitingOf(h, name, spec))
 	}
 	s.command(StartSession{
 		IssueID: h.id(), Run: h.run.ID(), Action: name, Dir: h.dir, Prompt: prompt, Log: w.Log, Resumed: resumed,

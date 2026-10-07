@@ -32,6 +32,9 @@ type BotsConfig struct {
 	// Login is the gh login crew acts as when it acts as you; empty
 	// when unknown.
 	Login string
+	// Logins holds, by name, the login each bot that acts at startup acts
+	// as, such as crew-developer[bot] (KTD-W8).
+	Logins map[crew.BotName]string
 }
 
 // bots is what the model knows of the identities its actions and writes
@@ -55,6 +58,7 @@ func WithBots(c BotsConfig) Option {
 	return func(m *Model) {
 		c.Names = slices.Clone(c.Names)
 		c.Unable = maps.Clone(c.Unable)
+		c.Logins = maps.Clone(c.Logins)
 		m.bots.config = c
 	}
 }
@@ -73,6 +77,15 @@ func (ms *bots) identity(bot crew.BotName) crew.BotName {
 		return bot
 	}
 	return ""
+}
+
+// login returns the login a session of bot acts as: its bot's when the bot
+// acts at startup, else yours, the gh login; empty when unknown (KTD-W8).
+func (ms *bots) login(bot crew.BotName) string {
+	if ms.acts(bot) {
+		return ms.config.Logins[bot]
+	}
+	return ms.config.Login
 }
 
 // writer returns who crew's own writes go as: the default bot while it acts

@@ -108,6 +108,15 @@ type Action struct {
 	On On
 }
 
+// MayWait reports whether a's session may wait for an answer to a question
+// it asks on the issue: a is a session whose On has a Waiting entry (R19).
+// A shell action never waits.
+func (a Action) MayWait() bool {
+	_, session := a.Kind.(SessionSpec)
+	_, waits := a.On[Waiting]
+	return session && waits
+}
+
 // Outcome is how an action's session ended, as its harness reported it.
 type Outcome struct {
 	// Succeeded is true when the session ended cleanly.
