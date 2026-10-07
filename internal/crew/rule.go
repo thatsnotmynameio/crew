@@ -101,16 +101,6 @@ type CheckResult struct {
 	Reason CheckReason
 }
 
-// promptIssue is the only issue data a prompt template can reach. A struct,
-// not the Issue itself, so templates depend on exactly these four fields and
-// any other name, such as {{.Issue.Number}}, fails to render.
-type promptIssue struct {
-	Ref   string
-	Key   string
-	Title string
-	URL   string
-}
-
 // Render renders the action's prompt for issue. The template's data is
 // .Issue with the fields Ref, Key, Title and URL; a reference to any other
 // field, or a template that does not parse, is an error naming the action.
