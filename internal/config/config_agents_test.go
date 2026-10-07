@@ -126,7 +126,7 @@ func TestLoadGivesEveryActionItsBot(t *testing.T) {
 			if got := actionBots(cfg.Rules); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("action bots = %q, want %q", got, tt.want)
 			}
-			if cfg.Bot.Name != tt.wantBot || !reflect.DeepEqual(botNames(cfg.Bots), tt.wantBots) {
+			if cfg.Bot.Name != tt.wantBot || !reflect.DeepEqual(cfg.BotNames(), tt.wantBots) {
 				t.Errorf("Bot = %q, Bots = %q; want %q, %q", cfg.Bot, cfg.Bots, tt.wantBot, tt.wantBots)
 			}
 			actsAsItsAgentsBot(t, cfg.Rules)
@@ -157,15 +157,6 @@ func actionBots(rules []crew.Rule) []crew.BotName {
 		for _, a := range r.Actions {
 			out = append(out, a.Bot.Name)
 		}
-	}
-	return out
-}
-
-// botNames returns the names of bots, in order.
-func botNames(bots []crew.Bot) []crew.BotName {
-	out := make([]crew.BotName, 0, len(bots))
-	for _, b := range bots {
-		out = append(out, b.Name)
 	}
 	return out
 }

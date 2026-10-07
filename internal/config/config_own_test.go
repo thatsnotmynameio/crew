@@ -59,7 +59,7 @@ func TestTheRepositorysOwnConfigLoads(t *testing.T) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
 	wantBots := []crew.BotName{"clerk", "product-manager", "developer"}
-	if cfg.Bot.Name != "clerk" || !reflect.DeepEqual(botNames(cfg.Bots), wantBots) {
+	if cfg.Bot.Name != "clerk" || !reflect.DeepEqual(cfg.BotNames(), wantBots) {
 		t.Errorf("Bot = %q, Bots = %q; want clerk, %q", cfg.Bot, cfg.Bots, wantBots)
 	}
 	columns := make([]string, 0, len(cfg.Board))

@@ -197,17 +197,27 @@ func engineSettings(doc *document, cfg *Config) []error {
 // action's bot in rule order, each once.
 func namedBots(def crew.Bot, rules []crew.Rule) []crew.Bot {
 	var out []crew.Bot
-	if def != (crew.Bot{}) {
+	if def.Name != "" {
 		out = append(out, def)
 	}
 	for _, r := range rules {
 		for _, a := range r.Actions {
-			if a.Bot != (crew.Bot{}) && !slices.Contains(out, a.Bot) {
+			if a.Bot.Name != "" && !slices.Contains(out, a.Bot) {
 				out = append(out, a.Bot)
 			}
 		}
 	}
 	return out
+}
+
+// BotNames returns the names of Bots, in order: the engine and the bots'
+// runtime refer to bots by name.
+func (c *Config) BotNames() []crew.BotName {
+	names := make([]crew.BotName, 0, len(c.Bots))
+	for _, bot := range c.Bots {
+		names = append(names, bot.Name)
+	}
+	return names
 }
 
 // positive reports msg for the key at path when it is set and not above zero.
