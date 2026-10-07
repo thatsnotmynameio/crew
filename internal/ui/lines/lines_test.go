@@ -134,6 +134,9 @@ func stepEnded(plan crew.StepPlan, outcome crew.StepOutcome) core.RouteStepEnded
 // notify is a route's shell step.
 var notify = crew.StepPlan{Kind: crew.StepShell, Shell: "notify"}
 
+// check is a route's function step.
+var check = crew.StepPlan{Kind: crew.StepFunction, Function: "check"}
+
 // sentences pairs each kind of event with the sentence Text gives it.
 var sentences = []struct {
 	event core.Published
@@ -152,6 +155,7 @@ var sentences = []struct {
 		"#9 development: worktree issue-9-development is gone, so it does not resume there"},
 	{crew.ActionSessionStarted{EventHead: lfgHead, Action: "lfg"}, "#9 development/lfg started its session"},
 	{crew.ActionShellAsked{EventHead: lfgHead, Action: "judge"}, "#9 development/judge started its script"},
+	{crew.ActionFunctionAsked{EventHead: lfgHead, Action: "check"}, "#9 development/check started its function"},
 	{core.RunNotRecorded{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		What: "the start of lfg", Reason: "disk full"},
 		"#9 development: could not record the start of lfg, so a restart may not resume it: disk full"},
@@ -188,6 +192,12 @@ var sentences = []struct {
 		"#9 development through blocked: crew stopped the shell step notify"},
 	{stepEnded(notify, crew.StepSkipped{}),
 		"#9 development through blocked: crew skipped the shell step notify, as it was stopping"},
+	{stepEnded(check, crew.StepRan{Reason: crew.NewShellReason(`the route's function step check returned "passed"`)}),
+		`#9 development through blocked: the function step check ran: the route's function step check returned "passed"`},
+	{stepEnded(check, crew.StepFailed{Reason: crew.NewShellReason("the route's function step check failed")}),
+		"#9 development through blocked: the function step check failed: the route's function step check failed"},
+	{stepEnded(check, crew.StepSkipped{}),
+		"#9 development through blocked: crew skipped the function step check, as it was stopping"},
 	{core.IssueSkipped{At: at("10:00:00"), IssueRef: "#3", States: []crew.State{"ready", "in progress"}},
 		"skipped #3: it carries 2 crew labels (ready, in progress)"},
 	{core.IssueOfOtherKind{At: at("10:00:00"), IssueID: issueID("90"), IssueRef: "#90", Kind: crew.KindPullRequest,

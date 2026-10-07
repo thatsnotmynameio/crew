@@ -331,6 +331,8 @@ func (h *heldRun) actionViews() []ActionView {
 		switch s := a.State().(type) {
 		case crew.InShell:
 			v.Started = s.Started
+		case crew.InFunction:
+			v.Started = s.Started
 		case crew.Finished:
 			v.Outcome = s.End.Outcome()
 		case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.StartingSession, crew.InSession, crew.NotRun:
@@ -362,7 +364,7 @@ func phaseOf(state crew.ActionRunState) Phase {
 	switch state.(type) {
 	case crew.StartingSession:
 		return PhaseStarting
-	case crew.InSession, crew.InShell:
+	case crew.InSession, crew.InShell, crew.InFunction:
 		return PhaseRunning
 	case crew.Finished:
 		return PhaseEnded

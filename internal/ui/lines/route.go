@@ -8,8 +8,8 @@ import (
 )
 
 // stepEnded is the line for a step of a route that settled (R16): a move,
-// close, comment or report that landed, or a shell step that ran, failed,
-// was stopped or was skipped. A tracker step given up or dropped has none:
+// close, comment or report that landed, or a shell or function step that
+// ran, failed, was stopped or was skipped. A tracker step given up or dropped has none:
 // its CallDropped says so.
 func stepEnded(e core.RouteStepEnded) string {
 	route := fmt.Sprintf("%s %s through %s: ", e.IssueRef, e.Rule, e.Route)
@@ -41,7 +41,7 @@ func landed(e core.RouteStepEnded) string {
 		return "commented on " + e.IssueRef
 	case crew.StepReport:
 		return "posted the report on " + e.IssueRef
-	case crew.StepShell:
+	case crew.StepShell, crew.StepFunction:
 	}
 	return ""
 }
@@ -59,6 +59,8 @@ func stepName(p crew.StepPlan) string {
 		return "the report"
 	case crew.StepShell:
 		return "the shell step " + string(p.Shell)
+	case crew.StepFunction:
+		return "the function step " + string(p.Function)
 	}
 	return "the step"
 }

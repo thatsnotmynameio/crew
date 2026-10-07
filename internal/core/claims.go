@@ -103,6 +103,8 @@ func unrecorded(e crew.RunEvent) (crew.ActionName, string, bool) {
 		return e.Action, "the start of " + string(e.Action), true
 	case crew.ActionShellAsked:
 		return e.Action, "the start of " + string(e.Action), true
+	case crew.ActionFunctionAsked:
+		return e.Action, "the start of " + string(e.Action), true
 	case crew.ActionSessionStarted:
 		return e.Action, "the start of " + string(e.Action) + "'s session", true
 	case crew.ActionEnded:
@@ -115,7 +117,8 @@ func unrecorded(e crew.RunEvent) (crew.ActionName, string, bool) {
 		return "", "its release", true
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
 		crew.WorkspaceMissing, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellStopAsked,
-		crew.ActionShellEnded, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked:
+		crew.ActionShellEnded, crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.RunLookupAsked,
+		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked:
 	}
 	return "", "", false
 }

@@ -13,8 +13,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// stepKey identifies the shell step at index step of the route of one rule
-// run, which is no action of it.
+// stepKey identifies the shell or function step at index step of the
+// route of one rule run, which is no action of it.
 type stepKey struct {
 	run  crew.RuleRunID
 	step int
@@ -46,9 +46,9 @@ func (e *Engine) runStepShell(ctx context.Context, c core.RunStepShell) func() {
 	}
 }
 
-// stopScript ends the script running holds under key. The core asks to
-// stop only scripts it started, and their end still arrives through their
-// own goroutine.
+// stopScript ends the script or function running holds under key. The
+// core asks to stop only scripts and functions it started, and their end
+// still arrives through their own goroutine.
 func stopScript[K comparable](running map[K]context.CancelFunc, key K) {
 	if cancel, ok := running[key]; ok {
 		cancel()
