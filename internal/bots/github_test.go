@@ -192,7 +192,7 @@ func TestRequestsWithAnUnusableKeyAreNotSent(t *testing.T) {
 
 // testGrant is the reply of a token call granting what crew asks for.
 const testGrant = `{"token":"ghs_secret","expires_at":"2026-10-03T13:00:00Z","permissions":{"issues":"write",` +
-	`"pull_requests":"write","contents":"read","checks":"read","statuses":"read","actions":"read","metadata":"read"}}`
+	`"pull_requests":"write","contents":"write","checks":"read","statuses":"read","actions":"read","metadata":"read"}}`
 
 func TestAccessTokenIsLimitedToTheRepositoryAndCrewsPermissions(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +225,8 @@ func TestPermissionsAreTheManifests(t *testing.T) {
 		t.Errorf("manifest permissions = %v, want %v", got, permissions())
 	}
 	p := permissions()
-	p["contents"] = permWrite
-	if permissions()["contents"] != permRead {
+	p["checks"] = permWrite
+	if permissions()["checks"] != permRead {
 		t.Error("changing Permissions' map changed the next one")
 	}
 }

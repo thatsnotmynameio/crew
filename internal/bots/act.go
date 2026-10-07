@@ -349,6 +349,11 @@ func tokenWarning(b Bot, path string, err error) string {
 		return fmt.Sprintf("GitHub rejected the key of bot %s; delete %s and "+
 			"run `crew bots create %s` in this repository", b.Name, path, b.Name)
 	}
+	if errors.Is(err, ErrPermissionsNotGranted) {
+		return fmt.Sprintf("bot %s could not get a token: its app %s does not grant %s; grant them in the app's "+
+			"settings on GitHub, accept them on its installation and restart crew; crew acts as you in its place "+
+			"this run", b.Name, b.AppName, formatPermissions(permissions()))
+	}
 	return fmt.Sprintf("bot %s could not get a token: %v; crew acts as you in its place this run", b.Name, err)
 }
 
