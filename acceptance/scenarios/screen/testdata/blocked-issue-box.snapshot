@@ -1,0 +1,80 @@
+HH:MM:SS crew: loading config
+HH:MM:SS crew: checking the gh login
+HH:MM:SS crew: finding the code owners
+HH:MM:SS crew: reading the repository's labels
+HH:MM:SS crew: looking for claude on PATH
+HH:MM:SS crew: checking the git checkout and its origin
+HH:MM:SS crew: resolving origin's default branch
+HH:MM:SS crew: reading the run journal
+crew ╱╱ widgets • up ##  ? help
+
+Bots ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── only you
+ ╭────────────────────────────────╮
+ │ ▄ █ ▄ you                      │
+ │ ▄█ █▄ @boss                    │
+ │ ▄███▄ no actions yet           │
+ │ crew's writes +1               │
+ │ idle                       ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+ ╰────────────────────────────│ #2 Add a search box                                                                              │
+                              │ rule     none                                                                                    │
+▸ Board ──────────────────────│ labels    dev:ready   blocked                                                                    │────────────────────── 1 issue
+ development                  │ kind     issue                                                                                   │
+ ─────────────────────────────│ priority none                                                                                    │
+ ╭────────────────────────────│ url      https://github.com/acme/widgets/issues/2                                                │
+ │ ▸ #2 Add a search box      │                                                                                                  │
+ │ run  ⊘ blocked             │ no actions                                                                                       │
+ │ bots none                  │                                                                                                  │
+ │ via  none                  │ Events                                                                                           │
+ ╰────────────────────────────│ none                                                                                             │
+                              ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+Queues ─── 0 of 2 busy   Events ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 1 event
+ default  □□  0/2         HH:MM:SS poll: listed 1 issue, took 0
+
+
+
+
+
+esc close · ←→ card · ↑↓ scroll · q stop
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

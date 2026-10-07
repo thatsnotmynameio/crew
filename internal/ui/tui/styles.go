@@ -70,7 +70,7 @@ type styles struct {
 	// brightest on its background (KTD11 of #151).
 	highlight                    lipgloss.Style
 	success, warning, error      lipgloss.Style
-	chip, ref                    lipgloss.Style
+	chip, blockedChip, ref       lipgloss.Style
 	warningPill                  lipgloss.Style
 	helpBox, helpKey, helpAction lipgloss.Style
 }
@@ -85,14 +85,15 @@ func newStyles(dark bool) styles {
 	pill := func(c color.Color) lipgloss.Style {
 		return lipgloss.NewStyle().Background(c).Foreground(p.pillInk).Bold(true).Padding(0, 1)
 	}
+	chip := lipgloss.NewStyle().Foreground(p.chipText).Background(p.chipBack).Padding(0, 1)
 	return styles{
 		gradientFrom: p.gradientFrom, gradientTo: p.gradientTo,
 		avatars: p.avatars, offline: p.offline,
 		text: fg(p.text), title: fg(p.title).Bold(true), muted: fg(p.muted), subtle: fg(p.subtle),
 		accent: fg(p.accent), strongAccent: fg(p.strongAccent), highlight: fg(p.title),
 		success: fg(p.success), warning: fg(p.warning), error: fg(p.error),
-		chip: lipgloss.NewStyle().Foreground(p.chipText).Background(p.chipBack).Padding(0, 1),
-		ref:  fg(p.text).Underline(true).UnderlineColor(p.muted),
+		chip: chip, blockedChip: chip.Foreground(p.warning),
+		ref: fg(p.text).Underline(true).UnderlineColor(p.muted),
 
 		warningPill: pill(p.warning),
 		helpBox:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.subtle).Padding(0, 1),

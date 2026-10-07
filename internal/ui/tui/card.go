@@ -102,12 +102,15 @@ func (m Model) runItem(a core.ActionView) string {
 	return m.spin() + " " + name + " " + s.muted.Render(short(m.at.Sub(a.Started)))
 }
 
-// claimState is c's claim through its icon (R11, KTD13), or ○ idle when
-// crew does not hold its issue (#126).
+// claimState is c's claim through its icon (R11, KTD13); when crew does
+// not hold its issue, ⊘ blocked if an open issue blocks it (R1 of #229),
+// else ○ idle (#126).
 func (m Model) claimState(c card) string {
 	s := m.styles
 	claim := c.view.Claim
 	switch {
+	case !c.held && c.issue.Blocked:
+		return s.warning.Render("⊘ blocked")
 	case !c.held:
 		return s.muted.Render("○ idle")
 	case claim == core.ClaimRunning || claim == core.ClaimJudging:

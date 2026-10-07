@@ -24,8 +24,9 @@ const (
 )
 
 // popupHeader is the popup's header rows, each value after its muted
-// label: the rule, the labels as chips, the kind, the priority, whether
-// the issue is blocked and its URL (R15, KTD8 of #151).
+// label: the rule, the labels as chips, the kind, the priority and its
+// URL (R15, KTD8 of #151). Whether the issue is blocked shows among the
+// chips, not as a row (R4 of #229).
 func (m Model) popupHeader(c card) []string {
 	s := m.styles
 	none := s.muted.Render("none")
@@ -37,16 +38,12 @@ func (m Model) popupHeader(c card) []string {
 	if c.issue.Priority > 0 {
 		priority = s.text.Render(fmt.Sprintf("P%d", c.issue.Priority))
 	}
-	blocked := "no"
-	if c.issue.Blocked {
-		blocked = "yes"
-	}
 	url := none
 	if c.issue.URL != "" {
 		url = s.link(clean(c.issue.URL), c.issue.URL)
 	}
-	labels := []string{"rule", "labels", "kind", "priority", "blocked", "url"}
-	values := []string{rule, m.chips(c), s.text.Render(c.issue.Kind.String()), priority, s.text.Render(blocked), url}
+	labels := []string{"rule", "labels", "kind", "priority", "url"}
+	values := []string{rule, m.chips(c), s.text.Render(c.issue.Kind.String()), priority, url}
 	width := widest(labels)
 	out := make([]string, 0, len(labels))
 	for i, l := range labels {
@@ -56,7 +53,10 @@ func (m Model) popupHeader(c card) []string {
 }
 
 // chips are c's labels as chips: its issue's crew states, then the board
-// labels its board item carries, each once (R15, KTD8 of #151).
+// labels its board item carries, each once (R15, KTD8 of #151). A blocked
+// chip follows them when the issue is blocked, read from its board item,
+// fresh on every poll, and from c's issue only off the board: core keeps a
+// held issue as it took it, unblocked (R3, KTD2, KTD3 of #229).
 func (m Model) chips(c card) string {
 	i := slices.IndexFunc(m.snap.Board, func(b crew.BoardIssue) bool { return b.Issue.Key == c.issue.Key })
 	var labels []string
@@ -69,13 +69,22 @@ func (m Model) chips(c card) string {
 	if i >= 0 {
 		labels = append(labels, m.snap.Board[i].Labels...)
 	}
-	out := make([]string, 0, len(labels))
-	seen := map[string]bool{}
+	blocked := c.issue.Blocked
+	if i >= 0 {
+		blocked = m.snap.Board[i].Issue.Blocked
+	}
+	out := make([]string, 0, len(labels)+1)
+	// A label named blocked on a blocked issue gives way to the blocked
+	// chip, so the popup does not show blocked twice.
+	seen := map[string]bool{"blocked": blocked}
 	for _, l := range labels {
 		if l = clean(l); l != "" && !seen[l] {
 			seen[l] = true
 			out = append(out, m.styles.chip.Render(l))
 		}
+	}
+	if blocked {
+		out = append(out, m.styles.blockedChip.Render("blocked"))
 	}
 	if len(out) == 0 {
 		return m.styles.muted.Render("none")

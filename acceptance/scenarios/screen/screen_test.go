@@ -39,7 +39,7 @@ func TestScreenBoardRunningIssue(t *testing.T) {
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
 	wantText(t, text, "Bots", "development", "Queues", "Events",
 		"#1", title, "run", "implement", "bots", "via", "default")
-	if !inColumn(text, "development") {
+	if !inColumn(text, "development", title) {
 		t.Errorf("the development column has no card for %q:\n%s", title, text)
 	}
 	wantOneFrame(t, text)
@@ -52,12 +52,14 @@ func TestScreenBoardRunningIssue(t *testing.T) {
 // TestScreenIssueBox checks the box Enter opens over the board.
 //
 // README: "The board has focus when the view opens, with one card highlighted"
-// and "Enter opens a box over the dimmed view with that issue's rule, labels,
-// kind, priority, whether it is blocked and its URL, its actions with the bot,
-// queue, state and branch of each and the last thing each said or why it
-// failed", and "Esc closes it". With one issue on the board, Enter opens its
-// box, which shows the rule development, the label dev:running, the URL, the
-// action implement, its queue default and what its session said last; Esc
+// and "Enter opens a box over the dimmed view with that issue's rule, its
+// labels as chips with a `blocked` chip after them when an open issue blocks
+// it, its kind, priority and URL, its actions with the bot, queue, state and
+// branch of each and the last thing each said or why it failed", and "Esc
+// closes it". With one issue on the board, Enter opens its box, which shows
+// the rule development, the label dev:running, the URL, the action implement,
+// its queue default and what its session said last; nothing blocks the issue,
+// so its box's header says nothing of blocked, as issue #229's AE4 says. Esc
 // closes it.
 func TestScreenIssueBox(t *testing.T) {
 	sc, n := newScenario(t)
@@ -70,6 +72,9 @@ func TestScreenIssueBox(t *testing.T) {
 	sc.Screen().WaitForText(t, issueURL, timeout)
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
 	wantText(t, text, title, "development", running, issueURL, "implement", "default", said)
+	if header, found := boxHeader(text, issueURL); !found || strings.Contains(header, blocked) {
+		t.Errorf("the box of an issue nothing blocks says %s, or is missing:\n%s", blocked, text)
+	}
 	wantOneFrame(t, text)
 	harness.MatchSnapshot(t, "issue-box", text)
 	sc.Screen().Send(t, esc)

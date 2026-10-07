@@ -37,14 +37,14 @@ func TestManifestAsksForCrewsPermissionsAndNoWebhook(t *testing.T) {
 		t.Errorf("description %q names neither the bot nor the owner", desc)
 	}
 	wantPerms := map[string]any{
-		"issues": "write", "pull_requests": "write", "contents": "read", "checks": "read",
+		"issues": "write", "pull_requests": "write", "contents": "write", "checks": "read",
 		"statuses": "read", "actions": "read", "metadata": "read",
 	}
 	perms, _ := got["default_permissions"].(map[string]any)
 	if !maps.Equal(perms, wantPerms) {
 		t.Errorf("default_permissions = %v, want %v", perms, wantPerms)
 	}
-	if perms["contents"] == "write" || perms["workflows"] != nil {
-		t.Errorf("default_permissions %v can write code", perms)
+	if perms["workflows"] != nil || perms["administration"] != nil {
+		t.Errorf("default_permissions %v can change workflows or the repository's settings", perms)
 	}
 }

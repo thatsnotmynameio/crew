@@ -169,9 +169,10 @@ var headerIssue = crew.Issue{
 	Priority: 2, Blocked: true, States: []crew.State{"in progress"},
 }
 
-// Covers R15 and KTD8 of #151: the header shows the rule, the crew state
-// and board labels as chips, each once, the kind, the priority, whether
-// it is blocked and the URL.
+// Covers R15 and KTD8 of #151, and AE3, AE4, R3 and R4 of #229: the
+// header shows the rule, the crew state and board labels as chips, each
+// once, then a blocked chip when the issue is blocked, the kind, the
+// priority and the URL, and no blocked row.
 func TestThePopupHeaderShowsTheIssuesFields(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(onBoard(held(headerIssue, "implement", "code", core.ClaimRunning),
@@ -180,18 +181,22 @@ func TestThePopupHeaderShowsTheIssuesFields(t *testing.T) {
 
 	rows := popupRows(t, h)
 	for label, want := range map[string]string{
-		"rule": "implement", "kind": "issue", "priority": "P2", "blocked": "yes", "url": headerIssue.URL,
+		"rule": "implement", "kind": "issue", "priority": "P2", "url": headerIssue.URL,
 	} {
 		if got := field(t, rows, label); got != want {
 			t.Errorf("%s = %q, want %q", label, got, want)
 		}
 	}
-	if got := strings.Fields(field(t, rows, "labels")); !slices.Equal(got, []string{"in", "progress", "bug"}) {
-		t.Errorf("labels = %q, want the state in progress once, then bug", got)
+	if got := strings.Fields(field(t, rows, "labels")); !slices.Equal(got, []string{"in", "progress", "bug", "blocked"}) {
+		t.Errorf("labels = %q, want the state in progress once, bug, then blocked", got)
 	}
 	if !strings.Contains(h.raw(), sgr(48, darkPalette().chipBack)) {
 		t.Error("the labels are not drawn as chips")
 	}
+	if !strings.Contains(h.raw(), blockedChip(darkPalette())) {
+		t.Error("the blocked chip is not drawn in the warning colour on the chips' background")
+	}
+	noBlockedRow(t, rows)
 
 	plain := headerIssue
 	plain.Priority, plain.Blocked = 0, false
@@ -200,8 +205,107 @@ func TestThePopupHeaderShowsTheIssuesFields(t *testing.T) {
 	if got := field(t, rows, "priority"); got != "none" {
 		t.Errorf("priority 0 reads %q, want none", got)
 	}
-	if got := field(t, rows, "blocked"); got != "no" {
-		t.Errorf("an unblocked issue reads blocked %q, want no", got)
+	if got := field(t, rows, "labels"); got != "in progress" {
+		t.Errorf("an unblocked issue's labels = %q, want in progress alone", got)
+	}
+	noBlockedRow(t, rows)
+}
+
+// blockedChip is the blocked chip in palette p as the popup draws it: the
+// chips' background, its padding, then its text in the warning colour.
+func blockedChip(p palette) string {
+	return sgr(48, p.chipBack) + " " + fg(p.warning) + "blocked"
+}
+
+// noBlockedRow fails t when one of the popup's rows is a blocked row.
+func noBlockedRow(t *testing.T, rows []string) {
+	t.Helper()
+	for _, r := range rows {
+		if strings.HasPrefix(r, "blocked ") {
+			t.Errorf("the popup has the row %q, want no blocked row", r)
+		}
+	}
+}
+
+// Covers R3 and KTD2 of #229: a blocked issue with no labels shows the
+// blocked chip alone, not none.
+func TestABlockedIssueWithNoLabelsShowsTheBlockedChipAlone(t *testing.T) {
+	bare := headerIssue
+	bare.States = nil
+	h := newHarness(t, 120)
+	h.send(updateMsg(held(bare, "implement", "code", core.ClaimRunning)))
+	h.send(enterKey)
+
+	if got := field(t, popupRows(t, h), "labels"); got != "blocked" {
+		t.Errorf("labels = %q, want the blocked chip alone", got)
+	}
+}
+
+// Covers R3 and R5 of #229: a blocked issue that also carries a label named
+// blocked shows blocked once, as the blocked chip; an issue nothing blocks
+// keeps that label as a plain chip.
+func TestALabelNamedBlockedGivesWayToTheBlockedChip(t *testing.T) {
+	h := newHarness(t, 120)
+	h.send(updateMsg(onBoard(held(headerIssue, "implement", "code", core.ClaimRunning),
+		labeled(headerIssue, "blocked", "bug"))))
+	h.send(enterKey)
+
+	got := strings.Fields(field(t, popupRows(t, h), "labels"))
+	if !slices.Equal(got, []string{"in", "progress", "bug", "blocked"}) {
+		t.Errorf("labels = %q, want in progress, bug, then blocked once", got)
+	}
+	if !strings.Contains(h.raw(), blockedChip(darkPalette())) {
+		t.Error("the one blocked is not the blocked chip")
+	}
+
+	free := headerIssue
+	free.Blocked = false
+	h.send(updateMsg(onBoard(held(free, "implement", "code", core.ClaimRunning),
+		labeled(free, "blocked", "bug"))))
+	got = strings.Fields(field(t, popupRows(t, h), "labels"))
+	if !slices.Equal(got, []string{"in", "progress", "blocked", "bug"}) {
+		t.Errorf("labels = %q, want the label blocked in its place", got)
+	}
+	if strings.Contains(h.raw(), blockedChip(darkPalette())) {
+		t.Error("an issue nothing blocks shows the blocked chip")
+	}
+}
+
+// Covers AE5, R3 and KTD3 of #229: a held issue's view keeps the issue as
+// core took it, unblocked, while its board item is blocked; its popup
+// shows the blocked chip.
+func TestAE5AHeldIssueBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
+	taken := headerIssue
+	taken.Blocked = false
+	h := newHarness(t, 120)
+	h.send(updateMsg(onBoard(held(taken, "implement", "code", core.ClaimRunning),
+		labeled(headerIssue, "in progress"))))
+	h.send(enterKey)
+
+	got := strings.Fields(field(t, popupRows(t, h), "labels"))
+	if !slices.Equal(got, []string{"in", "progress", "blocked"}) {
+		t.Errorf("labels = %q, want in progress, then blocked", got)
+	}
+}
+
+// Covers R3 and KTD3 of #229: core keeps an issue whose rule ended as it
+// took it, unblocked, while the same issue on the board is blocked; its
+// card stays in its label's column (#230) and its popup shows the blocked
+// chip.
+func TestAnIssueWhoseRuleEndedAndIsBlockedOnTheBoardShowsTheBlockedChip(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+	h.send(updateMsg(onBoard(engine.Update{}, item("20", "bug"), item("22", "bug"))))
+	h.send(downKey)
+
+	blocked := item("22", "crew:triage:done")
+	blocked.Issue.Blocked = true
+	u := handledBy(crew.Issue{Key: "22", Ref: "#22", Title: "Bug"}, "fix", "crew:triage:done")
+	h.send(updateMsg(onBoard(u, item("20", "bug"), blocked)))
+	wantLit(t, h, "#22", 2)
+	h.send(enterKey)
+
+	if got := strings.Fields(field(t, popupRows(t, h), "labels")); !slices.Contains(got, "blocked") {
+		t.Errorf("labels = %q, want a blocked chip", got)
 	}
 }
 

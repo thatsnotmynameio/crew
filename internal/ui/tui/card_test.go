@@ -169,6 +169,40 @@ func TestACardsBorderIsStrongOnlyWhileItsIssueRuns(t *testing.T) {
 	}
 }
 
+// Covers AE1, AE2 and R1 of #229: the run row of a blocked issue crew
+// does not hold reads blocked in the warning colour instead of idle, and
+// idle again once nothing blocks it.
+func TestAE1AndAE2ABlockedIssuesCardReadsBlockedInsteadOfIdle(t *testing.T) {
+	blocked := twenty
+	blocked.Blocked = true
+	h := newHarness(t, 120)
+	h.send(updateMsg(onBoard(engine.Update{}, labeled(blocked, "ready"))))
+	if got := faceOf(t, boardOf(t, h.view()), "#20")[1]; got != "run  ⊘ blocked" {
+		t.Errorf("a blocked issue's run row = %q, want run  ⊘ blocked", got)
+	}
+	if !strings.Contains(h.raw(), h.current().styles.warning.Render("⊘ blocked")) {
+		t.Errorf("⊘ blocked is not in the warning colour:\n%s", h.view())
+	}
+
+	h.send(updateMsg(onBoard(engine.Update{}, labeled(twenty, "ready"))))
+	if got := faceOf(t, boardOf(t, h.view()), "#20")[1]; got != "run  ○ idle" {
+		t.Errorf("an issue nothing blocks has the run row %q, want run  ○ idle", got)
+	}
+}
+
+// Covers AE5 and R2 of #229: a held issue that becomes blocked mid-run
+// keeps showing its running action, with no blocked.
+func TestAE5AHeldBlockedIssuesCardKeepsItsActions(t *testing.T) {
+	blocked := twelve
+	blocked.Blocked = true
+	h := newBoardHarness(t, 150, crewRules, crewBoard)
+	h.send(updateMsg(onBoard(held(twelve, "triage", "triage", core.ClaimRunning),
+		labeled(blocked, "crew:triage:in progress"))))
+	if got := faceOf(t, boardOf(t, h.view()), "#12")[1]; got != "run  ⠋ triage 1m" {
+		t.Errorf("a held blocked issue's run row = %q, want its running action", got)
+	}
+}
+
 // Covers R1 of #151: a title holding an escape sequence is drawn clean and
 // cut to the card.
 func TestACardsTitleIsCleanAndCut(t *testing.T) {

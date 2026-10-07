@@ -79,11 +79,20 @@ func newScenario(t *testing.T) (*harness.Scenario, int) {
 // title with the ready label. It returns the scenario and the issue's number.
 func newScenarioWith(t *testing.T, cfg string) (*harness.Scenario, int) {
 	t.Helper()
+	sc := newEmptyScenario(t, cfg)
+	n := sc.GitHub.AddIssue(fakegithub.Issue{Title: title, Author: owner, Labels: []string{ready}})
+	return sc, n
+}
+
+// newEmptyScenario builds a screen scenario that runs crew with cfg as its
+// .crew/config.yaml, whose repository has owner as its code owner, the rule's
+// labels and no issue yet.
+func newEmptyScenario(t *testing.T, cfg string) *harness.Scenario {
+	t.Helper()
 	sc := harness.New(t, harness.Options{Config: cfg, Screen: true, Size: harness.Size{Cols: cols, Rows: rows}})
 	sc.GitHub.SetFile(".github/CODEOWNERS", "* @"+owner+"\n")
 	sc.GitHub.AddLabel(ready, running, success, failure)
-	n := sc.GitHub.AddIssue(fakegithub.Issue{Title: title, Author: owner, Labels: []string{ready}})
-	return sc, n
+	return sc
 }
 
 // heldSession is a session that says said and then works until release is
@@ -133,14 +142,14 @@ func wantText(t *testing.T, text string, wants ...string) {
 	}
 }
 
-// inColumn reports whether the cards of the board's column header hold the
-// scenarios' issue title, ignoring case. It reads only the board: the rows between the column headers
+// inColumn reports whether the cards of the board's column header hold text,
+// ignoring case. It reads only the board: the rows between the column headers
 // and the Queues and Events sections, which the README puts under the board,
 // and in those rows only the cells from the header's first cell to the next
 // column's, so neither an event line nor a card of another column counts.
-func inColumn(screen, header string) bool {
+func inColumn(screen, header, text string) bool {
 	cards, found := columnCards(screen, header)
-	return found && strings.Contains(strings.ToLower(cards), strings.ToLower(title))
+	return found && strings.Contains(strings.ToLower(cards), strings.ToLower(text))
 }
 
 // columnCards returns the text of the cards in the board's column header, one

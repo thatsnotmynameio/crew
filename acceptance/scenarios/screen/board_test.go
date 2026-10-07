@@ -63,17 +63,17 @@ func TestScreenFailedRuleIssue(t *testing.T) {
 	sc.Start()
 	waitForLabel(sc, n, failure)
 	sc.Screen().WaitFor(t, func(text string) bool {
-		return inEvents(text, "#1", "fail") && !inColumn(text, "development")
+		return inEvents(text, "#1", "fail") && !inColumn(text, "development", title)
 	}, timeout)
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
 	wantText(t, text, "development", "Queues", "Events")
-	if inColumn(text, "development") {
+	if inColumn(text, "development", title) {
 		t.Errorf("the development column still has a card for %q:\n%s", title, text)
 	}
 	if hasColumn(text, handled) {
 		t.Errorf("the board draws a %s column:\n%s", handled, text)
 	}
-	if inColumn(text, notOnBoard) {
+	if inColumn(text, notOnBoard, title) {
 		t.Errorf("the %s column has a card for %q, whose rule ended:\n%s", notOnBoard, title, text)
 	}
 	if !inEvents(text, "#1", "fail") {
@@ -103,15 +103,15 @@ func TestScreenFailedColumnIssue(t *testing.T) {
 	sc.Start()
 	waitForLabel(sc, n, failure)
 	sc.Screen().WaitFor(t, func(text string) bool {
-		return inEvents(text, "#1", "fail") && inColumn(text, failed)
+		return inEvents(text, "#1", "fail") && inColumn(text, failed, title)
 	}, timeout)
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
 	wantText(t, text, toDo, doing, failed, "Queues", "Events")
-	if !inColumn(text, failed) {
+	if !inColumn(text, failed, title) {
 		t.Errorf("the %s column has no card for %q:\n%s", failed, title, text)
 	}
 	for _, column := range []string{toDo, doing, notOnBoard} {
-		if inColumn(text, column) {
+		if inColumn(text, column, title) {
 			t.Errorf("the %s column has a card for %q, which carries %s:\n%s", column, title, failure, text)
 		}
 	}
@@ -139,12 +139,12 @@ func TestScreenNotOnBoardIssue(t *testing.T) {
 	sc.Claude.Script(prompt, heldSession(release))
 	sc.Start()
 	waitForLabel(sc, n, running)
-	sc.Screen().WaitFor(t, func(text string) bool { return inColumn(text, notOnBoard) }, timeout)
+	sc.Screen().WaitFor(t, func(text string) bool { return inColumn(text, notOnBoard, title) }, timeout)
 	text := sc.Screen().WaitStable(t, settle, timeout, masks()...)
-	if !inColumn(text, notOnBoard) {
+	if !inColumn(text, notOnBoard, title) {
 		t.Errorf("the %s column has no card for %q:\n%s", notOnBoard, title, text)
 	}
-	if inColumn(text, toDo) {
+	if inColumn(text, toDo, title) {
 		t.Errorf("the %s column has a card for %q, which carries %s:\n%s", toDo, title, running, text)
 	}
 	if !headerBefore(text, toDo, notOnBoard) {

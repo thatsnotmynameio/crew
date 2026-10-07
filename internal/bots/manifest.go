@@ -43,13 +43,14 @@ func NewManifest(name, owner, redirectURL string) Manifest {
 
 // permissions returns the repository permissions every bot asks for, in
 // its manifest and in each token crew mints: those crew and its sessions
-// use through gh, and none to push code or change workflows. Each call
-// returns a new map.
+// use through gh, and none to change workflows. contents is write only
+// because GitHub refuses to resolve a review thread without it: pushes
+// keep your own git credentials (gitenv.go). Each call returns a new map.
 func permissions() map[string]string {
 	return map[string]string{
 		"issues":        permWrite,
 		"pull_requests": permWrite,
-		"contents":      permRead,
+		"contents":      permWrite,
 		"checks":        permRead,
 		"statuses":      permRead,
 		"actions":       permRead,

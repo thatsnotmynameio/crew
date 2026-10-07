@@ -32,6 +32,12 @@ var ErrNotInstalled = errors.New("the bot is not installed on the repository")
 // answered 401: it rejected the bot's key, as when the app was deleted.
 var ErrKeyRejected = errors.New("GitHub rejected the bot's key")
 
+// ErrPermissionsNotGranted is the error Client.AccessToken wraps when
+// GitHub answered 422: the bot's installation does not grant every
+// permission crew asks for, as an app created before crew asked for one
+// does not.
+var ErrPermissionsNotGranted = errors.New("the bot's installation does not grant the permissions crew asks for")
+
 // Client calls GitHub's REST API for the bots. A call signed as a bot
 // mints a fresh app JWT for its request, since one lives under 10 minutes
 // and a wait for the installation can last longer.
@@ -124,12 +130,17 @@ type Grant struct {
 
 // AccessToken mints an installation token of b's installation id, limited
 // to the repository called name and to the permissions every bot asks
-// for. It wraps ErrKeyRejected when GitHub rejected b's key.
+// for. It wraps ErrKeyRejected when GitHub rejected b's key, and
+// ErrPermissionsNotGranted when b's installation does not grant them.
 func (c *Client) AccessToken(ctx context.Context, b Bot, id int64, name string) (Grant, error) {
 	path := "/app/installations/" + strconv.FormatInt(id, 10) + "/access_tokens"
 	body := map[string]any{"repositories": []string{name}, "permissions": permissions()}
 	var g Grant
-	if err := c.do(ctx, http.MethodPost, path, auth{bot: &b}, body, http.StatusCreated, &g); err != nil {
+	err := c.do(ctx, http.MethodPost, path, auth{bot: &b}, body, http.StatusCreated, &g)
+	if se, ok := errors.AsType[*statusError](err); ok && se.code == http.StatusUnprocessableEntity {
+		err = fmt.Errorf("%w: %w", ErrPermissionsNotGranted, err)
+	}
+	if err != nil {
 		return Grant{}, fmt.Errorf("mint a token of %s for %s: %w", b.Name, name, err)
 	}
 	return g, nil
