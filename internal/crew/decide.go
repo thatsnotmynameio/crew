@@ -11,8 +11,12 @@ import (
 var ErrRefused = errors.New("refused")
 
 // stoppedReason is the reason of an action crew stopped before it could end
-// on its own.
+// on its own, or before it started.
 const stoppedReason = "crew stopped"
+
+// timeUpReason is the reason of an action that did not start as crew's run
+// time was up.
+const timeUpReason = "crew's run time was up"
 
 // RunDefinition is what a rule run decides by: its rule, and what crew can
 // do for it.
@@ -25,14 +29,15 @@ type RunDefinition struct {
 }
 
 // Decide returns the events fact produces on run, in the order to apply
-// them, or none when the fact changes nothing, such as a stop reaching a
-// run that is ending. It refuses, with an error wrapping ErrRefused, a
+// them, or none when the fact changes nothing, such as crew's run time
+// being up for a run that is routing. It refuses, with an error wrapping ErrRefused, a
 // fact of another run, any fact for a released run, and a fact for an
 // action or a delivery that does not wait for it. It never changes run:
 // the caller applies the events.
 //
 // It renders the prompt of each session action it starts, from def, only
-// to decide whether the action fails with CausePrompt.
+// to decide whether the action fails with CausePrompt, and the comment of
+// each comment step it asks, only to decide whether the step fails.
 func Decide(run RuleRun, def RunDefinition, fact Fact) ([]RunEvent, error) {
 	h := fact.factHead()
 	if run.id == "" || h.Run != run.id {
@@ -90,8 +95,13 @@ func is[T ActionRunState](s ActionRunState) bool {
 
 // start starts the action named name: asks for its session, after
 // rendering its prompt, or for its script, acting as the run's bot. A
-// session whose prompt does not render ends at once.
+// session whose prompt does not render ends at once, and once a stop or
+// time-up reached the run the action ends without starting.
 func (d *decider) start(name ActionName) {
+	if j, halted := d.halted(); halted {
+		d.end(name, j, ToRoute{Route: FailedRoute})
+		return
+	}
 	switch k := d.def.Rule.Action(name).Kind.(type) {
 	case SessionSpec:
 		if _, err := k.Prompt.Render(d.run.issue); err != nil {
@@ -104,12 +114,40 @@ func (d *decider) start(name ActionName) {
 	}
 }
 
-// finish ends the action named name with j, then starts the next action
-// when its verdict leads there, or chooses the route it leads to: its own,
-// or PassedRoute after the last action.
+// startAtCursor starts the action at the run's cursor.
+func (d *decider) startAtCursor() {
+	a, _ := d.run.Cursor()
+	d.start(a.name)
+}
+
+// halted returns the end of an action that a stop, or crew's run time
+// being up, keeps from starting, and whether one does: the stop wins.
+func (d *decider) halted() (Judged, bool) {
+	switch {
+	case d.run.stopping:
+		return failedBy(NewSessionText(stoppedReason), CauseStoppedBeforeStart), true
+	case d.run.timeUp:
+		return failedBy(NewSessionText(timeUpReason), CauseTimeUp), true
+	}
+	return Judged{}, false
+}
+
+// finish ends the action named name with j, which leads where its
+// action's on sends j's verdict, or to FailedRoute once a stop reached the
+// run.
 func (d *decider) finish(name ActionName, j Judged) {
+	target := d.def.Rule.Action(name).On.Target(j.Verdict)
+	if d.run.stopping {
+		target = ToRoute{Route: FailedRoute}
+	}
+	d.end(name, j, target)
+}
+
+// end ends the action named name with j and target, then starts the next
+// action when target leads there, or chooses the route it leads to: its
+// own, or PassedRoute after the last action.
+func (d *decider) end(name ActionName, j Judged, target Target) {
 	a, _ := d.run.Action(name)
-	target := d.target(name, j.Verdict)
 	d.emit(ActionEnded{
 		EventHead: d.head(), Action: name, End: j.End, Verdict: j.Verdict, Target: target,
 		SessionStarted: a.session, Usage: cloneUsage(a.usage),
@@ -126,29 +164,61 @@ func (d *decider) finish(name ActionName, j Judged) {
 	}
 }
 
-// stopAtCursor ends the action at the cursor, which did not start, as
-// stopped: the run ends through FailedRoute.
-func (d *decider) stopAtCursor() {
-	a, _ := d.run.Cursor()
-	d.finish(a.name, failedBy(NewSessionText(stoppedReason), CauseStopped))
-}
-
-// target returns where verdict v of the action named name leads: where its
-// on sends v, or FailedRoute once a stop reached the run.
-func (d *decider) target(name ActionName, v Verdict) Target {
-	if d.run.stopping {
-		return ToRoute{Route: FailedRoute}
-	}
-	return d.def.Rule.Action(name).On.Target(v)
-}
-
 // choose ends the run's sequence through route, with the action named
-// action at its cursor, and asks for the lookup of the run's pull requests
+// action at its cursor. It asks for the lookup of the run's pull requests
 // when the rule has a session that could have opened one in the run's
-// workspace.
+// workspace, and the route's first step once the lookup answered, or at
+// once without one.
 func (d *decider) choose(route RouteName, action ActionName) {
-	d.emit(RouteChosen{EventHead: d.head(), Route: route, Action: action})
+	r, _ := d.def.Rule.Route(route)
+	d.emit(RouteChosen{EventHead: d.head(), Route: route, Action: action, Steps: plans(r)})
 	if _, ok := d.run.Workspace().Get(); ok && d.def.FindsPullRequests && d.def.Rule.hasSession() {
 		d.emit(RunLookupAsked{EventHead: d.head()})
+		return
 	}
+	d.nextStep()
+}
+
+// nextStep asks the next step of the run's route, once it is routing, or
+// releases the run once the route's final step settled. A step that
+// settles without being asked (unasked) settles at once, and the route
+// goes on.
+func (d *decider) nextStep() {
+	for {
+		p, routing := d.run.phase.(RoutingPhase)
+		if !routing {
+			return
+		}
+		i := len(p.Settled)
+		if i >= len(p.Steps) {
+			d.emit(RunReleased{EventHead: d.head()})
+			return
+		}
+		outcome, settled := d.unasked(p.Route, i)
+		if !settled {
+			d.emit(StepAsked{EventHead: d.head(), Step: i})
+			return
+		}
+		d.emit(StepEnded{EventHead: d.head(), Step: i, Outcome: outcome})
+	}
+}
+
+// unasked returns the outcome of the step at index i of route when it
+// settles without being asked, and whether it does: a shell step once a
+// stop reached the run is skipped, and a comment whose template does not
+// render for the run fails.
+func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
+	r, _ := d.def.Rule.Route(route)
+	switch s := r.Steps[i].(type) {
+	case ShellStep:
+		if d.run.stopping {
+			return StepSkipped{}, true
+		}
+	case CommentStep:
+		if _, err := s.Template.Render(d.run.CommentData()); err != nil {
+			return StepFailed{Reason: NewCheckReason(err.Error())}, true
+		}
+	case MoveStep, CloseStep, ReportStep:
+	}
+	return nil, false
 }

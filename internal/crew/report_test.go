@@ -6,7 +6,7 @@ import (
 )
 
 // The statuses and reports below mirror internal/core's status,
-// actionState, runEnded's failure report and reportPullRequests.
+// actionState, the report step's report and reportPullRequests.
 
 func TestARunningStatusShowsEachActionAsItStands(t *testing.T) {
 	said := map[ActionName]Said{"lfg": NewSaid("Reading the diff.")}
@@ -70,19 +70,20 @@ func TestAnActionWithoutASessionOrScriptToTimeIsPending(t *testing.T) {
 	}
 }
 
-func TestAnEndedStatusCarriesTheEndingAndHowItsMoveStands(t *testing.T) {
+func TestAnEndedStatusCarriesTheRoutesMoveAndHowItStands(t *testing.T) {
 	tests := []struct {
 		name  string
 		given []RunEvent
 		want  StatusEnded
 	}{
-		{name: "ended", given: endedFailed, want: StatusEnded{To: labelFailed, Move: MovePending}},
+		{name: "routing", given: lfgFailed(), want: StatusEnded{To: labelFailed, Move: MovePending}},
+		{name: "moved", given: releasedAs(StepLanded{}), want: StatusEnded{To: labelFailed, Move: MoveDone}},
+		{name: "given up", given: releasedAs(StepGivenUp{}), want: StatusEnded{To: labelFailed, Move: MoveDropped}},
+		{name: "dropped", given: releasedAs(StepDropped{}), want: StatusEnded{To: labelFailed, Move: MoveDropped}},
 		{
-			name:  "moved",
-			given: seq(endedFailed, []RunEvent{EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed}}),
-			want:  StatusEnded{To: labelFailed, Move: MoveDone},
+			name: "closed", given: append(lfgFailedThrough(CloseStep{}), stepEnded(6, 0, StepLanded{})),
+			want: StatusEnded{Move: MoveDone},
 		},
-		{name: "dropped", given: snapshots["released"], want: StatusEnded{To: labelFailed, Move: MoveDropped}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,7 +101,7 @@ func TestAnEndedStatusCarriesTheEndingAndHowItsMoveStands(t *testing.T) {
 }
 
 func TestAnEndedActionShowsItsUsageOnlyWhenItsSessionStartedAndUsageIsShown(t *testing.T) {
-	run := given(t, seq(lookingUp, []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}))
+	run := given(t, seq(lookingUp(), []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}))
 	shown := Some(ShownUsage{Spend: usage.Spend(), PullRequest: foundPR})
 	want := []ActionStatus{
 		{Name: "install", State: ActionSucceeded{}},
@@ -128,23 +129,27 @@ func TestAResumedRunNamesItsWorkspaceOnTheActionsThatRan(t *testing.T) {
 	}
 }
 
-func TestTheFailureReportListsTheFailedActions(t *testing.T) {
-	got, ok := given(t, endedFailed).FailureReport()
+func TestTheReportNamesTheActionThatEndedTheSequence(t *testing.T) {
+	got, ok := given(t, lfgFailed()).FailureReport()
 	want := FailureReport{
 		IssueID: testID, IssueRef: "#9", Failures: []ActionFailure{failure("lfg")},
 	}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("FailureReport = %#v, %v, want %#v", got, ok, want)
 	}
-	for name, events := range map[string][]RunEvent{"a success": endedDone, "a running run": asking()} {
+	if got, ok := given(t, passedAll()).FailureReport(); !ok || got.Failures[0].Action != "judge" {
+		t.Errorf("FailureReport through passed = %#v, %v, want judge named", got, ok)
+	}
+	actionless := []RunEvent{takenWithoutActions(), takeMoved(), chose(1, PassedRoute, "")}
+	for name, events := range map[string][]RunEvent{"a rule without actions": actionless, "a running run": asking()} {
 		if got, ok := given(t, events).FailureReport(); ok {
-			t.Errorf("%s has a failure report: %#v", name, got)
+			t.Errorf("%s has a report: %#v", name, got)
 		}
 	}
 }
 
 func TestThePullRequestReportsOfTheTakeAndTheEnding(t *testing.T) {
-	run := given(t, endedDone)
+	run := given(t, passedAll())
 	take := run.TakeReport(labelRunning)
 	if take.ID() != testRun.TakeReport() || take.IssueID() != testID || take.State() != labelRunning {
 		t.Errorf("TakeReport = %#v", take)
@@ -161,16 +166,19 @@ func TestThePullRequestReportsOfTheTakeAndTheEnding(t *testing.T) {
 	if _, ok := given(t, asking()).EndingReport(true); ok {
 		t.Error("a running run has an ending report")
 	}
+	if _, ok := given(t, lfgFailedThrough(CloseStep{})).EndingReport(true); ok {
+		t.Error("a route that closes the issue has an ending report")
+	}
 	actionless, _ := given(t, []RunEvent{
-		takenWithoutActions(), takeMoved(), RunEnded{EventHead: eh(1), Ending: RunEnding{To: labelDone}},
+		takenWithoutActions(), takeMoved(), chose(1, PassedRoute, ""),
 	}).EndingReport(true)
 	if _, ended := actionless.End().Get(); ended {
 		t.Error("the ending report of a rule without actions carries an end")
 	}
 }
 
-func TestAReleasedRunKeepsItsEndingOnlyWhenItEnded(t *testing.T) {
-	if _, ok := given(t, snapshots["released"]).EndingReport(false); !ok {
+func TestAReleasedRunKeepsItsEndingOnlyWhenItChoseARoute(t *testing.T) {
+	if _, ok := given(t, released()).EndingReport(false); !ok {
 		t.Error("a released run lost its ending")
 	}
 	givenUp := given(t, []RunEvent{taken(), RunReleased{EventHead: eh(1)}})

@@ -36,6 +36,14 @@ func (r Rule) Action(name ActionName) Action {
 	return Action{}
 }
 
+// Route returns r's route named name, and whether r has one.
+func (r Rule) Route(name RouteName) (Route, bool) {
+	if i := slices.IndexFunc(r.Routes, func(route Route) bool { return route.Name == name }); i >= 0 {
+		return r.Routes[i], true
+	}
+	return Route{}, false
+}
+
 // Labels are a rule's states, one for each point of its run.
 type Labels struct {
 	// Ready is the state an item must be in for the rule to take it.

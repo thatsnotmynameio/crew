@@ -61,9 +61,15 @@ type TakeMoved struct {
 	From, To State
 }
 
-// RunStopped is a stop that reached the run while it was taking or running
-// its actions.
+// RunStopped is a stop that reached the run before it was released.
 type RunStopped struct {
+	EventHead
+}
+
+// RunOutOfTime is crew's run time that was up while the run was taking or
+// running its actions: the action that runs finishes, and none starts
+// after it.
+type RunOutOfTime struct {
 	EventHead
 }
 
@@ -185,6 +191,8 @@ type RouteChosen struct {
 	// route: the action that did not go on to the next, or the last
 	// action; empty for a rule without actions.
 	Action ActionName
+	// Steps are the route's steps, in the order they run.
+	Steps []StepPlan
 }
 
 // RunLookupAsked is the lookup of the pull requests of the run's branch,
@@ -201,41 +209,32 @@ type RunLookupDone struct {
 	PullRequest PullRequest
 }
 
-// RunEnded is a run whose every action ended, and how it ended.
-type RunEnded struct {
+// StepAsked is the route's step at index Step asked: a tracker call to
+// deliver, or a shell action's script to run, acting as the run's bot.
+type StepAsked struct {
 	EventHead
 
-	Ending RunEnding
+	Step int
 }
 
-// EndingMoved is the run's ending move that landed: the issue moved from
-// From to To.
-type EndingMoved struct {
+// StepShellStopAsked is the route's shell step at index Step, whose script
+// runs, asked to stop.
+type StepShellStopAsked struct {
 	EventHead
 
-	From, To State
+	Step int
 }
 
-// EndingDropped is the run's ending move to To, which crew gave up.
-type EndingDropped struct {
+// StepEnded is the route's step at index Step that settled, and how.
+type StepEnded struct {
 	EventHead
 
-	To     State
-	Reason string
+	Step    int
+	Outcome StepOutcome
 }
 
-// FailureReported is the run's failure report that landed.
-type FailureReported struct {
-	EventHead
-}
-
-// FailureReportDropped is the run's failure report, which crew gave up.
-type FailureReportDropped struct {
-	EventHead
-}
-
-// RunReleased is a run crew let go: its ending settled, or its take was
-// given up.
+// RunReleased is a run crew let go: the final step of its route settled,
+// or its take was given up.
 type RunReleased struct {
 	EventHead
 }

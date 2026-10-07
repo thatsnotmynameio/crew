@@ -23,6 +23,7 @@ type RuleRun struct {
 	rule      RuleName
 	taken     time.Time
 	stopping  bool
+	timeUp    bool
 	phase     RunPhase
 	actions   []ActionRun
 	workspace WorkspaceState
@@ -48,9 +49,12 @@ func (r RuleRun) Rule() RuleName { return r.rule }
 // Taken returns when the rule took the issue.
 func (r RuleRun) Taken() time.Time { return r.taken }
 
-// Stopping reports whether a stop reached the run while it was taking or
-// running its actions.
+// Stopping reports whether a stop reached the run before it was released.
 func (r RuleRun) Stopping() bool { return r.stopping }
+
+// TimeUp reports whether crew's run time was up while the run was taking or
+// running its actions: no action starts after the one that runs.
+func (r RuleRun) TimeUp() bool { return r.timeUp }
 
 // Phase returns where the run stands.
 func (r RuleRun) Phase() RunPhase { return clonePhase(r.phase) }
@@ -112,10 +116,10 @@ func (r RuleRun) PullRequest() PullRequest {
 }
 
 // ActionsEnded reports whether the run's sequence is over: it chose a
-// route, ended or was released, so no action of it runs or will start.
+// route or was released, so no action of it runs or will start.
 func (r RuleRun) ActionsEnded() bool {
 	switch r.phase.(type) {
-	case RoutingPhase, EndingPhase, ReleasedPhase:
+	case RoutingPhase, ReleasedPhase:
 		return true
 	case TakingPhase, RunningPhase:
 	}
@@ -126,7 +130,7 @@ func (r RuleRun) ActionsEnded() bool {
 func (r RuleRun) Snapshot() RuleRunSnapshot {
 	s := RuleRunSnapshot{
 		ID: r.id, Continues: r.continues, Issue: r.issue.Data(), Rule: r.rule, Taken: r.taken,
-		Stopping: r.stopping, Phase: clonePhase(r.phase), Workspace: r.workspace, Resume: r.resume,
+		Stopping: r.stopping, TimeUp: r.timeUp, Phase: clonePhase(r.phase), Workspace: r.workspace, Resume: r.resume,
 		Cursor: r.cursor, Bot: r.bot, Lookup: r.lookup,
 	}
 	for _, a := range r.actions {
@@ -150,6 +154,7 @@ type RuleRunSnapshot struct {
 	Rule      RuleName
 	Taken     time.Time
 	Stopping  bool
+	TimeUp    bool
 	Phase     RunPhase
 	// Actions are the action runs, in the rule's action order, each named
 	// once.
@@ -169,14 +174,15 @@ var errBadSnapshot = errors.New("not a rule run")
 // RestoreRuleRun returns the run s describes, sharing no memory with it. It
 // rejects a snapshot without an id, phase, workspace state, lookup or
 // action state, one that names an action twice, one whose cursor is not on
-// one of its actions, and one whose sequence is over while an action runs.
+// one of its actions, one whose route has a step past its last, and one
+// whose sequence is over while an action runs.
 func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 	if err := validate(s); err != nil {
 		return RuleRun{}, fmt.Errorf("restore rule run %q: %w", s.ID, err)
 	}
 	r := RuleRun{
 		id: s.ID, continues: s.Continues, issue: NewIssue(s.Issue), rule: s.Rule, taken: s.Taken,
-		stopping: s.Stopping, phase: clonePhase(s.Phase), workspace: s.Workspace, resume: s.Resume,
+		stopping: s.Stopping, timeUp: s.TimeUp, phase: clonePhase(s.Phase), workspace: s.Workspace, resume: s.Resume,
 		cursor: s.Cursor, bot: s.Bot, lookup: s.Lookup,
 	}
 	for _, a := range s.Actions {
@@ -194,8 +200,24 @@ func validate(s RuleRunSnapshot) error {
 		return fmt.Errorf("%w: it has no workspace state or no lookup", errBadSnapshot)
 	case s.Cursor < 0 || s.Cursor >= max(len(s.Actions), 1):
 		return fmt.Errorf("%w: its cursor %d is not on one of its actions", errBadSnapshot, s.Cursor)
+	case !stepsFit(s.Phase):
+		return fmt.Errorf("%w: its route has a step past its last", errBadSnapshot)
 	}
 	return validateActions(s)
+}
+
+// stepsFit reports whether the steps settled and in flight of p's route,
+// when it has one, are steps of that route.
+func stepsFit(p RunPhase) bool {
+	route, ok := RuleRun{phase: p}.route()
+	if !ok {
+		return true
+	}
+	i, asked := route.InFlight()
+	if asked {
+		i++
+	}
+	return i <= len(route.Steps)
 }
 
 // validateActions returns why the actions of s are not a rule run's, or
@@ -219,7 +241,7 @@ func validateActions(s RuleRunSnapshot) error {
 }
 
 // RunPhase is where a rule run stands: TakingPhase, RunningPhase,
-// RoutingPhase, EndingPhase or ReleasedPhase.
+// RoutingPhase or ReleasedPhase.
 //
 //sumtype:decl
 type RunPhase interface {
@@ -234,105 +256,86 @@ type TakingPhase struct{}
 type RunningPhase struct{}
 
 // RoutingPhase is a run whose sequence is over and which ends through
-// Route.
+// Route, one step at a time: it asks a step only once the step before it
+// settled, and is released once the final step settled.
 type RoutingPhase struct {
 	Route RouteName
 	// Chosen is when the run chose the route.
 	Chosen time.Time
+	// Steps are the route's steps, in the order they run.
+	Steps []StepPlan
+	// Settled are how the route's first steps settled, one for each, in
+	// the route's order.
+	Settled []StepOutcome
+	// Asked says whether the step after the settled ones was asked and has
+	// not settled: it is in flight.
+	Asked bool
 }
 
-// EndingPhase is a run whose every action ended: its ending move, and its
-// failure report when an action failed, are delivered.
-type EndingPhase struct {
-	Ending RunEnding
-	// Ended is when the run's last action ended and its ending was
-	// decided.
-	Ended time.Time
-	// Move is how the ending move settled; none while it is in flight or
-	// owed.
-	Move Optional[EndingMove]
-	// ReportSettled is set once the failure report landed or was given up,
-	// and from the start for an ending without failures, which posts none.
-	ReportSettled bool
+// InFlight returns the index in Steps of the step that was asked and has
+// not settled, and whether one was.
+func (p RoutingPhase) InFlight() (int, bool) { return len(p.Settled), p.Asked }
+
+// Final returns how the route's final step, the move or close that ends
+// it, settled, once it did.
+func (p RoutingPhase) Final() (StepOutcome, bool) {
+	if len(p.Steps) == 0 || len(p.Settled) < len(p.Steps) {
+		return nil, false
+	}
+	return p.Settled[len(p.Steps)-1], true
 }
 
-// ReleasedPhase is a run crew let go: its ending settled, or its take was
-// given up.
+// End returns the route's final step: the move or close that ends it.
+func (p RoutingPhase) End() (StepPlan, bool) {
+	if len(p.Steps) == 0 {
+		return StepPlan{}, false
+	}
+	return p.Steps[len(p.Steps)-1], true
+}
+
+// clone returns a copy of p with its own steps and outcomes.
+func (p RoutingPhase) clone() RoutingPhase {
+	p.Steps, p.Settled = slices.Clone(p.Steps), slices.Clone(p.Settled)
+	return p
+}
+
+// ReleasedPhase is a run crew let go: the final step of its route settled,
+// or its take was given up.
 type ReleasedPhase struct {
-	// Ending is the run's settled ending; none when its take was given up.
-	Ending Optional[SettledEnding]
+	// Route is the route the run ended through, with how each of its steps
+	// settled; none when its take was given up.
+	Route Optional[RoutingPhase]
 }
 
 func (TakingPhase) runPhase()   {}
 func (RunningPhase) runPhase()  {}
 func (RoutingPhase) runPhase()  {}
-func (EndingPhase) runPhase()   {}
 func (ReleasedPhase) runPhase() {}
 
-// RunEnding is how a rule run ended: the state its issue moves to, and its
-// failed actions.
-type RunEnding struct {
-	// To is the rule's success state, or its failure state when an action
-	// failed.
-	To State
-	// Failures are the failed actions, in the rule's action order; empty
-	// when every action succeeded.
-	Failures []ActionFailure
-}
-
-// Failed reports whether an action failed.
-func (v RunEnding) Failed() bool { return len(v.Failures) > 0 }
-
-// SettledEnding is the ending of a released run, with how its move
-// settled.
-type SettledEnding struct {
-	Ending RunEnding
-	// Ended is when the run's last action ended.
-	Ended time.Time
-	Move  EndingMove
-}
-
-// EndingMove is how an ending move settled: EndingLanded or
-// EndingGivenUp.
-//
-//sumtype:decl
-type EndingMove interface {
-	endingMove()
-}
-
-// EndingLanded is an ending move that landed: the issue is in the
-// ending's state.
-type EndingLanded struct{}
-
-// EndingGivenUp is an ending move crew gave up, as the issue was closed or
-// moved meanwhile, the tracker refused it, or its last try after a stop
-// failed.
-type EndingGivenUp struct {
-	Reason string
-}
-
-func (EndingLanded) endingMove()  {}
-func (EndingGivenUp) endingMove() {}
-
-// clonePhase returns a copy of p that shares no failures with it.
+// clonePhase returns a copy of p that shares no steps or outcomes with it.
 func clonePhase(p RunPhase) RunPhase {
 	switch p := p.(type) {
-	case EndingPhase:
-		p.Ending = p.Ending.clone()
-		return p
+	case RoutingPhase:
+		return p.clone()
 	case ReleasedPhase:
-		if v, ok := p.Ending.Get(); ok {
-			v.Ending = v.Ending.clone()
-			p.Ending = Some(v)
+		if route, ok := p.Route.Get(); ok {
+			p.Route = Some(route.clone())
 		}
 		return p
-	case TakingPhase, RunningPhase, RoutingPhase:
+	case TakingPhase, RunningPhase:
 	}
 	return p
 }
 
-// clone returns a copy of v with its own failures.
-func (v RunEnding) clone() RunEnding {
-	v.Failures = slices.Clone(v.Failures)
-	return v
+// route returns the route the run chose, with how its steps stand, once it
+// chose one.
+func (r RuleRun) route() (RoutingPhase, bool) {
+	switch p := r.phase.(type) {
+	case RoutingPhase:
+		return p, true
+	case ReleasedPhase:
+		return p.Route.Get()
+	case TakingPhase, RunningPhase:
+	}
+	return RoutingPhase{}, false
 }

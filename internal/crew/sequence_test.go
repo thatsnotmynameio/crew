@@ -22,10 +22,15 @@ func lfgEnd(j Judged, target Target) RunEvent {
 	}
 }
 
-// chose is the run through route at minute n, with action at its cursor.
+// chose is the run through route at minute n, with action at its cursor
+// and the test rule's steps of route.
 func chose(n int, route RouteName, action ActionName) RunEvent {
-	return RouteChosen{EventHead: eh(n), Route: route, Action: action}
+	r, _ := sequence().Rule.Route(route)
+	return RouteChosen{EventHead: eh(n), Route: route, Action: action, Steps: plans(r)}
 }
+
+// asked is the route's step at index step asked at minute n.
+func asked(n, step int) RunEvent { return StepAsked{EventHead: eh(n), Step: step} }
 
 func badLfgPrompt(d RunDefinition) RunDefinition {
 	spec, _ := d.Rule.Actions[1].Kind.(SessionSpec)
@@ -63,7 +68,7 @@ var sessionDecisions = []decision{
 				EventHead: eh(4), Action: "lfg", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: NewSessionText("not found"), Cause: CauseStart},
 			},
-			chose(4, FailedRoute, "lfg"),
+			chose(4, FailedRoute, "lfg"), asked(4, 0),
 		},
 	},
 	{
@@ -80,7 +85,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(succeeded("done")),
 			lfgEnd(Judged{Verdict: "blocked", End: EndSucceeded{Reason: NewSessionText("done")}}, ToRoute{Route: "blocked"}),
-			chose(5, "blocked", "lfg"),
+			chose(5, "blocked", "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -89,7 +94,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(succeeded("done")),
 			lfgEnd(judgeSession(nil, succeeded("done"), VerdictReported{Verdict: "too-big"}, false), toFailed),
-			chose(5, FailedRoute, "lfg"),
+			chose(5, FailedRoute, "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -98,7 +103,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(succeeded("done")),
 			lfgEnd(judgeSession(nil, succeeded("done"), VerdictUnreadable{}, false), toFailed),
-			chose(5, FailedRoute, "lfg"),
+			chose(5, FailedRoute, "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -107,7 +112,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(failedOutcome("gave up")),
 			lfgEnd(failedBy(NewSessionText("gave up"), CauseSession), toFailed),
-			chose(5, FailedRoute, "lfg"),
+			chose(5, FailedRoute, "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -116,7 +121,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(succeeded("done")),
 			lfgEnd(failedBy(NewSessionText("done"), CauseStopped), toFailed),
-			chose(5, FailedRoute, "lfg"),
+			chose(5, FailedRoute, "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -125,7 +130,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(failedOutcome("gave up")),
 			lfgEnd(failedBy(NewSessionText("gave up"), CauseSession), ToRoute{Route: "blocked"}),
-			chose(5, "blocked", "lfg"),
+			chose(5, "blocked", "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -134,7 +139,7 @@ var sessionDecisions = []decision{
 		want: []RunEvent{
 			lfgSession(failedOutcome("killed")),
 			lfgEnd(failedBy(NewSessionText("killed"), CauseStopped), toFailed),
-			chose(5, FailedRoute, "lfg"),
+			chose(5, FailedRoute, "lfg"), asked(5, 0),
 		},
 	},
 	{
@@ -146,7 +151,7 @@ var sessionDecisions = []decision{
 				EventHead: eh(5), Action: "lfg", Verdict: Failed, Target: toFailed, Usage: usage,
 				End: EndFailed{Reason: NewSessionText("gave up"), Cause: CauseSession},
 			},
-			chose(5, FailedRoute, "lfg"),
+			chose(5, FailedRoute, "lfg"), asked(5, 0),
 		},
 	},
 }
@@ -175,7 +180,7 @@ var shellDecisions = []decision{
 				EventHead: eh(3), Action: "install", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: NewSessionText("install failed"), Cause: CauseShell},
 			},
-			chose(3, FailedRoute, "install"),
+			chose(3, FailedRoute, "install"), asked(3, 0),
 		},
 	},
 	{
@@ -187,7 +192,7 @@ var shellDecisions = []decision{
 				EventHead: eh(6), Action: "judge", Verdict: "needs_person", Target: ToRoute{Route: "needs-person"},
 				End: EndSucceeded{Reason: NewSessionText("judge: ask")},
 			},
-			chose(6, "needs-person", "judge"),
+			chose(6, "needs-person", "judge"), asked(6, 0),
 		},
 	},
 	{
@@ -204,7 +209,7 @@ var shellDecisions = []decision{
 				EventHead: eh(3), Action: "install", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: NewSessionText("install was stopped"), Cause: CauseStopped},
 			},
-			chose(3, FailedRoute, "install"),
+			chose(3, FailedRoute, "install"), asked(3, 0),
 		},
 	},
 	{
@@ -217,7 +222,7 @@ var shellDecisions = []decision{
 				EventHead: eh(3), Action: "lfg", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: renderError("lfg"), Cause: CausePrompt},
 			},
-			chose(3, FailedRoute, "lfg"),
+			chose(3, FailedRoute, "lfg"), asked(3, 0),
 		},
 	},
 }
@@ -233,7 +238,7 @@ var lookupDecisions = []decision{
 	{
 		name:  "routeChosen: with lookups, a chosen route asks for the run's pull requests",
 		given: judging(), finds: true, fact: shellEnded(6, "judge", exited(0, "judge passed")),
-		want: append(passedAll()[len(judging()):], RunLookupAsked{EventHead: eh(6)}),
+		want: lookingUp()[len(judging()):],
 	},
 	{
 		name:  "routeChosen: a rule without a session asks for none",
@@ -244,7 +249,7 @@ var lookupDecisions = []decision{
 				EventHead: eh(3), Action: "install", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: NewSessionText("install failed"), Cause: CauseShell},
 			},
-			chose(3, FailedRoute, "install"),
+			chose(3, FailedRoute, "install"), asked(3, 0),
 		},
 	},
 	{
@@ -253,10 +258,16 @@ var lookupDecisions = []decision{
 		want: seq([]RunEvent{takeMoved()}, stoppedAt(1, "install")),
 	},
 	{
-		name:  "pullRequestLookedUp: the route keeps what the lookup found",
-		given: append(passedAll(), RunLookupAsked{EventHead: eh(6)}), finds: true,
+		name:  "pullRequestLookedUp: a run rebuilt with a lookup before its route asks no step",
+		given: append(installing(), RunLookupAsked{EventHead: eh(2)}), finds: true,
+		fact: PullRequestLookedUp{FactHead: fh(3), PullRequest: foundPR},
+		want: []RunEvent{RunLookupDone{EventHead: eh(3), PullRequest: foundPR}},
+	},
+	{
+		name:  "pullRequestLookedUp: the route keeps what the lookup found, and asks its first step",
+		given: lookingUp(), finds: true,
 		fact: PullRequestLookedUp{FactHead: fh(7), PullRequest: foundPR},
-		want: []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}},
+		want: []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}, asked(7, 0)},
 	},
 }
 
@@ -280,14 +291,14 @@ func TestF1ASequenceRunsItsActionsOneAtATimeInOneWorkspace(t *testing.T) {
 		{fact: lfgEnded(succeeded("done"), nil), starts: []ActionName{"judge"}},
 		{fact: shellEnded(6, "judge", exited(0, "judge passed"))},
 	}
-	var asked int
+	var workspaces int
 	for _, s := range steps {
 		var events []RunEvent
 		run, events = walk(t, run, s.fact)
 		var started []ActionName
 		for _, e := range events {
 			if _, ok := e.(WorkspaceAsked); ok {
-				asked++
+				workspaces++
 			}
 			started = append(started, startedBy(e)...)
 		}
@@ -296,9 +307,12 @@ func TestF1ASequenceRunsItsActionsOneAtATimeInOneWorkspace(t *testing.T) {
 		}
 	}
 	w, _ := run.Workspace().Get()
-	if asked != 1 || w.Workspace != runWS() || run.Phase() != (RoutingPhase{Route: PassedRoute, Chosen: at(6)}) {
+	want := RoutingPhase{
+		Route: PassedRoute, Chosen: at(6), Steps: []StepPlan{{Kind: StepMove, To: labelDone}}, Asked: true,
+	}
+	if workspaces != 1 || w.Workspace != runWS() || !reflect.DeepEqual(run.Phase(), want) {
 		t.Errorf("workspace asked %d times, workspace %#v, phase %#v; want one workspace and passed",
-			asked, w, run.Phase())
+			workspaces, w, run.Phase())
 	}
 }
 

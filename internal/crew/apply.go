@@ -52,6 +52,11 @@ func (RunStopped) apply(r RuleRun) RuleRun {
 	return r
 }
 
+func (RunOutOfTime) apply(r RuleRun) RuleRun {
+	r.timeUp = true
+	return r
+}
+
 func (e WorkspaceAsked) apply(r RuleRun) RuleRun {
 	r = r.acting()
 	r.workspace = CreatingWorkspace{}
@@ -151,7 +156,7 @@ func (e RouteChosen) apply(r RuleRun) RuleRun {
 			r.actions[i].state = NotRun{}
 		}
 	}
-	r.phase = RoutingPhase{Route: e.Route, Chosen: e.At}
+	r.phase = RoutingPhase{Route: e.Route, Chosen: e.At, Steps: slices.Clone(e.Steps)}
 	return r
 }
 
@@ -165,37 +170,30 @@ func (e RunLookupDone) apply(r RuleRun) RuleRun {
 	return r
 }
 
-func (e RunEnded) apply(r RuleRun) RuleRun {
-	r.phase = EndingPhase{Ending: e.Ending.clone(), Ended: e.At, ReportSettled: !e.Ending.Failed()}
-	return r
-}
-
-func (e EndingMoved) apply(r RuleRun) RuleRun {
-	return r.whileEnding(func(j EndingPhase) EndingPhase {
-		j.Move = Some[EndingMove](EndingLanded{})
-		return j
+func (e StepAsked) apply(r RuleRun) RuleRun {
+	return r.whileRouting(e.Step, func(p RoutingPhase) RoutingPhase {
+		p.Asked = true
+		return p
 	})
 }
 
-func (e EndingDropped) apply(r RuleRun) RuleRun {
-	return r.whileEnding(func(j EndingPhase) EndingPhase {
-		j.Move = Some[EndingMove](EndingGivenUp{Reason: e.Reason})
-		return j
+func (StepShellStopAsked) apply(r RuleRun) RuleRun { return r }
+
+// apply settles the step, which is no longer in flight.
+func (e StepEnded) apply(r RuleRun) RuleRun {
+	return r.whileRouting(e.Step, func(p RoutingPhase) RoutingPhase {
+		p.Settled = append(slices.Clone(p.Settled), e.Outcome)
+		p.Asked = false
+		return p
 	})
 }
 
-func (FailureReported) apply(r RuleRun) RuleRun { return r.reportSettled() }
-
-func (FailureReportDropped) apply(r RuleRun) RuleRun { return r.reportSettled() }
-
-// apply releases the run, keeping its ending once the ending's move
-// settled.
+// apply releases the run, keeping its route and how its steps settled
+// once it chose one.
 func (RunReleased) apply(r RuleRun) RuleRun {
 	var released ReleasedPhase
-	if j, ok := r.phase.(EndingPhase); ok {
-		if move, settled := j.Move.Get(); settled {
-			released.Ending = Some(SettledEnding{Ending: j.Ending, Ended: j.Ended, Move: move})
-		}
+	if p, ok := r.phase.(RoutingPhase); ok {
+		released.Route = Some(p)
 	}
 	r.phase = released
 	return r
@@ -224,19 +222,12 @@ func (r RuleRun) withAction(name ActionName, change func(ActionRun) ActionRun) R
 	return r
 }
 
-// whileEnding returns r with change applied to its phase, when it is ending.
-func (r RuleRun) whileEnding(change func(EndingPhase) EndingPhase) RuleRun {
-	if j, ok := r.phase.(EndingPhase); ok {
-		r.phase = change(j)
+// whileRouting returns r with change applied to its phase, when it is
+// routing and its next step to settle is the one at index step, a step of
+// its route.
+func (r RuleRun) whileRouting(step int, change func(RoutingPhase) RoutingPhase) RuleRun {
+	if p, ok := r.phase.(RoutingPhase); ok && len(p.Settled) == step && step < len(p.Steps) {
+		r.phase = change(p)
 	}
 	return r
-}
-
-// reportSettled returns r with its failure report settled, when it is
-// ending.
-func (r RuleRun) reportSettled() RuleRun {
-	return r.whileEnding(func(j EndingPhase) EndingPhase {
-		j.ReportSettled = true
-		return j
-	})
 }

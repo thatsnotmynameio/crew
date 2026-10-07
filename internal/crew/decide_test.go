@@ -52,8 +52,8 @@ func withoutActions(d RunDefinition) RunDefinition {
 // and the run through failed.
 func stoppedAt(n int, action ActionName) []RunEvent {
 	return []RunEvent{
-		ActionEnded{EventHead: eh(n), Action: action, End: stopEnd, Verdict: Failed, Target: toFailed},
-		RouteChosen{EventHead: eh(n), Route: FailedRoute, Action: action},
+		ActionEnded{EventHead: eh(n), Action: action, End: unstarted, Verdict: Failed, Target: toFailed},
+		chose(n, FailedRoute, action), asked(n, 0),
 	}
 }
 
@@ -62,12 +62,12 @@ var takeDecisions = []decision{
 	{
 		name: "take: a rule without actions chooses passed at once", def: withoutActions,
 		given: []RunEvent{takenWithoutActions()}, fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{takeMoved(), RouteChosen{EventHead: eh(1), Route: PassedRoute}},
+		want: []RunEvent{takeMoved(), chose(1, PassedRoute, ""), asked(1, 0)},
 	},
 	{
 		name: "take: a rule without actions chooses passed after a stop too", def: withoutActions, finds: true,
 		given: seq([]RunEvent{takenWithoutActions()}, stopped(0)), fact: TakeSettled{FactHead: fh(1), Landed: true},
-		want: []RunEvent{takeMoved(), RouteChosen{EventHead: eh(1), Route: PassedRoute}},
+		want: []RunEvent{takeMoved(), chose(1, PassedRoute, ""), asked(1, 0)},
 	},
 	{
 		name:  "take: a landed take asks for the run's one workspace",
@@ -150,7 +150,7 @@ var workspaceDecisions = []decision{
 				EventHead: eh(2), Action: "install", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: NewSessionText("disk full"), Cause: CauseWorkspace},
 			},
-			RouteChosen{EventHead: eh(2), Route: FailedRoute, Action: "install"},
+			chose(2, FailedRoute, "install"), asked(2, 0),
 		},
 	},
 	{
@@ -161,7 +161,7 @@ var workspaceDecisions = []decision{
 				EventHead: eh(2), Action: "lfg", Verdict: Failed, Target: toFailed,
 				End: EndFailed{Reason: NewSessionText("not listed"), Cause: CauseWorkspace},
 			},
-			RouteChosen{EventHead: eh(2), Route: FailedRoute, Action: "lfg"},
+			chose(2, FailedRoute, "lfg"), asked(2, 0),
 		},
 	},
 }
@@ -187,10 +187,6 @@ var stopDecisions = []decision{
 		name:  "stop: a session that is starting waits for its next fact",
 		given: starting(), fact: StopReached{FactHead: fh(4)},
 		want: stopped(4),
-	},
-	{
-		name:  "stop: a run whose sequence is over goes on",
-		given: passedAll(), fact: StopReached{FactHead: fh(7)},
 	},
 	{
 		name:  "stop: a stop reaches a run once",

@@ -3,9 +3,9 @@ package crew
 import "time"
 
 // Fact is what happened to a rule run, which Decide turns into the run's
-// events: a delivery of the run settled, a stop reached it, its workspace
-// or the lookup of its pull requests answered, or the action at its cursor
-// started or ended.
+// events: its take or a step of its route settled, a stop or crew's run
+// time being up reached it, its workspace or the lookup of its pull
+// requests answered, or the action at its cursor started or ended.
 //
 //sumtype:decl
 type Fact interface {
@@ -31,24 +31,14 @@ type TakeSettled struct {
 	Landed bool
 }
 
-// EndingMoveSettled is the run's ending move settling.
-type EndingMoveSettled struct {
-	FactHead
-
-	Move EndingMove
-}
-
-// FailureReportSettled is the run's failure report settling: it landed, or
-// crew gave it up.
-type FailureReportSettled struct {
-	FactHead
-
-	Landed bool
-}
-
 // StopReached is a stop reaching the run: requested, or the stop that ends
 // a wind-down.
 type StopReached struct {
+	FactHead
+}
+
+// TimeUp is crew's run time being up for the run.
+type TimeUp struct {
 	FactHead
 }
 
@@ -87,10 +77,10 @@ type PullRequestLookedUp struct {
 }
 
 // decide moves the issue on once the take landed: a rule without actions
-// chooses PassedRoute at once, after a stop too; after a stop, the first
-// action ends without starting; otherwise the run asks for its workspace,
-// the resumed run's when it inherited a resume point. A take given up
-// releases the run.
+// chooses PassedRoute at once, after a stop or time-up too; after a stop or
+// time-up, the first action ends without starting; otherwise the run asks
+// for its workspace, the resumed run's when it inherited a resume point. A
+// take given up releases the run.
 func (f TakeSettled) decide(d *decider) error {
 	if _, taking := d.run.phase.(TakingPhase); !taking {
 		return d.refused("its take")
@@ -101,70 +91,37 @@ func (f TakeSettled) decide(d *decider) error {
 	}
 	labels := d.def.Rule.Labels
 	d.emit(TakeMoved{EventHead: d.head(), From: labels.Ready, To: labels.Running})
-	switch {
-	case len(d.run.actions) == 0:
+	if len(d.run.actions) == 0 {
 		d.choose(PassedRoute, "")
-	case d.run.stopping:
-		d.stopAtCursor()
-	default:
-		asked := WorkspaceAsked{EventHead: d.head()}
-		if resume, ok := d.run.resume.Get(); ok {
-			asked.Reopen = Some(resume.Workspace)
-		}
-		d.emit(asked)
+		return nil
 	}
+	if _, halted := d.halted(); halted {
+		d.startAtCursor()
+		return nil
+	}
+	asked := WorkspaceAsked{EventHead: d.head()}
+	if resume, ok := d.run.resume.Get(); ok {
+		asked.Reopen = Some(resume.Workspace)
+	}
+	d.emit(asked)
 	return nil
 }
 
-// decide releases the run once its ending move settled and its failure
-// report, when it posts one, settled too.
-func (f EndingMoveSettled) decide(d *decider) error {
-	j, ok := d.run.phase.(EndingPhase)
-	if _, settled := j.Move.Get(); !ok || settled || f.Move == nil {
-		return d.refused("an ending move")
-	}
-	switch m := f.Move.(type) {
-	case EndingLanded:
-		d.emit(EndingMoved{EventHead: d.head(), From: d.def.Rule.Labels.Running, To: j.Ending.To})
-	case EndingGivenUp:
-		d.emit(EndingDropped{EventHead: d.head(), To: j.Ending.To, Reason: m.Reason})
-	}
-	d.releaseOnceSettled()
-	return nil
-}
-
-// decide settles the failure report, and releases the run once its
-// ending move settled too.
-func (f FailureReportSettled) decide(d *decider) error {
-	if j, ok := d.run.phase.(EndingPhase); !ok || j.ReportSettled {
-		return d.refused("a failure report")
-	}
-	if f.Landed {
-		d.emit(FailureReported{EventHead: d.head()})
-	} else {
-		d.emit(FailureReportDropped{EventHead: d.head()})
-	}
-	d.releaseOnceSettled()
-	return nil
-}
-
-// releaseOnceSettled releases the ending run once its ending move and its
-// failure report settled.
-func (d *decider) releaseOnceSettled() {
-	j, _ := d.run.phase.(EndingPhase)
-	if _, moved := j.Move.Get(); moved && j.ReportSettled {
-		d.emit(RunReleased{EventHead: d.head()})
-	}
-}
-
-// decide marks a run taking or running its actions as stopping, once, and
-// asks the session or script at its cursor to stop. A run whose sequence is
-// over goes on.
+// decide marks the run as stopping, once. A run taking or running its
+// actions asks the session or script at its cursor to stop; a routing run
+// asks its shell step in flight to stop, and skips the shell steps after
+// it, while its tracker steps go on.
 func (StopReached) decide(d *decider) error {
-	if d.run.ActionsEnded() || d.run.stopping {
+	if d.run.stopping {
 		return nil
 	}
 	d.emit(RunStopped{EventHead: d.head()})
+	if p, routing := d.run.phase.(RoutingPhase); routing {
+		if i, asked := p.InFlight(); asked && p.Steps[i].Kind == StepShell {
+			d.emit(StepShellStopAsked{EventHead: d.head(), Step: i})
+		}
+		return nil
+	}
 	a, _ := d.run.Cursor()
 	switch a.state.(type) {
 	case InSession:
@@ -174,6 +131,18 @@ func (StopReached) decide(d *decider) error {
 	case AwaitingTurn, DoneInEarlierRun, StartingSession, Finished, NotRun:
 		// No session or script runs: the run's next fact sees the stop.
 	}
+	return nil
+}
+
+// decide marks a run taking or running its actions as out of time, once:
+// the action that runs finishes, and no action starts after it. A routing
+// run runs every step of its route, and a run a stop reached is already
+// starting nothing.
+func (TimeUp) decide(d *decider) error {
+	if d.run.ActionsEnded() || d.run.stopping || d.run.timeUp {
+		return nil
+	}
+	d.emit(RunOutOfTime{EventHead: d.head()})
 	return nil
 }
 
@@ -193,37 +162,33 @@ func (d *decider) awaitsWorkspace(reopened bool) error {
 }
 
 // decide records the run's workspace and starts the action at its cursor,
-// or, after a stop, ends that action without starting it: no action writes
-// the log, so the workspace names none.
+// or, after a stop or time-up, ends that action without starting it: no
+// action writes the log, so the workspace names none.
 func (f WorkspaceReady) decide(d *decider) error {
 	if err := d.awaitsWorkspace(false); err != nil {
 		return err
 	}
 	opened := WorkspaceOpened{EventHead: d.head(), Workspace: f.Workspace}
-	if d.run.stopping {
-		d.emit(opened)
-		d.stopAtCursor()
-		return nil
+	if _, halted := d.halted(); !halted {
+		_, resumes := d.run.resume.Get()
+		opened.Log, opened.Resumed = f.Log, f.Resumed && resumes
 	}
-	_, resumes := d.run.resume.Get()
-	opened.Log, opened.Resumed = f.Log, f.Resumed && resumes
 	d.emit(opened)
-	a, _ := d.run.Cursor()
-	d.start(a.name)
+	d.startAtCursor()
 	return nil
 }
 
 // decide asks for a new workspace in place of the reopened one that is
-// gone, for a run that starts again at its first action, or, after a stop,
-// ends that action without a workspace.
+// gone, for a run that starts again at its first action, or, after a stop
+// or time-up, ends that action without a workspace.
 func (f WorkspaceGone) decide(d *decider) error {
 	if err := d.awaitsWorkspace(true); err != nil {
 		return err
 	}
 	reopening, _ := d.run.workspace.(ReopeningWorkspace)
 	d.emit(WorkspaceMissing{EventHead: d.head(), Workspace: reopening.Workspace})
-	if d.run.stopping {
-		d.stopAtCursor()
+	if _, halted := d.halted(); halted {
+		d.startAtCursor()
 		return nil
 	}
 	d.emit(WorkspaceAsked{EventHead: d.head()})
@@ -241,11 +206,13 @@ func (f WorkspaceFailed) decide(d *decider) error {
 	return nil
 }
 
-// decide keeps the pull requests the lookup found.
+// decide keeps the pull requests the lookup found, and asks the first step
+// of the route, which waited for them.
 func (f PullRequestLookedUp) decide(d *decider) error {
 	if _, pending := d.run.lookup.(LookupPending); !pending {
 		return d.refused("the lookup of its pull requests")
 	}
 	d.emit(RunLookupDone{EventHead: d.head(), PullRequest: f.PullRequest})
+	d.nextStep()
 	return nil
 }

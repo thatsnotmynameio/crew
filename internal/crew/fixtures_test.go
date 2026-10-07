@@ -22,10 +22,12 @@ const (
 )
 
 var (
-	t0        = time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	testID    = IssueID{Repository: "R_1", Key: "9"}
-	usage     = Usage{Cost: Some(0.5), Turns: Some(3)}
-	stopEnd   = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStopped}
+	t0      = time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	testID  = IssueID{Repository: "R_1", Key: "9"}
+	usage   = Usage{Cost: Some(0.5), Turns: Some(3)}
+	stopEnd = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStopped}
+	// unstarted is the end of an action a stop reached before it started.
+	unstarted = EndFailed{Reason: NewSessionText("crew stopped"), Cause: CauseStoppedBeforeStart}
 	foundPR   = PullRequestFound{Ref: "#45", URL: "https://example.com/pull/45"}
 	developer = Bot{Name: "crew-developer"}
 	toFailed  = ToRoute{Route: FailedRoute}
@@ -198,13 +200,24 @@ func judging() []RunEvent {
 	)
 }
 
-// passedAll is judge passed at minute 6, and the run through passed.
-func passedAll() []RunEvent {
+// judgePassed is judge passed at minute 6, the run's last action.
+func judgePassed() []RunEvent {
 	return append(judging(),
 		ActionShellEnded{EventHead: eh(6), Action: "judge", Outcome: exited(0, "judge passed")},
 		passedEnd(6, "judge", "judge passed"),
-		RouteChosen{EventHead: eh(6), Route: PassedRoute, Action: "judge"},
 	)
+}
+
+// passedAll is the run through passed at minute 6, whose move to done is
+// asked.
+func passedAll() []RunEvent {
+	return append(judgePassed(), chose(6, PassedRoute, "judge"), asked(6, 0))
+}
+
+// lookingUp is the run through passed at minute 6, whose pull requests are
+// looked up before its first step.
+func lookingUp() []RunEvent {
+	return append(judgePassed(), chose(6, PassedRoute, "judge"), RunLookupAsked{EventHead: eh(6)})
 }
 
 func succeeded(reason string) Outcome {

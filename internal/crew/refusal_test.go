@@ -6,88 +6,12 @@ import (
 	"testing"
 )
 
-// The decision tables below cover the run's ending move and failure report,
-// which a run reaches through RunEnded, and the facts a run refuses; each
-// row names the fact it decides and the branch it follows.
+// The tables below are facts a run refuses: each row names the fact and
+// why the run does not wait for it.
 
-// endedFailed is a run whose lfg failed at minute 5, and that ended in
-// failure at minute 7.
-var endedFailed = seq(inSession(), []RunEvent{
-	lfgSession(failedOutcome("gave up")),
-	lfgEnd(failedBy(NewSessionText("gave up"), CauseSession), toFailed),
-	RunEnded{EventHead: eh(7), Ending: RunEnding{To: labelFailed, Failures: []ActionFailure{failure("lfg")}}},
-})
-
-// endedDone is a run whose actions passed, and that ended in success at
-// minute 7.
-var endedDone = seq(judging(), []RunEvent{
-	ActionShellEnded{EventHead: eh(6), Action: "judge", Outcome: exited(0, "judge passed")},
-	passedEnd(6, "judge", "judge passed"),
-	RunEnded{EventHead: eh(7), Ending: RunEnding{To: labelDone}},
-})
-
-// endingDecisions decide the ending move and the failure report.
-var endingDecisions = []decision{
-	{
-		name:  "endingMoveSettled: a landed ending move without a report releases the run",
-		given: endedDone, fact: EndingMoveSettled{FactHead: fh(8), Move: EndingLanded{}},
-		want: []RunEvent{
-			EndingMoved{EventHead: eh(8), From: labelRunning, To: labelDone},
-			RunReleased{EventHead: eh(8)},
-		},
-	},
-	{
-		name:  "endingMoveSettled: a landed ending move waits for the failure report",
-		given: endedFailed, fact: EndingMoveSettled{FactHead: fh(8), Move: EndingLanded{}},
-		want: []RunEvent{EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed}},
-	},
-	{
-		name:  "failureReportSettled: a landed failure report waits for the ending move",
-		given: endedFailed, fact: FailureReportSettled{FactHead: fh(8), Landed: true},
-		want: []RunEvent{FailureReported{EventHead: eh(8)}},
-	},
-	{
-		name: "failureReportSettled: the failure report landing after the ending move releases the run",
-		given: seq(endedFailed, []RunEvent{
-			EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed},
-		}),
-		fact: FailureReportSettled{FactHead: fh(9), Landed: true},
-		want: []RunEvent{FailureReported{EventHead: eh(9)}, RunReleased{EventHead: eh(9)}},
-	},
-	{
-		name:  "endingMoveSettled: the ending move landing after the failure report releases the run",
-		given: seq(endedFailed, []RunEvent{FailureReported{EventHead: eh(8)}}),
-		fact:  EndingMoveSettled{FactHead: fh(9), Move: EndingLanded{}},
-		want: []RunEvent{
-			EndingMoved{EventHead: eh(9), From: labelRunning, To: labelFailed},
-			RunReleased{EventHead: eh(9)},
-		},
-	},
-	{
-		name:  "endingMoveSettled: an ending move given up keeps its reason",
-		given: endedDone, fact: EndingMoveSettled{FactHead: fh(8), Move: EndingGivenUp{Reason: "issue closed"}},
-		want: []RunEvent{
-			EndingDropped{EventHead: eh(8), To: labelDone, Reason: "issue closed"},
-			RunReleased{EventHead: eh(8)},
-		},
-	},
-	{
-		name: "failureReportSettled: a failure report given up still settles",
-		given: seq(endedFailed, []RunEvent{
-			EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed},
-		}),
-		fact: FailureReportSettled{FactHead: fh(9)},
-		want: []RunEvent{FailureReportDropped{EventHead: eh(9)}, RunReleased{EventHead: eh(9)}},
-	},
-}
-
-// released is a run released at minute 8, after its ending move landed.
-var released = seq(endedDone, []RunEvent{
-	EndingMoved{EventHead: eh(8), From: labelRunning, To: labelDone}, RunReleased{EventHead: eh(8)},
-})
-
-// lookingUp is a run through passed whose pull requests are looked up.
-var lookingUp = append(passedAll(), RunLookupAsked{EventHead: eh(6)})
+// released is a run released at minute 7, after its failed route's move
+// landed.
+func released() []RunEvent { return releasedAs(StepLanded{}) }
 
 type refusal struct {
 	name  string
@@ -103,33 +27,10 @@ var runRefusals = []refusal{
 		fact: WorkspaceReady{FactHead: FactHead{Run: "run-1", At: at(2)}, Workspace: runWS()},
 	},
 	{name: "a fact for no run", fact: StopReached{FactHead: fh(1)}},
-	{name: "a released run refuses a stop", given: released, fact: StopReached{FactHead: fh(9)}},
-	{
-		name: "a released run refuses an ending move", given: released,
-		fact: EndingMoveSettled{FactHead: fh(9), Move: EndingLanded{}},
-	},
+	{name: "a released run refuses a stop", given: released(), fact: StopReached{FactHead: fh(9)}},
+	{name: "a released run refuses a time-up", given: released(), fact: TimeUp{FactHead: fh(9)}},
+	{name: "a time-up for another run", given: asking(), fact: TimeUp{FactHead: FactHead{Run: "run-1", At: at(2)}}},
 	{name: "a take that already landed", given: asking(), fact: TakeSettled{FactHead: fh(2), Landed: true}},
-	{
-		name: "an ending move while the actions run", given: inSession(),
-		fact: EndingMoveSettled{FactHead: fh(5), Move: EndingLanded{}},
-	},
-	{
-		name: "an ending move while routing", given: passedAll(),
-		fact: EndingMoveSettled{FactHead: fh(7), Move: EndingLanded{}},
-	},
-	{
-		name:  "an ending move that already settled",
-		given: seq(endedDone, []RunEvent{EndingDropped{EventHead: eh(8), To: labelDone}}),
-		fact:  EndingMoveSettled{FactHead: fh(9), Move: EndingLanded{}},
-	},
-	{
-		name: "a failure report the ending does not post", given: endedDone,
-		fact: FailureReportSettled{FactHead: fh(8), Landed: true},
-	},
-	{
-		name: "a failure report while routing", given: passedAll(),
-		fact: FailureReportSettled{FactHead: fh(7), Landed: true},
-	},
 }
 
 // workspaceRefusals are workspace facts while the run does not wait for
@@ -192,12 +93,32 @@ var lookupRefusals = []refusal{
 	{name: "pullRequestLookedUp never asked", given: passedAll(), fact: PullRequestLookedUp{FactHead: fh(7)}},
 	{
 		name:  "pullRequestLookedUp already answered",
-		given: append(lookingUp, RunLookupDone{EventHead: eh(7)}), fact: PullRequestLookedUp{FactHead: fh(8)},
+		given: append(lookingUp(), RunLookupDone{EventHead: eh(7)}), fact: PullRequestLookedUp{FactHead: fh(8)},
 	},
 }
 
+// stepRefusals are facts of a route's step that is not in flight, or that
+// settles in a way its kind cannot.
+var stepRefusals = []refusal{
+	{name: "stepSettled while taking", given: []RunEvent{taken()}, fact: settled(1, 0, StepLanded{})},
+	{name: "stepSettled while the actions run", given: inSession(), fact: settled(5, 0, StepLanded{})},
+	{name: "stepSettled while the lookup is pending", given: lookingUp(), fact: settled(7, 0, StepLanded{})},
+	{name: "stepSettled for a step not in flight", given: lfgFailed(), fact: settled(6, 1, StepLanded{})},
+	{name: "stepSettled for a step that settled", given: reported(), fact: settled(7, 0, StepLanded{})},
+	{name: "stepSettled for a shell step", given: notifying(), fact: settled(6, 0, StepLanded{})},
+	{name: "stepSettled with a shell step's outcome", given: lfgFailed(), fact: settled(6, 0, StepRan{})},
+	{name: "stepSettled skipped", given: lfgFailed(), fact: settled(6, 0, StepSkipped{})},
+	{name: "stepSettled with no outcome", given: lfgFailed(), fact: settled(6, 0, nil)},
+	{name: "stepSettled for a released run", given: released(), fact: settled(9, 0, StepLanded{})},
+	{name: "stepShellEnded while the actions run", given: installing(), fact: shellStepEnded(3, 0, exited(0, ""))},
+	{name: "stepShellEnded for a tracker step", given: lfgFailed(), fact: shellStepEnded(6, 0, exited(0, ""))},
+	{name: "stepShellEnded for a step not in flight", given: notifying(), fact: shellStepEnded(6, 1, exited(0, ""))},
+	{name: "stepShellEnded while the lookup is pending", given: lookingUp(), fact: shellStepEnded(7, 0, exited(0, ""))},
+	{name: "stepShellEnded for a released run", given: released(), fact: shellStepEnded(9, 0, exited(0, ""))},
+}
+
 func TestDecideRefusesWhatTheRunDoesNotWaitFor(t *testing.T) {
-	for _, table := range [][]refusal{runRefusals, workspaceRefusals, actionRefusals, lookupRefusals} {
+	for _, table := range [][]refusal{runRefusals, workspaceRefusals, actionRefusals, lookupRefusals, stepRefusals} {
 		for _, tt := range table {
 			t.Run(tt.name, func(t *testing.T) {
 				run := given(t, tt.given)
@@ -213,5 +134,3 @@ func TestDecideRefusesWhatTheRunDoesNotWaitFor(t *testing.T) {
 		}
 	}
 }
-
-func TestDecideTheEnding(t *testing.T) { decide(t, endingDecisions) }

@@ -82,8 +82,8 @@ func (r RuleRunID) TakeReport() PullRequestReportID {
 	return PullRequestReportID(string(r) + "/take")
 }
 
-// EndingReport returns the id of the report that follows the run's
-// ending move.
+// EndingReport returns the id of the report that follows the final move
+// of the run's route.
 func (r RuleRunID) EndingReport() PullRequestReportID {
 	return PullRequestReportID(string(r) + "/ending")
 }

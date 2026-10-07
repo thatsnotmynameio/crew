@@ -86,12 +86,13 @@ type StatusProgress interface {
 // actions run.
 type StatusRunning struct{}
 
-// StatusEnded is the progress of a rule whose every action ended: the issue
-// moves to To.
+// StatusEnded is the progress of a rule whose run chose its route: the
+// route's final step moves the issue to To, or closes it.
 type StatusEnded struct {
-	// To is the state the issue moves to.
+	// To is the state the issue moves to; empty when the route closes it.
 	To State
-	// Move says whether the move to To is under way, landed or was given up.
+	// Move says whether the route's final move or close is under way,
+	// landed or was given up.
 	Move MoveProgress
 }
 
@@ -213,16 +214,23 @@ const (
 	// verdict its on: does not name, or its session reported text with no
 	// verdict name.
 	CauseVerdict
+	// CauseStoppedBeforeStart: crew stopped before the action started, so
+	// it never ran.
+	CauseStoppedBeforeStart
+	// CauseTimeUp: crew's run time was up before the action started, so it
+	// never ran.
+	CauseTimeUp
 )
 
-// MoveProgress is how the move that ends a rule stands.
+// MoveProgress is how the move or close that ends a rule stands.
 type MoveProgress int
 
-// The progress of the move that ends a rule.
+// The progress of the move or close that ends a rule.
 const (
-	// MovePending: the move is in flight or waits for a retry.
+	// MovePending: the move is in flight or waits for a retry, or a step
+	// before it runs.
 	MovePending MoveProgress = iota
-	// MoveDone: the issue is in To.
+	// MoveDone: the issue is in To, or closed.
 	MoveDone
 	// MoveDropped: crew gave the move up, as the issue was closed or moved
 	// meanwhile, the tracker refused it, or its last try after a stop failed.

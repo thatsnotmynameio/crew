@@ -95,16 +95,14 @@ func TestApplyLeavesTheRunItIsGivenAsItWas(t *testing.T) {
 
 // snapshots are runs in each phase, for the snapshot tests.
 var snapshots = map[string][]RunEvent{
-	"taking":     {taken()},
-	"resuming":   reopening(),
-	"stopping":   seq(inSession(), stopped(5)),
-	"in a shell": judging(),
-	"looking up": seq(lookingUp, []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}),
-	"ending":     endedFailed,
-	"released": seq(endedFailed, []RunEvent{
-		EndingDropped{EventHead: eh(8), To: labelFailed, Reason: "closed"}, FailureReported{EventHead: eh(8)},
-		RunReleased{EventHead: eh(8)},
-	}),
+	"taking":      {taken()},
+	"resuming":    reopening(),
+	"stopping":    seq(inSession(), stopped(5)),
+	"in a shell":  judging(),
+	"looking up":  seq(lookingUp(), []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}),
+	"routing":     reported(),
+	"out of time": seq(installing(), outOfTime(2)),
+	"released":    releasedAs(StepDropped{Reason: "closed"}),
 }
 
 func TestASnapshotRestoresToAnEqualRun(t *testing.T) {
@@ -182,10 +180,14 @@ func TestRestoreRejectsWhatIsNotARun(t *testing.T) {
 	noState.Actions[0].State = nil
 	pastTheEnd := routing
 	pastTheEnd.Cursor = 3
+	pastTheRoute := routing
+	pastTheRoute.Phase = RoutingPhase{Route: PassedRoute, Steps: []StepPlan{{Kind: StepMove}}, Settled: []StepOutcome{
+		StepLanded{},
+	}, Asked: true}
 	for name, s := range map[string]RuleRunSnapshot{
 		"routing with an action running": running, "an action twice": twice, "no id": noID, "no phase": noPhase,
 		"no workspace state": noWorkspace, "no lookup": noLookup, "an action without a state": noState,
-		"a cursor past the actions": pastTheEnd,
+		"a cursor past the actions": pastTheEnd, "a step past the route's last": pastTheRoute,
 	} {
 		if _, err := RestoreRuleRun(s); err == nil {
 			t.Errorf("RestoreRuleRun(%s) = nil, want an error", name)
@@ -197,32 +199,40 @@ func TestRestoreRejectsWhatIsNotARun(t *testing.T) {
 }
 
 func TestARunSharesNothingWithItsSnapshotsAndCopies(t *testing.T) {
-	run := given(t, endedFailed)
+	run := given(t, reported())
 	before := run.Snapshot()
 	s := run.Snapshot()
 	s.Actions[1].Usage.Models = append(s.Actions[1].Usage.Models, "extra")
-	failures(t, s.Phase)[0].Action = "changed"
+	routingPhase(t, s.Phase).Steps[0].Kind = StepShell
+	routingPhase(t, s.Phase).Settled[0] = StepSkipped{}
 	s.Issue.States[0] = "changed"
 	restored, _ := RestoreRuleRun(s)
-	failures(t, restored.Phase())[0].Log = "changed"
+	routingPhase(t, restored.Phase()).Steps[1].To = "changed"
 	run.Actions()[0] = ActionRun{}
-	failures(t, run.Phase())[0].Log = "changed"
+	routingPhase(t, run.Phase()).Steps[1].To = "changed"
 	if !reflect.DeepEqual(run.Snapshot(), before) {
 		t.Errorf("run = %#v, want it unchanged: %#v", run.Snapshot(), before)
 	}
-	if failures(t, s.Phase)[0].Log == "changed" {
-		t.Error("the restored run shares its failures with the snapshot")
+	if routingPhase(t, s.Phase).Steps[1].To == "changed" {
+		t.Error("the restored run shares its steps with the snapshot")
+	}
+	out := given(t, releasedAs(StepLanded{}))
+	gone, _ := out.Phase().(ReleasedPhase)
+	route, _ := gone.Route.Get()
+	route.Settled[1] = StepSkipped{}
+	if !reflect.DeepEqual(out.Phase(), given(t, releasedAs(StepLanded{})).Phase()) {
+		t.Error("a released run shares its route's outcomes with its phase's copy")
 	}
 }
 
-// failures returns the failures of an ending phase.
-func failures(t *testing.T, p RunPhase) []ActionFailure {
+// routingPhase returns the routing phase p.
+func routingPhase(t *testing.T, p RunPhase) RoutingPhase {
 	t.Helper()
-	j, ok := p.(EndingPhase)
+	r, ok := p.(RoutingPhase)
 	if !ok {
-		t.Fatalf("phase = %#v, want ending", p)
+		t.Fatalf("phase = %#v, want routing", p)
 	}
-	return j.Ending.Failures
+	return r
 }
 
 func TestAnActionRunTellsWhatItRecorded(t *testing.T) {
@@ -273,7 +283,10 @@ func TestARouteChosenLeavesTheActionsItDidNotReachNotRun(t *testing.T) {
 	if !reflect.DeepEqual(got[1:], []ActionRunState{NotRun{}, NotRun{}}) || !run.ActionsEnded() {
 		t.Errorf("actions = %#v, want lfg and judge not run, and the sequence over", got)
 	}
-	if a, _ := run.Cursor(); a.Name() != "install" || run.Phase() != (RoutingPhase{Route: FailedRoute, Chosen: at(3)}) {
+	want := RoutingPhase{
+		Route: FailedRoute, Chosen: at(3), Steps: []StepPlan{{Kind: StepReport}, {Kind: StepMove, To: labelFailed}},
+	}
+	if a, _ := run.Cursor(); a.Name() != "install" || !reflect.DeepEqual(run.Phase(), want) {
 		t.Errorf("cursor %s, phase %#v, want install and failed", a.Name(), run.Phase())
 	}
 	if given(t, inSession()).ActionsEnded() {
