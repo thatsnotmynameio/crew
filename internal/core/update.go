@@ -113,7 +113,7 @@ func (s *step) tick(said []Said) {
 		}
 	}
 	for _, h := range m.issues {
-		s.retryOwed(h, false)
+		s.retryRun(h.issue.ID, false)
 		if h.claim == ClaimRunning {
 			s.running(h)
 		}
@@ -152,19 +152,6 @@ func (s *step) freed() {
 	}
 }
 
-// retryOwed attempts h's owed calls that are not in flight, each as its final
-// try when final is set.
-func (s *step) retryOwed(h *heldIssue, final bool) {
-	for _, c := range h.calls {
-		if c.owed && !c.inFlight {
-			if final {
-				c.final = true
-			}
-			s.attempt(h, c)
-		}
-	}
-}
-
 // stop starts nothing new from now on, stops the running sessions and
 // checks, and gives each owed call, status and pull request report not in
 // flight its final try (R9). Issues whose actions have all ended are already
@@ -182,11 +169,11 @@ func (s *step) stop() {
 		case ClaimRunning:
 			h.claim = ClaimStopping
 			s.stopActions(h)
-		case ClaimJudging, ClaimOwed:
-			s.retryOwed(h, true)
-		case ClaimStopping:
-			// Only stop sets this claim, and stop runs once.
+		case ClaimJudging, ClaimStopping, ClaimOwed:
+			// Judging goes on; only stop sets stopping, and it runs once;
+			// owed is never stored, the view derives it (KTD-P4).
 		}
+		s.retryRun(h.issue.ID, true)
 	}
 	s.retryStatuses()
 	s.retryPullRequests()
@@ -345,86 +332,12 @@ func (s *step) take(si int, issue crew.Issue) {
 	}
 	m.issues = append(m.issues, h)
 	s.emit(IssueTaken{At: s.at, Issue: issue.Clone(), Rule: rule.Name, From: rule.Labels.Ready, To: rule.Labels.Running})
-	s.call(h, &call{kind: CallMove, take: true, from: rule.Labels.Ready, to: rule.Labels.Running})
+	s.deliver(h, &delivery{purpose: purposeTake, call: h.move(rule.Labels.Ready, rule.Labels.Running)})
 }
 
-// call registers c on h under a new ID and makes its first attempt.
-func (s *step) call(h *heldIssue, c *call) {
-	s.m.lastID++
-	c.id = s.m.lastID
-	h.calls = append(h.calls, c)
-	s.attempt(h, c)
-}
-
-// attempt issues c's command.
-func (s *step) attempt(h *heldIssue, c *call) {
-	c.inFlight = true
-	if c.kind == CallReport {
-		s.command(ReportFailure{ID: c.id, Report: cloneReport(c.report)})
-		return
-	}
-	s.command(Move{ID: c.id, IssueID: h.issue.ID, From: c.from, To: c.to})
-}
-
-// callResult settles, owes or retries the call r answers. A take and a
-// verdict call are owed alike when they fail transiently: a take may have
-// landed although it failed, so releasing its issue could strand it in the
-// running label with no session, and the tracker makes the retry idempotent.
-func (s *step) callResult(r CallResult) {
-	m := s.m
-	h, c := m.findCall(r.ID)
-	if c == nil || !c.inFlight {
-		return
-	}
-	c.inFlight = false
-	switch r.Result {
-	case ResultDone:
-		if c.take {
-			s.taken(h, c)
-			return
-		}
-		if c.kind == CallReport {
-			s.emit(FailureReported{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref})
-		} else {
-			s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to})
-			m.boardMoved(h.issue, c.to)
-			s.ended(h, c.to, crew.MoveDone)
-			s.reportPullRequests(h, c.to, true)
-			h.verdict.Move, h.landed = crew.MoveDone, m.listings
-		}
-		h.settle(c)
-	case ResultFailed:
-		switch {
-		case m.stopping && c.final:
-			s.dropped(h, c, r)
-		default:
-			c.owed = true
-			h.claim = ClaimOwed
-			s.emit(CallOwed{At: s.at, Call: h.describe(c), Reason: r.Reason})
-			if m.stopping {
-				c.final = true
-				s.attempt(h, c)
-			}
-		}
-	default:
-		s.dropped(h, c, r)
-	}
-	if len(h.calls) == 0 {
-		m.release(h)
-		s.freed()
-	}
-}
-
-// dropped gives up c, which r answered, and says so on h's status when c is
-// the verdict move.
-func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
-	s.emit(CallDropped{At: s.at, Call: h.describe(c), Result: r.Result, Reason: r.Reason})
-	if c.kind == CallMove && !c.take {
-		s.ended(h, c.to, crew.MoveDropped)
-		h.verdict.Move, h.verdict.DropReason = crew.MoveDropped, r.Reason
-		h.landed = s.m.listings
-	}
-	h.settle(c)
+// move returns the move of h's issue from one state to another, as a Call.
+func (h *heldIssue) move(from, to crew.State) Call {
+	return Call{Kind: CallMove, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: from, To: to}
 }
 
 // taken applies the take to the board (KTD4), reports it on h's pull
@@ -432,12 +345,11 @@ func (s *step) dropped(h *heldIssue, c *call, r CallResult) {
 // stop, ends them unstarted so the issue moves to its rule's failure label
 // (R9). A rule without actions is judged at once, after a stop too, so the
 // issue moves on to its rule's success (R8, KTD5).
-func (s *step) taken(h *heldIssue, c *call) {
+func (s *step) taken(h *heldIssue, c Call) {
 	m := s.m
-	s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to})
-	m.boardMoved(h.issue, c.to)
-	s.reportPullRequests(h, c.to, false)
-	h.settle(c)
+	s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.From, To: c.To})
+	m.boardMoved(h.issue, c.To)
+	s.reportPullRequests(h, c.To, false)
 	switch {
 	case len(h.actions) == 0:
 		s.judge(h)
@@ -496,14 +408,40 @@ func (s *step) judge(h *heldIssue) {
 		h.verdict.Actions = append(h.verdict.Actions, HandledAction{Name: a.name, Spend: a.spend(), PullRequest: a.pr})
 	}
 	if len(report.Failures) == 0 {
-		s.call(h, &call{kind: CallMove, from: rule.Labels.Running, to: rule.Labels.Success})
+		s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(rule.Labels.Running, rule.Labels.Success)})
 		s.ended(h, rule.Labels.Success, crew.MovePending)
 		return
 	}
 	h.verdict.To, h.verdict.Failures = rule.Labels.Failure, slices.Clone(report.Failures)
-	s.call(h, &call{kind: CallMove, from: rule.Labels.Running, to: rule.Labels.Failure})
-	s.call(h, &call{kind: CallReport, report: report})
+	s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(rule.Labels.Running, rule.Labels.Failure)})
+	s.deliver(h, &delivery{
+		purpose: purposeReport, report: report,
+		call: Call{Kind: CallReport, IssueID: h.issue.ID, IssueRef: h.issue.Ref},
+	})
 	s.ended(h, rule.Labels.Failure, crew.MovePending)
+}
+
+// received applies to h the outcome of one of its deliveries (KTD-P3): a
+// landed take starts its actions, a landed verdict move reports the move, a
+// landed failure report is reported, and a verdict move given up ends the
+// status with the move dropped. A take given up leaves nothing to do.
+func (s *step) received(h *heldIssue, o outcome) {
+	switch {
+	case o.purpose == purposeTake && o.landed:
+		s.taken(h, o.call)
+	case o.purpose == purposeVerdict && o.landed:
+		s.emit(IssueMoved{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: o.call.From, To: o.call.To})
+		s.m.boardMoved(h.issue, o.call.To)
+		s.ended(h, o.call.To, crew.MoveDone)
+		s.reportPullRequests(h, o.call.To, true)
+		h.verdict.Move, h.landed = crew.MoveDone, s.m.listings
+	case o.purpose == purposeVerdict:
+		s.ended(h, o.call.To, crew.MoveDropped)
+		h.verdict.Move, h.verdict.DropReason = crew.MoveDropped, o.reason
+		h.landed = s.m.listings
+	case o.purpose == purposeReport && o.landed:
+		s.emit(FailureReported{At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref})
+	}
 }
 
 // full reports whether every slot is busy, so a listing could take nothing:
@@ -564,18 +502,6 @@ func (m *Model) action(id crew.IssueID, name crew.ActionName, phases ...Phase) (
 	return nil, nil
 }
 
-// findCall returns the unsettled call with id and its issue, or nils.
-func (m *Model) findCall(id CallID) (*heldIssue, *call) {
-	for _, h := range m.issues {
-		for _, c := range h.calls {
-			if c.id == id {
-				return h, c
-			}
-		}
-	}
-	return nil, nil
-}
-
 // release forgets h, keeping its handled entry, which replaces the issue's
 // earlier one, when its rule ended. A rule without actions that ended well
 // keeps an earlier entry that ended well too, marked Gone: its move took the
@@ -607,15 +533,4 @@ func (h *heldIssue) ended() bool {
 		}
 	}
 	return true
-}
-
-// settle forgets c, which needs no further attempt.
-func (h *heldIssue) settle(c *call) {
-	h.calls = slices.DeleteFunc(h.calls, func(x *call) bool { return x == c })
-}
-
-// cloneReport copies r, so the copy shares no slice with it.
-func cloneReport(r crew.FailureReport) crew.FailureReport {
-	r.Failures = slices.Clone(r.Failures)
-	return r
 }

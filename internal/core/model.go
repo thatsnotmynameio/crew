@@ -5,9 +5,11 @@
 // is its only caller, from one goroutine.
 //
 // Each issue the core holds moves through claim states kept apart from the
-// tracker's states: Taking, then Running (or Stopping), then Judging, and
-// Owed while its take or a verdict call waits for a retry. An issue is
-// released when its verdict calls are settled, or when its take is given up.
+// tracker's states: Taking, then Running (or Stopping), then Judging. The
+// core's outbox delivers the tracker writes a held issue's rule decides on,
+// and the view shows the issue Owed while one of them waits for a retry
+// (KTD8). An issue is released when its verdict calls are settled, or when
+// its take is given up.
 package core
 
 import (
@@ -30,7 +32,8 @@ type Model struct {
 	requested   bool         // a stop was requested
 	stopping    bool         // the stop sequence runs: requested, or ending a wind-down
 	stopped     bool         // the Stopped event was emitted
-	lastID      CallID
+	// outbox delivers the tracker writes the rules decide on (KTD8).
+	outbox outbox
 	// queueOf holds the queue each rule runs in, by rule index, as an
 	// index into queues (KTD2). maxParallel caps every queue together.
 	queueOf []int
@@ -81,7 +84,6 @@ type heldIssue struct {
 	run     crew.RuleRunID // minted at take, from the listing's seed (KTD5)
 	claim   Claim
 	actions []*actionRun // in the rule's action order
-	calls   []*call      // the take move, then the verdict calls
 	taken   time.Time    // when the rule took the issue
 	// verdict is the issue's handled entry, set once every action ended and
 	// completed by its verdict move's result; nil before.
@@ -148,18 +150,6 @@ func (a *actionRun) spend() crew.Spend {
 	return a.usage.Spend()
 }
 
-// call is a tracker call the core made and has not settled.
-type call struct {
-	id       CallID
-	kind     CallKind
-	take     bool
-	from, to crew.State
-	report   crew.FailureReport
-	inFlight bool
-	owed     bool // failed transiently; retried at the next tick
-	final    bool // its current or last attempt is its one try after stop
-}
-
 // New returns a model for rules, whose rules are in config order and
 // already validated, taking at most maxParallelIssues issues at once (R6),
 // and for each rule at most its queue's slots (R6, KTD2).
@@ -169,7 +159,7 @@ func New(rules []crew.Rule, maxParallelIssues int, opts ...Option) *Model {
 		r.Actions = slices.Clone(r.Actions)
 		own[i] = r
 	}
-	m := &Model{rules: own, maxParallel: maxParallelIssues}
+	m := &Model{rules: own, maxParallel: maxParallelIssues, outbox: outbox{runs: map[crew.IssueID]*runLane{}}}
 	m.queueOf, m.queues, m.slots = queues(own, maxParallelIssues)
 	for _, o := range opts {
 		o(m)
@@ -261,7 +251,10 @@ const (
 	ClaimJudging
 	// ClaimOwed: the take move or a verdict call failed transiently and
 	// waits for a retry. With an owed take, no action has started yet: they
-	// stay PhaseWaiting until the retried take is done.
+	// stay PhaseWaiting until the retried take is done. A held issue never
+	// stores it: the view shows it over any other claim from the first
+	// transient failure until every call of the issue's run lane settled
+	// (KTD-P4).
 	ClaimOwed
 )
 
@@ -491,6 +484,9 @@ func (m *Model) View() View {
 			Issue: h.issue.Clone(), Rule: m.rules[h.rule].Name,
 			Queue: m.queues[m.queueOf[h.rule]].Name, Claim: h.claim,
 		}
+		if m.outbox.owing(h.issue.ID) {
+			iv.Claim = ClaimOwed
+		}
 		for _, a := range h.actions {
 			iv.Actions = append(iv.Actions, ActionView{
 				Name: a.name, Phase: a.phase, Workspace: a.workspace, Branch: a.branch,
@@ -498,11 +494,7 @@ func (m *Model) View() View {
 			})
 		}
 		v.Issues = append(v.Issues, iv)
-		for _, c := range h.calls {
-			if c.owed {
-				v.Owed = append(v.Owed, h.describe(c))
-			}
-		}
+		v.Owed = append(v.Owed, m.outbox.owedRun(h.issue.ID)...)
 	}
 	v.Owed = append(v.Owed, m.owedPullRequests()...)
 	for _, e := range m.handled {
@@ -517,9 +509,4 @@ func (m *Model) View() View {
 	}
 	v.Bots = m.botsView()
 	return v
-}
-
-// describe returns c as a Call of h.
-func (h *heldIssue) describe(c *call) Call {
-	return Call{Kind: c.kind, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to}
 }
