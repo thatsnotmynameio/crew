@@ -22,7 +22,7 @@ const halves = 2 // the overlay's offset is half the room left around it
 // of them acts outside crew's own process, and none is a mouse event
 // (R9 of #151).
 type keyMap struct {
-	stop, pause, focus, back, bots, events, esc, enter         key.Binding
+	stop, pause, resume, focus, back, bots, events, esc, enter key.Binding
 	up, down, pageUp, pageDown, top, bottom, left, right, help key.Binding
 }
 
@@ -31,6 +31,7 @@ func newKeyMap() keyMap {
 	return keyMap{
 		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", "stop")),
 		pause:    key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "pause")),
+		resume:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "resume")),
 		focus:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus")),
 		back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus back")),
 		bots:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bots")),
@@ -184,7 +185,7 @@ func (m Model) keyHelp() string {
 	switch {
 	case m.snap.TimeUp:
 	case m.snap.Paused:
-		bindings = append(bindings, key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "resume")))
+		bindings = append(bindings, m.keys.resume)
 	default:
 		bindings = append(bindings, m.keys.pause)
 	}
