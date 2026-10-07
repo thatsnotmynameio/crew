@@ -10,8 +10,9 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// tail ends every status comment: a blank line and the marker line.
-const tail = "\n\n" + statusMarker + "\n"
+// tail ends every status comment: a blank line, crew's marker line and the
+// status marker line.
+const tail = "\n\n" + crew.PostedMarker + "\n" + statusMarker + "\n"
 
 // separator is what stands between two entries of a status comment, before
 // the second one's marker line.
@@ -388,5 +389,27 @@ func TestAFailedWriteLeavesTheCommentAsItWas(t *testing.T) {
 	}
 	if n := len(gh.callsTo(listComments...)); n != 1 {
 		t.Errorf("listed the comments %d times, want 1", n)
+	}
+}
+
+// KTD-W2: crew's marker counts toward GitHub's limit, so a comment that the
+// new entry would fill exactly to the limit without the marker is continued
+// in a new comment.
+func TestCrewsMarkerCountsTowardTheLimit(t *testing.T) {
+	text := commentAfter(t, fix(run2, ""))
+	text = strings.TrimSuffix(text, tail)
+	oldTail := "\n\n" + statusMarker + "\n"
+	older := "crew: an older status "
+	older += strings.Repeat("x", maxCommentBytes-len(older+separator+text+oldTail))
+	if n := len(older + separator + text + oldTail); n != maxCommentBytes {
+		t.Fatalf("the edit without crew's marker is %d bytes, want %d", n, maxCommentBytes)
+	}
+	tr, gh := restarted(t, older+oldTail)
+	report(t, tr, fix(run2, ""))
+	if n := len(gh.callsTo(editComment...)); n != 0 {
+		t.Errorf("edited %d times, want none of the full comment", n)
+	}
+	if n := len(gh.callsTo(createComment...)); n != 1 {
+		t.Errorf("created %d comments, want 1 continuing the full one", n)
 	}
 }

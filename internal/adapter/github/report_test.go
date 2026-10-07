@@ -9,8 +9,9 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// Covers R17, KTD23: the report names the action that ended the sequence,
-// its verdict, the route and the log, and quotes nothing else.
+// Covers R17, KTD23 and AE18: the report names the action that ended the
+// sequence, its verdict, the route and the log, and quotes nothing else, and
+// its last line is crew's marker (R46).
 func TestTheReportNamesTheActionItsVerdictTheRouteAndTheLog(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -58,8 +59,8 @@ func TestTheReportNamesTheActionItsVerdictTheRouteAndTheLog(t *testing.T) {
 			if n := len(gh.calls); n != 1 || len(comments) != 1 {
 				t.Fatalf("made %d gh calls, want 1 comment: %q", n, gh.calls)
 			}
-			if body := statusBody(t, comments[0]); body != tt.want {
-				t.Errorf("comment =\n%s\nwant\n%s", body, tt.want)
+			if body, want := statusBody(t, comments[0]), tt.want+postedLine; body != want {
+				t.Errorf("comment =\n%s\nwant\n%s", body, want)
 			}
 		})
 	}

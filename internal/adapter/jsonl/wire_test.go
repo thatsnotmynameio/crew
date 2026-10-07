@@ -50,9 +50,20 @@ func TestATakeKeepsItsWireKeys(t *testing.T) {
 		`"continues":"development-0","actions":[{"name":"install"},{"name":"lfg"},{"name":"judge"}],` +
 		`"start":{"kind":"at","workspace":"issue-9-development","branch":"crew/issue-9-development",` +
 		`"log":".crew/logs/issue-9-development.log","action":"lfg","route":"no-pr",` +
-		`"reason":"no pull request was found","session":"lfg","bot":"crew-developer"}}` + "\n"
+		`"reason":"no pull request was found","session":"lfg","bot":"crew-developer"},` +
+		`"questions":[{"rule_run":"development-0","action":"lfg","login":"crew-developer[bot]"}]}` + "\n"
 	if string(data) != want {
 		t.Fatalf("journal:\n got %s\nwant %s", data, want)
+	}
+}
+
+func TestASessionsStartKeepsItsWireKeys(t *testing.T) {
+	j, root := journal(t)
+	appendAll(t, j, actionEvents()[1])
+
+	got := lines(t, root)[0]
+	if got["bot"] != "crew-developer" || got["login"] != "crew-developer[bot]" || got["asks"] != true {
+		t.Errorf("action_session_started line = %v, want its bot, its login and asks", got)
 	}
 }
 

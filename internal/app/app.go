@@ -220,9 +220,11 @@ type built struct {
 // prepared. A written board needs a tracker that lists issues by any label,
 // a port.BoardLister (KTD3); the default board needs none, since the core
 // fills it from its listings (KTD10). A route that comments or closes needs
-// a tracker that can, a port.Commenter or a port.Closer (KTD7). Every
-// function use is built once, from its parameters, so a parameter its
-// function refuses stops crew before it polls (R28).
+// a tracker that can, a port.Commenter or a port.Closer (KTD7), and a
+// session that may wait for answers one that lists comments, a
+// port.CommentLister (KTD-W5). Every function use is built once, from its
+// parameters, so a parameter its function refuses stops crew before it
+// polls (R28).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root, o.GlobalConfig, o.Registry.Functions())
 	if err != nil {
@@ -246,7 +248,8 @@ func build(o Options) (built, error) {
 	if _, ok := tracker.(port.BoardLister); cfg.BoardWritten && !ok {
 		return built{}, fmt.Errorf("board: tracker %q cannot list issues by any label", cfg.Tracker)
 	}
-	if err := routeSteps(cfg.Tracker, tracker, cfg.Rules); err != nil {
+	if err := errors.Join(routeSteps(cfg.Tracker, tracker, cfg.Rules),
+		waitingSessions(cfg.Tracker, tracker, cfg.Rules)); err != nil {
 		return built{}, err
 	}
 	return built{cfg: cfg, tracker: tracker, harnesses: harnesses, functions: functions}, nil
@@ -275,34 +278,6 @@ func buildFunctions(r registry.Registry, uses []config.FunctionUse) (map[crew.Fu
 	return out, errors.Join(errs...)
 }
 
-// routeSteps returns an error for each route of rules with a step tracker,
-// named name, cannot take: a comment without a port.Commenter, a close
-// without a port.Closer. Each error names the rule and the route by their
-// key path in the config.
-func routeSteps(name string, tracker port.Tracker, rules []crew.Rule) error {
-	_, comments := tracker.(port.Commenter)
-	_, closes := tracker.(port.Closer)
-	var errs []error
-	for _, r := range rules {
-		for _, route := range r.Routes {
-			path := fmt.Sprintf("rules.%s.routes.%s", r.Name, route.Name)
-			if !comments && slices.ContainsFunc(route.Steps, isStep[crew.CommentStep]) {
-				errs = append(errs, fmt.Errorf("%s: tracker %q cannot comment on issues", path, name))
-			}
-			if !closes && slices.ContainsFunc(route.Steps, isStep[crew.CloseStep]) {
-				errs = append(errs, fmt.Errorf("%s: tracker %q cannot close issues", path, name))
-			}
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// isStep reports whether s is a step of type T.
-func isStep[T crew.Step](s crew.Step) bool {
-	_, ok := s.(T)
-	return ok
-}
-
 // bots makes the bots the config names act, through Options.Bots, and
 // none when it names none.
 func (b built) bots(ctx context.Context, o Options) (Bots, error) {
@@ -322,7 +297,13 @@ func (b built) bots(ctx context.Context, o Options) (Bots, error) {
 // engine builds the engine of the config and its adapters, whose actions
 // act as bots.
 func (b built) engine(o Options, bots Bots) *engine.Engine {
-	return engine.New(engine.Config{
+	return engine.New(b.engineConfig(o, bots))
+}
+
+// engineConfig is what engine hands the engine: the config, its adapters
+// and bots, the bots that act.
+func (b built) engineConfig(o Options, bots Bots) engine.Config {
+	return engine.Config{
 		Rules:             b.cfg.Rules,
 		MaxParallelIssues: b.cfg.MaxParallelIssues,
 		PollInterval:      b.cfg.PollInterval,
@@ -340,13 +321,24 @@ func (b built) engine(o Options, bots Bots) *engine.Engine {
 		Writer:            bots.Writer,
 		Identities:        bots.Identities,
 		BotLogins:         bots.Logins,
+		AnsweringApps:     answeringApps(b.cfg, bots),
 		DefaultBot:        b.cfg.Bot.Name,
 		Bots:              b.cfg.BotNames(),
 		Unable:            bots.Unable,
 		BotFailures:       bots.Failing,
 		Board:             b.cfg.Board,
 		BoardWritten:      b.cfg.BoardWritten,
-	})
+	}
+}
+
+// answeringApps returns the answering list: the config's answering_apps
+// when it writes them, [] included, and otherwise the logins of crew's bots
+// (R38, KTD-W4).
+func answeringApps(cfg *config.Config, bots Bots) []string {
+	if cfg.AnsweringAppsWritten {
+		return slices.Clone(cfg.AnsweringApps)
+	}
+	return slices.Clone(bots.Logins)
 }
 
 // journal returns the run journal of the repository at Root, through

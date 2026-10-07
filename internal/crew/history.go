@@ -7,8 +7,9 @@ const crashedReason = "crew stopped before the run ended: it crashed or was kill
 // History is the past of the rule runs, folded from their events in the
 // order they happened, replayed from a journal or live: for each issue and
 // rule its last run, rebuilt with Apply. Start reads a new run's start from
-// it. It retires nothing by itself: the core has it Retire the runs whose
-// worktree's name another run opens.
+// it, and Questions the open questions the new run inherits. It retires
+// nothing by itself: the core has it Retire the runs whose worktree's name
+// another run opens.
 //
 // The zero History holds no past. Fold changes it, so the one that holds it
 // is the one that folds every event; its accessors return copies.
@@ -125,18 +126,30 @@ func startAfter(last RuleRun, rule Rule) Start {
 // passed route alone, in last's worktree, when it was given up or never
 // settled.
 func passedAfter(last RuleRun) Start {
-	if p, ok := last.route(); ok {
-		switch final, _ := p.Final(); final.(type) {
-		case StepLanded, StepDropped:
-			return StartFresh{}
-		case StepGivenUp, StepRan, StepFailed, StepSkipped, StepStopped, nil:
-		}
+	if passedFinished(last) {
+		return StartFresh{}
 	}
 	s := StartPassedRoute{Session: last.session}
 	if w, log, ok := worktreeOf(last); ok {
 		s.Workspace, s.Log = Some(w), log
 	}
 	return s
+}
+
+// passedFinished reports whether last chose PassedRoute and finished it:
+// its final move or close landed, or was dropped since the item moved
+// meanwhile.
+func passedFinished(last RuleRun) bool {
+	if route, chosen := chosenRoute(last); !chosen || route != PassedRoute {
+		return false
+	}
+	p, _ := last.route()
+	switch final, _ := p.Final(); final.(type) {
+	case StepLanded, StepDropped:
+		return true
+	case StepGivenUp, StepRan, StepFailed, StepSkipped, StepStopped, nil:
+	}
+	return false
 }
 
 // chosenRoute returns the route last chose, and whether it chose one: the

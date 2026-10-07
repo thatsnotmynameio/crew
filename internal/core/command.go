@@ -27,9 +27,10 @@ type TrackerCommand interface {
 }
 
 // RunCommand is a command about one rule run: its workspace, its actions'
-// sessions and scripts, its route's shell steps and the lookup of its pull
-// requests, which carry the run's id so their results reach that run only
-// (KTD7), and the record of its runs in the journal.
+// sessions and scripts, the read of the answers its sessions start with,
+// its route's shell steps and the lookup of its pull requests, which carry
+// the run's id so their results reach that run only (KTD7), and the record
+// of its runs in the journal.
 //
 //sumtype:decl
 type RunCommand interface {
@@ -230,6 +231,16 @@ type FindPullRequest struct {
 	Since   time.Time
 }
 
+// ReadAnswers asks the tracker for every comment on the issue of the rule
+// run Run before the session of its action Action starts, when the run has
+// open questions at Action (KTD-W6). Its result is AnswersRead, carrying
+// Run and Action.
+type ReadAnswers struct {
+	IssueID crew.IssueID
+	Run     crew.RuleRunID
+	Action  crew.ActionName
+}
+
 // ReportStatus asks the tracker to show Status on its issue's status
 // comment (KTD3). Its result is a StatusResult carrying Status.IssueID. The
 // core never has two status writes of one issue in flight.
@@ -263,6 +274,7 @@ func (StopShell) command()          {}
 func (RunStepShell) command()       {}
 func (StopStepShell) command()      {}
 func (FindPullRequest) command()    {}
+func (ReadAnswers) command()        {}
 
 func (ListIssues) trackerCommand()         {}
 func (ListBoard) trackerCommand()          {}
@@ -283,3 +295,4 @@ func (StopShell) runCommand()       {}
 func (RunStepShell) runCommand()    {}
 func (StopStepShell) runCommand()   {}
 func (FindPullRequest) runCommand() {}
+func (ReadAnswers) runCommand()     {}

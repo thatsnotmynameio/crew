@@ -189,6 +189,24 @@ func (d *driver) run(id crew.IssueID) crew.RuleRunID {
 func (d *driver) named(in core.Input) core.Input {
 	fill := d.fill
 	switch in := in.(type) {
+	case core.RunInput:
+		return d.namedRun(in)
+	case core.Tick:
+		in.Said = slices.Clone(in.Said)
+		for i := range in.Said {
+			fill(&in.Said[i].Run, in.Said[i].IssueID)
+		}
+		return in
+	case core.SchedulerInput:
+	}
+	return in
+}
+
+// namedRun returns in, an input about a run, with its run filled in, when
+// it names none, as named does.
+func (d *driver) namedRun(in core.RunInput) core.Input {
+	fill := d.fill
+	switch in := in.(type) {
 	case core.WorkspaceReady:
 		fill(&in.Run, in.IssueID)
 		return in
@@ -222,13 +240,9 @@ func (d *driver) named(in core.Input) core.Input {
 	case core.PullRequestFound:
 		fill(&in.Run, in.IssueID)
 		return in
-	case core.Tick:
-		in.Said = slices.Clone(in.Said)
-		for i := range in.Said {
-			fill(&in.Said[i].Run, in.Said[i].IssueID)
-		}
+	case core.AnswersRead:
+		fill(&in.Run, in.IssueID)
 		return in
-	case core.SchedulerInput:
 	}
 	return in
 }
@@ -282,7 +296,8 @@ func (d *driver) settle(cmds []core.Command) {
 				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Run: c.Run, Action: c.Action})
 			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 				core.Record, core.StopSession, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell,
-				core.RunFunction, core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest:
+				core.RunFunction, core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest,
+				core.ReadAnswers:
 				// Left unanswered.
 			}
 			next = append(next, out...)
@@ -328,7 +343,7 @@ func noIDs(cmds []core.Command) []core.Command {
 		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
 			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunShell, core.StopShell,
 			core.RunStepShell, core.StopStepShell, core.RunFunction, core.StopFunction, core.RunStepFunction,
-			core.StopStepFunction, core.FindPullRequest:
+			core.StopStepFunction, core.FindPullRequest, core.ReadAnswers:
 		}
 		out = append(out, c)
 	}
@@ -476,7 +491,7 @@ func issueKey(c core.Command) string {
 		return c.IssueID.Key
 	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 		core.Record, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell, core.RunFunction,
-		core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest:
+		core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest, core.ReadAnswers:
 	}
 	return ""
 }

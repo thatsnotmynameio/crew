@@ -51,6 +51,9 @@ type RunTaken struct {
 	// the first action, at a restart point in that run's reopened
 	// worktree, or with PassedRoute alone. Nil counts as StartFresh.
 	Start Start
+	// Questions are the open questions the run inherits from the run it
+	// continues (History.Questions), oldest first.
+	Questions []Question
 }
 
 // TakeMoved is the run's take move that landed: the issue moved from From
@@ -120,6 +123,12 @@ type ActionSessionStarted struct {
 	// Bot is the bot the session acts as; the run's actions that are not
 	// sessions act as it from then on.
 	Bot Bot
+	// Login is the login the session acts as; empty when unknown.
+	Login string
+	// Asks says whether the session may ask a question on the issue: its
+	// action's on: has a Waiting entry. Applied, it adds the session to
+	// the run's open questions (KTD-W7).
+	Asks bool
 }
 
 // ActionSessionStopAsked is an action's running session asked to stop.

@@ -30,7 +30,7 @@ func Apply(run RuleRun, e RunEvent) (RuleRun, error) {
 // done in an earlier run, an action the rule lost counting as the first;
 // or, for the passed route alone, with every action done in an earlier run
 // and its cursor on the last. A resumed run inherits the continued run's
-// latest session.
+// latest session, and every run the open questions its take carries.
 func (e RunTaken) apply(RuleRun) RuleRun {
 	start := e.Start
 	if start == nil {
@@ -39,7 +39,7 @@ func (e RunTaken) apply(RuleRun) RuleRun {
 	r := RuleRun{
 		id: e.Run, continues: e.Continues, issue: NewIssue(e.Issue), rule: e.Rule, taken: e.At,
 		phase: TakingPhase{}, workspace: NoWorkspace{}, start: start, session: inherited(start),
-		lookup: LookupNotAsked{},
+		questions: slices.Clone(e.Questions), lookup: LookupNotAsked{},
 	}
 	for _, name := range e.Actions {
 		r.actions = append(r.actions, newActionRun(name))
@@ -84,8 +84,8 @@ func (e WorkspaceAsked) apply(r RuleRun) RuleRun {
 // apply drops the worktree from the run's start. A run that resumed at an
 // action starts fresh: its cursor moves back to its first action, which no
 // earlier run did in the new workspace, and it no longer inherits the
-// continued run's latest session. The passed route alone keeps its
-// actions as they were.
+// continued run's latest session, though it keeps the open questions it
+// inherited. The passed route alone keeps its actions as they were.
 func (WorkspaceMissing) apply(r RuleRun) RuleRun {
 	r = r.acting()
 	r.workspace, r.start = NoWorkspace{}, WithoutWorktree(r.Start())
@@ -116,8 +116,13 @@ func (e ActionSessionAsked) apply(r RuleRun) RuleRun {
 	})
 }
 
+// apply makes the session the run's latest, and one of its open questions
+// when it may ask one.
 func (e ActionSessionStarted) apply(r RuleRun) RuleRun {
 	r.session = Some(LatestSession{Action: e.Action, Bot: e.Bot})
+	if e.Asks {
+		r = r.asked(e.Action, e.Login)
+	}
 	return r.withAction(e.Action, func(a ActionRun) ActionRun {
 		a.state, a.session = InSession{}, Some(e.At)
 		return a
@@ -172,16 +177,25 @@ func (e ActionFunctionEnded) apply(r RuleRun) RuleRun {
 }
 
 // apply ends the action with what the event recorded, which, for an end
-// Decide returned, is what the action run already holds.
+// Decide returned, is what the action run already holds. A session that
+// started in this run and ended well ends on the open questions at its
+// action (KTD-W7); one that failed, crew stopped or never started ends on
+// none, as it may have asked before it was cut short.
 func (e ActionEnded) apply(r RuleRun) RuleRun {
-	return r.withAction(e.Action, func(a ActionRun) ActionRun {
+	var session bool
+	r = r.withAction(e.Action, func(a ActionRun) ActionRun {
 		if _, ok := e.SessionStarted.Get(); ok {
 			a.session = e.SessionStarted
 		}
+		_, session = a.session.Get()
 		a.usage = cloneUsage(e.Usage)
 		a.state = Finished{End: e.End, Verdict: e.Verdict, Target: e.Target}
 		return a
 	})
+	if _, well := e.End.(EndSucceeded); session && well {
+		r = r.endedOn(e.Action, e.Verdict)
+	}
+	return r
 }
 
 // apply ends the run's sequence: its cursor stays on the event's action,

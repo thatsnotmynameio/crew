@@ -134,7 +134,8 @@ func TestAReportMirrorsTheLabelAndPostsTheStopComment(t *testing.T) {
 	body := "crew: `development` ended through `passed` on #42, which moved to `crew:waiting review`, " +
 		"as did this pull request.\n" +
 		"\n" + nobodyWatches + "\n" +
-		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n"
+		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n" +
+		postedLine
 	if got := comments(t, gh, 50); !slices.Equal(got, []string{body}) {
 		t.Errorf("comments on 50 = %q, want one:\n%s", got, body)
 	}
@@ -164,7 +165,8 @@ func TestAStoppedRuleSaysItFailedBecauseCrewStoppedIt(t *testing.T) {
 		"as did this pull request.\n" +
 		"\n**`lfg`** failed: crew stopped it. Its log is `.crew/logs/issue-42-lfg.log`.\n" +
 		"\n" + nobodyWatches + "\n" +
-		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n"
+		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n" +
+		postedLine
 	if got := comments(t, gh, 50); !slices.Equal(got, []string{body}) {
 		t.Errorf("comments on 50 = %q, want one:\n%s", got, body)
 	}
@@ -542,7 +544,8 @@ func TestAReportAfterACloseEditsNoLabelAndSaysTheIssueWasClosed(t *testing.T) {
 		"crew took its labels off this pull request, which stays open.\n" +
 		"\n**`lfg`** ended with `duplicate`.\n" +
 		"\n" + nobodyWatches + "\n" +
-		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n"
+		"\n#42's [status comment](https://github.com/o/r/issues/42#issuecomment-101) has the details.\n" +
+		postedLine
 	if got := comments(t, gh, 50); !slices.Equal(got, []string{body}) {
 		t.Errorf("comments on 50 = %q, want one:\n%s", got, body)
 	}

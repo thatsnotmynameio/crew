@@ -26,10 +26,11 @@ type Input interface {
 }
 
 // RunInput is the result of a RunCommand about one rule run: its
-// workspace, an action's session or script, a route's shell step, or the
-// lookup of its pull requests. It names the run that asked, and the core hands it to that run only, so an
-// answer for a run it no longer holds changes nothing, even while a newer
-// run of the same issue runs the same action (KTD7).
+// workspace, an action's session or script, the read of the answers a
+// session starts with, a route's shell step, or the lookup of its pull
+// requests. It names the run that asked, and the core hands it to that
+// run only, so an answer for a run it no longer holds changes nothing,
+// even while a newer run of the same issue runs the same action (KTD7).
 //
 //sumtype:decl
 type RunInput interface {
@@ -317,6 +318,20 @@ type PullRequestFound struct {
 	PullRequest crew.PullRequest
 }
 
+// AnswersRead is a ReadAnswers that ended: every comment on the issue,
+// oldest first, or Failed, with a Reason crew may show, when the tracker
+// could not list them. The comments reach only the session's prompt, never
+// a run event, the journal, a comment or the status (KTD-W6).
+type AnswersRead struct {
+	At       time.Time
+	IssueID  crew.IssueID
+	Run      crew.RuleRunID
+	Action   crew.ActionName
+	Comments []crew.Comment
+	Failed   bool
+	Reason   crew.SessionText
+}
+
 // Stamped implements Input.
 func (i Tick) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
@@ -383,6 +398,9 @@ func (i StepShellEnded) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; re
 // Stamped implements Input.
 func (i PullRequestFound) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
+// Stamped implements Input.
+func (i AnswersRead) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
+
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }
 func (i TimeUp) arrival() time.Time               { return i.At }
@@ -404,6 +422,7 @@ func (i SessionEnded) arrival() time.Time         { return i.At }
 func (i ShellEnded) arrival() time.Time           { return i.At }
 func (i StepShellEnded) arrival() time.Time       { return i.At }
 func (i PullRequestFound) arrival() time.Time     { return i.At }
+func (i AnswersRead) arrival() time.Time          { return i.At }
 
 func (i WorkspaceReady) ruleRun() crew.RuleRunID       { return i.Run }
 func (i WorkspaceGone) ruleRun() crew.RuleRunID        { return i.Run }
@@ -414,6 +433,7 @@ func (i SessionEnded) ruleRun() crew.RuleRunID         { return i.Run }
 func (i ShellEnded) ruleRun() crew.RuleRunID           { return i.Run }
 func (i StepShellEnded) ruleRun() crew.RuleRunID       { return i.Run }
 func (i PullRequestFound) ruleRun() crew.RuleRunID     { return i.Run }
+func (i AnswersRead) ruleRun() crew.RuleRunID          { return i.Run }
 
 func (Tick) schedulerInput()               {}
 func (StopRequested) schedulerInput()      {}
