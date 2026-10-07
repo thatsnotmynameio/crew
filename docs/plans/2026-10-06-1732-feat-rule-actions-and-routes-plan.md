@@ -11,6 +11,8 @@ execution: code
 
 # Rules as a sequence of actions with routes by verdict - Plan
 
+Superseded by `docs/plans/2026-10-07-0724-feat-rule-sequences-and-routes-plan.md`, which plans the same work again on the domain #237 redesigned and folds in #227.
+
 ## Goal Capsule
 
 - **Objective:** the boss can write a rule that runs any mix of agent sessions, shell scripts and crew functions one after another, and sends each issue where the result says it should go, including a pause while a session waits for an answer, without changing crew's code for each new case.
