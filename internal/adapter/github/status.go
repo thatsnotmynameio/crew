@@ -441,27 +441,6 @@ func (t *Tracker) renderStatus(s crew.Status) string {
 	return b.String()
 }
 
-// usage words what an ended action's session spent and the pull request it
-// opened, after a space, as in " Usage: $12.40, 17.2M tokens. Pull request:
-// [#45](url).", or returns "" when its status holds no session's spend.
-// These are crew's own figures and the tracker's link, never the session's
-// words.
-func usage(a crew.ActionStatus) string {
-	if a.Spend.Sessions == 0 {
-		return ""
-	}
-	var pr string
-	switch a.PullRequest.Lookup {
-	case crew.PullRequestFound:
-		pr = "[" + a.PullRequest.Ref + "](" + a.PullRequest.URL + ")"
-	case crew.PullRequestNone:
-		pr = "none"
-	default:
-		pr = "not looked up"
-	}
-	return " Usage: " + a.Spend.String() + ". Pull request: " + pr + "."
-}
-
 // writeHeadline writes the status entry's first line: what the rule does.
 func writeHeadline(b *strings.Builder, s crew.Status) {
 	rule := codeSpan(string(s.Rule))

@@ -51,17 +51,6 @@ const (
 	KindPullRequest
 )
 
-// String names the kind for renderers: "issue" or "pull request".
-func (k Kind) String() string {
-	switch k {
-	case KindIssue:
-		return "issue"
-	case KindPullRequest:
-		return "pull request"
-	}
-	return "unknown"
-}
-
 // Clone returns a copy of i with its own States, so the copy shares no slice
 // with i.
 func (i Issue) Clone() Issue {

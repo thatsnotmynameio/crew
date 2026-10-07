@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/thatsnotmynameio/crew/internal/ui/lines"
 )
 
 const (
@@ -32,7 +34,7 @@ func (m Model) header() string {
 			items = append(items, s.warning.Render(short(started.Add(limit).Sub(m.at))+" left"))
 		}
 	}
-	for _, part := range spendParts(m.snap.Spent) {
+	for _, part := range lines.SpendParts(m.snap.Spent) {
 		items = append(items, s.text.Render(part))
 	}
 	right := s.muted.Render("? help")

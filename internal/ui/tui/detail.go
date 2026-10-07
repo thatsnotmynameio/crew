@@ -43,7 +43,7 @@ func (m Model) popupHeader(c card) []string {
 		url = s.link(clean(c.issue.URL), c.issue.URL)
 	}
 	labels := []string{"rule", "labels", "kind", "priority", "url"}
-	values := []string{rule, m.chips(c), s.text.Render(c.issue.Kind.String()), priority, url}
+	values := []string{rule, m.chips(c), s.text.Render(lines.KindName(c.issue.Kind)), priority, url}
 	width := widest(labels)
 	out := make([]string, 0, len(labels))
 	for i, l := range labels {

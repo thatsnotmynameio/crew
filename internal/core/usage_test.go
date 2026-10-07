@@ -24,6 +24,9 @@ var (
 	pr45   = crew.PullRequest{Lookup: crew.PullRequestFound, Ref: "#45", URL: "https://example.com/pull/45"}
 	noPR   = crew.PullRequest{Lookup: crew.PullRequestNone}
 	tokens = crew.Usage{Tokens: crew.Tokens{Output: 5}, HasTokens: true}
+	// partialSpend is spent's session summed with one that reported
+	// nothing: two sessions, of which only one reported cost and tokens.
+	partialSpend = crew.Spend{Sessions: 2, Cost: 12.40, WithCost: 1, Tokens: spent.Tokens, WithTokens: 1}
 )
 
 // lookups returns the FindPullRequest commands in cmds.
@@ -85,8 +88,8 @@ func TestAE1AnEndedSessionLooksUpItsPullRequestAndRecordsItWithItsUsage(t *testi
 	if !reflect.DeepEqual(entry.Actions, want) {
 		t.Fatalf("handled actions = %#v, want %#v", entry.Actions, want)
 	}
-	if got := entry.Spend().String(); got != "$12.40 (partial), 370 tokens (partial)" {
-		t.Fatalf("handled spend = %q", got)
+	if got := entry.Spend(); got != partialSpend {
+		t.Fatalf("handled spend = %#v, want %#v", got, partialSpend)
 	}
 }
 
@@ -206,8 +209,8 @@ func TestAE4ARuleMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
 	verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
 	d.settle(verdict)
 
-	if got := onlyEntry(t, d).Spend().String(); got != "$12.40 (partial), 370 tokens (partial)" {
-		t.Fatalf("handled spend = %q, want the known cost marked partial", got)
+	if got := onlyEntry(t, d).Spend(); got != partialSpend {
+		t.Fatalf("handled spend = %#v, want the known cost of two sessions, %#v", got, partialSpend)
 	}
 }
 
@@ -222,8 +225,8 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 	verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
 	d.settle(verdict)
 
-	if got := onlyEntry(t, d).Spend().String(); got != "$12.40, 370 tokens" {
-		t.Fatalf("handled spend = %q, want only the session's", got)
+	if got, want := onlyEntry(t, d).Spend(), spent.Spend(); got != want {
+		t.Fatalf("handled spend = %#v, want only the session's, %#v", got, want)
 	}
 	if got := d.m.View().Spent; got != spent.Spend() {
 		t.Fatalf("run spend = %#v, want only the session's", got)
@@ -247,8 +250,11 @@ func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	if got := onlyEntry(t, d).Rule; got != "review" {
 		t.Fatalf("handled shows %q, want only the review rule", got)
 	}
-	if got := d.m.View().Spent.String(); got != "$24.80 (partial), 745 tokens" {
-		t.Fatalf("run spend = %q, want all three sessions", got)
+	want := crew.Spend{Sessions: 3, Cost: 24.80, WithCost: 2, Tokens: crew.Tokens{
+		Input: 20, Output: 45, CacheRead: 600, CacheWrite: 80,
+	}, WithTokens: 3}
+	if got := d.m.View().Spent; got != want {
+		t.Fatalf("run spend = %#v, want all three sessions, %#v", got, want)
 	}
 }
 
