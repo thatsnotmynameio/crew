@@ -83,11 +83,11 @@ func (s *step) command(c Command) { s.cmds = append(s.cmds, c) }
 func (s *step) emit(e Published)  { s.events = append(s.events, e) }
 
 // windDown starts the stop sequence once the run time is up and no held
-// run holds crew (KTD12): each routes with no shell step left to run, or
-// with a tracker step in flight that is owed. The stop then gives owed
-// calls their final try (R5) and skips what is left of each route's shell
-// steps, so time-up never cuts a route's shell step short, while an outage
-// cannot hold crew past the limit.
+// run holds crew (KTD12): each routes with no shell or function step left
+// to run, or with a tracker step in flight that is owed. The stop then
+// gives owed calls their final try (R5) and skips what is left of each
+// route's shell and function steps, so time-up never cuts a route's shell
+// or function step short, while an outage cannot hold crew past the limit.
 func (s *step) windDown() {
 	m := s.m
 	if !m.timeUp || m.stopping {
@@ -102,18 +102,18 @@ func (s *step) windDown() {
 }
 
 // windsDown reports whether h lets crew stop once its run time is up: its
-// run chose its route, and either has no shell step left or has a tracker
-// step in flight that is owed.
+// run chose its route, and either has no shell or function step left or
+// has a tracker step in flight that is owed.
 func (m *Model) windsDown(h *heldRun) bool {
 	p, routing := h.run.Phase().(crew.RoutingPhase)
 	if !routing {
 		return false
 	}
 	i, asked := p.InFlight()
-	if asked && p.Steps[i].Kind != crew.StepShell && m.outbox.owing(h.id()) {
+	if asked && p.Steps[i].Kind.Delivered() && m.outbox.owing(h.id()) {
 		return true
 	}
-	return !slices.ContainsFunc(p.Steps[i:], func(st crew.StepPlan) bool { return st.Kind == crew.StepShell })
+	return !slices.ContainsFunc(p.Steps[i:], func(st crew.StepPlan) bool { return !st.Kind.Delivered() })
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has

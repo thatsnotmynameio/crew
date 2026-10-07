@@ -61,12 +61,17 @@ func (p parsedRule) rule() crew.Rule {
 }
 
 // ruleEnv is what the rules' names resolve against: the queues, the agents,
-// the shell actions by name, and tracker.bot.
+// the shell actions and the function presets by name, the registered
+// functions with their declared verdicts, and tracker.bot. uses gathers
+// each function use as it is parsed.
 type ruleEnv struct {
-	queues  queueTable
-	agents  []Agent
-	actions map[crew.ActionName]crew.ShellSpec
-	bot     crew.Bot
+	queues    queueTable
+	agents    []Agent
+	actions   map[crew.ActionName]crew.ShellSpec
+	presets   map[crew.ActionName]preset
+	functions map[string][]crew.Verdict
+	bot       crew.Bot
+	uses      *[]FunctionUse
 }
 
 // rules decodes and validates rules:, resolving each rule's queue, each

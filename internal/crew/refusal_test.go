@@ -83,6 +83,10 @@ var actionRefusals = []refusal{
 	{name: "shellEnded for a script that ended", given: inSession(), fact: shellEnded(5, "install", exited(0, ""))},
 	{name: "shellEnded while routing", given: passedAll(), fact: shellEnded(7, "judge", exited(0, ""))},
 	{name: "an action the run does not have", given: installing(), fact: shellEnded(3, "deploy", exited(0, ""))},
+	{name: "functionEnded while a script runs", given: installing(), fact: functionEnded(3, "install", noVerdict)},
+	{name: "functionEnded while a session runs", given: inSession(), fact: functionEnded(5, "lfg", noVerdict)},
+	{name: "functionEnded while routing", given: passedAll(), fact: functionEnded(7, "judge", noVerdict)},
+	{name: "shellEnded while a function runs", given: checking(), fact: shellEnded(6, "check", exited(0, ""))},
 }
 
 // lookupRefusals are lookups the run did not ask for, or that it already
@@ -115,7 +119,17 @@ var stepRefusals = []refusal{
 	{name: "stepShellEnded for a step not in flight", given: notifying(), fact: shellStepEnded(6, 1, exited(0, ""))},
 	{name: "stepShellEnded while the lookup is pending", given: lookingUp(), fact: shellStepEnded(7, 0, exited(0, ""))},
 	{name: "stepShellEnded for a released run", given: released(), fact: shellStepEnded(9, 0, exited(0, ""))},
+	{name: "stepSettled for a function step", given: checkingStep(), fact: settled(6, 0, StepLanded{})},
+	{name: "stepShellEnded for a function step", given: checkingStep(), fact: shellStepEnded(6, 0, exited(0, ""))},
+	{name: "stepFunctionEnded for a shell step", given: notifying(), fact: functionStepEnded(6, 0, noVerdict)},
+	{name: "stepFunctionEnded for a tracker step", given: lfgFailed(), fact: functionStepEnded(6, 0, noVerdict)},
+	{name: "stepFunctionEnded while the actions run", given: checking(), fact: functionStepEnded(6, 0, noVerdict)},
+	{name: "stepFunctionEnded for a step not in flight", given: checkingStep(), fact: functionStepEnded(6, 1, noVerdict)},
 }
+
+// checkingStep is the run through a failed route of a function step and a
+// move, after lfg failed, whose function step runs.
+func checkingStep() []RunEvent { return lfgFailedThrough(checkStep, moveFailed) }
 
 func TestDecideRefusesWhatTheRunDoesNotWaitFor(t *testing.T) {
 	for _, table := range [][]refusal{runRefusals, workspaceRefusals, actionRefusals, lookupRefusals, stepRefusals} {

@@ -13,8 +13,8 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// stepKey identifies the shell step at index step of the route of one rule
-// run, which is no action of it.
+// stepKey identifies the shell or function step at index step of the
+// route of one rule run, which is no action of it.
 type stepKey struct {
 	run  crew.RuleRunID
 	step int
@@ -46,9 +46,9 @@ func (e *Engine) runStepShell(ctx context.Context, c core.RunStepShell) func() {
 	}
 }
 
-// stopScript ends the script running holds under key. The core asks to
-// stop only scripts it started, and their end still arrives through their
-// own goroutine.
+// stopScript ends the script or function running holds under key. The
+// core asks to stop only scripts and functions it started, and their end
+// still arrives through their own goroutine.
 func stopScript[K comparable](running map[K]context.CancelFunc, key K) {
 	if cancel, ok := running[key]; ok {
 		cancel()
@@ -74,7 +74,7 @@ func (e *Engine) runScript(
 	if e.cfg.Shell == nil {
 		return notStarted(errors.New("crew has no shell to run it"))
 	}
-	logRel := scriptLog(issue, s)
+	logRel := scriptLog(issue, s.Log, s.Rule)
 	prompt, last, err := e.session(logRel, s.Session)
 	if err != nil {
 		return notStarted(err)
@@ -114,14 +114,14 @@ func (e *Engine) runScript(
 	return notStarted(err)
 }
 
-// scriptLog returns the repository-relative path of the log s writes
-// into: its run's, or for a run without a workspace the log of the
-// workspace the run of s's rule on issue would have (KTD-S13).
-func scriptLog(issue crew.IssueID, s core.Script) string {
-	if s.Log != "" {
-		return s.Log
+// scriptLog returns the repository-relative path of the log a script or a
+// function writes into: log, its run's, or for a run without a workspace
+// the log of the workspace the run of rule on issue would have (KTD-S13).
+func scriptLog(issue crew.IssueID, log string, rule crew.RuleName) string {
+	if log != "" {
+		return log
 	}
-	return logPath(port.WorkspaceBase(issue, s.Rule))
+	return logPath(port.WorkspaceBase(issue, rule))
 }
 
 // scriptDir returns the directory a script runs in, dir, and what removes

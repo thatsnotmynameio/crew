@@ -52,3 +52,14 @@ rules:
 		}
 	}
 }
+
+// R31: crew registers no function yet, so its catalog is empty.
+func TestDefaultRegistersNoFunction(t *testing.T) {
+	r := registry.Default(&proc.Group{})
+
+	if got := r.Functions(); len(got) != 0 {
+		t.Errorf("Functions = %v, want none", got)
+	}
+	_, err := r.Function("rules.implement.actions[0].function", "check-ci", func(any) error { return nil })
+	assertErr(t, err, "the registered functions are: none")
+}

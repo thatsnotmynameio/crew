@@ -86,11 +86,11 @@ func (m *Model) definition(h *heldRun) crew.RunDefinition {
 }
 
 // runInput hands an input about a rule run's workspace, an action's
-// session or script, a route's shell step or the lookup of its pull
-// requests to the held rule run it names, as the fact it tells (KTD-P4,
-// KTD7). An input naming a run the core does not hold, such as a late
-// answer for a released run, changes nothing, even while a newer run of
-// the same issue runs the same action.
+// session, script or function, a route's shell or function step or the
+// lookup of its pull requests to the held rule run it names, as the fact
+// it tells (KTD-P4, KTD7). An input naming a run the core does not hold,
+// such as a late answer for a released run, changes nothing, even while a
+// newer run of the same issue runs the same action.
 func (s *step) runInput(in RunInput) {
 	h := s.m.findRun(in.ruleRun())
 	if h == nil {
@@ -116,6 +116,10 @@ func (s *step) runInput(in RunInput) {
 		s.decide(h, crew.ShellEnded{FactHead: head, Action: in.Action, Outcome: in.Outcome})
 	case StepShellEnded:
 		s.decide(h, crew.StepShellEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
+	case FunctionEnded:
+		s.decide(h, crew.FunctionEnded{FactHead: head, Action: in.Action, Outcome: in.Outcome})
+	case StepFunctionEnded:
+		s.decide(h, crew.StepFunctionEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
 	case PullRequestFound:
 		s.decide(h, crew.PullRequestLookedUp{FactHead: head, PullRequest: in.PullRequest})
 	}
@@ -191,17 +195,18 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 	case crew.RunTaken, crew.RunStopped, crew.RunOutOfTime:
 		// Nothing to do outside the run.
 	case crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
-		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded:
+		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked,
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionEnded:
 		s.onAction(h, e)
 	case crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
-		crew.StepEnded:
+		crew.StepFunctionStopAsked, crew.StepEnded:
 		s.onRoute(h, e)
 	}
 }
 
 // onAction issues the commands e, an event about the action at the cursor
 // of h's run, calls for, and publishes e when the views word it: a started
-// session or script, or an ended action.
+// session, script or function, or an ended action.
 func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionSessionAsked:
@@ -215,12 +220,17 @@ func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 		s.runShell(h, e)
 	case crew.ActionShellStopAsked:
 		s.command(StopShell{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
+	case crew.ActionFunctionAsked:
+		s.emit(e)
+		s.runFunction(h, e)
+	case crew.ActionFunctionStopAsked:
+		s.command(StopFunction{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
 		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionEnded, crew.ActionShellEnded,
-		crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
-		crew.StepEnded, crew.RunReleased:
+		crew.ActionFunctionEnded, crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked,
+		crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }

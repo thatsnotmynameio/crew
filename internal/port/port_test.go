@@ -38,3 +38,11 @@ func TestPrepareReturnsEveryFailure(t *testing.T) {
 		t.Errorf("harness prepared %d times, want once despite the tracker's failure", len(harness.Calls()))
 	}
 }
+
+func TestRefusedParameterNamesTheParameterAndTheReason(t *testing.T) {
+	err := error(port.RefusedParameterError{Parameter: "count", Reason: "must be at least 1"})
+
+	if got, want := err.Error(), "count: must be at least 1"; got != want {
+		t.Errorf("Error = %q, want %q", got, want)
+	}
+}

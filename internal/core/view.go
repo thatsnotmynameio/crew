@@ -322,7 +322,7 @@ func (h *heldRun) actionViews() []ActionView {
 	for _, a := range actions {
 		v := ActionView{
 			Name: a.Name(), Phase: phaseOf(a.State()), Workspace: w.Workspace.Name, Branch: w.Workspace.Branch,
-			Log: w.Log, Resumed: w.Resumed,
+			Log: h.run.ActionLog(a), Resumed: w.Resumed,
 		}
 		if a.Name() == cursor.Name() && v.Phase == PhaseAwaitingTurn {
 			v.Phase = h.startPhase()
@@ -330,6 +330,8 @@ func (h *heldRun) actionViews() []ActionView {
 		v.Started, _ = a.SessionStarted().Get()
 		switch s := a.State().(type) {
 		case crew.InShell:
+			v.Started = s.Started
+		case crew.InFunction:
 			v.Started = s.Started
 		case crew.Finished:
 			v.Outcome = s.End.Outcome()
@@ -362,7 +364,7 @@ func phaseOf(state crew.ActionRunState) Phase {
 	switch state.(type) {
 	case crew.StartingSession:
 		return PhaseStarting
-	case crew.InSession, crew.InShell:
+	case crew.InSession, crew.InShell, crew.InFunction:
 		return PhaseRunning
 	case crew.Finished:
 		return PhaseEnded

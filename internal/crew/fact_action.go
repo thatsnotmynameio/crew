@@ -37,6 +37,14 @@ type ShellEnded struct {
 	Outcome ShellOutcome
 }
 
+// FunctionEnded is a function action's function that ended.
+type FunctionEnded struct {
+	FactHead
+
+	Action  ActionName
+	Outcome FunctionOutcome
+}
+
 // decide records the session's start, as its action's bot, and asks it to
 // stop at once when a stop reached the run while it was starting.
 func (f SessionStarted) decide(d *decider) error {
@@ -83,5 +91,18 @@ func (f ShellEnded) decide(d *decider) error {
 	action := d.def.Rule.Action(f.Action)
 	spec, _ := action.Kind.(ShellSpec)
 	d.finish(f.Action, judgeShell(spec, action.On, f.Outcome, d.run.stopping))
+	return nil
+}
+
+// decide keeps how the function ended and ends the action with the
+// verdict judgeFunction gives.
+func (f FunctionEnded) decide(d *decider) error {
+	if err := d.awaits(f.Action, is[InFunction]); err != nil {
+		return err
+	}
+	d.emit(ActionFunctionEnded{EventHead: d.head(), Action: f.Action, Outcome: f.Outcome})
+	action := d.def.Rule.Action(f.Action)
+	spec, _ := action.Kind.(FunctionSpec)
+	d.finish(f.Action, judgeFunction(spec, action.On, f.Outcome, d.run.stopping))
 	return nil
 }

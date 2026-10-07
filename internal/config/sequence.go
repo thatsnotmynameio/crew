@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -28,8 +27,8 @@ type referenceDoc struct {
 
 // itemShape is what an item of a rule's actions must be, said when it is
 // none of its forms.
-const itemShape = "must be the name of one of actions, a session with prompt, " +
-	"or a mapping whose one key names one of actions, with optionally on and name"
+const itemShape = "must be the name of one of actions or of a function, a session with prompt, " +
+	"or a mapping whose one key names one of actions or a function, with optionally on and name"
 
 // The keys of an item of a rule's actions that are not a session's alone.
 const (
@@ -86,8 +85,12 @@ func parseItem(e entry, env ruleEnv) (parsedAction, error) {
 	n := resolve(e.value)
 	switch {
 	case n.Kind == yaml.ScalarNode:
-		name, spec, err := env.shell(n, e.path)
-		return parsedAction{Name: name, Kind: spec, path: e.path, line: n.Line}, err
+		c, err := env.callee(n, e.path)
+		if err != nil {
+			return parsedAction{}, err
+		}
+		kind, err := env.call(c, nil, e.path, n.Line)
+		return parsedAction{Name: c.name, Kind: kind, path: e.path, line: n.Line}, err
 	case n.Kind != yaml.MappingNode:
 		return parsedAction{}, keyError(e.path, n.Line, itemShape)
 	case hasKey(n, "prompt") || hasKey(n, "agent"):
@@ -142,8 +145,10 @@ func parseSession(e entry, env ruleEnv) (parsedAction, error) {
 }
 
 // parseReference decodes the reference e: a mapping whose one key besides
-// on and name names one of actions, with an empty value, since a shell
-// action takes no parameters.
+// on and name names one of actions or a function, with an empty value for
+// a shell action, which takes no parameters, and an empty value or the
+// parameters for a function. A function's action is named after the key
+// written unless its name says otherwise.
 func parseReference(e entry, env ruleEnv) (parsedAction, error) {
 	own, rest := split(entries(e.value, e.path), nameKey, onKey)
 	if len(rest) != 1 {
@@ -154,16 +159,17 @@ func parseReference(e entry, env ruleEnv) (parsedAction, error) {
 		return parsedAction{}, err
 	}
 	ref := rest[0]
-	defined, spec, refErr := env.shell(ref.key, ref.path)
+	c, refErr := env.callee(ref.key, ref.path)
+	var kind crew.ActionKind
 	if refErr == nil {
-		refErr = noParameters(ref)
+		kind, refErr = env.call(c, &ref, e.path, e.value.Line)
 	}
-	name, nameErr := actionName(doc.Name, e.path+".name", string(defined))
+	name, nameErr := actionName(doc.Name, e.path+".name", string(c.name))
 	on, onErr := parseOn(&doc.On, e.path+".on")
 	if err := errors.Join(refErr, nameErr, onErr); err != nil {
 		return parsedAction{}, err
 	}
-	a := crew.Action{Name: name, Kind: spec, On: on.targets()}
+	a := crew.Action{Name: name, Kind: kind, On: on.targets()}
 	return parsedAction{Action: a, path: e.path, line: e.value.Line, on: on}, nil
 }
 
@@ -185,25 +191,6 @@ func actionName(l located[string], path, byDefault string) (crew.ActionName, err
 	}
 	name, err := required(l, path, l.line)
 	return crew.ActionName(name), err
-}
-
-// shell returns the name and the definition of the shell action the scalar
-// n, an item or a step at path, names.
-func (env ruleEnv) shell(n *yaml.Node, path string) (crew.ActionName, crew.ShellSpec, error) {
-	n = resolve(n)
-	if n.Kind != yaml.ScalarNode {
-		return "", crew.ShellSpec{}, keyError(path, n.Line, itemShape)
-	}
-	name := crew.ActionName(n.Value)
-	if spec, ok := env.actions[name]; ok {
-		return name, spec, nil
-	}
-	if len(env.actions) == 0 {
-		return "", crew.ShellSpec{}, keyError(path, n.Line,
-			fmt.Sprintf("action %q does not exist; actions declares none", n.Value))
-	}
-	return "", crew.ShellSpec{}, keyError(path, n.Line, fmt.Sprintf("action %q does not exist; the actions are %s",
-		n.Value, strings.Join(sortedKeys(env.actions), ", ")))
 }
 
 // onEntries are an action's on, in file order.

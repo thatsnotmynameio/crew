@@ -28,7 +28,7 @@ func (r RuleRun) FailureReport() (FailureReport, bool) {
 	report := FailureReport{IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), Rule: r.rule, Route: route.Route}
 	if a, ok := r.Cursor(); ok {
 		w, _ := r.Workspace().Get()
-		f := ActionFailure{Action: a.name, Workspace: w.Workspace.Name, Log: w.Log}
+		f := ActionFailure{Action: a.name, Workspace: w.Workspace.Name, Log: r.ActionLog(a)}
 		if ended, ok := a.state.(Finished); ok {
 			f.Verdict = ended.Verdict
 		}
@@ -111,15 +111,19 @@ func (r RuleRun) stepStatuses() []StepStatus {
 }
 
 // actionStatuses returns the run's actions as a status shows them: each
-// one's state, and a shell action's line once its script ended. A
-// session's or a tool's own words never go with them. When the run
-// resumed, each action that ran in it names its workspace.
+// one's state, and a shell action's line once its script ended, or a
+// function action's once its function ended. A session's or a tool's own
+// words never go with them. When the run resumed, each action that ran in
+// it names its workspace.
 func (r RuleRun) actionStatuses(said map[ActionName]Said, showUsage bool) []ActionStatus {
 	out := make([]ActionStatus, 0, len(r.actions))
 	w, _ := r.Workspace().Get()
 	for i, a := range r.actions {
 		s := ActionStatus{Name: a.name, State: r.actionState(i, said[a.name], showUsage)}
 		if o, ok := a.shell.Get(); ok {
+			s.Shell = o.Reason
+		}
+		if o, ok := a.function.Get(); ok {
 			s.Shell = o.Reason
 		}
 		if w.Resumed && ran(s.State) {
@@ -141,9 +145,9 @@ func ran(state ActionState) bool {
 }
 
 // actionState returns how the action at index i stands in a status. A
-// session or a script that runs is running. The action at the cursor that
-// has none running yet is pending, and those after it await their turn. A
-// failed action carries its cause and the run's log.
+// session, a script or a function that runs is running. The action at the
+// cursor that has none running yet is pending, and those after it await
+// their turn. A failed action carries its cause and the run's log.
 func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
 	a := r.actions[i]
 	switch s := a.state.(type) {
@@ -151,6 +155,8 @@ func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
 		started, _ := a.session.Get()
 		return ActionRunning{Started: started, Said: said}
 	case InShell:
+		return ActionRunning{Started: s.Started}
+	case InFunction:
 		return ActionRunning{Started: s.Started}
 	case Finished:
 		return r.endState(a, s, showUsage)
@@ -176,8 +182,20 @@ func (r RuleRun) endState(a ActionRun, f Finished, showUsage bool) ActionState {
 		usage = Some(ShownUsage{Spend: a.Spend(), PullRequest: r.PullRequest()})
 	}
 	if failed, ok := f.End.(EndFailed); ok {
-		w, _ := r.Workspace().Get()
-		return ActionFailed{Cause: failed.Cause, Log: w.Log, Usage: usage}
+		return ActionFailed{Cause: failed.Cause, Log: r.ActionLog(a), Usage: usage}
 	}
 	return ActionSucceeded{Verdict: f.Verdict, Usage: usage}
+}
+
+// ActionLog returns the log a wrote into: its run's, or for a run without
+// a workspace, such as one whose actions are all functions, the log its
+// function wrote into; empty when there is none.
+func (r RuleRun) ActionLog(a ActionRun) string {
+	if w, ok := r.Workspace().Get(); ok && w.Log != "" {
+		return w.Log
+	}
+	if f, ok := a.function.Get(); ok {
+		return f.Log
+	}
+	return ""
 }

@@ -15,11 +15,13 @@ const (
 	StepReport
 	// StepShell runs one of the config's shell actions (ShellStep).
 	StepShell
+	// StepFunction calls one of crew's functions (FunctionStep).
+	StepFunction
 )
 
 // StepPlan is one step of the route a run ends through, as plain data: what
-// it does, the state a move moves the item to, and the shell action a shell
-// step runs.
+// it does, the state a move moves the item to, the shell action a shell
+// step runs and the name of a function step.
 type StepPlan struct {
 	Kind StepKind
 	// To is the state a StepMove moves the item to; empty for the other
@@ -28,6 +30,8 @@ type StepPlan struct {
 	// Shell is the shell action a StepShell runs; empty for the other
 	// kinds.
 	Shell ActionName
+	// Function is the name of a StepFunction; empty for the other kinds.
+	Function ActionName
 }
 
 // planOf returns s as plain data.
@@ -43,6 +47,8 @@ func planOf(s Step) StepPlan {
 		return StepPlan{Kind: StepReport}
 	case ShellStep:
 		return StepPlan{Kind: StepShell, Shell: s.Name}
+	case FunctionStep:
+		return StepPlan{Kind: StepFunction, Function: s.Name}
 	}
 	return StepPlan{}
 }
@@ -69,7 +75,8 @@ type StepOutcome interface {
 // or the comment or report was posted.
 type StepLanded struct{}
 
-// StepRan is a shell step whose script exited 0.
+// StepRan is a shell step whose script exited 0, or a function step whose
+// function returned Passed.
 type StepRan struct {
 	// Reason is crew's one line on how the script ended, in crew's words
 	// only: a route's step never carries what its script printed (R49).
@@ -77,8 +84,9 @@ type StepRan struct {
 }
 
 // StepFailed is a shell step whose script exited with another status or
-// did not run to its end, or a comment step whose comment did not render
-// for the run, so crew never posted it.
+// did not run to its end, a function step whose function returned another
+// verdict or none, or a comment step whose comment did not render for the
+// run, so crew never posted it.
 type StepFailed struct {
 	// Reason is crew's one line on how the script ended, in crew's words
 	// only, or why the comment did not render: a route's step never
@@ -104,7 +112,8 @@ type StepDropped struct {
 // before its turn.
 type StepSkipped struct{}
 
-// StepStopped is a shell step crew stopped while its script ran.
+// StepStopped is a shell step crew stopped while its script ran, or a
+// function step crew stopped while its function ran.
 type StepStopped struct {
 	// Reason is crew's one line on how the script ended.
 	Reason ShellReason
@@ -127,6 +136,20 @@ func judgeStep(outcome ShellOutcome, stopping bool) StepOutcome {
 	case stopping:
 		return StepStopped{Reason: outcome.Reason}
 	case exited && status == 0:
+		return StepRan{Reason: outcome.Reason}
+	}
+	return StepFailed{Reason: outcome.Reason}
+}
+
+// judgeFunctionStep returns the outcome of a route's function step whose
+// function ended as outcome says: stopped once a stop reached the run, ran
+// when it returned Passed, and failed otherwise (R16).
+func judgeFunctionStep(outcome FunctionOutcome, stopping bool) StepOutcome {
+	v, returned := outcome.Verdict.Get()
+	switch {
+	case stopping:
+		return StepStopped{Reason: outcome.Reason}
+	case returned && v == Passed:
 		return StepRan{Reason: outcome.Reason}
 	}
 	return StepFailed{Reason: outcome.Reason}

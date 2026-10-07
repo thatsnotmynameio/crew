@@ -309,3 +309,65 @@ func TestAReleasedRunKeepsItsEndingOnlyWhenItChoseARoute(t *testing.T) {
 		t.Errorf("a take given up has the ending report %#v", r)
 	}
 }
+
+// R49: a function action's line shows crew's reason, as a shell action's
+// shows its script's line, and a running function is running.
+func TestAFunctionActionShowsItsReason(t *testing.T) {
+	failed := seq(checking(), []RunEvent{
+		checkEnded(6, FunctionOutcome{Reason: NewShellReason("check failed: \x1b[31mno pull request\x1b[0m")}),
+		checkEnd(6, failedBy(NewSessionText("check failed: no pull request"), CauseFunction), toFailed),
+		chose(6, FailedRoute, "check"),
+	})
+	tests := []struct {
+		name  string
+		given []RunEvent
+		want  ActionStatus
+	}{
+		{name: "running", given: checking(), want: ActionStatus{Name: "check", State: ActionRunning{Started: at(5)}}},
+		{
+			name: "failed", given: failed,
+			want: ActionStatus{
+				Name: "check", State: ActionFailed{Cause: CauseFunction, Log: runLog},
+				Shell: NewShellReason("check failed: no pull request"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := given(t, tt.given).Status(at(9), nil, false).Actions()
+			want := []ActionStatus{
+				{Name: "install", State: ActionSucceeded{Verdict: Passed}, Shell: installRan},
+				{Name: "lfg", State: ActionSucceeded{Verdict: Passed}},
+				tt.want,
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("Actions =\n%#v\nwant\n%#v", got, want)
+			}
+		})
+	}
+}
+
+// R25, R49: a run whose actions are all functions has no workspace, so a
+// failed function's status and failure report name the log its function
+// wrote into.
+func TestAFunctionOnlyRunNamesItsFunctionsLog(t *testing.T) {
+	const log = ".crew/logs/issue-42-implement.log"
+	run := given(t, []RunEvent{
+		onlyCheckTake(),
+		ActionFunctionAsked{EventHead: eh(1), Action: "check"},
+		checkEnded(2, FunctionOutcome{Reason: NewShellReason("check failed"), Log: log}),
+		checkEnd(2, failedBy(NewSessionText("check failed"), CauseFunction), toFailed),
+		chose(2, FailedRoute, "check"),
+	})
+	actions := run.Status(at(3), nil, false).Actions()
+	want := ActionStatus{
+		Name: "check", State: ActionFailed{Cause: CauseFunction, Log: log}, Shell: NewShellReason("check failed"),
+	}
+	if len(actions) != 1 || !reflect.DeepEqual(actions[0], want) {
+		t.Errorf("Actions = %#v, want [%#v]", actions, want)
+	}
+	report, ok := run.FailureReport()
+	if !ok || len(report.Failures) != 1 || report.Failures[0].Log != log {
+		t.Errorf("FailureReport = %#v, %v; want its failure to name log %s", report, ok, log)
+	}
+}
