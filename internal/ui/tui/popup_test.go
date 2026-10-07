@@ -182,7 +182,7 @@ func TestThePopupWalksTheHeldCardsFirst(t *testing.T) {
 
 // headerIssue is #3, with everything the popup's header shows.
 var headerIssue = crew.Issue{
-	Key: "3", Ref: "#3", Title: "Speed up the poll", URL: "https://github.com/o/r/issues/3",
+	ID: issueID("3"), Ref: "#3", Title: "Speed up the poll", URL: "https://github.com/o/r/issues/3",
 	Priority: 2, Blocked: true, States: []crew.State{"in progress"},
 }
 
@@ -316,7 +316,7 @@ func TestAnIssueWhoseRuleEndedAndIsBlockedOnTheBoardShowsTheBlockedChip(t *testi
 
 	blocked := item("22", "crew:triage:done")
 	blocked.Issue.Blocked = true
-	u := handledBy(crew.Issue{Key: "22", Ref: "#22", Title: "Bug"}, "fix", "crew:triage:done")
+	u := handledBy(crew.Issue{ID: issueID("22"), Ref: "#22", Title: "Bug"}, "fix", "crew:triage:done")
 	h.send(updateMsg(onBoard(u, item("20", "bug"), blocked)))
 	wantLit(t, h, "#22", 2)
 	h.send(enterKey)
@@ -406,7 +406,7 @@ func TestAnActionWhoseBotCannotActShowsYou(t *testing.T) {
 // check failed shows the check's reason in the error colour.
 func TestAE5AnEndedActionShowsItsLastMessageAndAFailedOneWhy(t *testing.T) {
 	h := newHarness(t, 120)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: "running the tests now"})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: "running the tests now"})))
 	ended := runningSnapshot()
 	actions := &ended.Snapshot.Issues[0].Actions
 	(*actions)[0].Phase, (*actions)[0].Outcome = core.PhaseEnded, crew.Outcome{Succeeded: true}
@@ -439,12 +439,12 @@ func TestThePopupListsOnlyItsIssuesEventsOldestFirst(t *testing.T) {
 	one, two := u.Snapshot.Issues[0].Issue, u.Snapshot.Issues[1].Issue
 	u.Snapshot.Recent = []core.Event{
 		core.IssueTaken{At: start.Add(-7 * time.Minute), Issue: one, Rule: "implement", From: "ready", To: "in progress"},
-		core.ActionStarted{At: start.Add(-6 * time.Minute), IssueKey: "1", IssueRef: "#1", Rule: "implement",
+		core.ActionStarted{At: start.Add(-6 * time.Minute), IssueID: issueID("1"), IssueRef: "#1", Rule: "implement",
 			Action: "tests", Branch: "crew/1-tests", Log: ".crew/logs/1-tests.log"},
 		core.IssueTaken{At: start.Add(-5 * time.Minute), Issue: two, Rule: "review",
 			From: "ready to review", To: "in review"},
-		core.CallOwed{At: start.Add(-4 * time.Minute), Call: core.Call{Kind: core.CallMove, IssueKey: "1", IssueRef: "#1",
-			From: "ready", To: "done"}, Reason: "rate limited"},
+		core.CallOwed{At: start.Add(-4 * time.Minute), Call: core.Call{Kind: core.CallMove, IssueID: issueID("1"),
+			IssueRef: "#1", From: "ready", To: "done"}, Reason: "rate limited"},
 		core.PollDone{At: start.Add(-3 * time.Minute), Listed: 2},
 	}
 	h.send(updateMsg(u))
@@ -498,7 +498,7 @@ func TestThePopupOfAHandledIssueShowsNoCostNorPullRequests(t *testing.T) {
 func TestALongMessageWrapsInsideThePopup(t *testing.T) {
 	h := newHarness(t, 60)
 	long := strings.Repeat("the parser now reads every key once ", 4)
-	h.send(updateMsg(saying(core.Said{IssueKey: "1", Action: "code", Text: long})))
+	h.send(updateMsg(saying(core.Said{IssueID: issueID("1"), Action: "code", Text: long})))
 	h.send(enterKey)
 
 	box, _, _ := popupBox(h.view(), popupWidthIn(60))

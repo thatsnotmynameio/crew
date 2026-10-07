@@ -18,7 +18,7 @@ const full = 100
 
 // noteKey identifies a rule's end: one notification each (KTD6).
 type noteKey struct {
-	issue string
+	issue crew.IssueID
 	rule  crew.RuleName
 	ended time.Time
 }
@@ -45,7 +45,7 @@ func newOutsideState() *outsideState {
 func (m Model) notifications() []tea.Cmd {
 	var out []tea.Cmd
 	for _, e := range m.snap.Handled {
-		k := noteKey{issue: e.Issue.Key, rule: e.Rule, ended: e.Ended}
+		k := noteKey{issue: e.Issue.ID, rule: e.Rule, ended: e.Ended}
 		if m.outside.seen[k] {
 			continue
 		}

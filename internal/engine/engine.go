@@ -10,7 +10,6 @@
 package engine
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -387,7 +386,7 @@ func (e *Engine) prepare(ctx context.Context) error {
 	bots := e.withBots()
 	e.repository = e.findRepository()
 	port.Step(ctx, "reading the run journal")
-	past, err := e.readJournal()
+	past, err := e.readJournal(e.repository.ID)
 	if err != nil {
 		return err
 	}
@@ -424,15 +423,13 @@ func (e *Engine) withBots() core.Option {
 // calls it, as it owns the sessions.
 func (e *Engine) said() []core.Said {
 	var out []core.Said
-	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), func(a, b sessionKey) int {
-		return cmp.Or(cmp.Compare(a.issue, b.issue), cmp.Compare(a.action, b.action))
-	}) {
+	for _, k := range slices.SortedFunc(maps.Keys(e.sessions), sessionKey.compare) {
 		n, ok := e.sessions[k].(port.Narrator)
 		if !ok {
 			continue
 		}
 		if text := n.Said(); text != "" {
-			out = append(out, core.Said{IssueKey: k.issue, Action: k.action, Text: lastWords(e.scrub(text))})
+			out = append(out, core.Said{IssueID: k.issue, Action: k.action, Text: lastWords(e.scrub(text))})
 		}
 	}
 	return out
@@ -448,11 +445,11 @@ func (e *Engine) receive(ctx context.Context, m message) {
 	case nil:
 		return
 	case core.SessionStarted:
-		e.sessions[sessionKey{in.IssueKey, in.Action}] = m.session
+		e.sessions[sessionKey{in.IssueID, in.Action}] = m.session
 	case core.SessionEnded:
-		delete(e.sessions, sessionKey{in.IssueKey, in.Action})
+		delete(e.sessions, sessionKey{in.IssueID, in.Action})
 	case core.CheckEnded:
-		delete(e.checks, sessionKey{in.IssueKey, in.Action})
+		delete(e.checks, sessionKey{in.IssueID, in.Action})
 	}
 	e.step(ctx, m.input)
 }

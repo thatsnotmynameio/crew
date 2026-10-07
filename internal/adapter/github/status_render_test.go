@@ -12,7 +12,7 @@ import (
 // running74 is #74 in implement with one action, lfg, running since started
 // and having said said.
 func running74(started time.Time, said string) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
+	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionRunning, Started: started, Said: said}},
 		Updated: updated}
 }
@@ -90,7 +90,7 @@ func TestElapsedTimeIsInWholeMinutes(t *testing.T) {
 // Covers AE3 and AE4.
 func TestAnEndedStatusShowsEachActionAndTheMove(t *testing.T) {
 	tr, _ := build(t)
-	status := crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
+	status := crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
 		Actions: []crew.ActionStatus{
 			{Name: "development", State: crew.ActionFailed},
 			{Name: "acceptance", State: crew.ActionSucceeded},
@@ -122,7 +122,7 @@ func TestAnEndedActionShowsWhatItSpentAndItsPullRequest(t *testing.T) {
 	spent := crew.Usage{Cost: 12.4, HasCost: true, Tokens: crew.Tokens{CacheRead: 17_200_000}, HasTokens: true}.Spend()
 	ended := func(a crew.ActionStatus) crew.Status {
 		a.Name = "lfg"
-		return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
+		return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
 			Actions: []crew.ActionStatus{a}, To: needsAttention, Updated: updated}
 	}
 	tests := []struct {
@@ -180,7 +180,7 @@ func resumed(s crew.Status) crew.Status {
 // lfgEnded is #74's implement rule, ended with its one action, lfg, in
 // state.
 func lfgEnded(state crew.ActionState) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
+	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusEnded,
 		Actions: []crew.ActionStatus{{Name: "lfg", State: state}}, To: needsAttention, Updated: updated}
 }
 

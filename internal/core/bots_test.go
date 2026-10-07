@@ -74,7 +74,7 @@ func names(d *driver) []crew.BotName {
 func endedAs(d *driver, i crew.Issue, action crew.ActionName, usage crew.Usage) {
 	d.t.Helper()
 	d.running(i)
-	verdict, _ := d.send(core.SessionEnded{IssueKey: i.Key, Action: action, Outcome: succeeded, Usage: usage})
+	verdict, _ := d.send(core.SessionEnded{IssueID: i.ID, Action: action, Outcome: succeeded, Usage: usage})
 	d.settle(verdict)
 }
 
@@ -111,7 +111,7 @@ func TestAE1ABotShowsItsStateWritesPairsTotalsAndRunningActions(t *testing.T) {
 func TestAE2WithoutBotsOnlyYouActsAndCounts(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: succeeded, Usage: spent})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded, Usage: spent})
 
 	if got := names(d); !slices.Equal(got, []crew.BotName{"you"}) {
 		t.Fatalf("entries = %v, want only you", got)
@@ -245,25 +245,25 @@ func TestAnActionRunsOnItsEntryFromItsSessionUntilItsSpendLands(t *testing.T) {
 			take, _ := d.send(core.CallResult{ID: moveID(d.t, cmds, "74"), Result: core.ResultDone})
 			for _, c := range take {
 				if w, ok := c.(core.CreateWorkspace); ok {
-					d.send(space(w.Issue.Key, w.Action))
+					d.send(space(w.Issue.ID.Key, w.Action))
 				}
 			}
 		}, false},
 		{"running", func(d *driver) { d.running(issue("74", 1, ready)) }, true},
 		{"checking", func(d *driver) {
 			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 		}, true},
 		{"finishing", func(d *driver) {
 			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 		}, true},
 		{"ended", func(d *driver) {
 			d.running(issue("74", 1, ready))
-			d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-			d.send(core.PullRequestFound{IssueKey: "74", Action: "development", PullRequest: noPR})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+			d.send(core.PullRequestFound{IssueID: issueID("74"), Action: "development", PullRequest: noPR})
 		}, false},
 	}
 	for _, tt := range tests {
@@ -281,7 +281,7 @@ func TestAnActionThatEndedWithoutASessionAddsNothing(t *testing.T) {
 	d := botsDriver(t, botRules(), crewBots(nil))
 	cmds, _ := d.poll(issue("2", 1, needsTriage))
 	d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueKey: "2", Action: "triage", Reason: "disk full"})
+	d.send(core.WorkspaceFailed{IssueID: issueID("2"), Action: "triage", Reason: "disk full"})
 	for _, e := range d.m.View().Bots {
 		if e.Spend != (crew.Spend{}) || e.Running != nil {
 			t.Fatalf("entry %s = %#v, want no spend and nothing running", e.Name, e)

@@ -341,7 +341,7 @@ func threeBotsOnABoard() engine.Update {
 	for col := 1; col <= 5; col++ {
 		key := strconv.Itoa(col)
 		label := crew.State(fmt.Sprintf("l%d", col))
-		issues = append(issues, labeled(crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}, label))
+		issues = append(issues, labeled(crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Card"}, label))
 	}
 	u := onBoard(engine.Update{}, issues...)
 	u.Snapshot.Bots = aeOneBots()
@@ -502,7 +502,7 @@ func shortWindow() engine.Update {
 	u.Snapshot.Handled = manySnapshot().Snapshot.Handled
 	u.Snapshot.Recent = eventful().Snapshot.Recent
 	for _, key := range []string{"3", "4"} {
-		card := crew.Issue{Key: key, Ref: "#" + key, Title: "Card"}
+		card := crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Card"}
 		u.Snapshot.Issues = append(u.Snapshot.Issues, core.IssueView{Issue: card, Rule: "implement", Claim: core.ClaimTaking})
 		u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{Issue: card, Labels: []crew.State{"ready"}})
 	}

@@ -36,7 +36,7 @@ func (m Model) selected() (card, bool) {
 // opened returns m with the highlighted card's popup open, while the
 // board has focus and a card is highlighted (R10, KTD12 of #151).
 func (m Model) opened() Model {
-	if m.focus == focusBoard && m.sel.key != "" {
+	if m.focus == focusBoard && !m.sel.empty() {
 		m.popup, m.popupOffset = true, 0
 	}
 	return m
@@ -83,7 +83,7 @@ func (m Model) walk(delta int) Model {
 		top = m.sel.top
 	}
 	m.sel = selection{
-		key: cs[next.row].issue.Key, column: next.column, row: next.row,
+		id: cs[next.row].issue.ID, column: next.column, row: next.row,
 		top: shownFrom(top, next.row, len(cs), m.budget().cards),
 	}
 	m.popupOffset = 0

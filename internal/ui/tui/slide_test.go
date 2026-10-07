@@ -34,7 +34,7 @@ func sliding(t *testing.T, width int) *harness {
 
 // in is key's item on a board of eightColumns, in column n's label.
 func in(key string, n int) crew.BoardIssue {
-	return labeled(crew.Issue{Key: key, Ref: "#" + key}, crew.State(fmt.Sprintf("l%d", n)))
+	return labeled(crew.Issue{ID: issueID(key), Ref: "#" + key}, crew.State(fmt.Sprintf("l%d", n)))
 }
 
 // underlineOf returns the board's underline row.

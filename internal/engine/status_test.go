@@ -91,7 +91,7 @@ func TestAE3AE4StopLeavesTheMoveOnTheStatusAndTheFailureReportApart(t *testing.T
 		}
 
 		want := crew.Status{
-			IssueKey: "1", IssueRef: "#1", Rule: "implement", Kind: crew.StatusEnded,
+			IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Kind: crew.StatusEnded,
 			Actions: []crew.ActionStatus{{
 				Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped,
 				Log: ".crew/logs/issue-1-development.log",

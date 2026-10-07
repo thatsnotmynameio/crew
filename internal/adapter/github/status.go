@@ -93,7 +93,7 @@ func (t *Tracker) ReportStatus(ctx context.Context, status crew.Status) error {
 		err = t.writeStatus(ctx, status, text)
 	}
 	if err != nil {
-		return fmt.Errorf("report status on issue #%s: %w", status.IssueKey, err)
+		return fmt.Errorf("report status on issue #%s: %w", status.IssueID.Key, err)
 	}
 	return nil
 }
@@ -103,7 +103,7 @@ func (t *Tracker) ReportStatus(ctx context.Context, status crew.Status) error {
 // comment and its body only once the write succeeded. An edit answered with
 // HTTP 404 forgets the comment and returns an error wrapping errCommentGone.
 func (t *Tracker) writeStatus(ctx context.Context, status crew.Status, text string) error {
-	issueKey := status.IssueKey
+	issueKey := status.IssueID.Key
 	c, ok := t.statusComment(issueKey)
 	if !ok {
 		var err error

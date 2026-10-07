@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"maps"
 	"reflect"
 	"slices"
 
@@ -53,10 +52,10 @@ func (s *step) report(st crew.Status) {
 	if m.statuses == nil {
 		return
 	}
-	sl := m.statuses[st.IssueKey]
+	sl := m.statuses[st.IssueID]
 	if sl == nil {
 		sl = &statusSlot{}
-		m.statuses[st.IssueKey] = sl
+		m.statuses[st.IssueID] = sl
 	}
 	sl.ref = st.IssueRef
 	s.assignRun(sl, &st)
@@ -119,7 +118,7 @@ func (s *step) send(sl *statusSlot, st crew.Status) {
 // the waiting statuses of later runs until it lands or is given up.
 func (s *step) statusResult(r StatusResult) {
 	m := s.m
-	sl := m.statuses[r.IssueKey]
+	sl := m.statuses[r.IssueID]
 	if sl == nil || sl.sending == nil {
 		return
 	}
@@ -131,7 +130,7 @@ func (s *step) statusResult(r StatusResult) {
 		sl.shown = nil
 		if !sl.failing {
 			sl.failing = true
-			s.emit(StatusFailed{At: s.at, IssueKey: r.IssueKey, IssueRef: sl.ref, Result: r.Result, Reason: r.Reason})
+			s.emit(StatusFailed{At: s.at, IssueID: r.IssueID, IssueRef: sl.ref, Result: r.Result, Reason: r.Reason})
 		}
 		superseded := len(sl.waiting) > 0 && sl.waiting[0].Run == sent.Run
 		if r.Result == ResultFailed && sent.Kind == crew.StatusEnded && !superseded {
@@ -149,10 +148,10 @@ func (s *step) statusResult(r StatusResult) {
 	s.pump(sl)
 }
 
-// retryStatuses resends each owed status, in issue-key order; after a stop,
+// retryStatuses resends each owed status, in issue id order; after a stop,
 // as its one final try.
 func (s *step) retryStatuses() {
-	for _, key := range slices.Sorted(maps.Keys(s.m.statuses)) {
+	for _, key := range sortedIssueIDs(s.m.statuses) {
 		sl := s.m.statuses[key]
 		if sl.owed == nil || sl.sending != nil {
 			continue
@@ -211,7 +210,7 @@ func (s *step) ended(h *heldIssue, to crew.State, move crew.MoveProgress) {
 // it spent and its pull request.
 func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 	st := crew.Status{
-		IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Kind: kind, Updated: s.at,
 	}
 	for _, a := range h.actions {
@@ -237,7 +236,7 @@ func (s *step) status(h *heldIssue, kind crew.StatusKind) crew.Status {
 
 // sameStatus reports whether a and b show the same, whenever computed (R5).
 func sameStatus(a, b crew.Status) bool {
-	return a.IssueKey == b.IssueKey && a.IssueRef == b.IssueRef && a.Rule == b.Rule &&
+	return a.IssueID == b.IssueID && a.IssueRef == b.IssueRef && a.Rule == b.Rule &&
 		a.Kind == b.Kind && a.To == b.To && a.Move == b.Move && a.Run == b.Run &&
 		slices.EqualFunc(a.Actions, b.Actions, sameAction)
 }

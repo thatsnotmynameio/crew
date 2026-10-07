@@ -119,7 +119,7 @@ func (a Action) Render(issue Issue) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse prompt of action %q: %w", a.Name, err)
 	}
-	data := struct{ Issue promptIssue }{promptIssue{Ref: issue.Ref, Key: issue.Key, Title: issue.Title, URL: issue.URL}}
+	data := struct{ Issue promptIssue }{promptIssue{Ref: issue.Ref, Key: issue.ID.Key, Title: issue.Title, URL: issue.URL}}
 	var out strings.Builder
 	if err := tmpl.Execute(&out, data); err != nil {
 		return "", fmt.Errorf("render prompt of action %q: %w", a.Name, err)
@@ -138,8 +138,8 @@ type Outcome struct {
 // FailureReport is what the engine asks a tracker to post on an issue whose
 // rule had failed actions. The tracker adapter formats it in its own markup.
 type FailureReport struct {
-	// IssueKey and IssueRef identify the issue, as in Issue.
-	IssueKey string
+	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
+	IssueID  IssueID
 	IssueRef string
 	// Failures lists each failed action, in the rule's action order.
 	Failures []ActionFailure

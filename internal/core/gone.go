@@ -12,21 +12,21 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 // rule's new entry replaces it, or keeps it when both ended well and that
 // rule has no actions.
 func (m *Model) gone(issues []crew.Issue) {
-	alone := map[string]crew.State{}
+	alone := map[crew.IssueID]crew.State{}
 	for _, issue := range issues {
 		if len(issue.States) == 1 {
-			alone[issue.Key] = issue.States[0]
+			alone[issue.ID] = issue.States[0]
 		}
 	}
 	for i := range m.handled {
 		e := &m.handled[i]
-		if e.landed >= m.listings || m.held(e.view.Issue.Key) != nil {
+		if e.landed >= m.listings || m.held(e.view.Issue.ID) != nil {
 			continue
 		}
 		if _, ok := m.ruleLabeled(e.view.To); !ok {
 			continue
 		}
-		state, found := alone[e.view.Issue.Key]
+		state, found := alone[e.view.Issue.ID]
 		e.view.Gone = !found || state != e.view.To
 	}
 }

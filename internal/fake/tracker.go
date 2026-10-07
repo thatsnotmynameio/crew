@@ -114,7 +114,7 @@ func (t *Tracker) Add(issue crew.Issue) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	issue = issue.Clone()
-	if ti := t.find(issue.Key); ti != nil {
+	if ti := t.find(issue.ID.Key); ti != nil {
 		ti.issue, ti.labels, ti.closed = issue, nil, false
 		return
 	}
@@ -231,24 +231,24 @@ func (t *Tracker) List(_ context.Context, states []crew.State) ([]crew.Issue, er
 // exactly in to, whatever its other labels, is already moved, so Move returns nil
 // and records no move, as the github adapter does on a retry. Any other issue
 // not in from is ErrMovedMeanwhile. A move leaves the issue's other labels.
-func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) error {
+func (t *Tracker) Move(_ context.Context, id crew.IssueID, from, to crew.State) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if err := t.moveErrs.pop(issueKey); err != nil {
-		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, err)
+	if err := t.moveErrs.pop(id.Key); err != nil {
+		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, err)
 	}
-	ti := t.find(issueKey)
+	ti := t.find(id.Key)
 	if ti == nil || ti.closed {
-		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, port.ErrMovedMeanwhile)
+		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, port.ErrMovedMeanwhile)
 	}
 	if !slices.Contains(ti.issue.States, from) {
 		if slices.Equal(ti.issue.States, []crew.State{to}) {
 			return nil
 		}
-		return fmt.Errorf("move issue %s from %s to %s: %w", issueKey, from, to, port.ErrMovedMeanwhile)
+		return fmt.Errorf("move issue %s from %s to %s: %w", id.Key, from, to, port.ErrMovedMeanwhile)
 	}
 	ti.issue.States = []crew.State{to}
-	t.moves = append(t.moves, Move{Key: issueKey, From: from, To: to})
+	t.moves = append(t.moves, Move{Key: id.Key, From: from, To: to})
 	return nil
 }
 
@@ -257,8 +257,8 @@ func (t *Tracker) Move(_ context.Context, issueKey string, from, to crew.State) 
 func (t *Tracker) ReportFailure(_ context.Context, report crew.FailureReport) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if err := t.reportErrs.pop(report.IssueKey); err != nil {
-		return fmt.Errorf("report failure on issue %s: %w", report.IssueKey, err)
+	if err := t.reportErrs.pop(report.IssueID.Key); err != nil {
+		return fmt.Errorf("report failure on issue %s: %w", report.IssueID.Key, err)
 	}
 	report.Failures = slices.Clone(report.Failures)
 	t.reports = append(t.reports, report)
@@ -267,7 +267,7 @@ func (t *Tracker) ReportFailure(_ context.Context, report crew.FailureReport) er
 
 func (t *Tracker) find(key string) *trackedIssue {
 	for _, ti := range t.issues {
-		if ti.issue.Key == key {
+		if ti.issue.ID.Key == key {
 			return ti
 		}
 	}
@@ -371,13 +371,13 @@ type StatusBoard struct {
 func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.errs.pop(status.IssueKey); err != nil {
-		return fmt.Errorf("report status on issue %s: %w", status.IssueKey, err)
+	if err := b.errs.pop(status.IssueID.Key); err != nil {
+		return fmt.Errorf("report status on issue %s: %w", status.IssueID.Key, err)
 	}
 	if b.statuses == nil {
 		b.statuses = map[string][]crew.Status{}
 	}
-	b.statuses[status.IssueKey] = append(b.statuses[status.IssueKey], status.Clone())
+	b.statuses[status.IssueID.Key] = append(b.statuses[status.IssueID.Key], status.Clone())
 	return nil
 }
 
@@ -508,13 +508,13 @@ type PullRequestBoard struct {
 func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.PullRequestReport) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.errs.pop(report.IssueKey); err != nil {
-		return fmt.Errorf("report pull requests of issue %s: %w", report.IssueKey, err)
+	if err := b.errs.pop(report.IssueID.Key); err != nil {
+		return fmt.Errorf("report pull requests of issue %s: %w", report.IssueID.Key, err)
 	}
 	if b.reports == nil {
 		b.reports = map[string][]crew.PullRequestReport{}
 	}
-	b.reports[report.IssueKey] = append(b.reports[report.IssueKey], report.Clone())
+	b.reports[report.IssueID.Key] = append(b.reports[report.IssueID.Key], report.Clone())
 	return nil
 }
 

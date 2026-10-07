@@ -30,7 +30,7 @@ type IssueTaken struct {
 // when the session continues a failed run in that run's workspace.
 type ActionStarted struct {
 	At        time.Time
-	IssueKey  string
+	IssueID   crew.IssueID
 	IssueRef  string
 	Rule      crew.RuleName
 	Action    crew.ActionName
@@ -45,7 +45,7 @@ type ActionStarted struct {
 // unless crew is stopping.
 type WorkspaceMissing struct {
 	At        time.Time
-	IssueKey  string
+	IssueID   crew.IssueID
 	IssueRef  string
 	Rule      crew.RuleName
 	Action    crew.ActionName
@@ -56,7 +56,7 @@ type WorkspaceMissing struct {
 // journal. After a restart, crew may not know how that run ended.
 type RunNotRecorded struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	Rule     crew.RuleName
 	Action   crew.ActionName
@@ -69,7 +69,7 @@ type RunNotRecorded struct {
 // Workspace and Log are empty when the action got no workspace or session.
 type ActionEnded struct {
 	At        time.Time
-	IssueKey  string
+	IssueID   crew.IssueID
 	IssueRef  string
 	Rule      crew.RuleName
 	Action    crew.ActionName
@@ -81,7 +81,7 @@ type ActionEnded struct {
 // IssueMoved is a move the tracker made, a take or a verdict.
 type IssueMoved struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	From     crew.State
 	To       crew.State
@@ -90,7 +90,7 @@ type IssueMoved struct {
 // FailureReported is a failure report the tracker posted.
 type FailureReported struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 }
 
@@ -98,7 +98,7 @@ type FailureReported struct {
 // taken (R15); a later poll takes it once it is in exactly one.
 type IssueSkipped struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	States   []crew.State
 }
@@ -109,7 +109,7 @@ type IssueSkipped struct {
 // once a listing found it in no such state.
 type IssueOfOtherKind struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	// Kind is the item's kind.
 	Kind crew.Kind
@@ -174,7 +174,7 @@ type CallDropped struct {
 // issue moved meanwhile (KTD5).
 type StatusFailed struct {
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	Result   Result
 	Reason   string
@@ -244,7 +244,7 @@ func (k CallKind) String() string {
 // Call describes a tracker call in events and in the View.
 type Call struct {
 	Kind     CallKind
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	// From and To are the move's states; both are empty for a failure
 	// report. For a pull request report, To is the state the pull requests

@@ -6,18 +6,23 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
-// selection is the highlighted card: its issue's key, its column, its row
-// in that column, and the first card that column shows. An empty key is
-// no selection (KTD5, KTD6 of #151).
+// selection is the highlighted card: its issue's id, its column, its row
+// in that column, and the first card that column shows. The zero id is no
+// selection (KTD5, KTD6 of #151).
 type selection struct {
-	key              string
+	id               crew.IssueID
 	column, row, top int
 }
 
+// empty reports whether s is no selection.
+func (s selection) empty() bool { return s.id == crew.IssueID{} }
+
 // is reports whether c is the highlighted card.
-func (s selection) is(c card) bool { return c.issue.Key == s.key && c.column == s.column }
+func (s selection) is(c card) bool { return c.issue.ID == s.id && c.column == s.column }
 
 // byColumn groups cards by their column, each in the order cards gives.
 func byColumn(cards []card) map[int][]card {
@@ -28,24 +33,24 @@ func byColumn(cards []card) map[int][]card {
 	return out
 }
 
-// rowOf is the row of key's card in cs, or -1.
-func rowOf(cs []card, key string) int {
-	return slices.IndexFunc(cs, func(c card) bool { return c.issue.Key == key })
+// rowOf is the row of the card of the issue id in cs, or -1.
+func rowOf(cs []card, id crew.IssueID) int {
+	return slices.IndexFunc(cs, func(c card) bool { return c.issue.ID == id })
 }
 
-// repaired returns s for cards (KTD5 of #151): the card of its key in its
+// repaired returns s for cards (KTD5 of #151): the card of its id in its
 // column, at its row now; else the issue's first card in board order;
 // else the nearest card to where it was. With no selection, the first
 // card of the first column holding cards.
 func (s selection) repaired(cards []card) selection {
 	columns := byColumn(cards)
-	if row := rowOf(columns[s.column], s.key); row >= 0 {
+	if row := rowOf(columns[s.column], s.id); row >= 0 {
 		s.row = row
 		return s
 	}
-	if i := slices.IndexFunc(cards, func(c card) bool { return c.issue.Key == s.key }); i >= 0 {
+	if i := slices.IndexFunc(cards, func(c card) bool { return c.issue.ID == s.id }); i >= 0 {
 		c := cards[i]
-		return selection{key: s.key, column: c.column, row: rowOf(columns[c.column], s.key)}
+		return selection{id: s.id, column: c.column, row: rowOf(columns[c.column], s.id)}
 	}
 	return s.nearest(columns)
 }
@@ -70,7 +75,7 @@ func (s selection) nearest(columns map[int][]card) selection {
 	if best == s.column {
 		top = s.top
 	}
-	return selection{key: cs[row].issue.Key, column: best, row: row, top: top}
+	return selection{id: cs[row].issue.ID, column: best, row: row, top: top}
 }
 
 // distance is how many columns apart a and b are.
@@ -149,11 +154,11 @@ func (m Model) vertical(msg tea.KeyPressMsg) Model {
 // of #151).
 func (m Model) moveRow(delta int) Model {
 	cs := byColumn(m.cards())[m.sel.column]
-	if m.sel.key == "" || len(cs) == 0 {
+	if m.sel.empty() || len(cs) == 0 {
 		return m
 	}
 	row := min(max(m.sel.row+delta, 0), len(cs)-1)
-	m.sel.key, m.sel.row = cs[row].issue.Key, row
+	m.sel.id, m.sel.row = cs[row].issue.ID, row
 	m.sel.top = shownFrom(m.sel.top, row, len(cs), m.budget().cards)
 	return m
 }
@@ -168,13 +173,13 @@ func (m Model) moveColumn(delta int) Model {
 	columns := byColumn(cards)
 	order := slices.Sorted(maps.Keys(columns))
 	i := slices.Index(order, m.sel.column) + delta
-	if m.sel.key == "" || i < 0 || i >= len(order) {
+	if m.sel.empty() || i < 0 || i >= len(order) {
 		return m
 	}
 	slot := m.sel.row - shownFrom(m.sel.top, m.sel.row, len(columns[m.sel.column]), m.budget().cards)
 	cs := columns[order[i]]
 	row := min(slot, len(cs)-1)
-	m.sel = selection{key: cs[row].issue.Key, column: order[i], row: row}
+	m.sel = selection{id: cs[row].issue.ID, column: order[i], row: row}
 	return m.reveal(cards, order, i)
 }
 

@@ -42,7 +42,7 @@ func boardKeys(board []crew.BoardIssue) []string {
 		for i, l := range b.Labels {
 			labels[i] = string(l)
 		}
-		out = append(out, b.Issue.Key+":"+strings.Join(labels, ","))
+		out = append(out, b.Issue.ID.Key+":"+strings.Join(labels, ","))
 	}
 	return out
 }

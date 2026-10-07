@@ -42,7 +42,7 @@ func TestTrackerMoveLeavesTheIssueInExactlyTheNewState(t *testing.T) {
 	tr := fake.NewTracker(issue("1", ready))
 	ctx := context.Background()
 
-	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("1"), ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	got, ok := tr.Issue("1")
@@ -80,7 +80,7 @@ func TestTrackerOtherLabelsAreNotListedAndAMoveKeepsThem(t *testing.T) {
 		t.Errorf("issue 1 states = %v, want %v", listed[0].States, want)
 	}
 
-	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("1"), ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	if want := []crew.State{waitingBrainstorm, "bug"}; !reflect.DeepEqual(tr.Labels("1"), want) {
@@ -97,7 +97,7 @@ func TestTrackerOtherLabelsAreNotListedAndAMoveKeepsThem(t *testing.T) {
 func TestTrackerMoveFromAStateTheIssueLeftIsMovedMeanwhile(t *testing.T) {
 	tr := fake.NewTracker(issue("1", needsAttention))
 
-	err := tr.Move(context.Background(), "1", ready, inProgress)
+	err := tr.Move(context.Background(), issueID("1"), ready, inProgress)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
@@ -115,7 +115,7 @@ func TestTrackerMoveFromAStateTheIssueLeftIsMovedMeanwhile(t *testing.T) {
 func TestTrackerMoveOfAnIssueAlreadyInToIsDone(t *testing.T) {
 	tr := fake.NewTracker(issue("1", inProgress))
 
-	if err := tr.Move(context.Background(), "1", ready, inProgress); err != nil {
+	if err := tr.Move(context.Background(), issueID("1"), ready, inProgress); err != nil {
 		t.Fatalf("Move = %v, want nil", err)
 	}
 	got, _ := tr.Issue("1")
@@ -130,7 +130,7 @@ func TestTrackerMoveOfAnIssueAlreadyInToIsDone(t *testing.T) {
 func TestTrackerMoveOfAnIssueInToAndAnotherStateIsMovedMeanwhile(t *testing.T) {
 	tr := fake.NewTracker(issue("1", inProgress, "paused"))
 
-	err := tr.Move(context.Background(), "1", ready, inProgress)
+	err := tr.Move(context.Background(), issueID("1"), ready, inProgress)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
@@ -140,7 +140,7 @@ func TestTrackerMoveOfAClosedIssueIsMovedMeanwhile(t *testing.T) {
 	tr := fake.NewTracker(issue("1", inProgress))
 	tr.Close("1")
 
-	err := tr.Move(context.Background(), "1", inProgress, readyToReview)
+	err := tr.Move(context.Background(), issueID("1"), inProgress, readyToReview)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
@@ -150,7 +150,7 @@ func TestTrackerSetStatesChangesAnIssueFromOutside(t *testing.T) {
 	tr := fake.NewTracker(issue("1", inProgress))
 	tr.SetStates("1", "paused")
 
-	err := tr.Move(context.Background(), "1", inProgress, readyToReview)
+	err := tr.Move(context.Background(), issueID("1"), inProgress, readyToReview)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Fatalf("Move = %v, want ErrMovedMeanwhile", err)
 	}
@@ -162,24 +162,24 @@ func TestTrackerScriptedMoveFailuresComeInOrderThenMovesSucceed(t *testing.T) {
 	tr.FailMoves("1", transient, port.ErrRefused)
 	ctx := context.Background()
 
-	err := tr.Move(ctx, "1", ready, inProgress)
+	err := tr.Move(ctx, issueID("1"), ready, inProgress)
 	if !errors.Is(err, transient) || errors.Is(err, port.ErrRefused) || errors.Is(err, port.ErrMovedMeanwhile) {
 		t.Errorf("first Move = %v, want the transient error", err)
 	}
-	if err := tr.Move(ctx, "1", ready, inProgress); !errors.Is(err, port.ErrRefused) {
+	if err := tr.Move(ctx, issueID("1"), ready, inProgress); !errors.Is(err, port.ErrRefused) {
 		t.Errorf("second Move = %v, want ErrRefused", err)
 	}
 	if got, _ := tr.Issue("1"); !reflect.DeepEqual(got.States, []crew.State{ready}) {
 		t.Errorf("states after failed moves = %v, want [ready]", got.States)
 	}
-	if err := tr.Move(ctx, "1", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("1"), ready, inProgress); err != nil {
 		t.Errorf("third Move = %v, want success", err)
 	}
 }
 
 func TestTrackerRecordsFailureReportsAndScriptsTheirFailures(t *testing.T) {
 	tr := fake.NewTracker(issue("1", needsAttention))
-	report := crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
+	report := crew.FailureReport{IssueID: issueID("1"), IssueRef: "#1", Failures: []crew.ActionFailure{
 		{
 			Action: "development", Reason: "tests fail",
 			Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
@@ -211,7 +211,7 @@ func TestTrackerIsSafeForConcurrentUse(t *testing.T) {
 	for i := range rune(20) {
 		wg.Go(func() {
 			key := string('a' + i)
-			if err := tr.Move(context.Background(), key, ready, inProgress); err != nil {
+			if err := tr.Move(context.Background(), issueID(key), ready, inProgress); err != nil {
 				t.Errorf("Move %s: %v", key, err)
 			}
 			if _, err := tr.List(context.Background(), []crew.State{ready}); err != nil {
@@ -253,7 +253,7 @@ func TestTrackerFactoryValidatesItsSectionAndReturnsTheTracker(t *testing.T) {
 func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 	tr := fake.NewReportingTracker(issue("74", ready))
 	var reporter port.StatusReporter = tr
-	started := crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
+	started := crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "implement", Kind: crew.StatusRunning,
 		Actions: []crew.ActionStatus{{Name: "development", State: crew.ActionRunning}}}
 	running := started.Clone()
 	running.Actions[0].Said = "Reading the plan."
@@ -366,9 +366,9 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	want := map[string][]crew.State{"3": {"bug"}, "1": {"bug", "Ready"}, "2": {"Waiting Brainstorm"}}
 	order := make([]string, 0, len(got))
 	for _, b := range got {
-		order = append(order, b.Issue.Key)
-		if !reflect.DeepEqual(b.Labels, want[b.Issue.Key]) {
-			t.Errorf("issue %s labels = %q, want %q", b.Issue.Key, b.Labels, want[b.Issue.Key])
+		order = append(order, b.Issue.ID.Key)
+		if !reflect.DeepEqual(b.Labels, want[b.Issue.ID.Key]) {
+			t.Errorf("issue %s labels = %q, want %q", b.Issue.ID.Key, b.Labels, want[b.Issue.ID.Key])
 		}
 	}
 	if wantOrder := []string{"3", "1", "2"}; !reflect.DeepEqual(order, wantOrder) {

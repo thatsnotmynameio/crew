@@ -31,7 +31,7 @@ const (
 type RunRecord struct {
 	Event    RunEvent
 	At       time.Time
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueRef string
 	Rule     crew.RuleName
 	Action   crew.ActionName
@@ -55,12 +55,12 @@ type RunRecord struct {
 // runKey identifies the runs one record replaces: those of an action, in a
 // rule, on an issue (R3).
 type runKey struct {
-	issue  string
+	issue  crew.IssueID
 	rule   crew.RuleName
 	action crew.ActionName
 }
 
-func keyOf(r RunRecord) runKey { return runKey{r.IssueKey, r.Rule, r.Action} }
+func keyOf(r RunRecord) runKey { return runKey{r.IssueID, r.Rule, r.Action} }
 
 // failed reports whether the run r records counts as failed (R2): it ended
 // and did not succeed, or it never recorded an end.
@@ -113,7 +113,7 @@ func (m *Model) remember(r RunRecord) {
 // lastRun returns the last run record of a, in h's rule, on h's issue
 // (R3).
 func (m *Model) lastRun(h *heldIssue, a *actionRun) (RunRecord, bool) {
-	r, ok := m.lastRuns[runKey{h.issue.Key, m.rules[h.rule].Name, a.name}]
+	r, ok := m.lastRuns[runKey{h.issue.ID, m.rules[h.rule].Name, a.name}]
 	return r, ok
 }
 
@@ -142,7 +142,7 @@ func (s *step) record(h *heldIssue, a *actionRun, event RunEvent) {
 		return
 	}
 	r := RunRecord{
-		Event: event, At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref,
+		Event: event, At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref,
 		Rule: m.rules[h.rule].Name, Action: a.name,
 		Workspace: a.workspace, Branch: a.branch, Log: a.log,
 	}

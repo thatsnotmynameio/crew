@@ -131,8 +131,8 @@ func TestAVerdictMovePutsTheIssueOnTheBoardAtOnceAndAStaleReadKeepsIt(t *testing
 	d.running(held)
 	d.send(core.BoardListed{})
 	wantBoard(t, d)
-	d.send(core.SessionEnded{IssueKey: "12", Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "12", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("12"), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
 	if got := listBoard(d.tick()); got == nil {
 		t.Fatal("tick did not read the board")
 	}
@@ -204,7 +204,7 @@ func TestAPullRequestsMoveNeverPutsItOnTheBoard(t *testing.T) {
 	d.settle(take)
 	wantBoard(t, d)
 
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "90", Action: "fix", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("90"), Action: "fix", Outcome: succeeded})
 	d.settle(verdict)
 	wantBoard(t, d)
 }

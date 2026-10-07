@@ -41,8 +41,8 @@ func wantListings(t *testing.T, cmds []core.Command, n int) {
 // returns the commands of its verdict.
 func (d *driver) endActions(key string) []core.Command {
 	d.t.Helper()
-	d.send(core.SessionEnded{IssueKey: key, Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: key, Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID(key), Action: "acceptance", Outcome: succeeded})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID(key), Action: "development", Outcome: succeeded})
 	return verdict
 }
 
@@ -143,7 +143,7 @@ func TestAE6AnIssueWithAnOwedMoveKeepsItsSlot(t *testing.T) {
 	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
 
 	cmds, events := d.send(core.Tick{})
-	wantCommands(t, cmds, core.Move{IssueKey: "1", From: inProgress, To: readyToReview})
+	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 	wantEvents(t, skips(events), core.PollSkipped{At: d.now, Busy: 2, Slots: 2})
 }
 

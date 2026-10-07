@@ -133,7 +133,7 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 	if _, err := tr.List(ctx, []crew.State{ready}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if err := tr.Move(ctx, "74", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("74"), ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	for range 2 {
@@ -141,7 +141,7 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 			t.Fatalf("ReportStatus: %v", err)
 		}
 	}
-	if err := tr.ReportFailure(ctx, crew.FailureReport{IssueKey: "12", IssueRef: "#12",
+	if err := tr.ReportFailure(ctx, crew.FailureReport{IssueID: issueID("12"), IssueRef: "#12",
 		Failures: []crew.ActionFailure{{Action: "lfg"}}}); err != nil {
 		t.Fatalf("ReportFailure: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 	if _, err := tr.List(ctx, []crew.State{ready}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if err := tr.Move(ctx, "74", ready, inProgress); err != nil {
+	if err := tr.Move(ctx, issueID("74"), ready, inProgress); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
 	for _, c := range gh.commandsTo() {
@@ -220,7 +220,7 @@ func TestABotRefusedAPermissionHandsEveryLaterWriteToYou(t *testing.T) {
 		reply{prefix: []string{"issue", "edit"}, as: asYou},
 	)
 	for range 2 {
-		if err := tr.Move(context.Background(), "74", ready, inProgress); err != nil {
+		if err := tr.Move(context.Background(), issueID("74"), ready, inProgress); err != nil {
 			t.Fatalf("Move: %v", err)
 		}
 	}
@@ -288,7 +288,7 @@ func TestAnIssueGoneForYouTooKeepsTheBotWriting(t *testing.T) {
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: commentOn(12), stderr: "gh: Not Found (HTTP 404)"},
 	)
-	report := crew.FailureReport{IssueKey: "12", IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
+	report := crew.FailureReport{IssueID: issueID("12"), IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
 	for range 2 {
 		err := tr.ReportFailure(context.Background(), report)
 		if !errors.Is(err, port.ErrMovedMeanwhile) {
@@ -332,7 +332,7 @@ func TestARateLimitedBotKeepsWriting(t *testing.T) {
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: commentOn(12), as: asBot, stderr: "gh: You have exceeded a secondary rate limit. (HTTP 403)"},
 	)
-	report := crew.FailureReport{IssueKey: "12", IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
+	report := crew.FailureReport{IssueID: issueID("12"), IssueRef: "#12", Failures: []crew.ActionFailure{{Action: "lfg"}}}
 	for range 2 {
 		err := tr.ReportFailure(context.Background(), report)
 		if err == nil {

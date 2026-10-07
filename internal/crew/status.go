@@ -9,8 +9,8 @@ import (
 // in one place it edits in place. The tracker adapter formats it in its own
 // markup and computes elapsed times from Updated.
 type Status struct {
-	// IssueKey and IssueRef identify the issue, as in Issue.
-	IssueKey string
+	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
+	IssueID  IssueID
 	IssueRef string
 	// Rule is the rule that runs or ran on the issue.
 	Rule RuleName

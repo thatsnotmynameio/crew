@@ -87,7 +87,7 @@ var success = crew.Outcome{Succeeded: true, Reason: "opened a pull request"}
 
 func issue(key string, states ...crew.State) crew.Issue {
 	return crew.Issue{
-		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key, States: states,
+		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.test/issues/" + key, States: states,
 	}
 }
 
@@ -404,3 +404,6 @@ func TestAE6LabelsNoRuleNamesAreNeverTouched(t *testing.T) {
 		}
 	})
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

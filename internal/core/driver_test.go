@@ -44,16 +44,19 @@ func draft() []crew.Rule {
 // issue returns an issue keyed key, opened minute minutes after t0.
 func issue(key string, minute int, states ...crew.State) crew.Issue {
 	return crew.Issue{
-		Key: key, Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
+		ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, URL: "https://example.com/issues/" + key,
 		Created: t0.Add(time.Duration(minute) * time.Minute), States: states,
 	}
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }
 
 // space is the workspace an engine would create for key and action.
 func space(key string, action crew.ActionName) core.WorkspaceReady {
 	name := "issue-" + key + "-" + string(action)
 	return core.WorkspaceReady{
-		IssueKey: key, Action: action, Workspace: crew.WorkspaceName(name), Dir: "/repo/.crew/worktrees/" + name,
+		IssueID: issueID(key), Action: action, Workspace: crew.WorkspaceName(name), Dir: "/repo/.crew/worktrees/" + name,
 		Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 }
@@ -89,9 +92,9 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ReportFailure:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
-				out, _ = d.send(space(c.Issue.Key, c.Action))
+				out, _ = d.send(space(c.Issue.ID.Key, c.Action))
 			case core.StartSession:
-				out, _ = d.send(core.SessionStarted{IssueKey: c.IssueKey, Action: c.Action})
+				out, _ = d.send(core.SessionStarted{IssueID: c.IssueID, Action: c.Action})
 			}
 			next = append(next, out...)
 		}
@@ -138,7 +141,7 @@ func noIDs(cmds []core.Command) []core.Command {
 func moveID(t *testing.T, cmds []core.Command, key string) core.CallID {
 	t.Helper()
 	for _, c := range cmds {
-		if m, ok := c.(core.Move); ok && m.IssueKey == key {
+		if m, ok := c.(core.Move); ok && m.IssueID.Key == key {
 			return m.ID
 		}
 	}
@@ -150,7 +153,7 @@ func moveID(t *testing.T, cmds []core.Command, key string) core.CallID {
 func reportID(t *testing.T, cmds []core.Command, key string) core.CallID {
 	t.Helper()
 	for _, c := range cmds {
-		if r, ok := c.(core.ReportFailure); ok && r.Report.IssueKey == key {
+		if r, ok := c.(core.ReportFailure); ok && r.Report.IssueID.Key == key {
 			return r.ID
 		}
 	}
@@ -181,7 +184,7 @@ func hasEvent(t *testing.T, events []core.Event, want core.Event) {
 func claimOf(t *testing.T, m *core.Model, key string) core.Claim {
 	t.Helper()
 	for _, iv := range m.View().Issues {
-		if iv.Issue.Key == key {
+		if iv.Issue.ID.Key == key {
 			return iv.Claim
 		}
 	}
@@ -194,7 +197,7 @@ func wantHeld(t *testing.T, m *core.Model, keys ...string) {
 	issues := m.View().Issues
 	got := make([]string, 0, len(issues))
 	for _, iv := range issues {
-		got = append(got, iv.Issue.Key)
+		got = append(got, iv.Issue.ID.Key)
 	}
 	if !slices.Equal(got, keys) {
 		t.Fatalf("held issues: got %v, want %v", got, keys)
@@ -209,15 +212,15 @@ var succeeded = crew.Outcome{Succeeded: true, Reason: "done"}
 func issueKey(c core.Command) string {
 	switch c := c.(type) {
 	case core.Move:
-		return c.IssueKey
+		return c.IssueID.Key
 	case core.ReportFailure:
-		return c.Report.IssueKey
+		return c.Report.IssueID.Key
 	case core.CreateWorkspace:
-		return c.Issue.Key
+		return c.Issue.ID.Key
 	case core.StartSession:
-		return c.IssueKey
+		return c.IssueID.Key
 	case core.StopSession:
-		return c.IssueKey
+		return c.IssueID.Key
 	}
 	return ""
 }
@@ -226,8 +229,8 @@ func issueKey(c core.Command) string {
 // commands, both in flight.
 func judgedNeedingAttention(d *driver) []core.Command {
 	d.running(issue("1", 1, ready))
-	d.send(core.SessionEnded{IssueKey: "1", Action: "acceptance", Outcome: failed("broke")})
-	cmds, _ := d.send(core.SessionEnded{IssueKey: "1", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: failed("broke")})
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 	return cmds
 }
 

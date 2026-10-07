@@ -50,10 +50,11 @@ type Tracker interface {
 	// carries every crew state it is in, not only the ones asked for, so the
 	// engine can skip an issue found in two states; it carries nothing that
 	// is not a crew state. An issue is Blocked while an open issue blocks
-	// it, when the tracker records dependencies. An error means the list
-	// could not be read; it is transient.
+	// it, when the tracker records dependencies. The tracker sets only the
+	// key of each issue's ID; the engine sets its repository. An error
+	// means the list could not be read; it is transient.
 	List(ctx context.Context, states []crew.State) ([]crew.Issue, error)
-	// Move moves the issue identified by issueKey from one state to
+	// Move moves issue, which the tracker finds by its key, from one state to
 	// another, and leaves it in exactly one crew state, to, without
 	// touching what is not crew's. It returns an error wrapping
 	// ErrMovedMeanwhile when the issue is closed or not in from, one
@@ -62,7 +63,7 @@ type Tracker interface {
 	// nothing, when the issue is already exactly in to and not in from,
 	// whatever other labels it carries, so retrying a move that landed is
 	// safe.
-	Move(ctx context.Context, issueKey string, from, to crew.State) error
+	Move(ctx context.Context, issue crew.IssueID, from, to crew.State) error
 	// ReportFailure posts report on its issue, formatted in the tracker's
 	// own markup. Its errors are classified as Move's are.
 	ReportFailure(ctx context.Context, report crew.FailureReport) error
@@ -270,8 +271,10 @@ type BoardLister interface {
 	// ListBoard returns the open issues the code owners or one of the bots
 	// opened that carry any of labels, never a pull request, oldest first.
 	// Each carries the labels of labels it carries, matched as the tracker
-	// matches labels, spelled as labels spells them and in its order. An error
-	// means the board could not be read; it is transient.
+	// matches labels, spelled as labels spells them and in its order. The
+	// tracker sets only the key of each issue's ID; the engine sets its
+	// repository. An error means the board could not be read; it is
+	// transient.
 	ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error)
 }
 
@@ -360,9 +363,10 @@ type Check struct {
 	// the command reads them from files, never as part of it.
 	Prompt      string
 	LastMessage string
-	// IssueRef, IssueKey and IssueURL identify the issue, as in crew.Issue.
+	// IssueRef, IssueID and IssueURL identify the issue, as Ref, ID and URL
+	// in crew.Issue.
 	IssueRef string
-	IssueKey string
+	IssueID  crew.IssueID
 	IssueURL string
 	// Branch is the branch the action's work went on.
 	Branch string

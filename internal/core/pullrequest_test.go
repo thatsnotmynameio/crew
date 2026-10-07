@@ -60,7 +60,7 @@ func wantReport(t *testing.T, got, want crew.PullRequestReport) {
 
 // answerPullRequests answers the report in flight for key with result.
 func (d *driver) answerPullRequests(key string, result core.Result) ([]core.Command, []core.Event) {
-	return d.send(core.PullRequestsResult{IssueKey: key, Result: result, Reason: result.String()})
+	return d.send(core.PullRequestsResult{IssueID: issueID(key), Result: result, Reason: result.String()})
 }
 
 // takeLanded polls #74 alone and lands its take. It returns the commands the
@@ -78,8 +78,8 @@ func (d *driver) takeLanded() []core.Command {
 func (d *driver) verdictLanded(landed []core.Command, acceptance, development crew.Outcome) []core.Command {
 	d.t.Helper()
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: acceptance})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: development})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: acceptance})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: development})
 	noPullRequestReport(d.t, verdict)
 	cmds, _ := d.send(core.CallResult{ID: moveID(d.t, verdict, "74"), Result: core.ResultDone})
 	return cmds
@@ -107,8 +107,8 @@ func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
 	landed, _ := d.send(core.CallResult{ID: moveID(t, cmds, "74"), Result: core.ResultDone})
 	noPullRequestReport(t, landed)
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: failed("broke")})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 	moved, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	noPullRequestReport(t, moved)
 	reported, _ := d.send(core.CallResult{ID: reportID(t, verdict, "74"), Result: core.ResultDone})
@@ -119,7 +119,7 @@ func TestWithoutPullRequestReportsARuleReportsNone(t *testing.T) {
 func TestALandedTakeReportsItsMovesToWithNoEnd(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	wantReport(t, pullRequestReportOf(t, d.takeLanded()), crew.PullRequestReport{
-		IssueKey: "74", IssueRef: "#74", State: inProgress,
+		IssueID: issueID("74"), IssueRef: "#74", State: inProgress,
 	})
 }
 
@@ -137,7 +137,7 @@ func TestATakeThatFailsReportsNothing(t *testing.T) {
 func TestAE1ASucceededRuleReportsOnSuccessAndItsEndOnceItsMoveLands(t *testing.T) {
 	d := newPullRequestDriver(t, draft())
 	wantReport(t, pullRequestReportOf(t, d.succeededRule()), crew.PullRequestReport{
-		IssueKey: "74", IssueRef: "#74", State: readyToReview, End: allSucceeded,
+		IssueID: issueID("74"), IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
 }
 
@@ -146,14 +146,15 @@ func TestAFailedRuleReportsOnFailureWithEachFailedActionsCause(t *testing.T) {
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: failed("broke")})
-	d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
-	verdict, _ := d.send(core.CheckEnded{IssueKey: "74", Action: "development", Outcome: failed("no pull request")})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: failed("broke")})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
+	verdict, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development",
+		Outcome: failed("no pull request")})
 	noPullRequestReport(t, verdict)
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReport{
-		IssueKey: "74", IssueRef: "#74", State: needsAttention,
+		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
 		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionFailed, Cause: crew.CauseSession, Log: space("74", "acceptance").Log},
 			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseCheck, Log: space("74", "development").Log,
@@ -167,14 +168,14 @@ func TestAE2AStopWhileTheSessionRunsReportsOnFailureWithTheActionStopped(t *test
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultDone)
 	d.runAll(landed)
-	d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
+	d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
 	d.send(core.StopRequested{})
-	verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: failed("killed")})
+	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: failed("killed")})
 	d.send(core.CallResult{ID: reportID(t, verdict, "74"), Result: core.ResultDone})
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
 	wantReport(t, pullRequestReportOf(t, cmds), crew.PullRequestReport{
-		IssueKey: "74", IssueRef: "#74", State: needsAttention,
+		IssueID: issueID("74"), IssueRef: "#74", State: needsAttention,
 		End: &crew.RuleEnd{Rule: "implement", Actions: []crew.ActionStatus{
 			{Name: "acceptance", State: crew.ActionSucceeded},
 			{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStopped, Log: space("74", "development").Log},
@@ -189,8 +190,8 @@ func TestADroppedVerdictMoveReportsNothing(t *testing.T) {
 			landed := d.takeLanded()
 			d.answerPullRequests("74", core.ResultDone)
 			d.runAll(landed)
-			d.send(core.SessionEnded{IssueKey: "74", Action: "acceptance", Outcome: succeeded})
-			verdict, _ := d.send(core.SessionEnded{IssueKey: "74", Action: "development", Outcome: succeeded})
+			d.send(core.SessionEnded{IssueID: issueID("74"), Action: "acceptance", Outcome: succeeded})
+			verdict, _ := d.send(core.SessionEnded{IssueID: issueID("74"), Action: "development", Outcome: succeeded})
 
 			cmds, _ := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: result})
 			noPullRequestReport(t, cmds)
@@ -209,7 +210,7 @@ func TestTheVerdictReportWaitsForTheTakeReportInFlight(t *testing.T) {
 	cmds, _ := d.answerPullRequests("74", core.ResultDone)
 	verdict := pullRequestReportOf(t, cmds)
 	wantReport(t, verdict, crew.PullRequestReport{
-		IssueKey: "74", IssueRef: "#74", State: readyToReview, End: allSucceeded,
+		IssueID: issueID("74"), IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
 	if verdict.ID == take.ID {
 		t.Fatalf("the verdict report has the take report's ID %q", take.ID)
@@ -220,10 +221,10 @@ func TestAE5AReportThatFailsTransientlyIsOwedAndResentAtTheNextTick(t *testing.T
 	d := newPullRequestDriver(t, draft())
 	want := pullRequestReportOf(t, d.succeededRule())
 
-	cmds, events := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "timeout"})
+	cmds, events := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "timeout"})
 	noPullRequestReport(t, cmds)
 	hasEvent(t, events, core.CallOwed{At: d.now, Reason: "timeout", Call: core.Call{
-		Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: readyToReview,
+		Kind: core.CallPullRequests, IssueID: issueID("74"), IssueRef: "#74", To: readyToReview,
 	}})
 	if got := onlyEntry(t, d); got.Move != crew.MoveDone {
 		t.Fatalf("handled move: got %v, want done", got.Move)
@@ -239,7 +240,7 @@ func TestAnOwedReportIsInTheViewAndHoldsBackTheIssuesLaterReports(t *testing.T) 
 	d := newPullRequestDriver(t, draft())
 	landed := d.takeLanded()
 	d.answerPullRequests("74", core.ResultFailed)
-	owed := core.Call{Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: inProgress}
+	owed := core.Call{Kind: core.CallPullRequests, IssueID: issueID("74"), IssueRef: "#74", To: inProgress}
 	if got := d.m.View().Owed; !reflect.DeepEqual(got, []core.Call{owed}) {
 		t.Fatalf("owed: got %#v, want %#v", got, []core.Call{owed})
 	}
@@ -270,7 +271,7 @@ func TestARefusedOrMovedMeanwhileReportIsDroppedAndTheNextOneSent(t *testing.T) 
 
 			cmds, events := d.answerPullRequests("74", result)
 			hasEvent(t, events, core.CallDropped{At: d.now, Result: result, Reason: result.String(), Call: core.Call{
-				Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: inProgress,
+				Kind: core.CallPullRequests, IssueID: issueID("74"), IssueRef: "#74", To: inProgress,
 			}})
 			if got := pullRequestReportOf(t, cmds); got.State != readyToReview {
 				t.Fatalf("sent the report to %q after the drop, want %q", got.State, readyToReview)
@@ -292,10 +293,11 @@ func TestStopGivesAnOwedReportOneFinalTryThenDropsIt(t *testing.T) {
 		t.Fatal("stopped with the final try in flight")
 	}
 
-	cmds, events := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "still down"})
+	cmds, events := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed,
+		Reason: "still down"})
 	noPullRequestReport(t, cmds)
 	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-		Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: readyToReview,
+		Kind: core.CallPullRequests, IssueID: issueID("74"), IssueRef: "#74", To: readyToReview,
 	}})
 	if !d.m.Stopped() || !containsStopped(events) {
 		t.Fatal("not stopped once the final try failed")
@@ -323,7 +325,7 @@ func TestAReportThatFailsInFlightAfterAStopGetsOneFinalTry(t *testing.T) {
 	want := pullRequestReportOf(t, d.succeededRule())
 	d.send(core.StopRequested{})
 
-	cmds, _ := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "down"})
+	cmds, _ := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "down"})
 	if got := pullRequestReportOf(t, cmds); !reflect.DeepEqual(got, want) {
 		t.Fatalf("final try:\n got %#v\nwant %#v", got, want)
 	}
@@ -331,10 +333,11 @@ func TestAReportThatFailsInFlightAfterAStopGetsOneFinalTry(t *testing.T) {
 		t.Fatal("stopped with the final try in flight")
 	}
 
-	cmds, events := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "still down"})
+	cmds, events := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed,
+		Reason: "still down"})
 	noPullRequestReport(t, cmds)
 	hasEvent(t, events, core.CallDropped{At: d.now, Result: core.ResultFailed, Reason: "still down", Call: core.Call{
-		Kind: core.CallPullRequests, IssueKey: "74", IssueRef: "#74", To: readyToReview,
+		Kind: core.CallPullRequests, IssueID: issueID("74"), IssueRef: "#74", To: readyToReview,
 	}})
 	if !d.m.Stopped() || !containsStopped(events) {
 		t.Fatal("not stopped once the final try failed")
@@ -348,15 +351,15 @@ func TestAReportQueuedBehindOneThatFailsAfterAStopIsStillSent(t *testing.T) {
 	noPullRequestReport(t, d.verdictLanded(landed, succeeded, succeeded))
 	d.send(core.StopRequested{})
 
-	cmds, _ := d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "down"})
+	cmds, _ := d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "down"})
 	if got := pullRequestReportOf(t, cmds); got.ID != take.ID {
 		t.Fatalf("final try sent report %q, want the take report %q", got.ID, take.ID)
 	}
 
-	cmds, _ = d.send(core.PullRequestsResult{IssueKey: "74", Result: core.ResultFailed, Reason: "still down"})
+	cmds, _ = d.send(core.PullRequestsResult{IssueID: issueID("74"), Result: core.ResultFailed, Reason: "still down"})
 	verdict := pullRequestReportOf(t, cmds)
 	wantReport(t, verdict, crew.PullRequestReport{
-		IssueKey: "74", IssueRef: "#74", State: readyToReview, End: allSucceeded,
+		IssueID: issueID("74"), IssueRef: "#74", State: readyToReview, End: allSucceeded,
 	})
 	if d.m.Stopped() {
 		t.Fatal("stopped with the verdict report in flight")

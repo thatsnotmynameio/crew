@@ -31,9 +31,9 @@ type Tick struct {
 
 // Said is what the running session of Action on an issue last said.
 type Said struct {
-	IssueKey string
-	Action   crew.ActionName
-	Text     string
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Text    string
 }
 
 // StopRequested asks the core to stop (R9). The core starts nothing new,
@@ -145,22 +145,22 @@ type CallResult struct {
 }
 
 // StatusResult is how a ReportStatus command ended, correlated by its
-// issue's key. Its Result is classified as a CallResult's is.
+// issue's id. Its Result is classified as a CallResult's is.
 type StatusResult struct {
-	At       time.Time
-	IssueKey string
-	Result   Result
+	At      time.Time
+	IssueID crew.IssueID
+	Result  Result
 	// Reason says why the write did not succeed, in one line. Empty on
 	// ResultDone.
 	Reason string
 }
 
 // PullRequestsResult is how a ReportPullRequests command ended, correlated
-// by its issue's key. Its Result is classified as a CallResult's is.
+// by its issue's id. Its Result is classified as a CallResult's is.
 type PullRequestsResult struct {
-	At       time.Time
-	IssueKey string
-	Result   Result
+	At      time.Time
+	IssueID crew.IssueID
+	Result  Result
 	// Reason says why the report did not succeed, in one line. Empty on
 	// ResultDone.
 	Reason string
@@ -169,9 +169,9 @@ type PullRequestsResult struct {
 // WorkspaceReady is a CreateWorkspace or ReopenWorkspace that succeeded.
 type WorkspaceReady struct {
 	At time.Time
-	// IssueKey and Action identify the CreateWorkspace this answers.
-	IssueKey string
-	Action   crew.ActionName
+	// IssueID and Action identify the CreateWorkspace this answers.
+	IssueID crew.IssueID
+	Action  crew.ActionName
 	// Workspace is the workspace's unique name.
 	Workspace crew.WorkspaceName
 	// Dir is the workspace's absolute directory, where the session runs.
@@ -192,9 +192,9 @@ type WorkspaceReady struct {
 // WorkspaceGone is a ReopenWorkspace whose workspace no longer exists. The
 // core creates a fresh one instead.
 type WorkspaceGone struct {
-	At       time.Time
-	IssueKey string
-	Action   crew.ActionName
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
 }
 
 // RecordFailed is a RecordRun the engine could not write. Record is the
@@ -208,27 +208,27 @@ type RecordFailed struct {
 // WorkspaceFailed is a CreateWorkspace that failed. The action counts as
 // failed with Reason, and its sibling actions go on.
 type WorkspaceFailed struct {
-	At       time.Time
-	IssueKey string
-	Action   crew.ActionName
-	Reason   string
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Reason  string
 }
 
 // SessionStarted is a StartSession whose session is now running. Its At is
 // the action's start time.
 type SessionStarted struct {
-	At       time.Time
-	IssueKey string
-	Action   crew.ActionName
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
 }
 
 // SessionFailedToStart is a StartSession that started no session. The action
 // counts as failed with Reason.
 type SessionFailedToStart struct {
-	At       time.Time
-	IssueKey string
-	Action   crew.ActionName
-	Reason   string
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Reason  string
 }
 
 // SessionEnded is a running session that ended, with its harness's
@@ -236,7 +236,7 @@ type SessionFailedToStart struct {
 // message, which only the action's checks read.
 type SessionEnded struct {
 	At          time.Time
-	IssueKey    string
+	IssueID     crew.IssueID
 	Action      crew.ActionName
 	Outcome     crew.Outcome
 	Usage       crew.Usage
@@ -246,17 +246,17 @@ type SessionEnded struct {
 // CheckEnded is a RunCheck that ended, with the check's verdict: it passed,
 // or it failed, ran out of time or could not start, as its Reason says.
 type CheckEnded struct {
-	At       time.Time
-	IssueKey string
-	Action   crew.ActionName
-	Outcome  crew.Outcome
+	At      time.Time
+	IssueID crew.IssueID
+	Action  crew.ActionName
+	Outcome crew.Outcome
 }
 
 // PullRequestFound is a FindPullRequest that ended: the pull request the
 // tracker found, none, or not looked up when the lookup failed.
 type PullRequestFound struct {
 	At          time.Time
-	IssueKey    string
+	IssueID     crew.IssueID
 	Action      crew.ActionName
 	PullRequest crew.PullRequest
 }

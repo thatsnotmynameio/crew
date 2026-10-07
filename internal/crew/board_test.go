@@ -35,7 +35,7 @@ func TestBoardLabels(t *testing.T) {
 }
 
 func TestBoardIssueClone(t *testing.T) {
-	b := BoardIssue{Issue: Issue{Key: "20", States: []State{"crew:fix:in progress"}}, Labels: []State{"bug"}}
+	b := BoardIssue{Issue: Issue{ID: IssueID{Key: "20"}, States: []State{"crew:fix:in progress"}}, Labels: []State{"bug"}}
 	c := b.Clone()
 	c.Labels[0] = "changed"
 	c.Issue.States[0] = "changed"

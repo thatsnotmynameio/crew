@@ -19,7 +19,7 @@ import (
 // before start.
 func entry(key, title string, rule crew.RuleName, to crew.State, taken, ended int) core.HandledView {
 	return core.HandledView{
-		Issue: crew.Issue{Key: key, Ref: "#" + key, Title: title}, Rule: rule, To: to, Move: crew.MoveDone,
+		Issue: crew.Issue{ID: issueID(key), Ref: "#" + key, Title: title}, Rule: rule, To: to, Move: crew.MoveDone,
 		Taken: start.Add(-time.Duration(taken) * time.Minute), Ended: start.Add(-time.Duration(ended) * time.Minute),
 	}
 }
@@ -49,7 +49,8 @@ func givenUpEntry(e core.HandledView, reason string) core.HandledView {
 func handledSnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Board = append(u.Snapshot.Board, crew.BoardIssue{
-		Issue: crew.Issue{Key: "7", Ref: "#7", Title: "Log the poll interval"}, Labels: []crew.State{"ready to review"},
+		Issue:  crew.Issue{ID: issueID("7"), Ref: "#7", Title: "Log the poll interval"},
+		Labels: []crew.State{"ready to review"},
 	})
 	u.Snapshot.Handled = []core.HandledView{
 		acted(
@@ -174,3 +175,6 @@ func nextCard(l, prefix string) int {
 	}
 	return i
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

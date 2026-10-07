@@ -27,13 +27,13 @@ const (
 )
 
 func issue(key string, states ...crew.State) crew.Issue {
-	return crew.Issue{Key: key, Ref: "#" + key, Title: "Issue " + key, States: states}
+	return crew.Issue{ID: issueID(key), Ref: "#" + key, Title: "Issue " + key, States: states}
 }
 
 func keys(issues []crew.Issue) []string {
 	out := make([]string, 0, len(issues))
 	for _, i := range issues {
-		out = append(out, i.Key)
+		out = append(out, i.ID.Key)
 	}
 	return out
 }
@@ -454,3 +454,6 @@ func TestCheckerScriptedToBlockRunsUntilItsContextEnds(t *testing.T) {
 		t.Errorf("blocking check = %v, want the context's error", err)
 	}
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

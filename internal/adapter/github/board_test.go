@@ -83,11 +83,11 @@ func TestListBoardKeepsTheAskedLabelsEachIssueCarries(t *testing.T) {
 	}
 
 	want := []crew.BoardIssue{
-		{Issue: crew.Issue{Key: "9", Ref: "#9", Title: "Issue 9", URL: "https://github.com/o/r/issues/9",
+		{Issue: crew.Issue{ID: issueID("9"), Ref: "#9", Title: "Issue 9", URL: "https://github.com/o/r/issues/9",
 			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}, Labels: []crew.State{"Idea"}},
-		{Issue: crew.Issue{Key: "14", Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
+		{Issue: crew.Issue{ID: issueID("14"), Ref: "#14", Title: "Issue 14", URL: "https://github.com/o/r/issues/14",
 			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, Labels: []crew.State{"bug", "Idea"}},
-		{Issue: crew.Issue{Key: "12", Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+		{Issue: crew.Issue{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
 			Created: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC), States: []crew.State{inProgress}},
 			Labels: []crew.State{"bug"}},
 	}

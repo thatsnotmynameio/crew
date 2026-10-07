@@ -10,7 +10,7 @@ func (s *step) actionInput(in Input) {
 	case WorkspaceReady:
 		s.workspaceReady(in)
 	case WorkspaceFailed:
-		if h, a := m.action(in.IssueKey, in.Action, PhaseCreating, PhaseReopening); a != nil {
+		if h, a := m.action(in.IssueID, in.Action, PhaseCreating, PhaseReopening); a != nil {
 			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseWorkspace)
 		}
 	case WorkspaceGone:
@@ -18,7 +18,7 @@ func (s *step) actionInput(in Input) {
 	case SessionStarted:
 		s.sessionStarted(in)
 	case SessionFailedToStart:
-		if h, a := m.action(in.IssueKey, in.Action, PhaseStarting); a != nil {
+		if h, a := m.action(in.IssueID, in.Action, PhaseStarting); a != nil {
 			s.end(h, a, crew.Outcome{Reason: in.Reason}, crew.CauseStart)
 		}
 	case SessionEnded:
@@ -35,12 +35,12 @@ func (s *step) actionInput(in Input) {
 // without one: its end is written without a workspace and not remembered, so
 // the failed run stays resumable.
 func (s *step) workspaceGone(in WorkspaceGone) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseReopening)
+	h, a := s.m.action(in.IssueID, in.Action, PhaseReopening)
 	if a == nil {
 		return
 	}
 	s.emit(WorkspaceMissing{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Workspace: a.prev.Workspace,
 	})
 	if s.m.stopping {
@@ -57,7 +57,7 @@ func (s *step) workspaceGone(in WorkspaceGone) {
 // run's (R5), or, after a stop, fails the action without starting it.
 func (s *step) workspaceReady(in WorkspaceReady) {
 	m := s.m
-	h, a := m.action(in.IssueKey, in.Action, PhaseCreating, PhaseReopening)
+	h, a := m.action(in.IssueID, in.Action, PhaseCreating, PhaseReopening)
 	if a == nil {
 		return
 	}
@@ -85,7 +85,7 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 	}
 	a.phase = PhaseStarting
 	s.command(StartSession{
-		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
+		IssueID: h.issue.ID, Action: a.name, Dir: a.dir, Prompt: a.prompt, Log: a.log, Resumed: a.resumed,
 		Agent: a.agent, Bot: a.bot,
 	})
 }
@@ -93,18 +93,18 @@ func (s *step) workspaceReady(in WorkspaceReady) {
 // sessionStarted records the action's start time, and stops the session at
 // once when a stop arrived while it was starting.
 func (s *step) sessionStarted(in SessionStarted) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting)
+	h, a := s.m.action(in.IssueID, in.Action, PhaseStarting)
 	if a == nil {
 		return
 	}
 	a.phase = PhaseRunning
 	a.started = s.at
 	s.emit(ActionStarted{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Workspace: a.workspace, Branch: a.branch, Log: a.log, Resumed: a.resumed,
 	})
 	if s.m.stopping {
-		s.command(StopSession{IssueKey: h.issue.Key, Action: a.name})
+		s.command(StopSession{IssueID: h.issue.ID, Action: a.name})
 	}
 }
 
@@ -114,14 +114,14 @@ func (s *step) sessionStarted(in SessionStarted) {
 // keeps what the session used and its last message, and looks up the pull
 // request the action opened, whatever its outcome (R5, KTD3).
 func (s *step) sessionEnded(in SessionEnded) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseStarting, PhaseRunning)
+	h, a := s.m.action(in.IssueID, in.Action, PhaseStarting, PhaseRunning)
 	if a == nil {
 		return
 	}
 	a.usage, a.lastMessage = in.Usage, in.LastMessage
 	if s.m.finding {
 		a.finding = true
-		s.command(FindPullRequest{IssueKey: h.issue.Key, Action: a.name, Branch: a.branch, Since: a.since})
+		s.command(FindPullRequest{IssueID: h.issue.ID, Action: a.name, Branch: a.branch, Since: a.since})
 	}
 	cause := crew.CauseSession
 	if s.m.stopping {
@@ -142,7 +142,7 @@ func (s *step) sessionEnded(in SessionEnded) {
 func (s *step) runCheck(h *heldIssue, a *actionRun) {
 	c := a.checks[len(a.results)]
 	s.command(RunCheck{
-		IssueKey: h.issue.Key, Action: a.name, Dir: a.dir, Name: c.Name, Command: c.Script, Log: a.log,
+		IssueID: h.issue.ID, Action: a.name, Dir: a.dir, Name: c.Name, Command: c.Script, Log: a.log,
 		IssueRef: h.issue.Ref, IssueURL: h.issue.URL, Branch: a.branch, Bot: a.bot,
 		Prompt: a.prompt, LastMessage: a.lastMessage,
 	})
@@ -153,7 +153,7 @@ func (s *step) runCheck(h *heldIssue, a *actionRun) {
 // last; one that did not pass ends it with the check's verdict (R4). A stop
 // ends it as stopped, whatever the check returned (R8).
 func (s *step) checkEnded(in CheckEnded) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking)
+	h, a := s.m.action(in.IssueID, in.Action, PhaseChecking)
 	if a == nil {
 		return
 	}
@@ -173,7 +173,7 @@ func (s *step) checkEnded(in CheckEnded) {
 // pullRequestFound keeps the pull request the lookup found, and ends the
 // action when its outcome was waiting for it (KTD3).
 func (s *step) pullRequestFound(in PullRequestFound) {
-	h, a := s.m.action(in.IssueKey, in.Action, PhaseChecking, PhaseFinishing)
+	h, a := s.m.action(in.IssueID, in.Action, PhaseChecking, PhaseFinishing)
 	if a == nil || !a.finding {
 		return
 	}
@@ -201,7 +201,7 @@ func (s *step) end(h *heldIssue, a *actionRun, outcome crew.Outcome, cause crew.
 	s.m.bots.credit(s.m.bots.identity(a.bot), a.spend())
 	s.record(h, a, RunEnded)
 	s.emit(ActionEnded{
-		At: s.at, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
+		At: s.at, IssueID: h.issue.ID, IssueRef: h.issue.Ref, Rule: s.m.rules[h.rule].Name,
 		Action: a.name, Outcome: outcome, Workspace: a.workspace, Log: a.log,
 	})
 	if h.ended() {

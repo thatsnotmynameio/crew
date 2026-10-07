@@ -294,7 +294,7 @@ func (env ruleEnv) check(n *yaml.Node, path string) (crew.Check, error) {
 // sampleIssue is the issue every prompt is rendered for at load, so a bad
 // template stops crew before polling rather than when an issue is taken.
 func sampleIssue() crew.Issue {
-	return crew.Issue{Key: "42", Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
+	return crew.Issue{ID: crew.IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42"}
 }
 
 // spellOnce gives every label the spelling it first has in the rules, in

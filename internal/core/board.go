@@ -1,7 +1,6 @@
 package core
 
 import (
-	"cmp"
 	"slices"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -168,7 +167,7 @@ func (b *board) names(kind crew.Kind, label crew.State) bool {
 func (b *board) apply(mv boardMove) {
 	to := mv.to
 	named := b.names(mv.issue.Kind, to)
-	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue.Key == mv.issue.Key })
+	i := slices.IndexFunc(b.issues, func(e crew.BoardIssue) bool { return e.Issue.ID == mv.issue.ID })
 	if i < 0 {
 		if named {
 			b.issues = append(b.issues, crew.BoardIssue{Issue: mv.issue.Clone(), Labels: []crew.State{to}})
@@ -185,7 +184,7 @@ func (b *board) apply(mv boardMove) {
 	}
 }
 
-// view returns a copy of the board's issues, oldest first and then by key
+// view returns a copy of the board's issues, oldest first and then by id
 // (KTD6); nil when there are none.
 func (b *board) view() []crew.BoardIssue {
 	if len(b.issues) == 0 {
@@ -199,7 +198,7 @@ func (b *board) view() []crew.BoardIssue {
 		if c := x.Issue.Created.Compare(y.Issue.Created); c != 0 {
 			return c
 		}
-		return cmp.Compare(x.Issue.Key, y.Issue.Key)
+		return compareIssueIDs(x.Issue.ID, y.Issue.ID)
 	})
 	return out
 }

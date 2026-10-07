@@ -135,8 +135,8 @@ func you(pairs []string, running ...core.RunningAction) core.BotView {
 // on the board in its rule's column, 12 minutes into a one-hour run, with
 // no bot configured.
 func runningSnapshot() engine.Update {
-	one := crew.Issue{Key: "1", Ref: "#1", Title: "Add login form"}
-	two := crew.Issue{Key: "2", Ref: "#2", Title: "Fix the flaky stream test"}
+	one := crew.Issue{ID: issueID("1"), Ref: "#1", Title: "Add login form"}
+	two := crew.Issue{ID: issueID("2"), Ref: "#2", Title: "Fix the flaky stream test"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},
@@ -201,7 +201,7 @@ func TestASnapshotWithTwoRunningActionsRendersTheGoldenView(t *testing.T) {
 // workspace, one resumed in its reopened workspace 3 minutes before start,
 // and one fresh, started 2 minutes before start.
 func resumingSnapshot() engine.Update {
-	issue := crew.Issue{Key: "9", Ref: "#9", Title: "Add login form"}
+	issue := crew.Issue{ID: issueID("9"), Ref: "#9", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{Queues: []core.QueueView{{Name: crew.DefaultQueue, Slots: 2, Busy: 1}}, Issues: []core.IssueView{
 			{Issue: issue, Rule: "development", Queue: crew.DefaultQueue, Claim: core.ClaimRunning, Actions: []core.ActionView{
@@ -237,7 +237,7 @@ func TestAResumedActionShowsItsWorkspaceAndAReopeningOneItsPhase(t *testing.T) {
 
 // windingDownSnapshot is #42 still running after a one-hour run time is up.
 func windingDownSnapshot() engine.Update {
-	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Add login form"}
+	issue := crew.Issue{ID: issueID("42"), Ref: "#42", Title: "Add login form"}
 	return engine.Update{Snapshot: engine.Snapshot{
 		View: core.View{TimeUp: true, Queues: []core.QueueView{
 			{Name: crew.DefaultQueue, Slots: 2, Busy: 1},

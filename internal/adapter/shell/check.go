@@ -62,7 +62,7 @@ func (c *Checker) Check(ctx context.Context, check port.Check) error {
 	env := slices.Clone(check.Identity.Env)
 	env = append(env,
 		"CREW_ISSUE_REF="+check.IssueRef,
-		"CREW_ISSUE_KEY="+check.IssueKey,
+		"CREW_ISSUE_KEY="+check.IssueID.Key,
 		"CREW_ISSUE_URL="+check.IssueURL,
 		"CREW_BRANCH="+check.Branch,
 		"CREW_CODE_OWNERS="+strings.Join(check.CodeOwners, " "),

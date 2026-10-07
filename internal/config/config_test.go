@@ -213,7 +213,7 @@ func TestLoadAppliesEngineDefaults(t *testing.T) {
 
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneRule)
-	issue := crew.Issue{Key: "42", Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
+	issue := crew.Issue{ID: issueID("42"), Ref: "#42", Title: "Fix it", URL: "https://example.com/42"}
 	got, err := cfg.Rules[0].Actions[0].Render(issue)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -386,3 +386,6 @@ var invalidSettings = []rejectCase{
 		wants: []string{"line 1", "must be a mapping", "rules"},
 	},
 }
+
+// issueID returns the id of the issue keyed key, in no repository.
+func issueID(key string) crew.IssueID { return crew.IssueID{Key: key} }

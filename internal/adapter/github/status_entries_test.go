@@ -91,7 +91,7 @@ func commentAfter(t *testing.T, statuses ...crew.Status) string {
 // developmentEnded is #74's development rule, run r1, ended with its lfg
 // action failed on its check.
 func developmentEnded() crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: "r1",
+	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "development", Kind: crew.StatusEnded, Run: "r1",
 		Actions: []crew.ActionStatus{{Name: "lfg", State: crew.ActionFailed, Cause: crew.CauseCheck,
 			Checks: []crew.CheckResult{{Name: "pr-closes-issue", Reason: "no open pull request closes #74"}},
 			Log:    ".crew/logs/issue-74-lfg.log"}},
@@ -100,7 +100,7 @@ func developmentEnded() crew.Status {
 
 // fix is #74's fix rule in run, running its address action that said said.
 func fix(run, said string) crew.Status {
-	return crew.Status{IssueKey: "74", IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
+	return crew.Status{IssueID: issueID("74"), IssueRef: "#74", Rule: "fix", Kind: crew.StatusRunning, Run: run,
 		Actions: []crew.ActionStatus{{Name: "address", Started: updated.Add(-5 * time.Minute), Said: said}},
 		Updated: updated}
 }

@@ -87,7 +87,7 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, action crew.Ac
 	if _, err := w.git(ctx, "fetch", "origin", def); err != nil {
 		return port.Space{}, fmt.Errorf("fetch origin %s: %w", def, err)
 	}
-	space, err := w.free(ctx, "issue-"+sanitize(issue.Key)+"-"+sanitize(string(action)))
+	space, err := w.free(ctx, "issue-"+sanitize(issue.ID.Key)+"-"+sanitize(string(action)))
 	if err != nil {
 		return port.Space{}, err
 	}

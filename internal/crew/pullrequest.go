@@ -11,8 +11,8 @@ type PullRequestReport struct {
 	// ID identifies the report across its retries: it is unique within one
 	// crew process and stays the same each time the report is sent again.
 	ID string
-	// IssueKey and IssueRef identify the issue, as in Issue.
-	IssueKey string
+	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
+	IssueID  IssueID
 	IssueRef string
 	// State is the crew state the issue moved to. Each pull request is put
 	// in it, and in no other crew state.

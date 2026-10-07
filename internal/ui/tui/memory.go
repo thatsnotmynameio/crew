@@ -17,9 +17,9 @@ type messageMemory struct {
 	actions map[actionKey]remembered
 }
 
-// actionKey is an action of an issue: its issue's key and its name.
+// actionKey is an action of an issue: its issue's id and its name.
 type actionKey struct {
-	issue  string
+	issue  crew.IssueID
 	action crew.ActionName
 }
 
@@ -40,12 +40,12 @@ func newMessageMemory() *messageMemory {
 func (mm *messageMemory) record(snap engine.Snapshot, cards []card) {
 	for _, iv := range snap.Issues {
 		for _, a := range iv.Actions {
-			mm.held(iv.Issue.Key, a)
+			mm.held(iv.Issue.ID, a)
 		}
 	}
 	for _, s := range snap.Said {
 		if text := clean(s.Text); text != "" {
-			k := actionKey{s.IssueKey, s.Action}
+			k := actionKey{s.IssueID, s.Action}
 			r := mm.actions[k]
 			r.message = text
 			mm.actions[k] = r
@@ -56,7 +56,7 @@ func (mm *messageMemory) record(snap engine.Snapshot, cards []card) {
 
 // held remembers the branch of issue's held action a; a new run of it
 // drops what its last run left, before its session starts too.
-func (mm *messageMemory) held(issue string, a core.ActionView) {
+func (mm *messageMemory) held(issue crew.IssueID, a core.ActionView) {
 	k := actionKey{issue, a.Name}
 	r := mm.actions[k]
 	if !a.Started.Equal(r.started) {
@@ -70,9 +70,9 @@ func (mm *messageMemory) held(issue string, a core.ActionView) {
 
 // forget drops every issue with no card in cards.
 func (mm *messageMemory) forget(cards []card) {
-	carded := map[string]bool{}
+	carded := map[crew.IssueID]bool{}
 	for _, c := range cards {
-		carded[c.issue.Key] = true
+		carded[c.issue.ID] = true
 	}
 	for k := range mm.actions {
 		if !carded[k.issue] {
@@ -84,7 +84,7 @@ func (mm *messageMemory) forget(cards []card) {
 // last returns the last message and the branch the memory holds for
 // issue's action, in that order, or empty strings for what it does not
 // hold.
-func (mm *messageMemory) last(issue string, action crew.ActionName) (string, string) {
+func (mm *messageMemory) last(issue crew.IssueID, action crew.ActionName) (string, string) {
 	r := mm.actions[actionKey{issue, action}]
 	return r.message, r.branch
 }

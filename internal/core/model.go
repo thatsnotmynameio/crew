@@ -39,13 +39,13 @@ type Model struct {
 	// slots is what the rules can use: the queues' slots summed, at most
 	// maxParallel (KTD4).
 	slots int
-	// statuses holds each issue's status slot, by issue key; nil when
+	// statuses holds each issue's status slot, by issue id; nil when
 	// status reporting is off (KTD3).
-	statuses map[string]*statusSlot
-	// pullRequests holds each issue's pull request slot, by issue key, while
+	statuses map[crew.IssueID]*statusSlot
+	// pullRequests holds each issue's pull request slot, by issue id, while
 	// it has a report not settled; nil when pull request reports are off
 	// (KTD3).
-	pullRequests map[string]*pullRequestSlot
+	pullRequests map[crew.IssueID]*pullRequestSlot
 	// handled holds one entry per issue whose rule ended this run, in the
 	// order the issues were released.
 	handled []handledEntry
@@ -65,10 +65,10 @@ type Model struct {
 	statusUsage bool
 	// spent sums what every session that ended this run used (R14).
 	spent crew.Spend
-	// otherKinds holds, by item key, the rule label of each item the last
+	// otherKinds holds, by item id, the rule label of each item the last
 	// listing found in the label of a rule of the other kind, which was
 	// reported then or before (#92).
-	otherKinds map[string]crew.State
+	otherKinds map[crew.IssueID]crew.State
 	// board is the board the model reads; nil when it reads none (KTD4).
 	board *board
 	// bots is what the model knows of the identities crew acts as (KTD3).
@@ -225,14 +225,14 @@ func ReportingUsage() Option {
 // ReportingStatus has the model report each issue's status through
 // ReportStatus commands, for a tracker that keeps status comments (KTD1).
 func ReportingStatus() Option {
-	return func(m *Model) { m.statuses = map[string]*statusSlot{} }
+	return func(m *Model) { m.statuses = map[crew.IssueID]*statusSlot{} }
 }
 
 // ReportingPullRequests has the model follow each move that landed with a
 // ReportPullRequests command, for a tracker that reports on pull requests
 // (KTD1, KTD2).
 func ReportingPullRequests() Option {
-	return func(m *Model) { m.pullRequests = map[string]*pullRequestSlot{} }
+	return func(m *Model) { m.pullRequests = map[crew.IssueID]*pullRequestSlot{} }
 }
 
 // Stopped reports whether a stop, requested or ending a wind-down, has
@@ -356,7 +356,7 @@ type View struct {
 	// those of entries Handled no longer shows (R14).
 	Spent crew.Spend
 	// Board is the board's items, as the last board read or listing found
-	// them with crew's moves since applied, oldest first and then by key
+	// them with crew's moves since applied, oldest first and then by id
 	// (KTD4, KTD6, KTD10); nil when the model has no board (ListingBoard,
 	// BoardFromListings).
 	Board []crew.BoardIssue
@@ -508,7 +508,7 @@ func (m *Model) View() View {
 	v.Owed = append(v.Owed, m.owedPullRequests()...)
 	for _, e := range m.handled {
 		hv := e.view.clone()
-		if h := m.held(hv.Issue.Key); h != nil {
+		if h := m.held(hv.Issue.ID); h != nil {
 			hv.HeldBy = m.rules[h.rule].Name
 		}
 		v.Handled = append(v.Handled, hv)
@@ -522,5 +522,5 @@ func (m *Model) View() View {
 
 // describe returns c as a Call of h.
 func (h *heldIssue) describe(c *call) Call {
-	return Call{Kind: c.kind, IssueKey: h.issue.Key, IssueRef: h.issue.Ref, From: c.from, To: c.to}
+	return Call{Kind: c.kind, IssueID: h.issue.ID, IssueRef: h.issue.Ref, From: c.from, To: c.to}
 }

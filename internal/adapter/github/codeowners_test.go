@@ -65,7 +65,7 @@ func TestTheCatchAllRuleOfCodeownersNamesTheCodeOwners(t *testing.T) {
 	}
 	keys := make([]string, 0, len(got))
 	for _, i := range got {
-		keys = append(keys, i.Key)
+		keys = append(keys, i.ID.Key)
 	}
 	if !slices.Equal(keys, []string{"12", "90"}) {
 		t.Errorf("List = %q, want 12 and alice's 90, not gh's login's 91", keys)
@@ -155,9 +155,9 @@ func TestListTakesTheIssuesTheBotsOpened(t *testing.T) {
 		t.Errorf("author1 = %q, want crew-ops[bot] alone after me", a1)
 	}
 	want := []crew.Issue{
-		{Key: "12", Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
+		{ID: issueID("12"), Ref: "#12", Title: "Issue 12", URL: "https://github.com/o/r/issues/12",
 			Created: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}},
-		{Key: "13", Ref: "#13", Title: "Issue 13", URL: "https://github.com/o/r/issues/13",
+		{ID: issueID("13"), Ref: "#13", Title: "Issue 13", URL: "https://github.com/o/r/issues/13",
 			Created: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC), States: []crew.State{ready}},
 	}
 	wantItems(t, got, want)
@@ -179,7 +179,7 @@ func TestListTakesThePullRequestsABotOpenedAsABot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(got) != 1 || got[0].Key != "90" {
+	if len(got) != 1 || got[0].ID.Key != "90" {
 		t.Errorf("List = %+v, want the bot's 90 alone", got)
 	}
 }

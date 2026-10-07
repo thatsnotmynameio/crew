@@ -393,13 +393,13 @@ func priority(values []fieldValue) int {
 // the issue carries and adds to's, leaving the labels that are not crew's,
 // those no rule names, alone. gh saying a label does not exist is a refusal: the
 // label must be created, which retrying cannot do.
-func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State) error {
+func (t *Tracker) Move(ctx context.Context, id crew.IssueID, from, to crew.State) error {
 	var issue struct {
 		State  string    `json:"state"`
 		Labels []ghLabel `json:"labels"`
 	}
-	move := fmt.Sprintf("move issue #%s from %s to %s", issueKey, from, to)
-	if err := t.gh.decode(ctx, &issue, "issue", "view", issueKey, "--json", "state,labels"); err != nil {
+	move := fmt.Sprintf("move issue #%s from %s to %s", id.Key, from, to)
+	if err := t.gh.decode(ctx, &issue, "issue", "view", id.Key, "--json", "state,labels"); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	if issue.State != stateOpen {
@@ -412,7 +412,7 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 		}
 		return fmt.Errorf("%s: it is no longer %s: %w", move, from, port.ErrMovedMeanwhile)
 	}
-	if err := t.editLabels(ctx, "issue", issueKey, remove, to); err != nil {
+	if err := t.editLabels(ctx, "issue", id.Key, remove, to); err != nil {
 		return fmt.Errorf("%s: %w", move, err)
 	}
 	return nil
@@ -424,8 +424,8 @@ func (t *Tracker) Move(ctx context.Context, issueKey string, from, to crew.State
 // 403, such as a locked issue, but not a rate limit) is port.ErrRefused, and
 // any other error is transient.
 func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) error {
-	if _, _, err := t.postComment(ctx, report.IssueKey, renderReport(report)); err != nil {
-		return fmt.Errorf("report failure on issue #%s: %w", report.IssueKey, err)
+	if _, _, err := t.postComment(ctx, report.IssueID.Key, renderReport(report)); err != nil {
+		return fmt.Errorf("report failure on issue #%s: %w", report.IssueID.Key, err)
 	}
 	return nil
 }
@@ -499,7 +499,7 @@ func (t *Tracker) authors(ctx context.Context) ([]string, error) {
 // labels name, each once, in label order.
 func (t *Tracker) item(n itemNode) crew.Issue {
 	key := strconv.Itoa(n.Number)
-	issue := crew.Issue{Key: key, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
+	issue := crew.Issue{ID: crew.IssueID{Key: key}, Ref: "#" + key, Title: n.Title, URL: n.URL, Created: n.CreatedAt}
 	for _, l := range n.Labels.Nodes {
 		if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(issue.States, s) {
 			issue.States = append(issue.States, s)
