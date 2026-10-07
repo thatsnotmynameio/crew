@@ -72,6 +72,8 @@ crew shows a live view of the issues it holds and the sessions it runs; `--plain
 
 ## Rules
 
+When crew moves an issue or pull request, it adds the new state label before removing the old ones. If adding fails, the old labels stay; if removal fails, the new label stays and crew retries the removal. An interrupted move can leave an item in two states; crew skips items in multiple states and reports them in Events.
+
 A rule takes the items that carry its `ready` label, issues by default or pull requests when its `takes` says so, and moves each to its `running` label. It then runs its `actions` one at a time, in the order listed, and ends the run through one of its `routes`:
 
 ```yaml

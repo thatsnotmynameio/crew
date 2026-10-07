@@ -167,14 +167,12 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 	return issue.URL, prs, nil
 }
 
-// mirror puts pr in to with the swap Move makes, through one gh pr edit as
-// the writer, and edits nothing when to's is already its only crew label.
+// mirror puts pr in to with the swap Move makes, adding before removing
+// through gh pr edit as the writer, and edits nothing when to's is already
+// its only crew label.
 func (t *Tracker) mirror(ctx context.Context, pr pullRequest, to crew.State) error {
 	remove, states := t.swap(pr.labels, to)
-	if len(remove) == 0 && slices.Equal(states, []crew.State{to}) {
-		return nil
-	}
-	if err := t.editLabels(ctx, "pr", strconv.Itoa(pr.number), remove, to); err != nil {
+	if err := t.editLabels(ctx, "pr", strconv.Itoa(pr.number), remove, to, slices.Contains(states, to)); err != nil {
 		return fmt.Errorf("edit pull request #%d: %w", pr.number, err)
 	}
 	return nil
