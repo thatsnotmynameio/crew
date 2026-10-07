@@ -69,7 +69,8 @@ func (e *Engine) callFunction(
 	if !ok {
 		return notStarted(fmt.Errorf("crew has no function for %s", c.Use))
 	}
-	log, err := e.openLog(scriptLog(issue, c.Log, c.Rule))
+	logRel := scriptLog(issue, c.Log, c.Rule)
+	log, err := e.openLog(logRel)
 	if err != nil {
 		return notStarted(err)
 	}
@@ -83,7 +84,9 @@ func (e *Engine) callFunction(
 	if err != nil {
 		_, _ = fmt.Fprintf(log, "crew: %s failed: %v\n", subject, err)
 	}
-	return e.functionOutcome(ctx, subject, v, err, withError)
+	outcome := e.functionOutcome(ctx, subject, v, err, withError)
+	outcome.Log = logRel
+	return outcome
 }
 
 // functionOutcome returns how the function subject names ended, having

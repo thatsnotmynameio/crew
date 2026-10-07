@@ -165,7 +165,7 @@ func (l line) shellEnded(h crew.EventHead) crew.RunEvent {
 // functionEnded returns the ActionFunctionEnded l holds, with head h: no
 // verdict when the line holds none.
 func (l line) functionEnded(h crew.EventHead) crew.RunEvent {
-	outcome := crew.FunctionOutcome{Reason: crew.NewShellReason(l.Reason)}
+	outcome := crew.FunctionOutcome{Reason: crew.NewShellReason(l.Reason), Log: l.Log}
 	if l.Verdict != "" {
 		outcome.Verdict = crew.Some(l.Verdict)
 	}

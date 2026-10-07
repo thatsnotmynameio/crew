@@ -311,6 +311,18 @@ var invalidFunctions = []rejectCase{
 		},
 	},
 	{
+		name: "a parameter written as null",
+		body: sequenceRule("", "      - pull-request: {count: null}\n", ""),
+		wants: []string{
+			"rules.implement.actions[0].pull-request.count", "line 5", "a function's parameter is text, a number or a boolean",
+		},
+	},
+	{
+		name:  "a preset's parameter left empty",
+		body:  sequenceRule(presetOf("count:"), "      - open-pr\n", ""),
+		wants: []string{"actions.open-pr.count", "line 4", "a function's parameter is text, a number or a boolean"},
+	},
+	{
 		name:  "a preset's parameter that is a mapping",
 		body:  sequenceRule(presetOf("filter: {state: open}"), "      - open-pr\n", ""),
 		wants: []string{"actions.open-pr.filter", "line 4", "a function's parameter is text, a number or a boolean"},

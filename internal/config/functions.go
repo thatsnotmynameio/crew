@@ -73,6 +73,12 @@ const (
 // strTag is the tag of a YAML string.
 const strTag = "!!str"
 
+// parameterTags are the tags of the scalars a function's parameter may be:
+// text, an integer, a float or a boolean.
+func parameterTags() []string {
+	return []string{strTag, "!!int", "!!float", "!!bool"}
+}
+
 // preset is a function preset of actions, or a function named by its own
 // name, which presets nothing: the function, where a resume starts, and
 // its parameters, each checked.
@@ -174,7 +180,9 @@ func parameters(section []entry) ([]parameter, error) {
 // template over the issue that renders for the sample issue (R29).
 func parseParameter(e entry) (parameter, error) {
 	v := resolve(e.value)
-	if v.Kind != yaml.ScalarNode {
+	if v.Kind != yaml.ScalarNode || !slices.Contains(parameterTags(), v.ShortTag()) {
+		// A null, written or left empty, would decode as nothing and reach
+		// the function as its field's zero value.
 		return parameter{}, keyError(e.path, v.Line, parameterShape)
 	}
 	p := parameter{key: e.key, value: v, path: e.path}

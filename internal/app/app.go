@@ -262,7 +262,7 @@ func buildFunctions(r registry.Registry, uses []config.FunctionUse) (map[crew.Fu
 	var errs []error
 	for _, use := range uses {
 		f, err := r.Function(string(use.Use), string(use.Function), use.Section)
-		if refused := (port.RefusedParameterError{}); errors.As(err, &refused) {
+		if refused, ok := errors.AsType[port.RefusedParameterError](err); ok {
 			errs = append(errs, use.Refused(refused.Parameter, refused.Reason))
 			continue
 		}

@@ -322,7 +322,7 @@ func (h *heldRun) actionViews() []ActionView {
 	for _, a := range actions {
 		v := ActionView{
 			Name: a.Name(), Phase: phaseOf(a.State()), Workspace: w.Workspace.Name, Branch: w.Workspace.Branch,
-			Log: w.Log, Resumed: w.Resumed,
+			Log: h.run.ActionLog(a), Resumed: w.Resumed,
 		}
 		if a.Name() == cursor.Name() && v.Phase == PhaseAwaitingTurn {
 			v.Phase = h.startPhase()

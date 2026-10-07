@@ -98,6 +98,7 @@ func TestEveryFunctionEventLoadsBackAsItselfWithOrWithoutAVerdict(t *testing.T) 
 		},
 		crew.ActionFunctionEnded{EventHead: head(4), Action: "label", Outcome: crew.FunctionOutcome{
 			Verdict: crew.Some(crew.Verdict("needs-review")), Reason: crew.NewShellReason("label: needs-review"),
+			Log: ".crew/logs/issue-7-label.log",
 		}},
 		crew.ActionEnded{
 			EventHead: head(5), Action: "label", Verdict: crew.Failed, Target: crew.ToRoute{Route: crew.FailedRoute},

@@ -28,7 +28,7 @@ func (r RuleRun) FailureReport() (FailureReport, bool) {
 	report := FailureReport{IssueID: r.issue.ID(), IssueRef: r.issue.Ref(), Rule: r.rule, Route: route.Route}
 	if a, ok := r.Cursor(); ok {
 		w, _ := r.Workspace().Get()
-		f := ActionFailure{Action: a.name, Workspace: w.Workspace.Name, Log: w.Log}
+		f := ActionFailure{Action: a.name, Workspace: w.Workspace.Name, Log: r.ActionLog(a)}
 		if ended, ok := a.state.(Finished); ok {
 			f.Verdict = ended.Verdict
 		}
@@ -182,8 +182,20 @@ func (r RuleRun) endState(a ActionRun, f Finished, showUsage bool) ActionState {
 		usage = Some(ShownUsage{Spend: a.Spend(), PullRequest: r.PullRequest()})
 	}
 	if failed, ok := f.End.(EndFailed); ok {
-		w, _ := r.Workspace().Get()
-		return ActionFailed{Cause: failed.Cause, Log: w.Log, Usage: usage}
+		return ActionFailed{Cause: failed.Cause, Log: r.ActionLog(a), Usage: usage}
 	}
 	return ActionSucceeded{Verdict: f.Verdict, Usage: usage}
+}
+
+// ActionLog returns the log a wrote into: its run's, or for a run without
+// a workspace, such as one whose actions are all functions, the log its
+// function wrote into; empty when there is none.
+func (r RuleRun) ActionLog(a ActionRun) string {
+	if w, ok := r.Workspace().Get(); ok && w.Log != "" {
+		return w.Log
+	}
+	if f, ok := a.function.Get(); ok {
+		return f.Log
+	}
+	return ""
 }

@@ -326,3 +326,32 @@ func TestTwoCallsOfOneUseAtOnceEachDecodeTheirOwnText(t *testing.T) {
 		}
 	})
 }
+
+// R25, R49: a rule whose actions are all functions runs without a
+// workspace; its failed function's report names the log the function
+// wrote into, the log the run's workspace would have.
+func TestAFunctionOnlyRunsFailureNamesItsFunctionsLog(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr, f := fake.NewTracker(issue(1, ready)), fake.NewFunction()
+		f.Script(fake.FunctionResult{Err: errors.New("no pull request")})
+		onlyFunction := crew.Rule{
+			Name: develop.Name, Labels: develop.Labels, Routes: develop.Routes,
+			Actions: []crew.Action{{Name: "check", Kind: prOpen(checkUse)}},
+		}
+		r := start(t, functionConfig(t, tr, f, onlyFunction))
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		reports := tr.Reports()
+		want := ".crew/logs/issue-1-implement.log"
+		if len(reports) != 1 || len(reports[0].Failures) != 1 || reports[0].Failures[0].Log != want {
+			t.Fatalf("reports = %+v, want one failure naming log %s", reports, want)
+		}
+		if calls := f.Calls(); len(calls) != 1 || calls[0].Call.Dir != "" {
+			t.Errorf("calls = %+v, want one with no directory", calls)
+		}
+	})
+}

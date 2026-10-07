@@ -249,6 +249,10 @@ type FunctionOutcome struct {
 	Verdict Optional[Verdict]
 	// Reason is crew's one line on how it ended.
 	Reason ShellReason
+	// Log is the repository-relative path of the log the function wrote
+	// into: the run's, or for a run without a workspace the log of the
+	// workspace it would have; empty when it could not open one.
+	Log string
 }
 
 // judgeFunction returns the verdict of the function action spec, which

@@ -346,3 +346,28 @@ func TestAFunctionActionShowsItsReason(t *testing.T) {
 		})
 	}
 }
+
+// R25, R49: a run whose actions are all functions has no workspace, so a
+// failed function's status and failure report name the log its function
+// wrote into.
+func TestAFunctionOnlyRunNamesItsFunctionsLog(t *testing.T) {
+	const log = ".crew/logs/issue-42-implement.log"
+	run := given(t, []RunEvent{
+		onlyCheckTake(),
+		ActionFunctionAsked{EventHead: eh(1), Action: "check"},
+		checkEnded(2, FunctionOutcome{Reason: NewShellReason("check failed"), Log: log}),
+		checkEnd(2, failedBy(NewSessionText("check failed"), CauseFunction), toFailed),
+		chose(2, FailedRoute, "check"),
+	})
+	actions := run.Status(at(3), nil, false).Actions()
+	want := ActionStatus{
+		Name: "check", State: ActionFailed{Cause: CauseFunction, Log: log}, Shell: NewShellReason("check failed"),
+	}
+	if len(actions) != 1 || !reflect.DeepEqual(actions[0], want) {
+		t.Errorf("Actions = %#v, want [%#v]", actions, want)
+	}
+	report, ok := run.FailureReport()
+	if !ok || len(report.Failures) != 1 || report.Failures[0].Log != log {
+		t.Errorf("FailureReport = %#v, %v; want its failure to name log %s", report, ok, log)
+	}
+}

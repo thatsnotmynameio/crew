@@ -203,6 +203,7 @@ func encodeFunction(e crew.RunEvent, run string) line {
 		l := actionLine(e.EventHead, typeFunctionEnded, run, e.Action)
 		l.Reason = e.Outcome.Reason.String()
 		l.Verdict, _ = e.Outcome.Verdict.Get()
+		l.Log = e.Outcome.Log
 		return l
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked,
