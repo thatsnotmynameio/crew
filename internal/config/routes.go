@@ -75,10 +75,7 @@ func routes(n *yaml.Node, path string, env ruleEnv) ([]parsedRoute, error) {
 // or a list of steps.
 func parseRoute(e entry, name crew.RouteName, env ruleEnv) (parsedRoute, error) {
 	r := parsedRoute{Name: name, path: e.path, line: e.key.Line}
-	v := e.value
-	if v.Kind == yaml.AliasNode {
-		v = v.Alias
-	}
+	v := resolve(e.value)
 	switch v.Kind {
 	case yaml.ScalarNode:
 		to, err := state(located[string]{value: v.Value, line: v.Line}, e.path, e.key.Line)
@@ -102,10 +99,7 @@ func parseRoute(e entry, name crew.RouteName, env ruleEnv) (parsedRoute, error) 
 
 // parseStep decodes the step e of the route called route.
 func parseStep(e entry, route crew.RouteName, env ruleEnv) (crew.Step, keyAt, error) {
-	n := e.value
-	if n.Kind == yaml.AliasNode {
-		n = n.Alias
-	}
+	n := resolve(e.value)
 	at := keyAt{e.path, n.Line}
 	switch {
 	case n.Kind == yaml.ScalarNode && n.Value == reportWord:

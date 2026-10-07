@@ -61,10 +61,7 @@ func parseShell(e entry) (crew.ShellSpec, error) {
 		return crew.ShellSpec{}, keyError(e.path, e.key.Line, fmt.Sprintf(
 			"%q is a word of the rules' grammar, so it cannot name an action", e.key.Value))
 	}
-	value := e.value
-	if value.Kind == yaml.AliasNode {
-		value = value.Alias
-	}
+	value := resolve(e.value)
 	var doc shellDoc
 	var scriptErr error
 	switch value.Kind {

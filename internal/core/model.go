@@ -5,7 +5,7 @@
 // is its only caller, from one goroutine.
 //
 // Each issue the core holds moves through claim states kept apart from the
-// tracker's states: Taking, then Running (or Stopping), then Judging while
+// tracker's states: Taking, then Running (or Stopping), then Routing while
 // its run ends through a route, one step at a time. The core's outbox
 // delivers the tracker writes a held issue's rule decides on, and the view
 // shows the issue Owed while one of them waits for a retry (KTD8). An issue

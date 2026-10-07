@@ -83,10 +83,7 @@ func sequence(n *yaml.Node, path string, env ruleEnv) ([]parsedAction, error) {
 // actions, a session, or a reference to one of actions with its on and
 // name beside it.
 func parseItem(e entry, env ruleEnv) (parsedAction, error) {
-	n := e.value
-	if n.Kind == yaml.AliasNode {
-		n = n.Alias
-	}
+	n := resolve(e.value)
 	switch {
 	case n.Kind == yaml.ScalarNode:
 		name, spec, err := env.shell(n, e.path)
@@ -193,9 +190,7 @@ func actionName(l located[string], path, byDefault string) (crew.ActionName, err
 // shell returns the name and the definition of the shell action the scalar
 // n, an item or a step at path, names.
 func (env ruleEnv) shell(n *yaml.Node, path string) (crew.ActionName, crew.ShellSpec, error) {
-	if n.Kind == yaml.AliasNode {
-		n = n.Alias
-	}
+	n = resolve(n)
 	if n.Kind != yaml.ScalarNode {
 		return "", crew.ShellSpec{}, keyError(path, n.Line, itemShape)
 	}

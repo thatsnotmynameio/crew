@@ -317,8 +317,9 @@ func (h *heldRun) claim() Claim {
 func (h *heldRun) actionViews() []ActionView {
 	w, _ := h.run.Workspace().Get()
 	cursor, _ := h.run.Cursor()
-	out := make([]ActionView, 0, len(h.run.Actions()))
-	for _, a := range h.run.Actions() {
+	actions := h.run.Actions()
+	out := make([]ActionView, 0, len(actions))
+	for _, a := range actions {
 		v := ActionView{
 			Name: a.Name(), Phase: phaseOf(a.State()), Workspace: w.Workspace.Name, Branch: w.Workspace.Branch,
 			Log: w.Log, Resumed: w.Resumed,

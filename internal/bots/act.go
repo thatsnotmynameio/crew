@@ -140,7 +140,7 @@ type acted struct {
 	path string
 	// inst is its installation on the repository.
 	inst int64
-	// sessionsDir is the gh config directory of its sessions and checks.
+	// sessionsDir is the gh config directory of its sessions and shell actions.
 	sessionsDir string
 	// writerDir, for the default bot alone, is the gh config directory of
 	// crew's own writes; "" for any other bot.
