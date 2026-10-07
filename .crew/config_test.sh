@@ -39,16 +39,21 @@ check() {
 	' "$config"
 }
 
-# refine prints the refine action of the refinement rule, its keys
+# action RULE NAME prints the action NAME of the rule RULE, its keys
 # unindented.
-refine() {
-	awk '
-		/^  refinement:$/ { rule = 1; next }
-		rule && /^      refine:$/ { on = 1; next }
+action() {
+	awk -v rule="  $1:" -v name="      $2:" '
+		$0 == rule { in_rule = 1; next }
+		in_rule && $0 == name { on = 1; next }
 		on && /^        / { print substr($0, 9); next }
 		on && /^$/ { print ""; next }
 		on { exit }
 	' "$config"
+}
+
+# refine prints the refine action of the refinement rule.
+refine() {
+	action refinement refine
 }
 
 # refine_prompt prints the refine action's prompt.
@@ -147,6 +152,10 @@ done
 # records how long the judge waited instead of waiting.
 judge=$(check session-finished)
 [ -n "$judge" ] || fail "the config has no session-finished check"
+for rule in development fix; do
+	action "$rule" lfg | grep '^check:' | grep -q session-finished ||
+		fail "the lfg action of $rule does not run session-finished"
+done
 mkdir "$root/bin"
 cat >"$root/bin/curl" <<'EOF'
 #!/bin/sh
