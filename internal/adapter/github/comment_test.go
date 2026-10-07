@@ -6,14 +6,28 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
+// postedLine ends every comment crew posts other than the status comment: a
+// blank line after the body's last line, then crew's marker line (R46).
+const postedLine = "\n" + crew.PostedMarker + "\n"
+
+// Covers AE18 for a route comment: whatever the body holds, crew's marker is
+// its last line, and stripping the body's controls leaves the marker intact.
 func TestCommentPostsTheBodyAsTheWriter(t *testing.T) {
+	session := crew.SessionMarker("seed.1", "lfg")
 	for name, tc := range map[string]struct{ body, want string }{
-		"a Markdown body": {"## Done\n\n- one\n- two\n", "## Done\n\n- one\n- two\n"},
+		"a Markdown body":                  {"## Done\n\n- one\n- two\n", "## Done\n\n- one\n- two\n" + postedLine},
+		"a body without a last line break": {"Done.", "Done.\n" + postedLine},
 		"controls stripped, lines kept": {"a\x00b\rc\r\n\x1b[31mred\x1b[0m\nend",
-			"a bc\nred\nend"},
+			"a bc\nred\nend\n" + postedLine},
+		"a NUL before the end": {"done\x00", "done \n" + postedLine},
+		"a template rendering the status marker": {"Done.\n\n" + statusMarker + "\n",
+			"Done.\n\n" + statusMarker + "\n" + postedLine},
+		"a template rendering a session marker": {"Which one?\n" + session + "\n",
+			"Which one?\n" + session + "\n" + postedLine},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var renewed atomic.Int32

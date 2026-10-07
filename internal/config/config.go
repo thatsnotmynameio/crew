@@ -52,6 +52,14 @@ type Config struct {
 	// bots of the agents some session names, in rule order. It is empty when
 	// no bot is named.
 	Bots []crew.Bot
+	// AnsweringApps is answering_apps: the logins of the Apps whose
+	// comments answer a session's question, each <slug>[bot], never
+	// github-actions[bot] (R38, R39). It is nil when the file leaves the key
+	// out.
+	AnsweringApps []string
+	// AnsweringAppsWritten tells whether AnsweringApps is the file's list,
+	// which replaces the default, crew's bots, even when empty.
+	AnsweringAppsWritten bool
 	// Agents are the agents in file order, including those no session names
 	// (see Agent.Used).
 	Agents []Agent
@@ -94,6 +102,7 @@ type document struct {
 	MaxParallelIssues   located[int]  `yaml:"max_parallel_issues"`
 	RunTimeLimitSeconds located[int]  `yaml:"run_time_limit_seconds"`
 	UsageInStatus       located[bool] `yaml:"usage_in_status"`
+	AnsweringApps       yaml.Node     `yaml:"answering_apps"`
 	Queues              yaml.Node     `yaml:"queues"`
 	Tracker             yaml.Node     `yaml:"tracker"`
 	Agents              yaml.Node     `yaml:"agents"`
@@ -160,7 +169,7 @@ func parse(top *yaml.Node, functions map[string][]crew.Verdict) (*Config, error)
 		MaxParallelIssues: defaultMaxParallelIssues,
 		Tracker:           defaultTracker,
 	}
-	errs := engineSettings(&doc, cfg)
+	errs := append(engineSettings(&doc, cfg), answeringApps(&doc.AnsweringApps, cfg))
 	table, queueErrs := queues(&doc.Queues, cfg.MaxParallelIssues)
 	errs = append(errs, queueErrs...)
 	var err error

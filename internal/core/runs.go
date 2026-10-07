@@ -20,6 +20,9 @@ type heldRun struct {
 	logFromDir string
 	// said holds what each session of the run last said while it ran.
 	said map[crew.ActionName]crew.Said
+	// answers is what crew read of the answers its next session starts
+	// with, when the run has open questions at its action (KTD-W6).
+	answers *answers
 	// landed is the listing generation when the final move or close of
 	// its route settled (KTD4).
 	landed int
@@ -105,7 +108,8 @@ func (s *step) runInput(in RunInput) {
 	case WorkspaceGone:
 		s.decide(h, crew.WorkspaceGone{FactHead: head})
 	case SessionStarted:
-		s.decide(h, crew.SessionStarted{FactHead: head, Action: in.Action})
+		spec, _ := s.m.rules[h.rule].Action(in.Action).Kind.(crew.SessionSpec)
+		s.decide(h, crew.SessionStarted{FactHead: head, Action: in.Action, Login: s.m.bots.login(spec.Bot.Name)})
 	case SessionFailedToStart:
 		s.decide(h, crew.SessionFailedToStart{FactHead: head, Action: in.Action, Reason: in.Reason})
 	case SessionEnded:
@@ -122,6 +126,8 @@ func (s *step) runInput(in RunInput) {
 		s.decide(h, crew.StepFunctionEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
 	case PullRequestFound:
 		s.decide(h, crew.PullRequestLookedUp{FactHead: head, PullRequest: in.PullRequest})
+	case AnswersRead:
+		s.answersRead(h, in)
 	}
 }
 
@@ -210,7 +216,7 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionSessionAsked:
-		s.startSession(h, e.Action)
+		s.sessionAsked(h, e.Action)
 	case crew.ActionSessionStarted:
 		s.emit(e)
 	case crew.ActionSessionStopAsked:
@@ -254,10 +260,13 @@ func (s *step) workspaceAsked(h *heldRun, e crew.WorkspaceAsked) {
 }
 
 // startSession starts the session of h's action named name, with its
-// prompt rendered for the issue, then crew's paragraphs: the resume
+// prompt rendered for the issue, then crew's paragraphs: the answers
+// paragraph, or the one that says crew could not read them, when the run
+// read the answers to its open questions at the action, else the resume
 // paragraph when the action is where the run resumes the work of the run
-// it continues, in that run's reopened workspace (R23), and the verdict
-// paragraph when the action's on: names verdicts (R9).
+// it continues, in that run's reopened workspace (R23, R48), the verdict
+// paragraph when the action's on: names verdicts (R9), and the waiting
+// paragraph when the session may wait for an answer (R19, KTD-W10).
 func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	def := s.m.rules[h.rule].Action(name)
 	spec, _ := def.Kind.(crew.SessionSpec)
@@ -267,11 +276,14 @@ func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	prompt, _ := spec.Prompt.Render(h.run.Issue())
 	start, resumed := h.run.Start().(crew.StartAt)
 	resumed = resumed && w.Resumed && start.Action == name
-	if resumed {
-		prompt += "\n\n" + resumeParagraph(start, w.Workspace.Branch, w.Log, h.logFromDir)
+	if p, ok := s.m.resumeParagraphs(h, name, start, resumed); ok {
+		prompt += "\n\n" + p
 	}
 	if verdicts, ok := verdictParagraph(def.On); ok {
 		prompt += "\n\n" + verdicts
+	}
+	if def.MayWait() {
+		prompt += "\n\n" + waitingParagraph(s.m.waitingOf(h, name, spec))
 	}
 	s.command(StartSession{
 		IssueID: h.id(), Run: h.run.ID(), Action: name, Dir: h.dir, Prompt: prompt, Log: w.Log, Resumed: resumed,

@@ -38,7 +38,7 @@ const (
 	shellTimeout = 10 * time.Minute
 	// lookupTimeout bounds the lookup of a run's pull request, which
 	// runs even while crew stops, so a hung gh delays a stop by no more
-	// (KTD3).
+	// (KTD3), and the read of the answers a session starts with.
 	lookupTimeout = 15 * time.Second
 	// saidInterval is how often the loop refreshes what the running
 	// sessions last said for the latest-wins subscribers (KTD5).
@@ -105,6 +105,10 @@ type Config struct {
 	// or not they act: the tracker takes the items they opened, and every
 	// session and script gets them as CREW_BOTS.
 	BotLogins []string
+	// AnsweringApps are the logins of the Apps whose comments answer a
+	// session's question: the config's answering_apps, or BotLogins when
+	// it writes none (R38, KTD-W4).
+	AnsweringApps []string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
 	DefaultBot crew.BotName
@@ -411,9 +415,9 @@ func (e *Engine) pendingPauses(ctx context.Context) {
 // workspace with crew.RuleStates, the states the rules name, asks the
 // tracker who the code owners are and which login it acts as, reads the
 // repository it works on, then loads the run journal and builds the core
-// from its events, with the bots. It returns the first error, naming its
-// port, a harness's agent, or the journal, without running what comes after
-// it (R6).
+// from its events, with the bots and who may answer a session (KTD-W4). It
+// returns the first error, naming its port, a harness's agent, or the
+// journal, without running what comes after it (R6).
 // The core is then left unbuilt, which is safe because Run returns the error
 // before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
@@ -440,7 +444,8 @@ func (e *Engine) prepare(ctx context.Context) error {
 	}
 	bots := e.withBots()
 	e.repository = e.findRepository()
-	opts := slices.Concat(e.opts, []core.Option{bots})
+	answerers := core.WithAnswerers(crew.Answerers{CodeOwners: e.codeOwners, Apps: e.cfg.AnsweringApps})
+	opts := slices.Concat(e.opts, []core.Option{bots, answerers})
 	if e.cfg.Journal != nil {
 		port.Step(ctx, "reading the run journal")
 		past, err := e.cfg.Journal.Load(e.repository.ID)
@@ -465,10 +470,17 @@ func (e *Engine) findRepository() crew.Repository {
 }
 
 // withBots returns the core's option of the configured bots, with the
+// login each acting bot acts as, from its identity (KTD-W8), and the
 // login the tracker acts as when it acts as you, as its
 // port.LoginFinder found it in Prepare; none without one (KTD8).
 func (e *Engine) withBots() core.Option {
-	c := core.BotsConfig{Default: e.cfg.DefaultBot, Names: e.cfg.Bots, Unable: e.cfg.Unable}
+	c := core.BotsConfig{
+		Default: e.cfg.DefaultBot, Names: e.cfg.Bots, Unable: e.cfg.Unable,
+		Logins: make(map[crew.BotName]string, len(e.cfg.Identities)),
+	}
+	for name, id := range e.cfg.Identities {
+		c.Logins[name] = id.Login
+	}
 	if l, ok := e.cfg.Tracker.(port.LoginFinder); ok {
 		c.Login = l.Login()
 	}
@@ -539,7 +551,7 @@ func (e *Engine) ran(in core.RunInput, s port.Session) {
 	case core.StepFunctionEnded:
 		delete(e.steps, stepKey{in.Run, in.Step})
 	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
-		core.PullRequestFound:
+		core.PullRequestFound, core.AnswersRead:
 	}
 }
 

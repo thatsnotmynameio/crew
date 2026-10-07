@@ -3,6 +3,7 @@ package config_test
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -119,6 +120,19 @@ func TestLoadGivesEverySessionItsBot(t *testing.T) {
 	}
 }
 
+// R20, KTD-W3: a session waits for answers 10 minutes unless its wait,
+// a Go duration, says otherwise.
+func TestLoadGivesEverySessionItsWait(t *testing.T) {
+	cfg := load(t, sequenceRule(oneAgent, "      - prompt: go\n      - {name: patient, prompt: go, wait: 3m}\n", ""))
+	actions := cfg.Rules[0].Actions
+	if got := sessionOf(t, actions[0]).Wait; got != 10*time.Minute {
+		t.Errorf("a session without wait waits %v, want 10m0s", got)
+	}
+	if got := sessionOf(t, actions[1]).Wait; got != 3*time.Minute {
+		t.Errorf("a session with wait: 3m waits %v, want 3m0s", got)
+	}
+}
+
 // A rule whose only actions are shell actions needs no agent, and runs on
 // the board like any rule with actions.
 func TestLoadARuleOfShellActionsWithoutAgents(t *testing.T) {
@@ -155,10 +169,19 @@ var invalidSequences = []rejectCase{
 		wants: []string{"rules.implement.actions[0].model", "line 9", "unknown key"},
 	},
 	{
-		// Waiting arrives with #255.
-		name:  "a session's wait",
-		body:  sequenceRule(oneAgent, "      - prompt: go\n        wait: 10m\n", ""),
-		wants: []string{"rules.implement.actions[0].wait", "line 9", "unknown key"},
+		name:  "a wait that is no duration",
+		body:  sequenceRule(oneAgent, "      - prompt: go\n        wait: soon\n", ""),
+		wants: []string{"rules.implement.actions[0].wait", "line 9", `"soon"`, "must be a duration"},
+	},
+	{
+		name:  "a wait of zero",
+		body:  sequenceRule(oneAgent, "      - prompt: go\n        wait: 0s\n", ""),
+		wants: []string{"rules.implement.actions[0].wait", "line 9", "must be positive"},
+	},
+	{
+		name:  "a negative wait",
+		body:  sequenceRule(oneAgent, "      - prompt: go\n        wait: -1m\n", ""),
+		wants: []string{"rules.implement.actions[0].wait", "line 9", "must be positive"},
 	},
 	{
 		name:  "a string that names no action",

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -15,8 +16,13 @@ type sessionDoc struct {
 	Agent  located[string] `yaml:"agent"`
 	Prompt located[string] `yaml:"prompt"`
 	Name   located[string] `yaml:"name"`
+	Wait   located[string] `yaml:"wait"`
 	On     yaml.Node       `yaml:"on"`
 }
+
+// defaultWait is how long a session waits for an answer when its wait is
+// left out (R20).
+const defaultWait = 10 * time.Minute
 
 // referenceDoc is the keys of a reference to one of actions written as a
 // mapping, besides the one key that names the action.
@@ -110,8 +116,8 @@ func hasKey(n *yaml.Node, key string) bool {
 }
 
 // parseSession decodes the session e, resolving its agent and its bot, its
-// agent's or else tracker.bot, in env. It is named after its agent unless
-// its name says otherwise (KTD16).
+// agent's or else tracker.bot, in env, and reading its wait. It is named
+// after its agent unless its name says otherwise (KTD16).
 func parseSession(e entry, env ruleEnv) (parsedAction, error) {
 	var doc sessionDoc
 	if err := decodeItem(e.value, e.path, itemShape, &doc); err != nil {
@@ -125,8 +131,9 @@ func parseSession(e entry, env ruleEnv) (parsedAction, error) {
 		byAgent = string(agent.Name)
 	}
 	name, nameErr := actionName(doc.Name, e.path+".name", byAgent)
+	wait, waitErr := sessionWait(doc.Wait, e.path+".wait")
 	on, onErr := parseOn(&doc.On, e.path+".on")
-	if err := errors.Join(promptErr, agentErr, nameErr, onErr); err != nil {
+	if err := errors.Join(promptErr, agentErr, nameErr, waitErr, onErr); err != nil {
 		return parsedAction{}, err
 	}
 	prompt, err := crew.ParsePrompt(name, text)
@@ -140,8 +147,26 @@ func parseSession(e entry, env ruleEnv) (parsedAction, error) {
 	if agent.Bot != "" {
 		bot = crew.Bot{Name: agent.Bot}
 	}
-	a := crew.Action{Name: name, Kind: crew.SessionSpec{Agent: agent.Agent, Prompt: prompt, Bot: bot}, On: on.targets()}
+	spec := crew.SessionSpec{Agent: agent.Agent, Prompt: prompt, Bot: bot, Wait: wait}
+	a := crew.Action{Name: name, Kind: spec, On: on.targets()}
 	return parsedAction{Action: a, path: e.path, line: line, on: on}, nil
+}
+
+// sessionWait returns how long the wait l at path has a session wait for an
+// answer: a positive Go duration, such as 10m, or defaultWait when l is left
+// out (KTD-W3).
+func sessionWait(l located[string], path string) (time.Duration, error) {
+	if l.line == 0 {
+		return defaultWait, nil
+	}
+	d, err := time.ParseDuration(l.value)
+	if err != nil {
+		return 0, keyError(path, l.line, fmt.Sprintf("%q must be a duration, such as 10m", l.value))
+	}
+	if d <= 0 {
+		return 0, keyError(path, l.line, "must be positive")
+	}
+	return d, nil
 }
 
 // parseReference decodes the reference e: a mapping whose one key besides

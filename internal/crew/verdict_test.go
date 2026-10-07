@@ -267,6 +267,29 @@ func TestJudgeShell(t *testing.T) {
 	}
 }
 
+// Covers R19: only a session whose on: has a waiting entry may wait for an
+// answer; a shell action never does, whatever its on: says.
+func TestActionMayWait(t *testing.T) {
+	waiting := On{Waiting: ToRoute{Route: "waiting"}}
+	tests := []struct {
+		name   string
+		action Action
+		want   bool
+	}{
+		{"a session with a waiting entry", Action{Kind: SessionSpec{}, On: waiting}, true},
+		{"a session with other entries only", Action{Kind: SessionSpec{}, On: On{"blocked": Next{}}}, false},
+		{"a session with no on", Action{Kind: SessionSpec{}}, false},
+		{"a shell action with a waiting entry", Action{Kind: ShellSpec{}, On: waiting}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.action.MayWait(); got != tt.want {
+				t.Errorf("MayWait() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // returned returns how a function that returned v ended, saying reason.
 func returned(v Verdict, reason string) FunctionOutcome {
 	return FunctionOutcome{Verdict: Some(v), Reason: NewShellReason(reason)}

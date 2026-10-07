@@ -30,6 +30,7 @@ type RuleRun struct {
 	start     Start
 	cursor    int
 	session   Optional[LatestSession]
+	questions []Question
 	lookup    Lookup
 }
 
@@ -145,7 +146,7 @@ func (r RuleRun) Snapshot() RuleRunSnapshot {
 	s := RuleRunSnapshot{
 		ID: r.id, Continues: r.continues, Issue: r.issue.Data(), Rule: r.rule, Taken: r.taken,
 		Stopping: r.stopping, TimeUp: r.timeUp, Phase: clonePhase(r.phase), Workspace: r.workspace, Start: r.Start(),
-		Cursor: r.cursor, Session: r.session, Lookup: r.lookup,
+		Cursor: r.cursor, Session: r.session, Questions: slices.Clone(r.questions), Lookup: r.lookup,
 	}
 	for _, a := range r.actions {
 		s.Actions = append(s.Actions, a.snapshot())
@@ -180,7 +181,9 @@ type RuleRunSnapshot struct {
 	// for a run without actions.
 	Cursor  int
 	Session Optional[LatestSession]
-	Lookup  Lookup
+	// Questions are the run's open questions, oldest first.
+	Questions []Question
+	Lookup    Lookup
 }
 
 // errBadSnapshot is the error of a snapshot RestoreRuleRun rejects.
@@ -198,7 +201,7 @@ func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 	r := RuleRun{
 		id: s.ID, continues: s.Continues, issue: NewIssue(s.Issue), rule: s.Rule, taken: s.Taken,
 		stopping: s.Stopping, timeUp: s.TimeUp, phase: clonePhase(s.Phase), workspace: s.Workspace, start: s.Start,
-		cursor: s.Cursor, session: s.Session, lookup: s.Lookup,
+		cursor: s.Cursor, session: s.Session, questions: slices.Clone(s.Questions), lookup: s.Lookup,
 	}
 	for _, a := range s.Actions {
 		r.actions = append(r.actions, restoreAction(a))

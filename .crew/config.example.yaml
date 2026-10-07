@@ -46,6 +46,14 @@
 ## and pull request.
 # usage_in_status: false
 
+## The Apps whose comments answer a question a session asks on its issue,
+## by login, <slug>[bot]. The code owners always answer; collaborators and
+## other Apps do not. Without it, crew's own bots answer; a list replaces
+## them, and [] has no App answer. github-actions[bot] never answers: any
+## workflow can post anyone's text as it.
+# answering_apps:
+#   - claude[bot]
+
 ## Queues by name, each with its slots. A queue's slots serve only the rules
 ## that name it, so a long session never holds up a quick rule of another
 ## queue. The queue default always exists: it gets the slots
@@ -168,6 +176,10 @@
 #         agent: developer
 #         ## The session's name in the rule: its agent's name by default.
 #         name: implement
+#         ## How long the session waits for an answer to a question it asks
+#         ## on the issue, a Go duration such as 10m or 1h30m, before it ends
+#         ## as waiting.
+#         wait: 10m
 #         ## The session's prompt, a Go template over the item the rule took:
 #         ## {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}}, {{.Issue.URL}}.
 #         prompt: |-

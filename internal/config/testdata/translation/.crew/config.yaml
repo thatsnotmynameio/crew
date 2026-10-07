@@ -3,11 +3,14 @@
 # queues, bots, agents on both harnesses, shell actions defined as a string
 # and as a mapping, a function preset, a function called through its preset
 # and by its own name, rules with and without actions, sessions with and
-# without a name, on maps, routes as a label and as a list of steps, notify
-# set both ways and multi-line prompts. Its function, word-count, is
-# invented too: the test registers it.
+# without a name or a wait, on maps, routes as a label and as a list of
+# steps, notify set both ways, multi-line prompts and an answering list. Its
+# function, word-count, is invented too: the test registers it.
 poll_interval_seconds: 120
 max_parallel_issues: 4
+answering_apps:
+  - glossary-keeper[bot]
+  - linguist[bot]
 queues:
   desk: 1
   translators: 2
@@ -54,6 +57,7 @@ rules:
     actions:
       - agent: translator
         name: draft
+        wait: 30m
         prompt: |-
           Translate the page {{.Issue.Ref}} names, "{{.Issue.Title}}", into Portuguese.
 
@@ -83,6 +87,7 @@ rules:
         prompt: Proofread the draft of {{.Issue.Ref}} ({{.Issue.URL}}).
         on:
           failed: rejected
+          waiting: next
       - glossary-kept
       - agent: translator
         prompt: Typeset the draft of {{.Issue.Ref}} for print.

@@ -248,17 +248,17 @@ func comparePriority(a, b int) int {
 }
 
 // take holds issue for rule si, as a new rule run that continues the last
-// run of the rule on the issue and starts where that run says (R22,
-// KTD19), and moves it to the rule's running label.
+// run of the rule on the issue, starts where that run says (R22, KTD19)
+// and inherits its open questions (KTD-W7), and moves it to the rule's
+// running label.
 func (s *step) take(si int, issue crew.Issue) {
 	m := s.m
 	rule := m.rules[si]
 	s.runs++
-	continues, start := m.continued(issue.ID(), rule)
-	taken := crew.RunTaken{
+	taken := m.continued(crew.RunTaken{
 		Run: crew.NewRuleRunID(s.seed, s.runs), At: s.at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule.Name,
-		Issue: issue.Data(), Continues: continues, From: rule.Labels.Ready, To: rule.Labels.Running, Start: start,
-	}
+		Issue: issue.Data(), From: rule.Labels.Ready, To: rule.Labels.Running,
+	}, rule)
 	for _, a := range rule.Actions {
 		taken.Actions = append(taken.Actions, a.Name)
 	}

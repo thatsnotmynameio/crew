@@ -49,11 +49,14 @@ type head struct {
 	Rule    crew.RuleName  `json:"stage"`
 }
 
-// place is the action an event is about, the bot it acts as, the
-// worktree the run works in and the states a move went between.
+// place is the action an event is about, the bot it acts as, the login a
+// session acts as and whether it may ask a question, the worktree the run
+// works in and the states a move went between.
 type place struct {
 	Action    crew.ActionName    `json:"action,omitempty"`
 	Bot       crew.BotName       `json:"bot,omitempty"`
+	Login     string             `json:"login,omitempty"`
+	Asks      bool               `json:"asks,omitempty"`
 	Workspace crew.WorkspaceName `json:"workspace,omitempty"`
 	Branch    string             `json:"branch,omitempty"`
 	Log       string             `json:"log,omitempty"`
@@ -108,7 +111,7 @@ const (
 )
 
 // taken is the issue as a rule took it, the run that rule run continues,
-// its actions and how it starts.
+// its actions, how it starts and the open questions it inherits.
 type taken struct {
 	Title     string         `json:"title,omitempty"`
 	URL       string         `json:"url,omitempty"`
@@ -120,6 +123,15 @@ type taken struct {
 	Continues crew.RuleRunID `json:"continues,omitempty"`
 	Actions   []takenAction  `json:"actions,omitempty"`
 	Start     *start         `json:"start,omitempty"`
+	Questions []question     `json:"questions,omitempty"`
+}
+
+// question is one open question: the rule run whose session may have
+// asked it, its action and the login it acted as.
+type question struct {
+	RuleRun crew.RuleRunID  `json:"rule_run"`
+	Action  crew.ActionName `json:"action"`
+	Login   string          `json:"login,omitempty"`
 }
 
 // The values of kind.

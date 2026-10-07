@@ -1,6 +1,7 @@
 package jsonl_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -87,6 +88,38 @@ func TestEveryLookupLoadsBackAsItself(t *testing.T) {
 		crew.RunLookupDone{EventHead: head(2), PullRequest: crew.PullRequestNone{}},
 		crew.RunLookupDone{EventHead: head(3), PullRequest: crew.PullRequestNotLookedUp{}},
 	})
+}
+
+// Lines an earlier crew wrote, without a session's login or asks or a
+// take's questions, load with none (KTD-W11).
+func TestLinesWithoutQuestionsLoadWithNone(t *testing.T) {
+	j, root := journal(t)
+	writeJournal(t, root,
+		`{"v":3,"type":"run_taken","time":"2026-10-07T09:00:00Z","rule_run":"development-1","issue":"9",`+
+			`"ref":"#9","stage":"development","start":{"kind":"fresh"}}`,
+		`{"v":3,"type":"action_session_started","time":"2026-10-07T09:00:07Z","rule_run":"development-1",`+
+			`"issue":"9","ref":"#9","stage":"development","action":"lfg","bot":"crew-developer"}`,
+	)
+
+	got, err := j.Load(repository)
+	want := []crew.RunEvent{
+		crew.RunTaken{EventHead: head(0), Issue: crew.IssueData{ID: head(0).IssueID, Ref: "#9"}, Start: crew.StartFresh{}},
+		crew.ActionSessionStarted{EventHead: head(7), Action: "lfg", Bot: developer},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Load =\n%#v, %v\nwant\n%#v", got, err, want)
+	}
+}
+
+func TestEveryQuestionLoadsBackAsItself(t *testing.T) {
+	roundTrip(t, []crew.RunEvent{crew.RunTaken{
+		EventHead: head(0), Issue: crew.IssueData{ID: head(0).IssueID, Ref: "#9"}, Start: crew.StartFresh{},
+		Questions: []crew.Question{
+			{Run: "development-0", Action: "lfg", Login: "crew-developer[bot]"},
+			{Run: "development-1", Action: "lfg"},
+			{Run: "development-1", Action: "acceptance", Login: "boss"},
+		},
+	}})
 }
 
 func TestEveryFunctionEventLoadsBackAsItselfWithOrWithoutAVerdict(t *testing.T) {
