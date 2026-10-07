@@ -36,26 +36,35 @@ type card struct {
 }
 
 // cards returns a card in each column whose labels an item of the board
-// carries and that shows its kind, item by item in the board's order,
-// oldest first (R7, KTD6, R23), then the Not on board cards (KTD13 of
-// #151). A card of an item crew holds carries its issue's view (R10,
-// KTD9); no card waits for the next rule (R28), and an issue whose rule
-// ended has only the cards its labels give it (R7 of #230).
+// carries and that shows its kind: first those of the items crew holds,
+// whatever their claim, then the others, each item by item in the board's
+// order, oldest first (R1 to R3 of #231; R7, KTD6, R23), then the Not on
+// board cards (KTD13 of #151). A card of an item crew holds carries its
+// issue's view (R10, KTD9); no card waits for the next rule (R28), and an
+// issue whose rule ended has only the cards its labels give it (R7 of
+// #230).
 func (m Model) cards() []card {
 	views := map[string]core.IssueView{}
 	for _, iv := range m.snap.Issues {
 		views[iv.Issue.Key] = iv
 	}
-	var out []card
+	var held, idle []card
 	for _, bi := range m.snap.Board {
-		view, held := views[bi.Issue.Key]
+		view, isHeld := views[bi.Issue.Key]
 		for i, c := range m.cfg.Board {
 			carries := slices.ContainsFunc(c.Labels, func(l string) bool { return slices.Contains(bi.Labels, l) })
-			if carries && c.Takes == bi.Issue.Kind {
-				out = append(out, card{issue: bi.Issue, column: i, held: held, view: view})
+			if !carries || c.Takes != bi.Issue.Kind {
+				continue
+			}
+			cd := card{issue: bi.Issue, column: i, held: isHeld, view: view}
+			if isHeld {
+				held = append(held, cd)
+			} else {
+				idle = append(idle, cd)
 			}
 		}
 	}
+	out := slices.Concat(held, idle)
 	return append(out, m.unboardedCards(out)...)
 }
 

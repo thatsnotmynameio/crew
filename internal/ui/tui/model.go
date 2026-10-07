@@ -185,6 +185,11 @@ func (m Model) updated(u engine.Update) (tea.Model, tea.Cmd) {
 	if m.sel.key != was {
 		m.popup = false
 	}
+	// The highlighted card's column scrolls to its row now, which moves
+	// when crew takes or lets go of its issue (R5 of #231).
+	if m.sel.key != "" {
+		m.sel.top = shownFrom(m.sel.top, m.sel.row, len(byColumn(cards)[m.sel.column]), m.budget().cards)
+	}
 	// The board scrolls to keep the highlight drawn, as ←→ do (R10 of
 	// #151).
 	order := slices.Sorted(maps.Keys(byColumn(cards)))

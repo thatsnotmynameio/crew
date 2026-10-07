@@ -13,16 +13,16 @@ Bots ─────────────────────────
  ideas                      bugs                       done                     
  ─────────────────────────  ─────────────────────────  ─────────────────────────
  ╭───────────────────────╮  ╭───────────────────────╮  ╭───────────────────────╮
- │ ▸ #21 Retry the poll  │  │ #21 Retry the poll    │  │ #22 Typo in help      │
- │ run  ○ idle           │  │ run  ○ idle           │  │ run  ○ idle           │
+ │ ▸ #21 Retry the poll  │  │ #20 Crash on start    │  │ #22 Typo in help      │
+ │ run  ○ idle           │  │ run  ⠋ lfg 1m         │  │ run  ○ idle           │
  │ bots none             │  │ bots none             │  │ bots none             │
- │ via  none             │  │ via  none             │  │ via  none             │
+ │ via  none             │  │ via  clerk            │  │ via  none             │
  ╰───────────────────────╯  ╰───────────────────────╯  ╰───────────────────────╯
                             ╭───────────────────────╮                           
-                            │ #20 Crash on start    │                           
-                            │ run  ⠋ lfg 1m         │                           
+                            │ #21 Retry the poll    │                           
+                            │ run  ○ idle           │                           
                             │ bots none             │                           
-                            │ via  clerk            │                           
+                            │ via  none             │                           
                             ╰───────────────────────╯                           
 
 Queues ─── 0 of 0 busy   Events ─────────────────────────────────────── 0 events

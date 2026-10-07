@@ -330,6 +330,99 @@ func TestAColumnsCardsGoOldestFirstAndTheNewestAreCut(t *testing.T) {
 	}
 }
 
+// holding is a snapshot of crew holding the issues keys, each titled Bug,
+// in claim, with one running action.
+func holding(claim core.Claim, keys ...string) engine.Update {
+	var u engine.Update
+	for _, k := range keys {
+		u.Snapshot.Issues = append(u.Snapshot.Issues,
+			held(crew.Issue{Key: k, Ref: "#" + k, Title: "Bug"}, "fix", "lfg", claim).Snapshot.Issues...)
+	}
+	return u
+}
+
+// cardOrder returns the refs with a card on board, by the board row of
+// their first card, top first; a ref with no card is left out.
+func cardOrder(board string, refs ...string) []string {
+	row := map[string]int{}
+	for i, l := range strings.Split(board, "\n") {
+		for _, ref := range refs {
+			if _, found := row[ref]; !found && nextCard(l, ref+" ") >= 0 {
+				row[ref] = i
+			}
+		}
+	}
+	out := slices.DeleteFunc(slices.Clone(refs), func(ref string) bool { _, found := row[ref]; return !found })
+	slices.SortStableFunc(out, func(a, b string) int { return row[a] - row[b] })
+	return out
+}
+
+// Covers AE1, R1 and R2 of #231: a column lists the cards of the items
+// crew holds first, then the others, each group in board order.
+func TestAE1HeldCardsComeFirstInTheirColumn(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "15", "12"),
+		item("10", "bug"), item("12", "bug"), item("15", "bug"))))
+	board := boardOf(t, h.view())
+
+	if got, want := cardOrder(board, "#10", "#12", "#15"), []string{"#12", "#15", "#10"}; !slices.Equal(got, want) {
+		t.Errorf("the column shows %v, want %v:\n%s", got, want, board)
+	}
+}
+
+// Covers AE2 and R3 of #231: a card is held whatever its issue's claim.
+func TestAE2EveryClaimKeepsACardHeld(t *testing.T) {
+	for _, claim := range []core.Claim{
+		core.ClaimTaking, core.ClaimRunning, core.ClaimStopping, core.ClaimJudging, core.ClaimOwed,
+	} {
+		h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+		h.send(updateMsg(onBoard(holding(claim, "15"),
+			item("10", "bug"), item("12", "bug"), item("15", "bug"))))
+		board := boardOf(t, h.view())
+
+		if got, want := cardOrder(board, "#10", "#12", "#15"), []string{"#15", "#10", "#12"}; !slices.Equal(got, want) {
+			t.Errorf("%s: the column shows %v, want %v:\n%s", claim, got, want, board)
+		}
+	}
+}
+
+// Covers R1 of #231: a held issue with cards in two columns comes first
+// in both.
+func TestAHeldIssueComesFirstInEachOfItsColumns(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "21"),
+		labeled(twenty, "crew:brainstorm:ready", "bug"), labeled(twentyOne, "crew:brainstorm:ready", "bug"))))
+	board := boardOf(t, h.view())
+
+	for _, ref := range []string{"#20", "#21"} {
+		if got := cardColumns(board, ref); !slices.Equal(got, []int{0, 1}) {
+			t.Fatalf("%s's cards are in columns %v, want ideas (0) and bugs (1):\n%s", ref, got, board)
+		}
+	}
+	if got, want := cardOrder(board, "#20", "#21"), []string{"#21", "#20"}; !slices.Equal(got, want) {
+		t.Errorf("the columns show %v, want %v:\n%s", got, want, board)
+	}
+}
+
+// Covers R4 of #231: the Not on board column keeps the order crew holds
+// its issues in, after the configured columns.
+func TestNotOnBoardKeepsItsOrder(t *testing.T) {
+	h := newBoardHarness(t, 120, crewRules, ideasBugsDone)
+
+	h.send(updateMsg(onBoard(holding(core.ClaimRunning, "31", "30"), item("10", "bug"))))
+	board := boardOf(t, h.view())
+
+	if got := cardColumn(t, board, "#31"); got != 3 {
+		t.Errorf("#31's card is in column %d, want Not on board (3):\n%s", got, board)
+	}
+	if got, want := cardOrder(board, "#30", "#31"), []string{"#31", "#30"}; !slices.Equal(got, want) {
+		t.Errorf("Not on board shows %v, want %v:\n%s", got, want, board)
+	}
+}
+
 // elevenBugs are eleven issues, #1 to #11, each labeled bug.
 func elevenBugs() []crew.BoardIssue {
 	issues := make([]crew.BoardIssue, 0, 11)
