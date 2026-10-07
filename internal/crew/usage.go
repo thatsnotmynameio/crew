@@ -1,14 +1,8 @@
 package crew
 
-import (
-	"fmt"
-	"strconv"
-	"strings"
-)
-
 // Usage is what a harness reported a session used. Each value is optional:
-// a harness that cannot tell leaves its Has field false, and crew shows the
-// value as not reported, never as zero.
+// a harness that cannot tell leaves its Has field false, so the value reads
+// as not reported, never as zero.
 type Usage struct {
 	// Cost is the session's cost in US dollars, as the harness reports it;
 	// set when HasCost.
@@ -46,8 +40,8 @@ func (t Tokens) add(u Tokens) Tokens {
 	}
 }
 
-// Spend is the cost and tokens of one session or the sum of several, for
-// the live view and the status comment. It is comparable, so a Status that
+// Spend is the cost and tokens of one session or the sum of several, with
+// how many of the sessions reported each. It is comparable, so a Status that
 // holds one still compares with ==.
 type Spend struct {
 	// Sessions is how many sessions it sums; zero for an action that never
@@ -82,65 +76,6 @@ func (s Spend) Add(t Spend) Spend {
 	}
 }
 
-// String words s as the live view and the status comment show it: the cost
-// next to the tokens, a sum that misses some session's value marked as
-// partial, and a value no session reported said so. It is "" when s sums
-// no session.
-func (s Spend) String() string {
-	if s.Sessions == 0 {
-		return ""
-	}
-	if s.WithCost == 0 && s.WithTokens == 0 {
-		return "cost and tokens not reported"
-	}
-	cost := "cost not reported"
-	if s.WithCost > 0 {
-		cost = formatCost(s.Cost) + partial(s.WithCost, s.Sessions)
-	}
-	count := "tokens not reported"
-	if s.WithTokens > 0 {
-		count = formatTokens(s.Tokens.Total()) + " tokens" + partial(s.WithTokens, s.Sessions)
-	}
-	return cost + ", " + count
-}
-
-// partial marks a sum of with values out of sessions as partial when some
-// session did not report its value.
-func partial(with, sessions int) string {
-	if with < sessions {
-		return " (partial)"
-	}
-	return ""
-}
-
-// formatCost words a cost in US dollars with two decimals, as $12.40.
-func formatCost(usd float64) string {
-	return fmt.Sprintf("$%.2f", usd)
-}
-
-// thousand and million are the steps of formatTokens' K and M.
-const (
-	thousand = 1_000
-	million  = 1_000_000
-)
-
-// formatTokens words a token count compactly: 950, 48.2K, 17.2M.
-func formatTokens(n int64) string {
-	switch {
-	case n < thousand:
-		return strconv.FormatInt(n, 10)
-	case n < million:
-		return compact(float64(n)/thousand) + "K"
-	default:
-		return compact(float64(n)/million) + "M"
-	}
-}
-
-// compact formats f with one decimal, without a trailing ".0".
-func compact(f float64) string {
-	return strings.TrimSuffix(fmt.Sprintf("%.1f", f), ".0")
-}
-
 // PullRequestLookup is what came of looking up the pull request an action
 // opened.
 type PullRequestLookup int
@@ -164,17 +99,4 @@ type PullRequest struct {
 	Ref string
 	// URL is its web address; set when Lookup is PullRequestFound.
 	URL string
-}
-
-// String words p: "pull request #45", "no pull request" or "pull request
-// not looked up".
-func (p PullRequest) String() string {
-	switch p.Lookup {
-	case PullRequestFound:
-		return "pull request " + p.Ref
-	case PullRequestNone:
-		return "no pull request"
-	default:
-		return "pull request not looked up"
-	}
 }

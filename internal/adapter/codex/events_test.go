@@ -293,15 +293,19 @@ func TestUsage(t *testing.T) {
 }
 
 // A Codex session's usage, summed with a Claude session's that has a cost,
-// shows the cost as partial and the tokens of both (AE5).
+// counts the cost of one session of two, so the live view shows it as
+// partial, and the tokens of both (AE5).
 func TestCodexUsageMarksASumWithAClaudeCostPartial(t *testing.T) {
 	claude := crew.Usage{Cost: 3.10, HasCost: true, Tokens: crew.Tokens{Input: 200_000}, HasTokens: true}
 	codex := record(fixture(t, "success.jsonl"), nil).usage(false)
 
-	got := claude.Spend().Add(codex.Spend()).String()
+	got := claude.Spend().Add(codex.Spend())
 
-	if want := "$3.10 (partial), 224.9K tokens"; got != want {
-		t.Errorf("spend = %q, want %q", got, want)
+	if got.Sessions != 2 || got.Cost != 3.10 || got.WithCost != 1 || got.WithTokens != 2 {
+		t.Errorf("spend = %+v, want two sessions, of which one reported a cost of $3.10 and both tokens", got)
+	}
+	if total := got.Tokens.Total(); total != 224_885 {
+		t.Errorf("tokens = %d, want Claude's 200,000 plus the fixture's 24,885", total)
 	}
 }
 
