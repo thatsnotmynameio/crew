@@ -141,7 +141,7 @@ func TestAStopDuringTheLookupKeepsTheSessionsOwnFailure(t *testing.T) {
 	}
 	cmds, _ = d.send(core.PullRequestFound{IssueKey: "9", Action: "development", PullRequest: noPR})
 	end := records(cmds)
-	if len(end) != 1 || end[0].Reason != "tests fail" || end[0].PullRequest != noPR {
+	if len(end) != 1 || end[0].Reason.String() != "tests fail" || end[0].PullRequest != noPR {
 		t.Fatalf("records = %#v, want the session's own failure with no pull request", end)
 	}
 }
@@ -154,7 +154,7 @@ func TestAE5AStoppedSessionIsRecordedWithoutUsage(t *testing.T) {
 
 	cmds, _ := d.send(core.PullRequestFound{IssueKey: "9", Action: "development", PullRequest: noPR})
 	end := records(cmds)
-	if len(end) != 1 || end[0].Usage.HasCost || end[0].Usage.HasTokens || end[0].Reason != "stopped by crew" {
+	if len(end) != 1 || end[0].Usage.HasCost || end[0].Usage.HasTokens || end[0].Reason.String() != "stopped by crew" {
 		t.Fatalf("records = %#v, want a stopped end with no usage", end)
 	}
 }
@@ -215,7 +215,7 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 	d := usageDriver(t, draft())
 	cmds, _ := d.poll(issue("5", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "5"), Result: core.ResultDone})
-	d.send(core.WorkspaceFailed{IssueKey: "5", Action: "acceptance", Reason: "no space left"})
+	d.send(core.WorkspaceFailed{IssueKey: "5", Action: "acceptance", Reason: crew.NewSessionText("no space left")})
 	d.send(space("5", "development"))
 	d.send(core.SessionStarted{IssueKey: "5", Action: "development"})
 	d.send(core.SessionEnded{IssueKey: "5", Action: "development", Outcome: succeeded, Usage: spent})

@@ -133,7 +133,7 @@ type Outcome struct {
 	// Succeeded is true when the session ended cleanly.
 	Succeeded bool
 	// Reason is one line saying why, such as the session's last message.
-	Reason string
+	Reason SessionText
 }
 
 // FailureReport is what the engine asks a tracker to post on an issue whose

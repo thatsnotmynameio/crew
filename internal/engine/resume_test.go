@@ -160,6 +160,29 @@ func TestAE5ARunKilledWithCrewResumesAfterARestart(t *testing.T) {
 	})
 }
 
+func TestAResumedRunsPromptQuotesItsJournalReasonWithoutControlBytes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready))
+		cfg := config(t, tr, develop)
+		// A journal an older crew wrote, its reason holding a NUL.
+		ended := strings.Replace(startedLine, `"event":"started"`, `"event":"ended"`, 1)
+		ended = strings.TrimSuffix(ended, "}") + `,"succeeded":false,"reason":"bo\u0000om"}`
+		writeJournal(t, cfg.Root, startedLine, ended)
+		if err := os.Mkdir(filepath.Join(cfg.Root, ".crew", "worktrees", "issue-1-development"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		r := start(t, cfg)
+
+		if p := r.session().Run().Prompt; !strings.Contains(p, `That run failed: "bo om".`) {
+			t.Errorf("prompt does not quote the stripped reason:\n%s", p)
+		}
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
 func TestAE3AGoneWorkspaceGivesAFreshOneWithoutTheParagraph(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))

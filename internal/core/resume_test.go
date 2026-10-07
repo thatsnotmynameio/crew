@@ -228,7 +228,7 @@ func TestAE7AResumedRunThatFailsAgainResumesOnceMoreWithItsReason(t *testing.T) 
 
 	cmds, _ := d.send(core.SessionEnded{IssueKey: "9", Action: "lfg", Outcome: failed("second reason")})
 	got := records(cmds)
-	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason != "second reason" ||
+	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason.String() != "second reason" ||
 		got[0].Workspace != "issue-9-lfg" {
 		t.Fatalf("records = %#v, want one failed end in issue-9-lfg with the second reason", got)
 	}
@@ -285,9 +285,11 @@ func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 		d := resumeDriver(t, past)
 		d.takeIssue(issue("9", 1, readyForDev))
 		d.send(reopened("9", "lfg", "lfg"))
-		cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "9", Action: "lfg", Reason: "start claude: not found"})
+		cmds, _ := d.send(core.SessionFailedToStart{
+			IssueKey: "9", Action: "lfg", Reason: crew.NewSessionText("start claude: not found"),
+		})
 		got := records(cmds)
-		if len(got) != 1 || got[0].Reason != "the session's reason" || got[0].Succeeded {
+		if len(got) != 1 || got[0].Reason.String() != "the session's reason" || got[0].Succeeded {
 			t.Fatalf("records = %#v, want a failed end keeping the session's reason", got)
 		}
 		d.settle(cmds)
@@ -305,7 +307,7 @@ func TestARunWhoseSessionNeverStartedKeepsTheLastSessionsReason(t *testing.T) {
 		d.send(core.StopRequested{})
 		cmds, _ := d.send(reopened("9", "lfg", "lfg"))
 		got := records(cmds)
-		if len(got) != 2 || got[1].Event != core.RunEnded || got[1].Reason != "the session's reason" {
+		if len(got) != 2 || got[1].Event != core.RunEnded || got[1].Reason.String() != "the session's reason" {
 			t.Fatalf("records = %#v, want a start then a failed end keeping the session's reason", got)
 		}
 	})
@@ -316,9 +318,11 @@ func TestAFailureWithoutAWorkspaceRecordsItsEndAndKeepsTheFailedRun(t *testing.T
 	d := resumeDriver(t, past)
 	d.takeIssue(issue("9", 1, readyForDev))
 
-	cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "9", Action: "lfg", Reason: "git worktree list failed"})
+	cmds, _ := d.send(core.WorkspaceFailed{
+		IssueKey: "9", Action: "lfg", Reason: crew.NewSessionText("git worktree list failed"),
+	})
 	if got := records(cmds); len(got) != 1 || got[0].Event != core.RunEnded || got[0].Workspace != "" ||
-		got[0].Reason != "git worktree list failed" {
+		got[0].Reason.String() != "git worktree list failed" {
 		t.Fatalf("records = %#v, want one end without a workspace", got)
 	}
 	d.settle(cmds)
@@ -341,10 +345,10 @@ func TestAStopThenAGoneWorkspaceCreatesNothing(t *testing.T) {
 			t.Fatalf("got %#v after a stop, want no workspace", c)
 		}
 	}
-	if got := records(cmds); len(got) != 1 || got[0].Workspace != "" || got[0].Reason != "crew stopped" {
+	if got := records(cmds); len(got) != 1 || got[0].Workspace != "" || got[0].Reason.String() != "crew stopped" {
 		t.Fatalf("records = %#v, want one stopped end without a workspace", got)
 	}
-	if a := d.m.View().Issues[0].Actions[0]; a.Phase != core.PhaseEnded || a.Outcome.Reason != "crew stopped" {
+	if a := d.m.View().Issues[0].Actions[0]; a.Phase != core.PhaseEnded || a.Outcome.Reason.String() != "crew stopped" {
 		t.Fatalf("action = %#v, want ended with crew stopped", a)
 	}
 }
@@ -422,7 +426,7 @@ func TestAE1AFailedCheckIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 	reason := "the check failed: no pull requests found for branch \"crew/issue-9-lfg\""
 	cmds, _ := d.send(core.CheckEnded{IssueKey: "9", Action: "lfg", Outcome: failed(reason)})
 	got := records(cmds)
-	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason != reason {
+	if len(got) != 1 || got[0].Event != core.RunEnded || got[0].Succeeded || got[0].Reason.String() != reason {
 		t.Fatalf("records = %#v, want one failed end with the check's reason", got)
 	}
 	d.settle(cmds)

@@ -10,7 +10,7 @@ import (
 
 // passed is the outcome of a check that passed for reason.
 func passed(reason string) crew.Outcome {
-	return crew.Outcome{Succeeded: true, Reason: reason}
+	return crew.Outcome{Succeeded: true, Reason: crew.NewSessionText(reason)}
 }
 
 // judgeCheck is the check that runs before prCheck on development in

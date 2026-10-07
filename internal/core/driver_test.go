@@ -201,9 +201,11 @@ func wantHeld(t *testing.T, m *core.Model, keys ...string) {
 	}
 }
 
-func failed(reason string) crew.Outcome { return crew.Outcome{Succeeded: false, Reason: reason} }
+func failed(reason string) crew.Outcome {
+	return crew.Outcome{Succeeded: false, Reason: crew.NewSessionText(reason)}
+}
 
-var succeeded = crew.Outcome{Succeeded: true, Reason: "done"}
+var succeeded = crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("done")}
 
 // issueKey returns the key of the issue c concerns.
 func issueKey(c core.Command) string {

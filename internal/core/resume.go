@@ -42,7 +42,7 @@ type RunRecord struct {
 	Log       string
 	// Succeeded and Reason are the action's outcome; set on RunEnded only.
 	Succeeded bool
-	Reason    string
+	Reason    crew.SessionText
 	// SessionStarted is when the action's session started, Usage what it
 	// used and PullRequest what its lookup found; set on RunEnded only.
 	// SessionStarted is zero when no session started, and then Usage is
@@ -68,9 +68,9 @@ func (r RunRecord) failed() bool {
 
 // reason is why the run r records failed: its outcome's reason, or
 // crashedReason when it never recorded an end.
-func (r RunRecord) reason() string {
+func (r RunRecord) reason() crew.SessionText {
 	if r.Event == RunStarted {
-		return crashedReason
+		return crew.NewSessionText(crashedReason)
 	}
 	return r.Reason
 }
@@ -171,7 +171,7 @@ func resumeParagraph(prev RunRecord, branch, log, logFromDir string) string {
 	if branch != "" {
 		fmt.Fprintf(&b, ", on branch `%s`", branch)
 	}
-	fmt.Fprintf(&b, ". That run failed: %q.", oneLine(prev.reason()))
+	fmt.Fprintf(&b, ". That run failed: %q.", oneLine(prev.reason().String()))
 	fmt.Fprintf(&b, " Its output is in the log `%s` of the repository's main checkout", log)
 	if logFromDir != "" {
 		fmt.Fprintf(&b, " (`%s` from this worktree)", logFromDir)

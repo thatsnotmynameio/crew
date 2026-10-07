@@ -78,7 +78,8 @@ func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
 	}
 
 	cmds, _ := d.send(core.CheckEnded{
-		IssueKey: "74", Action: "development", Outcome: crew.Outcome{Succeeded: true, Reason: "the check passed"},
+		IssueKey: "74", Action: "development",
+		Outcome: crew.Outcome{Succeeded: true, Reason: crew.NewSessionText("the check passed")},
 	})
 	wantCommands(t, cmds, core.Move{IssueKey: "74", From: inProgress, To: readyToReview})
 }
@@ -256,7 +257,9 @@ var failedCauseCases = []struct {
 		name:   "workspace",
 		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
 		end: func(d *driver, _ []core.Command) []core.Command {
-			cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "74", Action: "development", Reason: "git: no origin"})
+			cmds, _ := d.send(core.WorkspaceFailed{
+				IssueKey: "74", Action: "development", Reason: crew.NewSessionText("git: no origin"),
+			})
 			return cmds
 		},
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseWorkspace},
@@ -266,7 +269,9 @@ var failedCauseCases = []struct {
 		action: crew.Action{Name: "development", Prompt: "Do {{.Issue.Ref}}"},
 		end: func(d *driver, _ []core.Command) []core.Command {
 			d.send(devSpace)
-			cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "74", Action: "development", Reason: "claude: not found"})
+			cmds, _ := d.send(core.SessionFailedToStart{
+				IssueKey: "74", Action: "development", Reason: crew.NewSessionText("claude: not found"),
+			})
 			return cmds
 		},
 		want: crew.ActionStatus{Name: "development", State: crew.ActionFailed, Cause: crew.CauseStart, Log: devSpace.Log},

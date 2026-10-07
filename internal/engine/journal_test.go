@@ -29,7 +29,7 @@ func record(event core.RunEvent, key string) core.RunRecord {
 		Rule: "development", Action: action, Workspace: name, Branch: "crew/" + name, Log: ".crew/logs/" + name + ".log",
 	}
 	if event == core.RunEnded {
-		r.Reason = "no pull request was found"
+		r.Reason = crew.NewSessionText("no pull request was found")
 	}
 	return r
 }
@@ -150,5 +150,27 @@ func TestAnEndWithoutAWorkspaceIsWrittenAndSkippedOnRead(t *testing.T) {
 	}
 	if got, err := e.readJournal(); err != nil || len(got) != 0 {
 		t.Fatalf("readJournal = %#v, %v, want it skipped", got, err)
+	}
+}
+
+func TestAJournalReasonWithAControlByteLoadsWithASpaceInItsPlace(t *testing.T) {
+	e := journalEngine(t)
+	line := `{"v":1,"event":"ended","time":"2026-10-02T21:05:00Z","issue":"9","ref":"#9","stage":"development",` +
+		`"action":"lfg","workspace":"issue-9-lfg","branch":"crew/issue-9-lfg","log":".crew/logs/issue-9-lfg.log",` +
+		`"succeeded":false,"reason":"bo\u0000om"}` + "\n"
+	dir := filepath.Join(e.cfg.Root, ".crew", "logs")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "runs.jsonl"), []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := e.readJournal()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("readJournal = %#v, %v, want one record", got, err)
+	}
+	if reason := got[0].Reason.String(); reason != "bo om" {
+		t.Errorf("reason = %q, want %q", reason, "bo om")
 	}
 }

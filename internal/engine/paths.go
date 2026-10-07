@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
 )
 
 // logDir is where session logs go, relative to the repository root (KTD12).
@@ -73,6 +75,16 @@ func (e *Engine) scrub(text string) string {
 	text = privateKey.ReplaceAllString(text, "[redacted private key]")
 	text = githubToken.ReplaceAllString(text, "[redacted token]")
 	return replaceDir(replaceDir(text, e.cfg.Root, "."), e.cfg.Home, "~")
+}
+
+// scrubAndStrip is text scrubbed, stripped of its control characters
+// (crew.StripControls) and scrubbed again, for the constructors of the text
+// crew shows from a session (KTD3). The first scrub sees the raw bytes, so a
+// token after a control byte, as in foo\x00ghp_…, still starts at a word
+// boundary. The second closes what the strip itself opens: removing an
+// escape sequence can join a token's parts, as gh\x1b[0mp_… becomes ghp_….
+func (e *Engine) scrubAndStrip(text string) string {
+	return e.scrub(crew.StripControls(e.scrub(text)))
 }
 
 // githubToken matches GitHub's tokens by their prefixes: personal, OAuth,

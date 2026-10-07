@@ -140,7 +140,7 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 			wantCommands(t, cmds,
 				core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
 				core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{{
-					Action: "development", Reason: tt.outcome.Reason,
+					Action: "development", Reason: tt.outcome.Reason.String(),
 					Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
 				}}}},
 			)
@@ -224,6 +224,7 @@ func TestBlockedIssueIsNotTakenUntilNothingBlocksIt(t *testing.T) {
 }
 
 func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
+	fetchFailed := crew.NewSessionText("fetch failed")
 	tests := []struct {
 		name      string
 		fail      func(d *driver) []core.Command
@@ -233,7 +234,7 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 		{
 			name: "workspace failed",
 			fail: func(d *driver) []core.Command {
-				cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "1", Action: "acceptance", Reason: "fetch failed"})
+				cmds, _ := d.send(core.WorkspaceFailed{IssueKey: "1", Action: "acceptance", Reason: fetchFailed})
 				return cmds
 			},
 		},
@@ -241,7 +242,7 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 			name: "session failed to start",
 			fail: func(d *driver) []core.Command {
 				d.send(space("1", "acceptance"))
-				cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "1", Action: "acceptance", Reason: "fetch failed"})
+				cmds, _ := d.send(core.SessionFailedToStart{IssueKey: "1", Action: "acceptance", Reason: fetchFailed})
 				return cmds
 			},
 			workspace: "issue-1-acceptance",
@@ -283,7 +284,7 @@ func TestPromptThatFailsToRenderFailsItsAction(t *testing.T) {
 	wantCommands(t, cmds, core.CreateWorkspace{Issue: issue("1", 1, ready), Action: "development"})
 	for _, e := range events {
 		if ended, ok := e.(core.ActionEnded); ok && ended.Action == "acceptance" {
-			if ended.Outcome.Succeeded || !strings.Contains(ended.Outcome.Reason, "Number") {
+			if ended.Outcome.Succeeded || !strings.Contains(ended.Outcome.Reason.String(), "Number") {
 				t.Fatalf("acceptance ended with %#v, want a failure naming the render error", ended.Outcome)
 			}
 			return

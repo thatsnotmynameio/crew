@@ -353,7 +353,10 @@ func fourActions() engine.Update {
 		{Name: "code", Phase: core.PhaseRunning, Branch: "crew/1-code", Started: start.Add(-5*time.Minute - 3*time.Second)},
 		{Name: "tests", Phase: core.PhaseWaiting},
 		{Name: "docs", Phase: core.PhaseEnded, Branch: "crew/1-docs", Outcome: crew.Outcome{Succeeded: true}},
-		{Name: "lint", Phase: core.PhaseEnded, Branch: "crew/1-lint", Outcome: crew.Outcome{Reason: "exited 1"}},
+		{
+			Name: "lint", Phase: core.PhaseEnded, Branch: "crew/1-lint",
+			Outcome: crew.Outcome{Reason: crew.NewSessionText("exited 1")},
+		},
 	}
 	u.Snapshot.Bots = []core.BotView{
 		{Name: "crew-dev", Acting: true, Pairs: []string{"implement/code"},
@@ -411,7 +414,7 @@ func TestAE5AnEndedActionShowsItsLastMessageAndAFailedOneWhy(t *testing.T) {
 	actions := &ended.Snapshot.Issues[0].Actions
 	(*actions)[0].Phase, (*actions)[0].Outcome = core.PhaseEnded, crew.Outcome{Succeeded: true}
 	*actions = append(*actions, core.ActionView{
-		Name: "docs", Phase: core.PhaseEnded, Outcome: crew.Outcome{Reason: "check failed: exited 2"},
+		Name: "docs", Phase: core.PhaseEnded, Outcome: crew.Outcome{Reason: crew.NewSessionText("check failed: exited 2")},
 	})
 	h.send(updateMsg(ended))
 	h.send(enterKey)

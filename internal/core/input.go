@@ -211,7 +211,7 @@ type WorkspaceFailed struct {
 	At       time.Time
 	IssueKey string
 	Action   string
-	Reason   string
+	Reason   crew.SessionText
 }
 
 // SessionStarted is a StartSession whose session is now running. Its At is
@@ -228,7 +228,7 @@ type SessionFailedToStart struct {
 	At       time.Time
 	IssueKey string
 	Action   string
-	Reason   string
+	Reason   crew.SessionText
 }
 
 // SessionEnded is a running session that ended, with its harness's

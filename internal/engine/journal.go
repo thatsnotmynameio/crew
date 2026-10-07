@@ -117,7 +117,7 @@ func (l journalLine) record() (core.RunRecord, bool) {
 		if l.Succeeded == nil {
 			return core.RunRecord{}, false
 		}
-		r.Event, r.Succeeded, r.Reason = core.RunEnded, *l.Succeeded, l.Reason
+		r.Event, r.Succeeded, r.Reason = core.RunEnded, *l.Succeeded, crew.NewSessionText(l.Reason)
 	default:
 		return core.RunRecord{}, false
 	}
@@ -134,7 +134,7 @@ func lineOf(r core.RunRecord, run string) journalLine {
 		return l
 	}
 	succeeded := r.Succeeded
-	l.Event, l.Succeeded, l.Reason = eventEnded, &succeeded, r.Reason
+	l.Event, l.Succeeded, l.Reason = eventEnded, &succeeded, r.Reason.String()
 	if !r.SessionStarted.IsZero() {
 		l.DurationMS = new(r.At.Sub(r.SessionStarted).Milliseconds())
 	}

@@ -137,7 +137,7 @@ func (m Model) liveActionRow(c card, a core.ActionView) actionRow {
 	if a.Phase == core.PhaseEnded {
 		state = doneState
 		if !a.Outcome.Succeeded {
-			state, row.note, row.failed = failedState, clean(a.Outcome.Reason), true
+			state, row.note, row.failed = failedState, clean(a.Outcome.Reason.String()), true
 		}
 	}
 	row.cells = []string{

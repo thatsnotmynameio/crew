@@ -203,11 +203,21 @@ func (e *Engine) classify(ctx context.Context, err error) (core.Result, string) 
 // reason is err as a reason for the core: local paths shortened, and a
 // timeout said as such, as a killed tool's own error rarely does.
 func (e *Engine) reason(ctx context.Context, err error) string {
-	text := err.Error()
+	return e.scrub(callError(ctx, err))
+}
+
+// callError is err's text, with a timeout said as such.
+func callError(ctx context.Context, err error) string {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		text = fmt.Sprintf("timed out after %s: %s", callTimeout, text)
+		return fmt.Sprintf("timed out after %s: %s", callTimeout, err)
 	}
-	return e.scrub(text)
+	return err.Error()
+}
+
+// sessionText is text, from outside crew, as the reason of an action's
+// outcome: scrubbed, stripped and scrubbed again (scrubAndStrip).
+func (e *Engine) sessionText(text string) crew.SessionText {
+	return crew.NewSessionText(e.scrubAndStrip(text))
 }
 
 func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
@@ -215,7 +225,7 @@ func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	defer cancel()
 	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Action)
 	if err != nil {
-		e.post(core.WorkspaceFailed{IssueKey: c.Issue.Key, Action: c.Action, Reason: e.reason(ctx, err)})
+		e.post(core.WorkspaceFailed{IssueKey: c.Issue.Key, Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
 		return
 	}
 	e.post(e.ready(c.Issue.Key, c.Action, space, false))
@@ -236,7 +246,7 @@ func (e *Engine) reopenWorkspace(ctx context.Context, c core.ReopenWorkspace) {
 	case errors.Is(err, port.ErrWorkspaceGone):
 		e.post(core.WorkspaceGone{IssueKey: c.IssueKey, Action: c.Action})
 	case err != nil:
-		e.post(core.WorkspaceFailed{IssueKey: c.IssueKey, Action: c.Action, Reason: e.reason(ctx, err)})
+		e.post(core.WorkspaceFailed{IssueKey: c.IssueKey, Action: c.Action, Reason: e.sessionText(callError(ctx, err))})
 	default:
 		e.post(e.ready(c.IssueKey, c.Action, space, true))
 	}
@@ -265,7 +275,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 		}
 	}
 	if err != nil {
-		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
+		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.sessionText(err.Error())})
 		return
 	}
 	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
@@ -274,7 +284,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	})
 	if err != nil {
 		_ = log.Close() // nothing was written to it worth keeping
-		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.scrub(err.Error())})
+		e.post(core.SessionFailedToStart{IssueKey: c.IssueKey, Action: c.Action, Reason: e.sessionText(err.Error())})
 		return
 	}
 	e.inbox <- message{input: core.SessionStarted{IssueKey: c.IssueKey, Action: c.Action}, session: s}
@@ -282,7 +292,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	// The harness stops writing once Wait returns. A failed close cannot
 	// change the session's verdict, which is what the core needs.
 	_ = log.Close()
-	outcome := crew.Outcome{Succeeded: verdict.Succeeded, Reason: e.scrub(verdict.Reason)}
+	outcome := crew.Outcome{Succeeded: verdict.Succeeded, Reason: e.sessionText(verdict.Reason)}
 	var usage crew.Usage
 	if r, ok := s.(port.UsageReporter); ok {
 		usage = r.Usage()
@@ -355,11 +365,11 @@ func (e *Engine) runCheck(ctx context.Context, cancel context.CancelFunc, c core
 func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	subject := "the check " + c.Name
 	if e.cfg.Checker == nil {
-		return crew.Outcome{Reason: subject + " could not start: crew has no check runner"}
+		return crew.Outcome{Reason: crew.NewSessionText(subject + " could not start: crew has no check runner")}
 	}
 	log, err := e.openLog(c.Log)
 	if err != nil {
-		return crew.Outcome{Reason: subject + " could not start: " + e.scrub(err.Error())}
+		return crew.Outcome{Reason: crew.NewSessionText(subject + " could not start: " + e.scrub(err.Error()))}
 	}
 	// A failed write or close cannot change the check's verdict.
 	defer func() { _ = log.Close() }()
@@ -373,19 +383,19 @@ func (e *Engine) check(ctx context.Context, c core.RunCheck) crew.Outcome {
 	})
 	switch {
 	case err == nil:
-		return crew.Outcome{Succeeded: true, Reason: e.saying(subject+" passed", last.String())}
+		return crew.Outcome{Succeeded: true, Reason: crew.NewSessionText(e.saying(subject+" passed", last.String()))}
 	case errors.Is(err, port.ErrCheckFailed):
 		line := last.String()
 		if line == "" {
-			return crew.Outcome{Reason: subject + " failed and printed nothing"}
+			return crew.Outcome{Reason: crew.NewSessionText(subject + " failed and printed nothing")}
 		}
-		return crew.Outcome{Reason: e.saying(subject+" failed", line)}
+		return crew.Outcome{Reason: crew.NewSessionText(e.saying(subject+" failed", line))}
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return crew.Outcome{Reason: fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout)}
+		return crew.Outcome{Reason: crew.NewSessionText(fmt.Sprintf("%s ran out of time after %s", subject, checkTimeout))}
 	case ctx.Err() != nil:
-		return crew.Outcome{Reason: subject + " was stopped"}
+		return crew.Outcome{Reason: crew.NewSessionText(subject + " was stopped")}
 	}
-	return crew.Outcome{Reason: subject + " could not start: " + e.scrub(err.Error())}
+	return crew.Outcome{Reason: crew.NewSessionText(subject + " could not start: " + e.scrub(err.Error()))}
 }
 
 // saying returns verdict, followed by line, the last line a check printed,

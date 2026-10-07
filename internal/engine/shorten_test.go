@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,6 +88,84 @@ func TestASessionsReasonReachesTheReportWithLocalPathsShortened(t *testing.T) {
 
 		if want := "go test failed in ./engine (cache ~/.cache), ran in .."; got != want {
 			t.Errorf("reason = %q, want %q", got, want)
+		}
+	})
+}
+
+// endedReason runs cfg until every goroutine is blocked, ends the one
+// session with reason, stops the engine and returns the reason of the
+// action's ActionEnded event.
+func endedReason(t *testing.T, cfg engine.Config, reason string) string {
+	t.Helper()
+	r := start(t, cfg)
+	r.session().End(port.Verdict{Reason: reason})
+	synctest.Wait()
+	r.engine.Stop()
+	if _, err := r.wait(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var reasons []string
+	for _, e := range r.events() {
+		if ended, ok := e.(core.ActionEnded); ok {
+			reasons = append(reasons, ended.Outcome.Reason.String())
+		}
+	}
+	if len(reasons) != 1 {
+		t.Fatalf("ActionEnded reasons = %q, want one", reasons)
+	}
+	return reasons[0]
+}
+
+func TestASessionsReasonEndsTheActionWithoutControlBytesAndWithTokensRedacted(t *testing.T) {
+	tests := []struct {
+		name, reason, want string
+	}{
+		{name: "colour and nul", reason: "exit 1 after: \x1b[31mbo\x00om\x1b[0m", want: "exit 1 after: bo om"},
+		// Removing the escape sequence joins the token's prefix, so the
+		// scrub runs again after the strip.
+		{name: "token split by an escape", reason: "token gh\x1b[0mp_abc123 leaked", want: "token [redacted token] leaked"},
+		{name: "token after a nul", reason: "foo\x00ghp_abc123", want: "foo [redacted token]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				tr := fake.NewTracker(issue(1, ready))
+
+				if got := endedReason(t, config(t, tr, develop), tt.reason); got != tt.want {
+					t.Errorf("reason = %q, want %q", got, tt.want)
+				}
+			})
+		})
+	}
+}
+
+// multiLineWorkspace fails every creation with git's multi-line stderr.
+type multiLineWorkspace struct{}
+
+func (multiLineWorkspace) Create(context.Context, crew.Issue, string) (port.Space, error) {
+	return port.Space{}, errors.New("git worktree add: fatal: x\nhint: y")
+}
+
+func TestAWorkspaceFailureWithSeveralLinesEndsTheActionOnOneLine(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready))
+		cfg := config(t, tr, develop)
+		cfg.Workspace = multiLineWorkspace{}
+		r := start(t, cfg)
+
+		synctest.Wait()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		want := "git worktree add: fatal: x hint: y"
+		events := r.events()
+		if !slices.ContainsFunc(events, func(e core.Event) bool {
+			ended, ok := e.(core.ActionEnded)
+			return ok && ended.Outcome.Reason.String() == want
+		}) {
+			t.Errorf("events = %#v, want an ActionEnded with reason %q", events, want)
 		}
 	})
 }
