@@ -214,6 +214,23 @@ func TestAE6TimeUpWhilePausedWindsDownAndTheToggleChangesNothing(t *testing.T) {
 	hasEvent(t, events, core.Stopped{At: d.now})
 }
 
+// Covers R7: the pause and resume events carry the time crew paused and
+// resumed, which Events shows beside their lines.
+func TestThePauseEventsCarryTheirTime(t *testing.T) {
+	d := newDriver(t, draft(), 2)
+
+	_, paused := d.send(core.PauseToggled{})
+	pausedAt := d.now
+	_, resumed := d.send(core.PauseToggled{})
+
+	if got := paused[0].Time(); !got.Equal(pausedAt) {
+		t.Errorf("Paused.Time() = %v, want %v", got, pausedAt)
+	}
+	if got := resumed[0].Time(); !got.Equal(d.now) {
+		t.Errorf("Resumed.Time() = %v, want %v", got, d.now)
+	}
+}
+
 // Covers R10: a toggle during a stop changes nothing.
 func TestTheToggleDuringAStopChangesNothing(t *testing.T) {
 	d := newDriver(t, draft(), 2)

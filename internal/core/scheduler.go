@@ -154,9 +154,9 @@ func (s *step) timeUp(limit time.Duration) {
 // and, unless crew is paused (KTD1 of #282), takes free slots' worth of
 // issues, each while its rule's queue has a free slot (R6): the highest
 // priority first, an issue without one last; then, at the same priority,
-// later rules first; then the oldest issue first (KTD8). It reports nothing for the issues it leaves, a blocked one
-// included: a later listing with a free slot takes them. It takes nothing
-// once the run time is up.
+// later rules first; then the oldest issue first (KTD8). It reports nothing
+// for the issues it leaves, a blocked one included: a later listing with a
+// free slot takes them. It takes nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false

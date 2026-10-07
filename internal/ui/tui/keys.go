@@ -51,8 +51,8 @@ func newKeyMap() keyMap {
 }
 
 // key handles a key press: the stop keys (KTD7; KTD1, KTD2 of #266), the
-// pause key (KTD6 of #282), the help overlay, then the popup's keys while it is open, else Enter, focus,
-// the highlight and scrolling (KTD12 of #151).
+// pause key (KTD6 of #282), the help overlay, then the popup's keys while it
+// is open, else Enter, focus, the highlight and scrolling (KTD12 of #151).
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.stop):
