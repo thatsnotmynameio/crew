@@ -2,17 +2,18 @@ package core
 
 import "github.com/thatsnotmynameio/crew/internal/crew"
 
-// pullRequestSlot holds one issue's pull request reports not settled yet
-// (KTD3). It is kept apart from the held issues, so a report never holds the
-// issue nor changes its claim. At most one report is in flight.
-type pullRequestSlot struct {
+// pullRequestLane is the outbox's lane of one issue's pull request reports
+// not settled yet (KTD3, KTD8). It is kept apart from the held issues, so a
+// report never holds the issue nor changes its claim. At most one report is
+// in flight.
+type pullRequestLane struct {
 	// reports are oldest first, in the order their moves landed. The first
 	// is in flight when sending is set, or owed; the others wait behind it.
 	reports []*pendingReport
 	sending bool
 }
 
-// pendingReport is one report of a slot.
+// pendingReport is one report of a lane.
 type pendingReport struct {
 	report crew.PullRequestReport
 	owed   bool // failed transiently; retried at the next tick
@@ -27,7 +28,7 @@ type pendingReport struct {
 // fixed for its life (KTD7).
 func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	m := s.m
-	if m.pullRequests == nil {
+	if m.outbox.pullRequests == nil {
 		return
 	}
 	id := h.run.TakeReport()
@@ -38,10 +39,10 @@ func (s *step) reportPullRequests(h *heldIssue, to crew.State, ended bool) {
 	if ended && len(h.actions) > 0 {
 		r.End = s.ruleEnd(h)
 	}
-	sl := m.pullRequests[r.IssueID]
+	sl := m.outbox.pullRequests[r.IssueID]
 	if sl == nil {
-		sl = &pullRequestSlot{}
-		m.pullRequests[r.IssueID] = sl
+		sl = &pullRequestLane{}
+		m.outbox.pullRequests[r.IssueID] = sl
 	}
 	sl.reports = append(sl.reports, &pendingReport{report: r})
 	s.pumpPullRequests(sl)
@@ -53,17 +54,17 @@ func (s *step) ruleEnd(h *heldIssue) *crew.RuleEnd {
 	return &crew.RuleEnd{Rule: s.m.rules[h.rule].Name, Actions: s.status(h, crew.StatusEnded).Actions}
 }
 
-// pumpPullRequests sends the slot's oldest report, unless a report is in
+// pumpPullRequests sends the lane's oldest report, unless a report is in
 // flight or owed.
-func (s *step) pumpPullRequests(sl *pullRequestSlot) {
+func (s *step) pumpPullRequests(sl *pullRequestLane) {
 	if sl.sending || len(sl.reports) == 0 || sl.reports[0].owed {
 		return
 	}
 	s.sendPullRequests(sl)
 }
 
-// sendPullRequests issues the slot's oldest report.
-func (s *step) sendPullRequests(sl *pullRequestSlot) {
+// sendPullRequests issues the lane's oldest report.
+func (s *step) sendPullRequests(sl *pullRequestLane) {
 	sl.sending = true
 	s.command(ReportPullRequests{Report: sl.reports[0].report.Clone()})
 }
@@ -74,7 +75,7 @@ func (s *step) sendPullRequests(sl *pullRequestSlot) {
 // cannot work, or failed its final try, is dropped.
 func (s *step) pullRequestsResult(r PullRequestsResult) {
 	m := s.m
-	sl := m.pullRequests[r.IssueID]
+	sl := m.outbox.pullRequests[r.IssueID]
 	if sl == nil || !sl.sending {
 		return
 	}
@@ -95,7 +96,7 @@ func (s *step) pullRequestsResult(r PullRequestsResult) {
 	}
 	sl.reports = sl.reports[1:]
 	if len(sl.reports) == 0 {
-		delete(m.pullRequests, r.IssueID)
+		delete(m.outbox.pullRequests, r.IssueID)
 		return
 	}
 	s.pumpPullRequests(sl)
@@ -104,8 +105,8 @@ func (s *step) pullRequestsResult(r PullRequestsResult) {
 // retryPullRequests resends each owed report not in flight, in issue id
 // order; after a stop, as its one final try.
 func (s *step) retryPullRequests() {
-	for _, key := range sortedIssueIDs(s.m.pullRequests) {
-		sl := s.m.pullRequests[key]
+	for _, key := range sortedIssueIDs(s.m.outbox.pullRequests) {
+		sl := s.m.outbox.pullRequests[key]
 		if sl.sending || !sl.reports[0].owed {
 			continue
 		}
@@ -117,10 +118,10 @@ func (s *step) retryPullRequests() {
 }
 
 // owedPullRequests returns the owed reports, in issue id order.
-func (m *Model) owedPullRequests() []Call {
+func (o *outbox) owedPullRequests() []Call {
 	var out []Call
-	for _, key := range sortedIssueIDs(m.pullRequests) {
-		if p := m.pullRequests[key].reports[0]; p.owed {
+	for _, key := range sortedIssueIDs(o.pullRequests) {
+		if p := o.pullRequests[key].reports[0]; p.owed {
 			out = append(out, p.describe())
 		}
 	}
