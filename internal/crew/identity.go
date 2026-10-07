@@ -12,9 +12,6 @@ type RuleName string
 // ActionName names an action within its rule.
 type ActionName string
 
-// CheckName names a check, as the config's checks key it.
-type CheckName string
-
 // AgentName names an agent, as the config's agents key it.
 type AgentName string
 

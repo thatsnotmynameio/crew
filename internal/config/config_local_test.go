@@ -138,26 +138,6 @@ func TestAE5AnErrorNamesTheFileOfItsKey(t *testing.T) {
 	}
 }
 
-// Covers AE6: an old key in the local file is refused, naming that file.
-func TestAE6OldKeysOfTheLocalFileAreRefused(t *testing.T) {
-	lines := loadFilesErr(t, oneRule, "workflow: []\n")
-	want := localName + ": workflow (line 1): now rules, which maps each rule's name to the rule"
-	if !reflect.DeepEqual(lines, []string{want}) {
-		t.Errorf("error = %q, want %q", lines, want)
-	}
-}
-
-func TestOldKeysOfBothFilesAreRefusedEachWithItsFile(t *testing.T) {
-	lines := loadFilesErr(t, "harness: claude\n"+ruleOnly, "prompts: {}\n")
-	want := []string{
-		sharedName + ": harness (line 1): now agents.<name>.harness, beside the harness's name",
-		localName + ": prompts (line 1): gone; crew never ran them, so keep them in the skills that do",
-	}
-	if !reflect.DeepEqual(lines, want) {
-		t.Errorf("error =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
-	}
-}
-
 // Covers AE7: a local file of comments only, or an empty one, changes
 // nothing.
 func TestAE7AnEmptyLocalFileChangesNothing(t *testing.T) {

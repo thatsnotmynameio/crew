@@ -165,7 +165,7 @@ func installing() []RunEvent {
 
 // exited returns how a script that exited with status ended, saying reason.
 func exited(status int, reason string) ShellOutcome {
-	return ShellOutcome{Status: Some(status), Reason: NewCheckReason(reason)}
+	return ShellOutcome{Status: Some(status), Reason: NewShellReason(reason)}
 }
 
 // passedEnd is the end of an action that passed, saying reason.

@@ -113,7 +113,7 @@ func actionEvents() []crew.RunEvent {
 		crew.ActionShellAsked{EventHead: head(11), Action: "judge", Bot: developer},
 		crew.ActionShellStopAsked{EventHead: head(12), Action: "judge"},
 		crew.ActionShellEnded{EventHead: head(13), Action: "judge", Outcome: crew.ShellOutcome{
-			Status: crew.Some(1), Reason: crew.NewCheckReason("judge: exit status 1"),
+			Status: crew.Some(1), Reason: crew.NewShellReason("judge: exit status 1"),
 		}},
 		crew.ActionEnded{
 			EventHead: head(14), Action: "judge", End: failure, Verdict: crew.Failed,
@@ -136,7 +136,7 @@ func routeEvents() []crew.RunEvent {
 		crew.StepEnded{EventHead: head(19), Step: 0, Outcome: crew.StepLanded{}},
 		crew.StepAsked{EventHead: head(20), Step: 2},
 		crew.StepShellStopAsked{EventHead: head(21), Step: 2},
-		crew.StepEnded{EventHead: head(22), Step: 2, Outcome: crew.StepStopped{Reason: crew.NewCheckReason("stopped")}},
+		crew.StepEnded{EventHead: head(22), Step: 2, Outcome: crew.StepStopped{Reason: crew.NewShellReason("stopped")}},
 		crew.RunReleased{EventHead: head(23)},
 	}
 }

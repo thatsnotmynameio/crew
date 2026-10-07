@@ -150,7 +150,7 @@ type ShellOutcome struct {
 	// Reason is crew's one line on how it ended, followed, for a shell
 	// action whose script printed a line, by the last line it printed; a
 	// route's shell step has crew's line alone (R49).
-	Reason CheckReason
+	Reason ShellReason
 }
 
 // Judged is an action's verdict, with the end its run records.

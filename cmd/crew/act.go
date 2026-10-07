@@ -35,7 +35,7 @@ func actingBots(run proc.Runner, root string) func(context.Context, crew.BotName
 }
 
 // appBots returns the bots acting in a as app.Bots: each one's identity
-// for its sessions and checks, and the default bot's for crew's own
+// for its sessions and shell actions, and the default bot's for crew's own
 // writes, which renews its token through a, with the short reason of each
 // bot that cannot act and a's renewal failures. None holds a key or a
 // token, only the gh config directory that holds the token.

@@ -225,7 +225,7 @@ func TestAStopWhileARouteShellStepRunsStopsItAndSkipsTheShellStepsAfterIt(t *tes
 	cmds, _ := d.send(core.StopRequested{})
 	wantCommands(t, cmds, core.StopStepShell{IssueID: issueID("1"), Run: d.run(issueID("1")), Step: 0})
 
-	stopped := crew.ShellOutcome{Reason: crew.NewCheckReason("crew stopped notify")}
+	stopped := crew.ShellOutcome{Reason: crew.NewShellReason("crew stopped notify")}
 	moved, events := d.send(core.StepShellEnded{IssueID: issueID("1"), Step: 0, Outcome: stopped})
 	hasEvent(t, events, d.stepEnded("1", 0, crew.StepStopped{Reason: stopped.Reason}))
 	hasEvent(t, events, d.stepEnded("1", 1, crew.StepSkipped{}))

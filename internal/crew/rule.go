@@ -76,12 +76,6 @@ type Labels struct {
 	Ready State
 	// Running is the state the item is in while the rule's actions run.
 	Running State
-	// Success is the state the item moves to after every action succeeded.
-	Success State
-	// Failure is the state the item moves to when any action failed, with
-	// a failure report. It is empty only on a rule without actions, which
-	// never fails.
-	Failure State
 }
 
 // DefaultQueue gets the slots the other queues leave, and runs every rule
@@ -106,35 +100,12 @@ type Action struct {
 	// Name identifies the action within its rule, in workspace names, logs
 	// and failure reports.
 	Name ActionName
-	// Prompt is the action's prompt, parsed when the config loaded.
-	Prompt Prompt
-	// Agent is the agent whose harness runs the action's session.
-	Agent Agent
-	// Checks run in the action's workspace once its session succeeded, one
-	// after another in this order, until one does not pass; empty when the
-	// action has none. A check that does not pass fails the action.
-	Checks []Check
-	// Bot is the bot that acts for the action's session and check on the
-	// tracker: its agent's, or the tracker's when the agent names none. The
-	// zero Bot is you.
-	Bot Bot
 	// Kind is what the action runs: a session, named after its agent
 	// unless the config names it, or one of the config's shell actions,
 	// named as the config's actions key it.
 	Kind ActionKind
 	// On maps the action's verdicts to their targets.
 	On On
-}
-
-// Check is one of an action's checks.
-type Check struct {
-	// Name is the check's name in the config's checks.
-	Name CheckName
-	// Script is a shell command. It is never a template: it reads the
-	// issue, the session's prompt and its last message from environment
-	// variables and the files they name, so no issue or session text
-	// becomes part of the command.
-	Script string
 }
 
 // Outcome is how an action's session ended, as its harness reported it.

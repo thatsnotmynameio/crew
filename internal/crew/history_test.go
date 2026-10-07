@@ -182,7 +182,7 @@ func restartStarts() []startCase {
 		{
 			name: "stopped while judge ran: at judge (KTD-S7)",
 			past: past{facts: slices.Concat(toJudge(), []Fact{
-				StopReached{FactHead: fh(6)}, shellEnded(7, "judge", ShellOutcome{Reason: NewCheckReason("stopped")}),
+				StopReached{FactHead: fh(6)}, shellEnded(7, "judge", ShellOutcome{Reason: NewShellReason("stopped")}),
 			})},
 			want: atAction("judge", FailedRoute, "stopped"),
 		},

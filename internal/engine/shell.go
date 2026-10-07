@@ -69,7 +69,7 @@ func (e *Engine) runScript(
 	ctx context.Context, issue crew.IssueID, s core.Script, subject string, withLine bool,
 ) crew.ShellOutcome {
 	notStarted := func(err error) crew.ShellOutcome {
-		return crew.ShellOutcome{Reason: crew.NewCheckReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))}
+		return crew.ShellOutcome{Reason: crew.NewShellReason(subject + " could not start: " + e.scrubAndStrip(err.Error()))}
 	}
 	if e.cfg.Shell == nil {
 		return notStarted(errors.New("crew has no shell to run it"))
@@ -104,12 +104,12 @@ func (e *Engine) runScript(
 		if withLine {
 			said = e.saying(said, line.String())
 		}
-		return crew.ShellOutcome{Status: crew.Some(ran.Status), Reason: crew.NewCheckReason(said)}
+		return crew.ShellOutcome{Status: crew.Some(ran.Status), Reason: crew.NewShellReason(said)}
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		said := fmt.Sprintf("%s ran out of time after %s", subject, shellTimeout)
-		return crew.ShellOutcome{Reason: crew.NewCheckReason(said)}
+		return crew.ShellOutcome{Reason: crew.NewShellReason(said)}
 	case ctx.Err() != nil:
-		return crew.ShellOutcome{Reason: crew.NewCheckReason(subject + " was stopped")}
+		return crew.ShellOutcome{Reason: crew.NewShellReason(subject + " was stopped")}
 	}
 	return notStarted(err)
 }

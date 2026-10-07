@@ -21,7 +21,7 @@ func TestPullRequestReportReturnsWhatItWasBuiltFrom(t *testing.T) {
 }
 
 func TestRuleEndSharesNoActions(t *testing.T) {
-	built := []ActionStatus{{Name: "lfg", State: ActionFailed{}, Shell: NewCheckReason("unfinished")}}
+	built := []ActionStatus{{Name: "lfg", State: ActionFailed{}, Shell: NewShellReason("unfinished")}}
 	end := Some(NewRuleEnd("development", FailedRoute, built))
 	r := NewPullRequestReport(PullRequestReportData{ID: "7", State: "crew:failed", End: end})
 	built[0].Name = "built"

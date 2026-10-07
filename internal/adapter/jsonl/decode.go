@@ -145,7 +145,7 @@ func (l line) start() crew.Start {
 
 // shellEnded returns the ActionShellEnded l holds, with head h.
 func (l line) shellEnded(h crew.EventHead) crew.RunEvent {
-	outcome := crew.ShellOutcome{Reason: crew.NewCheckReason(l.Reason)}
+	outcome := crew.ShellOutcome{Reason: crew.NewShellReason(l.Reason)}
 	if l.ExitStatus != nil {
 		outcome.Status = crew.Some(*l.ExitStatus)
 	}
@@ -184,15 +184,15 @@ func (l line) stepEnded(h crew.EventHead) crew.RunEvent {
 	case settledLanded:
 		o = crew.StepLanded{}
 	case settledRan:
-		o = crew.StepRan{Reason: crew.NewCheckReason(l.Reason)}
+		o = crew.StepRan{Reason: crew.NewShellReason(l.Reason)}
 	case settledFailed:
-		o = crew.StepFailed{Reason: crew.NewCheckReason(l.Reason)}
+		o = crew.StepFailed{Reason: crew.NewShellReason(l.Reason)}
 	case settledDropped:
 		o = crew.StepDropped{Reason: l.Reason}
 	case settledSkipped:
 		o = crew.StepSkipped{}
 	case settledStopped:
-		o = crew.StepStopped{Reason: crew.NewCheckReason(l.Reason)}
+		o = crew.StepStopped{Reason: crew.NewShellReason(l.Reason)}
 	default:
 		o = crew.StepGivenUp{Reason: l.Reason}
 	}

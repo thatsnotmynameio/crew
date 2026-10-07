@@ -88,7 +88,7 @@ func wireValues(t *testing.T, key string, events []crew.RunEvent) []any {
 
 func TestEveryFailureCauseKeepsItsWireName(t *testing.T) {
 	causes := map[crew.FailureCause]string{
-		crew.CauseSession: "session", crew.CauseCheck: "check", crew.CauseStopped: "stopped",
+		crew.CauseSession: "session", crew.CauseStopped: "stopped",
 		crew.CauseWorkspace: "workspace", crew.CauseStart: "start", crew.CausePrompt: "prompt",
 		crew.CauseShell: "shell", crew.CauseVerdict: "verdict", crew.CauseStoppedBeforeStart: "stopped_before_start",
 		crew.CauseTimeUp: "time_up",

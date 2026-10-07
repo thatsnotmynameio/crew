@@ -7,8 +7,8 @@ import (
 )
 
 // SessionText is one line on how an action's session ended, such as the
-// reason of its Outcome: the session's or the harness's words, a check's
-// reason, or crew's own. The engine builds it from text that comes from
+// reason of its Outcome: the session's or the harness's words, or crew's
+// own. The engine builds it from text that comes from
 // outside crew, and NewSessionText strips it (StripControls). The failure
 // report and RuleEnd never carry it.
 type SessionText struct {
@@ -42,20 +42,21 @@ func (t Said) String() string {
 	return t.text
 }
 
-// CheckReason is one line on how a check ended: crew's words naming the
-// check, followed by the last line the check printed. The engine builds it
-// from the check's output, and NewCheckReason strips it (StripControls).
-type CheckReason struct {
+// ShellReason is one line on how a script or a route's step ended: crew's
+// words naming it, followed, for a shell action, by the last line its
+// script printed. The engine builds it from the script's output, and
+// NewShellReason strips it (StripControls).
+type ShellReason struct {
 	text string
 }
 
-// NewCheckReason returns s, stripped by StripControls, as a CheckReason.
-func NewCheckReason(s string) CheckReason {
-	return CheckReason{text: StripControls(s)}
+// NewShellReason returns s, stripped by StripControls, as a ShellReason.
+func NewShellReason(s string) ShellReason {
+	return ShellReason{text: StripControls(s)}
 }
 
 // String returns the text, without control characters.
-func (t CheckReason) String() string {
+func (t ShellReason) String() string {
 	return t.text
 }
 

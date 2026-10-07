@@ -132,21 +132,21 @@ var routingDecisions = []decision{
 		def:  failedThrough(notify, moveFailed), given: lfgFailedThrough(notify, moveFailed),
 		fact: shellStepEnded(6, 0, exited(1, "notify failed: no token")),
 		want: []RunEvent{
-			stepEnded(6, 0, StepFailed{Reason: NewCheckReason("notify failed: no token")}), asked(6, 1),
+			stepEnded(6, 0, StepFailed{Reason: NewShellReason("notify failed: no token")}), asked(6, 1),
 		},
 	},
 	{
 		name: "stepShellEnded: a shell step that exits 0 ran, and the route goes on",
 		def:  failedThrough(notify, moveFailed), given: lfgFailedThrough(notify, moveFailed),
 		fact: shellStepEnded(6, 0, exited(0, "notify passed")),
-		want: []RunEvent{stepEnded(6, 0, StepRan{Reason: NewCheckReason("notify passed")}), asked(6, 1)},
+		want: []RunEvent{stepEnded(6, 0, StepRan{Reason: NewShellReason("notify passed")}), asked(6, 1)},
 	},
 	{
 		name: "stepShellEnded: a shell step that did not run to its end failed",
 		def:  failedThrough(notify, moveFailed), given: lfgFailedThrough(notify, moveFailed),
-		fact: shellStepEnded(6, 0, ShellOutcome{Reason: NewCheckReason("notify ran out of time")}),
+		fact: shellStepEnded(6, 0, ShellOutcome{Reason: NewShellReason("notify ran out of time")}),
 		want: []RunEvent{
-			stepEnded(6, 0, StepFailed{Reason: NewCheckReason("notify ran out of time")}), asked(6, 1),
+			stepEnded(6, 0, StepFailed{Reason: NewShellReason("notify ran out of time")}), asked(6, 1),
 		},
 	},
 	{
@@ -169,12 +169,12 @@ var routingDecisions = []decision{
 }
 
 // commentError returns the reason a comment that does not render gives.
-func commentError() CheckReason {
+func commentError() ShellReason {
 	_, err := badComment().Template.Render(CommentData{Issue: NewIssue(testIssue())})
 	if err == nil {
 		panic("the bad comment rendered")
 	}
-	return NewCheckReason(err.Error())
+	return NewShellReason(err.Error())
 }
 
 func TestDecideTheRoute(t *testing.T) { decide(t, routingDecisions) }

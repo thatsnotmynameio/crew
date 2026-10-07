@@ -124,16 +124,6 @@ func topMapping(doc *yaml.Node) (*yaml.Node, error) {
 	return top, nil
 }
 
-// refuseOldKeys reports the old keys of every source, each with its file:
-// an origin of no keys names every error by all, the one file.
-func refuseOldKeys(sources []source) error {
-	errs := make([]error, 0, len(sources))
-	for _, s := range sources {
-		errs = append(errs, origin{all: s.name}.name(oldKeys(s.top)))
-	}
-	return errors.Join(errs...)
-}
-
 // merge builds the mapping of the sources' top-level keys, each set by the
 // last source that sets it: each file's keys no later file sets, in file
 // order, file after file. It returns the mapping and where each of its keys

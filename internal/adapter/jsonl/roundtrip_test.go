@@ -8,7 +8,7 @@ import (
 
 func TestEveryFailureCauseLoadsBackAsItself(t *testing.T) {
 	causes := []crew.FailureCause{
-		crew.CauseSession, crew.CauseCheck, crew.CauseStopped, crew.CauseWorkspace, crew.CauseStart, crew.CausePrompt,
+		crew.CauseSession, crew.CauseStopped, crew.CauseWorkspace, crew.CauseStart, crew.CausePrompt,
 		crew.CauseShell, crew.CauseVerdict, crew.CauseStoppedBeforeStart, crew.CauseTimeUp,
 	}
 	want := make([]crew.RunEvent, 0, len(causes))
@@ -43,10 +43,10 @@ func TestEveryStartLoadsBackAsItself(t *testing.T) {
 
 func TestEveryStepOutcomeLoadsBackAsItself(t *testing.T) {
 	outcomes := []crew.StepOutcome{
-		crew.StepLanded{}, crew.StepRan{Reason: crew.NewCheckReason("notify: exit status 0")},
-		crew.StepFailed{Reason: crew.NewCheckReason("notify: exit status 2")},
+		crew.StepLanded{}, crew.StepRan{Reason: crew.NewShellReason("notify: exit status 0")},
+		crew.StepFailed{Reason: crew.NewShellReason("notify: exit status 2")},
 		crew.StepGivenUp{Reason: "the tracker refused it"}, crew.StepDropped{Reason: "the issue moved meanwhile"},
-		crew.StepSkipped{}, crew.StepStopped{Reason: crew.NewCheckReason("stopped")},
+		crew.StepSkipped{}, crew.StepStopped{Reason: crew.NewShellReason("stopped")},
 	}
 	want := make([]crew.RunEvent, 0, len(outcomes))
 	for i, o := range outcomes {
@@ -58,7 +58,7 @@ func TestEveryStepOutcomeLoadsBackAsItself(t *testing.T) {
 func TestAShellThatDidNotRunToItsEndLoadsWithoutAStatus(t *testing.T) {
 	roundTrip(t, []crew.RunEvent{
 		crew.ActionShellEnded{
-			EventHead: head(1), Action: "judge", Outcome: crew.ShellOutcome{Reason: crew.NewCheckReason("timed out")},
+			EventHead: head(1), Action: "judge", Outcome: crew.ShellOutcome{Reason: crew.NewShellReason("timed out")},
 		},
 		crew.ActionShellEnded{
 			EventHead: head(2), Action: "judge", Outcome: crew.ShellOutcome{Status: crew.Some(0)},

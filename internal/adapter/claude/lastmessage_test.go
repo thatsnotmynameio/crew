@@ -38,8 +38,8 @@ func resultLine(t *testing.T, text string) []byte {
 	return append(line, '\n')
 }
 
-// R1: a check reads the session's last message as the session wrote it,
-// not the one-line reason cut to maxReason characters.
+// R1: a shell action reads the session's last message as the session
+// wrote it, not the one-line reason cut to maxReason characters.
 func TestLastMessageIsTheLastResultsTextAsWritten(t *testing.T) {
 	text := "PR #128 is open.\n\n- CI is green\n- merging is yours\n" + strings.Repeat("Detail. ", 40)
 	stream := append(resultLine(t, "An earlier query's answer."), resultLine(t, text)...)

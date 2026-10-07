@@ -230,7 +230,7 @@ func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 		}
 	case CommentStep:
 		if _, err := s.Template.Render(d.run.CommentData()); err != nil {
-			return StepFailed{Reason: NewCheckReason(err.Error())}, true
+			return StepFailed{Reason: NewShellReason(err.Error())}, true
 		}
 	case MoveStep, CloseStep, ReportStep:
 	}

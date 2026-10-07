@@ -105,7 +105,7 @@ func developmentEnded() crew.Status {
 		Progress: crew.StatusEnded{Route: crew.FailedRoute, To: needsAttention, Move: crew.MoveDone},
 		Actions: []crew.ActionStatus{{
 			Name: "lfg", State: crew.ActionFailed{Cause: crew.CauseShell, Log: ".crew/logs/issue-74-lfg.log"},
-			Shell: crew.NewCheckReason("no open pull request closes #74"),
+			Shell: crew.NewShellReason("no open pull request closes #74"),
 		}},
 		Updated: updated,
 	})

@@ -183,7 +183,7 @@ func stepKinds() map[crew.StepKind]string {
 // causes returns the names of the failure causes on the wire.
 func causes() map[crew.FailureCause]string {
 	return map[crew.FailureCause]string{
-		crew.CauseSession: "session", crew.CauseCheck: "check", crew.CauseStopped: "stopped",
+		crew.CauseSession: "session", crew.CauseStopped: "stopped",
 		crew.CauseWorkspace: "workspace", crew.CauseStart: "start", crew.CausePrompt: "prompt",
 		crew.CauseShell: "shell", crew.CauseVerdict: "verdict", crew.CauseStoppedBeforeStart: "stopped_before_start",
 		crew.CauseTimeUp: "time_up",

@@ -9,7 +9,7 @@ import (
 // actionState, the report step's report and reportPullRequests.
 
 // installRan is install's shell line as its status shows it.
-var installRan = NewCheckReason("install passed")
+var installRan = NewShellReason("install passed")
 
 func TestARunningStatusShowsEachActionAsItStands(t *testing.T) {
 	said := map[ActionName]Said{"lfg": NewSaid("Reading the diff.")}
@@ -115,7 +115,7 @@ func TestAShellActionShowsItsLineAndASessionNone(t *testing.T) {
 		{Name: "lfg", State: ActionSucceeded{Verdict: Passed}},
 		{
 			Name: "judge", State: ActionSucceeded{Verdict: "needs_person"},
-			Shell: NewCheckReason("judge exited with status 3: needs a person"),
+			Shell: NewShellReason("judge exited with status 3: needs a person"),
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -166,7 +166,7 @@ func TestAnEndedStatusCarriesTheRouteItsMoveOrCloseAndHowItStands(t *testing.T) 
 }
 
 func TestAnEndedStatusListsTheRoutesStepsAndHowEachSettled(t *testing.T) {
-	failed := StepFailed{Reason: NewCheckReason("the route's shell step notify exited with status 1")}
+	failed := StepFailed{Reason: NewShellReason("the route's shell step notify exited with status 1")}
 	run := given(t, append(lfgFailedThrough(notify, ReportStep{}, moveFailed),
 		stepEnded(6, 0, failed), asked(6, 1)))
 	want := []StepStatus{
@@ -185,7 +185,7 @@ func TestAnEndedStatusListsTheRoutesStepsAndHowEachSettled(t *testing.T) {
 func TestAnEndedActionShowsItsUsageOnlyWhenItsSessionStartedAndUsageIsShown(t *testing.T) {
 	run := given(t, seq(lookingUp(), []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}))
 	shown := Some(ShownUsage{Spend: usage.Spend(), PullRequest: foundPR})
-	judged := NewCheckReason("judge passed")
+	judged := NewShellReason("judge passed")
 	want := []ActionStatus{
 		{Name: "install", State: ActionSucceeded{Verdict: Passed}, Shell: installRan},
 		{Name: "lfg", State: ActionSucceeded{Verdict: Passed, Usage: shown}},

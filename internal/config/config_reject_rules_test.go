@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -80,12 +81,6 @@ var invalidRules = []rejectCase{
 		wants: []string{"rules.implement.labels", "line 3", "must be a mapping with ready and running"},
 	},
 	{
-		// R1, R33: a rule's success and failure are its routes now.
-		name:  "a success label",
-		body:  "rules:\n  implement:\n    labels: {ready: a, running: b, success: c}\n    routes: {passed: done}\n",
-		wants: []string{"rules.implement.labels.success", "line 3", "unknown key"},
-	},
-	{
 		name: "labels without ready and running",
 		body: "rules:\n  implement:\n    labels: {}\n    routes: {passed: done}\n",
 		wants: []string{
@@ -106,5 +101,65 @@ var invalidRules = []rejectCase{
 		name:  "an empty queue",
 		body:  ruleWith(`queue: ""`),
 		wants: []string{"rules.implement.queue", "line 6", "must not be empty"},
+	},
+}
+
+// Covers the rule sequences' AE10 (R33): a config in the old rule shape is
+// refused by the ordinary strict checks, each key with the error any other
+// key would get and no word about routes, actions or the new format.
+func TestAE10TheOldRuleShapeIsRefusedWithNoHint(t *testing.T) {
+	for _, tt := range oldShapes {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := loadFilesErr(t, tt.body, noFile)
+			for i, line := range lines {
+				lines[i] = strings.TrimPrefix(line, sharedName+": ")
+			}
+			if !reflect.DeepEqual(lines, tt.want) {
+				t.Errorf("error =\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(tt.want, "\n"))
+			}
+		})
+	}
+}
+
+// oldShapes are configs in the old rule shape, each with the whole error,
+// without the file's name, that Load must refuse it with.
+var oldShapes = []struct {
+	name, body string
+	want       []string
+}{
+	{
+		name: "a success label",
+		body: "rules:\n  implement:\n    labels: {ready: a, running: b, success: c}\n    routes: {passed: done}\n",
+		want: []string{"rules.implement.labels.success (line 3): unknown key"},
+	},
+	{
+		name: "a failure label",
+		body: "rules:\n  implement:\n    labels: {ready: a, running: b, failure: c}\n    routes: {passed: done}\n",
+		want: []string{"rules.implement.labels.failure (line 3): unknown key"},
+	},
+	{
+		name: "an old stage key in a rule",
+		body: "rules:\n  implement:\n    labels: {ready: a, running: b}\n    on_success: c\n    routes: {passed: done}\n",
+		want: []string{"rules.implement.on_success (line 4): unknown key"},
+	},
+	{
+		name: "a top-level checks",
+		body: oneRule + "checks:\n  test: go test ./...\n",
+		want: []string{"checks (line 17): unknown key"},
+	},
+	{
+		name: "a check under a session",
+		body: sequenceRule(oneAgent, "      - prompt: go\n        check: test\n", ""),
+		want: []string{"rules.implement.actions[0].check (line 9): unknown key"},
+	},
+	{
+		name: "actions written as a mapping of old actions",
+		body: sequenceRule(oneAgent, "      development: {prompt: go, mate: developer}\n", ""),
+		want: []string{"rules.implement.actions (line 8): must be a list of actions"},
+	},
+	{
+		name: "an old top-level key",
+		body: oneRule + "workflow: []\n",
+		want: []string{"workflow (line 17): unknown key"},
 	},
 }

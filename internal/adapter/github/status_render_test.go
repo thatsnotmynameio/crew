@@ -268,7 +268,6 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	const log = " Its log is `.crew/logs/issue-74-lfg.log`."
 	for cause, want := range map[crew.FailureCause]string{
 		crew.CauseSession:            "**`lfg`** failed: its session failed." + log,
-		crew.CauseCheck:              "**`lfg`** failed: its check failed." + log,
 		crew.CauseShell:              "**`lfg`** failed: `` `gh` found no @someone **pull request** ``." + log,
 		crew.CauseVerdict:            "**`lfg`** failed: it ended with a verdict it may not end with." + log,
 		crew.CauseStopped:            "**`lfg`** failed: crew stopped it." + log,
@@ -280,7 +279,7 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	} {
 		s := changed(developmentEnded(), func(d *crew.StatusData) {
 			d.Actions[0].State = crew.ActionFailed{Cause: cause, Log: ".crew/logs/issue-74-lfg.log"}
-			d.Actions[0].Shell = crew.NewCheckReason("`gh` found no @someone **pull request**")
+			d.Actions[0].Shell = crew.NewShellReason("`gh` found no @someone **pull request**")
 		})
 		body := tr.renderStatus(s)
 		if !slices.Contains(strings.Split(body, "\n"), want) {
@@ -295,7 +294,7 @@ func TestAFailedActionSaysWhyInCrewsWords(t *testing.T) {
 	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
 		t.Errorf("body has no line %q:\n%s", want, body)
 	}
-	s = changed(developmentEnded(), func(d *crew.StatusData) { d.Actions[0].Shell = crew.CheckReason{} })
+	s = changed(developmentEnded(), func(d *crew.StatusData) { d.Actions[0].Shell = crew.ShellReason{} })
 	want = "**`lfg`** failed: its script failed. Its log is `.crew/logs/issue-74-lfg.log`."
 	if body := tr.renderStatus(s); !slices.Contains(strings.Split(body, "\n"), want) {
 		t.Errorf("a script failure without a line: body has no line %q:\n%s", want, body)
@@ -333,15 +332,15 @@ func TestARoutesStepsThatDidNotLandShowInCrewsWords(t *testing.T) {
 	s := changed(developmentEnded(), func(d *crew.StatusData) {
 		d.Steps = []crew.StepStatus{
 			{Step: crew.StepPlan{Kind: crew.StepComment}, Outcome: crew.StepFailed{
-				Reason: crew.NewCheckReason("the comment did not render: no .Foo"),
+				Reason: crew.NewShellReason("the comment did not render: no .Foo"),
 			}},
-			{Step: notify, Outcome: crew.StepFailed{Reason: crew.NewCheckReason(exitedOne)}},
-			{Step: notify, Outcome: crew.StepStopped{Reason: crew.NewCheckReason("the route's shell step notify was stopped")}},
+			{Step: notify, Outcome: crew.StepFailed{Reason: crew.NewShellReason(exitedOne)}},
+			{Step: notify, Outcome: crew.StepStopped{Reason: crew.NewShellReason("the route's shell step notify was stopped")}},
 			{Step: notify, Outcome: crew.StepSkipped{}},
 			{Step: crew.StepPlan{Kind: crew.StepReport}, Outcome: crew.StepGivenUp{Reason: "gh: HTTP 403 @someone"}},
 			{Step: crew.StepPlan{Kind: crew.StepComment}, Outcome: crew.StepDropped{Reason: "gh: HTTP 404"}},
 			{Step: crew.StepPlan{Kind: crew.StepReport}, Outcome: crew.StepLanded{}},
-			{Step: notify, Outcome: crew.StepRan{Reason: crew.NewCheckReason("the route's shell step notify exited 0")}},
+			{Step: notify, Outcome: crew.StepRan{Reason: crew.NewShellReason("the route's shell step notify exited 0")}},
 			{Step: crew.StepPlan{Kind: crew.StepMove, To: needsAttention}, Outcome: crew.StepGivenUp{Reason: "gh: HTTP 403"}},
 		}
 	})
@@ -392,7 +391,7 @@ func fenced(t *testing.T, markdown string) []string {
 func TestAShellActionShowsItsLastLine(t *testing.T) {
 	tr, _ := build(t)
 	withLine := func(s crew.Status, line string) crew.Status {
-		return changed(s, func(d *crew.StatusData) { d.Actions[0].Shell = crew.NewCheckReason(line) })
+		return changed(s, func(d *crew.StatusData) { d.Actions[0].Shell = crew.NewShellReason(line) })
 	}
 	const log = " Its log is `.crew/logs/issue-9-lfg.log`.\n"
 	tests := []struct {

@@ -128,7 +128,7 @@ type ActionStatus struct {
 	// line goes in a status: a session's or a tool's own words never do,
 	// since a tracker may show it in public, and those words can hold
 	// commands, output and secrets.
-	Shell CheckReason
+	Shell ShellReason
 	// Workspace is the workspace the action resumed in; empty when it did
 	// not resume.
 	Workspace WorkspaceName
@@ -215,8 +215,6 @@ type FailureCause int
 const (
 	// CauseSession: its session ended in a failure.
 	CauseSession FailureCause = iota
-	// CauseCheck: its check failed, ran out of time or could not start.
-	CauseCheck
 	// CauseStopped: crew stopped before the action could end on its own.
 	CauseStopped
 	// CauseWorkspace: its workspace could not be created.

@@ -73,7 +73,7 @@ type StepLanded struct{}
 type StepRan struct {
 	// Reason is crew's one line on how the script ended, in crew's words
 	// only: a route's step never carries what its script printed (R49).
-	Reason CheckReason
+	Reason ShellReason
 }
 
 // StepFailed is a shell step whose script exited with another status or
@@ -83,7 +83,7 @@ type StepFailed struct {
 	// Reason is crew's one line on how the script ended, in crew's words
 	// only, or why the comment did not render: a route's step never
 	// carries what its script printed (R49).
-	Reason CheckReason
+	Reason ShellReason
 }
 
 // StepGivenUp is a tracker step crew gave up: the tracker refused it, or
@@ -107,7 +107,7 @@ type StepSkipped struct{}
 // StepStopped is a shell step crew stopped while its script ran.
 type StepStopped struct {
 	// Reason is crew's one line on how the script ended.
-	Reason CheckReason
+	Reason ShellReason
 }
 
 func (StepLanded) stepOutcome()  {}

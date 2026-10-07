@@ -53,7 +53,7 @@ var strippedText = []struct {
 var builders = map[string]func(string) string{
 	"SessionText": func(s string) string { return NewSessionText(s).String() },
 	"Said":        func(s string) string { return NewSaid(s).String() },
-	"CheckReason": func(s string) string { return NewCheckReason(s).String() },
+	"ShellReason": func(s string) string { return NewShellReason(s).String() },
 }
 
 func TestStripControls(t *testing.T) {
@@ -84,9 +84,9 @@ func TestStripControlsIsIdempotent(t *testing.T) {
 		if twice := NewSaid(said.String()); twice != said {
 			t.Errorf("%s: Said rebuilt from %q is %q", tt.name, said, twice)
 		}
-		reason := NewCheckReason(tt.in)
-		if twice := NewCheckReason(reason.String()); twice != reason {
-			t.Errorf("%s: CheckReason rebuilt from %q is %q", tt.name, reason, twice)
+		reason := NewShellReason(tt.in)
+		if twice := NewShellReason(reason.String()); twice != reason {
+			t.Errorf("%s: ShellReason rebuilt from %q is %q", tt.name, reason, twice)
 		}
 	}
 }
@@ -98,8 +98,8 @@ func TestTheZeroValueIsTheEmptyText(t *testing.T) {
 	if s := (Said{}); s.String() != "" || s != NewSaid("") {
 		t.Errorf("zero Said = %q, want the empty text", s)
 	}
-	if s := (CheckReason{}); s.String() != "" || s != NewCheckReason("") {
-		t.Errorf("zero CheckReason = %q, want the empty text", s)
+	if s := (ShellReason{}); s.String() != "" || s != NewShellReason("") {
+		t.Errorf("zero ShellReason = %q, want the empty text", s)
 	}
 }
 

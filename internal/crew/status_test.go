@@ -33,7 +33,7 @@ func TestStatusReturnsWhatItWasBuiltFrom(t *testing.T) {
 func TestStatusSharesNoActionsOrSteps(t *testing.T) {
 	built := []ActionStatus{
 		{Name: "development", State: ActionRunning{Said: NewSaid("Starting U2.")}},
-		{Name: "judge", State: ActionSucceeded{}, Shell: NewCheckReason("judge passed")},
+		{Name: "judge", State: ActionSucceeded{}, Shell: NewShellReason("judge passed")},
 	}
 	steps := []StepStatus{{Step: StepPlan{Kind: StepReport}}}
 	s := NewStatus(StatusData{IssueID: IssueID{Key: "74"}, Progress: StatusRunning{}, Actions: built, Steps: steps})
@@ -44,7 +44,7 @@ func TestStatusSharesNoActionsOrSteps(t *testing.T) {
 	returned[0].State = ActionFailed{Cause: CauseStopped}
 	s.Steps()[0].Outcome = StepLanded{}
 	data := s.Data()
-	data.Actions[1].Shell = NewCheckReason("changed")
+	data.Actions[1].Shell = NewShellReason("changed")
 	data.Steps[0].Outcome = StepLanded{}
 
 	got := s.Actions()

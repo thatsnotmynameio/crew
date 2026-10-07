@@ -28,13 +28,13 @@ func TestCleanStripsEscapesAndControlCharactersOntoOneLine(t *testing.T) {
 	}
 }
 
-// Covers R23: the screen shows a session's or a check's text built by crew's
+// Covers R23: the screen shows a session's or a script's text built by crew's
 // text types exactly as it showed the raw text. Invalid UTF-8 is left out:
 // ansi.Strip keeps a broken rune's bytes, which clean shows as U+FFFD, where
 // the text types drop them.
 func TestCleanShowsBuiltTextAsItShowsTheRawText(t *testing.T) {
 	hostile := []string{
-		"the check tests passed: ok",
+		"the shell action tests passed: ok",
 		"a\x00b", "a\x7fb", "a\u0085b", "fatal: x\nhint: y", "a\rb", "a\vb", "a\fb", "a\tb",
 		"\x1b[31mred\x1b[0m", "\x1b[38;2;1;2;3mrgb", "\x1b[?25lhidden",
 		"a\x1b]0;evil\x07b", "a\x1b]0;evil\x1b\\b", "a\x1b]0;evil and the rest",
@@ -50,7 +50,7 @@ func TestCleanShowsBuiltTextAsItShowsTheRawText(t *testing.T) {
 		for typ, built := range map[string]string{
 			"SessionText": crew.NewSessionText(raw).String(),
 			"Said":        crew.NewSaid(raw).String(),
-			"CheckReason": crew.NewCheckReason(raw).String(),
+			"ShellReason": crew.NewShellReason(raw).String(),
 		} {
 			if got := clean(built); got != want {
 				t.Errorf("clean of %s built from %q = %q, want %q as from the raw text", typ, raw, got, want)

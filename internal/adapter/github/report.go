@@ -74,7 +74,7 @@ func renderStop(r crew.PullRequestReport, end crew.RuleEnd, link string) string 
 		name := "**" + codeSpan(string(a.Name)) + "**"
 		switch state := a.State.(type) {
 		case crew.ActionFailed:
-			fmt.Fprintf(&b, "\n%s\n", failedAction(name, state, crew.CheckReason{}))
+			fmt.Fprintf(&b, "\n%s\n", failedAction(name, state, crew.ShellReason{}))
 		case crew.ActionSucceeded:
 			if state.Verdict != "" && state.Verdict != crew.Passed {
 				fmt.Fprintf(&b, "\n%s %s.\n", name, verdictWords(state.Verdict))

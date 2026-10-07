@@ -507,7 +507,7 @@ func TestAJudgeThatFailedIsTheReasonTheResumedSessionIsGiven(t *testing.T) {
 		d.running(issue("9", 1, readyForDev))
 		d.ended("9", "lfg", succeeded)
 		cmds, _ := d.send(core.ShellEnded{IssueID: issueID("9"), Action: "pr-open", Outcome: crew.ShellOutcome{
-			Status: crew.Some(1), Reason: crew.NewCheckReason(reason),
+			Status: crew.Some(1), Reason: crew.NewShellReason(reason),
 		}})
 		d.settle(cmds)
 		wantHeld(t, d.m)

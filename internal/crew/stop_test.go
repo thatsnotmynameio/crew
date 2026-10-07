@@ -69,9 +69,9 @@ var stopRoutingDecisions = []decision{
 	{
 		name: "stop: the stopped shell step is recorded stopped, the next one skipped, and the move still asked",
 		def:  throughNotify, given: seq(notifying(), stopped(6)),
-		fact: shellStepEnded(7, 0, ShellOutcome{Reason: NewCheckReason("notify was stopped")}),
+		fact: shellStepEnded(7, 0, ShellOutcome{Reason: NewShellReason("notify was stopped")}),
 		want: []RunEvent{
-			stepEnded(7, 0, StepStopped{Reason: NewCheckReason("notify was stopped")}),
+			stepEnded(7, 0, StepStopped{Reason: NewShellReason("notify was stopped")}),
 			stepEnded(7, 1, StepSkipped{}),
 			asked(7, 2),
 		},
@@ -80,7 +80,7 @@ var stopRoutingDecisions = []decision{
 		name: "stop: a script that exits 0 after the stop is still recorded stopped",
 		def:  throughNotify, given: seq(notifying(), stopped(6)), fact: shellStepEnded(7, 0, exited(0, "notify passed")),
 		want: []RunEvent{
-			stepEnded(7, 0, StepStopped{Reason: NewCheckReason("notify passed")}),
+			stepEnded(7, 0, StepStopped{Reason: NewShellReason("notify passed")}),
 			stepEnded(7, 1, StepSkipped{}),
 			asked(7, 2),
 		},
@@ -141,7 +141,7 @@ var timeUpDecisions = []decision{
 			failedRoute(3, notify, moveFailed), asked(3, 0),
 		}),
 		fact: shellStepEnded(4, 0, exited(0, "notify passed")),
-		want: []RunEvent{stepEnded(4, 0, StepRan{Reason: NewCheckReason("notify passed")}), asked(4, 1)},
+		want: []RunEvent{stepEnded(4, 0, StepRan{Reason: NewShellReason("notify passed")}), asked(4, 1)},
 	},
 	{
 		name:  "timeUp: a take that lands after it starts no action and chooses failed with the time-up cause",

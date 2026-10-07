@@ -257,7 +257,7 @@ func printsTimestampedEventLines(t *testing.T, terminal, plain bool) {
 		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, r.stderr)
 	}
 	if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
-		t.Errorf("#1 is in %v, want the rule's success label, ready to review", got)
+		t.Errorf("#1 is in %v, want its passed route's label, ready to review", got)
 	}
 	out := r.stdout.String()
 	containsAll(t, out,

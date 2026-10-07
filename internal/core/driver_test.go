@@ -577,7 +577,7 @@ func (d *driver) ended(key string, action crew.ActionName, outcome crew.Outcome)
 
 // exited is how a script that exited with status ended.
 func exited(status int) crew.ShellOutcome {
-	return crew.ShellOutcome{Status: crew.Some(status), Reason: crew.NewCheckReason("exited " + strconv.Itoa(status))}
+	return crew.ShellOutcome{Status: crew.Some(status), Reason: crew.NewShellReason("exited " + strconv.Itoa(status))}
 }
 
 // runShellOf returns the RunShell in cmds.

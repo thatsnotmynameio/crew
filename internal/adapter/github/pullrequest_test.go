@@ -447,7 +447,7 @@ func TestAShellActionsLineStaysOffTheStopComment(t *testing.T) {
 	tr.rememberStatus("42", cachedStatus{id: 101, body: "status"})
 	report := ended(crewFailed, crew.ActionStatus{Name: "lfg",
 		State: crew.ActionFailed{Cause: crew.CauseShell, Log: ".crew/logs/issue-42-lfg.log"},
-		Shell: crew.NewCheckReason("`gh` found no @someone **pull request**")})
+		Shell: crew.NewShellReason("`gh` found no @someone **pull request**")})
 	if err := tr.ReportPullRequests(context.Background(), report); err != nil {
 		t.Fatalf("ReportPullRequests: %v", err)
 	}

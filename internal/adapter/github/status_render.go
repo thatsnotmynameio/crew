@@ -191,7 +191,7 @@ func writeClose(b *strings.Builder, ref string, move crew.MoveProgress) {
 // which the status comment gives for a script failure, and the stop comment
 // passes empty (R49). A stopped lfg reads: **`lfg`** failed: crew stopped
 // it. Its log is `.crew/logs/issue-42-lfg.log`.
-func failedAction(subject string, failed crew.ActionFailed, line crew.CheckReason) string {
+func failedAction(subject string, failed crew.ActionFailed, line crew.ShellReason) string {
 	text := fmt.Sprintf("%s failed%s.", subject, failureCause(failed.Cause, line))
 	if failed.Log == "" {
 		return text + " It failed before it had a log."
@@ -202,12 +202,10 @@ func failedAction(subject string, failed crew.ActionFailed, line crew.CheckReaso
 // failureCause words cause, what made an action fail, after a colon, or
 // returns "" for a cause it does not know. A script failure gives line,
 // the shell action's line, when it is not empty.
-func failureCause(cause crew.FailureCause, line crew.CheckReason) string {
+func failureCause(cause crew.FailureCause, line crew.ShellReason) string {
 	switch cause {
 	case crew.CauseSession:
 		return ": its session failed"
-	case crew.CauseCheck:
-		return ": its check failed"
 	case crew.CauseShell:
 		// The line already says how the script ended.
 		if line.String() == "" {

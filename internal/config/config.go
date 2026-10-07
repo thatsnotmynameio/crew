@@ -125,9 +125,6 @@ func Load(root, global string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseOldKeys(sources); err != nil {
-		return nil, err
-	}
 	top, o := merge(sources)
 	cfg, err := parse(top)
 	if err != nil {

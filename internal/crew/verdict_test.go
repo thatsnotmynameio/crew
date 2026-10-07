@@ -245,7 +245,7 @@ var shellJudgments = []struct {
 	},
 	{
 		name:    "a script that did not run to its end fails by its script",
-		outcome: ShellOutcome{Reason: NewCheckReason("judge could not start")},
+		outcome: ShellOutcome{Reason: NewShellReason("judge could not start")},
 		want: Judged{Verdict: Failed, End: EndFailed{
 			Reason: NewSessionText("judge could not start"), Cause: CauseShell,
 		}},

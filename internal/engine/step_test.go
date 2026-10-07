@@ -95,7 +95,7 @@ func TestARouteShellStepWithoutAWorkspaceRunsInATemporaryDirectory(t *testing.T)
 
 		checkTemporaryDir(t, cfg.Root, sh)
 		want := []crew.StepOutcome{
-			crew.StepFailed{Reason: crew.NewCheckReason("the route's shell step notify exited with status 1")},
+			crew.StepFailed{Reason: crew.NewShellReason("the route's shell step notify exited with status 1")},
 			crew.StepLanded{},
 		}
 		if got := r.stepOutcomes(); !reflect.DeepEqual(got, want) {
@@ -128,7 +128,7 @@ func TestAStopCancelsARunningRouteShellStep(t *testing.T) {
 		}
 
 		want := []crew.StepOutcome{
-			crew.StepStopped{Reason: crew.NewCheckReason("the route's shell step notify was stopped")},
+			crew.StepStopped{Reason: crew.NewShellReason("the route's shell step notify was stopped")},
 			crew.StepLanded{},
 		}
 		if got := r.stepOutcomes(); !reflect.DeepEqual(got, want) {
