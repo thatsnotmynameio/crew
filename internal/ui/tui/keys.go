@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -150,7 +151,7 @@ func (m Model) keyHelp() string {
 	case m.stopping || m.snap.Stopping:
 		return m.styles.warning.Render("q or ctrl+c forces the exit")
 	case !m.armedUntil.IsZero():
-		return m.styles.warning.Render("q or ctrl+c again within 3s stops crew")
+		return m.styles.warning.Render(fmt.Sprintf("q or ctrl+c again within %s stops crew", armWindow))
 	}
 	h := m.helper()
 	h.SetWidth(m.width)
@@ -171,7 +172,7 @@ func (m Model) keyHelp() string {
 // the stop's two presses and the press that forces (R9 of #266), and what a
 // card's labelled rows mean (R12, KTD12 of #151).
 func (m Model) helpOverlay(view string) string {
-	stop := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", "stop, within 3s"))
+	stop := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", fmt.Sprintf("stop, within %s", armWindow)))
 	force := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "force if stopping"))
 	groups := [][]key.Binding{
 		{stop, force, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},

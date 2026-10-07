@@ -183,8 +183,7 @@ func TestTheKeyHelpNamesTheBoardsKeys(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(runningSnapshot()))
 
-	rows := rowsOf(h.view())
-	if got, want := rows[len(rows)-1], stopKeys+" stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
+	if got, want := h.footer(), stopKeys+" stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
 		t.Errorf("key help = %q, want %q", got, want)
 	}
 }
