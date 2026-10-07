@@ -188,7 +188,7 @@ Everything in a scenario that runs `gh` goes through the fake: crew, and a check
 
 The GraphQL queries the fake resolves start at `repository(owner, name)`, with:
 
-- `nameWithOwner`;
+- `id`, the node id the REST API gives as `node_id`, and `nameWithOwner`;
 - `issues(first, states, filterBy: {createdBy, labels}, orderBy: {field: CREATED_AT, direction}, labels)` and `pullRequests(first, states, labels, orderBy, headRefName)`, as connections with `nodes`;
 - `issueOrPullRequest(number)`.
 

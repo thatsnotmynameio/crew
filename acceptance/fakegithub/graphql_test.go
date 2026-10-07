@@ -212,3 +212,16 @@ func TestAnUnknownGraphQLFieldIsAViolationNamingIt(t *testing.T) {
 		t.Errorf("stderr = %q", r.Stderr)
 	}
 }
+
+func TestTheRepositoryQueryReadsItsNodeID(t *testing.T) {
+	g := New("acme", "widgets")
+	query := `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { id nameWithOwner }
+}`
+	out := ok(t, g, "api", "graphql", "-f", "query="+query, "-F", "owner={owner}", "-F", "name={repo}")
+	nodeID := ok(t, g, "api", "repos/{owner}/{repo}", "--jq", ".node_id")
+	want := `{"data":{"repository":{"id":"` + strings.TrimSpace(nodeID) + `","nameWithOwner":"acme/widgets"}}}`
+	if !strings.HasPrefix(nodeID, "R_") || out != want {
+		t.Errorf("repository query = %s, want %s: the node id the REST API gives", out, want)
+	}
+}

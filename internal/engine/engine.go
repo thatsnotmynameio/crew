@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -155,6 +156,8 @@ type Engine struct {
 	// codeOwners are the code owners' logins, as the tracker's
 	// port.CodeOwnerFinder found them in Prepare; none without one.
 	codeOwners []string
+	// repository is the repository the engine works on, as Prepare read it.
+	repository crew.Repository
 
 	// The fields below are owned by Run's loop.
 	model    *core.Model
@@ -352,8 +355,9 @@ func (e *Engine) Prepare(ctx context.Context) error {
 // prepare hands the tracker its writer when the config names a bot, runs the
 // Preparer of the tracker, of each agent's harness in config order and of the
 // workspace with crew.RuleStates, the states the rules name, asks the
-// tracker who the code owners are and which login it acts as, then reads the
-// run journal and builds the core from it, with the bots. It returns the first
+// tracker who the code owners are and which login it acts as, reads the
+// repository it works on, then reads the run journal and builds the core
+// from it, with the bots. It returns the first
 // error, naming its port, a harness's agent, or the journal, without running
 // what comes after it (R6). The core is then left unbuilt, which is safe
 // because Run returns the error before its loop, the only place that reads
@@ -381,6 +385,7 @@ func (e *Engine) prepare(ctx context.Context) error {
 		e.codeOwners = b.CodeOwners()
 	}
 	bots := e.withBots()
+	e.repository = e.findRepository()
 	port.Step(ctx, "reading the run journal")
 	past, err := e.readJournal()
 	if err != nil {
@@ -388,6 +393,17 @@ func (e *Engine) prepare(ctx context.Context) error {
 	}
 	e.model = core.New(e.cfg.Rules, e.cfg.MaxParallelIssues, append(e.opts, core.RecordingRuns(past), bots)...)
 	return nil
+}
+
+// findRepository returns the repository the engine works on: as the
+// tracker's port.RepositoryFinder found it in Prepare, or else named after
+// the root directory, its base name being both its id and its name (KTD6).
+func (e *Engine) findRepository() crew.Repository {
+	if f, ok := e.cfg.Tracker.(port.RepositoryFinder); ok {
+		return f.Repository()
+	}
+	name := filepath.Base(e.cfg.Root)
+	return crew.Repository{ID: crew.RepositoryID(name), Name: name}
 }
 
 // withBots returns the core's option of the configured bots, with the

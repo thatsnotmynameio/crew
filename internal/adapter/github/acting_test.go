@@ -114,6 +114,7 @@ func TestTheTrackerReadsAsYouAndWritesAsTheBot(t *testing.T) {
 	var renewed atomic.Int32
 	tr, gh := actingTracker(t, &renewed,
 		reply{prefix: []string{"auth", "status"}}, login, noCodeowners,
+		repositoryReply,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"}]`},
 		reply{prefix: []string{"label", "create"}},
 		reply{prefix: []string{"issue", "view"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
@@ -179,6 +180,7 @@ func checkWritesAsOps(t *testing.T, gh *fakeGh) int {
 func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 	tr, gh := build(t,
 		reply{prefix: []string{"auth", "status"}}, login, noCodeowners,
+		repositoryReply,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`},
 		reply{prefix: []string{"api", "graphql"}, stdout: listJSON(nil, nil)},
 		reply{prefix: []string{"issue", "view"}, stdout: `{"state":"OPEN","labels":[{"name":"ready"}]}`},
@@ -199,7 +201,8 @@ func TestWithoutABotEverythingRunsAsYou(t *testing.T) {
 			t.Errorf("%q ran with %q, unset %q; want neither", c.Args, c.Env, c.Unset)
 		}
 	}
-	q := gh.callsTo("api", "graphql")[0]
+	graphql := gh.callsTo("api", "graphql")
+	q := graphql[len(graphql)-1] // the listing, after Prepare's repository read
 	if !slices.Equal(fieldValues(q, "author0"), []string{"me"}) || fieldValues(q, "author1") != nil {
 		t.Errorf("query authors = %q, %q; want me alone", fieldValues(q, "author0"), fieldValues(q, "author1"))
 	}
@@ -473,6 +476,7 @@ func TestTheTrackerFindsItsLoginInPrepare(t *testing.T) {
 		reply{prefix: []string{"auth", "status"}}, login,
 		reply{prefix: []string{"api", "-H", rawAccept, "repos/{owner}/{repo}/contents/.github/CODEOWNERS"},
 			stdout: "* @octocat\n"},
+		repositoryReply,
 		reply{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`},
 	)
 	var finder port.LoginFinder = tr

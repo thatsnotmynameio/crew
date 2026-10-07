@@ -37,7 +37,7 @@ import (
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
 // a port.Acting, a port.CodeOwnerFinder, a port.LoginFinder, a
-// port.WriterReporter and a port.BoardLister.
+// port.RepositoryFinder, a port.WriterReporter and a port.BoardLister.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -47,6 +47,7 @@ var (
 	_ port.Acting              = (*Tracker)(nil)
 	_ port.CodeOwnerFinder     = (*Tracker)(nil)
 	_ port.LoginFinder         = (*Tracker)(nil)
+	_ port.RepositoryFinder    = (*Tracker)(nil)
 	_ port.WriterReporter      = (*Tracker)(nil)
 	_ port.BoardLister         = (*Tracker)(nil)
 )
@@ -201,6 +202,7 @@ type Tracker struct {
 	comments   map[string]cachedStatus // status comments by issue key, as last written or read
 	stopped    map[string][]int        // pull requests given a report's stop comment, by report ID
 	codeOwners []string                // the code owners' logins, once Prepare found them
+	repository crew.Repository         // the repository, once Prepare found it
 	bots       []string                // the logins of the bots the config names
 }
 
@@ -429,10 +431,12 @@ func (t *Tracker) ReportFailure(ctx context.Context, report crew.FailureReport) 
 }
 
 // Prepare implements port.Preparer. It checks that gh is installed and logged
-// in, then finds the code owners in CODEOWNERS, then creates the labels of
-// states the repository lacks, comparing names case-insensitively, and no
-// other label. It reads as gh's login and creates the labels as the writer.
-// It reports each step on ctx as it starts, one per label it creates.
+// in, then finds the code owners in CODEOWNERS, then reads the repository
+// and its labels and creates the labels of states the repository lacks,
+// comparing names case-insensitively, and no other label. It reads as gh's
+// login and creates the labels as the writer. It reports each step on ctx as
+// it starts, one per label it creates; the repository's read is part of the
+// labels' step.
 func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	port.Step(ctx, "checking the gh login")
 	if _, err := t.gh.call(ctx, "auth", "status"); err != nil {
@@ -450,6 +454,9 @@ func (t *Tracker) Prepare(ctx context.Context, states []crew.State) error {
 	t.codeOwners = codeOwners
 	t.mu.Unlock()
 	port.Step(ctx, "reading the repository's labels")
+	if err := t.readRepository(ctx); err != nil {
+		return fmt.Errorf("tracker github: read the repository: %w", err)
+	}
 	var present []ghLabel
 	if err := t.gh.decode(ctx, &present, "label", "list", "--limit", "1000", "--json", "name"); err != nil {
 		return fmt.Errorf("tracker github: read the repository's labels: %w", err)

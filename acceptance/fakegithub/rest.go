@@ -260,7 +260,7 @@ func getRepo(g *GitHub, c *call) apiResult {
 	}
 	full := g.owner + "/" + g.name
 	return apiResult{status: http.StatusOK, body: object{
-		{"id", accountID(full)}, {"node_id", "R_" + strconv.FormatInt(accountID(full), 10)}, {keyName, g.name},
+		{"id", accountID(full)}, {"node_id", g.repositoryID()}, {keyName, g.name},
 		{"full_name", full}, {"private", false},
 		{"owner", object{{keyLogin, g.owner}, {"id", accountID(g.owner)}, {keyType, ownerType}}},
 		{"html_url", htmlBase + "/" + full},

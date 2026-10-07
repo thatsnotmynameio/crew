@@ -4,8 +4,8 @@
 // task. Each port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
-// LoginFinder, WriterReporter, BoardLister, Narrator or Reopener, that the
-// engine detects by type assertion. An adapter therefore never wraps another
+// LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Narrator or
+// Reopener, that the engine detects by type assertion. An adapter therefore never wraps another
 // adapter value, because a wrapper hides the optional interfaces of what it
 // wraps.
 //
@@ -241,6 +241,15 @@ type LoginFinder interface {
 	// as Prepare found it, or "" before. It is safe to call from any
 	// goroutine.
 	Login() string
+}
+
+// RepositoryFinder is an optional interface of a Tracker: it tells which
+// repository the tracker works on. Without it the engine names the
+// repository after the root directory.
+type RepositoryFinder interface {
+	// Repository returns the repository as Prepare found it, or the zero
+	// Repository before. It is safe to call from any goroutine.
+	Repository() crew.Repository
 }
 
 // WriterReporter is an optional interface of a Tracker that acts as a bot:

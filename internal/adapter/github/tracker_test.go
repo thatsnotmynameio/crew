@@ -180,6 +180,13 @@ var login = reply{prefix: []string{"api", "user"}, stdout: "me\n"}
 // none.
 var noCodeowners = reply{prefix: []string{"api", "-H", rawAccept}, stderr: "gh: Not Found (HTTP 404)"}
 
+// widgets is the repository repositoryReply answers with.
+var widgets = crew.Repository{ID: "R_kgDOWidgets", Name: "acme/widgets"}
+
+// repositoryReply answers Prepare's repository query with widgets.
+var repositoryReply = reply{prefix: []string{"api", "graphql", "-f", "query=" + repositoryQuery},
+	stdout: `{"data":{"repository":{"id":"R_kgDOWidgets","nameWithOwner":"acme/widgets"}}}`}
+
 func issuesJSON(nodes ...string) string {
 	return `{"data":{"repository":{"issues0":{"nodes":[` + strings.Join(nodes, ",") + `]}}}}`
 }

@@ -22,7 +22,7 @@ func codeownersAt(path string) []string {
 func prepared(t *testing.T, owners []reply, script ...reply) (*Tracker, *fakeGh) {
 	t.Helper()
 	all := slices.Concat([]reply{{prefix: []string{"auth", "status"}}, login}, owners,
-		[]reply{noCodeowners,
+		[]reply{noCodeowners, repositoryReply,
 			{prefix: []string{"label", "list"}, stdout: `[{"name":"ready"},{"name":"waiting brainstorm"}]`}},
 		script)
 	tr, gh := build(t, all...)
@@ -51,7 +51,8 @@ func TestTheCatchAllRuleOfCodeownersNamesTheCodeOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	q := gh.callsTo("api", "graphql")[0]
+	graphql := gh.callsTo("api", "graphql")
+	q := graphql[len(graphql)-1] // the listing, after Prepare's repository read
 	if a0, a1 := fieldValues(q, "author0"), fieldValues(q, "author1"); !slices.Equal(a0, []string{"mguilarducci"}) ||
 		!slices.Equal(a1, []string{"alice"}) || fieldValues(q, "author2") != nil {
 		t.Errorf("query authors = %q, %q; want mguilarducci and alice", a0, a1)
