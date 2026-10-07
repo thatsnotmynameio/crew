@@ -72,9 +72,10 @@ func TestAE3AnIssueThatFailsWhileWindingDownNeedsAttentionAsUsual(t *testing.T) 
 	wantCommands(t, cmds,
 		core.Move{IssueKey: "42", From: inProgress, To: needsAttention},
 		core.ReportFailure{Report: crew.FailureReport{IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{
-			failure("42", "acceptance", "broke"),
+			failure("42", "acceptance"),
 		}}},
 	)
+	d.wantReason("42", "acceptance", "broke")
 
 	d.send(core.CallResult{ID: moveID(t, cmds, "42"), Result: core.ResultDone})
 	_, events := d.send(core.CallResult{ID: reportID(t, cmds, "42"), Result: core.ResultDone})
@@ -164,10 +165,12 @@ func TestAE4AStopWhileWindingDownStopsRunningSessionsAsUsual(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueKey: "42", From: inProgress, To: needsAttention},
 		core.ReportFailure{Report: crew.FailureReport{IssueKey: "42", IssueRef: "#42", Failures: []crew.ActionFailure{
-			failure("42", "acceptance", "stopped"),
-			failure("42", "development", "stopped"),
+			failure("42", "acceptance"),
+			failure("42", "development"),
 		}}},
 	)
+	d.wantReason("42", "acceptance", "stopped")
+	d.wantReason("42", "development", "stopped")
 }
 
 func TestTimeUpAfterAStopOrASecondTimeChangesNothing(t *testing.T) {

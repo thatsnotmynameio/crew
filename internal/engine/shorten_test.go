@@ -30,7 +30,7 @@ func (w failingWorkspace) Create(_ context.Context, issue crew.Issue, action str
 	return port.Space{}, fmt.Errorf("git worktree add: fatal: '%s' already exists (see %s)", dir, config)
 }
 
-func TestAWorkspaceFailureReachesTheReportWithLocalPathsShortened(t *testing.T) {
+func TestAWorkspaceFailureEndsTheActionWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
@@ -48,15 +48,15 @@ func TestAWorkspaceFailureReachesTheReportWithLocalPathsShortened(t *testing.T) 
 			t.Fatalf("reports = %+v, want one with one failure", reports)
 		}
 		want := "git worktree add: fatal: './.crew/worktrees/issue-1-development' already exists (see ~/.gitconfig)"
-		if got := reports[0].Failures[0].Reason; got != want {
+		if got := r.lastReason(); got != want {
 			t.Errorf("reason = %q, want %q", got, want)
 		}
 	})
 }
 
 // reportedReason runs cfg, calling during first when it is set, until every
-// goroutine is blocked, stops it, and returns the reason of the one failure
-// the tracker received.
+// goroutine is blocked, stops it, and returns the reason development ended
+// with once the tracker received one report with one failure.
 func reportedReason(t *testing.T, tr *fake.Tracker, cfg engine.Config, during func(*rig)) string {
 	t.Helper()
 	r := start(t, cfg)
@@ -72,10 +72,10 @@ func reportedReason(t *testing.T, tr *fake.Tracker, cfg engine.Config, during fu
 	if len(reports) != 1 || len(reports[0].Failures) != 1 {
 		t.Fatalf("reports = %+v, want one with one failure", reports)
 	}
-	return reports[0].Failures[0].Reason
+	return r.lastReason()
 }
 
-func TestASessionsReasonReachesTheReportWithLocalPathsShortened(t *testing.T) {
+func TestASessionsReasonEndsTheActionWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
@@ -180,7 +180,7 @@ func (h failingHarness) Start(_ context.Context, run port.Run) (port.Session, er
 	return nil, fmt.Errorf("claude: cannot run in %s: no settings in %s", run.Dir, filepath.Join(h.home, ".claude"))
 }
 
-func TestAHarnessStartFailureReachesTheReportWithLocalPathsShortened(t *testing.T) {
+func TestAHarnessStartFailureEndsTheActionWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)
@@ -194,7 +194,7 @@ func TestAHarnessStartFailureReachesTheReportWithLocalPathsShortened(t *testing.
 	})
 }
 
-func TestALogThatCannotOpenReachesTheReportWithLocalPathsShortened(t *testing.T) {
+func TestALogThatCannotOpenEndsTheActionWithLocalPathsShortened(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg := config(t, tr, develop)

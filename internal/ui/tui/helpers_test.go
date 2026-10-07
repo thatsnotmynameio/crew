@@ -24,13 +24,11 @@ func entry(key, title, rule string, to crew.State, taken, ended int) core.Handle
 	}
 }
 
-// failedEntry is entry with its actions failed for reasons, in pairs of
-// action and reason.
-func failedEntry(key, title string, taken, ended int, failures ...string) core.HandledView {
+// failedEntry is entry with actions failed.
+func failedEntry(key, title string, taken, ended int, actions ...string) core.HandledView {
 	e := entry(key, title, "implement", "needs attention", taken, ended)
-	for len(failures) >= 2 {
-		e.Failures = append(e.Failures, crew.ActionFailure{Action: failures[0], Reason: failures[1]})
-		failures = failures[2:]
+	for _, a := range actions {
+		e.Failures = append(e.Failures, crew.ActionFailure{Action: a})
 	}
 	return e
 }
@@ -53,8 +51,7 @@ func handledSnapshot() engine.Update {
 	})
 	u.Snapshot.Handled = []core.HandledView{
 		acted(
-			failedEntry("5", "Parse the config once", 40, 30,
-				"tests", "exited 1: tests fail", "code", "prompt did not render"),
+			failedEntry("5", "Parse the config once", 40, 30, "tests", "code"),
 			core.HandledAction{Name: "tests", Spend: spent(0.84, 1_200_000), PullRequest: noPullRequest},
 			core.HandledAction{Name: "code"}),
 		acted(givenUpEntry(entry("6", "Drop the old flag", "implement", "ready to review", 25, 20), "issue closed"),
@@ -79,9 +76,9 @@ func handledSnapshot() engine.Update {
 func manySnapshot() engine.Update {
 	u := runningSnapshot()
 	u.Snapshot.Handled = []core.HandledView{
-		acted(failedEntry("11", "Parse the config once", 90, 50, "lfg", `exited 1: "tests fail on Go 1.27"`),
+		acted(failedEntry("11", "Parse the config once", 90, 50, "lfg"),
 			core.HandledAction{Name: "lfg", Spend: spent(4.05, 6_100_000), PullRequest: noPullRequest}),
-		acted(failedEntry("12", "Drop the old --dry flag", 60, 59, "lfg", `prompt did not render: no field "Body"`),
+		acted(failedEntry("12", "Drop the old --dry flag", 60, 59, "lfg"),
 			core.HandledAction{Name: "lfg"}),
 	}
 	for n := 13; n <= 20; n++ {

@@ -58,11 +58,13 @@ func space(key, action string) core.WorkspaceReady {
 	}
 }
 
-// driver feeds a model inputs one second apart, as the engine would stamp them.
+// driver feeds a model inputs one second apart, as the engine would stamp
+// them, and keeps every event the model emitted.
 type driver struct {
-	t   *testing.T
-	m   *core.Model
-	now time.Time
+	t      *testing.T
+	m      *core.Model
+	now    time.Time
+	events []core.Event
 }
 
 func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
@@ -72,7 +74,24 @@ func newDriver(t *testing.T, rules []crew.Rule, maxParallel int) *driver {
 
 func (d *driver) send(in core.Input) ([]core.Command, []core.Event) {
 	d.now = d.now.Add(time.Second)
-	return d.m.Update(in.Stamped(d.now))
+	cmds, events := d.m.Update(in.Stamped(d.now))
+	d.events = append(d.events, events...)
+	return cmds, events
+}
+
+// wantReason fails the test unless the last ActionEnded of action on issue
+// key carried reason.
+func (d *driver) wantReason(key, action, reason string) {
+	d.t.Helper()
+	for _, e := range slices.Backward(d.events) {
+		if ended, ok := e.(core.ActionEnded); ok && ended.IssueKey == key && ended.Action == action {
+			if got := ended.Outcome.Reason.String(); got != reason {
+				d.t.Errorf("%s of #%s ended with reason %q, want %q", action, key, got, reason)
+			}
+			return
+		}
+	}
+	d.t.Fatalf("no end of %s of #%s in %#v", action, key, d.events)
 }
 
 // settle answers cmds as a healthy engine would: moves succeed, workspaces

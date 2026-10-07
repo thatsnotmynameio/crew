@@ -64,10 +64,11 @@ func TestAE3SessionThatFailsRunsNoCheck(t *testing.T) {
 		}
 	}
 	ws := space("74", "development")
-	want := []crew.ActionFailure{{Action: "development", Reason: "tests fail", Workspace: ws.Workspace, Log: ws.Log}}
+	want := []crew.ActionFailure{{Action: "development", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failures = %#v, want %#v", got, want)
 	}
+	d.wantReason("74", "development", "tests fail")
 }
 
 func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
@@ -141,7 +142,7 @@ func TestAE1CheckThatFailsFailsItsActionWithTheChecksReason(t *testing.T) {
 	}
 	// AE5: only the action whose check failed is reported.
 	ws := space("74", "development")
-	want := []crew.ActionFailure{{Action: "development", Reason: reason, Workspace: ws.Workspace, Log: ws.Log}}
+	want := []crew.ActionFailure{{Action: "development", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failures = %#v, want %#v", got, want)
 	}
@@ -157,10 +158,11 @@ func TestAE9StopWhileCheckingStopsTheCheckAndFailsTheAction(t *testing.T) {
 	// Even a check that passed just as it was stopped counts as stopped.
 	cmds, _ = d.send(core.CheckEnded{IssueKey: "74", Action: "development", Passed: true, Reason: checkPassed})
 	ws := space("74", "development")
-	want := []crew.ActionFailure{{Action: "development", Reason: "crew stopped", Workspace: ws.Workspace, Log: ws.Log}}
+	want := []crew.ActionFailure{{Action: "development", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failures = %#v, want %#v", got, want)
 	}
+	d.wantReason("74", "development", "crew stopped")
 }
 
 func TestSessionThatSucceedsAfterAStopStartsNoCheck(t *testing.T) {
@@ -175,9 +177,10 @@ func TestSessionThatSucceedsAfterAStopStartsNoCheck(t *testing.T) {
 			t.Fatalf("a check started after a stop: %#v", cmds)
 		}
 	}
-	if got := failures(t, cmds); len(got) != 1 || got[0].Reason != "crew stopped" {
-		t.Fatalf("failures = %#v, want development failed as stopped", got)
+	if got := failures(t, cmds); len(got) != 1 || got[0].Action != "development" {
+		t.Fatalf("failures = %#v, want development failed", got)
 	}
+	d.wantReason("74", "development", "crew stopped")
 }
 
 func TestTimeUpLetsARunningCheckFinishBeforeStopping(t *testing.T) {

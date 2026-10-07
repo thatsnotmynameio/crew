@@ -27,6 +27,22 @@ func (r *rig) events() []core.Event {
 	return out
 }
 
+// lastReason returns the reason of the last ActionEnded r's engine
+// published, once Run has returned. It drains r's queue, as events does.
+func (r *rig) lastReason() string {
+	r.t.Helper()
+	reason, found := "", false
+	for _, e := range r.events() {
+		if ended, ok := e.(core.ActionEnded); ok {
+			reason, found = ended.Outcome.Reason.String(), true
+		}
+	}
+	if !found {
+		r.t.Fatal("no ActionEnded")
+	}
+	return reason
+}
+
 // session waits for the next session to start.
 func (r *rig) session() *fake.Session {
 	r.t.Helper()

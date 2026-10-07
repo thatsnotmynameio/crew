@@ -23,9 +23,9 @@ func onlyEntry(t *testing.T, d *driver) core.HandledView {
 }
 
 // failure is the failure of action on issue key, as its report carries it.
-func failure(key, action, reason string) crew.ActionFailure {
+func failure(key, action string) crew.ActionFailure {
 	name := "issue-" + key + "-" + action
-	return crew.ActionFailure{Action: action, Reason: reason, Workspace: name, Log: ".crew/logs/" + name + ".log"}
+	return crew.ActionFailure{Action: action, Workspace: name, Log: ".crew/logs/" + name + ".log"}
 }
 
 func TestASucceededRuleIsHandledOnceItsVerdictMoveIsDone(t *testing.T) {
@@ -80,9 +80,10 @@ func TestAFailedRuleIsHandledWithItsFailedActionsOnceItsReportSettles(t *testing
 	if got.To != needsAttention || got.Move != crew.MoveDone {
 		t.Fatalf("entry: got to %q, move %v; want needs attention, done", got.To, got.Move)
 	}
-	if want := []crew.ActionFailure{failure("1", "development", "tests fail")}; !reflect.DeepEqual(got.Failures, want) {
+	if want := []crew.ActionFailure{failure("1", "development")}; !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
+	d.wantReason("1", "development", "tests fail")
 	if !got.NeedsAttention() {
 		t.Fatal("a failed rule does not need attention")
 	}
@@ -132,9 +133,10 @@ func TestAFailedRuleWhoseMoveIsRefusedKeepsItsFailuresAndTheGivenUpMove(t *testi
 	if got.Move != crew.MoveDropped || got.DropReason != "label missing" {
 		t.Fatalf("entry: got move %v, reason %q; want dropped, label missing", got.Move, got.DropReason)
 	}
-	if want := []crew.ActionFailure{failure("1", "acceptance", "broke")}; !reflect.DeepEqual(got.Failures, want) {
+	if want := []crew.ActionFailure{failure("1", "acceptance")}; !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
+	d.wantReason("1", "acceptance", "broke")
 }
 
 // Covers AE1.
@@ -164,10 +166,11 @@ func TestAnIssueTakenAgainKeepsItsEntryMarkedWithTheRuleHoldingIt(t *testing.T) 
 		t.Fatalf("entry after review: got %#v, want review, needs attention, taken %v, ended %v, held by none",
 			got, taken, ended)
 	}
-	want := []crew.ActionFailure{failure("1", "custom_review", "changes requested")}
+	want := []crew.ActionFailure{failure("1", "custom_review")}
 	if !reflect.DeepEqual(got.Failures, want) {
 		t.Fatalf("failures:\n got %#v\nwant %#v", got.Failures, want)
 	}
+	d.wantReason("1", "custom_review", "changes requested")
 }
 
 func TestATakeGivenUpOnAHandledIssueKeepsItsEarlierEntryNoLongerHeld(t *testing.T) {
@@ -263,9 +266,9 @@ func TestAViewsHandledEntriesShareNoMemoryWithTheModel(t *testing.T) {
 	d.settle(verdict)
 
 	first := d.m.View()
-	first.Handled[0].Failures[0].Reason = "changed"
+	first.Handled[0].Failures[0].Log = "changed"
 	first.Handled[0].Issue.States[0] = "changed"
-	if got := onlyEntry(t, d); got.Failures[0].Reason != "broke" || got.Issue.States[0] != ready {
+	if got := onlyEntry(t, d); got.Failures[0].Log != failure("1", "acceptance").Log || got.Issue.States[0] != ready {
 		t.Fatalf("entry after changing a view: %#v", got)
 	}
 }

@@ -46,7 +46,7 @@ func TestAE7AFailedRuleNotifiesAndLeavesNoHandledCard(t *testing.T) {
 	h.send(tea.BlurMsg{})
 
 	u := onBoard(handledBy(twelve, "triage", "crew:triage:failed"), labeled(twelve, "crew:triage:failed"))
-	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "triage", Reason: "exited 1"}}
+	u.Snapshot.Handled[0].Failures = []crew.ActionFailure{{Action: "triage"}}
 	u.Snapshot.Recent = []core.Event{core.IssueMoved{
 		At: start, IssueKey: "12", IssueRef: "#12", From: "crew:triage:in progress", To: "crew:triage:failed",
 	}}

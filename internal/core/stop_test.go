@@ -31,10 +31,12 @@ func TestAE9StopJudgesEndedIssuesAndStopsRunningOnes(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueKey: "2", From: inProgress, To: needsAttention},
 		core.ReportFailure{Report: crew.FailureReport{IssueKey: "2", IssueRef: "#2", Failures: []crew.ActionFailure{
-			failure("2", "acceptance", "stopped"),
-			failure("2", "development", "stopped"),
+			failure("2", "acceptance"),
+			failure("2", "development"),
 		}}},
 	)
+	d.wantReason("2", "acceptance", "stopped")
+	d.wantReason("2", "development", "stopped")
 
 	d.send(core.CallResult{ID: moveID(t, cmds, "2"), Result: core.ResultDone})
 	if d.m.Stopped() {
@@ -80,8 +82,8 @@ var owedTakeFinalTries = []struct {
 func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 	stoppedReport := core.ReportFailure{Report: crew.FailureReport{
 		IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "crew stopped"},
-			{Action: "development", Reason: "crew stopped"},
+			{Action: "acceptance"},
+			{Action: "development"},
 		},
 	}}
 	for _, tt := range owedTakeFinalTries {
@@ -93,6 +95,8 @@ func TestStopGivesAnOwedTakeOneFinalTry(t *testing.T) {
 
 			cmds, _ := d.send(core.CallResult{ID: moveID(t, final, "1"), Result: core.ResultDone})
 			wantCommands(t, cmds, core.Move{IssueKey: "1", From: inProgress, To: needsAttention}, stoppedReport)
+			d.wantReason("1", "acceptance", "crew stopped")
+			d.wantReason("1", "development", "crew stopped")
 			d.settle(cmds)
 			if !d.m.Stopped() {
 				t.Fatal("not stopped once the verdict calls settled")
@@ -130,10 +134,12 @@ func TestStopDuringTakeStartsNothingAndNeedsAttention(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
 		core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "crew stopped"},
-			{Action: "development", Reason: "crew stopped"},
+			{Action: "acceptance"},
+			{Action: "development"},
 		}}},
 	)
+	d.wantReason("1", "acceptance", "crew stopped")
+	d.wantReason("1", "development", "crew stopped")
 }
 
 func TestStopDuringSetupStartsNothingMoreAndStopsWhatStarted(t *testing.T) {
@@ -154,10 +160,12 @@ func TestStopDuringSetupStartsNothingMoreAndStopsWhatStarted(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
 		core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-			{Action: "acceptance", Reason: "crew stopped", Workspace: "issue-1-acceptance"},
-			failure("1", "development", "stopped"),
+			{Action: "acceptance", Workspace: "issue-1-acceptance"},
+			failure("1", "development"),
 		}}},
 	)
+	d.wantReason("1", "acceptance", "crew stopped")
+	d.wantReason("1", "development", "stopped")
 }
 
 func TestStopGivesEachOwedCallOneFinalTry(t *testing.T) {

@@ -140,10 +140,10 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 			wantCommands(t, cmds,
 				core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
 				core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{{
-					Action: "development", Reason: tt.outcome.Reason.String(),
-					Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
+					Action: "development", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
 				}}}},
 			)
+			d.wantReason("1", "development", tt.outcome.Reason.String())
 
 			_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 			hasEvent(t, events, core.IssueMoved{At: d.now, IssueKey: "1", IssueRef: "#1", From: inProgress, To: needsAttention})
@@ -175,10 +175,10 @@ func TestAE1AE5FailedRuleMovesToItsOwnOnFailure(t *testing.T) {
 	wantCommands(t, cmds,
 		core.Move{IssueKey: "2", From: inReview, To: ready},
 		core.ReportFailure{Report: crew.FailureReport{IssueKey: "2", IssueRef: "#2", Failures: []crew.ActionFailure{{
-			Action: "custom_review", Reason: "changes requested",
-			Workspace: "issue-2-custom_review", Log: ".crew/logs/issue-2-custom_review.log",
+			Action: "custom_review", Workspace: "issue-2-custom_review", Log: ".crew/logs/issue-2-custom_review.log",
 		}}}},
 	)
+	d.wantReason("2", "custom_review", "changes requested")
 	d.settle(cmds)
 	wantHeld(t, d.m)
 
@@ -267,9 +267,10 @@ func TestActionThatFailsToStartFailsAloneWhileSiblingsRun(t *testing.T) {
 			wantCommands(t, cmds,
 				core.Move{IssueKey: "1", From: inProgress, To: needsAttention},
 				core.ReportFailure{Report: crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-					{Action: "acceptance", Reason: "fetch failed", Workspace: tt.workspace, Log: tt.log},
+					{Action: "acceptance", Workspace: tt.workspace, Log: tt.log},
 				}}},
 			)
+			d.wantReason("1", "acceptance", "fetch failed")
 		})
 	}
 }

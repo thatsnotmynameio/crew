@@ -180,10 +180,7 @@ func TestTrackerScriptedMoveFailuresComeInOrderThenMovesSucceed(t *testing.T) {
 func TestTrackerRecordsFailureReportsAndScriptsTheirFailures(t *testing.T) {
 	tr := fake.NewTracker(issue("1", needsAttention))
 	report := crew.FailureReport{IssueKey: "1", IssueRef: "#1", Failures: []crew.ActionFailure{
-		{
-			Action: "development", Reason: "tests fail",
-			Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log",
-		},
+		{Action: "development", Workspace: "issue-1-development", Log: ".crew/logs/issue-1-development.log"},
 	}}
 	tr.FailReports("1", port.ErrRefused)
 	ctx := context.Background()

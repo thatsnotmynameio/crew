@@ -476,7 +476,7 @@ func (s *step) judge(h *heldIssue) {
 	for _, a := range h.actions {
 		if !a.outcome.Succeeded {
 			report.Failures = append(report.Failures, crew.ActionFailure{
-				Action: a.name, Reason: a.outcome.Reason.String(), Workspace: a.workspace, Log: a.log,
+				Action: a.name, Workspace: a.workspace, Log: a.log,
 			})
 		}
 	}

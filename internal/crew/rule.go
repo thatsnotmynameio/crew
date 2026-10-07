@@ -138,6 +138,8 @@ type Outcome struct {
 
 // FailureReport is what the engine asks a tracker to post on an issue whose
 // rule had failed actions. The tracker adapter formats it in its own markup.
+// It carries no reason: an outcome's reason is a session's or a tool's last
+// words, which a tracker comment must not show.
 type FailureReport struct {
 	// IssueKey and IssueRef identify the issue, as in Issue.
 	IssueKey string
@@ -146,12 +148,11 @@ type FailureReport struct {
 	Failures []ActionFailure
 }
 
-// ActionFailure is one failed action in a FailureReport.
+// ActionFailure is one failed action in a FailureReport: where to read why
+// it failed, never the reason itself.
 type ActionFailure struct {
 	// Action is the action's name.
 	Action string
-	// Reason is the one-line reason from the action's Outcome.
-	Reason string
 	// Workspace is the name of the workspace the action ran in.
 	Workspace string
 	// Log is the repository-relative path of the session's log file.

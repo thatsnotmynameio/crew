@@ -61,10 +61,11 @@ func TestAPassingCheckStartsTheNextWhichDecidesTheAction(t *testing.T) {
 		t.Fatalf("verdict = %#v, want the move to needs attention", got)
 	}
 	ws := space("74", "development")
-	want := []crew.ActionFailure{{Action: "development", Reason: reason, Workspace: ws.Workspace, Log: ws.Log}}
+	want := []crew.ActionFailure{{Action: "development", Workspace: ws.Workspace, Log: ws.Log}}
 	if got := failures(t, cmds); !reflect.DeepEqual(got, want) {
 		t.Fatalf("failures = %#v, want %#v", got, want)
 	}
+	d.wantReason("74", "development", reason)
 }
 
 // Covers AE1: the first check that fails ends the action; the checks after
@@ -80,9 +81,10 @@ func TestAFailingCheckEndsTheActionBeforeTheNext(t *testing.T) {
 			t.Fatalf("a check ran after one failed: %#v", cmds)
 		}
 	}
-	if got := failures(t, cmds); len(got) != 1 || got[0].Reason != reason {
-		t.Fatalf("failures = %#v, want development failed with %q", got, reason)
+	if got := failures(t, cmds); len(got) != 1 || got[0].Action != "development" {
+		t.Fatalf("failures = %#v, want development failed", got)
 	}
+	d.wantReason("74", "development", reason)
 }
 
 // Covers AE2: the action succeeds once its last check passed.
@@ -122,9 +124,10 @@ func TestAStopWhileTheFirstCheckRunsEndsTheActionWithoutTheSecond(t *testing.T) 
 			t.Fatalf("a check started after a stop: %#v", cmds)
 		}
 	}
-	if got := failures(t, cmds); len(got) != 1 || got[0].Reason != "crew stopped" {
-		t.Fatalf("failures = %#v, want development failed as stopped", got)
+	if got := failures(t, cmds); len(got) != 1 || got[0].Action != "development" {
+		t.Fatalf("failures = %#v, want development failed", got)
 	}
+	d.wantReason("74", "development", "crew stopped")
 }
 
 // R6: while its second check runs, an action's status shows how its first

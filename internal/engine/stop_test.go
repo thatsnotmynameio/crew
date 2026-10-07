@@ -99,8 +99,11 @@ func TestStopKillsASessionIgnoringItAtTheTenSecondDeadline(t *testing.T) {
 			t.Errorf("issue 1 is in %v, want needs attention", got)
 		}
 		reports := tr.Reports()
-		if len(reports) != 1 || len(reports[0].Failures) != 1 || reports[0].Failures[0].Reason != fake.KilledReason {
-			t.Errorf("reports = %+v, want one naming the killed session", reports)
+		if len(reports) != 1 || len(reports[0].Failures) != 1 {
+			t.Errorf("reports = %+v, want one with one failure", reports)
+		}
+		if got := r.lastReason(); got != fake.KilledReason {
+			t.Errorf("reason = %q, want %q, naming the killed session", got, fake.KilledReason)
 		}
 	})
 }
