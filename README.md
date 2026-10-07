@@ -6,7 +6,7 @@ crew only runs sessions and moves labels. Opening pull requests, reviewing and m
 
 ## Quick start
 
-On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your `PATH` and logged in, install the latest release into `/usr/local/bin`. The command checks the download against the release's `checksums.txt`, and `sudo` asks for your password:
+On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your `PATH` and logged in, install the latest release into `~/.local/bin`, without `sudo` or a password. The command checks the download against the release's `checksums.txt` and creates `~/.local/bin` when it is missing. When `~/.local/bin` is not on your `PATH`, it prints the line to add to your shell's startup file; when another `crew` comes first on your `PATH`, such as one installed in `/usr/local/bin`, it names that file:
 
 ```sh
 (
@@ -30,9 +30,22 @@ On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your 
     grep " $archive\$" checksums.txt | shasum -a 256 -c -
   fi
   tar -xzf "$archive" crew
-  sudo install -d /usr/local/bin
-  sudo install -m 0755 crew /usr/local/bin/crew
-  crew --version
+  bin="$HOME/.local/bin"
+  install -d "$bin"
+  install -m 0755 crew "$bin/crew"
+  "$bin/crew" --version
+  case ":$PATH:" in
+    *":$bin:"*)
+      found=$(command -v crew || true)
+      if [ "$found" != "$bin/crew" ]; then
+        echo "warning: crew runs $found, not $bin/crew; remove $found to run the crew just installed" >&2
+      fi
+      ;;
+    *)
+      echo "warning: $bin is not on your PATH; add this line to your shell's startup file, such as ~/.profile, ~/.bashrc or ~/.zshrc:" >&2
+      echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" >&2
+      ;;
+  esac
 )
 ```
 
