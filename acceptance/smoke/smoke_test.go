@@ -94,7 +94,7 @@ func TestSmokeScreen(t *testing.T) {
 	sc.Start()
 	sc.Screen().WaitForText(t, harness.RepositoryName, timeout)
 	sc.Wait(s.invoked, timeout)
-	sc.Screen().Send(t, "q")
+	sc.Screen().Send(t, "qq")
 	if exited := sc.Exit(timeout); exited.Code != 0 {
 		t.Fatalf("crew exited %d, want 0\nscreen:\n%s", exited.Code, sc.Screen().Text())
 	}
