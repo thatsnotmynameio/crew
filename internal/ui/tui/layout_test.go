@@ -39,7 +39,7 @@ func TestEverySectionShowsInOrder(t *testing.T) {
 	view := fitted(t, 80, 0, handledSnapshot())
 
 	last := -1
-	for _, title := range []string{"crew ╱", "Bots ─", "Board ─", "Queues ─", "Events ─", "q q stop"} {
+	for _, title := range []string{"crew ╱", "Bots ─", "Board ─", "Queues ─", "Events ─", stopKeys + " stop"} {
 		i := strings.Index(view, title)
 		if i <= last {
 			t.Fatalf("%q is out of order or missing:\n%s", title, view)
@@ -156,7 +156,7 @@ func TestQuestionMarkTogglesTheHelpOverlay(t *testing.T) {
 		"via  the queue its actions run in")
 	for _, binding := range []string{
 		`enter +open card`, `esc +close or board`, `b +bots`, `e +events`,
-		`q q +stop, within 3s`, `q +force if stopping`,
+		stopKeys + ` +stop, within 3s`, `q +force if stopping`,
 	} {
 		if !regexp.MustCompile(`\b` + binding + `\b`).MatchString(view) {
 			t.Errorf("the keys lack %q:\n%s", binding, view)
@@ -184,7 +184,7 @@ func TestTheKeyHelpNamesTheBoardsKeys(t *testing.T) {
 	h.send(updateMsg(runningSnapshot()))
 
 	rows := rowsOf(h.view())
-	if got, want := rows[len(rows)-1], "q q stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
+	if got, want := rows[len(rows)-1], stopKeys+" stop · tab focus · ←→↑↓ move · enter open · ? help"; got != want {
 		t.Errorf("key help = %q, want %q", got, want)
 	}
 }

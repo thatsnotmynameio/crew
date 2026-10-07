@@ -338,10 +338,12 @@ func TestTheClosedUpdateChannelBecomesTheEngineStoppedMessage(t *testing.T) {
 	}
 }
 
-// The live view's own notices in its footer (R1, R6 of #266).
+// The live view's own notices in its footer (R1, R6 of #266), and the stop
+// key as its help names it (R9 of #266).
 const (
 	armedNotice = "q or ctrl+c again within 3s stops crew"
 	forceNotice = "q or ctrl+c forces the exit"
+	stopKeys    = "q q"
 )
 
 var qKey = tea.KeyPressMsg{Code: 'q', Text: "q"}

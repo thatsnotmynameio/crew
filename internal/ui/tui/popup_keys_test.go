@@ -66,15 +66,15 @@ func TestHAndLMoveThePopupLikeTheArrows(t *testing.T) {
 	}
 }
 
-// Covers R13, R14 and KTD12 of #151: in the popup q q stops crew (R1 of
-// #266), ? shows
+// Covers R13, R14 and KTD12 of #151: in the popup two presses of q stop
+// crew (R1 of #266), ? shows
 // the help over it, Tab, b, e and Enter change nothing, and no key but q
 // acts outside the view.
 func TestThePopupsKeys(t *testing.T) {
 	h := newHarness(t, 120)
 	h.send(updateMsg(runningSnapshot()))
 	h.send(enterKey)
-	if got := rowsOf(h.view())[len(rowsOf(h.view()))-1]; got != "esc close · ←→ card · ↑↓ scroll · q q stop" {
+	if got := rowsOf(h.view())[len(rowsOf(h.view()))-1]; got != "esc close · ←→ card · ↑↓ scroll · "+stopKeys+" stop" {
 		t.Errorf("the key help reads %q in the popup", got)
 	}
 
