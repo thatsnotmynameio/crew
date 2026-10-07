@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -46,18 +47,13 @@ func newKeyMap() keyMap {
 	}
 }
 
-// key handles a key press: the stop keys as before (KTD7), the help
-// overlay, then the popup's keys while it is open, else Enter, focus, the
-// highlight and scrolling (KTD12 of #151).
+// key handles a key press: the stop keys (KTD7; KTD1, KTD2 of #266), the
+// help overlay, then the popup's keys while it is open, else Enter, focus,
+// the highlight and scrolling (KTD12 of #151).
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.stop):
-		if m.stopping {
-			m.cfg.Force()
-			return m, tea.Quit
-		}
-		m.stopping = true
-		m.cfg.Stop()
+		return m.stopKey()
 	case key.Matches(msg, m.keys.help):
 		m.help = !m.help
 	case key.Matches(msg, m.keys.esc):
@@ -70,6 +66,26 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m = m.navigated(msg)
 	}
 	return m, nil
+}
+
+// stopKey handles q or Ctrl-C: once crew is stopping it forces the exit;
+// within the window a first press armed it confirms the stop; otherwise it
+// arms the stop until the window ends (R1 to R7 of #266).
+func (m Model) stopKey() (tea.Model, tea.Cmd) {
+	now := m.cfg.Now()
+	switch {
+	case m.stopping || m.snap.Stopping:
+		m.cfg.Force()
+		return m, tea.Quit
+	case now.Before(m.armedUntil):
+		m.armedUntil = time.Time{}
+		m.stopping = true
+		m.cfg.Stop()
+		return m, nil
+	}
+	until := now.Add(armWindow)
+	m.armedUntil = until
+	return m, tea.Tick(armWindow, func(time.Time) tea.Msg { return armExpiredMsg{until: until} })
 }
 
 // scrollBots returns m with the Bots cards moved delta cards sideways, as
@@ -127,11 +143,14 @@ func (m Model) helper() help.Model {
 }
 
 // keyHelp is the key-help line (R21), the popup's while it is open
-// (KTD12 of #151), or, once you asked to stop, how to force the exit
-// (KTD16).
+// (KTD12 of #151), or, once crew is stopping, how to force the exit
+// (KTD16), else while the stop is armed, how to confirm it (KTD5 of #266).
 func (m Model) keyHelp() string {
-	if m.stopping {
-		return m.styles.warning.Render("q or ctrl+c again forces the exit")
+	switch {
+	case m.stopping || m.snap.Stopping:
+		return m.styles.warning.Render("q or ctrl+c forces the exit")
+	case !m.armedUntil.IsZero():
+		return m.styles.warning.Render("q or ctrl+c again within 3s stops crew")
 	}
 	h := m.helper()
 	h.SetWidth(m.width)

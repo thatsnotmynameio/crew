@@ -298,17 +298,18 @@ func TestAnActionRunningItsCheckStillRunsOnItsCard(t *testing.T) {
 	}
 }
 
-func TestCtrlCPostsOneStopAndKeepsRunningUntilTheEngineStops(t *testing.T) {
+func TestTwoCtrlCsPostOneStopAndKeepRunningUntilTheEngineStops(t *testing.T) {
 	h := newHarness(t, 80)
 	h.send(updateMsg(runningSnapshot()))
 
+	h.send(ctrlC)
 	if quits(h.send(ctrlC)) {
 		t.Fatal("Ctrl-C quit the program before the engine stopped")
 	}
 	if h.stops != 1 {
 		t.Fatalf("stop called %d times, want 1", h.stops)
 	}
-	contains(t, h.view(), "STOPPING", "q or ctrl+c again forces the exit")
+	contains(t, h.view(), "STOPPING", forceNotice)
 
 	// The engine keeps publishing while it stops; the TUI keeps rendering.
 	stopping := runningSnapshot()
@@ -317,7 +318,7 @@ func TestCtrlCPostsOneStopAndKeepsRunningUntilTheEngineStops(t *testing.T) {
 		t.Fatal("an update while stopping quit the program")
 	}
 	if h.stops != 1 || h.forces != 0 {
-		t.Fatalf("after one Ctrl-C: stop called %d times, force %d; want 1 and 0", h.stops, h.forces)
+		t.Fatalf("after two Ctrl-Cs: stop called %d times, force %d; want 1 and 0", h.stops, h.forces)
 	}
 
 	close(h.updates)
@@ -337,28 +338,215 @@ func TestTheClosedUpdateChannelBecomesTheEngineStoppedMessage(t *testing.T) {
 	}
 }
 
-func TestASecondCtrlCOrQWhileStoppingForcesTheExit(t *testing.T) {
-	for _, keys := range [][2]tea.KeyPressMsg{
-		{ctrlC, ctrlC},
-		{{Code: 'q', Text: "q"}, {Code: 'q', Text: "q"}},
-		{{Code: 'q', Text: "q"}, ctrlC},
-	} {
+// The live view's own notices in its footer (R1, R6 of #266).
+const (
+	armedNotice = "q or ctrl+c again within 3s stops crew"
+	forceNotice = "q or ctrl+c forces the exit"
+)
+
+var qKey = tea.KeyPressMsg{Code: 'q', Text: "q"}
+
+// footer is the view's last row.
+func (h *harness) footer() string {
+	rows := rowsOf(h.view())
+	return rows[len(rows)-1]
+}
+
+// armExpiry is the message that ends the stop armed at at.
+func armExpiry(at time.Time) tea.Msg { return armExpiredMsg{until: at.Add(armWindow)} }
+
+// Covers AE1 of #266: one Ctrl-C only arms the stop, and the footer goes
+// back to its key help when 3 seconds pass.
+func TestAStrayCtrlCOnlyArmsTheStop(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(updateMsg(runningSnapshot()))
+
+	if quits(h.send(ctrlC)) {
+		t.Fatal("one Ctrl-C quit the program")
+	}
+	if h.stops != 0 {
+		t.Fatalf("one Ctrl-C called Stop %d times, want none", h.stops)
+	}
+	if got := h.footer(); got != armedNotice {
+		t.Errorf("footer = %q, want the armed notice", got)
+	}
+	if strings.Contains(h.view(), "STOPPING") {
+		t.Errorf("one Ctrl-C shows STOPPING:\n%s", h.view())
+	}
+
+	h.clock = h.clock.Add(armWindow)
+	h.send(armExpiry(start))
+
+	if got := h.footer(); !strings.Contains(got, "tab focus") {
+		t.Errorf("footer = %q 3s later, want the key help", got)
+	}
+	if h.stops != 0 || h.forces != 0 {
+		t.Errorf("Stop called %d times and Force %d, want neither", h.stops, h.forces)
+	}
+}
+
+// Covers AE2 of #266: q and Ctrl-C count as one key, and the second press
+// within 3 seconds stops crew.
+func TestTwoPressesWithinTheWindowStopCrew(t *testing.T) {
+	for _, keys := range [][2]tea.KeyPressMsg{{qKey, ctrlC}, {ctrlC, qKey}, {qKey, qKey}, {ctrlC, ctrlC}} {
 		t.Run(keys[0].String()+" then "+keys[1].String(), func(t *testing.T) {
 			h := newHarness(t, 80)
+			h.send(updateMsg(runningSnapshot()))
+
 			h.send(keys[0])
-			if h.stops != 1 || h.forces != 0 {
-				t.Fatalf("after the first key: stop %d, force %d; want 1 and 0", h.stops, h.forces)
+			h.clock = h.clock.Add(2 * time.Second)
+			if quits(h.send(keys[1])) {
+				t.Fatal("the confirmed stop quit the program before the engine stopped")
 			}
 
-			cmd := h.send(keys[1])
+			if h.stops != 1 || h.forces != 0 {
+				t.Errorf("Stop called %d times and Force %d, want 1 and 0", h.stops, h.forces)
+			}
+			contains(t, h.view(), "STOPPING")
+			if got := h.footer(); got != forceNotice {
+				t.Errorf("footer = %q, want the forcing notice", got)
+			}
+		})
+	}
+}
+
+// Covers AE5 of #266: a press after the window arms the stop again, even
+// before the earlier arm's expiry arrives, and the expiry of that earlier
+// arm leaves the new one armed.
+func TestAPressAfterTheWindowArmsAgain(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(updateMsg(runningSnapshot()))
+
+	h.send(qKey)
+	h.clock = h.clock.Add(4 * time.Second)
+	h.send(qKey)
+	if h.stops != 0 {
+		t.Fatalf("two presses 4s apart called Stop %d times, want none", h.stops)
+	}
+
+	h.send(armExpiry(start))
+	if got := h.footer(); got != armedNotice {
+		t.Errorf("footer = %q after the first arm's expiry, want the second arm's notice", got)
+	}
+
+	h.clock = h.clock.Add(2 * time.Second)
+	h.send(qKey)
+	if h.stops != 1 {
+		t.Errorf("a press 2s after the second arm called Stop %d times, want once", h.stops)
+	}
+}
+
+// Covers R5 of #266: other keys work while the stop is armed, and neither
+// cancel nor extend the window.
+func TestOtherKeysNeitherCancelNorExtendTheArmedStop(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		after time.Duration
+		stops int
+	}{
+		{"a press inside the window confirms", 2500 * time.Millisecond, 1},
+		{"a press past the window arms again", 3500 * time.Millisecond, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, 80)
+			h.send(updateMsg(runningSnapshot()))
+
+			h.send(qKey)
+			h.clock = h.clock.Add(2 * time.Second)
+			h.send(tab)
+			if h.current().focus != focusBots {
+				t.Errorf("tab while armed left the focus on %v", h.current().focus)
+			}
+			if got := h.footer(); got != armedNotice {
+				t.Errorf("footer = %q after tab, want the armed notice", got)
+			}
+			h.clock = start.Add(tc.after)
+			h.send(qKey)
+
+			if h.stops != tc.stops {
+				t.Errorf("Stop called %d times, want %d", h.stops, tc.stops)
+			}
+		})
+	}
+}
+
+// Covers AE3 of #266: once a confirmed stop runs, one more press forces
+// the exit.
+func TestOnePressWhileStoppingForcesTheExit(t *testing.T) {
+	for _, key := range []tea.KeyPressMsg{qKey, ctrlC} {
+		t.Run(key.String(), func(t *testing.T) {
+			h := newHarness(t, 80)
+			h.send(qKey)
+			h.send(qKey)
+			if h.stops != 1 || h.forces != 0 {
+				t.Fatalf("after two presses: stop %d, force %d; want 1 and 0", h.stops, h.forces)
+			}
+
+			cmd := h.send(key)
 
 			if h.stops != 1 || h.forces != 1 {
-				t.Errorf("after the second key: stop %d, force %d; want 1 and 1", h.stops, h.forces)
+				t.Errorf("after the third press: stop %d, force %d; want 1 and 1", h.stops, h.forces)
 			}
 			if !quits(cmd) {
 				t.Error("the forced exit did not quit the program")
 			}
 		})
+	}
+}
+
+// Covers AE4 of #266: when a signal stopped crew, the first press forces
+// the exit, and the footer says so.
+func TestOnePressAfterAnOutsideStopForcesTheExit(t *testing.T) {
+	h := newHarness(t, 80)
+	stopping := runningSnapshot()
+	stopping.Snapshot.Stopping = true
+	h.send(updateMsg(stopping))
+	if got := h.footer(); got != forceNotice {
+		t.Errorf("footer = %q while the engine stops, want the forcing notice", got)
+	}
+
+	cmd := h.send(qKey)
+
+	if h.stops != 0 || h.forces != 1 {
+		t.Errorf("Stop called %d times and Force %d, want 0 and 1", h.stops, h.forces)
+	}
+	if !quits(cmd) {
+		t.Error("the forced exit did not quit the program")
+	}
+}
+
+// Covers R6 of #266: a signal that stops crew while the stop is armed shows
+// the forcing notice, not the armed one.
+func TestAnOutsideStopWhileArmedShowsTheForcingNotice(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(qKey)
+	stopping := runningSnapshot()
+	stopping.Snapshot.Stopping = true
+
+	h.send(updateMsg(stopping))
+
+	if got := h.footer(); got != forceNotice {
+		t.Errorf("footer = %q, want the forcing notice", got)
+	}
+}
+
+// Covers AE6 of #266: a wind-down still takes two presses to stop.
+func TestAWindDownStillTakesTwoPressesToStop(t *testing.T) {
+	h := newHarness(t, 80)
+	h.send(windingDown())
+
+	h.send(qKey)
+	if h.stops != 0 {
+		t.Fatalf("one press during a wind-down called Stop %d times, want none", h.stops)
+	}
+	if got := h.footer(); got != armedNotice {
+		t.Errorf("footer = %q, want the armed notice", got)
+	}
+
+	h.clock = h.clock.Add(time.Second)
+	h.send(qKey)
+	if h.stops != 1 {
+		t.Errorf("a second press during a wind-down called Stop %d times, want once", h.stops)
 	}
 }
 

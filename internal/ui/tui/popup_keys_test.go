@@ -66,7 +66,8 @@ func TestHAndLMoveThePopupLikeTheArrows(t *testing.T) {
 	}
 }
 
-// Covers R13, R14 and KTD12 of #151: in the popup q stops crew, ? shows
+// Covers R13, R14 and KTD12 of #151: in the popup q q stops crew (R1 of
+// #266), ? shows
 // the help over it, Tab, b, e and Enter change nothing, and no key but q
 // acts outside the view.
 func TestThePopupsKeys(t *testing.T) {
@@ -101,9 +102,13 @@ func TestThePopupsKeys(t *testing.T) {
 	if !popupShows(h) || strings.Contains(h.view(), "Cards") {
 		t.Errorf("esc did not close the help first:\n%s", h.view())
 	}
-	h.send(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	h.send(qKey)
+	if h.stops != 0 || !popupShows(h) {
+		t.Errorf("one q in the popup called Stop %d times or closed it", h.stops)
+	}
+	h.send(qKey)
 	if h.stops != 1 {
-		t.Errorf("q in the popup called Stop %d times, want once", h.stops)
+		t.Errorf("two q in the popup called Stop %d times, want once", h.stops)
 	}
 }
 
