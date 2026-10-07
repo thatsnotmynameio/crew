@@ -77,8 +77,8 @@ func TestAnItemMovedToALabelNoColumnNamesLeavesTheBoard(t *testing.T) {
 	d.running(issue("1", 1, readyToReview))
 	wantBoard(t, d, on(issue("1", 1, readyToReview), inReview))
 
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "custom_review", Outcome: succeeded})
-	d.settle(verdict)
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "custom_review", Outcome: succeeded})
+	d.settle(ending)
 
 	wantBoard(t, d)
 }
@@ -96,8 +96,8 @@ func TestAnItemShowsOnlyInTheColumnsOfItsKind(t *testing.T) {
 	d.settle(take)
 	wantBoard(t, d, on(pr90(1, fixReviewReady), fixing))
 
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("90"), Action: "fix", Outcome: succeeded})
-	d.settle(verdict)
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("90"), Action: "fix", Outcome: succeeded})
+	d.settle(ending)
 	wantBoard(t, d)
 }
 
@@ -108,10 +108,10 @@ func TestAListingThatPredatesAMoveKeepsIt(t *testing.T) {
 	twelve := issue("12", 12, ready)
 	d.running(twelve)
 	d.send(core.SessionEnded{IssueID: issueID("12"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("12"), Action: "development", Outcome: succeeded})
 	d.tick()
 
-	d.settle(verdict)
+	d.settle(ending)
 	wantBoard(t, d, on(twelve, readyToReview))
 
 	stale := issue("12", 12, inProgress)

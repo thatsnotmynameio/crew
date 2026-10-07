@@ -117,7 +117,7 @@ func TestAE2IssueMovesOnSuccessOnlyOnceEveryActionEndedCleanly(t *testing.T) {
 	wantCommands(t, cmds, core.Move{IssueID: issueID("1"), From: inProgress, To: readyToReview})
 
 	_, events = d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-	hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
+	hasEvent(t, events, crew.EndingMoved{EventHead: d.runHead("1"), From: inProgress, To: readyToReview})
 	wantHeld(t, d.m)
 }
 
@@ -148,7 +148,7 @@ func TestAE3AE5FailedActionWaitsForSiblingsThenNeedsAttention(t *testing.T) {
 			d.wantReason("1", "development", tt.outcome.Reason.String())
 
 			_, events := d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
-			hasEvent(t, events, crew.VerdictMoved{EventHead: d.runHead("1"), From: inProgress, To: needsAttention})
+			hasEvent(t, events, crew.EndingMoved{EventHead: d.runHead("1"), From: inProgress, To: needsAttention})
 			wantHeld(t, d.m, "1") // its report is still in flight
 			_, events = d.send(core.CallResult{ID: reportID(t, cmds, "1"), Result: core.ResultDone})
 			hasEvent(t, events, crew.FailureReported{EventHead: d.runHead("1")})

@@ -15,7 +15,7 @@ type heldRun struct {
 	// live holds, by action, the session plumbing of each action run that
 	// got some (KTD-P5).
 	live map[crew.ActionName]*plumbing
-	// landed is the listing generation when the verdict move landed or was
+	// landed is the listing generation when the ending move landed or was
 	// given up (KTD4).
 	landed int
 }
@@ -174,11 +174,11 @@ func (s *step) settled(h *heldRun, p purpose, landed bool, reason string) crew.F
 	switch p {
 	case purposeTake:
 		return crew.TakeSettled{FactHead: head, Landed: landed}
-	case purposeVerdict:
+	case purposeEnding:
 		if landed {
-			return crew.VerdictSettled{FactHead: head, Move: crew.VerdictLanded{}}
+			return crew.EndingMoveSettled{FactHead: head, Move: crew.EndingLanded{}}
 		}
-		return crew.VerdictSettled{FactHead: head, Move: crew.VerdictGivenUp{Reason: reason}}
+		return crew.EndingMoveSettled{FactHead: head, Move: crew.EndingGivenUp{Reason: reason}}
 	default:
 		return crew.FailureReportSettled{FactHead: head, Landed: landed}
 	}
@@ -228,15 +228,15 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.TakeMoved:
 		s.takeMoved(h, e)
-	case crew.RunJudged:
-		s.judged(h, e)
-	case crew.VerdictMoved:
+	case crew.RunEnded:
+		s.runEnded(h, e)
+	case crew.EndingMoved:
 		s.emit(e)
 		s.m.boardMoved(h.run.Issue(), e.To)
 		s.reportRun(h)
-		s.reportVerdict(h)
+		s.reportEnding(h)
 		h.landed = s.m.listings
-	case crew.VerdictDropped:
+	case crew.EndingDropped:
 		s.reportRun(h)
 		h.landed = s.m.listings
 	case crew.FailureReported:
@@ -278,8 +278,8 @@ func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.ActionOpened, crew.ActionSessionEnded,
-		crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing, crew.RunJudged, crew.VerdictMoved,
-		crew.VerdictDropped, crew.FailureReported, crew.FailureReportDropped, crew.RunReleased:
+		crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing, crew.RunEnded, crew.EndingMoved,
+		crew.EndingDropped, crew.FailureReported, crew.FailureReportDropped, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }
@@ -360,11 +360,11 @@ func (s *step) actionEnded(h *heldRun, e crew.ActionEnded) {
 	s.emit(e)
 }
 
-// judged moves h to its verdict's state, with the failure report when an
+// runEnded moves h to its ending's state, with the failure report when an
 // action failed, and reports the run ended with its move pending (R7).
-func (s *step) judged(h *heldRun, e crew.RunJudged) {
+func (s *step) runEnded(h *heldRun, e crew.RunEnded) {
 	running := s.m.rules[h.rule].Labels.Running
-	s.deliver(h, &delivery{purpose: purposeVerdict, call: h.move(running, e.Verdict.To)})
+	s.deliver(h, &delivery{purpose: purposeEnding, call: h.move(running, e.Ending.To)})
 	if report, ok := h.run.FailureReport(); ok {
 		s.deliver(h, &delivery{
 			purpose: purposeReport, report: report,
@@ -374,7 +374,7 @@ func (s *step) judged(h *heldRun, e crew.RunJudged) {
 	s.reportRun(h)
 }
 
-// release forgets h, keeping its handled entry when its verdict settled
+// release forgets h, keeping its handled entry when its ending settled
 // (handle).
 func (m *Model) release(h *heldRun) {
 	m.issues = slices.DeleteFunc(m.issues, func(x *heldRun) bool { return x == h })

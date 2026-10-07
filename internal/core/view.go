@@ -19,9 +19,9 @@ const (
 	// ClaimStopping: a stop was requested before every action ended; the
 	// core waits for them to end.
 	ClaimStopping
-	// ClaimJudging: every action ended and the verdict calls are in flight.
+	// ClaimJudging: every action ended and the ending calls are in flight.
 	ClaimJudging
-	// ClaimOwed: the take move or a verdict call failed transiently and
+	// ClaimOwed: the take move or an ending call failed transiently and
 	// waits for a retry. With an owed take, no action has started yet: they
 	// stay PhaseWaiting until the retried take is done. A held issue never
 	// stores it: the view shows it over any other claim from the first
@@ -136,7 +136,7 @@ type View struct {
 type HandledView struct {
 	Issue crew.Issue
 	Rule  crew.RuleName
-	// To is the state the rule's verdict moved the issue to, or meant to
+	// To is the state the rule's ending moved the issue to, or meant to
 	// when Move is MoveDropped.
 	To crew.State
 	// Failures are the rule's failed actions, in its action order; nil
@@ -145,11 +145,11 @@ type HandledView struct {
 	// Actions are the rule's actions, in its action order, with what each
 	// spent and the pull request it opened (R12).
 	Actions []HandledAction
-	// Move is MoveDone, or MoveDropped when crew gave the verdict move up.
+	// Move is MoveDone, or MoveDropped when crew gave the ending move up.
 	Move crew.MoveProgress
-	// DropReason says why the verdict move was given up.
+	// DropReason says why the ending move was given up.
 	DropReason string
-	// Gone is set when a listing requested after the verdict move landed, or
+	// Gone is set when a listing requested after the ending move landed, or
 	// was given up, did not find the issue alone in To, and To is the label
 	// of a rule: only those states are listed (KTD4). A blocked issue stays
 	// in its label and stays listed, so it is not gone; an issue in two crew
@@ -187,12 +187,12 @@ func (h HandledView) Spend() crew.Spend {
 }
 
 // NeedsAttention reports whether you should look at the issue: an
-// action failed, or crew gave the verdict move up.
+// action failed, or crew gave the ending move up.
 func (h HandledView) NeedsAttention() bool {
 	return len(h.Failures) > 0 || h.Move == crew.MoveDropped
 }
 
-// Duration is the rule's time, from the take to the verdict.
+// Duration is the rule's time, from the take to the ending.
 func (h HandledView) Duration() time.Duration { return h.Ended.Sub(h.Taken) }
 
 // QueueView is one queue some rule runs in.
@@ -276,7 +276,7 @@ func (m *Model) View() View {
 func (h *heldRun) claim() Claim {
 	claim := ClaimRunning
 	switch h.run.Phase().(type) {
-	case crew.JudgingPhase:
+	case crew.EndingPhase:
 		return ClaimJudging
 	case crew.TakingPhase:
 		claim = ClaimTaking

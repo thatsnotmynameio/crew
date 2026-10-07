@@ -87,7 +87,7 @@ func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, final := failOneRun(t)
 		worded := []string{
-			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.VerdictMoved",
+			"crew.RunTaken", "crew.TakeMoved", "crew.ActionSessionStarted", "crew.ActionEnded", "crew.EndingMoved",
 			"crew.FailureReported",
 		}
 		published := runEventKinds(slices.Concat(r.events(), final.Snapshot.Recent))
@@ -109,7 +109,7 @@ func TestOnlyTheRunEventsTheViewsWordArePublished(t *testing.T) {
 func failOneRun(t *testing.T) (*rig, engine.Update) {
 	t.Helper()
 	r := start(t, config(t, fake.NewTracker(issue(1, ready)), develop))
-	r.sessions(1)["issue-1-development"].End(port.Verdict{Reason: "tests fail"})
+	r.sessions(1)["issue-1-development"].End(port.SessionEnd{Reason: "tests fail"})
 	synctest.Wait()
 
 	r.engine.Stop()

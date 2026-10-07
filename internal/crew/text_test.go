@@ -1,6 +1,10 @@
 package crew
 
-import "testing"
+import (
+	"slices"
+	"strings"
+	"testing"
+)
 
 // strippedText is each input of the stripping rule with what it gives.
 var strippedText = []struct {
@@ -96,5 +100,45 @@ func TestTheZeroValueIsTheEmptyText(t *testing.T) {
 	}
 	if s := (CheckReason{}); s.String() != "" || s != NewCheckReason("") {
 		t.Errorf("zero CheckReason = %q, want the empty text", s)
+	}
+}
+
+// linesKept is each input whose lines StripControlsKeepingLines keeps with
+// what it gives; it strips every other input as StripControls does.
+var linesKept = []struct {
+	name, in, want string
+}{
+	{"line breaks", "fatal: x\nhint: y", "fatal: x\nhint: y"},
+	{"a Markdown body", "## Title\n\n- one\n- two\n", "## Title\n\n- one\n- two\n"},
+	{"a CRLF line break", "a\r\nb\r\n", "a\nb\n"},
+	{"a bare carriage return", "a\rb", "ab"},
+	{"a tab", "a\tb\n\tc", "a\tb\n\tc"},
+	{"a line break inside a CSI", "a\x1b[3\n1mb", "a\nb"},
+	{"a carriage return inside a CSI", "a\x1b[3\r1mb", "ab"},
+	{"a NUL, a CR, a CRLF and colours", "a\x00b\rc\r\n\x1b[31md\x1b[0m", "a bc\nd"},
+}
+
+func TestStripControlsKeepingLines(t *testing.T) {
+	for _, tt := range linesKept {
+		if got := StripControlsKeepingLines(tt.in); got != tt.want {
+			t.Errorf("%s: StripControlsKeepingLines(%q) = %q, want %q", tt.name, tt.in, got, tt.want)
+		}
+	}
+	for _, tt := range strippedText {
+		if strings.ContainsAny(tt.in, "\n\r") {
+			continue
+		}
+		if got := StripControlsKeepingLines(tt.in); got != tt.want {
+			t.Errorf("%s: StripControlsKeepingLines(%q) = %q, want %q", tt.name, tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestStripControlsKeepingLinesIsIdempotent(t *testing.T) {
+	for _, tt := range slices.Concat(linesKept, strippedText) {
+		once := StripControlsKeepingLines(tt.in)
+		if twice := StripControlsKeepingLines(once); twice != once {
+			t.Errorf("%s: stripping %q again gives %q", tt.name, once, twice)
+		}
 	}
 }

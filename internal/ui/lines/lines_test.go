@@ -78,7 +78,7 @@ func TestATakenStartedEndedMovedSequencePrintsFourStampedLinesInOrder(t *testing
 		engine.Update{Events: []core.Published{
 			crew.ActionEnded{EventHead: head("09:12:30"), Action: "code",
 				End: crew.EndSucceeded{Reason: crew.NewSessionText("Opened pull request #7")}},
-			crew.VerdictMoved{EventHead: head("09:12:31"), From: "in progress", To: "ready to review"},
+			crew.EndingMoved{EventHead: head("09:12:31"), From: "in progress", To: "ready to review"},
 		}},
 	)
 

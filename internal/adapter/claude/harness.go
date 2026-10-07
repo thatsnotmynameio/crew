@@ -1,5 +1,5 @@
 // Package claude is the harness adapter for Claude Code. It runs `claude -p`
-// headless in an action's workspace and judges the session by the
+// headless in an action's workspace and tells how the session ended from the
 // stream-json events it prints: the session succeeded when its last result
 // event is not an error and the process exited 0.
 package claude
@@ -17,7 +17,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// stoppedReason is the Verdict.Reason of a session ended by Stop.
+// stoppedReason is the SessionEnd.Reason of a session ended by Stop.
 const stoppedReason = "stopped by crew before the session ended"
 
 // Compile-time guards: the engine finds Preparer, Narrator, UsageReporter
@@ -90,7 +90,7 @@ func (h *harness) Prepare(ctx context.Context, _ []crew.State) error {
 // Start implements port.Harness. It runs claude in run.Dir with the
 // harness's model, acting as run.Identity. Everything claude prints, stdout
 // and stderr, goes to run.Output, and stdout also goes through the stream
-// parser as it is printed, so the verdict never re-reads the log.
+// parser as it is printed, so the session's end never re-reads the log.
 func (h *harness) Start(ctx context.Context, run port.Run) (port.Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", binary, err)
@@ -111,16 +111,16 @@ type session struct {
 	process process
 	events  *stream // claude's stdout, parsed as it is printed
 	stopped atomic.Bool
-	verdict port.Verdict  // set before done is closed
-	usage   crew.Usage    // set before done is closed
-	last    string        // the last result's text; set before done is closed
-	done    chan struct{} // closed once the process is reaped and judged
+	end     port.SessionEnd // set before done is closed
+	usage   crew.Usage      // set before done is closed
+	last    string          // the last result's text; set before done is closed
+	done    chan struct{}   // closed once the process is reaped and its end settled
 }
 
 // Wait implements port.Session.
-func (s *session) Wait() port.Verdict {
+func (s *session) Wait() port.SessionEnd {
 	<-s.done
-	return s.verdict
+	return s.end
 }
 
 // Said implements port.Narrator: it returns the last text block of the last
@@ -146,7 +146,7 @@ func (s *session) LastMessage() string {
 
 // Stop implements port.Session. proc sends the terminate signal to the
 // session's process group, and the kill signal once ctx is done. The
-// session's verdict is then a failure saying it was stopped.
+// session's end is then a failure saying it was stopped.
 func (s *session) Stop(ctx context.Context) error {
 	select {
 	case <-s.done:
@@ -162,18 +162,18 @@ func (s *session) Stop(ctx context.Context) error {
 }
 
 // reap waits for the process, whose output is fully copied once Wait
-// returns, judges it, keeps its last message and reads its usage. A session
-// crew stopped, or one a signal ended, reports no usage.
+// returns, settles how it ended, keeps its last message and reads its usage.
+// A session crew stopped, or one a signal ended, reports no usage.
 func (s *session) reap() {
 	err := s.process.Wait()
 	last := s.events.end()
-	s.verdict = judge(last, err)
+	s.end = sessionEnd(last, err)
 	if last != nil {
 		s.last = last.Result
 	}
 	switch {
 	case s.stopped.Load():
-		s.verdict = port.Verdict{Reason: stoppedReason}
+		s.end = port.SessionEnd{Reason: stoppedReason}
 	case !signaled(err):
 		s.usage = s.events.usage()
 	}

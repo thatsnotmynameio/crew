@@ -43,19 +43,19 @@ func TestAE3TimeUpLetsARunningIssueFinishAndTakesNothingNew(t *testing.T) {
 	wantCommands(t, cmds)
 
 	d.send(core.SessionEnded{IssueID: issueID("42"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: succeeded})
-	wantCommands(t, verdict, core.Move{IssueID: issueID("42"), From: inProgress, To: readyToReview})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("42"), Action: "development", Outcome: succeeded})
+	wantCommands(t, ending, core.Move{IssueID: issueID("42"), From: inProgress, To: readyToReview})
 	if d.m.Stopped() {
-		t.Fatal("stopped while #42's verdict move is in flight")
+		t.Fatal("stopped while #42's ending move is in flight")
 	}
 
-	_, events = d.send(core.CallResult{ID: moveID(t, verdict, "42"), Result: core.ResultDone})
+	_, events = d.send(core.CallResult{ID: moveID(t, ending, "42"), Result: core.ResultDone})
 	wantEvents(t, events,
-		crew.VerdictMoved{EventHead: d.runHead("42"), From: inProgress, To: readyToReview},
+		crew.EndingMoved{EventHead: d.runHead("42"), From: inProgress, To: readyToReview},
 		core.Stopped{At: d.now},
 	)
 	if !d.m.Stopped() {
-		t.Fatal("not stopped once #42 was judged")
+		t.Fatal("not stopped once #42's run ended")
 	}
 	if d.m.View().Stopping {
 		t.Fatal("the view says a stop was requested; none was")
@@ -121,8 +121,8 @@ func TestWhileWindingDownOwedCallsAreRetriedAtTicksThenGetAFinalTry(t *testing.T
 	d := newDriver(t, draft(), 2)
 	d.running(issue("1", 1, ready), issue("2", 2, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	d.send(core.TimeUp{Limit: limit})
 
 	retry, _ := d.send(core.Tick{})

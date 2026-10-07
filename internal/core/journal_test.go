@@ -40,8 +40,8 @@ func TestReplayingThePastTakesNoSlotAndPublishesNothing(t *testing.T) {
 		},
 		crew.TakeMoved{EventHead: h, From: readyForDev, To: crewRunning},
 		started, ended,
-		crew.RunJudged{EventHead: h, Verdict: crew.Verdict{To: crewFailed, Failures: []crew.ActionFailure{{Action: "lfg"}}}},
-		crew.VerdictMoved{EventHead: h, From: crewRunning, To: crewFailed},
+		crew.RunEnded{EventHead: h, Ending: crew.RunEnding{To: crewFailed, Failures: []crew.ActionFailure{{Action: "lfg"}}}},
+		crew.EndingMoved{EventHead: h, From: crewRunning, To: crewFailed},
 		crew.RunReleased{EventHead: h},
 	)
 

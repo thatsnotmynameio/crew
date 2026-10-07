@@ -116,7 +116,7 @@ func (t *Tracker) pullRequests(ctx context.Context, issueKey string) (string, []
 		"-F", "owner={owner}", "-F", "name={repo}",
 		"-F", "number="+issueKey)
 	if err != nil {
-		if strings.Contains(string(out.Stderr), "Could not resolve to an issue or pull request") {
+		if strings.Contains(string(out.Stderr), unresolved) {
 			return "", nil, fmt.Errorf("find its pull requests: %w: %w", port.ErrMovedMeanwhile, err)
 		}
 		return "", nil, fmt.Errorf("find its pull requests: %w", err)

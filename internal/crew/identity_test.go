@@ -57,9 +57,9 @@ func TestNewRuleRunID(t *testing.T) {
 
 func TestPullRequestReportIDs(t *testing.T) {
 	run := NewRuleRunID(seed(1), 1)
-	take, verdict := run.TakeReport(), run.VerdictReport()
-	if take == verdict {
-		t.Fatalf("a run's take and verdict reports share the id %q", take)
+	take, ending := run.TakeReport(), run.EndingReport()
+	if take == ending {
+		t.Fatalf("a run's take and ending reports share the id %q", take)
 	}
 	if again := NewRuleRunID(seed(1), 1).TakeReport(); again != take {
 		t.Fatalf("one run's take report has ids %q and %q", take, again)

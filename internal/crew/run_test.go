@@ -84,9 +84,9 @@ var snapshots = map[string][]RunEvent{
 	"looking up": seq(lookingUp, []RunEvent{
 		ActionLookupDone{EventHead: eh(6), Action: "development", PullRequest: foundPR},
 	}),
-	"judging": judgedFailed,
-	"released": seq(judgedFailed, []RunEvent{
-		VerdictDropped{EventHead: eh(8), To: labelFailed, Reason: "closed"}, FailureReported{EventHead: eh(8)},
+	"ending": endedFailed,
+	"released": seq(endedFailed, []RunEvent{
+		EndingDropped{EventHead: eh(8), To: labelFailed, Reason: "closed"}, FailureReported{EventHead: eh(8)},
 		RunReleased{EventHead: eh(8)},
 	}),
 }
@@ -148,18 +148,18 @@ func plainFields(v reflect.Value, path string) (string, bool) {
 }
 
 func TestRestoreRejectsWhatIsNotARun(t *testing.T) {
-	judging := given(t, judgedFailed).Snapshot()
-	running := judging
+	ending := given(t, endedFailed).Snapshot()
+	running := ending
 	running.Actions = slices.Clone(running.Actions)
 	running.Actions[0].State = InSession{}
 	twice := given(t, preparing()).Snapshot()
 	twice.Actions[1].Name = "development"
-	noID := judging
+	noID := ending
 	noID.ID = ""
-	noPhase := judging
+	noPhase := ending
 	noPhase.Phase = nil
 	for name, s := range map[string]RuleRunSnapshot{
-		"judging with an action running": running, "an action twice": twice, "no id": noID, "no phase": noPhase,
+		"ending with an action running": running, "an action twice": twice, "no id": noID, "no phase": noPhase,
 	} {
 		if _, err := RestoreRuleRun(s); err == nil {
 			t.Errorf("RestoreRuleRun(%s) = nil, want an error", name)
@@ -168,7 +168,7 @@ func TestRestoreRejectsWhatIsNotARun(t *testing.T) {
 }
 
 func TestARunSharesNothingWithItsSnapshotsAndCopies(t *testing.T) {
-	run := given(t, judgedFailed)
+	run := given(t, endedFailed)
 	before := run.Snapshot()
 	s := run.Snapshot()
 	s.Actions[0].Checks = append(s.Actions[0].Checks, CheckResult{Name: "extra"})
@@ -186,14 +186,14 @@ func TestARunSharesNothingWithItsSnapshotsAndCopies(t *testing.T) {
 	}
 }
 
-// failures returns the failures of a judging phase.
+// failures returns the failures of an ending phase.
 func failures(t *testing.T, p RunPhase) []ActionFailure {
 	t.Helper()
-	j, ok := p.(JudgingPhase)
+	j, ok := p.(EndingPhase)
 	if !ok {
-		t.Fatalf("phase = %#v, want judging", p)
+		t.Fatalf("phase = %#v, want ending", p)
 	}
-	return j.Verdict.Failures
+	return j.Ending.Failures
 }
 
 func TestAnActionRunTellsWhatItRecorded(t *testing.T) {

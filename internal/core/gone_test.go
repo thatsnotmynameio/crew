@@ -14,7 +14,7 @@ func reviewClosed() []crew.Rule {
 }
 
 // implemented runs #1 through implement with development's outcome and
-// returns the verdict commands, in flight.
+// returns the ending commands, in flight.
 func implemented(d *driver, development crew.Outcome) []core.Command {
 	d.running(issue("1", 1, ready))
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
@@ -30,7 +30,7 @@ type goneCase struct {
 	name     string
 	rules    []crew.Rule
 	outcome  crew.Outcome
-	dropped  bool // the verdict move is given up
+	dropped  bool // the ending move is given up
 	listed   []crew.Issue
 	wantTo   crew.State
 	wantGone bool
@@ -40,11 +40,11 @@ type goneCase struct {
 func (c goneCase) run(t *testing.T) {
 	t.Helper()
 	d := newDriver(t, c.rules, 2)
-	verdict := implemented(d, c.outcome)
+	ending := implemented(d, c.outcome)
 	if c.dropped {
-		d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultRefused, Reason: "nope"})
+		d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultRefused, Reason: "nope"})
 	} else {
-		d.settle(verdict)
+		d.settle(ending)
 	}
 	if got := onlyEntry(t, d); got.Gone {
 		t.Fatalf("entry gone before any listing: %#v", got)
@@ -96,13 +96,13 @@ func TestAHandledEntryIsGoneWhenTheNextListingDoesNotFindItAloneInARulesLabel(t 
 	}
 }
 
-func TestAListingRequestedBeforeTheVerdictMoveLandedMarksNothing(t *testing.T) {
+func TestAListingRequestedBeforeTheEndingMoveLandedMarksNothing(t *testing.T) {
 	d := newDriver(t, draft(), 2)
-	verdict := implemented(d, succeeded)
+	ending := implemented(d, succeeded)
 	if cmds, _ := d.send(core.Tick{}); len(cmds) == 0 {
 		t.Fatal("tick issued no listing")
 	}
-	d.settle(verdict)
+	d.settle(ending)
 
 	d.send(core.IssuesListed{})
 	if got := onlyEntry(t, d); got.Gone {
@@ -143,11 +143,11 @@ func TestAnIssueTakenAgainKeepsItsEntryAndItsNextEntryStartsNotGone(t *testing.T
 	}
 	d.settle(take)
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 	if cmds, _ := d.send(core.Tick{}); len(cmds) == 0 {
 		t.Fatal("tick issued no listing")
 	}
-	d.settle(verdict)
+	d.settle(ending)
 	if got := onlyEntry(t, d); got.Gone {
 		t.Fatalf("new entry gone before any listing: %#v", got)
 	}

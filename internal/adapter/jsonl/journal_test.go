@@ -58,7 +58,7 @@ var (
 // everyEvent is one event of each type, every field set, in the order a
 // run could have them.
 func everyEvent() []crew.RunEvent {
-	return slices.Concat(takeEvents(), actionEvents(), verdictEvents())
+	return slices.Concat(takeEvents(), actionEvents(), endingEvents())
 }
 
 // takeEvents are the events of a take, and a stop.
@@ -121,14 +121,14 @@ func actionEvents() []crew.RunEvent {
 	}
 }
 
-// verdictEvents are the events of a verdict and the run's release.
-func verdictEvents() []crew.RunEvent {
+// endingEvents are the events of an ending and the run's release.
+func endingEvents() []crew.RunEvent {
 	return []crew.RunEvent{
-		crew.RunJudged{EventHead: head(18), Verdict: crew.Verdict{To: "needs attention", Failures: []crew.ActionFailure{
+		crew.RunEnded{EventHead: head(18), Ending: crew.RunEnding{To: "needs attention", Failures: []crew.ActionFailure{
 			{Action: "lfg", Workspace: "issue-9-lfg", Log: logPath}, {Action: "review"},
 		}}},
-		crew.VerdictMoved{EventHead: head(19), From: "in progress", To: "needs attention"},
-		crew.VerdictDropped{EventHead: head(20), To: "needs attention", Reason: "the issue moved meanwhile"},
+		crew.EndingMoved{EventHead: head(19), From: "in progress", To: "needs attention"},
+		crew.EndingDropped{EventHead: head(20), To: "needs attention", Reason: "the issue moved meanwhile"},
 		crew.FailureReported{EventHead: head(21)},
 		crew.FailureReportDropped{EventHead: head(22)},
 		crew.RunReleased{EventHead: head(23)},

@@ -182,6 +182,7 @@ Everything in a scenario that runs `gh` goes through the fake: crew, and a check
 | `gh api orgs/ORG/teams/TEAM/members` | A team's members. |
 | `gh api repos/{owner}/{repo}/issues/N/comments` | Lists comments (`per_page`, `--paginate`); with `-f body=...`, adds one as the account `gh` acts as. |
 | `gh api -X PATCH repos/{owner}/{repo}/issues/comments/ID -f body=...` | Edits a comment. |
+| `gh api -X PATCH repos/{owner}/{repo}/issues/N -f state=closed` | Closes an issue or pull request; a merged one stays merged. Any other state fails with HTTP 422. |
 | `gh api graphql -f query=... [-F name=value]` | One query, resolved from the state (below). |
 
 `gh api` takes `-X`/`--method`, `-H`/`--header` (only `Accept: application/vnd.github.raw+json`), `-f`/`--raw-field`, `-F`/`--field`, `-q`/`--jq` and `--paginate` (on the listing endpoints). `--jq` is evaluated by gojq, the evaluator `gh` uses, and strings print unquoted. `--paginate` returns the whole list.
@@ -196,7 +197,7 @@ An issue or pull request has `number`, `title`, `url`, `createdAt`, `state`, `re
 
 ### Scripting a Claude Code session
 
-`sc.Claude` (a `*fakeclaude.Claude`) answers Claude Code's headless print mode with stream-json output: `-p`, `--verbose`, `--output-format stream-json`, `--model`, `--permission-mode`, and the prompt after `--`. A session prints one JSON event per line and ends with a result event that says whether it succeeded; then the process exits with a code.
+`sc.Claude` (a `*fakeclaude.Claude`) answers Claude Code's headless print mode with stream-json output: `-p`, `--verbose`, `--output-format stream-json`, `--model`, `--permission-mode`, `--add-dir` with one directory, and the prompt after `--`. A session prints one JSON event per line and ends with a result event that says whether it succeeded; then the process exits with a code.
 
 Register one script for every session crew is expected to start:
 
@@ -220,7 +221,7 @@ A script of your own is a `fakeclaude.ScriptFunc`: `func(ctx context.Context, s 
 
 - `Dir`: the directory the session runs in, where the script may write files;
 - `Prompt`, `Model` and `PermissionMode`, as given on the command line;
-- `Env`: the session's `GH_CONFIG_DIR` and `CREW_*` variables;
+- `Env`: the session's `GH_CONFIG_DIR` and `CREW_*` variables; when crew gives the session a verdict file, `Env["CREW_VERDICT_FILE"]` is its path, which the script may write as a session would;
 - `GitHub`: the fake GitHub, which the script may change as a session that runs `gh` would.
 
 Its event builders are `s.Init()` (the system init event that opens a session), `s.Said(text)` (an assistant message; the last one is what a reader shows), `s.Success(result)` and `s.Failure(message)`.

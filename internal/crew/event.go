@@ -130,8 +130,8 @@ type ActionSessionStopAsked struct {
 	Action ActionName
 }
 
-// ActionSessionEnded is an action's session that ended, with its harness's
-// verdict and what it used.
+// ActionSessionEnded is an action's session that ended, with how its
+// harness says it ended and what it used.
 type ActionSessionEnded struct {
 	EventHead
 
@@ -208,23 +208,23 @@ type ActionEnded struct {
 	PullRequest PullRequest
 }
 
-// RunJudged is a run whose every action ended, and its verdict.
-type RunJudged struct {
+// RunEnded is a run whose every action ended, and how it ended.
+type RunEnded struct {
 	EventHead
 
-	Verdict Verdict
+	Ending RunEnding
 }
 
-// VerdictMoved is the run's verdict move that landed: the issue moved from
+// EndingMoved is the run's ending move that landed: the issue moved from
 // From to To.
-type VerdictMoved struct {
+type EndingMoved struct {
 	EventHead
 
 	From, To State
 }
 
-// VerdictDropped is the run's verdict move to To, which crew gave up.
-type VerdictDropped struct {
+// EndingDropped is the run's ending move to To, which crew gave up.
+type EndingDropped struct {
 	EventHead
 
 	To     State
@@ -241,7 +241,7 @@ type FailureReportDropped struct {
 	EventHead
 }
 
-// RunReleased is a run crew let go: its verdict settled, or its take was
+// RunReleased is a run crew let go: its ending settled, or its take was
 // given up.
 type RunReleased struct {
 	EventHead

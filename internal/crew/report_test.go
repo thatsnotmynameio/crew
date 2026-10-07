@@ -6,7 +6,7 @@ import (
 )
 
 // The statuses and reports below mirror internal/core's status,
-// actionState, judge's failure report and reportPullRequests.
+// actionState, runEnded's failure report and reportPullRequests.
 
 func TestARunningStatusShowsEachActionAsItStands(t *testing.T) {
 	built := CheckResult{Name: "build", Passed: true, Reason: NewCheckReason("build passed")}
@@ -49,16 +49,16 @@ func TestAnActionWithoutASessionToTimeIsPending(t *testing.T) {
 	}
 }
 
-func TestAnEndedStatusCarriesTheVerdictAndHowItsMoveStands(t *testing.T) {
+func TestAnEndedStatusCarriesTheEndingAndHowItsMoveStands(t *testing.T) {
 	tests := []struct {
 		name  string
 		given []RunEvent
 		want  StatusEnded
 	}{
-		{name: "judged", given: judgedFailed, want: StatusEnded{To: labelFailed, Move: MovePending}},
+		{name: "ended", given: endedFailed, want: StatusEnded{To: labelFailed, Move: MovePending}},
 		{
 			name:  "moved",
-			given: seq(judgedFailed, []RunEvent{VerdictMoved{EventHead: eh(8), From: labelRunning, To: labelFailed}}),
+			given: seq(endedFailed, []RunEvent{EndingMoved{EventHead: eh(8), From: labelRunning, To: labelFailed}}),
 			want:  StatusEnded{To: labelFailed, Move: MoveDone},
 		},
 		{name: "dropped", given: snapshots["released"], want: StatusEnded{To: labelFailed, Move: MoveDropped}},
@@ -109,22 +109,22 @@ func TestAResumedActionNamesItsWorkspace(t *testing.T) {
 }
 
 func TestTheFailureReportListsTheFailedActions(t *testing.T) {
-	got, ok := given(t, judgedFailed).FailureReport()
+	got, ok := given(t, endedFailed).FailureReport()
 	want := FailureReport{
 		IssueID: testID, IssueRef: "#9", Failures: []ActionFailure{failure("development"), failure("review")},
 	}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("FailureReport = %#v, %v, want %#v", got, ok, want)
 	}
-	for name, events := range map[string][]RunEvent{"a success": judgedDone, "a running run": preparing()} {
+	for name, events := range map[string][]RunEvent{"a success": endedDone, "a running run": preparing()} {
 		if got, ok := given(t, events).FailureReport(); ok {
 			t.Errorf("%s has a failure report: %#v", name, got)
 		}
 	}
 }
 
-func TestThePullRequestReportsOfTheTakeAndTheVerdict(t *testing.T) {
-	run := given(t, judgedDone)
+func TestThePullRequestReportsOfTheTakeAndTheEnding(t *testing.T) {
+	run := given(t, endedDone)
 	take := run.TakeReport(labelRunning)
 	if take.ID() != testRun.TakeReport() || take.IssueID() != testID || take.State() != labelRunning {
 		t.Errorf("TakeReport = %#v", take)
@@ -132,27 +132,27 @@ func TestThePullRequestReportsOfTheTakeAndTheVerdict(t *testing.T) {
 	if _, ended := take.End().Get(); ended {
 		t.Error("the take report carries an end")
 	}
-	verdict, ok := run.VerdictReport(true)
-	end, ended := verdict.End().Get()
-	if !ok || verdict.ID() != testRun.VerdictReport() || verdict.State() != labelDone || !ended ||
+	ending, ok := run.EndingReport(true)
+	end, ended := ending.End().Get()
+	if !ok || ending.ID() != testRun.EndingReport() || ending.State() != labelDone || !ended ||
 		!reflect.DeepEqual(end, NewRuleEnd("implement", run.Status(at(9), nil, true).Actions())) {
-		t.Errorf("VerdictReport = %#v, %v, want the verdict with the actions as the ended status shows them", verdict, ok)
+		t.Errorf("EndingReport = %#v, %v, want the ending with the actions as the ended status shows them", ending, ok)
 	}
-	if _, ok := given(t, preparing()).VerdictReport(true); ok {
-		t.Error("a running run has a verdict report")
+	if _, ok := given(t, preparing()).EndingReport(true); ok {
+		t.Error("a running run has an ending report")
 	}
-	actionless, _ := given(t, []RunEvent{taken(), takeMoved(), judgedAtOnce}).VerdictReport(true)
+	actionless, _ := given(t, []RunEvent{taken(), takeMoved(), endedAtOnce}).EndingReport(true)
 	if _, ended := actionless.End().Get(); ended {
-		t.Error("the verdict report of a rule without actions carries an end")
+		t.Error("the ending report of a rule without actions carries an end")
 	}
 }
 
-func TestAReleasedRunKeepsItsVerdictOnlyWhenItWasJudged(t *testing.T) {
-	if _, ok := given(t, snapshots["released"]).VerdictReport(false); !ok {
-		t.Error("a released run lost its verdict")
+func TestAReleasedRunKeepsItsEndingOnlyWhenItEnded(t *testing.T) {
+	if _, ok := given(t, snapshots["released"]).EndingReport(false); !ok {
+		t.Error("a released run lost its ending")
 	}
 	givenUp := given(t, []RunEvent{taken(bothActions()...), RunReleased{EventHead: eh(1)}})
-	if r, ok := givenUp.VerdictReport(false); ok || givenUp.Status(at(1), nil, false).Progress() != (StatusRunning{}) {
-		t.Errorf("a take given up has the verdict report %#v", r)
+	if r, ok := givenUp.EndingReport(false); ok || givenUp.Status(at(1), nil, false).Progress() != (StatusRunning{}) {
+		t.Errorf("a take given up has the ending report %#v", r)
 	}
 }

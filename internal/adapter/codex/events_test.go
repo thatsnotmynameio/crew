@@ -47,134 +47,134 @@ func record(stdout, stderr []byte) *recorder {
 	return r
 }
 
-// judgeCase is codex's output and exit, and the verdict on them: stdout
-// is file's content when file is set.
-type judgeCase struct {
+// sessionEndCase is codex's output and exit, and how the session ended on
+// them: stdout is file's content when file is set.
+type sessionEndCase struct {
 	name    string
 	file    string
 	stdout  string
 	stderr  string
 	exit    error
 	stopped bool
-	want    port.Verdict
+	want    port.SessionEnd
 }
 
 // ended is a turn ending in turn.started, then an error, then turn.completed.
 const ended = `{"type":"turn.started"}` + "\n" + `{"type":"error","message":"model refused"}` + "\n" +
 	`{"type":"turn.completed","usage":{}}` + "\n"
 
-var judgeCases = []judgeCase{
+var sessionEndCases = []sessionEndCase{
 	{
 		name: "a completed turn and exit 0 succeed with the last message",
 		file: "success.jsonl",
-		want: port.Verdict{Succeeded: true, Reason: "I fixed the parser. The tests pass."},
+		want: port.SessionEnd{Succeeded: true, Reason: "I fixed the parser. The tests pass."},
 	},
 	{
 		name: "a failed turn fails with its error even when codex exits 0",
 		file: "failed.jsonl",
-		want: port.Verdict{Reason: "stream disconnected before completion: " +
+		want: port.SessionEnd{Reason: "stream disconnected before completion: " +
 			"error sending request for url (https://api.openai.com/v1/responses)"},
 	},
 	{
 		name: "a logged-out run fails with the turn's error, not a retry",
 		file: "loggedout.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
-		want: port.Verdict{Reason: "unexpected status 401 Unauthorized: Missing bearer or basic " +
+		want: port.SessionEnd{Reason: "unexpected status 401 Unauthorized: Missing bearer or basic " +
 			"authentication in header, url: https://api.openai.com/v1/responses"},
 	},
 	{
 		name: "retries and error items before a completed turn do not fail it",
 		file: "retried.jsonl",
-		want: port.Verdict{Succeeded: true, Reason: "Done: the review is posted."},
+		want: port.SessionEnd{Succeeded: true, Reason: "Done: the review is posted."},
 	},
 	{
 		name:   "a completed turn fails when codex exits non-zero, naming the last error",
 		stdout: ended,
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   port.Verdict{Reason: "exit code 1 after: model refused"},
+		want:   port.SessionEnd{Reason: "exit code 1 after: model refused"},
 	},
 	{
 		name: "a completed turn fails when codex exits non-zero, naming the last message",
 		file: "success.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
-		want: port.Verdict{Reason: "exit code 1 after: I fixed the parser. The tests pass."},
+		want: port.SessionEnd{Reason: "exit code 1 after: I fixed the parser. The tests pass."},
 	},
 	{
 		name:   "a completed turn fails when codex exits non-zero, with nothing else to say",
 		stdout: `{"type":"turn.completed","usage":{}}` + "\n",
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   port.Verdict{Reason: "exit code 1"},
+		want:   port.SessionEnd{Reason: "exit code 1"},
 	},
 	{
 		name: "no turn event fails with the last error",
 		file: "interrupted.jsonl",
 		exit: exitError{code: 1, msg: "exit status 1"},
-		want: port.Verdict{Reason: "Reconnecting... 2/5 (stream disconnected before completion: connection reset)"},
+		want: port.SessionEnd{Reason: "Reconnecting... 2/5 (stream disconnected before completion: connection reset)"},
 	},
 	{
 		name:   "no stdout at all fails with the last stderr line",
 		stderr: "Reading additional input from stdin...\nerror: unexpected argument '--approve-for-me' found\n\n",
 		exit:   exitError{code: 2, msg: "exit status 2"},
-		want:   port.Verdict{Reason: "error: unexpected argument '--approve-for-me' found"},
+		want:   port.SessionEnd{Reason: "error: unexpected argument '--approve-for-me' found"},
 	},
 	{
 		name: "no stdout and no stderr fail with the exit code",
 		exit: exitError{code: 2, msg: "exit status 2"},
-		want: port.Verdict{Reason: "exit code 2"},
+		want: port.SessionEnd{Reason: "exit code 2"},
 	},
 	{
 		name:   "stderr is not the reason once stdout held an event",
 		stdout: `{"type":"thread.started","thread_id":"t"}` + "\n",
 		stderr: "2026-10-05T21:13:33Z ERROR codex_core: something\n",
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   port.Verdict{Reason: "exit code 1"},
+		want:   port.SessionEnd{Reason: "exit code 1"},
 	},
 	{
 		name: "no stdout and exit 0 fail without a result",
-		want: port.Verdict{Reason: "the session ended without a result"},
+		want: port.SessionEnd{Reason: "the session ended without a result"},
 	},
 	{
 		name:   "a signal names itself",
 		stdout: `{"type":"thread.started","thread_id":"t"}` + "\n",
 		exit:   exitError{code: -1, msg: "signal: killed"},
-		want:   port.Verdict{Reason: "signal: killed"},
+		want:   port.SessionEnd{Reason: "signal: killed"},
 	},
 	{
 		name:    "a session crew stopped fails as stopped whatever it printed",
 		file:    "success.jsonl",
 		exit:    exitError{code: -1, msg: "signal: terminated"},
 		stopped: true,
-		want:    port.Verdict{Reason: "stopped by crew before the session ended"},
+		want:    port.SessionEnd{Reason: "stopped by crew before the session ended"},
 	},
 	{
 		name: "text quoting an event inside a message never counts as one",
 		file: "quoted.jsonl",
-		want: port.Verdict{Succeeded: true,
+		want: port.SessionEnd{Succeeded: true,
 			Reason: `A failed turn prints {"type":"turn.failed","error":{"message":"boom"}} on a line of its own.`},
 	},
 	{
 		name:   "a last line without a newline still counts",
 		stdout: `{"type":"turn.started"}` + "\n" + `{"type":"turn.failed","error":{"message":"quota exceeded"}}`,
 		exit:   exitError{code: 1, msg: "exit status 1"},
-		want:   port.Verdict{Reason: "quota exceeded"},
+		want:   port.SessionEnd{Reason: "quota exceeded"},
 	},
 	{
 		name:   "lines that are not events are skipped",
 		stdout: "not json\n[1,2]\n{broken\n" + `{"type":"turn.completed","usage":{}}` + "\n",
-		want:   port.Verdict{Succeeded: true},
+		want:   port.SessionEnd{Succeeded: true},
 	},
 }
 
-func TestJudge(t *testing.T) {
-	for _, tt := range judgeCases {
+func TestSessionEnd(t *testing.T) {
+	for _, tt := range sessionEndCases {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout := []byte(tt.stdout)
 			if tt.file != "" {
 				stdout = fixture(t, tt.file)
 			}
-			got := record(stdout, []byte(tt.stderr)).judge(tt.exit, tt.stopped)
+			got := record(stdout, []byte(tt.stderr)).sessionEnd(tt.exit, tt.stopped)
 			if got != tt.want {
-				t.Errorf("judge = %+v, want %+v", got, tt.want)
+				t.Errorf("sessionEnd = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -188,7 +188,7 @@ func TestReasonIsOneCleanLineOfAtMost200Characters(t *testing.T) {
 	}
 	stdout := []byte(`{"type":"turn.failed","error":{"message":` + string(message) + `}}` + "\n")
 
-	got := record(stdout, nil).judge(nil, false).Reason
+	got := record(stdout, nil).sessionEnd(nil, false).Reason
 
 	if n := utf8.RuneCountInString(got); n != maxReason {
 		t.Errorf("reason has %d characters, want %d: %q", n, maxReason, got)

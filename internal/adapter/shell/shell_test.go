@@ -19,7 +19,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/proc"
 )
 
-// output is a writer safe for the check's copy goroutine and the test.
+// output is a writer safe for the script's copy goroutine and the test.
 type output struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -38,10 +38,10 @@ func (o *output) String() string {
 	return o.buf.String()
 }
 
-// check returns a check of command in a new directory, for issue #14.
-func check(t *testing.T, command string, out *output) port.Check {
+// script returns a script of command in a new directory, for issue #14.
+func script(t *testing.T, command string, out *output) port.Script {
 	t.Helper()
-	return port.Check{
+	return port.Script{
 		Dir: t.TempDir(), Command: command,
 		IssueRef: "#14", IssueID: crew.IssueID{Key: "14"}, IssueURL: "https://github.com/o/r/issues/14",
 		Branch: "crew/issue-14-lfg", Output: out,
@@ -50,7 +50,7 @@ func check(t *testing.T, command string, out *output) port.Check {
 
 // withoutCrewEnv clears every CREW_ variable crew's own environment holds,
 // such as those of a crew session running these tests, until the test
-// ends, so a check sees only the ones the checker sets.
+// ends, so a script sees only the ones the shell sets.
 func withoutCrewEnv(t *testing.T) {
 	t.Helper()
 	for _, e := range os.Environ() {
@@ -63,32 +63,34 @@ func withoutCrewEnv(t *testing.T) {
 	}
 }
 
-func TestCheckThatExitsZeroPasses(t *testing.T) {
-	var out output
-	if err := shell.New(&proc.Group{}).Check(context.Background(), check(t, "true", &out)); err != nil {
-		t.Fatalf("Check = %v, want nil", err)
+// exits runs s and fails the test unless it ran and exited status.
+func exits(t *testing.T, s port.Script, status int) {
+	t.Helper()
+	got, err := shell.New(&proc.Group{}).Run(context.Background(), s)
+	if err != nil || got.Status != status {
+		t.Fatalf("Run = %+v, %v, want status %d and no error", got, err, status)
 	}
 }
 
-func TestCheckThatExitsNonZeroFailsWithItsOutputInOrder(t *testing.T) {
+func TestScriptThatExitsZeroReportsStatusZero(t *testing.T) {
 	var out output
-	err := shell.New(&proc.Group{}).Check(context.Background(), check(t, "echo one; echo two >&2; exit 3", &out))
-	if !errors.Is(err, port.ErrCheckFailed) {
-		t.Fatalf("Check = %v, want an error wrapping ErrCheckFailed", err)
-	}
+	exits(t, script(t, "true", &out), 0)
+}
+
+func TestScriptThatExitsNonZeroReportsItsStatusWithItsOutputInOrder(t *testing.T) {
+	var out output
+	exits(t, script(t, "echo one; echo two >&2; exit 3", &out), 3)
 	if got := out.String(); got != "one\ntwo\n" {
 		t.Errorf("output = %q, want both lines in order", got)
 	}
 }
 
-func TestCheckReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
+func TestScriptReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 	var out output
 	command := `printf '%s|%s|%s|%s|%s\n' ` +
 		`"$CREW_ISSUE_REF" "$CREW_ISSUE_KEY" "$CREW_ISSUE_URL" "$CREW_BRANCH" "$(pwd -P)"`
-	c := check(t, command, &out)
-	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
-		t.Fatalf("Check: %v", err)
-	}
+	c := script(t, command, &out)
+	exits(t, c, 0)
 	dir, err := filepath.EvalSymlinks(c.Dir)
 	if err != nil {
 		t.Fatal(err)
@@ -99,16 +101,14 @@ func TestCheckReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 	}
 }
 
-func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
-	// The title is not part of port.Check at all, so it cannot reach the
+func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
+	// The title is not part of port.Script at all, so it cannot reach the
 	// command: the check sees only crew's nine variables, and the command
 	// runs as written.
 	withoutCrewEnv(t)
 	var out output
-	c := check(t, `env | grep '^CREW_' | sort`, &out)
-	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
-		t.Fatalf("Check: %v", err)
-	}
+	c := script(t, `env | grep '^CREW_' | sort`, &out)
+	exits(t, c, 0)
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
@@ -125,11 +125,11 @@ func TestAE6CheckRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 
 // AE6 of #80: whatever GH_TOKEN your shell exports, the check's gh
 // reads its bot's directory, and the check learns the code owners and the bots.
-func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
+func TestScriptActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	withoutCrewEnv(t)
 	t.Setenv("GH_TOKEN", "your-token")
 	var out output
-	c := check(t, `echo "$GH_CONFIG_DIR|$CREW_CODE_OWNERS|$CREW_BOTS|${GH_TOKEN-unset}"`+
+	c := script(t, `echo "$GH_CONFIG_DIR|$CREW_CODE_OWNERS|$CREW_BOTS|${GH_TOKEN-unset}"`+
 		`"|${CREW_BOSS-unset}|${CREW_MATES-unset}"`, &out)
 	c.Identity = port.Identity{
 		Bot: "developer", Login: "crew-developer[bot]",
@@ -139,9 +139,7 @@ func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 	c.CodeOwners = []string{"octocat"}
 	c.Bots = []string{"crew-developer[bot]", "crew-ops[bot]"}
 
-	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
-		t.Fatalf("Check: %v", err)
-	}
+	exits(t, c, 0)
 	want := "/run/crew/developer|octocat|crew-developer[bot] crew-ops[bot]|unset|unset|unset\n"
 	if got := out.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
@@ -151,16 +149,14 @@ func TestCheckActsAsItsIdentityAndNamesTheCodeOwnersAndTheBots(t *testing.T) {
 // R1, R2: a check reads the action's name from CREW_ACTION, and the
 // session's prompt and last message, as written, from the files
 // CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name.
-func TestCheckReadsTheActionThePromptAndTheLastMessage(t *testing.T) {
+func TestScriptReadsTheActionThePromptAndTheLastMessage(t *testing.T) {
 	var out output
-	c := check(t, `echo "$CREW_ACTION"; cat "$CREW_PROMPT_FILE"; echo '|'; cat "$CREW_LAST_MESSAGE_FILE"`, &out)
+	c := script(t, `echo "$CREW_ACTION"; cat "$CREW_PROMPT_FILE"; echo '|'; cat "$CREW_LAST_MESSAGE_FILE"`, &out)
 	c.Action = "lfg"
 	c.Prompt = "/lfg #14\n\nYou are resuming a failed run."
 	c.LastMessage = "PR #20 is open.\n\n- CI is green\n- merging is yours"
 
-	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
-		t.Fatalf("Check: %v", err)
-	}
+	exits(t, c, 0)
 	want := "lfg\n" + c.Prompt + "|\n" + c.LastMessage
 	if got := out.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
@@ -169,23 +165,19 @@ func TestCheckReadsTheActionThePromptAndTheLastMessage(t *testing.T) {
 
 // R2: an empty last message is an empty file, which a check tells apart
 // from a message.
-func TestCheckGetsAnEmptyLastMessageAsAnEmptyFile(t *testing.T) {
+func TestScriptGetsAnEmptyLastMessageAsAnEmptyFile(t *testing.T) {
 	var out output
-	c := check(t, `test -f "$CREW_LAST_MESSAGE_FILE" && ! test -s "$CREW_LAST_MESSAGE_FILE"`, &out)
-	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
-		t.Errorf("Check = %v, want an empty file", err)
-	}
+	c := script(t, `test -f "$CREW_LAST_MESSAGE_FILE" && ! test -s "$CREW_LAST_MESSAGE_FILE"`, &out)
+	exits(t, c, 0) // the test command exits 0 only for an empty file
 }
 
 // A message longer than one environment string may be (128 KiB on Linux)
 // still reaches the check whole.
-func TestCheckGetsALongLastMessageWhole(t *testing.T) {
+func TestScriptGetsALongLastMessageWhole(t *testing.T) {
 	var out output
-	c := check(t, `wc -c < "$CREW_LAST_MESSAGE_FILE"`, &out)
+	c := script(t, `wc -c < "$CREW_LAST_MESSAGE_FILE"`, &out)
 	c.LastMessage = strings.Repeat("a", 200*1024)
-	if err := shell.New(&proc.Group{}).Check(context.Background(), c); err != nil {
-		t.Fatalf("Check: %v", err)
-	}
+	exits(t, c, 0)
 	if got := strings.TrimSpace(out.String()); got != strconv.Itoa(len(c.LastMessage)) {
 		t.Errorf("the check read %s bytes, want %d", got, len(c.LastMessage))
 	}
@@ -193,7 +185,7 @@ func TestCheckGetsALongLastMessageWhole(t *testing.T) {
 
 // The files hold the session's words, so they go once the check ended,
 // however it ended.
-func TestCheckRemovesItsFilesWhenItEnds(t *testing.T) {
+func TestScriptRemovesItsFilesWhenItEnds(t *testing.T) {
 	for _, tt := range []struct {
 		name, command string
 		timeout       time.Duration
@@ -204,14 +196,14 @@ func TestCheckRemovesItsFilesWhenItEnds(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var out output
-			c := check(t, `dirname "$CREW_PROMPT_FILE" > files; dirname "$CREW_LAST_MESSAGE_FILE" >> files; `+tt.command, &out)
+			c := script(t, `dirname "$CREW_PROMPT_FILE" > files; dirname "$CREW_LAST_MESSAGE_FILE" >> files; `+tt.command, &out)
 			ctx := context.Background()
 			if tt.timeout > 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, tt.timeout)
 				defer cancel()
 			}
-			_ = shell.New(&proc.Group{}).Check(ctx, c) // each way of ending is tested elsewhere
+			_, _ = shell.New(&proc.Group{}).Run(ctx, c) // each way of ending is tested elsewhere
 			dirs, err := os.ReadFile(filepath.Join(c.Dir, "files"))
 			if err != nil {
 				t.Fatal(err)
@@ -225,19 +217,19 @@ func TestCheckRemovesItsFilesWhenItEnds(t *testing.T) {
 	}
 }
 
-func TestCheckEndedByItsContextIsKilledWithWhatItStarted(t *testing.T) {
+func TestScriptEndedByItsContextIsKilledWithWhatItStarted(t *testing.T) {
 	var out output
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	c := check(t, `sleep 60 & echo $! > child; wait`, &out)
+	c := script(t, `sleep 60 & echo $! > child; wait`, &out)
 
 	start := time.Now()
-	err := shell.New(&proc.Group{}).Check(ctx, c)
-	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, port.ErrCheckFailed) {
-		t.Fatalf("Check = %v, want an error wrapping the context's", err)
+	_, err := shell.New(&proc.Group{}).Run(ctx, c)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run = %v, want an error wrapping the context's", err)
 	}
 	if took := time.Since(start); took > 10*time.Second {
-		t.Fatalf("Check returned after %v, want soon after the context ended", took)
+		t.Fatalf("Run returned after %v, want soon after the context ended", took)
 	}
 	pid, err := os.ReadFile(filepath.Join(c.Dir, "child"))
 	if err != nil {
@@ -258,12 +250,19 @@ func TestCheckEndedByItsContextIsKilledWithWhatItStarted(t *testing.T) {
 	}
 }
 
-func TestCheckThatCannotStartIsNotAFailedCheck(t *testing.T) {
+func TestScriptThatCannotStartReportsAnErrorNotAStatus(t *testing.T) {
 	var out output
-	c := check(t, "true", &out)
+	c := script(t, "true", &out)
 	c.Dir = filepath.Join(c.Dir, "missing")
-	err := shell.New(&proc.Group{}).Check(context.Background(), c)
-	if err == nil || errors.Is(err, port.ErrCheckFailed) {
-		t.Fatalf("Check = %v, want a start error", err)
+	got, err := shell.New(&proc.Group{}).Run(context.Background(), c)
+	if err == nil || got != (port.ShellResult{}) {
+		t.Fatalf("Run = %+v, %v, want a start error and no status", got, err)
 	}
+}
+
+// A script killed by a signal crew did not send has no exit status of its
+// own: it reports -1, which is not 0, so its check fails.
+func TestScriptKilledByASignalReportsMinusOne(t *testing.T) {
+	var out output
+	exits(t, script(t, "kill -KILL $$", &out), -1)
 }

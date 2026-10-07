@@ -73,7 +73,7 @@ func TestAE3SessionThatFailsRunsNoCheck(t *testing.T) {
 	d.wantReason("74", "development", "tests fail")
 }
 
-func TestAE2SuccessfulSessionIsJudgedOnlyOnceItsCheckPassed(t *testing.T) {
+func TestAE2SuccessfulSessionEndsTheRunOnlyOnceItsCheckPassed(t *testing.T) {
 	d := newDriver(t, checked(), 2)
 	checking(d, succeeded)
 	if got := claimOf(t, d.m, "74"); got != core.ClaimRunning {
@@ -143,7 +143,7 @@ func TestAE1CheckThatFailsFailsItsActionWithTheChecksReason(t *testing.T) {
 	moveID(t, cmds, "74")
 	if got := noIDs(cmds)[0]; !reflect.DeepEqual(got, core.Move{IssueID: issueID("74"), From: inProgress,
 		To: needsAttention}) {
-		t.Fatalf("verdict = %#v, want the move to needs attention", got)
+		t.Fatalf("ending = %#v, want the move to needs attention", got)
 	}
 	// AE5: only the action whose check failed is reported.
 	ws := space("74", "development")
@@ -198,10 +198,10 @@ func TestTimeUpLetsARunningCheckFinishBeforeStopping(t *testing.T) {
 		t.Fatal("stopped while a check runs")
 	}
 
-	verdict, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
-	_, events := d.send(core.CallResult{ID: moveID(t, verdict, "74"), Result: core.ResultDone})
+	ending, _ := d.send(core.CheckEnded{IssueID: issueID("74"), Action: "development", Passed: true, Reason: checkPassed})
+	_, events := d.send(core.CallResult{ID: moveID(t, ending, "74"), Result: core.ResultDone})
 	if !d.m.Stopped() || !containsStopped(events) {
-		t.Fatal("not stopped once the checked issue was judged")
+		t.Fatal("not stopped once the checked issue's run ended")
 	}
 }
 

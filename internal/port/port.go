@@ -5,8 +5,9 @@
 // task. Each port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
-// LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Narrator or
-// Reopener, that the engine detects by type assertion. An adapter therefore never wraps another
+// LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Commenter,
+// Closer, CommentLister, Narrator or Reopener, that the engine detects by
+// type assertion. An adapter therefore never wraps another
 // adapter value, because a wrapper hides the optional interfaces of what it
 // wraps.
 //
@@ -107,6 +108,13 @@ type Run struct {
 	// issues crew takes.
 	CodeOwners []string
 	Bots       []string
+	// VerdictFile, when not empty, is the file the session may write its
+	// verdict to, which it finds in CREW_VERDICT_FILE. VerdictDir is the
+	// directory that holds it, which the session may write. Both are
+	// optional and owned by crew, which makes them for one session outside
+	// the worktree and .crew/logs/; the harness only hands them on.
+	VerdictFile string
+	VerdictDir  string
 }
 
 // Identity is who a child process, such as a session or a check, acts as on
@@ -130,9 +138,9 @@ type Identity struct {
 
 // Session is a running harness session.
 type Session interface {
-	// Wait blocks until the session ends and returns the harness's verdict.
+	// Wait blocks until the session ends and returns how it ended.
 	// Wait may be called more than once, and from any goroutine.
-	Wait() Verdict
+	Wait() SessionEnd
 	// Stop asks the session to end and returns once it has. The adapter
 	// terminates the session, then kills it when ctx is done: the caller owns
 	// the deadline and the adapter owns the signals. Stopping a session that
@@ -140,10 +148,10 @@ type Session interface {
 	Stop(ctx context.Context) error
 }
 
-// Verdict is how a session ended, as its harness judged it. A session that
-// ends cleanly succeeded; one that fails, dies or is stopped did not. The
-// engine turns a verdict into the action's crew.Outcome.
-type Verdict struct {
+// SessionEnd is how a session ended, as its harness reported it. A session
+// that ends cleanly succeeded; one that fails, dies or is stopped did not. The
+// engine turns a SessionEnd into the action's crew.Outcome.
+type SessionEnd struct {
 	// Succeeded is true when the session ended cleanly.
 	Succeeded bool
 	// Reason says why in one line, such as the session's last message. It
@@ -299,6 +307,40 @@ type BoardLister interface {
 	ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error)
 }
 
+// Commenter is an optional interface of a Tracker: it posts a comment on an
+// issue.
+type Commenter interface {
+	// Comment posts body as a new comment on issue, as the tracker's
+	// writer, with its control characters stripped but its lines kept
+	// (crew.StripControlsKeepingLines). Its errors are classified as
+	// Tracker.Move's are.
+	Comment(ctx context.Context, issue crew.IssueID, body string) error
+}
+
+// Closer is an optional interface of a Tracker: it closes an issue and takes
+// crew's states off it.
+type Closer interface {
+	// Close closes issue, which must be in from, then removes every crew
+	// state from its open pull requests and from it, without touching what
+	// is not crew's. It returns an error wrapping ErrMovedMeanwhile when
+	// the issue is gone, open but not in from, or closed in other crew
+	// states but not from; one wrapping ErrRefused when the issue cannot
+	// be closed, such as a merged pull request, or the tracker refuses for
+	// good; and any other error when it failed transiently. A closed issue
+	// in from or in no crew state is not closed again, but still loses its
+	// crew states and its pull requests theirs, so retrying is safe
+	// whichever step failed.
+	Close(ctx context.Context, issue crew.IssueID, from crew.State) error
+}
+
+// CommentLister is an optional interface of a Tracker: it lists an issue's
+// comments.
+type CommentLister interface {
+	// Comments returns every comment on issue, oldest first. Its errors are
+	// classified as Tracker.Move's are.
+	Comments(ctx context.Context, issue crew.IssueID) ([]crew.Comment, error)
+}
+
 // Reopener is an optional interface of a Workspace: it reopens a workspace
 // it created before, so a failed action can resume where it stopped. A
 // workspace without it creates a fresh workspace for every action.
@@ -352,26 +394,30 @@ type PullRequestFinder interface {
 	FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error)
 }
 
-// ErrCheckFailed means a check ran and exited with a non-zero status.
-var ErrCheckFailed = errors.New("the check failed")
-
-// Checker runs action checks: a command you wrote, run in an action's
-// workspace once its session succeeded, so crew does not judge the action
-// by what its session says alone.
-type Checker interface {
-	// Check runs check to its end, with its output going to check.Output.
-	// It returns nil when the command exited 0, and an error wrapping
-	// ErrCheckFailed when it exited otherwise. When ctx ends first, it ends
-	// the command and what the command started, and returns an error
-	// wrapping ctx.Err(). Any other error means the command could not start.
-	Check(ctx context.Context, check Check) error
+// Shell runs scripts: a command you wrote, such as an action's check, run in
+// an action's workspace once its session succeeded, so crew does not judge
+// the action by what its session says alone.
+type Shell interface {
+	// Run runs script to its end, with its output going to script.Output,
+	// and returns its exit status. A script killed by a signal crew did not
+	// send reports status -1. When ctx ends first, it ends the command and
+	// what the command started, and returns an error wrapping ctx.Err().
+	// Any other error means the command could not start.
+	Run(ctx context.Context, script Script) (ShellResult, error)
 }
 
-// Check is what a Checker needs to run a check. The issue and the session
+// ShellResult is how a script that ran ended.
+type ShellResult struct {
+	// Status is the script's exit status: 0 for success, -1 when a signal
+	// killed it.
+	Status int
+}
+
+// Script is what a Shell needs to run a script. The issue and the session
 // reach the command only through these fields, as environment variables
 // and files they name, never as part of the command, so no issue or
 // session text can run as code.
-type Check struct {
+type Script struct {
 	// Dir is the action's workspace directory, where the command runs.
 	Dir string
 	// Name is the check's name, and Command the shell command to run.

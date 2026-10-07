@@ -108,14 +108,14 @@ func runText(e crew.RunEvent) string {
 		return actionEnded(e)
 	case crew.TakeMoved:
 		return moved(e.IssueRef, e.From, e.To)
-	case crew.VerdictMoved:
+	case crew.EndingMoved:
 		return moved(e.IssueRef, e.From, e.To)
 	case crew.FailureReported:
 		return "reported the failure on " + e.IssueRef
 	case crew.RunStopped, crew.ActionWorkspaceAsked, crew.ActionOpened, crew.ActionSessionAsked,
 		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionLookupAsked, crew.ActionCheckAsked,
 		crew.ActionCheckStopAsked, crew.ActionCheckEnded, crew.ActionLookupDone, crew.ActionFinishing,
-		crew.RunJudged, crew.VerdictDropped, crew.FailureReportDropped, crew.RunReleased:
+		crew.RunEnded, crew.EndingDropped, crew.FailureReportDropped, crew.RunReleased:
 	}
 	return ""
 }
@@ -154,7 +154,7 @@ func coreText(e core.Event) string {
 	return fmt.Sprintf("%T", e)
 }
 
-// moved is the line for a move the tracker made, a take or a verdict.
+// moved is the line for a move the tracker made, a take or an ending.
 func moved(ref string, from, to crew.State) string {
 	return fmt.Sprintf("%s moved from %s to %s", ref, from, to)
 }

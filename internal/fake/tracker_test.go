@@ -21,7 +21,7 @@ func TestTrackerListsOpenIssuesInAnyGivenStateWithAllTheirStates(t *testing.T) {
 		issue("4", ready, needsAttention),
 		issue("5", ready),
 	)
-	tr.Close("5")
+	tr.CloseIssue("5")
 
 	got, err := tr.List(context.Background(), []crew.State{ready, readyToReview})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestTrackerMoveOfAnIssueInToAndAnotherStateIsMovedMeanwhile(t *testing.T) {
 
 func TestTrackerMoveOfAClosedIssueIsMovedMeanwhile(t *testing.T) {
 	tr := fake.NewTracker(issue("1", inProgress))
-	tr.Close("1")
+	tr.CloseIssue("1")
 
 	err := tr.Move(context.Background(), issueID("1"), inProgress, readyToReview)
 	if !errors.Is(err, port.ErrMovedMeanwhile) {
@@ -353,7 +353,7 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 	tr.SetLabels("3", "Bug", "docs")
 	tr.SetLabels("4", "bug")
 	tr.SetLabels("5", "bug")
-	tr.Close("5")
+	tr.CloseIssue("5")
 	tr.SetLabels("6", "docs")
 
 	got, err := tr.ListBoard(context.Background(), []crew.State{"bug", "Ready", "Waiting Brainstorm"})
@@ -379,7 +379,7 @@ func TestBoardTrackerListsTheOpenIssuesCarryingABoardLabel(t *testing.T) {
 func TestAddingAKnownIssueReplacesItOpenWithoutLabels(t *testing.T) {
 	tr := fake.NewBoardTracker(issue("1", ready))
 	tr.SetLabels("1", "bug")
-	tr.Close("1")
+	tr.CloseIssue("1")
 
 	tr.Add(issue("1", readyToReview))
 

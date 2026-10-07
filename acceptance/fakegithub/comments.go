@@ -78,7 +78,7 @@ func (g *GitHub) commentJSON(cm *comment) object {
 	}
 	return object{
 		{keyURL, apiBase + repo + "/issues/comments/" + id},
-		{"html_url", g.htmlURL(cm.number) + "#issuecomment-" + id},
+		{keyHTMLURL, g.htmlURL(cm.number) + "#issuecomment-" + id},
 		{"issue_url", apiBase + repo + "/issues/" + number},
 		{"id", cm.id},
 		{"node_id", "IC_" + id},

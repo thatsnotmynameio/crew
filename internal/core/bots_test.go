@@ -79,12 +79,12 @@ func names(d *driver) []crew.BotName {
 }
 
 // endedAs runs action of issue i to a successful end with usage, and
-// settles its verdict.
+// settles its ending.
 func endedAs(d *driver, i crew.Issue, action crew.ActionName, usage crew.Usage) {
 	d.t.Helper()
 	d.running(i)
-	verdict, _ := d.send(core.SessionEnded{IssueID: i.ID(), Action: action, Outcome: succeeded, Usage: usage})
-	d.settle(verdict)
+	ending, _ := d.send(core.SessionEnded{IssueID: i.ID(), Action: action, Outcome: succeeded, Usage: usage})
+	d.settle(ending)
 }
 
 func TestAE1ABotShowsItsStateWritesPairsTotalsAndRunningActions(t *testing.T) {

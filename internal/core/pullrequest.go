@@ -37,12 +37,12 @@ func (s *step) reportPullRequests(report crew.PullRequestReport) {
 	s.pumpPullRequests(sl)
 }
 
-// reportVerdict queues the report that follows the verdict move of h's run,
+// reportEnding queues the report that follows the ending move of h's run,
 // which landed. It carries how the rule ended, unless the rule has no
 // actions: nobody stopped watching anything, so there is nothing to tell
 // (KTD5).
-func (s *step) reportVerdict(h *heldRun) {
-	if report, ok := h.run.VerdictReport(s.m.statusUsage); ok {
+func (s *step) reportEnding(h *heldRun) {
+	if report, ok := h.run.EndingReport(s.m.statusUsage); ok {
 		s.reportPullRequests(report)
 	}
 }

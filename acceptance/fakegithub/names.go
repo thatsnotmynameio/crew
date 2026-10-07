@@ -7,6 +7,7 @@ const (
 	keyCreatedAt = "createdAt"
 	keyFirst     = "first"
 	keyHead      = "headRefName"
+	keyHTMLURL   = "html_url"
 	keyLabels    = "labels"
 	keyLogin     = "login"
 	keyName      = "name"
@@ -17,3 +18,7 @@ const (
 	keyURL       = "url"
 	typeUser     = "User"
 )
+
+// closedState is a closed issue's or pull request's state as GitHub's REST
+// API and gh pr list's --state spell it.
+const closedState = "closed"

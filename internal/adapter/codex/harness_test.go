@@ -122,7 +122,7 @@ const worktree = "/repo/.crew/worktrees/issue-4-review"
 
 // runSession runs one session of p to its end and returns its outcome and
 // the bytes the engine's writer received.
-func runSession(t *testing.T, p *fakeProcess) (port.Verdict, []byte) {
+func runSession(t *testing.T, p *fakeProcess) (port.SessionEnd, []byte) {
 	t.Helper()
 	h := build(t, noSection, &fakeSpawn{process: p}, &fakeGit{})
 	var out bytes.Buffer
@@ -270,7 +270,7 @@ func TestCompletedSessionSucceedsAndTheLogGetsEverythingCodexPrinted(t *testing.
 
 	got, out := runSession(t, p)
 
-	if want := (port.Verdict{Succeeded: true, Reason: "I fixed the parser. The tests pass."}); got != want {
+	if want := (port.SessionEnd{Succeeded: true, Reason: "I fixed the parser. The tests pass."}); got != want {
 		t.Errorf("outcome = %+v, want %+v", got, want)
 	}
 	if want := slices.Concat(p.stdout, p.stderr); !bytes.Equal(out, want) {
@@ -294,7 +294,7 @@ func TestWaitGivesEveryCallerTheSameOutcome(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	outcomes := make([]port.Verdict, 2)
+	outcomes := make([]port.SessionEnd, 2)
 	for i := range outcomes {
 		wg.Go(func() { outcomes[i] = s.Wait() })
 	}
@@ -394,7 +394,7 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, os.ErrClosed }
 
-func TestAFailingLogNeitherStopsTheOutputNorChangesTheVerdict(t *testing.T) {
+func TestAFailingLogNeitherStopsTheOutputNorChangesTheSessionEnd(t *testing.T) {
 	h := build(t, noSection, &fakeSpawn{process: newProcess(fixture(t, "success.jsonl"))}, &fakeGit{})
 	s, err := h.Start(t.Context(), port.Run{Dir: worktree, Prompt: "Review #4", Output: failingWriter{}})
 	if err != nil {
@@ -428,7 +428,7 @@ func TestStopEndsTheSessionWithinTheCallersDeadlineAsAFailure(t *testing.T) {
 	if p.stops == 0 || !p.stopDeadline.Equal(deadline) {
 		t.Errorf("process stopped %d times with deadline %v, want the caller's %v", p.stops, p.stopDeadline, deadline)
 	}
-	if got := s.Wait(); got != (port.Verdict{Reason: "stopped by crew before the session ended"}) {
+	if got := s.Wait(); got != (port.SessionEnd{Reason: "stopped by crew before the session ended"}) {
 		t.Errorf("outcome = %+v, want a failure saying crew stopped it", got)
 	}
 }
@@ -447,7 +447,7 @@ func TestStopAfterTheSessionEndedChangesNothing(t *testing.T) {
 		if waited {
 			s.Wait()
 		} else if ended, ok := s.(*session); ok {
-			<-ended.done // reaped and judged, though nobody waited
+			<-ended.done // reaped and its end settled, though nobody waited
 		}
 
 		if err := s.Stop(t.Context()); err != nil {

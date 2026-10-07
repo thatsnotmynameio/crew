@@ -155,21 +155,21 @@ func (e ActionEnded) apply(r RuleRun) RuleRun {
 	})
 }
 
-func (e RunJudged) apply(r RuleRun) RuleRun {
-	r.phase = JudgingPhase{Verdict: e.Verdict.clone(), Judged: e.At, ReportSettled: !e.Verdict.Failed()}
+func (e RunEnded) apply(r RuleRun) RuleRun {
+	r.phase = EndingPhase{Ending: e.Ending.clone(), Ended: e.At, ReportSettled: !e.Ending.Failed()}
 	return r
 }
 
-func (e VerdictMoved) apply(r RuleRun) RuleRun {
-	return r.judging(func(j JudgingPhase) JudgingPhase {
-		j.Move = Some[VerdictMove](VerdictLanded{})
+func (e EndingMoved) apply(r RuleRun) RuleRun {
+	return r.whileEnding(func(j EndingPhase) EndingPhase {
+		j.Move = Some[EndingMove](EndingLanded{})
 		return j
 	})
 }
 
-func (e VerdictDropped) apply(r RuleRun) RuleRun {
-	return r.judging(func(j JudgingPhase) JudgingPhase {
-		j.Move = Some[VerdictMove](VerdictGivenUp{Reason: e.Reason})
+func (e EndingDropped) apply(r RuleRun) RuleRun {
+	return r.whileEnding(func(j EndingPhase) EndingPhase {
+		j.Move = Some[EndingMove](EndingGivenUp{Reason: e.Reason})
 		return j
 	})
 }
@@ -178,13 +178,13 @@ func (FailureReported) apply(r RuleRun) RuleRun { return r.reportSettled() }
 
 func (FailureReportDropped) apply(r RuleRun) RuleRun { return r.reportSettled() }
 
-// apply releases the run, keeping its verdict once the verdict's move
+// apply releases the run, keeping its ending once the ending's move
 // settled.
 func (RunReleased) apply(r RuleRun) RuleRun {
 	var released ReleasedPhase
-	if j, ok := r.phase.(JudgingPhase); ok {
+	if j, ok := r.phase.(EndingPhase); ok {
 		if move, settled := j.Move.Get(); settled {
-			released.Verdict = Some(SettledVerdict{Verdict: j.Verdict, Judged: j.Judged, Move: move})
+			released.Ending = Some(SettledEnding{Ending: j.Ending, Ended: j.Ended, Move: move})
 		}
 	}
 	r.phase = released
@@ -214,18 +214,18 @@ func (r RuleRun) withAction(name ActionName, change func(ActionRun) ActionRun) R
 	return r
 }
 
-// judging returns r with change applied to its phase, when it is judging.
-func (r RuleRun) judging(change func(JudgingPhase) JudgingPhase) RuleRun {
-	if j, ok := r.phase.(JudgingPhase); ok {
+// whileEnding returns r with change applied to its phase, when it is ending.
+func (r RuleRun) whileEnding(change func(EndingPhase) EndingPhase) RuleRun {
+	if j, ok := r.phase.(EndingPhase); ok {
 		r.phase = change(j)
 	}
 	return r
 }
 
 // reportSettled returns r with its failure report settled, when it is
-// judging.
+// ending.
 func (r RuleRun) reportSettled() RuleRun {
-	return r.judging(func(j JudgingPhase) JudgingPhase {
+	return r.whileEnding(func(j EndingPhase) EndingPhase {
 		j.ReportSettled = true
 		return j
 	})

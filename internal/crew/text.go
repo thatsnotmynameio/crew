@@ -69,6 +69,21 @@ func (t CheckReason) String() string {
 // and C1) into one space. It neither trims nor folds spaces, so text without
 // controls comes out unchanged, and stripping twice changes nothing more.
 func StripControls(s string) string {
+	return strip(s, shown)
+}
+
+// StripControlsKeepingLines returns s stripped as StripControls strips it,
+// but keeping its lines, for a body of several lines such as a Markdown
+// comment: it keeps each line break (\n), drops each carriage return, so
+// that \r\n becomes \n, and turns every other control character into one
+// space, as StripControls does. Stripping twice changes nothing more.
+func StripControlsKeepingLines(s string) string {
+	return strip(s, shownKeepingLines)
+}
+
+// strip returns s without its escape sequences and invalid UTF-8, writing
+// each rune of its text through show.
+func strip(s string, show func(*strings.Builder, rune)) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	state := inText
@@ -77,7 +92,7 @@ func StripControls(s string) string {
 			if r, size := utf8.DecodeRuneInString(s[i:]); size > 1 {
 				// A terminal shows a rune wherever it is outside an OSC or
 				// DCS string, and goes back to text.
-				b.WriteRune(shown(r))
+				show(&b, r)
 				state = inText
 				i += size
 				continue
@@ -85,7 +100,7 @@ func StripControls(s string) string {
 		}
 		next, shows := state.next(s[i])
 		if shows {
-			b.WriteRune(shown(rune(s[i])))
+			show(&b, rune(s[i]))
 		}
 		state = next
 		i++
@@ -93,13 +108,26 @@ func StripControls(s string) string {
 	return b.String()
 }
 
-// shown is r as StripControls writes it: a tab or a printable rune as is, any
-// other control character as a space.
-func shown(r rune) rune {
+// shown writes r to b as StripControls shows it: a tab or a printable rune
+// as is, any other control character as a space.
+func shown(b *strings.Builder, r rune) {
 	if r != '\t' && unicode.IsControl(r) {
-		return ' '
+		r = ' '
 	}
-	return r
+	b.WriteRune(r)
+}
+
+// shownKeepingLines writes r to b as StripControlsKeepingLines shows it: a
+// line break as is, a carriage return not at all, anything else as shown
+// writes it.
+func shownKeepingLines(b *strings.Builder, r rune) {
+	switch r {
+	case '\n':
+		b.WriteRune(r)
+	case '\r':
+	default:
+		shown(b, r)
+	}
 }
 
 // The control bytes the escape sequence parser of StripControls tells apart.

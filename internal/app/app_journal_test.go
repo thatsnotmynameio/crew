@@ -97,7 +97,7 @@ func TestTheJournalHoldsOneEndedLinePerActionAndNoSessionTextPathOrPrompt(t *tes
 		r.start()
 		session := next(t, h)
 		session.SetLastMessage("the session's last words")
-		session.End(port.Verdict{Succeeded: true, Reason: "done"})
+		session.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		synctest.Wait()
 		if got := states(t, tr); !reflect.DeepEqual(got, []crew.State{readyToReview}) {
 			t.Fatalf("#1 is in %v, want ready to review", got)

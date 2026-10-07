@@ -28,7 +28,7 @@ type outbox struct {
 	pullRequests map[crew.IssueID]*pullRequestLane
 }
 
-// runLane holds one held issue's take move, or its verdict move and failure
+// runLane holds one held issue's take move, or its ending move and failure
 // report, not settled yet, in the order they were enqueued.
 type runLane struct {
 	deliveries []*delivery
@@ -45,9 +45,9 @@ type purpose int
 const (
 	// purposeTake moves the issue to its rule's running label.
 	purposeTake purpose = iota
-	// purposeVerdict moves the issue to its rule's success or failure
+	// purposeEnding moves the issue to its rule's success or failure
 	// label.
-	purposeVerdict
+	purposeEnding
 	// purposeReport posts the failure report.
 	purposeReport
 )
@@ -92,12 +92,12 @@ func (s *step) attempt(d *delivery) {
 
 // callResult settles, owes or retries the delivery r answers, and hands the
 // run of its issue the outcome of one that settled, as a fact. A take and a
-// verdict call are owed alike when they fail transiently: a take may have
+// ending call are owed alike when they fail transiently: a take may have
 // landed although it failed, so releasing its issue could strand it in the
 // running label with no session, and the tracker makes the retry idempotent.
 // A landed take starts the run's actions, and the core reports the run
 // running unless they all ended already; the run releases itself once its
-// verdict move and failure report settled, or its take was given up. A
+// ending move and failure report settled, or its take was given up. A
 // result for no delivery in flight, or for an issue no longer held, changes
 // nothing.
 func (s *step) callResult(r CallResult) {

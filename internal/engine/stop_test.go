@@ -40,7 +40,7 @@ func (g *gatedTracker) Move(ctx context.Context, id crew.IssueID, from, to crew.
 }
 
 // Covers AE9 through the loop.
-func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
+func TestStopLetsAnEndingMoveInFlightFinish(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := &gatedTracker{
 			Tracker: fake.NewTracker(issue(1, ready), issue(2, ready)),
@@ -49,14 +49,14 @@ func TestStopLetsAVerdictMoveInFlightFinish(t *testing.T) {
 		r := start(t, config(t, tr, develop))
 		sessions := r.sessions(2)
 
-		sessions["issue-1-development"].End(port.Verdict{Succeeded: true, Reason: "done"})
+		sessions["issue-1-development"].End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		<-tr.entered
 		r.cancel() // Run's context ending is a stop request, not an abort.
 		synctest.Wait()
 
 		select {
 		case err := <-r.done:
-			t.Fatalf("Run returned %v while a verdict move was in flight", err)
+			t.Fatalf("Run returned %v while an ending move was in flight", err)
 		default:
 		}
 		if !sessions["issue-2-development"].Stopped() {
@@ -128,7 +128,7 @@ func (m *moveCounter) Move(ctx context.Context, id crew.IssueID, from, to crew.S
 	return m.Tracker.Move(ctx, id, from, to)
 }
 
-func TestStopGivesAFailingVerdictMoveOneFinalTryAndReturns(t *testing.T) {
+func TestStopGivesAFailingEndingMoveOneFinalTryAndReturns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := &moveCounter{Tracker: fake.NewTracker(issue(1, ready)), to: needsAttention}
 		r := start(t, config(t, tr, develop))

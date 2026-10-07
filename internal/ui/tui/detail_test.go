@@ -19,7 +19,7 @@ func TestEachEventAboutAnIssueIsThatIssues(t *testing.T) {
 		core.RunNotRecorded{IssueID: id},
 		crew.ActionEnded{EventHead: head},
 		crew.TakeMoved{EventHead: head},
-		crew.VerdictMoved{EventHead: head},
+		crew.EndingMoved{EventHead: head},
 		crew.FailureReported{EventHead: head},
 		core.IssueSkipped{IssueID: id},
 		core.IssueOfOtherKind{IssueID: id},

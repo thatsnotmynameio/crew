@@ -199,11 +199,11 @@ func TestTakesAnIssueOnlyWhileItsRulesQueueHasAFreeSlot(t *testing.T) {
 	}
 }
 
-func TestAnIssueWhoseVerdictMoveIsOwedKeepsItsQueuesSlot(t *testing.T) {
+func TestAnIssueWhoseEndingMoveIsOwedKeepsItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
 	d.running(issue("1", 1, needsTriage))
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: succeeded})
-	d.send(core.CallResult{ID: moveID(t, verdict, "1"), Result: core.ResultFailed, Reason: "timeout"})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "triage", Outcome: succeeded})
+	d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultFailed, Reason: "timeout"})
 	if c := claimOf(t, d.m, "1"); c != core.ClaimOwed {
 		t.Fatalf("claim of #1: got %v, want owed", c)
 	}
@@ -285,8 +285,8 @@ func TestAFreedQueueSlotAfterASkippedTickListsAtOnce(t *testing.T) {
 	cmds, _ := d.send(core.Tick{})
 	wantListings(t, cmds, 0)
 
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("3"), Action: "triage", Outcome: succeeded})
-	cmds, _ = d.send(core.CallResult{ID: moveID(t, verdict, "3"), Result: core.ResultDone})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("3"), Action: "triage", Outcome: succeeded})
+	cmds, _ = d.send(core.CallResult{ID: moveID(t, ending, "3"), Result: core.ResultDone})
 	wantCommands(t, cmds, core.ListIssues{States: []crew.State{needsTriage, triaging, ready, inProgress}})
 }
 
@@ -364,8 +364,8 @@ func TestAnIssueWhoseTakeIsInFlightOrOwedHoldsABusySlot(t *testing.T) {
 func TestAReleasedIssueFreesItsQueuesSlot(t *testing.T) {
 	d := newDriver(t, queued(clerk, defaultQueue(2)), 3)
 	d.running(issue("7", 7, needsTriage))
-	verdict, _ := d.send(core.SessionEnded{IssueID: issueID("7"), Action: "triage", Outcome: succeeded})
-	d.send(core.CallResult{ID: moveID(t, verdict, "7"), Result: core.ResultDone})
+	ending, _ := d.send(core.SessionEnded{IssueID: issueID("7"), Action: "triage", Outcome: succeeded})
+	d.send(core.CallResult{ID: moveID(t, ending, "7"), Result: core.ResultDone})
 
 	wantHeld(t, d.m)
 	wantQueues(t, queuesOf(t, d.m, 1, 2),

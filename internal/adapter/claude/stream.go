@@ -14,12 +14,12 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
-// maxReason is how many characters of a reason a verdict keeps.
+// maxReason is how many characters of a reason a session's end keeps.
 const maxReason = 200
 
 // stream reads claude's stream-json output as it is written: one JSON event
 // per line. It keeps the last top-level result event, which is what the
-// session is judged by, the turns of every result event, and the last text
+// session's end is read from, the turns of every result event, and the last text
 // the session said. A line that is not a JSON object is skipped.
 //
 // It is written from one goroutine. The result is read with end, and the
@@ -182,27 +182,27 @@ func (s *stream) usage() crew.Usage {
 	return u
 }
 
-// judge is the verdict on a session whose last top-level result event is
+// sessionEnd is how a session ended whose last top-level result event is
 // last, or nil, and whose process exited with exit (nil for status 0). It
 // succeeded only when last exists, is not an error, and the process exited
 // 0. The reason is the result's text on one line, cut to maxReason
 // characters, or how the process exited when there is no result.
-func judge(last *result, exit error) port.Verdict {
+func sessionEnd(last *result, exit error) port.SessionEnd {
 	switch {
 	case last == nil && exit == nil:
-		return port.Verdict{Reason: "the session ended without a result"}
+		return port.SessionEnd{Reason: "the session ended without a result"}
 	case last == nil:
-		return port.Verdict{Reason: exited(exit)}
+		return port.SessionEnd{Reason: exited(exit)}
 	case last.IsError:
 		text := last.Result
 		if strings.TrimSpace(text) == "" {
 			text = last.Subtype // such as error_max_turns, which has no text
 		}
-		return port.Verdict{Reason: oneLine(text)}
+		return port.SessionEnd{Reason: oneLine(text)}
 	case exit != nil:
-		return port.Verdict{Reason: oneLine(fmt.Sprintf("%s after: %s", exited(exit), last.Result))}
+		return port.SessionEnd{Reason: oneLine(fmt.Sprintf("%s after: %s", exited(exit), last.Result))}
 	}
-	return port.Verdict{Succeeded: true, Reason: oneLine(last.Result)}
+	return port.SessionEnd{Succeeded: true, Reason: oneLine(last.Result)}
 }
 
 // exited says how a process that did not exit 0 ended: "exit code N", or the

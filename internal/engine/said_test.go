@@ -230,7 +230,7 @@ func TestR18OnceTheSessionEndsTheNextRefreshDropsItsWords(t *testing.T) {
 			t.Fatalf("Said = %#v, want the session's words", said)
 		}
 
-		n.session.End(port.Verdict{Succeeded: true, Reason: "done"})
+		n.session.End(port.SessionEnd{Succeeded: true, Reason: "done"})
 		if said := n.refreshed(t).Snapshot.Said; len(said) != 0 {
 			t.Errorf("Said = %#v after the session ended, want nothing", said)
 		}

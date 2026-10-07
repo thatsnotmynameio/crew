@@ -78,8 +78,8 @@ func TestAE1AnEndedSessionLooksUpItsPullRequestAndRecordsItWithItsUsage(t *testi
 	}
 
 	d.send(core.SessionEnded{IssueID: issueID("31"), Action: "acceptance", Outcome: succeeded})
-	verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("31"), Action: "acceptance", PullRequest: noPR})
-	d.send(core.CallResult{ID: moveID(t, verdict, "31"), Result: core.ResultDone})
+	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("31"), Action: "acceptance", PullRequest: noPR})
+	d.send(core.CallResult{ID: moveID(t, ending, "31"), Result: core.ResultDone})
 	entry := onlyEntry(t, d)
 	want := []core.HandledAction{
 		{Name: "acceptance", Spend: crew.Spend{Sessions: 1}, PullRequest: noPR},
@@ -209,8 +209,8 @@ func TestAE4ARuleMissingACostShowsTheKnownCostAsPartial(t *testing.T) {
 	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "acceptance", Outcome: failed("killed")})
 	d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "acceptance", PullRequest: noPR})
 	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "development", Outcome: succeeded, Usage: spent})
-	verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
-	d.settle(verdict)
+	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
+	d.settle(ending)
 
 	if got := onlyEntry(t, d).Spend(); got != partialSpend {
 		t.Fatalf("handled spend = %#v, want the known cost of two sessions, %#v", got, partialSpend)
@@ -225,8 +225,8 @@ func TestAnActionWithoutASessionAddsNothingAndMakesNothingPartial(t *testing.T) 
 	d.send(space("5", "development"))
 	d.send(core.SessionStarted{IssueID: issueID("5"), Action: "development"})
 	d.send(core.SessionEnded{IssueID: issueID("5"), Action: "development", Outcome: succeeded, Usage: spent})
-	verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
-	d.settle(verdict)
+	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("5"), Action: "development", PullRequest: pr45})
+	d.settle(ending)
 
 	if got, want := onlyEntry(t, d).Spend(), spent.Spend(); got != want {
 		t.Fatalf("handled spend = %#v, want only the session's, %#v", got, want)
@@ -241,14 +241,14 @@ func TestAE7TheRunSpendCountsEveryRuleRunOfThisRun(t *testing.T) {
 	d.running(issue("7", 1, ready))
 	for _, action := range []crew.ActionName{"acceptance", "development"} {
 		d.send(core.SessionEnded{IssueID: issueID("7"), Action: action, Outcome: succeeded, Usage: spent})
-		verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("7"), Action: action, PullRequest: noPR})
-		d.settle(verdict)
+		ending, _ := d.send(core.PullRequestFound{IssueID: issueID("7"), Action: action, PullRequest: noPR})
+		d.settle(ending)
 	}
 
 	d.running(issue("7", 1, readyToReview))
 	d.send(core.SessionEnded{IssueID: issueID("7"), Action: "custom_review", Outcome: succeeded, Usage: tokens})
-	verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("7"), Action: "custom_review", PullRequest: noPR})
-	d.settle(verdict)
+	ending, _ := d.send(core.PullRequestFound{IssueID: issueID("7"), Action: "custom_review", PullRequest: noPR})
+	d.settle(ending)
 
 	if got := onlyEntry(t, d).Rule; got != "review" {
 		t.Fatalf("handled shows %q, want only the review rule", got)
@@ -276,8 +276,8 @@ func TestAHandledEntryCarriesTheSpendOfTheRulesThatEndedOnItBefore(t *testing.T)
 	}
 	end := func(action crew.ActionName, u crew.Usage) {
 		d.send(core.SessionEnded{IssueID: issueID("8"), Action: action, Outcome: succeeded, Usage: u})
-		verdict, _ := d.send(core.PullRequestFound{IssueID: issueID("8"), Action: action, PullRequest: noPR})
-		d.settle(verdict)
+		ending, _ := d.send(core.PullRequestFound{IssueID: issueID("8"), Action: action, PullRequest: noPR})
+		d.settle(ending)
 	}
 
 	d.running(issue("8", 1, ready))

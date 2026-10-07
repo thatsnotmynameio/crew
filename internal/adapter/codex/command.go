@@ -34,14 +34,24 @@ const envPolicy = "shell_environment_policy"
 // everything and filter nothing, so no filter of the user's drops them from
 // the commands codex runs; the unset variables are set empty there, by name
 // only, so no shell profile brings a token of yours back.
+//
+// A run with a verdict file gives it to the session as CREW_VERDICT_FILE,
+// the same way, and adds the file's directory to the writable roots.
 func command(run port.Run, model string, gitDirs []string) proc.Command {
 	env := slices.Concat(
 		run.Identity.Env,
 		[]string{"CREW_CODE_OWNERS=" + strings.Join(run.CodeOwners, " "), "CREW_BOTS=" + strings.Join(run.Bots, " ")},
 	)
+	if run.VerdictFile != "" {
+		env = append(env, "CREW_VERDICT_FILE="+run.VerdictFile)
+	}
+	writable := gitDirs
+	if run.VerdictDir != "" {
+		writable = append(slices.Clip(gitDirs), run.VerdictDir)
+	}
 	args := []string{"exec", "--json", "--approve-for-me", "-c", "sandbox_workspace_write.network_access=true"}
-	for i, dir := range gitDirs {
-		if !slices.Contains(gitDirs[:i], dir) {
+	for i, dir := range writable {
+		if !slices.Contains(writable[:i], dir) {
 			args = append(args, "--add-dir", dir)
 		}
 	}
