@@ -1,5 +1,11 @@
 # crew
 
+[![CI](https://github.com/thatsnotmynameio/crew/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thatsnotmynameio/crew/actions/workflows/ci.yml)
+[![Release](https://github.com/thatsnotmynameio/crew/actions/workflows/release.yml/badge.svg)](https://github.com/thatsnotmynameio/crew/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Platforms: Linux and macOS](https://img.shields.io/badge/platforms-linux%20%7C%20macOS-lightgrey)](.goreleaser.yaml)
+
 crew moves your GitHub issues through rules you declare in the repository. Each rule reacts to one label: crew polls for the issues and pull requests that carry it and runs the rule's actions in parallel, each one a headless Claude Code or Codex session in its own git worktree and branch. When every action ends, crew moves the issue to the rule's success label, or to its failure label with a comment saying what failed. You name every label in the rules: crew has no fixed ones.
 
 crew only runs sessions and moves labels. Opening pull requests, reviewing and merging are your prompts' job and yours.
