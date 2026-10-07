@@ -182,6 +182,7 @@ Everything in a scenario that runs `gh` goes through the fake: crew, and a check
 | `gh api orgs/ORG/teams/TEAM/members` | A team's members. |
 | `gh api repos/{owner}/{repo}/issues/N/comments` | Lists comments (`per_page`, `--paginate`); with `-f body=...`, adds one as the account `gh` acts as. |
 | `gh api -X PATCH repos/{owner}/{repo}/issues/comments/ID -f body=...` | Edits a comment. |
+| `gh api -X PATCH repos/{owner}/{repo}/issues/N -f state=closed` | Closes an issue or pull request; a merged one stays merged. Any other state fails with HTTP 422. |
 | `gh api graphql -f query=... [-F name=value]` | One query, resolved from the state (below). |
 
 `gh api` takes `-X`/`--method`, `-H`/`--header` (only `Accept: application/vnd.github.raw+json`), `-f`/`--raw-field`, `-F`/`--field`, `-q`/`--jq` and `--paginate` (on the listing endpoints). `--jq` is evaluated by gojq, the evaluator `gh` uses, and strings print unquoted. `--paginate` returns the whole list.

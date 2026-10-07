@@ -1,6 +1,7 @@
 package fakegithub
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -132,5 +133,48 @@ func TestAMutationIsWrittenAsTheAccountOfGHConfigDir(t *testing.T) {
 	}
 	if got := g.Comments(3); len(got) != 1 || got[0].Author != "deploy-bot[bot]" {
 		t.Errorf("comments = %+v, want one by deploy-bot[bot]", got)
+	}
+}
+
+func TestPatchingAnItemsStateClosesIt(t *testing.T) {
+	g := New("acme", "widgets")
+	g.AddIssue(Issue{Number: 3, Labels: []string{"ready", "bug"}})
+	g.AddPullRequest(PullRequest{Number: 7, HeadBranch: "fix"})
+	type restIssue struct {
+		Number int    `json:"number"`
+		State  string `json:"state"`
+	}
+	out := ok(t, g, "api", "--method", "PATCH", "repos/{owner}/{repo}/issues/3", "-f", "state=closed")
+	if got := decode[restIssue](t, out); got.Number != 3 || got.State != "closed" {
+		t.Errorf("PATCH printed %+v, want issue 3 closed", got)
+	}
+	if is, _ := g.Issue(3); is.State != Closed || !slices.Equal(is.Labels, []string{"ready", "bug"}) {
+		t.Errorf("issue 3 = %+v, want closed with its labels", is)
+	}
+	ok(t, g, "api", "-X", "PATCH", "repos/{owner}/{repo}/issues/7", "-f", "state=closed")
+	if pr, _ := g.PullRequest(7); pr.State != Closed {
+		t.Errorf("pull request 7 = %+v, want closed", pr)
+	}
+	g.AddPullRequest(PullRequest{Number: 8, HeadBranch: "done", State: Merged})
+	ok(t, g, "api", "--method", "PATCH", "repos/{owner}/{repo}/issues/8", "-f", "state=closed")
+	if pr, _ := g.PullRequest(8); pr.State != Merged {
+		t.Errorf("merged pull request 8 = %+v, want it still merged", pr)
+	}
+	ok(t, g, "api", "--method", "PATCH", "repos/{owner}/{repo}/issues/3", "-f", "state=closed")
+	if is, _ := g.Issue(3); is.State != Closed {
+		t.Errorf("issue 3 closed again = %+v, want it still closed", is)
+	}
+	stderr := refused(t, g, "api", "--method", "PATCH", "repos/{owner}/{repo}/issues/99", "-f", "state=closed")
+	if stderr != "gh: Not Found (HTTP 404)\n" {
+		t.Errorf("PATCH of a missing issue: stderr %q, want gh's HTTP 404", stderr)
+	}
+	stderr = refused(t, g, "api", "--method", "PATCH", "repos/{owner}/{repo}/issues/3", "-f", "state=open")
+	if stderr != "gh: Validation Failed (HTTP 422)\n" {
+		t.Errorf("PATCH to another state: stderr %q, want gh's HTTP 422", stderr)
+	}
+	r := gh(g, "api", "--method", "PATCH", "repos/{owner}/{repo}/issues/3", "-f", "title=x")
+	want := "gh api --method PATCH 'repos/{owner}/{repo}/issues/3' -f title=x (unknown field title)"
+	if r.Violation != want {
+		t.Errorf("an unknown field: violation %q, want %q", r.Violation, want)
 	}
 }

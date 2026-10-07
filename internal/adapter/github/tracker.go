@@ -5,10 +5,12 @@
 // code owners or one of crew's bots opened, as items alike, and lists the
 // board's issues the same authors opened, whatever their labels. It moves
 // items by swapping crew's labels, reports failures as Markdown comments and
-// keeps a status comment on each item, with one entry per rule run. It puts
-// the open pull requests that close an issue in the issue's crew label, and
-// comments on them when a rule ends that nobody watches them any more. It
-// finds the pull request an action opened from its branch. It works on the
+// keeps a status comment on each item, with one entry per rule run. It posts
+// comments, lists an item's comments and closes items, taking crew's labels
+// off them and their pull requests. It puts the open pull requests that close
+// an issue in the issue's crew label, and comments on them when a rule ends
+// that nobody watches them any more. It finds the pull request an action
+// opened from its branch. It works on the
 // repository gh resolves from crew's working directory, and runs every gh
 // call through the shared process helper.
 //
@@ -37,7 +39,8 @@ import (
 // Compile-time guards: the tracker is a port.Tracker, a port.Preparer, a
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
 // a port.Acting, a port.CodeOwnerFinder, a port.LoginFinder, a
-// port.RepositoryFinder, a port.WriterReporter and a port.BoardLister.
+// port.RepositoryFinder, a port.WriterReporter, a port.BoardLister, a
+// port.Commenter, a port.Closer and a port.CommentLister.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -50,6 +53,9 @@ var (
 	_ port.RepositoryFinder    = (*Tracker)(nil)
 	_ port.WriterReporter      = (*Tracker)(nil)
 	_ port.BoardLister         = (*Tracker)(nil)
+	_ port.Commenter           = (*Tracker)(nil)
+	_ port.Closer              = (*Tracker)(nil)
+	_ port.CommentLister       = (*Tracker)(nil)
 )
 
 // issueFields are what issuesQuery reads of an issue. A dependency

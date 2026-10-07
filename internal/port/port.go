@@ -5,8 +5,9 @@
 // task. Each port holds only what every adapter must provide; anything an
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
-// LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Narrator or
-// Reopener, that the engine detects by type assertion. An adapter therefore never wraps another
+// LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Commenter,
+// Closer, CommentLister, Narrator or Reopener, that the engine detects by
+// type assertion. An adapter therefore never wraps another
 // adapter value, because a wrapper hides the optional interfaces of what it
 // wraps.
 //
@@ -297,6 +298,40 @@ type BoardLister interface {
 	// repository. An error means the board could not be read; it is
 	// transient.
 	ListBoard(ctx context.Context, labels []crew.State) ([]crew.BoardIssue, error)
+}
+
+// Commenter is an optional interface of a Tracker: it posts a comment on an
+// issue.
+type Commenter interface {
+	// Comment posts body as a new comment on issue, as the tracker's
+	// writer, with its control characters stripped but its lines kept
+	// (crew.StripControlsKeepingLines). Its errors are classified as
+	// Tracker.Move's are.
+	Comment(ctx context.Context, issue crew.IssueID, body string) error
+}
+
+// Closer is an optional interface of a Tracker: it closes an issue and takes
+// crew's states off it.
+type Closer interface {
+	// Close closes issue, which must be in from, then removes every crew
+	// state from its open pull requests and from it, without touching what
+	// is not crew's. It returns an error wrapping ErrMovedMeanwhile when
+	// the issue is gone, open but not in from, or closed in other crew
+	// states but not from; one wrapping ErrRefused when the issue cannot
+	// be closed, such as a merged pull request, or the tracker refuses for
+	// good; and any other error when it failed transiently. A closed issue
+	// in from or in no crew state is not closed again, but still loses its
+	// crew states and its pull requests theirs, so retrying is safe
+	// whichever step failed.
+	Close(ctx context.Context, issue crew.IssueID, from crew.State) error
+}
+
+// CommentLister is an optional interface of a Tracker: it lists an issue's
+// comments.
+type CommentLister interface {
+	// Comments returns every comment on issue, oldest first. Its errors are
+	// classified as Tracker.Move's are.
+	Comments(ctx context.Context, issue crew.IssueID) ([]crew.Comment, error)
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace

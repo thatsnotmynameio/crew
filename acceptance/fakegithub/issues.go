@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/csv"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -150,6 +151,31 @@ func issueView(g *GitHub, c *call) Reply {
 	return output(pick(all, c.flag("--json")), c.flag("--jq"), c.inv.Env, true)
 }
 
+// patchIssue answers PATCH repos/:owner/:repo/issues/:number with
+// state=closed: it closes the issue or pull request, which stays closed or
+// merged when it already is. Any other state is GitHub's validation failure.
+func patchIssue(g *GitHub, c *call) apiResult {
+	it := g.target(c.api)
+	if it == nil {
+		return notFound()
+	}
+	if state, _ := c.api.fields[keyState].(string); state != closedState {
+		return apiResult{status: http.StatusUnprocessableEntity, message: "Validation Failed"}
+	}
+	if it.state == Open {
+		it.state = Closed
+		g.touch()
+	}
+	number := strconv.Itoa(it.number)
+	return apiResult{status: http.StatusOK, body: object{
+		{keyURL, apiBase + "/repos/" + g.owner + "/" + g.name + "/issues/" + number},
+		{keyHTMLURL, g.htmlURL(it.number)},
+		{keyNumber, it.number},
+		{keyState, closedState},
+		{keyTitle, it.title},
+	}}
+}
+
 // pick returns the fields of all that the --json flag names, keyed as gh
 // exports them.
 func pick(all map[string]any, fields string) map[string]any {
@@ -246,7 +272,7 @@ func checkPRList(g *GitHub, c *call) string {
 	if reason := noArgs(g, c); reason != "" {
 		return reason
 	}
-	if s := c.flag("--state"); s != "" && !slices.Contains([]string{"open", "closed", "merged", "all"}, s) {
+	if s := c.flag("--state"); s != "" && !slices.Contains([]string{"open", closedState, "merged", "all"}, s) {
 		return "unknown state " + s
 	}
 	if !c.has("--json") {
@@ -286,7 +312,7 @@ func inState(it *item, state string) bool {
 	switch state {
 	case "all":
 		return true
-	case "closed":
+	case closedState:
 		return it.state != Open
 	case "merged":
 		return it.state == Merged

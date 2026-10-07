@@ -73,6 +73,8 @@ func routes() []route {
 			paginate: true, handle: listComments},
 		{method: http.MethodPatch, pattern: "repos/:owner/:repo/issues/comments/:id", body: []string{keyBody},
 			handle: patchComment},
+		{method: http.MethodPatch, pattern: "repos/:owner/:repo/issues/:number", body: []string{keyState},
+			handle: patchIssue},
 	}
 }
 
@@ -263,7 +265,7 @@ func getRepo(g *GitHub, c *call) apiResult {
 		{"id", accountID(full)}, {"node_id", g.repositoryID()}, {keyName, g.name},
 		{"full_name", full}, {"private", false},
 		{"owner", object{{keyLogin, g.owner}, {"id", accountID(g.owner)}, {keyType, ownerType}}},
-		{"html_url", htmlBase + "/" + full},
+		{keyHTMLURL, htmlBase + "/" + full},
 	}}
 }
 

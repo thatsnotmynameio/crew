@@ -157,9 +157,9 @@ func (t *Tracker) Labels(key string) []crew.State {
 	return nil
 }
 
-// Close closes the issue with key: List no longer returns it, and moving it
-// is ErrMovedMeanwhile.
-func (t *Tracker) Close(key string) {
+// CloseIssue closes the issue with key, as a person would: List no longer
+// returns it, and moving it is ErrMovedMeanwhile.
+func (t *Tracker) CloseIssue(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.find(key); ti != nil {
