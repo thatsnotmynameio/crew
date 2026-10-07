@@ -1,12 +1,9 @@
 package github
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -186,34 +183,15 @@ func (t *Tracker) findStatus(ctx context.Context, issueKey string) (cachedStatus
 	t.mu.Lock()
 	crewLogins := append([]string{login}, t.bots...)
 	t.mu.Unlock()
-	out, err := t.gh.call(ctx, "api", "--method", "GET", "--paginate",
-		"repos/{owner}/{repo}/issues/"+issueKey+"/comments?per_page=100")
+	comments, err := t.listComments(ctx, issueKey)
 	if err != nil {
-		return cachedStatus{}, false, classify(err, out, true)
+		return cachedStatus{}, false, err
 	}
-	// --paginate prints the pages' arrays one after the other.
 	var newest cachedStatus
-	dec := json.NewDecoder(bytes.NewReader(out.Stdout))
-	for {
-		var page []struct {
-			ID   int64 `json:"id"`
-			User struct {
-				Login string `json:"login"`
-			} `json:"user"`
-			Body string `json:"body"`
-		}
-		err := dec.Decode(&page)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return cachedStatus{}, false, fmt.Errorf("unreadable output: %w", err)
-		}
-		for _, c := range page {
-			if containsFold(crewLogins, c.User.Login) && c.ID > newest.id &&
-				strings.HasSuffix(strings.TrimRight(c.Body, " \t\r\n"), statusMarker) {
-				newest = cachedStatus{id: c.ID, body: c.Body, author: c.User.Login}
-			}
+	for _, c := range comments {
+		if containsFold(crewLogins, c.User.Login) && c.ID > newest.id &&
+			strings.HasSuffix(strings.TrimRight(c.Body, " \t\r\n"), statusMarker) {
+			newest = cachedStatus{id: c.ID, body: c.Body, author: c.User.Login}
 		}
 	}
 	return newest, newest.id != 0, nil

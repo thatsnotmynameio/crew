@@ -1,5 +1,5 @@
-// Package shell is the shell adapter: it runs each action's check with sh,
-// in the action's workspace, as a child process of crew.
+// Package shell is the shell adapter: it runs scripts, such as each action's
+// check, with sh in the action's workspace, as a child process of crew.
 package shell
 
 import (
@@ -20,7 +20,7 @@ import (
 // Compile-time guard.
 var _ port.Shell = (*Shell)(nil)
 
-// stopTimeout is how long a check ended by its context gets to stop before
+// stopTimeout is how long a script ended by its context gets to stop before
 // it is killed.
 const stopTimeout = 10 * time.Second
 

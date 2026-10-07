@@ -47,18 +47,18 @@ func NewShell() *Shell {
 }
 
 // Script makes the check of the action whose branch is branch run as s.
-func (c *Shell) Script(branch string, s CheckScript) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.scripts[branch] = s
+func (sh *Shell) Script(branch string, s CheckScript) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	sh.scripts[branch] = s
 }
 
 // ScriptCheck makes the check called name, of the action whose branch is
 // branch, run as s, whatever Script set for the branch.
-func (c *Shell) ScriptCheck(branch string, name crew.CheckName, s CheckScript) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.scripts[scriptKey(branch, name)] = s
+func (sh *Shell) ScriptCheck(branch string, name crew.CheckName, s CheckScript) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	sh.scripts[scriptKey(branch, name)] = s
 }
 
 // scriptKey is the key of the script ScriptCheck sets for the check called
@@ -68,21 +68,21 @@ func scriptKey(branch string, name crew.CheckName) string {
 }
 
 // Runs returns the scripts run so far, in the order they started.
-func (c *Shell) Runs() []port.Script {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return slices.Clone(c.runs)
+func (sh *Shell) Runs() []port.Script {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	return slices.Clone(sh.runs)
 }
 
 // Run implements port.Shell.
-func (c *Shell) Run(ctx context.Context, script port.Script) (port.ShellResult, error) {
-	c.mu.Lock()
-	c.runs = append(c.runs, script)
-	s, ok := c.scripts[scriptKey(script.Branch, script.Name)]
+func (sh *Shell) Run(ctx context.Context, script port.Script) (port.ShellResult, error) {
+	sh.mu.Lock()
+	sh.runs = append(sh.runs, script)
+	s, ok := sh.scripts[scriptKey(script.Branch, script.Name)]
 	if !ok {
-		s = c.scripts[script.Branch]
+		s = sh.scripts[script.Branch]
 	}
-	c.mu.Unlock()
+	sh.mu.Unlock()
 	if s.StartErr != nil {
 		return port.ShellResult{}, s.StartErr
 	}

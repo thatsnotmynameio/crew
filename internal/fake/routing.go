@@ -156,13 +156,14 @@ func (r RoutingTracker) Close(_ context.Context, id crew.IssueID, from crew.Stat
 	}
 	r.Tracker.mu.Lock()
 	defer r.Tracker.mu.Unlock()
+	moved := fmt.Errorf("close issue %s from %s: %w", id.Key, from, port.ErrMovedMeanwhile)
 	ti := r.find(id.Key)
 	if ti == nil {
-		return fmt.Errorf("close issue %s from %s: %w", id.Key, from, port.ErrMovedMeanwhile)
+		return moved
 	}
 	states := ti.issue.States()
 	if !slices.Contains(states, from) && (!ti.closed || len(states) > 0) {
-		return fmt.Errorf("close issue %s from %s: %w", id.Key, from, port.ErrMovedMeanwhile)
+		return moved
 	}
 	if ti.closed && len(states) == 0 {
 		return nil
