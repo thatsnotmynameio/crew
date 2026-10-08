@@ -195,7 +195,7 @@ func TestADelegationSaysWhatTheReadFound(t *testing.T) {
 		{name: "no comment", read: core.QuestionRead{}, want: delegationOf(crew.QuestionNotFound, "")},
 		{
 			name: "read failed",
-			read: core.QuestionRead{Failed: true, Reason: "gh: HTTP 502"},
+			read: core.QuestionRead{Failed: true},
 			want: delegationOf(crew.QuestionUnread, ""),
 		},
 	}
@@ -278,7 +278,7 @@ func TestAStopWhileCrewReadsTheCommentsStillDelegatesAndMoves(t *testing.T) {
 	if cmds, _ := d.send(core.StopRequested{}); len(unrecorded(cmds)) != 0 {
 		t.Fatalf("the stop gave %#v, want nothing while crew reads", cmds)
 	}
-	delegate, _ := d.send(core.QuestionRead{IssueID: issueID("1"), Failed: true, Reason: "stopping"})
+	delegate, _ := d.send(core.QuestionRead{IssueID: issueID("1"), Failed: true})
 	wantCommands(t, delegate, delegationOf(crew.QuestionUnread, ""))
 	moved, events := d.send(core.CallResult{ID: delegateID(t, delegate), Result: core.ResultDone})
 	hasEvent(t, events, d.stepEnded("1", 0, crew.StepLanded{}))

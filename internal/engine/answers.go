@@ -24,13 +24,13 @@ func (e *Engine) readAnswers(ctx context.Context, c core.ReadAnswers) {
 
 // readQuestion lists the comments on the issue of c's run (listComments)
 // and posts them for the core to find the open question in, which c's
-// delegation step delegates (KTD8). A read that fails posts its reason, and
-// the step still delegates. The comments go only to the core: the engine
+// delegation step delegates (KTD8). A read that fails is posted as failed,
+// and the step still delegates. The comments go only to the core: the engine
 // logs and reports none of them.
 func (e *Engine) readQuestion(ctx context.Context, c core.ReadQuestion) {
 	read := core.QuestionRead{IssueID: c.IssueID, Run: c.Run, Step: c.Step}
-	comments, reason, ok := e.listComments(ctx, c.IssueID)
-	read.Comments, read.Failed, read.Reason = comments, !ok, reason
+	comments, _, ok := e.listComments(ctx, c.IssueID)
+	read.Comments, read.Failed = comments, !ok
 	e.post(read)
 }
 

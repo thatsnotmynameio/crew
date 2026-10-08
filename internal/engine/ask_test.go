@@ -158,17 +158,17 @@ func TestTheReadOfAQuestionPostsTheCommentsOrWhyItFailed(t *testing.T) {
 				rt.FailCommentLists("1", fmt.Errorf("open %s/.git: denied", root))
 				return listing{rt}
 			},
-			want: core.QuestionRead{Failed: true, Reason: "list the comments of issue 1: open ./.git: denied"},
+			want: core.QuestionRead{Failed: true},
 		},
 		{
 			name:    "timed out",
 			tracker: func(string) port.Tracker { return hanging{listing{rt}} },
-			want:    core.QuestionRead{Failed: true, Reason: "list the comments: context deadline exceeded"},
+			want:    core.QuestionRead{Failed: true},
 		},
 		{
 			name:    "no lister",
 			tracker: func(string) port.Tracker { return fake.NewTracker(issue(1, questionLabel)) },
-			want:    core.QuestionRead{Failed: true, Reason: "the tracker lists no comments"},
+			want:    core.QuestionRead{Failed: true},
 		},
 	}
 	for _, tt := range tests {

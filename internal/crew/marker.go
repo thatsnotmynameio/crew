@@ -24,7 +24,7 @@ const PostedMarker = MarkerPrefix + "posted -->"
 // comment.
 func SessionMarker(run RuleRunID, action ActionName) string {
 	return MarkerPrefix + "session run=" + url.QueryEscape(string(run)) +
-		" action=" + url.QueryEscape(string(action)) + " -->"
+		" action=" + url.QueryEscape(string(action)) + markerEnd
 }
 
 // HoldsMarker reports whether body holds any of crew's markers, crew's own,

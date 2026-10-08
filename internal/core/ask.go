@@ -25,8 +25,7 @@ type Delegate struct {
 }
 
 // QuestionRead is a ReadQuestion that ended: every comment on the issue,
-// oldest first, or Failed, with a Reason crew may show, when the tracker
-// could not list them. The comments reach only the search for the open
+// oldest first, or Failed when the tracker could not list them. The comments reach only the search for the open
 // question, never a run event, the journal, a comment or the status.
 type QuestionRead struct {
 	At       time.Time
@@ -35,7 +34,6 @@ type QuestionRead struct {
 	Step     int
 	Comments []crew.Comment
 	Failed   bool
-	Reason   string
 }
 
 func (ReadQuestion) command() {}

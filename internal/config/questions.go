@@ -86,8 +86,7 @@ func questions(n *yaml.Node, table queueTable, cfg *Config) error {
 	var answererErr, queueErr error
 	q.Answerer, answererErr = required(doc.Answerer, path+".answerer", n.Line)
 	if strings.EqualFold(q.Answerer, githubActions) {
-		answererErr = keyError(path+".answerer", doc.Answerer.line,
-			githubActions+" never answers: any workflow can post anyone's text as it")
+		answererErr = keyError(path+".answerer", doc.Answerer.line, githubActionsRefusal)
 	}
 	q.Queue, queueErr = ruleQueue(doc.Queue, path, table)
 	return errors.Join(answererErr, queueErr)
