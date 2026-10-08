@@ -29,5 +29,8 @@ node_modules/
 coverage.out
 .context/compound-engineering/
 
+# The parts /cw-split-plan writes for an issue, read by the step after it
+/docs/splitting/
+
 # Local settings, such as a boss's own .crew/config.local.yaml
 *.local*

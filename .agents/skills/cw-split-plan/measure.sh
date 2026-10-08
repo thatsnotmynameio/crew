@@ -1,8 +1,7 @@
 #!/bin/sh
 # Measures plans for /cw-split-plan: for each file, one line with its
 # characters, its distinct requirements (R1, R2, ...) and acceptance examples
-# (AE1, ...), whether it is above the split threshold, and whether it is
-# below the part minimum.
+# (AE1, ...), and whether it is above the split threshold.
 #
 #   sh measure.sh plan.md [part.md ...]
 #
@@ -11,14 +10,12 @@
 # list item or not, once however often it is defined. A mention inside a
 # line, such as "Covers R5", counts nothing.
 #
-# The thresholds come from the cost of crew's own lfg sessions (#160): a plan
-# above 10,000 characters or above 12 requirements is considered for a split,
-# and no part of a split may be below 4,000 characters.
+# The threshold comes from the cost of crew's own lfg sessions (#160): a plan
+# above 10,000 characters or above 12 requirements is considered for a split.
 set -eu
 
 max_characters=10000
 max_requirements=12
-min_part_characters=4000
 
 # wc -m counts characters only under a UTF-8 locale; their names differ
 # between Linux and macOS.
@@ -57,10 +54,6 @@ for file in "$@"; do
 	if [ "$characters" -gt "$max_characters" ] || [ "$requirements" -gt "$max_requirements" ]; then
 		above=yes
 	fi
-	below=no
-	if [ "$characters" -lt "$min_part_characters" ]; then
-		below=yes
-	fi
 	echo "$file: characters=$characters requirements=$requirements acceptance_examples=$examples" \
-		"above_threshold=$above below_part_minimum=$below"
+		"above_threshold=$above"
 done
