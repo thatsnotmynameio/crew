@@ -219,3 +219,20 @@ func TestAReportStepOfARunWithoutActionsNamesNoAction(t *testing.T) {
 		IssueID: issueID("1"), IssueRef: "#1", Rule: "promote triage", Route: crew.PassedRoute,
 	}})
 }
+
+// Covers KTD4: the answered rule's return step moves #1 from the rule's
+// running label to the label its check found, and its end names both.
+func TestAReturnStepMovesTheItemFromTheRunningLabelToTheCheckedLabel(t *testing.T) {
+	d := answeredDriver(t)
+	d.checking()
+	moved, _ := d.send(returnRead(unsureQuestion("boss"), crew.Comment{Author: "bob", Body: "yes"}))
+	wantCommands(t, unrecorded(moved), core.Move{IssueID: issueID("1"), From: answeredRunning, To: depsReady})
+
+	_, events := d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
+
+	h := d.runHead("1")
+	hasEvent(t, events, core.RouteStepEnded{
+		At: h.At, IssueID: issueID("1"), IssueRef: "#1", Rule: "answered", Route: crew.PassedRoute, Step: 0,
+		Plan: crew.StepPlan{Kind: crew.StepMove, To: depsReady}, From: answeredRunning, Outcome: crew.StepLanded{},
+	})
+}

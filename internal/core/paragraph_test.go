@@ -1,7 +1,9 @@
 package core_test
 
 import (
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -64,5 +66,48 @@ func TestAResumedSessionsParagraphNamesTheRouteItsLastRunEndedThrough(t *testing
 		"and continue from where it stopped instead of starting over.\n\n" + verdicts
 	if got := startOf(t, cmds).Prompt; got != want {
 		t.Fatalf("prompt:\n got %q\nwant %q", got, want)
+	}
+}
+
+// Covers KTD5, KTD8: the first session of a run that holds its rule's
+// question, and may wait, is told its read command also prints the
+// comment crew asked that question with, and no App crew writes as may
+// answer it. The command prints that question by crew's writer, its own
+// question, and the answers of the other Apps only.
+func TestAWaitingSessionsReadCommandAlsoFindsItsRulesQuestion(t *testing.T) {
+	rules := withSpec(depsAsking(t), 0, "check", func(s *crew.SessionSpec) {
+		s.Bot, s.Wait = crew.Bot{Name: "developer"}, 10*time.Minute
+	})
+	rules[0].Actions[0].On[crew.Waiting] = crew.ToRoute{Route: "waiting"}
+	rules[0].Routes = append(rules[0].Routes,
+		crew.Route{Name: "waiting", Steps: []crew.Step{crew.MoveStep{To: "waiting"}}})
+	answerers := crew.Answerers{
+		CodeOwners: []string{"alice"}, Apps: []string{"crew-product-manager[bot]", "crew-clerk[bot]"},
+	}
+	d := resumedAtCheck(t, rules, askedUnsure(t, rules), core.WithAnswerers(answerers))
+
+	cmds, _ := d.send(core.AnswersRead{IssueID: issueID("1"), Action: "check"})
+
+	prompt := startOf(t, cmds).Prompt
+	wantHolds(t, prompt, "the Apps on crew's answering list other than you, `crew-product-manager[bot]`, only when",
+		"a line with `\"question\":true` and the `created_at` of each comment of yours that holds your marker, "+
+			"or of crew's that asks this rule's question, and the `created_at`")
+	question := "Does #1 block #281?\n\n" + crew.QuestionMarker("unsure", "deps", depsReady)
+	page := []comment{
+		newComment(0, "crew-clerk[bot]", "Bot", question+"\n"+crew.PostedMarker),
+		newComment(1, "crew-developer[bot]", "Bot", "Still? "+crew.SessionMarker(d.run(issueID("1")), "check")),
+		newComment(2, "crew-clerk[bot]", "Bot", "Me too"),
+		newComment(3, "crew-product-manager[bot]", "Bot", "Agreed"),
+	}
+
+	got := runRead(t, readCommand(t, prompt), page)
+
+	want := []map[string]any{
+		{"question": true, "created_at": "2026-10-07T10:00:00Z"},
+		{"question": true, "created_at": "2026-10-07T10:01:00Z"},
+		{"created_at": "2026-10-07T10:03:00Z", "login": "crew-product-manager[bot]", "body": "Agreed"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the read command printed\n%v\nwant\n%v", got, want)
 	}
 }

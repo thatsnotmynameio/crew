@@ -39,44 +39,47 @@ func (a Answer) Quoted() string {
 }
 
 // Answered is what Answers found on an issue: whether it found the
-// question, the answers that count, newest first, and how many older ones
-// it left out to keep within AnswersCap.
+// question, which one, the answers that count, newest first, and how many
+// older ones it left out to keep within AnswersCap.
 type Answered struct {
 	Found   bool
 	Answers []Answer
 	LeftOut int
+	// RuleQuestion is the id of the rule's question found; empty when the
+	// question found is a session's.
+	RuleQuestion QuestionID
 }
 
 // Answers returns the answers to the open questions among comments, which
-// are oldest first, with who may answer (R37, R39, R43, R44, R45, R47,
-// KTD-W9). The question is the latest comment that holds the marker of one
-// of questions, by that question's login, and not crew's own marker. An
-// answer is a comment after it that holds none of crew's markers, by a
-// code owner who is not an App, or by an App on the answering list that
-// asked none of questions. Logins compare ignoring case, and an empty one
-// matches nothing. The answers go newest first, whole, until the next one
-// would take the quoted answers past AnswersCap: that one and every older
-// one are left out and counted.
-func Answers(comments []Comment, questions []Question, who Answerers) Answered {
-	asked := -1
+// are oldest first, with writers, the logins crew posts as, and who may
+// answer (R37, R39, R43, R44, R45, R47, KTD-W9, KTD5). The question is the
+// latest comment that asks one of questions (askedIn). An answer is a
+// comment after it that answerOf keeps, the Apps that asked any of
+// questions left out: each session question's login, and crew's writers
+// when one of questions is a rule's. Logins compare ignoring case, and an
+// empty one matches nothing. The answers go newest first, whole, until the
+// next one would take the quoted answers past AnswersCap: that one and
+// every older one are left out and counted.
+func Answers(comments []Comment, questions []Question, writers []string, who Answerers) Answered {
+	asked, found := -1, Question{}
 	for i, c := range slices.Backward(comments) {
-		if isQuestion(c, questions) {
-			asked = i
+		if q, ok := askedIn(c, questions, writers); ok {
+			asked, found = i, q
 			break
 		}
 	}
 	if asked < 0 {
 		return Answered{}
 	}
+	askers := askingLogins(questions, writers)
 	var counted []Answer
 	for _, c := range comments[asked+1:] {
-		c.Body = StripControlsKeepingLines(c.Body)
-		if answers(c, questions, who) {
-			counted = append(counted, Answer{Author: c.Author, Body: c.Body})
+		if a, ok := answerOf(c, who, askers); ok {
+			counted = append(counted, a)
 		}
 	}
 	slices.Reverse(counted)
-	out, size := Answered{Found: true}, 0
+	out, size := Answered{Found: true, RuleQuestion: found.ID}, 0
 	for i, a := range counted {
 		if size += len(a.Quoted()); size > AnswersCap {
 			out.LeftOut = len(counted) - i
@@ -87,33 +90,58 @@ func Answers(comments []Comment, questions []Question, who Answerers) Answered {
 	return out
 }
 
-// isQuestion reports whether c asks one of questions: it holds that
-// question's marker, its author is that question's login, and it does not
-// hold crew's own marker.
-func isQuestion(c Comment, questions []Question) bool {
-	if HoldsPostedMarker(c.Body) {
-		return false
-	}
-	return slices.ContainsFunc(questions, func(q Question) bool {
-		return q.Login != "" && strings.EqualFold(c.Author, q.Login) && HoldsSessionMarker(c.Body, q.Run, q.Action)
+// askedIn returns the one of questions c asks, and whether it asks one. A
+// session's question is asked by a comment that holds its marker, written
+// by its login, that does not hold crew's own marker. A rule's is asked by
+// a comment one of writers posted through crew (postedBy) whose question
+// marker names its id and its rule.
+func askedIn(c Comment, questions []Question, writers []string) (Question, bool) {
+	posted, marked := FindQuestionMarker(c.Body)
+	byCrew := postedBy(c, writers)
+	i := slices.IndexFunc(questions, func(q Question) bool {
+		if q.ID != "" {
+			return byCrew && marked && posted.ID == q.ID && posted.Rule == q.Rule
+		}
+		return q.Login != "" && strings.EqualFold(c.Author, q.Login) && !HoldsPostedMarker(c.Body) &&
+			HoldsSessionMarker(c.Body, q.Run, q.Action)
 	})
+	if i < 0 {
+		return Question{}, false
+	}
+	return questions[i], true
 }
 
-// answers reports whether c, a comment after the question whose body is
-// already stripped, counts as an answer: it holds none of crew's markers,
-// also none that stripping its control characters revealed, and a code
-// owner who is not an App, or an App on the answering list that asked none
-// of questions, wrote it.
-func answers(c Comment, questions []Question, who Answerers) bool {
-	if HoldsMarker(c.Body) || c.Author == "" {
-		return false
+// askingLogins returns the logins that asked one of questions, which never
+// answer as Apps: each session question's login, and writers when one of
+// questions is a rule's, which crew's writers asked (KTD5).
+func askingLogins(questions []Question, writers []string) []string {
+	var logins []string
+	for _, q := range questions {
+		logins = append(logins, q.Login)
+	}
+	if slices.ContainsFunc(questions, func(q Question) bool { return q.ID != "" }) {
+		logins = append(logins, writers...)
+	}
+	return logins
+}
+
+// answerOf returns c, a comment after the question, as an answer, and
+// whether it counts as one: the one answer rule of a session's answers and
+// of the return's check (KTD5). Its body is stripped of control characters
+// (StripControlsKeepingLines), then of the answer markers that parse
+// (StripAnswerMarkers). It counts when that body holds none of crew's
+// markers, also none that stripping revealed, and a code owner who is not
+// an App wrote it, or an App on the answering list that is none of asked,
+// the logins that asked.
+func answerOf(c Comment, who Answerers, asked []string) (Answer, bool) {
+	a := Answer{Author: c.Author, Body: StripAnswerMarkers(StripControlsKeepingLines(c.Body))}
+	if HoldsMarker(a.Body) || c.Author == "" {
+		return Answer{}, false
 	}
 	if !c.App {
-		return containsFold(who.CodeOwners, c.Author)
+		return a, containsFold(who.CodeOwners, c.Author)
 	}
-	return containsFold(who.Apps, c.Author) && !slices.ContainsFunc(questions, func(q Question) bool {
-		return strings.EqualFold(q.Login, c.Author)
-	})
+	return a, containsFold(who.Apps, c.Author) && !containsFold(asked, c.Author)
 }
 
 // containsFold reports whether logins holds login, ignoring case.

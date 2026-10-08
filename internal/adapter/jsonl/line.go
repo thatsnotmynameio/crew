@@ -127,11 +127,13 @@ type taken struct {
 }
 
 // question is one open question: the rule run whose session may have
-// asked it, its action and the login it acted as.
+// asked it, its action and the login it acted as; or, for a question the
+// rule asked, its id alone, the rule being the line's own.
 type question struct {
-	RuleRun crew.RuleRunID  `json:"rule_run"`
-	Action  crew.ActionName `json:"action"`
+	RuleRun crew.RuleRunID  `json:"rule_run,omitempty"`
+	Action  crew.ActionName `json:"action,omitempty"`
 	Login   string          `json:"login,omitempty"`
+	ID      crew.QuestionID `json:"id,omitempty"`
 }
 
 // The values of kind.
@@ -178,13 +180,14 @@ type route struct {
 }
 
 // step is one step of a route: its kind, the state a move moves the item
-// to, the shell action a shell step runs and the function a function step
-// calls.
+// to, the shell action a shell step runs, the function a function step
+// calls and the id of the question a question step posts.
 type step struct {
 	Kind     string          `json:"kind"`
 	To       crew.State      `json:"to,omitempty"`
 	Shell    crew.ActionName `json:"shell,omitempty"`
 	Function crew.ActionName `json:"function,omitempty"`
+	Question crew.QuestionID `json:"question,omitempty"`
 }
 
 // stepKinds returns the names of the kinds of a route's steps on the wire.

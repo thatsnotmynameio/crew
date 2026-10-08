@@ -47,6 +47,15 @@ type FunctionEnded struct {
 	Outcome FunctionOutcome
 }
 
+// ReturnChecked is the answered rule's check that ended: what CheckReturn
+// found in the item's comments, never the comments themselves (KTD2).
+type ReturnChecked struct {
+	FactHead
+
+	Action ActionName
+	Check  ReturnCheck
+}
+
 // decide records the session's start, as its action's bot and the login
 // the fact names, and whether it may ask a question, and asks it to stop
 // at once when a stop reached the run while it was starting.
@@ -110,5 +119,19 @@ func (f FunctionEnded) decide(d *decider) error {
 	action := d.def.Rule.Action(f.Action)
 	spec, _ := action.Kind.(FunctionSpec)
 	d.finish(f.Action, judgeFunction(spec, action.On, f.Outcome, d.run.stopping))
+	return nil
+}
+
+// decide ends the action with the check's verdict, where its on sends it,
+// once a stop reached the run too: the read finishes within the lookup
+// timeout, so its verdict stands (KTD6). Passed goes on to the passed
+// route, whose return step moves the item to the label the check found.
+func (f ReturnChecked) decide(d *decider) error {
+	if err := d.awaits(f.Action, is[InReturnCheck]); err != nil {
+		return err
+	}
+	j := judgeReturn(f.Check)
+	d.returnTo = f.Check.To
+	d.end(f.Action, j, d.def.Rule.Action(f.Action).On.Target(j.Verdict))
 	return nil
 }

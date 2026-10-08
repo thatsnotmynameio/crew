@@ -63,6 +63,45 @@ const (
 	questionWaiting crew.State    = "crew:question:waiting answer"
 )
 
+// The name, labels and action of crew's answered rule, the same in every
+// repository (KTD1 of #311).
+const (
+	answeredRule    crew.RuleName   = "answered"
+	answeredLabel   crew.State      = "crew:answered"
+	answeredRunning crew.State      = "crew:answered:in progress"
+	answeredFailed  crew.State      = "crew:answered:failed"
+	answerAction    crew.ActionName = "answer"
+)
+
+// builtinRule is one of crew's rules questions adds: its name, and the
+// labels it takes, runs in or moves an item to, which no other rule may.
+type builtinRule struct {
+	name   crew.RuleName
+	labels []crew.State
+}
+
+// builtinRules returns crew's rules questions adds, the question rule
+// first.
+func builtinRules() []builtinRule {
+	return []builtinRule{
+		{questionRule, []crew.State{questionLabel, questionRunning, questionWaiting}},
+		{answeredRule, []crew.State{answeredLabel, answeredRunning, answeredFailed}},
+	}
+}
+
+// reservedLabel rejects label, written at path and line, when it is one of
+// the labels of crew's built-in rules, ignoring case.
+func reservedLabel(path string, line int, label crew.State) error {
+	for _, b := range builtinRules() {
+		if slices.ContainsFunc(b.labels, func(l crew.State) bool { return strings.EqualFold(string(label), string(l)) }) {
+			return keyError(path, line, fmt.Sprintf(
+				"%q is a label of crew's %s rule, which questions adds, so no other rule takes it, "+
+					"runs in it or moves an item to it", label, b.name))
+		}
+	}
+	return nil
+}
+
 // askAt is where a question is written: its step or action, and its return
 // label.
 type askAt struct {
@@ -215,13 +254,10 @@ func questionRoutes(p parsedRule) ([]parsedRoute, error) {
 
 // checkQuestions rejects, in rules after spellOnce, every question without
 // q, and with q every question in a rule that takes pull requests, every
-// return label that is no rule's ready label (R3), and every rule that
-// takes the question rule's name or labels.
+// return label that is no rule's ready label (R3) or the ready label of a
+// rule that takes pull requests (KTD4 of #311), and every rule that takes
+// the name or labels of crew's question or answered rule.
 func checkQuestions(rules []parsedRule, q *Questions) error {
-	ready := make([]string, 0, len(rules))
-	for _, r := range rules {
-		ready = append(ready, string(r.Labels.Ready))
-	}
 	var errs []error
 	for _, r := range rules {
 		if q != nil {
@@ -229,15 +265,16 @@ func checkQuestions(rules []parsedRule, q *Questions) error {
 		}
 		for _, route := range r.routes {
 			if route.ask != nil {
-				errs = append(errs, checkAsk(r, route, q, ready))
+				errs = append(errs, checkAsk(r, route, q, rules))
 			}
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// checkAsk rejects the question route of r asks, as checkQuestions does.
-func checkAsk(r parsedRule, route parsedRoute, q *Questions, ready []string) error {
+// checkAsk rejects the question route of r asks, as checkQuestions does,
+// against the ready labels of rules.
+func checkAsk(r parsedRule, route parsedRoute, q *Questions, rules []parsedRule) error {
 	at := route.ask.step
 	switch {
 	case q == nil:
@@ -246,36 +283,41 @@ func checkAsk(r parsedRule, route parsedRoute, q *Questions, ready []string) err
 		return keyError(at.path, at.line,
 			fmt.Sprintf("rule %q takes pull requests, and crew's question rule takes issues, so it cannot ask", r.Name))
 	}
-	last := route.Steps[len(route.Steps)-2]
-	if s, ok := last.(crew.QuestionStep); ok && !slices.Contains(ready, string(s.Question.Return)) {
-		return keyError(route.ask.ret.path, route.ask.ret.line, fmt.Sprintf(
+	// A question route ends with its question, then crew's move to
+	// crew:question: endWithQuestion and questionRoutes see to it.
+	s, _ := route.Steps[len(route.Steps)-2].(crew.QuestionStep)
+	ret, to := route.ask.ret, s.Question.Return
+	i := slices.IndexFunc(rules, func(o parsedRule) bool { return o.Labels.Ready == to })
+	switch {
+	case i < 0:
+		ready := make([]string, len(rules))
+		for j, o := range rules {
+			ready[j] = string(o.Labels.Ready)
+		}
+		return keyError(ret.path, ret.line, fmt.Sprintf(
 			"%q is not the ready label of a rule, so none would take the item back once its question is answered; "+
-				"the ready labels are %s", s.Question.Return, strings.Join(ready, ", ")))
+				"the ready labels are %s", to, strings.Join(ready, ", ")))
+	case rules[i].Takes == crew.KindPullRequest:
+		return keyError(ret.path, ret.line, fmt.Sprintf(
+			"%q is the ready label of rule %q, which takes pull requests, and the item that asks is an issue, "+
+				"so that rule would never take it back once its question is answered", to, rules[i].Name))
 	}
 	return nil
 }
 
-// checkReserved rejects r when it is named like crew's question rule, when
-// it takes or runs in one of that rule's labels, or when one of its
-// written moves leads to one.
+// checkReserved rejects r when it is named like one of crew's built-in
+// rules, when it takes or runs in one of their labels, or when one of its
+// written moves leads to one. Labels are compared ignoring case.
 func checkReserved(r parsedRule) error {
-	reserved := func(path string, line int, label crew.State) error {
-		for _, l := range []crew.State{questionLabel, questionRunning, questionWaiting} {
-			if strings.EqualFold(string(label), string(l)) {
-				return keyError(path, line, fmt.Sprintf(
-					"%q is a label of crew's question rule, which questions adds, so no other rule takes it, "+
-						"runs in it or moves an item to it", label))
-			}
-		}
-		return nil
-	}
 	errs := []error{
-		reserved(r.path+".labels.ready", r.labels.Ready.line, r.Labels.Ready),
-		reserved(r.path+".labels.running", r.labels.Running.line, r.Labels.Running),
+		reservedLabel(r.path+".labels.ready", r.labels.Ready.line, r.Labels.Ready),
+		reservedLabel(r.path+".labels.running", r.labels.Running.line, r.Labels.Running),
 	}
-	if r.Name == questionRule {
-		errs = append(errs, keyError(r.path, r.ruleLine, fmt.Sprintf(
-			"%q is the name of crew's question rule, which questions adds; name this rule another way", r.Name)))
+	for _, b := range builtinRules() {
+		if r.Name == b.name {
+			errs = append(errs, keyError(r.path, r.ruleLine, fmt.Sprintf(
+				"%q is the name of crew's %s rule, which questions adds; name this rule another way", r.Name, b.name)))
+		}
 	}
 	for _, route := range r.routes {
 		written := len(route.Steps)
@@ -284,7 +326,7 @@ func checkReserved(r parsedRule) error {
 		}
 		for i, step := range route.Steps[:written] {
 			if m, ok := step.(crew.MoveStep); ok {
-				errs = append(errs, reserved(route.steps[i].path, route.steps[i].line, m.To))
+				errs = append(errs, reservedLabel(route.steps[i].path, route.steps[i].line, m.To))
 			}
 		}
 	}
@@ -292,23 +334,36 @@ func checkReserved(r parsedRule) error {
 }
 
 // withQuestionRule returns rules and notify with crew's question rule
-// first, in q's queue, when q is set (KTD7): it takes crew:question,
-// delegates the item's open question and moves the item to crew:question:
-// waiting answer, which no rule takes. It has no actions and does not
-// notify. At equal priority the scheduler takes later rules first, so the
-// file's rules take first.
+// first, then its answered rule, both in q's queue, when q is set (KTD7).
+// The question rule takes crew:question, delegates the item's open
+// question and moves the item to crew:question:waiting answer, which no
+// rule takes; it has no actions. The answered rule takes crew:answered,
+// checks the answer with its one action, answer, and returns the item to
+// the label the check found, or reports and moves it to
+// crew:answered:failed (KTD1, KTD4 of #311). Neither notifies. At equal
+// priority the scheduler takes later rules first, so the file's rules take
+// first.
 func withQuestionRule(q *Questions, rules []crew.Rule, notify map[crew.RuleName]bool,
 ) ([]crew.Rule, map[crew.RuleName]bool) {
 	if q == nil {
 		return rules, notify
 	}
-	rule := crew.Rule{
+	question := crew.Rule{
 		Name: questionRule, Queue: q.Queue,
 		Labels: crew.Labels{Ready: questionLabel, Running: questionRunning},
 		Routes: []crew.Route{{Name: crew.PassedRoute, Steps: []crew.Step{
 			crew.DelegateStep{}, crew.MoveStep{To: questionWaiting},
 		}}},
 	}
-	notify[questionRule] = false
-	return append([]crew.Rule{rule}, rules...), notify
+	answered := crew.Rule{
+		Name: answeredRule, Queue: q.Queue,
+		Labels:  crew.Labels{Ready: answeredLabel, Running: answeredRunning},
+		Actions: []crew.Action{{Name: answerAction, Kind: crew.ReturnSpec{}}},
+		Routes: []crew.Route{
+			{Name: crew.PassedRoute, Steps: []crew.Step{crew.ReturnStep{}}},
+			{Name: crew.FailedRoute, Steps: []crew.Step{crew.ReportStep{}, crew.MoveStep{To: answeredFailed}}},
+		},
+	}
+	notify[questionRule], notify[answeredRule] = false, false
+	return append([]crew.Rule{question, answered}, rules...), notify
 }

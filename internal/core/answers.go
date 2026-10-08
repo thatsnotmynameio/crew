@@ -51,7 +51,7 @@ func (s *step) answersRead(h *heldRun, in AnswersRead) {
 	}
 	a.read, a.failed, a.reason = true, in.Failed, in.Reason
 	if !in.Failed {
-		a.answered = crew.Answers(in.Comments, h.run.Questions(in.Action), s.m.answerers)
+		a.answered = crew.Answers(in.Comments, h.run.Questions(in.Action), s.m.bots.writers(), s.m.answerers)
 	}
 	s.startSession(h, in.Action)
 }
@@ -86,9 +86,10 @@ func (m *Model) resumeParagraphs(h *heldRun, name crew.ActionName, start crew.St
 
 // unread returns what the read command of a session whose answers crew
 // could not read reads: the open questions of h's run at its action named
-// name, and who may answer them, the Apps that asked one left out (R48).
+// name, and who may answer them, the Apps that asked one left out, crew's
+// writers among them for a rule's question (R48, KTD5).
 func (m *Model) unread(h *heldRun, name crew.ActionName) reader {
-	asks, logins := askedAt(h.run.Questions(name))
+	asks, logins := m.askedAt(h.run.Questions(name))
 	return reader{
 		issue: h.run.Issue().ID().Key, questions: asks, owners: m.answerers.CodeOwners, apps: m.appsExcept(logins...),
 	}

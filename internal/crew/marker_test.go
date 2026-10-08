@@ -129,3 +129,87 @@ func TestADelegatedMarkerNamesItsQuestion(t *testing.T) {
 		t.Errorf("a question's marker holds a delegation's")
 	}
 }
+
+// The delegation that could not read the comments writes its own marker,
+// still a delegation's, which tells it from the one that found no question
+// and from the one that names its question.
+func TestADelegationsMarkerSaysWhatItsReadFound(t *testing.T) {
+	if UnreadDelegatedMarker != "<!-- crew:delegated unread -->" {
+		t.Errorf("UnreadDelegatedMarker = %q", UnreadDelegatedMarker)
+	}
+	for name, tc := range map[string]struct {
+		marker string
+		want   DelegatedQuestion
+	}{
+		"the question found":    {DelegatedMarker(blocksID), DelegatedQuestion{Search: QuestionFound, ID: blocksID}},
+		"an escaped id":         {DelegatedMarker("a b"), DelegatedQuestion{Search: QuestionFound, ID: "a b"}},
+		"no question found":     {DelegatedMarker(""), DelegatedQuestion{Search: QuestionNotFound}},
+		"the comments not read": {UnreadDelegatedMarker, DelegatedQuestion{Search: QuestionUnread}},
+		"the last marker counts": {
+			DelegatedMarker("x") + "\n" + UnreadDelegatedMarker, DelegatedQuestion{Search: QuestionUnread},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := "@octocat, please answer.\n\n" + tc.marker + "\n"
+			if !HoldsDelegatedMarker(body) {
+				t.Errorf("HoldsDelegatedMarker(%q) = false, want true", body)
+			}
+			if got, ok := FindDelegatedMarker(body); !ok || got != tc.want {
+				t.Errorf("FindDelegatedMarker(%q) = %#v, %v, want %#v", body, got, ok, tc.want)
+			}
+		})
+	}
+	for _, body := range []string{
+		"no marker",
+		"<!-- crew:delegated -->",
+		"<!-- crew:delegated id=a extra=b -->",
+		"<!-- crew:delegated id=%ZZ -->",
+		"<!-- crew:delegated unread",
+		QuestionMarker(blocksID, "deps", "crew:deps:ready"),
+	} {
+		if got, ok := FindDelegatedMarker(body); ok {
+			t.Errorf("FindDelegatedMarker(%q) = %#v, want none", body, got)
+		}
+	}
+}
+
+func TestAnAnswerMarkerCarriesTheQuestionsParameters(t *testing.T) {
+	if got := AnswerMarker(blocksID, "deps", "crew:deps:ready"); got !=
+		"<!-- crew:answer question=blocks rule=deps return=crew%3Adeps%3Aready -->" {
+		t.Errorf("AnswerMarker = %q", got)
+	}
+}
+
+// Stripping removes each well-formed answer marker, and the blank space
+// around a body it stripped, and keeps every other marker, so a body that
+// holds one still holds a marker.
+func TestStrippingAnswerMarkersKeepsOnlyTheWellFormedOnesOut(t *testing.T) {
+	marker := AnswerMarker(blocksID, "deps", "crew:deps:ready")
+	for name, tc := range map[string]struct{ body, want string }{
+		"a marker after the text": {"yes\n\n" + marker + "\n", "yes"},
+		"two markers":             {marker + " yes " + marker, "yes"},
+		"values with spaces and comment ends": {
+			"yes " + AnswerMarker("a b", "x --> <!-- crew:posted -->", "a&b=c -->"), "yes",
+		},
+		"a bad one, then a good one": {"<!-- crew:answer end --> yes " + marker, "<!-- crew:answer end --> yes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := StripAnswerMarkers(tc.body); got != tc.want {
+				t.Errorf("StripAnswerMarkers(%q) = %q, want %q", tc.body, got, tc.want)
+			}
+		})
+	}
+	for _, kept := range []string{
+		"no marker\n",
+		"<!-- crew:answer by alice -->\nyes",
+		"yes\n<!-- crew:answer end -->",
+		"<!-- crew:answer question=a rule=b -->",
+		"<!-- crew:answer rule=b question=a return=c -->",
+		"<!-- crew:answer question=a rule=b return=%ZZ -->",
+		"<!-- crew:answer question=a rule=b return=c",
+	} {
+		if got := StripAnswerMarkers(kept); got != kept {
+			t.Errorf("StripAnswerMarkers(%q) = %q, want it kept as it is", kept, got)
+		}
+	}
+}

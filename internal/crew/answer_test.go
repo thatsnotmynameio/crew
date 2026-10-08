@@ -230,7 +230,81 @@ var answerCases = []struct {
 		},
 		want: Answered{Found: true, Answers: []Answer{{Author: "alice", Body: "Use Postgres"}}},
 	},
+	{
+		name: "an answer's parameters are stripped, and it counts",
+		comments: []Comment{
+			questionBy(asker, true, "seed.1"),
+			person("alice", "Use Postgres\n\n"+AnswerMarker(blocksID, "deps", "crew:deps:ready")),
+		},
+		want: Answered{Found: true, Answers: []Answer{{Author: "alice", Body: "Use Postgres"}}},
+	},
+	{
+		name: "a rule's question, by its marker and a writer's login, and its answer with the parameters stripped",
+		comments: []Comment{
+			person("alice", "Before"),
+			asksAs(crewWriter, blocksID),
+			person("alice", "Yes, #284 does\n\n"+AnswerMarker(blocksID, "deps", labelReady)),
+		},
+		questions: []Question{ruleAsked},
+		want: Answered{
+			Found: true, RuleQuestion: blocksID, Answers: []Answer{{Author: "alice", Body: "Yes, #284 does"}},
+		},
+	},
+	{
+		name: "a rule's question: crew's App writer answers nothing, your gh login as a code owner does",
+		comments: []Comment{
+			asksAs(crewWriter, blocksID), app(crewWriter, "My own comment"), person("Boss", "Yes"),
+		},
+		questions: []Question{ruleAsked},
+		who:       Answerers{CodeOwners: []string{"boss"}, Apps: []string{crewWriter}},
+		want:      Answered{Found: true, RuleQuestion: blocksID, Answers: []Answer{{Author: "Boss", Body: "Yes"}}},
+	},
+	{
+		name:      "a rule's question marker by a login other than crew's writers is no question",
+		comments:  []Comment{asksAs("mallory", blocksID), person("alice", "Yes")},
+		questions: []Question{ruleAsked},
+		want:      Answered{},
+	},
+	{
+		name: "a rule's question marker without crew's own marker is no question",
+		comments: []Comment{
+			app(crewWriter, "Does it?\n\n"+QuestionMarker(blocksID, "deps", labelReady)), person("alice", "Yes"),
+		},
+		questions: []Question{ruleAsked},
+		want:      Answered{},
+	},
+	{
+		name: "a question marker of another id or rule is not the rule's question",
+		comments: []Comment{
+			asksAs(crewWriter, "other"),
+			writes(crewWriter, "Does it?\n\n"+QuestionMarker(blocksID, "release", labelReady)),
+			person("alice", "Yes"),
+		},
+		questions: []Question{ruleAsked},
+		want:      Answered{},
+	},
+	{
+		name: "a session's question, then a later rule's question: the rule's",
+		comments: []Comment{
+			questionBy(asker, true, "seed.1"), person("alice", "Postgres"),
+			asksAs(crewWriter, blocksID), person("alice", "Yes"),
+		},
+		questions: []Question{askedBy(asker), ruleAsked},
+		want:      Answered{Found: true, RuleQuestion: blocksID, Answers: []Answer{{Author: "alice", Body: "Yes"}}},
+	},
+	{
+		name: "a rule's question, then a later session's question: the session's",
+		comments: []Comment{
+			asksAs(crewWriter, blocksID), person("alice", "Yes"),
+			questionBy(asker, true, "seed.1"), person("Octocat", "Postgres"),
+		},
+		questions: []Question{ruleAsked, askedBy(asker)},
+		want:      Answered{Found: true, Answers: []Answer{{Author: "Octocat", Body: "Postgres"}}},
+	},
 }
+
+// ruleAsked is the deps rule's open question blocks.
+var ruleAsked = Question{ID: blocksID, Rule: "deps"}
 
 func TestAnswersKeepOnlyTheCommentsThatCount(t *testing.T) {
 	for _, tt := range answerCases {
@@ -243,7 +317,7 @@ func TestAnswersKeepOnlyTheCommentsThatCount(t *testing.T) {
 			if who.CodeOwners == nil && who.Apps == nil {
 				who = defaultAnswerers
 			}
-			if got := Answers(tt.comments, questions, who); !reflect.DeepEqual(got, tt.want) {
+			if got := Answers(tt.comments, questions, writers, who); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Answers =\n%#v\nwant\n%#v", got, tt.want)
 			}
 		})
@@ -285,7 +359,7 @@ func TestAnswersAreCappedNewestFirst(t *testing.T) {
 				comments = append(comments, sized(t, string(rune('a'+i)), size))
 			}
 
-			got := Answers(comments, []Question{askedBy(asker)}, defaultAnswerers)
+			got := Answers(comments, []Question{askedBy(asker)}, writers, defaultAnswerers)
 
 			if !got.Found || len(got.Answers) != tt.kept || got.LeftOut != tt.leftOut {
 				t.Fatalf("found %v, %d answers, %d left out; want found, %d answers, %d left out",

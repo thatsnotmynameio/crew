@@ -24,7 +24,7 @@ func (s *step) onRoute(h *heldRun, e crew.RunEvent) {
 		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked, crew.ActionSessionStarted,
 		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellAsked, crew.ActionShellStopAsked,
 		crew.ActionShellEnded, crew.ActionFunctionAsked, crew.ActionFunctionStopAsked, crew.ActionFunctionEnded,
-		crew.ActionEnded, crew.RunLookupDone, crew.RunReleased:
+		crew.ActionReturnAsked, crew.ActionEnded, crew.RunLookupDone, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }
@@ -49,8 +49,10 @@ func (s *step) askStep(h *heldRun, i int) {
 	issue := h.run.Issue()
 	d := &delivery{purpose: purposeStep, step: i}
 	switch st := route.Steps[i].(type) {
-	case crew.MoveStep:
-		d.call = h.move(rule.Labels.Running, st.To)
+	case crew.MoveStep, crew.ReturnStep:
+		// The plan holds where a move goes, and where a return goes: the
+		// label the run's check found.
+		d.call = h.move(rule.Labels.Running, p.Steps[i].To)
 	case crew.CloseStep:
 		d.call = Call{Kind: CallClose, IssueID: issue.ID(), IssueRef: issue.Ref(), From: rule.Labels.Running}
 	case crew.CommentStep:

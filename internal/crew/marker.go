@@ -46,11 +46,12 @@ func HoldsSessionMarker(body string, run RuleRunID, action ActionName) bool {
 	return strings.Contains(body, SessionMarker(run, action))
 }
 
-// questionPrefix starts a question's marker, and delegatedPrefix a
-// delegation's.
+// questionPrefix starts a question's marker, delegatedPrefix a
+// delegation's and answerPrefix an answer's.
 const (
 	questionPrefix  = MarkerPrefix + "question "
 	delegatedPrefix = MarkerPrefix + "delegated "
+	answerPrefix    = MarkerPrefix + "answer "
 )
 
 // markerEnd closes every one of crew's markers.
@@ -60,8 +61,15 @@ const markerEnd = " -->"
 // comment that asks it: <!-- crew:question id=<id> rule=<rule>
 // return=<label> -->. Its values are query-escaped, as SessionMarker's are.
 func QuestionMarker(id QuestionID, rule RuleName, ret State) string {
-	return questionPrefix + "id=" + url.QueryEscape(string(id)) + " rule=" + url.QueryEscape(string(rule)) +
-		" return=" + url.QueryEscape(string(ret)) + markerEnd
+	return QuestionMarkerPrefix(id, rule) + url.QueryEscape(string(ret)) + markerEnd
+}
+
+// QuestionMarkerPrefix returns the start of the marker of the question id
+// that rule asks, up to its return label's value: <!-- crew:question
+// id=<id> rule=<rule> return=. It finds that question whatever label it
+// returns to, and no question of a rule whose name only starts with rule.
+func QuestionMarkerPrefix(id QuestionID, rule RuleName) string {
+	return questionPrefix + "id=" + url.QueryEscape(string(id)) + " rule=" + url.QueryEscape(string(rule)) + " return="
 }
 
 // FindQuestionMarker returns the question the last question marker in body
@@ -87,8 +95,8 @@ func markerValues(inner string, keys ...string) ([]string, bool) {
 		return nil, false
 	}
 	values := make([]string, 0, len(keys))
-	for i, pair := range pairs {
-		escaped, found := strings.CutPrefix(pair, keys[i]+"=")
+	for i, key := range keys {
+		escaped, found := strings.CutPrefix(pairs[i], key+"=")
 		value, err := url.QueryUnescape(escaped)
 		if !found || err != nil {
 			return nil, false
@@ -105,8 +113,85 @@ func DelegatedMarker(id QuestionID) string {
 	return delegatedPrefix + "id=" + url.QueryEscape(string(id)) + markerEnd
 }
 
+// UnreadDelegatedMarker is the marker of the comment that delegates the
+// item's open question when crew could not read its comments, and so names
+// none: <!-- crew:delegated unread -->. It is a delegation's marker, which
+// tells it from the one that found no question (KTD10).
+const UnreadDelegatedMarker = delegatedPrefix + "unread" + markerEnd
+
 // HoldsDelegatedMarker reports whether body holds, anywhere, the marker of
 // a delegation, of any question.
 func HoldsDelegatedMarker(body string) bool {
 	return strings.Contains(body, delegatedPrefix)
+}
+
+// DelegatedQuestion is what a delegation's marker says the read before it
+// found: the question by its id, no question, or nothing as the read
+// failed.
+type DelegatedQuestion struct {
+	// Search is what the read found.
+	Search QuestionSearch
+	// ID is the question found; empty unless Search is QuestionFound.
+	ID QuestionID
+}
+
+// FindDelegatedMarker returns what the last delegation marker in body says
+// its read found, and whether that marker parses: DelegatedMarker's, of an
+// id or of none, or UnreadDelegatedMarker.
+func FindDelegatedMarker(body string) (DelegatedQuestion, bool) {
+	_, marker, found := strings.CutLast(body, delegatedPrefix)
+	inner, _, closed := strings.Cut(marker, markerEnd)
+	if !found || !closed {
+		return DelegatedQuestion{}, false
+	}
+	if inner == "unread" {
+		return DelegatedQuestion{Search: QuestionUnread}, true
+	}
+	values, ok := markerValues(inner, "id")
+	switch {
+	case !ok:
+		return DelegatedQuestion{}, false
+	case values[0] == "":
+		return DelegatedQuestion{Search: QuestionNotFound}, true
+	}
+	return DelegatedQuestion{Search: QuestionFound, ID: QuestionID(values[0])}, true
+}
+
+// AnswerMarker returns the marker an answer may carry to name the question
+// it answers, by the question's parameters: <!-- crew:answer question=<id>
+// rule=<rule> return=<label> --> (R7). Its values are query-escaped, as
+// QuestionMarker's are. crew reads none of them: the question names its
+// return label (KTD5).
+func AnswerMarker(id QuestionID, rule RuleName, ret State) string {
+	return answerPrefix + "question=" + url.QueryEscape(string(id)) + " rule=" + url.QueryEscape(string(rule)) +
+		" return=" + url.QueryEscape(string(ret)) + markerEnd
+}
+
+// StripAnswerMarkers returns body without the answer markers it holds that
+// parse (AnswerMarker's three keys, in order, each value unescaping), and
+// without the blank space around the rest once it stripped one. It keeps
+// every other marker, a quoted answer's among them, so a body that holds
+// one still holds a marker (HoldsMarker) and is never an answer.
+func StripAnswerMarkers(body string) string {
+	var b strings.Builder
+	rest, stripped := body, false
+	for {
+		before, marker, found := strings.Cut(rest, answerPrefix)
+		if !found {
+			b.WriteString(rest)
+			break
+		}
+		b.WriteString(before)
+		inner, after, closed := strings.Cut(marker, markerEnd)
+		if _, ok := markerValues(inner, "question", "rule", "return"); closed && ok {
+			rest, stripped = after, true
+			continue
+		}
+		b.WriteString(answerPrefix)
+		rest = marker
+	}
+	if !stripped {
+		return body
+	}
+	return strings.TrimSpace(b.String())
 }

@@ -126,10 +126,35 @@ func (s *step) runInput(in RunInput) {
 		s.decide(h, crew.StepFunctionEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
 	case PullRequestFound:
 		s.decide(h, crew.PullRequestLookedUp{FactHead: head, PullRequest: in.PullRequest})
+	case commentsInput:
+		s.commentsRead(h, in)
+	}
+}
+
+// commentsInput is a read of the comments on the issue of a held run:
+// AnswersRead, QuestionRead or ReturnRead.
+//
+//sumtype:decl
+type commentsInput interface {
+	RunInput
+	commentsRead()
+}
+
+func (AnswersRead) commentsRead()  {}
+func (QuestionRead) commentsRead() {}
+func (ReturnRead) commentsRead()   {}
+
+// commentsRead hands in, a read of the comments on the issue of h's run,
+// to what asked for it: the session that starts on its answers, the
+// delegation step, or the answered rule's check.
+func (s *step) commentsRead(h *heldRun, in commentsInput) {
+	switch in := in.(type) {
 	case AnswersRead:
 		s.answersRead(h, in)
 	case QuestionRead:
 		s.questionRead(h, in)
+	case ReturnRead:
+		s.returnRead(h, in)
 	}
 }
 
@@ -204,7 +229,7 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 		// Nothing to do outside the run.
 	case crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
 		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked,
-		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionEnded:
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionReturnAsked, crew.ActionEnded:
 		s.onAction(h, e)
 	case crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
 		crew.StepFunctionStopAsked, crew.StepEnded:
@@ -214,7 +239,9 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 
 // onAction issues the commands e, an event about the action at the cursor
 // of h's run, calls for, and publishes e when the views word it: a started
-// session, script or function, or an ended action.
+// session, script, function or check of the answer, or an ended action.
+// The answered rule's check asks for the read of the issue's comments
+// (KTD2).
 func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionSessionAsked:
@@ -233,6 +260,9 @@ func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 		s.runFunction(h, e)
 	case crew.ActionFunctionStopAsked:
 		s.command(StopFunction{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
+	case crew.ActionReturnAsked:
+		s.emit(e)
+		s.command(ReadReturn{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,

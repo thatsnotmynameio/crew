@@ -288,7 +288,8 @@ func spending(state crew.ActionRunState) bool {
 	switch state.(type) {
 	case crew.InSession, crew.InShell, crew.InFunction:
 		return true
-	case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.StartingSession, crew.Finished, crew.NotRun:
+	case crew.AwaitingTurn, crew.DoneInEarlierRun, crew.StartingSession, crew.InReturnCheck, crew.Finished,
+		crew.NotRun:
 	}
 	return false
 }

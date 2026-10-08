@@ -57,12 +57,14 @@ func Decide(run RuleRun, def RunDefinition, fact Fact) ([]RunEvent, error) {
 }
 
 // decider is one Decide in progress: the run with the events decided so
-// far applied, and those events.
+// far applied, those events, and the label the answered rule's check
+// found, which a route's return step moves the item to.
 type decider struct {
-	run    RuleRun
-	def    RunDefinition
-	at     time.Time
-	events []RunEvent
+	run      RuleRun
+	def      RunDefinition
+	at       time.Time
+	events   []RunEvent
+	returnTo State
 }
 
 // head returns the head of an event of the run, at the fact's time.
@@ -98,7 +100,8 @@ func is[T ActionRunState](s ActionRunState) bool {
 
 // start starts the action named name: asks for its session, after
 // rendering its prompt, or for its script or its function, after rendering
-// its text parameters, acting as the run's bot. A session whose prompt
+// its text parameters, acting as the run's bot, or for the read of the
+// item's comments the answered rule's check needs. A session whose prompt
 // does not render, and a function whose text parameters do not, end at
 // once. A question ends at once with Asked and asks for nothing: the route
 // its On sends Asked to posts it. Once a stop or time-up reached the run
@@ -126,6 +129,8 @@ func (d *decider) start(name ActionName) {
 	case QuestionSpec:
 		reason := fmt.Sprintf("crew asked the question %q", k.Question.ID)
 		d.finish(name, Judged{Verdict: Asked, End: EndSucceeded{Reason: NewSessionText(reason)}})
+	case ReturnSpec:
+		d.emit(ActionReturnAsked{EventHead: d.head(), Action: name})
 	}
 }
 
@@ -180,13 +185,20 @@ func (d *decider) end(name ActionName, j Judged, target Target) {
 }
 
 // choose ends the run's sequence through route, with the action named
-// action at its cursor. It asks for the lookup of the run's pull requests
-// when the rule has a session that could have opened one in the run's
-// workspace, and the route's first step once the lookup answered, or at
-// once without one.
+// action at its cursor, each return step planned as a move to the label
+// the answered rule's check found (KTD4). It asks for the lookup of the
+// run's pull requests when the rule has a session that could have opened
+// one in the run's workspace, and the route's first step once the lookup
+// answered, or at once without one.
 func (d *decider) choose(route RouteName, action ActionName) {
 	r, _ := d.def.Rule.Route(route)
-	d.emit(RouteChosen{EventHead: d.head(), Route: route, Action: action, Steps: plans(r)})
+	steps := plans(r)
+	for i, s := range r.Steps {
+		if _, ok := s.(ReturnStep); ok {
+			steps[i].To = d.returnTo
+		}
+	}
+	d.emit(RouteChosen{EventHead: d.head(), Route: route, Action: action, Steps: steps})
 	if _, ok := d.run.Workspace().Get(); ok && d.def.FindsPullRequests && d.def.Rule.hasSession() {
 		d.emit(RunLookupAsked{EventHead: d.head()})
 		return
@@ -259,7 +271,7 @@ func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 		if _, err := s.Question.Body(d.run.CommentData()); err != nil {
 			return StepFailed{Reason: NewShellReason(err.Error())}, true
 		}
-	case MoveStep, CloseStep, ReportStep, DelegateStep:
+	case MoveStep, CloseStep, ReportStep, DelegateStep, ReturnStep:
 	}
 	return nil, false
 }

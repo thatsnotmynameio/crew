@@ -42,14 +42,18 @@ type life func(at func(int) FactHead) []Fact
 
 // lived returns the history of the runs run-1, run-2 and on of the test
 // rule as def says, one per life, each taken as the history before it
-// says: its start, the run it continues and the questions it inherits.
+// says: its start, the run it continues and the questions it inherits, with
+// def's actions.
 func lived(t *testing.T, def RunDefinition, lives ...life) *History {
 	t.Helper()
 	var h History
 	for i, l := range lives {
 		id := RuleRunID(fmt.Sprintf("run-%d", i+1))
 		take, _ := taken().(RunTaken)
-		take.EventHead = hh(id, 0)
+		take.EventHead, take.Actions = hh(id, 0), nil
+		for _, a := range def.Rule.Actions {
+			take.Actions = append(take.Actions, a.Name)
+		}
 		take.Start, take.Questions = h.Start(testID, def.Rule), h.Questions(testID, def.Rule.Name)
 		if last, ok := h.LastRun(testID, def.Rule.Name); ok {
 			take.Continues = Some(last.ID())

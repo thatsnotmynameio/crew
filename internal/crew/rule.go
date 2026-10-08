@@ -128,9 +128,10 @@ type Outcome struct {
 // FailureReport is what a route's report step asks a tracker to post on an
 // issue: the action whose verdict ended the rule's sequence, that verdict,
 // the route the rule ends through and the log (R17, KTD5). The tracker
-// adapter formats it in its own markup. It carries no reason: an outcome's
-// reason is a session's or a tool's last words, which a tracker comment
-// must not show.
+// adapter formats it in its own markup. It carries no outcome's reason: an
+// outcome's reason is a session's or a tool's last words, which a tracker
+// comment must not show. Only the answered rule's check names why, as a
+// typed FailureReason the tracker words itself (KTD7).
 type FailureReport struct {
 	// IssueID and IssueRef identify the issue, as ID and Ref in Issue.
 	IssueID  IssueID
@@ -144,8 +145,8 @@ type FailureReport struct {
 }
 
 // ActionFailure is the action that ended a rule's sequence, in a
-// FailureReport: its verdict and where to read why, never the reason
-// itself.
+// FailureReport: its verdict, where to read why, and the answered rule's
+// typed reason, never an outcome's reason itself.
 type ActionFailure struct {
 	// Action is the action's name.
 	Action ActionName
@@ -155,18 +156,44 @@ type ActionFailure struct {
 	Workspace WorkspaceName
 	// Log is the repository-relative path of the session's log file.
 	Log string
+	// Reason is why the answered rule's check did not return the item, for
+	// the tracker to word itself (KTD7); NoFailureReason for any other
+	// action.
+	Reason FailureReason
 }
+
+// FailureReason is why the answered rule's check did not return the item,
+// in crew's own words, which a tracker words itself: never the text of a
+// comment (KTD7).
+type FailureReason int
+
+// The reasons of a FailureReport's action, one for each of the check's
+// failure verdicts.
+const (
+	// NoFailureReason is the reason of any action other than the answered
+	// rule's check, and of a check that did not fail by its own verdict.
+	NoFailureReason FailureReason = iota
+	// ReasonNoQuestion is a check that found no question the config
+	// declares (NoQuestion).
+	ReasonNoQuestion
+	// ReasonUnanswered is a check that found no answer after the question
+	// (Unanswered).
+	ReasonUnanswered
+	// ReasonUnread is a check that could not read the item's comments
+	// (Unread).
+	ReasonUnread
+)
 
 // needsWorkspace reports whether any of r's actions needs the run's
 // worktree: a session or a shell action. A function needs none (R25); it
-// gets the run's worktree when the run has one. A question needs none
-// either.
+// gets the run's worktree when the run has one. A question and the
+// answered rule's check need none either.
 func (r Rule) needsWorkspace() bool {
 	return slices.ContainsFunc(r.Actions, func(a Action) bool {
 		switch a.Kind.(type) {
 		case SessionSpec, ShellSpec:
 			return true
-		case FunctionSpec, QuestionSpec:
+		case FunctionSpec, QuestionSpec, ReturnSpec:
 		}
 		return false
 	})

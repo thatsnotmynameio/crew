@@ -11,21 +11,42 @@ import (
 // the route it ends through and the issue, then the action whose verdict
 // ended the sequence, that verdict and its log's repository-relative path,
 // or a line saying it ended before it had a log (R17, KTD23). The report
-// carries no reason: a reason is a session's or a tool's last words, which
-// can hold commands and their output, so you read it in the log or in
-// crew's output.
+// carries no outcome's reason: a reason is a session's or a tool's last
+// words, which can hold commands and their output, so you read it in the
+// log or in crew's output. Only the answered rule's check says why, in
+// crew's own words for its typed reason (failureWords, KTD7).
 func renderReport(r crew.FailureReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "crew: %s ended through %s on %s.\n", codeSpan(string(r.Rule)), codeSpan(string(r.Route)), r.IssueRef)
 	for _, f := range r.Failures {
 		action := fmt.Sprintf("**%s** ended with %s", codeSpan(string(f.Action)), codeSpan(string(f.Verdict)))
-		if f.Log == "" {
+		switch {
+		case f.Reason != crew.NoFailureReason:
+			fmt.Fprintf(&b, "\n%s: %s\n", action, failureWords(f.Reason, r.IssueRef))
+		case f.Log == "":
 			fmt.Fprintf(&b, "\n%s before it had a log. crew's output says why.\n", action)
-			continue
+		default:
+			fmt.Fprintf(&b, "\n%s. Its log is %s.\n", action, codeSpan(f.Log))
 		}
-		fmt.Fprintf(&b, "\n%s. Its log is %s.\n", action, codeSpan(f.Log))
 	}
 	return b.String()
+}
+
+// failureWords words why the answered rule's check did not return the
+// issue ref, in crew's own words: never a comment's text (KTD7).
+func failureWords(reason crew.FailureReason, ref string) string {
+	switch reason {
+	case crew.ReasonNoQuestion:
+		return fmt.Sprintf("crew found no open question on %s that the config declares, so it has nowhere to return %s.",
+			ref, ref)
+	case crew.ReasonUnanswered:
+		return "no answer counts after the question. An answer counts when a code owner, " +
+			"or an App on crew's answering list, posts it after the question."
+	case crew.ReasonUnread:
+		return fmt.Sprintf("crew could not read the comments on %s.", ref)
+	case crew.NoFailureReason:
+	}
+	return ""
 }
 
 // codeSpan renders s as inline code. Its delimiter is longer than any

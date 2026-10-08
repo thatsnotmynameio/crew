@@ -188,3 +188,141 @@ func TestTheReadOfAQuestionPostsTheCommentsOrWhyItFailed(t *testing.T) {
 		})
 	}
 }
+
+// The labels of crew's answered rule, and the ready label of deps.
+const (
+	answeredLabel crew.State = "crew:answered"
+	answeredFail  crew.State = "crew:answered:failed"
+	depsReady     crew.State = "crew:deps:ready"
+)
+
+// answeredRule is crew's answered rule: its one action, answer, checks the
+// answer; passed returns the item to the label the check found, and failed
+// reports, then moves the item to crew:answered:failed.
+var answeredRule = crew.Rule{
+	Name:    "answered",
+	Labels:  crew.Labels{Ready: answeredLabel, Running: "crew:answered:in progress"},
+	Actions: []crew.Action{{Name: "answer", Kind: crew.ReturnSpec{}}},
+	Routes: []crew.Route{
+		{Name: crew.PassedRoute, Steps: []crew.Step{crew.ReturnStep{}}},
+		{Name: crew.FailedRoute, Steps: []crew.Step{crew.ReportStep{}, crew.MoveStep{To: answeredFail}}},
+	},
+}
+
+// depsRule is the rule deps, whose session check, on unsure, asks the
+// question blocks, to return to deps's ready label, and moves the issue to
+// crew:question.
+func depsRule(t *testing.T) crew.Rule {
+	t.Helper()
+	text, err := crew.ParseCommentTemplate("ask", "Does {{.Issue.Ref}} block #281?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := sessionAction("check", "Check {{.Issue.Ref}}")
+	check.On = crew.On{"unsure": crew.ToRoute{Route: "ask"}}
+	return crew.Rule{
+		Name: "deps", Labels: crew.Labels{Ready: depsReady, Running: "crew:deps:in progress"},
+		Actions: []crew.Action{check},
+		Routes: append(routes(needsAttention), crew.Route{Name: "ask", Steps: []crew.Step{
+			crew.QuestionStep{Question: crew.Ask{ID: "blocks", Text: text, Return: depsReady}},
+			crew.MoveStep{To: questionLabel},
+		}}),
+	}
+}
+
+// Covers AE2, AE4, R9, R10, KTD2: the engine reads #1's comments for the
+// answered rule's check, which returns #1 to deps's ready label once alice
+// answered the question crew posted as you, and fails it to
+// crew:answered:failed, with a report, when it could not read them.
+func TestTheAnsweredRuleReturnsTheItemOnceTheEngineReadTheAnswer(t *testing.T) {
+	tests := []struct {
+		name   string
+		listed func(rt fake.RoutingTracker)
+		want   crew.State
+		report bool
+	}{
+		{
+			name: "answered",
+			listed: func(rt fake.RoutingTracker) {
+				rt.SetComments("1", postedQuestion("boss"), crew.Comment{Author: "alice", Body: "yes"})
+			},
+			want: depsReady,
+		},
+		{
+			name:   "read failed",
+			listed: func(rt fake.RoutingTracker) { rt.FailCommentLists("1", errors.New("gh: HTTP 502")) },
+			want:   answeredFail, report: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				rt := fake.NewRoutingTracker(issue(1, answeredLabel))
+				tt.listed(rt)
+				r := start(t, config(t, listing{rt}, answeredRule, depsRule(t)))
+				synctest.Wait()
+				stopped(t, r)
+
+				if got := states(t, rt, "1"); !slices.Equal(got, []crew.State{tt.want}) {
+					t.Errorf("#1 is in %v, want %s", got, tt.want)
+				}
+				if got := len(rt.Reports()); got > 0 != tt.report {
+					t.Errorf("%d reports posted, want a report: %v", got, tt.report)
+				}
+			})
+		})
+	}
+}
+
+// Covers KTD2: the read of the answered rule's check posts the comments the
+// tracker listed, or a failed read when the listing fails, times out or
+// the tracker lists no comments.
+func TestTheReadOfAReturnPostsTheCommentsOrThatItFailed(t *testing.T) {
+	rt := fake.NewRoutingTracker(issue(1, answeredLabel))
+	rt.SetComments("1", postedQuestion("boss"))
+	tests := []struct {
+		name    string
+		tracker func(root string) port.Tracker
+		want    core.ReturnRead
+	}{
+		{
+			name:    "listed",
+			tracker: func(string) port.Tracker { return listing{rt} },
+			want:    core.ReturnRead{Comments: []crew.Comment{postedQuestion("boss")}},
+		},
+		{
+			name: "failed",
+			tracker: func(root string) port.Tracker {
+				rt.FailCommentLists("1", fmt.Errorf("open %s/.git: denied", root))
+				return listing{rt}
+			},
+			want: core.ReturnRead{Failed: true},
+		},
+		{
+			name:    "timed out",
+			tracker: func(string) port.Tracker { return hanging{listing{rt}} },
+			want:    core.ReturnRead{Failed: true},
+		},
+		{
+			name:    "no lister",
+			tracker: func(string) port.Tracker { return fake.NewTracker(issue(1, answeredLabel)) },
+			want:    core.ReturnRead{Failed: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cfg := config(t, nil, answeredRule)
+				cfg.Tracker = tt.tracker(cfg.Root)
+				c := core.ReadReturn{IssueID: issueID("1"), Run: "run", Action: "answer"}
+
+				got := engine.New(cfg).ReadReturn(context.Background(), c)
+				want := tt.want
+				want.IssueID, want.Run, want.Action = c.IssueID, c.Run, c.Action
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("read = %#v, want %#v", got, want)
+				}
+			})
+		})
+	}
+}

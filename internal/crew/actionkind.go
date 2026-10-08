@@ -2,8 +2,8 @@ package crew
 
 import "time"
 
-// ActionKind is what an action runs: SessionSpec, ShellSpec, FunctionSpec
-// or QuestionSpec.
+// ActionKind is what an action runs: SessionSpec, ShellSpec, FunctionSpec,
+// QuestionSpec or ReturnSpec.
 //
 //sumtype:decl
 type ActionKind interface {
@@ -67,7 +67,14 @@ type FunctionSpec struct {
 	ResumeSelf bool
 }
 
+// ReturnSpec is the answered rule's one action, crew's own: crew reads the
+// item's comments, and the action ends with what CheckReturn found there,
+// the label the item returns to or the verdict that says why it does not
+// (KTD2). The config's grammar has no word for it.
+type ReturnSpec struct{}
+
 func (SessionSpec) actionKind()  {}
 func (ShellSpec) actionKind()    {}
 func (FunctionSpec) actionKind() {}
 func (QuestionSpec) actionKind() {}
+func (ReturnSpec) actionKind()   {}

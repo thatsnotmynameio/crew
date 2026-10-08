@@ -14,18 +14,20 @@ import (
 // Compile-time guards: the routing tracker implements the tracker
 // capabilities a rule's routes use.
 var (
-	_ port.Commenter      = (*Routing)(nil)
-	_ port.CommentLister  = (*Routing)(nil)
-	_ port.Delegator      = (*Routing)(nil)
-	_ port.LoginFinder    = (*Routing)(nil)
-	_ port.Tracker        = RoutingTracker{}
-	_ port.Preparer       = RoutingTracker{}
-	_ port.StatusReporter = RoutingTracker{}
-	_ port.Commenter      = RoutingTracker{}
-	_ port.Closer         = RoutingTracker{}
-	_ port.CommentLister  = RoutingTracker{}
-	_ port.Delegator      = RoutingTracker{}
-	_ port.LoginFinder    = RoutingTracker{}
+	_ port.Commenter       = (*Routing)(nil)
+	_ port.CommentLister   = (*Routing)(nil)
+	_ port.Delegator       = (*Routing)(nil)
+	_ port.LoginFinder     = (*Routing)(nil)
+	_ port.CodeOwnerFinder = (*Routing)(nil)
+	_ port.Tracker         = RoutingTracker{}
+	_ port.Preparer        = RoutingTracker{}
+	_ port.StatusReporter  = RoutingTracker{}
+	_ port.Commenter       = RoutingTracker{}
+	_ port.Closer          = RoutingTracker{}
+	_ port.CommentLister   = RoutingTracker{}
+	_ port.Delegator       = RoutingTracker{}
+	_ port.LoginFinder     = RoutingTracker{}
+	_ port.CodeOwnerFinder = RoutingTracker{}
 )
 
 // Comment is a comment the fake tracker posted on the issue with Key.
@@ -42,12 +44,13 @@ type Closing struct {
 }
 
 // Routing is a scriptable port.Commenter, port.CommentLister,
-// port.Delegator and port.LoginFinder, and the record of a RoutingTracker's
-// closes, to embed in a RoutingTracker. It records each comment and
-// delegation posted and serves the comments SetComments scripts, then those
-// it posted, unless a failure scripted with FailComments, FailClosings or
-// FailCommentLists comes first. Its zero value is ready to use: it posts as
-// no login and finds none.
+// port.Delegator, port.LoginFinder and port.CodeOwnerFinder, and the record
+// of a RoutingTracker's closes, to embed in a RoutingTracker. It records
+// each comment and delegation posted and serves the comments SetComments
+// scripts, then those it posted or AddComment added, unless a failure
+// scripted with FailComments, FailClosings or FailCommentLists comes
+// first. Its zero value is ready to use: it posts as no login, and finds
+// no login and no code owner.
 type Routing struct {
 	mu        sync.Mutex
 	postErrs  failures
@@ -60,6 +63,7 @@ type Routing struct {
 	lists     map[string]int
 	writer    string
 	login     string
+	owners    []string
 }
 
 // Comment implements port.Commenter. It records body, as given, on the
@@ -77,13 +81,23 @@ func (r *Routing) Comment(_ context.Context, id crew.IssueID, body string) error
 }
 
 // Delegate implements port.Delegator. It records delegation, as given, and
-// lists a comment that mentions its answerer with the delegation's marker
-// among the issue's comments (list).
+// lists a comment as the github adapter posts it among the issue's comments
+// (list): the answerer's mention, the move to the label the delegation
+// names, if any, and the delegation's marker, the unread one for a read
+// that failed.
 func (r *Routing) Delegate(_ context.Context, delegation crew.Delegation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.delegated = append(r.delegated, delegation)
-	r.list(delegation.IssueID.Key, "@"+delegation.Answerer+"\n\n"+crew.DelegatedMarker(delegation.ID)+"\n")
+	body := "@" + delegation.Answerer + "\n\n"
+	if delegation.MoveTo != "" {
+		body += "Post your answer first, then move " + delegation.IssueRef + " to `" + string(delegation.MoveTo) + "`.\n\n"
+	}
+	marker := crew.DelegatedMarker(delegation.ID)
+	if delegation.Search == crew.QuestionUnread {
+		marker = crew.UnreadDelegatedMarker
+	}
+	r.list(delegation.IssueID.Key, body+marker+"\n")
 	return nil
 }
 
@@ -107,6 +121,22 @@ func (r *Routing) SetLogin(login string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.login = login
+}
+
+// CodeOwners implements port.CodeOwnerFinder: it returns what
+// SetCodeOwners last set.
+func (r *Routing) CodeOwners() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.owners)
+}
+
+// SetCodeOwners sets the code owners' logins CodeOwners returns, such as
+// the person who answers a question.
+func (r *Routing) SetCodeOwners(logins ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.owners = slices.Clone(logins)
 }
 
 // Delegations returns the delegations posted so far, in order.
@@ -141,6 +171,18 @@ func (r *Routing) SetComments(key string, comments ...crew.Comment) {
 		r.listings = map[string][]crew.Comment{}
 	}
 	r.listings[key] = slices.Clone(comments)
+}
+
+// AddComment lists c after the comments of the issue with key, as a
+// person who posts it on the issue, such as an answer: as written, without
+// crew's marker, and not among Posted.
+func (r *Routing) AddComment(key string, c crew.Comment) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.listings == nil {
+		r.listings = map[string][]crew.Comment{}
+	}
+	r.listings[key] = append(r.listings[key], c)
 }
 
 // CommentLists returns how many times Comments listed the comments of the
@@ -206,9 +248,9 @@ func (r *Routing) list(key, body string) {
 }
 
 // RoutingTracker is a ReportingTracker that also implements port.Commenter,
-// port.Closer, port.CommentLister, port.Delegator and port.LoginFinder, for
-// the tests about a rule's routes. A plain *Tracker or ReportingTracker does not implement
-// them.
+// port.Closer, port.CommentLister, port.Delegator, port.LoginFinder and
+// port.CodeOwnerFinder, for the tests about a rule's routes and
+// questions. A plain *Tracker or ReportingTracker does not implement them.
 type RoutingTracker struct {
 	ReportingTracker
 	*Routing
@@ -217,7 +259,8 @@ type RoutingTracker struct {
 // NewRoutingTracker returns a RoutingTracker holding issues, all open,
 // whose Prepare, status writes, comments, closes, comment listings and
 // delegations succeed until told otherwise, and which lists no comment until
-// SetComments or a post, and finds no login until SetLogin.
+// SetComments or a post, and finds no login until SetLogin and no code
+// owner until SetCodeOwners.
 func NewRoutingTracker(issues ...crew.Issue) RoutingTracker {
 	return RoutingTracker{ReportingTracker: NewReportingTracker(issues...), Routing: &Routing{}}
 }

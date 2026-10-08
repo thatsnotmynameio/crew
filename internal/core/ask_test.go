@@ -87,12 +87,13 @@ func delegating() []crew.Rule {
 	}}
 }
 
-// delegateDriver drives a model of delegating that journals its runs,
-// whose answerer is octocat and whose bots are developerBots: crew writes
-// as crew-clerk[bot], and you are boss.
+// delegateDriver drives a model of delegating and crew's answered rule
+// that journals its runs, whose answerer is octocat and whose bots are
+// developerBots: crew writes as crew-clerk[bot], and you are boss.
 func delegateDriver(t *testing.T) *driver {
 	t.Helper()
-	m := core.New(delegating(), 2, core.Journaling(nil), core.WithBots(developerBots()), core.Delegating("octocat"))
+	rules := append(delegating(), answering())
+	m := core.New(rules, 2, core.Journaling(nil), core.WithBots(developerBots()), core.Delegating("octocat"))
 	return &driver{t: t, m: m, now: t0}
 }
 
@@ -114,11 +115,15 @@ func postedQuestion(author string) crew.Comment {
 }
 
 // delegationOf is the delegation of #1's question to octocat, as search
-// found it: the question id of deps when found.
+// found it: the question id of deps when found, and crew:answered, where
+// the answerer moves #1 once answered, unless it found no question.
 func delegationOf(search crew.QuestionSearch, id crew.QuestionID) core.Delegate {
 	d := crew.Delegation{IssueID: issueID("1"), IssueRef: "#1", Answerer: "octocat", Search: search, ID: id}
 	if id != "" {
 		d.Rule = "deps"
+	}
+	if search != crew.QuestionNotFound {
+		d.MoveTo = answeredLabel
 	}
 	return core.Delegate{Delegation: d}
 }
@@ -167,10 +172,11 @@ func TestTheQuestionRuleReadsTheCommentsAndDelegatesTheOpenQuestion(t *testing.T
 	}
 }
 
-// Covers KTD8: every delegation mentions the answerer and says what the
-// read found: the question crew posted, as its writer or as you, none when
-// only someone else forged one, or nothing as the read failed. The route
-// still ends with its move.
+// Covers KTD8, KTD10: every delegation mentions the answerer and says
+// what the read found: the question crew posted, as its writer or as you,
+// none when only someone else forged one, or nothing as the read failed.
+// Only one that found the question or could not read asks for the move to
+// crew:answered. The route still ends with its move.
 func TestADelegationSaysWhatTheReadFound(t *testing.T) {
 	tests := []struct {
 		name string
@@ -239,7 +245,8 @@ func TestAnOwedDelegationIsRetriedAtTheNextTick(t *testing.T) {
 	wantOwed(t, d.m, delegated)
 
 	retry, _ := d.send(core.Tick{})
-	wantCommands(t, retry, core.ListIssues{States: []crew.State{questionLabel, questionRunning}},
+	wantCommands(t, retry,
+		core.ListIssues{States: []crew.State{questionLabel, questionRunning, answeredLabel, answeredRunning}},
 		delegationOf(crew.QuestionNotFound, ""))
 	moved, _ := d.send(core.CallResult{ID: delegateID(t, retry), Result: core.ResultDone})
 	wantCommands(t, unrecorded(moved), waitingMove)

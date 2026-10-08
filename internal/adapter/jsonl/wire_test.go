@@ -170,3 +170,28 @@ func TestTheQuestionStepsKeepTheirWireNames(t *testing.T) {
 		t.Errorf("steps = %v, want %v", got, want)
 	}
 }
+
+// KTD12: the answered rule's check is its own line type, marked as its
+// action's start; a question step writes its question's id, and a rule's
+// open question its id alone, the rule being the line's.
+func TestTheAnsweredRulesCheckAndQuestionIDsKeepTheirWireKeys(t *testing.T) {
+	j, root := journal(t)
+	appendAll(t, j,
+		crew.ActionReturnAsked{EventHead: head(1), Action: "answer"},
+		crew.RouteChosen{EventHead: head(2), Route: "unsure", Steps: []crew.StepPlan{
+			{Kind: crew.StepQuestion, Question: "blocks"},
+		}},
+		crew.RunTaken{EventHead: head(3), Questions: []crew.Question{{ID: "blocks", Rule: "development"}}},
+	)
+
+	got := lines(t, root)
+	if got[0]["type"] != "action_return_asked" || got[0]["event"] != "started" || got[0]["action"] != "answer" {
+		t.Errorf("check line = %v, want action_return_asked, the start of answer", got[0])
+	}
+	if want := []any{map[string]any{"kind": "question", "question": "blocks"}}; !reflect.DeepEqual(got[1]["steps"], want) {
+		t.Errorf("steps = %v, want %v", got[1]["steps"], want)
+	}
+	if want := []any{map[string]any{"id": "blocks"}}; !reflect.DeepEqual(got[2]["questions"], want) {
+		t.Errorf("questions = %v, want %v", got[2]["questions"], want)
+	}
+}

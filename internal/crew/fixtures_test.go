@@ -374,3 +374,64 @@ var checkStep = FunctionStep{Name: "check", Function: checkSpec()}
 func functionStepEnded(n, step int, o FunctionOutcome) Fact {
 	return StepFunctionEnded{FactHead: fh(n), Step: step, Outcome: o}
 }
+
+// The answered rule's fixtures: the rule answered takes an item in
+// crew:answered and moves it to crew:answered:in progress while its one
+// action, answer, checks where the item returns (ReturnSpec). Its passed
+// route returns the item to the label the check found, and its failed
+// route reports, then moves the item to crew:answered:failed.
+
+const (
+	labelAnswered        State = "crew:answered"
+	labelAnsweredRunning State = "crew:answered:in progress"
+	labelAnsweredFailed  State = "crew:answered:failed"
+	labelDepsReady       State = "crew:deps:ready"
+)
+
+// answeredRule replaces the test rule with the answered rule.
+func answeredRule(d RunDefinition) RunDefinition {
+	d.Rule = Rule{
+		Name:    "answered",
+		Labels:  Labels{Ready: labelAnswered, Running: labelAnsweredRunning},
+		Actions: []Action{{Name: "answer", Kind: ReturnSpec{}}},
+		Routes: []Route{
+			{Name: PassedRoute, Steps: []Step{ReturnStep{}}},
+			{Name: FailedRoute, Steps: []Step{ReportStep{}, MoveStep{To: labelAnsweredFailed}}},
+		},
+	}
+	return d
+}
+
+// ah returns the head of an event of the answered rule's test run at
+// minute n.
+func ah(n int) EventHead {
+	h := eh(n)
+	h.Rule = "answered"
+	return h
+}
+
+// answeredTake is the answered rule's take of #9 at minute 0.
+func answeredTake() RunEvent {
+	issue := testIssue()
+	issue.States = []State{labelAnswered}
+	return RunTaken{
+		EventHead: ah(0), Issue: issue, From: labelAnswered, To: labelAnsweredRunning, Actions: []ActionName{"answer"},
+	}
+}
+
+// answeredMoved is the answered rule's take that landed at minute 1.
+func answeredMoved() RunEvent {
+	return TakeMoved{EventHead: ah(1), From: labelAnswered, To: labelAnsweredRunning}
+}
+
+// checkingReturn is the answered rule's take landed at minute 1, and
+// answer asked: crew reads the item's comments.
+func checkingReturn() []RunEvent {
+	return []RunEvent{answeredTake(), answeredMoved(), ActionReturnAsked{EventHead: ah(1), Action: "answer"}}
+}
+
+// returnChecked is the fact of answer's check, which found check at
+// minute n.
+func returnChecked(n int, check ReturnCheck) Fact {
+	return ReturnChecked{FactHead: fh(n), Action: "answer", Check: check}
+}

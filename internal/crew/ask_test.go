@@ -178,7 +178,7 @@ func TestDecideTheQuestion(t *testing.T) { decide(t, questionDecisions) }
 
 func TestTheStepPlansOfAQuestionAndADelegation(t *testing.T) {
 	got := plans(Route{Steps: []Step{QuestionStep{Question: blocks()}, DelegateStep{}, toQuestion}})
-	want := []StepPlan{{Kind: StepQuestion}, {Kind: StepDelegate}, {Kind: StepMove, To: labelQuestion}}
+	want := []StepPlan{{Kind: StepQuestion, Question: blocksID}, {Kind: StepDelegate}, {Kind: StepMove, To: labelQuestion}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("plans = %#v, want %#v", got, want)
 	}
@@ -248,6 +248,12 @@ var openQuestionCases = []struct {
 	{
 		name:     "a question followed by its delegation is not open, and there is no other",
 		comments: []Comment{asksAs(crewWriter, blocksID), delegates(crewWriter, blocksID)},
+	},
+	{
+		name: "a question followed by the delegation that could not read is not open",
+		comments: []Comment{
+			asksAs(crewWriter, blocksID), writes(crewWriter, "@octocat, please answer.\n\n"+UnreadDelegatedMarker),
+		},
 	},
 	{
 		name: "an earlier question delegated, then a later one whose post the tracker refused: none",
@@ -337,11 +343,6 @@ var askedAtLfg = StartAt{
 // questionStarts are the starts after a run whose question ask ended with
 // asked (KTD4), and after a run whose session chose a route that asks.
 func questionStarts() []startCase {
-	asksOnBlocked := func(d RunDefinition) RunDefinition {
-		d.Rule.Routes = slices.Clone(d.Rule.Routes)
-		d.Rule.Routes[2] = Route{Name: "blocked", Steps: []Step{QuestionStep{Question: blocks()}, toQuestion}}
-		return d
-	}
 	return []startCase{
 		{
 			name: "asked, followed by a session: at the session, in the run's worktree",
@@ -362,11 +363,11 @@ func questionStarts() []startCase {
 		},
 		{
 			name: "a session's verdict chose a route that asks: at that session, as any route",
-			past: past{change: asksOnBlocked, facts: slices.Concat(toJudge()[:4], []Fact{
+			past: past{change: asksWhenBlocked, facts: slices.Concat(toJudge()[:4], []Fact{
 				lfgEnded(succeeded("done"), VerdictReported{Verdict: "blocked"}),
 				settled(6, 0, StepLanded{}), settled(7, 1, StepLanded{}),
 			})},
-			rule: asksOnBlocked, want: atAction("lfg", "blocked", "done"),
+			rule: asksWhenBlocked, want: atAction("lfg", "blocked", "done"),
 		},
 	}
 }

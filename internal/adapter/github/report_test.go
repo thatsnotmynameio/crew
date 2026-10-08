@@ -13,11 +13,7 @@ import (
 // sequence, its verdict, the route and the log, and quotes nothing else, and
 // its last line is crew's marker (R46).
 func TestTheReportNamesTheActionItsVerdictTheRouteAndTheLog(t *testing.T) {
-	tests := []struct {
-		name   string
-		report crew.FailureReport
-		want   string
-	}{
+	tests := []reportCase{
 		{
 			name: "blocked",
 			report: crew.FailureReport{
@@ -46,6 +42,47 @@ func TestTheReportNamesTheActionItsVerdictTheRouteAndTheLog(t *testing.T) {
 			want:   "crew: `triage` ended through `stale` on #12.\n",
 		},
 	}
+	wantReports(t, tests)
+}
+
+// Covers KTD7: the report of the answered rule's check words the reason
+// its verdict names in crew's own words, and quotes no comment.
+func TestTheAnsweredRulesReportSaysWhyInCrewsWords(t *testing.T) {
+	wantReports(t, []reportCase{
+		{
+			name:   "no question",
+			report: answeredReport(crew.NoQuestion, crew.ReasonNoQuestion),
+			want: "crew: `answered` ended through `failed` on #12.\n" +
+				"\n**`answer`** ended with `no-question`: crew found no open question on #12 that the config " +
+				"declares, so it has nowhere to return #12.\n",
+		},
+		{
+			name:   "unanswered",
+			report: answeredReport(crew.Unanswered, crew.ReasonUnanswered),
+			want: "crew: `answered` ended through `failed` on #12.\n" +
+				"\n**`answer`** ended with `unanswered`: no answer counts after the question. An answer " +
+				"counts when a code owner, or an App on crew's answering list, posts it after the question.\n",
+		},
+		{
+			name:   "unread",
+			report: answeredReport(crew.Unread, crew.ReasonUnread),
+			want: "crew: `answered` ended through `failed` on #12.\n" +
+				"\n**`answer`** ended with `unread`: crew could not read the comments on #12.\n",
+		},
+	})
+}
+
+// reportCase is a report and the comment its rendering must post.
+type reportCase struct {
+	name   string
+	report crew.FailureReport
+	want   string
+}
+
+// wantReports posts each case's report on #12 and fails t unless it made
+// one comment whose body is the case's, then crew's marker.
+func wantReports(t *testing.T, tests []reportCase) {
+	t.Helper()
 	postComment := []string{"api", "--method", "POST", "repos/{owner}/{repo}/issues/12/comments"}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,6 +100,16 @@ func TestTheReportNamesTheActionItsVerdictTheRouteAndTheLog(t *testing.T) {
 				t.Errorf("comment =\n%s\nwant\n%s", body, want)
 			}
 		})
+	}
+}
+
+// answeredReport returns the report of the answered rule's check on #12,
+// which failed with verdict for reason, without a log, as the check runs
+// in no workspace.
+func answeredReport(verdict crew.Verdict, reason crew.FailureReason) crew.FailureReport {
+	return crew.FailureReport{
+		IssueID: issueID("12"), IssueRef: "#12", Rule: "answered", Route: crew.FailedRoute,
+		Failures: []crew.ActionFailure{{Action: "answer", Verdict: verdict, Reason: reason}},
 	}
 }
 

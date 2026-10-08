@@ -86,7 +86,7 @@ type PostedQuestion struct {
 // delegation's, closes it: crew delegated it already.
 func OpenQuestion(comments []Comment, writers []string) (PostedQuestion, bool) {
 	for _, c := range slices.Backward(comments) {
-		if c.Author == "" || !containsFold(writers, c.Author) || !HoldsPostedMarker(c.Body) {
+		if !postedBy(c, writers) {
 			continue
 		}
 		if q, ok := FindQuestionMarker(c.Body); ok {
@@ -97,6 +97,13 @@ func OpenQuestion(comments []Comment, writers []string) (PostedQuestion, bool) {
 		}
 	}
 	return PostedQuestion{}, false
+}
+
+// postedBy reports whether one of writers, the logins crew posts as,
+// compared ignoring case, posted c through crew's tracker: it holds crew's
+// own marker. An empty author is no writer.
+func postedBy(c Comment, writers []string) bool {
+	return c.Author != "" && containsFold(writers, c.Author) && HoldsPostedMarker(c.Body)
 }
 
 // QuestionSearch is what the read of an item's comments found for a
@@ -132,4 +139,8 @@ type Delegation struct {
 	// QuestionFound.
 	ID   QuestionID
 	Rule RuleName
+	// MoveTo is the label the answerer moves the item to once the answer
+	// is posted, the answered rule's ready label (KTD10). It is empty when
+	// Search is QuestionNotFound: the check would fail on that move.
+	MoveTo State
 }

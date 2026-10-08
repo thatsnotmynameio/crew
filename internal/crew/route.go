@@ -24,8 +24,8 @@ type Route struct {
 }
 
 // Step is one step of a route: MoveStep, CloseStep, CommentStep, ReportStep,
-// ShellStep, FunctionStep, QuestionStep or DelegateStep. A session is never
-// a step.
+// ShellStep, FunctionStep, QuestionStep, DelegateStep or ReturnStep. A
+// session is never a step.
 //
 //sumtype:decl
 type Step interface {
@@ -36,6 +36,12 @@ type Step interface {
 type MoveStep struct {
 	To State
 }
+
+// ReturnStep moves the item to the label the answered rule's check found:
+// the return label of the question it answers. The route names no label;
+// the run writes the check's into the step's plan, a move, when it chooses
+// the route (KTD4).
+type ReturnStep struct{}
 
 // CloseStep closes the issue.
 type CloseStep struct{}
@@ -76,3 +82,4 @@ func (ShellStep) step()    {}
 func (FunctionStep) step() {}
 func (QuestionStep) step() {}
 func (DelegateStep) step() {}
+func (ReturnStep) step()   {}

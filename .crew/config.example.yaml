@@ -55,17 +55,20 @@
 #   - claude[bot]
 
 ## Who answers the questions rules ask, which it turns on. With it, crew adds
-## the rule question before your rules: it takes the items in crew:question,
-## runs in crew:question:in progress, mentions the answerer on the item and
-## moves it to crew:question:waiting answer, which no rule takes, until
-## someone moves it to its question's return label. No other rule may then
-## be called question, or take, run in or move an item to those labels.
-## Without it, crew refuses every question.
+## two rules before your rules. The rule question takes the items in
+## crew:question, runs in crew:question:in progress, mentions the answerer on
+## the item and moves it to crew:question:waiting answer, which no rule
+## takes. The answerer posts the answer and moves the item to crew:answered.
+## The rule answered takes the items there, runs in crew:answered:in
+## progress, and moves the item to its question's return label once an
+## answer counts, or reports and moves it to crew:answered:failed. No other
+## rule may then be called question or answered, or take, run in or move an
+## item to those six labels. Without it, crew refuses every question.
 # questions:
 #   ## The login crew mentions on every question: a person's, or an App's as
 #   ## <slug>[bot]. github-actions[bot] never answers.
 #   answerer: octocat
-#   ## The queue the question rule runs in: one of queues, or default.
+#   ## The queue both rules run in: one of queues, or default.
 #   queue: default
 
 ## Queues by name, each with its slots. A queue's slots serve only the rules
@@ -223,7 +226,7 @@
 #           ## The question, a Go template as a comment's.
 #           text: "Is {{.Issue.Ref}} still worth a pull request?"
 #           ## The label the item returns to once the question is answered:
-#           ## the ready label of one of the rules.
+#           ## the ready label of one of the rules that take issues.
 #           return: ready
 #         ## The action's name, and its route's: question by default.
 #         name: confirm-scope
