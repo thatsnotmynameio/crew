@@ -15,12 +15,14 @@ import (
 var (
 	_ port.Commenter      = (*Routing)(nil)
 	_ port.CommentLister  = (*Routing)(nil)
+	_ port.Delegator      = (*Routing)(nil)
 	_ port.Tracker        = RoutingTracker{}
 	_ port.Preparer       = RoutingTracker{}
 	_ port.StatusReporter = RoutingTracker{}
 	_ port.Commenter      = RoutingTracker{}
 	_ port.Closer         = RoutingTracker{}
 	_ port.CommentLister  = RoutingTracker{}
+	_ port.Delegator      = RoutingTracker{}
 )
 
 // Comment is a comment the fake tracker posted on the issue with Key.
@@ -36,17 +38,19 @@ type Closing struct {
 	From crew.State
 }
 
-// Routing is a scriptable port.Commenter and port.CommentLister, and the
-// record of a RoutingTracker's closes, to embed in a RoutingTracker. It
-// records each comment posted and serves the comments SetComments scripts,
-// unless a failure scripted with FailComments, FailClosings or
-// FailCommentLists comes first. Its zero value is ready to use.
+// Routing is a scriptable port.Commenter, port.CommentLister and
+// port.Delegator, and the record of a RoutingTracker's closes, to embed in a
+// RoutingTracker. It records each comment and delegation posted and serves
+// the comments SetComments scripts, unless a failure scripted with
+// FailComments, FailClosings or FailCommentLists comes first. Its zero
+// value is ready to use.
 type Routing struct {
 	mu        sync.Mutex
 	postErrs  failures
 	closeErrs failures
 	listErrs  failures
 	posted    []Comment
+	delegated []crew.Delegation
 	closings  []Closing
 	listings  map[string][]crew.Comment
 }
@@ -61,6 +65,21 @@ func (r *Routing) Comment(_ context.Context, id crew.IssueID, body string) error
 	}
 	r.posted = append(r.posted, Comment{Key: id.Key, Body: body})
 	return nil
+}
+
+// Delegate implements port.Delegator. It records delegation, as given.
+func (r *Routing) Delegate(_ context.Context, delegation crew.Delegation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.delegated = append(r.delegated, delegation)
+	return nil
+}
+
+// Delegations returns the delegations posted so far, in order.
+func (r *Routing) Delegations() []crew.Delegation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.delegated)
 }
 
 // Comments implements port.CommentLister: the comments SetComments last
@@ -127,16 +146,17 @@ func (r *Routing) Closings() []Closing {
 }
 
 // RoutingTracker is a ReportingTracker that also implements port.Commenter,
-// port.Closer and port.CommentLister, for the tests about a rule's routes.
-// A plain *Tracker or ReportingTracker does not implement them.
+// port.Closer, port.CommentLister and port.Delegator, for the tests about a
+// rule's routes. A plain *Tracker or ReportingTracker does not implement
+// them.
 type RoutingTracker struct {
 	ReportingTracker
 	*Routing
 }
 
 // NewRoutingTracker returns a RoutingTracker holding issues, all open,
-// whose Prepare, status writes, comments, closes and comment listings
-// succeed until told otherwise, and which lists no comment until
+// whose Prepare, status writes, comments, closes, comment listings and
+// delegations succeed until told otherwise, and which lists no comment until
 // SetComments.
 func NewRoutingTracker(issues ...crew.Issue) RoutingTracker {
 	return RoutingTracker{ReportingTracker: NewReportingTracker(issues...), Routing: &Routing{}}

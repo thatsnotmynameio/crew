@@ -198,8 +198,8 @@ type BotActsAgain struct {
 	Bot crew.BotName
 }
 
-// CallKind tells a Move, a ReportFailure, a ReportPullRequests, a Comment
-// and a Close apart in a Call.
+// CallKind tells a Move, a ReportFailure, a ReportPullRequests, a Comment,
+// a Close and a Delegate apart in a Call.
 type CallKind int
 
 // The kinds of tracker call.
@@ -214,6 +214,8 @@ const (
 	CallComment
 	// CallClose is a Close.
 	CallClose
+	// CallDelegate is a Delegate.
+	CallDelegate
 )
 
 // String names the kind for renderers.
@@ -227,6 +229,8 @@ func (k CallKind) String() string {
 		return "comment"
 	case CallClose:
 		return "close"
+	case CallDelegate:
+		return "delegation"
 	default:
 		return "move"
 	}
@@ -238,7 +242,7 @@ type Call struct {
 	IssueID  crew.IssueID
 	IssueRef string
 	// From and To are the move's states; both are empty for a failure
-	// report and a comment. For a pull request report, To is the state the
+	// report, a comment and a delegation. For a pull request report, To is the state the
 	// pull requests are put in and From is empty; for a close, From is the
 	// state the issue is closed from and To is empty.
 	From crew.State

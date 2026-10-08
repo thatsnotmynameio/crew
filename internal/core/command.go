@@ -27,10 +27,11 @@ type TrackerCommand interface {
 }
 
 // RunCommand is a command about one rule run: its workspace, its actions'
-// sessions and scripts, the read of the answers its sessions start with,
-// its route's shell steps and the lookup of its pull requests, which carry
-// the run's id so their results reach that run only (KTD7), and the record
-// of its runs in the journal.
+// sessions and scripts, the read of the answers its sessions start with or
+// of the question its delegation step delegates, its route's shell steps
+// and the lookup of its pull requests, which carry the run's id so their
+// results reach that run only (KTD7), and the record of its runs in the
+// journal.
 //
 //sumtype:decl
 type RunCommand interface {
@@ -38,9 +39,9 @@ type RunCommand interface {
 	runCommand()
 }
 
-// CallID identifies one tracker call, a Move, a Close, a Comment or a
-// ReportFailure, so its CallResult finds it. A retried call keeps its ID; the core never has two
-// attempts of one call in flight.
+// CallID identifies one tracker call, a Move, a Close, a Comment, a
+// ReportFailure or a Delegate, so its CallResult finds it. A retried call
+// keeps its ID; the core never has two attempts of one call in flight.
 type CallID uint64
 
 // ListIssues asks the tracker for the open issues in any of States. Its

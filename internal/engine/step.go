@@ -35,3 +35,16 @@ func (e *Engine) close(ctx context.Context, c core.Close) {
 	err := e.closer.Close(ctx, c.IssueID, c.From)
 	e.post(e.callResult(ctx, c.ID, err))
 }
+
+// delegate posts a delegation step's delegation through the tracker's
+// port.Delegator, and answers as comment does.
+func (e *Engine) delegate(ctx context.Context, c core.Delegate) {
+	if e.delegator == nil {
+		e.post(e.callResult(ctx, c.ID, fmt.Errorf("the tracker cannot delegate: %w", port.ErrRefused)))
+		return
+	}
+	ctx, cancel := callContext(ctx)
+	defer cancel()
+	err := e.delegator.Delegate(ctx, c.Delegation)
+	e.post(e.callResult(ctx, c.ID, err))
+}

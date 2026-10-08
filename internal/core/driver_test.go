@@ -243,6 +243,9 @@ func (d *driver) namedRun(in core.RunInput) core.Input {
 	case core.AnswersRead:
 		fill(&in.Run, in.IssueID)
 		return in
+	case core.QuestionRead:
+		fill(&in.Run, in.IssueID)
+		return in
 	}
 	return in
 }
@@ -288,6 +291,8 @@ func (d *driver) settle(cmds []core.Command) {
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.Close:
 				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
+			case core.Delegate:
+				out, _ = d.send(core.CallResult{ID: c.ID, Result: core.ResultDone})
 			case core.CreateWorkspace:
 				ready := space(c.Issue.ID().Key, c.Rule)
 				ready.Run = c.Run
@@ -297,7 +302,7 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 				core.Record, core.StopSession, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell,
 				core.RunFunction, core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest,
-				core.ReadAnswers:
+				core.ReadAnswers, core.ReadQuestion:
 				// Left unanswered.
 			}
 			next = append(next, out...)
@@ -340,10 +345,13 @@ func noIDs(cmds []core.Command) []core.Command {
 		case core.Close:
 			call.ID = 0
 			c = call
+		case core.Delegate:
+			call.ID = 0
+			c = call
 		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
 			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunShell, core.StopShell,
 			core.RunStepShell, core.StopStepShell, core.RunFunction, core.StopFunction, core.RunStepFunction,
-			core.StopStepFunction, core.FindPullRequest, core.ReadAnswers:
+			core.StopStepFunction, core.FindPullRequest, core.ReadAnswers, core.ReadQuestion:
 		}
 		out = append(out, c)
 	}
@@ -491,7 +499,8 @@ func issueKey(c core.Command) string {
 		return c.IssueID.Key
 	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 		core.Record, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell, core.RunFunction,
-		core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest, core.ReadAnswers:
+		core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest, core.ReadAnswers,
+		core.ReadQuestion, core.Delegate:
 	}
 	return ""
 }

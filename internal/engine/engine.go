@@ -109,6 +109,10 @@ type Config struct {
 	// session's question: the config's answering_apps, or BotLogins when
 	// it writes none (R38, KTD-W4).
 	AnsweringApps []string
+	// Answerer is the login of the person or App every delegation of a
+	// question mentions: the config's questions.answerer; empty when it
+	// has none (KTD11).
+	Answerer string
 	// DefaultBot is the config's default bot, which acts for crew's own
 	// writes; empty when the config names none.
 	DefaultBot crew.BotName
@@ -174,6 +178,10 @@ type Engine struct {
 	// nil when the tracker has none, and those steps are then refused.
 	commenter port.Commenter
 	closer    port.Closer
+	// delegator is the tracker's port.Delegator, which the delegation
+	// steps go through; nil when the tracker has none, and those steps
+	// are then refused.
+	delegator port.Delegator
 	// opts are the core's options; Prepare builds the core with them once it
 	// has loaded the run journal (KTD2).
 	opts []core.Option
@@ -209,8 +217,8 @@ type Engine struct {
 // at each poll through it; a default Board fills from the listings. When
 // the tracker implements port.WriterReporter, the engine reads through it
 // whether crew's writes went back to you. When it implements
-// port.Commenter and port.Closer, the routes' comment and close steps go
-// through them.
+// port.Commenter, port.Closer and port.Delegator, the routes' comment,
+// close and delegation steps go through them.
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
@@ -236,6 +244,7 @@ func New(cfg Config) *Engine {
 	writes, _ := cfg.Tracker.(port.WriterReporter)
 	commenter, _ := cfg.Tracker.(port.Commenter)
 	closer, _ := cfg.Tracker.(port.Closer)
+	delegator, _ := cfg.Tracker.(port.Delegator)
 	harnesses := make(map[crew.AgentName]port.Harness, len(cfg.Harnesses))
 	for _, h := range cfg.Harnesses {
 		harnesses[h.Agent] = h.Harness
@@ -253,6 +262,7 @@ func New(cfg Config) *Engine {
 		writes:       writes,
 		commenter:    commenter,
 		closer:       closer,
+		delegator:    delegator,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
 		sessions:     map[sessionKey]liveSession{},
@@ -415,9 +425,10 @@ func (e *Engine) pendingPauses(ctx context.Context) {
 // workspace with crew.RuleStates, the states the rules name, asks the
 // tracker who the code owners are and which login it acts as, reads the
 // repository it works on, then loads the run journal and builds the core
-// from its events, with the bots and who may answer a session (KTD-W4). It
-// returns the first error, naming its port, a harness's agent, or the
-// journal, without running what comes after it (R6).
+// from its events, with the bots, who may answer a session (KTD-W4) and
+// whom a question's delegation mentions (KTD11). It returns the first
+// error, naming its port, a harness's agent, or the journal, without
+// running what comes after it (R6).
 // The core is then left unbuilt, which is safe because Run returns the error
 // before its loop, the only place that reads it.
 func (e *Engine) prepare(ctx context.Context) error {
@@ -445,7 +456,7 @@ func (e *Engine) prepare(ctx context.Context) error {
 	bots := e.withBots()
 	e.repository = e.findRepository()
 	answerers := core.WithAnswerers(crew.Answerers{CodeOwners: e.codeOwners, Apps: e.cfg.AnsweringApps})
-	opts := slices.Concat(e.opts, []core.Option{bots, answerers})
+	opts := slices.Concat(e.opts, []core.Option{bots, answerers, core.Delegating(e.cfg.Answerer)})
 	if e.cfg.Journal != nil {
 		port.Step(ctx, "reading the run journal")
 		past, err := e.cfg.Journal.Load(e.repository.ID)
@@ -551,7 +562,7 @@ func (e *Engine) ran(in core.RunInput, s port.Session) {
 	case core.StepFunctionEnded:
 		delete(e.steps, stepKey{in.Run, in.Step})
 	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
-		core.PullRequestFound, core.AnswersRead:
+		core.PullRequestFound, core.AnswersRead, core.QuestionRead:
 	}
 }
 

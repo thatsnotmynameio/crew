@@ -37,7 +37,7 @@ const (
 	// purposeTake moves the issue to its rule's running label.
 	purposeTake purpose = iota
 	// purposeStep delivers a tracker step of the run's route: a move, a
-	// close, a comment or a report (KTD9).
+	// close, a comment, a report, a question or a delegation (KTD9).
 	purposeStep
 )
 
@@ -50,10 +50,12 @@ type delivery struct {
 	step int
 	// call is the write as CallOwed, CallDropped and View.Owed show it.
 	call Call
-	// report is the failure report a report step posts, and body the
-	// comment a comment step posts.
-	report crew.FailureReport
-	body   string
+	// report is the failure report a report step posts, body the comment
+	// a comment or question step posts, and delegation what a delegation
+	// step posts.
+	report     crew.FailureReport
+	body       string
+	delegation crew.Delegation
 	// waiting is set on a close that waits for the pull request report in
 	// flight of its issue, before its first try (KTD-S14).
 	waiting  bool
@@ -100,6 +102,8 @@ func (s *step) attempt(d *delivery) {
 		s.command(ReportFailure{ID: d.id, Report: cloneReport(d.report)})
 	case CallComment:
 		s.command(Comment{ID: d.id, IssueID: c.IssueID, Body: d.body})
+	case CallDelegate:
+		s.command(Delegate{ID: d.id, Delegation: d.delegation})
 	case CallClose:
 		s.m.outbox.dropPullRequests(c.IssueID)
 		s.command(Close{ID: d.id, IssueID: c.IssueID, From: c.From})

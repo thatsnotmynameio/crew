@@ -98,6 +98,13 @@ func (ms *bots) writer() crew.BotName {
 	return ""
 }
 
+// writers returns the logins crew's own comments go as: the default bot's
+// while it acts at startup, and yours, the gh login, either empty when
+// unknown (KTD8). Both count, as crew's writes may go back to you mid-run.
+func (ms *bots) writers() []string {
+	return []string{ms.login(ms.config.Default), ms.config.Login}
+}
+
 // credit adds spend to what identity's ended actions spent.
 func (ms *bots) credit(identity crew.BotName, spend crew.Spend) {
 	if ms.spent == nil {
