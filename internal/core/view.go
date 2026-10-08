@@ -112,6 +112,9 @@ type View struct {
 	Stopping bool
 	// TimeUp is true once the run time is up and crew winds down.
 	TimeUp bool
+	// Paused is true while crew takes no new issue until it resumes
+	// (#282). A stop or a wind-down ends the pause.
+	Paused bool
 	// Issues are the held issues, in the order they were taken.
 	Issues []IssueView
 	// Queues are the queues some rule runs in, in the order of the first
@@ -260,7 +263,7 @@ type ActionView struct {
 
 // View returns a snapshot of what the core holds.
 func (m *Model) View() View {
-	v := View{Stopping: m.requested, TimeUp: m.timeUp, Spent: m.spent}
+	v := View{Stopping: m.requested, TimeUp: m.timeUp, Paused: m.paused, Spent: m.spent}
 	for q, queue := range m.queues {
 		v.Queues = append(v.Queues, QueueView{Name: queue.Name, Slots: queue.Slots, Busy: m.busy(q)})
 	}

@@ -100,6 +100,8 @@ func (m Model) windowTitle() string {
 		return "crew · stopping"
 	case m.snap.TimeUp:
 		return "crew · winding down"
+	case m.snap.Paused:
+		return "crew · paused"
 	}
 	running, taking := m.actionCounts()
 	var parts []string

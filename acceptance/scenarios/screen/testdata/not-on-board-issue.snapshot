@@ -27,14 +27,14 @@ Bots ─────────────────────────
                                      │ via  default                   │
                                      ╰────────────────────────────────╯
 
-Queues ─── 1 of 2 busy   Events ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 4 events
+Queues ─── 1 of 2 busy   Events ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5 events
  default  ■□  1/2         HH:MM:SS development took #1 "Add a search box" (dev:ready -> dev:running)
                           HH:MM:SS poll: listed 1 issue, took 1
                           HH:MM:SS #1 moved from dev:ready to dev:running
-                          HH:MM:SS #1 development/implement started on branch crew/issue-1-implement, log .crew/logs/issue-1-implement.log
+                          HH:MM:SS #1 development works in worktree issue-1-development on branch crew/issue-1-development, log .crew/logs/issue-1-development.…
+                          HH:MM:SS #1 development/implement started its session
 
-
-q q stop · tab focus · ←→↑↓ move · enter open · ? help
+q q stop · ctrl+p pause · tab focus · ←→↑↓ move · enter open · ? help
 
 
 

@@ -22,7 +22,7 @@ const halves = 2 // the overlay's offset is half the room left around it
 // of them acts outside crew's own process, and none is a mouse event
 // (R9 of #151).
 type keyMap struct {
-	stop, focus, back, bots, events, esc, enter                key.Binding
+	stop, pause, resume, focus, back, bots, events, esc, enter key.Binding
 	up, down, pageUp, pageDown, top, bottom, left, right, help key.Binding
 }
 
@@ -30,6 +30,8 @@ type keyMap struct {
 func newKeyMap() keyMap {
 	return keyMap{
 		stop:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", "stop")),
+		pause:    key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "pause")),
+		resume:   key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "resume")),
 		focus:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus")),
 		back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "focus back")),
 		bots:     key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bots")),
@@ -49,12 +51,14 @@ func newKeyMap() keyMap {
 }
 
 // key handles a key press: the stop keys (KTD7; KTD1, KTD2 of #266), the
-// help overlay, then the popup's keys while it is open, else Enter, focus,
-// the highlight and scrolling (KTD12 of #151).
+// pause key (KTD6 of #282), the help overlay, then the popup's keys while it
+// is open, else Enter, focus, the highlight and scrolling (KTD12 of #151).
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.stop):
 		return m.stopKey()
+	case key.Matches(msg, m.keys.pause):
+		m.pauseKey()
 	case key.Matches(msg, m.keys.help):
 		m.help = !m.help
 	case key.Matches(msg, m.keys.esc):
@@ -87,6 +91,16 @@ func (m Model) stopKey() (tea.Model, tea.Cmd) {
 	until := now.Add(armWindow)
 	m.armedUntil = until
 	return m, tea.Tick(armWindow, func(time.Time) tea.Msg { return armExpiredMsg{until: until} })
+}
+
+// pauseKey pauses crew's taking of new issues, or resumes it, unless crew
+// is stopping or winding down, which ended any pause (R10 of #282). It
+// keeps no state: the header follows the engine's snapshot (KTD6 of #282).
+func (m Model) pauseKey() {
+	if m.stopping || m.snap.Stopping || m.snap.TimeUp {
+		return
+	}
+	m.cfg.Pause()
 }
 
 // scrollBots returns m with the Bots cards moved delta cards sideways, as
@@ -146,6 +160,8 @@ func (m Model) helper() help.Model {
 // keyHelp is the key-help line (R21), the popup's while it is open
 // (KTD12 of #151), or, once crew is stopping, how to force the exit
 // (KTD16), else while the stop is armed, how to confirm it (KTD5 of #266).
+// The board's line names Ctrl-P as pause, or resume while paused, and
+// leaves it out while crew winds down (KTD6 of #282).
 func (m Model) keyHelp() string {
 	switch {
 	case m.stopping || m.snap.Stopping:
@@ -165,17 +181,27 @@ func (m Model) keyHelp() string {
 	}
 	move := key.NewBinding(key.WithKeys("left", "right", "up", "down"), key.WithHelp("←→↑↓", "move"))
 	open := key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open"))
-	return h.ShortHelpView([]key.Binding{m.keys.stop, m.keys.focus, move, open, m.keys.help})
+	bindings := []key.Binding{m.keys.stop}
+	switch {
+	case m.snap.TimeUp:
+	case m.snap.Paused:
+		bindings = append(bindings, m.keys.resume)
+	default:
+		bindings = append(bindings, m.keys.pause)
+	}
+	return h.ShortHelpView(append(bindings, m.keys.focus, move, open, m.keys.help))
 }
 
 // helpOverlay draws every key in a box over the middle of view (R20), with
-// the stop's two presses and the press that forces (R9 of #266), and what a
+// the stop's two presses and the press that forces (R9 of #266), the pause
+// (R8 of #282), and what a
 // card's labelled rows mean (R12, KTD12 of #151).
 func (m Model) helpOverlay(view string) string {
 	stop := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q q", fmt.Sprintf("stop, within %s", armWindow)))
 	force := key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "force if stopping"))
+	pause := key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("ctrl+p", "pause or resume"))
 	groups := [][]key.Binding{
-		{stop, force, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
+		{stop, force, pause, m.keys.help, m.keys.focus, m.keys.back, m.keys.bots, m.keys.events, m.keys.esc},
 		{m.keys.up, m.keys.down, m.keys.left, m.keys.right, m.keys.enter},
 		{m.keys.pageUp, m.keys.pageDown, m.keys.top, m.keys.bottom},
 	}

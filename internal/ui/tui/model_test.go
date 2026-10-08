@@ -53,6 +53,7 @@ type harness struct {
 	clock   time.Time
 	stops   int
 	forces  int
+	pauses  int
 }
 
 // newHarness is newBoardHarness of testNotify and testBoard.
@@ -70,7 +71,7 @@ func newBoardHarness(
 	t.Helper()
 	h := &harness{t: t, updates: make(chan engine.Update, 1), clock: start}
 	h.model = New(Config{
-		Updates: h.updates, Stop: func() { h.stops++ }, Force: func() { h.forces++ },
+		Updates: h.updates, Stop: func() { h.stops++ }, Force: func() { h.forces++ }, Pause: func() { h.pauses++ },
 		Now: func() time.Time { return h.clock }, Location: zone,
 		Notify: notify, Board: board, Repository: "crew", Warnings: warnings,
 	})

@@ -46,6 +46,9 @@ type Config struct {
 	Updates <-chan engine.Update
 	// Stop asks the engine to stop; Force kills what must die and returns.
 	Stop, Force func()
+	// Pause pauses the engine's taking of new issues, or resumes it
+	// (KTD5, KTD6 of #282). It must return at once.
+	Pause func()
 	// Now is the clock elapsed times are measured with; Location is where
 	// event times are shown.
 	Now      func() time.Time
@@ -132,6 +135,9 @@ type Model struct {
 // and return, leaving the exit to the caller after Program.Run returns.
 // Bubble Tea's own signal handler should be disabled
 // (tea.WithoutSignalHandler), so crew's handler is the only one.
+//
+// Ctrl-P calls Pause, unless crew is stopping or winding down; the header
+// shows the pause only once the engine's snapshot says so (KTD6 of #282).
 func New(cfg Config) Model {
 	return Model{
 		cfg: cfg, at: cfg.Now(), width: defaultWidth,

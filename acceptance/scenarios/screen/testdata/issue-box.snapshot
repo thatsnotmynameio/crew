@@ -11,28 +11,28 @@ crew ╱╱ widgets • up ##  ? help
 Bots ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── only you
  ╭────────────────────────────────╮
  │ ▄ █ ▄ you                      │
- │ ▄█ █▄ @boss                    │
- │ ▄███▄ no actions yet       ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
- │ crew's writes +1           │ #1 Add a search box                                                                              │
- │ ⠿ #1 development/implement │ rule     development                                                                             │
- ╰────────────────────────────│ labels    dev:ready   dev:running                                                                │
-                              │ kind     issue                                                                                   │
-▸ Board ──────────────────────│ priority none                                                                                    │────────────────────── 1 issue
- development                  │ url      https://github.com/acme/widgets/issues/1                                                │
- ─────────────────────────────│                                                                                                  │
- ╭────────────────────────────│ action     bot    queue    state          branch                                                 │
- │ ▸ #1 Add a search box      │ implement  ■ you  default  running ##  crew/issue-1-implement                                 │
- │ run  ⠿ implement ##        │ └ Writing the search box.                                                                        │
- │ bots ■ you                 │                                                                                                  │
- │ via  default               │ Events                                                                                           │
- ╰────────────────────────────│ HH:MM:SS development took #1 "Add a search box" (dev:ready -> dev:running)                       │
-                              │ HH:MM:SS #1 moved from dev:ready to dev:running                                                  │
-Queues ─── 1 of 2 busy   Event│ HH:MM:SS #1 development/implement started on branch crew/issue-1-implement, log .crew/logs/issu… │───────────────────── 4 events
+ │ ▄█ █▄ @boss                ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ ▄███▄ no actions yet       │ #1 Add a search box                                                                              │
+ │ crew's writes +1           │ rule     development                                                                             │
+ │ ⠿ #1 development/implement │ labels    dev:ready   dev:running                                                                │
+ ╰────────────────────────────│ kind     issue                                                                                   │
+                              │ priority none                                                                                    │
+▸ Board ──────────────────────│ url      https://github.com/acme/widgets/issues/1                                                │────────────────────── 1 issue
+ development                  │                                                                                                  │
+ ─────────────────────────────│ action     bot    queue    state          branch                                                 │
+ ╭────────────────────────────│ implement  ■ you  default  running ##  crew/issue-1-development                               │
+ │ ▸ #1 Add a search box      │ └ Writing the search box.                                                                        │
+ │ run  ⠿ implement ##        │                                                                                                  │
+ │ bots ■ you                 │ Events                                                                                           │
+ │ via  default               │ HH:MM:SS development took #1 "Add a search box" (dev:ready -> dev:running)                       │
+ ╰────────────────────────────│ HH:MM:SS #1 moved from dev:ready to dev:running                                                  │
+                              │ HH:MM:SS #1 development works in worktree issue-1-development on branch crew/issue-1-developmen… │
+Queues ─── 1 of 2 busy   Event│ HH:MM:SS #1 development/implement started its session                                            │───────────────────── 5 events
  default  ■□  1/2         HH:M╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                           HH:MM:SS poll: listed 1 issue, took 1
                           HH:MM:SS #1 moved from dev:ready to dev:running
-                          HH:MM:SS #1 development/implement started on branch crew/issue-1-implement, log .crew/logs/issue-1-implement.log
-
+                          HH:MM:SS #1 development works in worktree issue-1-development on branch crew/issue-1-development, log .crew/logs/issue-1-development.…
+                          HH:MM:SS #1 development/implement started its session
 
 esc close · ←→ card · ↑↓ scroll · q q stop
 

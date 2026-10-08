@@ -161,6 +161,17 @@ type WindingDown struct {
 	Limit time.Duration
 }
 
+// Paused means crew paused the taking of new issues (R7 of #282): it lists
+// and takes nothing until it resumes, while the issues it holds run on.
+type Paused struct {
+	At time.Time
+}
+
+// Resumed means crew takes new issues again after a pause (R7 of #282).
+type Resumed struct {
+	At time.Time
+}
+
 // Stopped means a stop, requested or ending a wind-down, has completed: the
 // core holds no issue, no owed call, no status write in flight or owed and no
 // pull request report not settled. It is emitted once.
@@ -268,6 +279,12 @@ func (e StatusFailed) Time() time.Time { return e.At }
 func (e WindingDown) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e Paused) Time() time.Time { return e.At }
+
+// Time implements Event.
+func (e Resumed) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e Stopped) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -287,6 +304,8 @@ func (CallOwed) event()         {}
 func (CallDropped) event()      {}
 func (StatusFailed) event()     {}
 func (WindingDown) event()      {}
+func (Paused) event()           {}
+func (Resumed) event()          {}
 func (Stopped) event()          {}
 func (BotStopped) event()       {}
 func (BotActsAgain) event()     {}

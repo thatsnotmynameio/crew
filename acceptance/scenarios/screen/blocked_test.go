@@ -43,8 +43,9 @@ var headerRow = regexp.MustCompile(`^\s*blocked\b`)
 
 // TestScreenBlockedCard checks the card of a blocked issue crew does not hold.
 //
-// README: "`run` (its actions and how long each has run, or its state with
-// none: `blocked` when crew does not hold it and an open issue blocks it)".
+// README: "`run` (the action its run is on and how long it has run, ... or its
+// state with none: `blocked` when crew does not hold it and an open issue
+// blocks it)".
 // An issue in the rule's ready label that an open issue blocks has a card in
 // the development column whose run row says blocked, not idle.
 func TestScreenBlockedCard(t *testing.T) {
@@ -68,8 +69,9 @@ func TestScreenBlockedCard(t *testing.T) {
 
 // TestScreenBlockedCardUnblocked checks a card once its blocker closes.
 //
-// README: "`run` (its actions and how long each has run, or its state with
-// none: `blocked` when crew does not hold it and an open issue blocks it)".
+// README: "`run` (the action its run is on and how long it has run, ... or its
+// state with none: `blocked` when crew does not hold it and an open issue
+// blocks it)".
 // An issue in the board column parked, which no rule takes from, has a card
 // that says blocked while an open issue blocks it. Once that issue is closed,
 // no open issue blocks it, so its card no longer says blocked and, as issue
@@ -121,8 +123,9 @@ func TestScreenBlockedIssueBox(t *testing.T) {
 // TestScreenBlockedWhileRunning checks an issue that becomes blocked while
 // crew runs it.
 //
-// README: "`run` (its actions and how long each has run, or its state with
-// none: `blocked` when crew does not hold it and an open issue blocks it)",
+// README: "`run` (the action its run is on and how long it has run, ... or its
+// state with none: `blocked` when crew does not hold it and an open issue
+// blocks it)",
 // and the box shows "its labels as chips with a `blocked` chip after them when
 // an open issue blocks it". The issue's blocker is closed when crew takes it
 // and reopened while its session runs: its box then shows the blocked chip

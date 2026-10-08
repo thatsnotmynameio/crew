@@ -22,8 +22,8 @@ const (
 //
 // README: "Under the header, Bots shows a card for each bot crew acts as, then
 // one for you", "the board has a card for each issue in each of its columns:
-// the issue's reference and title, then `run` (its actions and how long each
-// has run ...), `bots` (...) and `via` (the queue its actions run in)", and
+// the issue's reference and title, then `run` (the action its run is on and
+// how long it has run ...), `bots` (...) and `via` (the queue its actions run in)", and
 // "Queues and Events sit under the board". Without a board key,
 // `.crew/config.example.yaml` says "the board has one column per rule that has
 // actions". So the screen shows Bots, a development column whose card holds

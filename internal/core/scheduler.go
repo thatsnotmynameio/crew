@@ -10,10 +10,11 @@ import (
 
 // tick reads the board (KTD4), then lists issues, unless a listing is
 // outstanding or the run time is up; when every slot is busy it says it
-// skipped the listing instead (R1, R3). It then retries the owed calls,
-// statuses and pull request reports that are not in flight (KTD8, KTD5), and
-// reports the status of each running issue with what its sessions last said
-// (R6).
+// skipped the listing instead (R1, R3), unless crew is paused: a paused
+// listing takes nothing anyway and fills the board (KTD1 of #282). It then
+// retries the owed calls, statuses and pull request reports that are not in
+// flight (KTD8, KTD5), and reports the status of each running issue with
+// what its sessions last said (R6).
 func (s *step) tick(said []Said) {
 	m := s.m
 	if m.stopping {
@@ -26,7 +27,7 @@ func (s *step) tick(said []Said) {
 	}
 	s.readBoard()
 	if !m.listing && !m.timeUp {
-		if m.full() {
+		if m.full() && !m.paused {
 			m.skipped++
 			s.emit(PollSkipped{At: s.at, Busy: len(m.issues), Slots: m.slots})
 		} else {
@@ -82,17 +83,46 @@ func (s *step) freed() {
 	}
 }
 
-// stop starts nothing new from now on, hands every held run the stop, which
-// stops its running session or script and its route's running shell step
-// and skips the shell steps after it (R53), and gives each owed call,
-// status and pull request report not in flight its final try (R9). Routing
-// runs go on with their tracker steps.
+// togglePause pauses the taking of new issues, or resumes it (R1, R4 of
+// #282). A resume lists at once when no listing is outstanding and a slot
+// is free, since the next tick may be a poll interval away (KTD3 of #282);
+// with every slot busy, it lists once a slot frees.
+// It does nothing once crew stops or winds down, which ended the pause
+// (KTD2 of #282).
+func (s *step) togglePause() {
+	m := s.m
+	if m.stopping || m.timeUp {
+		return
+	}
+	m.paused = !m.paused
+	if m.paused {
+		s.emit(Paused{At: s.at})
+		return
+	}
+	s.emit(Resumed{At: s.at})
+	switch {
+	case m.listing:
+	case m.full():
+		// The paused ticks listed and took nothing, so the listing counts
+		// as skipped: freed lists once a slot frees, as unpaused.
+		m.skipped++
+	default:
+		s.listIssues()
+	}
+}
+
+// stop starts nothing new from now on, ends any pause (KTD2 of #282),
+// hands every held run the stop, which stops its running session or script
+// and its route's running shell step and skips the shell steps after it
+// (R53), and gives each owed call, status and pull request report not in
+// flight its final try (R9). Routing runs go on with their tracker steps.
 func (s *step) stop() {
 	m := s.m
 	if m.stopping {
 		return
 	}
 	m.stopping = true
+	m.paused = false
 	for _, h := range slices.Clone(m.issues) {
 		s.decide(h, crew.StopReached{FactHead: s.head(h)})
 		s.retryRun(h.id(), true)
@@ -101,16 +131,17 @@ func (s *step) stop() {
 	s.retryPullRequests()
 }
 
-// timeUp ends the run time (R2, R52): from now on nothing new is taken, and
-// every held run learns it, so the action that runs finishes and none
-// starts after it, while the routes the runs reach run all their steps.
-// windDown stops once no run holds crew (KTD12).
+// timeUp ends the run time (R2, R52) and any pause (KTD2 of #282): from now
+// on nothing new is taken, and every held run learns it, so the action that
+// runs finishes and none starts after it, while the routes the runs reach
+// run all their steps. windDown stops once no run holds crew (KTD12).
 func (s *step) timeUp(limit time.Duration) {
 	m := s.m
 	if m.stopping || m.timeUp {
 		return
 	}
 	m.timeUp = true
+	m.paused = false
 	s.emit(WindingDown{At: s.at, Limit: limit})
 	for _, h := range slices.Clone(m.issues) {
 		s.decide(h, crew.TimeUp{FactHead: s.head(h)})
@@ -120,12 +151,12 @@ func (s *step) timeUp(limit time.Duration) {
 // listed marks the handled entries whose issue left its state (KTD4), fills
 // a board filled from the listings (KTD10), skips issues in two states
 // (R15), reports the items in the label of a rule of the other kind (#92),
-// and takes free slots' worth of issues, each while its rule's queue has a
-// free slot (R6): the highest priority first, an issue without one last;
-// then, at the same priority, later rules first; then the oldest issue
-// first (KTD8). It reports nothing for the issues it leaves, a blocked one
-// included: a later listing with a free slot takes them. It takes nothing
-// once the run time is up.
+// and, unless crew is paused (KTD1 of #282), takes free slots' worth of
+// issues, each while its rule's queue has a free slot (R6): the highest
+// priority first, an issue without one last; then, at the same priority,
+// later rules first; then the oldest issue first (KTD8). It reports nothing
+// for the issues it leaves, a blocked one included: a later listing with a
+// free slot takes them. It takes nothing once the run time is up.
 func (s *step) listed(issues []crew.Issue) {
 	m := s.m
 	m.listing = false
@@ -136,7 +167,10 @@ func (s *step) listed(issues []crew.Issue) {
 	}
 	s.skipped(issues)
 	s.otherKind(issues)
-	taken := s.takeWaiting(s.waiting(issues))
+	taken := 0
+	if !m.paused {
+		taken = s.takeWaiting(s.waiting(issues))
+	}
 	s.emit(PollDone{At: s.at, Listed: len(issues), Taken: taken})
 }
 

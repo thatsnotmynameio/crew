@@ -29,6 +29,7 @@ type Model struct {
 	listings    int        // the ListIssues asked for: the generation of the last one (KTD4)
 	skipped     int        // ticks that skipped their listing since the last one
 	timeUp      bool       // the run time is up: take nothing new
+	paused      bool       // the taking of new issues is paused (#282)
 	requested   bool       // a stop was requested
 	stopping    bool       // the stop sequence runs: requested, or ending a wind-down
 	stopped     bool       // the Stopped event was emitted

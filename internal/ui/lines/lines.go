@@ -123,7 +123,8 @@ func runText(e crew.RunEvent) string {
 	return ""
 }
 
-// coreText describes the core's own events.
+// coreText describes the core's own events: those about an issue, a bot or
+// a tracker call here, those about crew as a whole in crewText.
 func coreText(e core.Event) string {
 	switch e := e.(type) {
 	case core.RunNotRecorded:
@@ -139,22 +140,40 @@ func coreText(e core.Event) string {
 		return fmt.Sprintf("bot %s stopped acting: %s", e.Bot, e.Warning)
 	case core.BotActsAgain:
 		return fmt.Sprintf("bot %s acts again: its token renewed", e.Bot)
-	case core.PollDone:
-		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
-	case core.PollSkipped:
-		return fmt.Sprintf("poll: skipped, %d of %d %s busy", e.Busy, e.Slots, Plural(e.Slots, "slot", "slots"))
-	case core.ListingFailed:
-		return withReason("listing issues failed", e.Reason)
 	case core.CallOwed:
 		return withReason(call(e.Call)+" failed, retrying at the next tick", e.Reason)
 	case core.CallDropped:
 		return withReason("gave up "+call(e.Call)+": "+result(e.Result), e.Reason)
 	case core.StatusFailed:
 		return withReason("could not update the status comment on "+e.IssueRef+": "+result(e.Result), e.Reason)
+	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Paused, core.Resumed,
+		core.Stopped:
+		return crewText(e)
+	}
+	return fmt.Sprintf("%T", e)
+}
+
+// crewText describes the core's events about crew as a whole: its polls,
+// its wind-down, its pause and resume (R7 of #282), and its stop. coreText
+// describes the others.
+func crewText(e core.Event) string {
+	switch e := e.(type) {
+	case core.PollDone:
+		return fmt.Sprintf("poll: listed %d %s, took %d", e.Listed, Plural(e.Listed, "issue", "issues"), e.Taken)
+	case core.PollSkipped:
+		return fmt.Sprintf("poll: skipped, %d of %d %s busy", e.Busy, e.Slots, Plural(e.Slots, "slot", "slots"))
+	case core.ListingFailed:
+		return withReason("listing issues failed", e.Reason)
 	case core.WindingDown:
 		return fmt.Sprintf("run time of %v is up: taking no new issues, winding down", e.Limit)
+	case core.Paused:
+		return "paused: taking no new issues until resumed; held issues run to their end"
+	case core.Resumed:
+		return "resumed: taking new issues again"
 	case core.Stopped:
 		return "stopped"
+	case core.RunNotRecorded, core.RouteStepEnded, core.IssueSkipped, core.IssueOfOtherKind, core.BotStopped,
+		core.BotActsAgain, core.CallOwed, core.CallDropped, core.StatusFailed:
 	}
 	return fmt.Sprintf("%T", e)
 }

@@ -248,6 +248,11 @@ var sentences = []struct {
 		"bot clerk stopped acting: crew's writes as bot clerk went back to you: HTTP 401"},
 	{core.BotActsAgain{At: at("10:00:00"), Bot: "developer"},
 		"bot developer acts again: its token renewed"},
+	// Covers R7 of #282: a pause and a resume each get a line.
+	{core.Paused{At: at("10:00:00")},
+		"paused: taking no new issues until resumed; held issues run to their end"},
+	{core.Resumed{At: at("10:00:00")},
+		"resumed: taking new issues again"},
 	{core.Stopped{At: at("10:00:00")},
 		"stopped"},
 }
