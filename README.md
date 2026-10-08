@@ -312,11 +312,12 @@ For now the captain, which answers, decides nothing: every task carries that sam
 | `.compound-engineering/` | The Compound Engineering plugin's settings for this repository. |
 | `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`) and `actionlint`. Pull requests and pushes to `main`: `go` (gofmt, vet, lint, tests, coverage floors, govulncheck), `codacy` (uploads the coverage to Codacy) and `codacy gate` (repeats Codacy's verdict on a pull request), both when the variable `CODACY_ENABLED` is `true` and skipped for Dependabot. The `acceptance` job is temporarily commented out because the suite is too slow; it can still be run locally. |
 | `.github/workflows/codacy-import.yml` | Pushes to `main` that change `.codacy/codacy.config.json`: applies it to Codacy. |
-| `.github/workflows/release.yml` | Pushes to `main`: when `VERSION` is new, GoReleaser builds crew and publishes it as `vX.Y.Z`, a GitHub release with the binaries and `checksums.txt`. |
+| `.github/workflows/release.yml` | Started by hand on `main`: when `VERSION` has no release yet and `CHANGELOG.md` has a section for it, GoReleaser builds crew and publishes it as `vX.Y.Z`, a GitHub release with the binaries, `checksums.txt` and that section as its text. Merging a pull request publishes nothing. |
 | `.goreleaser.yaml` | What a release builds: crew for macOS and Linux on amd64 and arm64, one archive per platform, and `checksums.txt`. |
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
 | `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the Codacy CLIs and the Go modules (crew's and the acceptance suite's). |
-| `VERSION` | The version; a pull request that bumps it is a release. |
+| `VERSION` | The version. A pull request that bumps it adds its section to `CHANGELOG.md`; the release is started by hand once it merges. |
+| `CHANGELOG.md` | What changed in each version for the people who use crew, newest first; each section is its version's release text. |
 
 The workflows call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA: shared behaviour changes there, once.
 
