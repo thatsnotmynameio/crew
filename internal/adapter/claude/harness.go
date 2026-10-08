@@ -130,8 +130,8 @@ func (s *session) Said() string {
 }
 
 // Usage implements port.UsageReporter: the cost, tokens, turns and models
-// the session's result events report, or nothing when crew stopped it, a
-// signal ended it, or it printed no result.
+// the session's result events report, with the tokens of each model, or
+// nothing when crew stopped it, a signal ended it, or it printed no result.
 func (s *session) Usage() crew.Usage {
 	<-s.done
 	return s.usage
