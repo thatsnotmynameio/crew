@@ -1,5 +1,5 @@
 #!/bin/sh
-# Measures plans for /cw-split-plan: for each file, one line with its
+# Measures plans for /cw-split-brainstorm: for each file, one line with its
 # characters, its distinct requirements (R1, R2, ...) and acceptance examples
 # (AE1, ...), and whether it is above the split threshold.
 #

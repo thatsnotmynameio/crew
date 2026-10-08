@@ -1,7 +1,7 @@
 ---
-name: cw-split-plan
-description: Measures the plan in a GitHub issue's body and, when it is above the size threshold, splits it into small parts that each merge alone, written as lean files under docs/splitting/<brainstorm|plan>/issue-N/ with a blockers.json of the links between them. It takes the issue and the stage, brainstorm or plan, reads only the issue and changes nothing on GitHub. Use when asked to split an issue's plan the crew way, or when crew's refinement prompt runs /cw-split-plan on an issue.
-argument-hint: "<issue> <brainstorm|plan>"
+name: cw-split-brainstorm
+description: Measures the brainstormed plan (a Product Contract, no implementation units) in a GitHub issue's body and, when it is above the size threshold, splits it into small parts that each merge alone, written as lean files under docs/splitting/brainstorm/issue-N/ with an issues.json of their titles and the links between them. It reads only the issue and changes nothing on GitHub. Use when asked to split an issue's brainstormed plan the crew way, or when crew's refinement prompt runs /cw-split-brainstorm on an issue. A plan ce-plan enriched with implementation units is /cw-split-ce-plan's.
+argument-hint: "<issue>"
 ---
 
 # Split a large plan into parts
@@ -10,29 +10,32 @@ This skill is the crew repository's own aid for building crew, not part of crew.
 
 A large plan costs more than its parts: one lfg session that carries the whole plan re-reads a bigger context on every turn (#160). So a plan above the threshold becomes small parts that each merge alone, leaving `main` whole and releasable, and that crew builds in parallel unless one really needs another. Each part is written lean: a session keeps everything it reads in its context until it ends, so a part holds only what its own session needs.
 
-The skill only splits. It reads the issue it is given and nothing else: no other issue, no sub-issue, no comment, no code, no file of the repository. It writes only the part files and `blockers.json`. It creates, edits and labels no issue, and asks no model.
+The skill only splits. It reads the issue it is given and nothing else: no other issue, no sub-issue, no comment, no code, no file of the repository. It writes only the part files and `issues.json`. It creates, edits and labels no issue, and asks no model.
 
 Run `gh` and `sh` with the repository root, from `git rev-parse --show-toplevel`, as the working directory. Read and write files with your own file tools, temporary ones outside the repository. When a `gh` command fails, report its error text and stop. Do not retry.
 
-It takes two arguments, such as `/cw-split-plan #42 brainstorm`:
+The issue is the argument, such as `#42`. Below, `N` is its number.
 
-- **The issue,** such as `#42`. Below, `N` is its number.
-- **The stage** the issue's plan comes from: `brainstorm` or `plan`. Below, `S` is the stage. When it is missing or is neither, say so and stop, writing nothing.
+It splits a brainstormed plan: a Goal Capsule and a Product Contract, as `ce-brainstorm` writes them. A plan that `ce-plan` enriched has a `## Implementation Units` section, and `/cw-split-ce-plan` splits it, along its units.
 
 ## What it writes
 
-Under `docs/splitting/S/issue-N/`, which git ignores, such as `docs/splitting/brainstorm/issue-42/`:
+Under `docs/splitting/brainstorm/issue-N/`, which git ignores:
 
-- `1.md` to `n.md`: one file per part, `n` being the number of parts. Ids start at 1 and follow the order the parts can merge in.
-- `blockers.json`: the links between the parts, and only between them. Each part's id is a key, and its value lists the ids of the parts it blocks, `[]` when it blocks none:
+- `1.md` to `n.md`: one file per part, its body, `n` being the number of parts. Ids start at 1 and follow the order the parts can merge in.
+- `issues.json`: one entry per part, in id order, with its id, its title and the ids of the parts that block it directly, `[]` when none does. Links are only between the parts:
 
 ```json
-{ "1": ["2", "3"], "2": ["3"], "3": [] }
+[
+  { "id": "1", "title": "Open the store", "blocked_by": [] },
+  { "id": "2", "title": "Record issues in the store", "blocked_by": ["1"] },
+  { "id": "3", "title": "Record crew's processes in the store", "blocked_by": ["1"] }
+]
 ```
 
-Here part 1 blocks parts 2 and 3, and part 2 blocks part 3.
+Here parts 2 and 3 are each blocked by part 1, and run in parallel once it merges.
 
-Before writing, delete `docs/splitting/S/issue-N/` when it exists, so the directory holds only this split. The other stage's directory for the same issue stays as it is.
+Before writing, delete `docs/splitting/brainstorm/issue-N/` when it exists, so the directory holds only this split.
 
 ## Outcomes
 
@@ -40,17 +43,20 @@ The skill ends with exactly one of these outcomes, named on the first line of it
 
 | Outcome | When |
 | --- | --- |
+| `not a brainstormed plan` | the body has a `## Implementation Units` section: `/cw-split-ce-plan` splits it; nothing is written |
 | `not split` | the plan is not above the threshold; nothing is written |
 | `kept whole` | the plan is above the threshold, but no grouping keeps every part whole on `main`; nothing is written |
-| `split` | the part files and `blockers.json` are written |
+| `split` | the part files and `issues.json` are written |
 
 ## 1. Read the issue
 
-Run `gh issue view N --json number,title,body` and write the body to a temporary file. When the body holds a section that opens with `<!-- cw-split-plan: split record -->`, a record an earlier version of this skill wrote, leave that section out: it is not part of the plan.
+Run `gh issue view N --json number,title,body` and write the body to a temporary file. When the body holds a section, such as `## Split`, whose first lines carry `<!-- cw-split-plan: split record -->`, a record an earlier version of this skill wrote, leave that section out: it is not part of the plan.
+
+When the body has a `## Implementation Units` section, end with `not a brainstormed plan`, naming `/cw-split-ce-plan`.
 
 ## 2. Measure the plan
 
-Run `sh .agents/skills/cw-split-plan/measure.sh <body file>`. It prints the plan's characters, requirements and acceptance examples, and `above_threshold`. The threshold is above 10,000 characters or above 12 requirements.
+Run `sh .agents/skills/cw-split-brainstorm/measure.sh <body file>`. It prints the plan's characters, requirements and acceptance examples, and `above_threshold`. The threshold is above 10,000 characters or above 12 requirements.
 
 When `above_threshold=no`, end with `not split`, giving the three numbers.
 
@@ -68,18 +74,18 @@ When no grouping meets rule 1, end with `kept whole`, and say why in one sentenc
 
 ## 4. Decide the links between parts
 
-A part is blocked by another only when you can say why it needs that part merged first, such as "it reads the config key the other part adds". Without such a reason, the two run in parallel. Never make a cycle. Number the parts so that a part's id is greater than the id of every part that blocks it.
+A part is blocked by another only when you can say why it needs that part merged first, such as "it reads the config key the other part adds". Without such a reason, the two run in parallel. Never make a cycle. Keep only direct links: leave out a link that a chain of other links already implies. Number the parts so that a part's id is greater than the id of every part that blocks it.
 
 ## 5. Write each part
 
 A part's file holds what its own session needs, read once: the contract copied verbatim from the plan, the context written for the part, and what the parts it builds on deliver. It names other parts by their ids, since they are not issues yet, and the parent as `#N`.
 
-The first line is the part's title as a heading, `# <title>`, naming what the part adds. Then, in this order, leaving out a section with nothing to hold:
+The file is the part's body: its title goes in `issues.json`, naming what the part adds. The body holds, in this order, leaving out a section with nothing to hold:
 
 | Section | What the part holds | How |
 | --- | --- | --- |
 | `## Goal Capsule` | **Objective:** the outcome this part delivers, in one sentence. **Parent:** `#N, part k of n. Read it only for a question this part does not answer.` **Open blockers:** the plan's. | written |
-| `## Builds on` | Only for a part that is blocked. The line `Already on main when this part starts; read the code, not these parts' files.`, then one line per part that blocks it directly, as in `blockers.json`: `- Part <id>: <what it delivers>.` | written |
+| `## Builds on` | Only for a part that is blocked. The line `Already on main when this part starts; read the code, not these parts' files.`, then one line per part in its `blocked_by`: `- Part <id>: <what it delivers>.` | written |
 | `## Product Contract` | the heading alone | |
 | `### Summary` | what this part adds, in one to three lines | written |
 | `### Context` | why this part matters, in one or two lines, in place of the plan's problem frame | written |
@@ -96,18 +102,19 @@ The first line is the part's title as a heading, `# <title>`, naming what the pa
 
 Verbatim is the contract: decisions, requirements, flows, examples, criteria, questions. A paraphrase there could change what gets built. Trimmed keeps the plan's own words, cut to what touches the part. Written is the context, kept short. Take everything from the issue's body: the skill reads no code, so a source the plan does not name is not added.
 
-End the file with the line `<!-- cw-split-plan: part of #N -->`.
+End the file with the line `<!-- cw-split-brainstorm: part of #N -->`.
 
-Measure every part: `sh .agents/skills/cw-split-plan/measure.sh <part files>`. A part with `above_threshold=yes` must be one that rule 1 keeps whole. Otherwise regroup, and go back to step 3.
+Measure every part: `sh .agents/skills/cw-split-brainstorm/measure.sh <part files>`. A part with `above_threshold=yes` must be one that rule 1 keeps whole. Otherwise regroup, and go back to step 3.
 
-## 6. Write blockers.json
+## 6. Write issues.json
 
-Write `docs/splitting/S/issue-N/blockers.json` from step 4, with every part's id as a key.
+Write `docs/splitting/brainstorm/issue-N/issues.json` from steps 4 and 5: each part's id, its title, and the ids of the parts that block it directly.
 
 ## 7. Report
 
 The first line is the outcome. Then:
 
+- `not a brainstormed plan`: that `/cw-split-ce-plan` splits this issue.
 - `not split`: the plan's characters, requirements and acceptance examples.
 - `kept whole`: those numbers, and the one-sentence reason.
 - `split`: the directory, then each part's id, title, requirement IDs, size and reason for shipping alone; each link between parts with its reason; and the parts kept above the threshold, with why.

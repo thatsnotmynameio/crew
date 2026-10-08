@@ -29,7 +29,7 @@ node_modules/
 coverage.out
 .context/compound-engineering/
 
-# The parts /cw-split-plan writes for an issue, read by the step after it
+# The parts /cw-split-brainstorm and /cw-split-ce-plan write for an issue, read by the step after them
 /docs/splitting/
 
 # Local settings, such as a boss's own .crew/config.local.yaml
