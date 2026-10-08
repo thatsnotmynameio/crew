@@ -215,6 +215,8 @@ func summarize(rules []crew.Rule, notify map[crew.RuleName]bool) []ruleSummary {
 				action = fmt.Sprintf("function %s: %s", a.Name, k.Function)
 			case crew.QuestionSpec:
 				action = fmt.Sprintf("question %s: %s", a.Name, k.Question.ID)
+			case crew.ReturnSpec:
+				action = fmt.Sprintf("return %s", a.Name)
 			}
 			if on := onNames(a.On); on != "" {
 				action += "; " + on
@@ -247,6 +249,8 @@ func stepNames(steps []crew.Step) string {
 			names[i] = "function " + string(s.Name)
 		case crew.QuestionStep:
 			names[i] = "question " + string(s.Question.ID)
+		case crew.ReturnStep:
+			names[i] = "return"
 		case crew.DelegateStep:
 			names[i] = "delegate"
 		}

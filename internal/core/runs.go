@@ -204,7 +204,7 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 		// Nothing to do outside the run.
 	case crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
 		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked,
-		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionEnded:
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionReturnAsked, crew.ActionEnded:
 		s.onAction(h, e)
 	case crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
 		crew.StepFunctionStopAsked, crew.StepEnded:
@@ -237,8 +237,8 @@ func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 		s.actionEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
 		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionEnded, crew.ActionShellEnded,
-		crew.ActionFunctionEnded, crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked,
-		crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded, crew.RunReleased:
+		crew.ActionFunctionEnded, crew.ActionReturnAsked, crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone,
+		crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded, crew.RunReleased:
 		// Nothing to do outside the run.
 	}
 }

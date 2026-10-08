@@ -1,6 +1,9 @@
 package crew
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 // The verdicts the answered rule's check fails with, each naming why the
 // item does not return (R10, KTD3).
@@ -109,4 +112,40 @@ func closedBy(comments []Comment, id QuestionID, writers []string) bool {
 		}
 	}
 	return false
+}
+
+// judgeReturn returns the verdict of the answered rule's check, which found
+// c: Passed when it found the label the item returns to, and its failure
+// verdict otherwise, each with a reason in crew's words, which never quote
+// a comment.
+func judgeReturn(c ReturnCheck) Judged {
+	var reason string
+	switch c.Failure {
+	case "":
+		reason = fmt.Sprintf("an answer counts, so the item returns to %q", c.To)
+		return Judged{Verdict: Passed, End: EndSucceeded{Reason: NewSessionText(reason)}}
+	case NoQuestion:
+		reason = "crew found no open question the config declares"
+	case Unanswered:
+		reason = "no answer counts after the question"
+	case Unread:
+		reason = "crew could not read the item's comments"
+	default:
+	}
+	return Judged{Verdict: c.Failure, End: EndSucceeded{Reason: NewSessionText(reason)}}
+}
+
+// failureReason returns the reason the answered rule's check failed with
+// v, or NoFailureReason when v is none of its failure verdicts.
+func failureReason(v Verdict) FailureReason {
+	switch v {
+	case NoQuestion:
+		return ReasonNoQuestion
+	case Unanswered:
+		return ReasonUnanswered
+	case Unread:
+		return ReasonUnread
+	default:
+	}
+	return NoFailureReason
 }

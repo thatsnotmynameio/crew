@@ -5,7 +5,8 @@ type StepKind int
 
 // The kinds of a route's steps, one for each Step.
 const (
-	// StepMove moves the item to a state (MoveStep).
+	// StepMove moves the item to a state (MoveStep), or to the label the
+	// answered rule's check found (ReturnStep).
 	StepMove StepKind = iota
 	// StepClose closes the issue (CloseStep).
 	StepClose
@@ -29,8 +30,9 @@ const (
 // step runs and the name of a function step.
 type StepPlan struct {
 	Kind StepKind
-	// To is the state a StepMove moves the item to; empty for the other
-	// kinds.
+	// To is the state a StepMove moves the item to: a return step's is the
+	// label the check found, written when the run chose its route; empty
+	// for the other kinds.
 	To State
 	// Shell is the shell action a StepShell runs; empty for the other
 	// kinds.
@@ -58,6 +60,10 @@ func planOf(s Step) StepPlan {
 		return StepPlan{Kind: StepQuestion}
 	case DelegateStep:
 		return StepPlan{Kind: StepDelegate}
+	case ReturnStep:
+		// The run writes the label the check found when it chooses the
+		// route.
+		return StepPlan{Kind: StepMove}
 	}
 	return StepPlan{}
 }

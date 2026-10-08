@@ -93,7 +93,8 @@ func (h *History) Retire(w WorkspaceName, issue IssueID, rule RuleName) {
 // startAfter returns how a run of rule starts after last, the last run of
 // rule on its issue:
 //   - after a run that chose PassedRoute, fresh once the route finished, or
-//     with the passed route alone, in last's worktree, when it did not;
+//     with the passed route alone, in last's worktree, when it did not,
+//     unless rule returns the item (returns);
 //   - after a run whose question action asked, after that action
 //     (askedAfter);
 //   - after a run that started no action and opened no worktree of its
@@ -104,7 +105,7 @@ func (h *History) Retire(w WorkspaceName, issue IssueID, rule RuleName) {
 func startAfter(last RuleRun, rule Rule) Start {
 	route, chosen := chosenRoute(last)
 	if chosen && route == PassedRoute {
-		return passedAfter(last)
+		return passedAfter(last, rule)
 	}
 	if start, ok := askedAfter(last, rule, route); ok {
 		return start
@@ -127,16 +128,27 @@ func startAfter(last RuleRun, rule Rule) Start {
 	return StartAt{Workspace: w, Log: log, Action: restart, Route: route, Reason: reason, Session: last.session}
 }
 
-// passedAfter returns how a run starts after last, which chose
+// passedAfter returns how a run of rule starts after last, which chose
 // PassedRoute: fresh once the route finished, as its final move or close
 // landed or was dropped since the item moved meanwhile, and with the
 // passed route alone, in last's worktree, when it was given up or never
-// settled.
-func passedAfter(last RuleRun) Start {
-	if passedFinished(last) {
+// settled. A rule that returns the item never runs its passed route alone:
+// its route's label comes from a check the next run makes again (KTD4).
+func passedAfter(last RuleRun, rule Rule) Start {
+	if passedFinished(last) || rule.returns() {
 		return StartFresh{}
 	}
 	return passedRouteAfter(last)
+}
+
+// returns reports whether r's PassedRoute holds a return step, whose label
+// the answered rule's check gives.
+func (r Rule) returns() bool {
+	route, _ := r.Route(PassedRoute)
+	return slices.ContainsFunc(route.Steps, func(s Step) bool {
+		_, ok := s.(ReturnStep)
+		return ok
+	})
 }
 
 // passedRouteAfter returns the passed route alone after last, in last's
@@ -255,7 +267,7 @@ func (a ActionRun) started() bool {
 			default:
 			}
 		}
-	case StartingSession, InSession, InShell, InFunction:
+	case StartingSession, InSession, InShell, InFunction, InReturnCheck:
 	}
 	return true
 }
@@ -318,7 +330,7 @@ func judges(kind ActionKind) bool {
 		return !k.ResumeSelf
 	case FunctionSpec:
 		return !k.ResumeSelf
-	case SessionSpec, QuestionSpec:
+	case SessionSpec, QuestionSpec, ReturnSpec:
 	}
 	return false
 }

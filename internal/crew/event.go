@@ -200,6 +200,15 @@ type ActionFunctionEnded struct {
 	Outcome FunctionOutcome
 }
 
+// ActionReturnAsked is the answered rule's action's start: the read of the
+// item's comments asked, at the run's cursor, to find where the item
+// returns (KTD2).
+type ActionReturnAsked struct {
+	EventHead
+
+	Action ActionName
+}
+
 // ActionEnded is an action run that ended: the action run's end, with its
 // verdict, where the verdict leads, and all it recorded.
 type ActionEnded struct {

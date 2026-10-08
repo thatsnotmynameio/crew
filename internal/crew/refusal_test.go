@@ -87,6 +87,16 @@ var actionRefusals = []refusal{
 	{name: "functionEnded while a session runs", given: inSession(), fact: functionEnded(5, "lfg", noVerdict)},
 	{name: "functionEnded while routing", given: passedAll(), fact: functionEnded(7, "judge", noVerdict)},
 	{name: "shellEnded while a function runs", given: checking(), fact: shellEnded(6, "check", exited(0, ""))},
+	{name: "returnChecked while taking", given: []RunEvent{answeredTake()}, fact: returnChecked(1, depsReady)},
+	{
+		name: "returnChecked while a function runs", given: checking(),
+		fact: ReturnChecked{FactHead: fh(6), Action: "check", Check: depsReady},
+	},
+	{
+		name: "returnChecked for a check that ended", given: seq(checkingReturn(), []RunEvent{returnedEnd(2)}, returnedTo(2)),
+		fact: returnChecked(3, depsReady),
+	},
+	{name: "functionEnded while crew reads", given: checkingReturn(), fact: functionEnded(2, "answer", noVerdict)},
 }
 
 // lookupRefusals are lookups the run did not ask for, or that it already

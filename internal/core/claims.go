@@ -108,6 +108,8 @@ func unrecorded(e crew.RunEvent) (crew.ActionName, string, bool) {
 		return e.Action, "the start of " + string(e.Action), true
 	case crew.ActionFunctionAsked:
 		return e.Action, "the start of " + string(e.Action), true
+	case crew.ActionReturnAsked:
+		return e.Action, "the start of " + string(e.Action), true
 	case crew.ActionSessionStarted:
 		return e.Action, "the start of " + string(e.Action) + "'s session", true
 	case crew.ActionEnded:

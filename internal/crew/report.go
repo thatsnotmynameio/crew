@@ -18,7 +18,8 @@ func (r RuleRun) Status(at time.Time, said map[ActionName]Said, showUsage bool) 
 // FailureReport returns the report a report step of the run's route posts,
 // once the run chose its route: the rule, the route, and the action at the
 // run's cursor, whose verdict ended the sequence, with that verdict, the
-// run's workspace and its log (KTD5). A run without actions names no
+// run's workspace and its log (KTD5), and, for the answered rule's check,
+// the reason its verdict names (KTD7). A run without actions names no
 // action.
 func (r RuleRun) FailureReport() (FailureReport, bool) {
 	route, routed := r.route()
@@ -31,6 +32,9 @@ func (r RuleRun) FailureReport() (FailureReport, bool) {
 		f := ActionFailure{Action: a.name, Workspace: w.Workspace.Name, Log: r.ActionLog(a)}
 		if ended, ok := a.state.(Finished); ok {
 			f.Verdict = ended.Verdict
+			if a.checked {
+				f.Reason = failureReason(ended.Verdict)
+			}
 		}
 		report.Failures = []ActionFailure{f}
 	}
@@ -145,7 +149,8 @@ func ran(state ActionState) bool {
 }
 
 // actionState returns how the action at index i stands in a status. A
-// session, a script or a function that runs is running. The action at the
+// session, a script, a function or a read of the item's comments that
+// runs is running. The action at the
 // cursor that has none running yet is pending, and those after it await
 // their turn. A failed action carries its cause and the run's log.
 func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
@@ -157,6 +162,8 @@ func (r RuleRun) actionState(i int, said Said, showUsage bool) ActionState {
 	case InShell:
 		return ActionRunning{Started: s.Started}
 	case InFunction:
+		return ActionRunning{Started: s.Started}
+	case InReturnCheck:
 		return ActionRunning{Started: s.Started}
 	case Finished:
 		return r.endState(a, s, showUsage)

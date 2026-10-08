@@ -117,8 +117,9 @@ func runText(e crew.RunEvent) string {
 		return fmt.Sprintf("%s %s ends through %s", e.IssueRef, e.Rule, e.Route)
 	case crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked, crew.ActionSessionAsked,
 		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellStopAsked, crew.ActionShellEnded,
-		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.RunLookupAsked, crew.RunLookupDone,
-		crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded, crew.RunReleased:
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionReturnAsked, crew.RunLookupAsked,
+		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded,
+		crew.RunReleased:
 	}
 	return ""
 }

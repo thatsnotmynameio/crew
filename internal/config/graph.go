@@ -108,7 +108,7 @@ func checkSteps(r parsedRoute) error {
 // ends tells whether step ends a route.
 func ends(step crew.Step) bool {
 	switch step.(type) {
-	case crew.MoveStep, crew.CloseStep:
+	case crew.MoveStep, crew.CloseStep, crew.ReturnStep:
 		return true
 	case crew.CommentStep, crew.ReportStep, crew.ShellStep, crew.FunctionStep, crew.QuestionStep, crew.DelegateStep:
 	}

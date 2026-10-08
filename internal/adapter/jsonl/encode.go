@@ -59,6 +59,8 @@ func encode(e crew.RunEvent, run string) line {
 	case crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked,
 		crew.StepFunctionStopAsked, crew.StepEnded:
 		return encodeRoute(e, run)
+	case crew.ActionReturnAsked:
+		// Not journaled yet: no rule of the config reads for a return.
 	}
 	return line{}
 }
@@ -136,7 +138,7 @@ func encodeWorkspace(e crew.RunEvent, run string) line {
 		l := headLine(e.EventHead, typeWorkspaceOpened, run)
 		l.Workspace, l.Branch, l.Log, l.Resumed = e.Workspace.Name, e.Workspace.Branch, e.Log, e.Resumed
 		return l
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
+	case crew.ActionReturnAsked, crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
 		crew.ActionShellAsked, crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked,
 		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionEnded, crew.RouteChosen,
@@ -182,7 +184,7 @@ func encodeAction(e crew.RunEvent, run string) line {
 		return l
 	case crew.ActionEnded:
 		return endedLine(e, run)
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
+	case crew.ActionReturnAsked, crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionFunctionAsked,
 		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.RouteChosen, crew.RunLookupAsked,
 		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded:
@@ -208,7 +210,7 @@ func encodeFunction(e crew.RunEvent, run string) line {
 		l.Verdict, _ = e.Outcome.Verdict.Get()
 		l.Log = e.Outcome.Log
 		return l
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
+	case crew.ActionReturnAsked, crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked,
 		crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellAsked,
 		crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionEnded, crew.RouteChosen, crew.RunLookupAsked,
@@ -266,7 +268,7 @@ func encodeRoute(e crew.RunEvent, run string) line {
 		l := stepLine(e.EventHead, typeStepEnded, run, e.Step)
 		l.Settled, l.Reason = settledOf(e.Outcome)
 		return l
-	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
+	case crew.ActionReturnAsked, crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.WorkspaceAsked, crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked,
 		crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellAsked,
 		crew.ActionShellStopAsked, crew.ActionShellEnded, crew.ActionFunctionAsked, crew.ActionFunctionStopAsked,

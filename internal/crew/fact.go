@@ -115,10 +115,11 @@ func (f TakeSettled) decide(d *decider) error {
 }
 
 // decide marks the run as stopping, once. A run taking or running its
-// actions asks the session, script or function at its cursor to stop; a
-// routing run asks its shell or function step in flight to stop, and
-// skips the shell and function steps after it, while its tracker steps go
-// on.
+// actions asks the session, script or function at its cursor to stop, but
+// not the read of the answered rule's check, which finishes within the
+// lookup timeout (KTD6); a routing run asks its shell or function step in
+// flight to stop, and skips the shell and function steps after it, while
+// its tracker steps go on.
 func (StopReached) decide(d *decider) error {
 	if d.run.stopping {
 		return nil
@@ -136,7 +137,7 @@ func (StopReached) decide(d *decider) error {
 		d.emit(ActionShellStopAsked{EventHead: d.head(), Action: a.name})
 	case InFunction:
 		d.emit(ActionFunctionStopAsked{EventHead: d.head(), Action: a.name})
-	case AwaitingTurn, DoneInEarlierRun, StartingSession, Finished, NotRun:
+	case AwaitingTurn, DoneInEarlierRun, StartingSession, InReturnCheck, Finished, NotRun:
 		// No session, script or function runs: the run's next fact sees
 		// the stop.
 	}

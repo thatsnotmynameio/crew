@@ -121,6 +121,7 @@ var snapshots = map[string][]RunEvent{
 	"looking up":  seq(lookingUp(), []RunEvent{RunLookupDone{EventHead: eh(7), PullRequest: foundPR}}),
 	"routing":     reported(),
 	"out of time": seq(installing(), outOfTime(2)),
+	"reading":     checkingReturn(),
 	"released":    releasedAs(StepDropped{Reason: "closed"}),
 }
 

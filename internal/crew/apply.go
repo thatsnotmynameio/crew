@@ -176,6 +176,15 @@ func (e ActionFunctionEnded) apply(r RuleRun) RuleRun {
 	})
 }
 
+// apply marks the action as the answered rule's check, which reads the
+// item's comments.
+func (e ActionReturnAsked) apply(r RuleRun) RuleRun {
+	return r.withAction(e.Action, func(a ActionRun) ActionRun {
+		a.state, a.checked = InReturnCheck{Started: e.At}, true
+		return a
+	})
+}
+
 // apply ends the action with what the event recorded, which, for an end
 // Decide returned, is what the action run already holds. A session that
 // started in this run and ended well ends on the open questions at its
