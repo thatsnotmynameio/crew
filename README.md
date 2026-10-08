@@ -118,9 +118,10 @@ A rule with actions declares the routes `passed` and `failed`, and every route a
 - `report` posts crew's report on the issue: the action that ended the run, its verdict, the route and the action's log.
 - `comment` posts a comment, a Go template that may name `{{.Issue.Ref}}`, `{{.Issue.Key}}`, `{{.Issue.Title}}`, `{{.Issue.URL}}`, `{{.Rule}}`, `{{.Action}}` (the action that ended the run), `{{.Verdict}}`, `{{.Route}}` and `{{.Log}}`, and nothing else.
 - The name of a shell action of `actions` runs it, as a step. The name of a function, or of a preset of one, calls it, as a step, alone or as a key whose value holds its parameters.
+- `question` asks a question on the issue, for the answerer `questions` names; see below.
 - `move` moves the item to a label. `close` closes the issue, takes crew's labels off it and off its pull requests, which stay open, and posts the stop comment on each of them.
 
-The last step, and only it, is a `move` or a `close`. A step that fails shows on the issue's status comment, and the route goes on, so the final move or close still happens. Neither a comment nor a report ever carries what a session or a script printed. A rule without actions declares only `passed`: crew runs it as soon as it takes the item, without a worktree or a session.
+The last step, and only it, is a `move`, a `close` or a `question`, after which crew adds the move to `crew:question` itself. A step that fails shows on the issue's status comment, and the route goes on, so the final move or close still happens. Neither a comment nor a report ever carries what a session or a script printed. A rule without actions declares only `passed`: crew runs it as soon as it takes the item, without a worktree or a session.
 
 crew refuses a config, naming the file, the key and its line, when an `on` names a route the rule does not declare, when nothing leads to a route other than `passed` and `failed`, when a route does not end with `move` or `close` or has one before its last step, when a route moves the item to the rule's own `ready` label or to any rule's `running` label, when two actions of a rule share a name, or when a route is named `next`. A top-level action cannot take a word of the rules' own, such as `agent`, `prompt`, `on`, `move` or `next`, or the name of a function crew registers, as its name. crew also refuses to start, with exit status 2, when a route comments on or closes issues and the tracker cannot, or when a session may wait for an answer and the tracker cannot list an issue's comments, naming the rule and the action.
 
@@ -154,9 +155,60 @@ rules:
 
 crew's prompt tells such a session how to ask and how to wait. The session asks one question as one comment on the issue, with its own hidden marker in it, `<!-- crew:session run=<run id> action=<action> -->`, and writes `waiting` in the file `CREW_VERDICT_FILE` names as soon as it posts. It then waits up to its `wait`, a Go duration such as `30m` or `1h30m`, or 10 minutes when left out, through short checks of the issue's comments. It reads them only with the one `gh api` command crew writes into its prompt, which prints only the comments that count as answers, so no one else's text reaches the session while it waits. Once an answer counts, the session replaces `waiting` in the file, or empties it, and goes on with the work. When none came, it checks once more and ends with `waiting`, and the run ends through the route `waiting` leads to. Each check is one command of at most 5 minutes. crew raises Claude Code's command timeout above that; a Codex session is asked to set its tool's timeout itself, which has not been tried yet.
 
-Only the code owners, the logins sessions get as `CREW_CODE_OWNERS`, and the Apps on the top-level `answering_apps` list may answer. Without `answering_apps`, that list is crew's bots; a list you write replaces them, and `[]` lets no App answer. Each entry is an App's login, `<slug>[bot]`, such as `claude[bot]`. crew refuses any other entry, and `github-actions[bot]` in any case, since any workflow can post anyone's text as it. The asking session's own login is left off the list. Logins match ignoring case. A comment by a code owner counts only when GitHub does not mark its author as an App, and one by a listed App only when it does. crew ignores a comment by anyone else and reports it nowhere. A comment that holds `<!-- crew:` anywhere never counts, and crew puts its own hidden marker, `<!-- crew:posted -->`, on every comment it posts: its reports, route comments, status comments and stop comments on pull requests.
+Only the code owners, the logins sessions get as `CREW_CODE_OWNERS`, and the Apps on the top-level `answering_apps` list may answer. Without `answering_apps`, that list is crew's bots; a list you write replaces them, and `[]` lets no App answer. Each entry is an App's login, `<slug>[bot]`, such as `claude[bot]`. crew refuses any other entry, and `github-actions[bot]` in any case, since any workflow can post anyone's text as it. The asking session's own login is left off the list. Logins match ignoring case. A comment by a code owner counts only when GitHub does not mark its author as an App, and one by a listed App only when it does. crew ignores a comment by anyone else and reports it nowhere. A comment that holds `<!-- crew:` anywhere never counts, and crew puts its own hidden marker, `<!-- crew:posted -->`, on every comment it posts: its reports, route comments, questions and their delegations, status comments and stop comments on pull requests.
 
 crew does not watch the issue for answers. Whoever answers moves the issue back to the rule's `ready` label, and crew resumes the run. Before a session starts at an action where an earlier session may have asked a question, crew reads the issue's comments. It finds the question by that session's marker and login, and hands the new session the answers that count, newest first and each whole, up to 32 KiB, with how many older ones it left out on the issue. When no answer came after the question, the prompt says so. The answers go only into the prompt, and the prompt file crew keeps beside the run's log for the shell actions after the session, never into the run journal, a comment or the status comment. When crew cannot read the comments, the prompt says so and gives the session the filtered command to read them with. A question stays open from run to run until a session at that action succeeds with a verdict other than `waiting`, which closes every question asked there; one that ends with `waiting` again leaves them all open, its own and the earlier ones, and the latest question asked is the one crew finds. A run that ended through `passed` and finished its route leaves no question open.
+
+A rule can also ask a question that someone else answers. The top-level `questions` names who answers every question, and turns questions on:
+
+```yaml
+questions:
+  answerer: octocat
+  queue: default
+
+rules:
+  triage:
+    labels:
+      ready: triage
+      running: triaging
+    actions:
+      - agent: triager
+        prompt: Find the component {{.Issue.Ref}} belongs to.
+        on:
+          unsure: unsure
+      - question:
+          id: priority
+          text: "How urgent is {{.Issue.Ref}}?"
+          return: triage
+        name: ask-priority
+      - agent: triager
+        name: plan
+        prompt: Plan the work for {{.Issue.Ref}}.
+    routes:
+      passed: planned
+      failed:
+        - report
+        - move: triage failed
+      unsure:
+        - comment: "`{{.Action}}` could not place {{.Issue.Ref}}."
+        - question: {id: component, text: "Which component does {{.Issue.Ref}} belong to?", return: triage}
+```
+
+`answerer` is one login: a person's, or an App's as `<slug>[bot]`. crew refuses `github-actions[bot]`. `queue` names the queue crew's question rule runs in, one of `queues` or `default`, which it is when left out. Without `questions`, crew refuses every question.
+
+A question is a route's step, `question: {id, text, return}`, or an action of the same form, with an optional `name` beside it, `question` by default. `id` names the question, with a verdict's grammar. `text` is the question, a Go template as a route's `comment` is. `return` is the label the issue goes back to once the question is answered: it must be the `ready` label of one of the rules, compared ignoring case, and crew refuses any other label, naming the file, the key and its line. A question names no one: the config's answerer answers every question. A question step is the last step of its route: crew adds the move to `crew:question` after it and refuses any step written after it. A question action ends as soon as the run reaches it, with the verdict `asked`, and takes no `on`. `asked` leads to a route named like the action, which crew adds to the rule: it posts the question, then moves the issue to `crew:question`. crew refuses a route you declare with that name, so two question actions of one rule need two names. crew refuses a question in a rule that takes pull requests.
+
+The question is a new comment, posted as crew's own writes are, as `tracker.bot` or as you. It holds the rendered text, then a hidden marker, `<!-- crew:question id=<id> rule=<rule> return=<label> -->`, then crew's own marker.
+
+With `questions`, crew adds a rule of its own, `question`, before yours. It takes the issues in `crew:question`, moves each to `crew:question:in progress` and at once runs its `passed` route, as for any rule without actions. That route reads the issue's comments, finds its open question, posts a comment that asks the answerer to answer it, then moves the issue to `crew:question:waiting answer`, which no rule takes. crew creates the three labels at startup with the others. With `questions` written, crew refuses a rule of yours named `question`, and one that takes, runs in or moves an issue to one of those labels. The question rule sends no notification, and the default board shows none of its labels, since it has no actions; a `board` you write can.
+
+The open question is the latest comment that holds a question's marker and crew's own marker, written by `tracker.bot` or by you, so a marker anyone else writes counts for nothing. The comment that delegates it reads, for example, ``@octocat, crew asks you to answer the question `priority` that `triage` asked on #12.``, and carries a hidden marker of its own, `<!-- crew:delegated id=<id> -->`. It never quotes the question, which the issue already shows. When crew finds no open question, or cannot read the comments, the comment still mentions the answerer and says so, so an issue put in `crew:question` by hand is not left there unseen. A question followed by its delegation is no longer open, so crew never delegates one twice. crew reads an issue's comments only for this and for a session's answers.
+
+An App answerer, such as `claude[bot]`, is written as `@claude` in a code span, so GitHub notifies no user who owns the login `claude`. GitHub notifies no App when a comment mentions it: an App answers only when its own webhook or workflow acts on the comment's text, and it must be set up to act on comments crew's bot writes. Some, such as Claude Code's GitHub Action, skip comments that bots write unless told otherwise.
+
+crew does not yet read the answer or move the issue back. Once the question is answered, a person moves the issue to the question's `return` label, and the rule whose `ready` label that is takes it. When that is the rule that asked, it resumes the run: after a question step, at the action whose verdict chose the route; after a question action, at the action after it, or with only its `passed` route when the question was its last action. When an action follows the question and the run's worktree cannot be reopened, because the run opened none or it is gone, the run starts over at the first action and asks the question again. crew hands the answer to no action.
+
+The question rule holds a slot of its queue while its route runs. It runs in the default queue unless `questions.queue` names another, so when the default queue has no slots, issues wait in `crew:question` until `questions.queue` names a queue that has some. crew refuses to start, with exit status 2, when a rule asks a question and the tracker cannot comment on issues, or when `questions` is written and the tracker cannot list an issue's comments or post a delegation, or crew can learn no login it posts as. GitHub's tracker can do all of these.
 
 ## Stopping crew
 
