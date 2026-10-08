@@ -41,7 +41,7 @@ func checkAsk(t *testing.T, q crew.Ask, id crew.QuestionID, text string, ret cre
 // crew:question after it.
 func TestLoadReadsAQuestionStep(t *testing.T) {
 	cfg := load(t, routeRule(answerer, ", on: {unsure: ask}", askRoute("Is {{.Issue.Ref}} done?", "ready")))
-	ask, ok := cfg.Rules[1].Route("ask")
+	ask, ok := cfg.Rules[2].Route("ask")
 	if !ok || len(ask.Steps) != 2 {
 		t.Fatalf("route ask = %+v, want a question and a move", ask)
 	}
@@ -57,7 +57,7 @@ func TestLoadReadsAQuestionAction(t *testing.T) {
 	items := "      - prompt: go\n" +
 		"      - question: {id: blocks, text: \"Does {{.Issue.Ref}} block #281?\", return: ready}\n" +
 		"        name: confirm\n"
-	r := load(t, sequenceRule(answerer+oneAgent, items, "")).Rules[1]
+	r := load(t, sequenceRule(answerer+oneAgent, items, "")).Rules[2]
 	a := r.Action("confirm")
 	spec, ok := a.Kind.(crew.QuestionSpec)
 	if !ok {
@@ -77,7 +77,7 @@ func TestLoadReadsAQuestionAction(t *testing.T) {
 // KTD3: a question action without name is called question, and so is its
 // route.
 func TestLoadNamesAQuestionActionQuestion(t *testing.T) {
-	r := load(t, sequenceRule(answerer+oneAgent, "      - question: {id: blocks, text: hi, return: ready}\n", "")).Rules[1]
+	r := load(t, sequenceRule(answerer+oneAgent, "      - question: {id: blocks, text: hi, return: ready}\n", "")).Rules[2]
 	if _, ok := r.Action("question").Kind.(crew.QuestionSpec); !ok {
 		t.Errorf("actions = %+v, want a question called question", r.Actions)
 	}
@@ -90,7 +90,7 @@ func TestLoadNamesAQuestionActionQuestion(t *testing.T) {
 // the ready label it names.
 func TestLoadSpellsAReturnLabelAsTheReadyLabel(t *testing.T) {
 	cfg := load(t, routeRule(answerer, ", on: {unsure: ask}", askRoute("Is it?", "READY")))
-	ask, _ := cfg.Rules[1].Route("ask")
+	ask, _ := cfg.Rules[2].Route("ask")
 	if got := askOf(t, ask.Steps[0]).Return; got != "ready" {
 		t.Errorf("return = %q, want ready", got)
 	}
@@ -108,14 +108,46 @@ func TestLoadAddsTheQuestionRuleFirst(t *testing.T) {
 			crew.DelegateStep{}, crew.MoveStep{To: "crew:question:waiting answer"},
 		}}},
 	}
-	if len(cfg.Rules) != 2 || !reflect.DeepEqual(cfg.Rules[0], want) || cfg.Rules[1].Name != "implement" {
-		t.Fatalf("rules = %+v\nwant %+v, then implement", cfg.Rules, want)
+	if len(cfg.Rules) != 3 || !reflect.DeepEqual(cfg.Rules[0], want) || cfg.Rules[2].Name != "implement" {
+		t.Fatalf("rules = %+v\nwant %+v, then answered, then implement", cfg.Rules, want)
 	}
 	if notify, ok := cfg.Notify["question"]; !ok || notify {
 		t.Errorf("question rule's notify = %v (set %v), want false", notify, ok)
 	}
 	if cfg.Questions == nil || cfg.Questions.Answerer != "octocat" {
 		t.Errorf("Questions = %+v, want octocat as the answerer", cfg.Questions)
+	}
+}
+
+// KTD1, KTD4 of #311: with questions:, crew's answered rule comes right
+// after the question rule, in questions.queue. It takes crew:answered,
+// runs its one check, answer, in crew:answered:in progress, returns the
+// item on passed and fails it to crew:answered:failed with a report, and
+// does not notify.
+func TestLoadAddsTheAnsweredRuleAfterTheQuestionRule(t *testing.T) {
+	cfg := load(t, "max_parallel_issues: 3\nqueues: {clerk: 1}\n"+
+		"questions: {answerer: octocat, queue: clerk}\n"+oneRule)
+	want := crew.Rule{
+		Name: "answered", Queue: crew.Queue{Name: "clerk", Slots: 1},
+		Labels:  crew.Labels{Ready: "crew:answered", Running: "crew:answered:in progress"},
+		Actions: []crew.Action{{Name: "answer", Kind: crew.ReturnSpec{}}},
+		Routes: []crew.Route{
+			{Name: crew.PassedRoute, Steps: []crew.Step{crew.ReturnStep{}}},
+			{Name: crew.FailedRoute, Steps: []crew.Step{crew.ReportStep{}, crew.MoveStep{To: "crew:answered:failed"}}},
+		},
+	}
+	names := make([]crew.RuleName, len(cfg.Rules))
+	for i, r := range cfg.Rules {
+		names[i] = r.Name
+	}
+	if wantNames := []crew.RuleName{"question", "answered", "implement"}; !reflect.DeepEqual(names, wantNames) {
+		t.Fatalf("rules = %q, want %q", names, wantNames)
+	}
+	if !reflect.DeepEqual(cfg.Rules[1], want) {
+		t.Errorf("answered rule = %+v\nwant %+v", cfg.Rules[1], want)
+	}
+	if notify, ok := cfg.Notify["answered"]; !ok || notify {
+		t.Errorf("answered rule's notify = %v (set %v), want false", notify, ok)
 	}
 }
 
@@ -163,8 +195,18 @@ func TestLoadRejectsInvalidQuestionActions(t *testing.T) {
 	testRejects(t, invalidQuestionActions)
 }
 
-// invalidQuestions are errors in questions:, and rules that take its
-// rule's name or labels.
+// KTD1 of #311: the answered rule's name and labels are anyone's without
+// questions:.
+func TestLoadWithoutQuestionsTakesTheAnsweredRulesNameAndLabels(t *testing.T) {
+	cfg := load(t, "rules:\n  answered:\n    labels: {ready: crew:answered, running: crew:answered:in progress}\n"+
+		"    routes: {passed: crew:answered:failed}\n")
+	if len(cfg.Rules) != 1 || cfg.Rules[0].Name != "answered" {
+		t.Errorf("rules = %+v, want the file's rule answered alone", cfg.Rules)
+	}
+}
+
+// invalidQuestions are errors in questions:, and rules that take the name
+// or labels of its rules.
 var invalidQuestions = []rejectCase{
 	{
 		name:  "questions written as a list",
@@ -208,6 +250,28 @@ var invalidQuestions = []rejectCase{
 		body:  routeRule(answerer, "", "      passed: crew:question\n      failed: failed\n"),
 		wants: []string{"rules.implement.routes.passed (line 11)", "crew's question rule"},
 	},
+	{
+		name:  "a rule named answered",
+		body:  answerer + "rules:\n  answered:\n    labels: {ready: a, running: ar}\n    routes: {passed: done}\n",
+		wants: []string{"rules.answered (line 3)", "crew's answered rule"},
+	},
+	{
+		name: "a rule that takes crew:answered, in any case",
+		body: answerer + "rules:\n  wait:\n    labels:\n      ready: Crew:Answered\n      running: x\n" +
+			"    routes: {passed: done}\n",
+		wants: []string{"rules.wait.labels.ready (line 5)", "crew's answered rule"},
+	},
+	{
+		name: "a rule that runs in the answered rule's running label, in any case",
+		body: answerer + "rules:\n  wait:\n    labels: {ready: x, running: CREW:ANSWERED:IN PROGRESS}\n" +
+			"    routes: {passed: done}\n",
+		wants: []string{"rules.wait.labels.running (line 4)", "crew's answered rule"},
+	},
+	{
+		name:  "a written move to crew:answered:failed, in any case",
+		body:  routeRule(answerer, "", "      passed: done\n      failed: crew:Answered:Failed\n"),
+		wants: []string{"rules.implement.routes.failed (line 12)", "crew's answered rule"},
+	},
 }
 
 // invalidQuestionSteps are errors in a question step. With answerer as
@@ -229,6 +293,19 @@ var invalidQuestionSteps = []rejectCase{
 		name:  "a return label to crew:question",
 		body:  routeRule(answerer, ", on: {unsure: ask}", askRoute("Is it?", "crew:question")),
 		wants: []string{"rules.implement.routes.ask[0].question.return (line 14)", "not the ready label of a rule"},
+	},
+	{
+		// KTD4 of #311.
+		name: "a return label that is the ready label of a rule that takes pull requests",
+		body: routeRule(answerer, ", on: {unsure: ask}", failedRoutes+
+			"      ask:\n        - question:\n            id: unsure\n            text: Is it?\n"+
+			"            return: review\n") +
+			"  review:\n    takes: pull_requests\n    labels: {ready: review, running: reviewing}\n" +
+			"    routes: {passed: reviewed}\n",
+		wants: []string{
+			".crew/config.yaml: rules.implement.routes.ask[0].question.return (line 17)",
+			`"review" is the ready label of rule "review", which takes pull requests`,
+		},
 	},
 	{
 		name: "a step after the question",

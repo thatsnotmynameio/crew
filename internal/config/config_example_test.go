@@ -71,7 +71,7 @@ func TestTheExampleLoadsUncommented(t *testing.T) {
 	for _, r := range cfg.Rules {
 		names = append(names, r.Name)
 	}
-	if want := []crew.RuleName{"question", "development", "review", "approve"}; !slices.Equal(names, want) {
+	if want := []crew.RuleName{"question", "answered", "development", "review", "approve"}; !slices.Equal(names, want) {
 		t.Errorf("rules = %q, want %q", names, want)
 	}
 }

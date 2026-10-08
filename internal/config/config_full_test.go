@@ -59,10 +59,10 @@ func TestAFullConfigLoads(t *testing.T) {
 	for _, c := range cfg.Board {
 		columns = append(columns, c.Name)
 	}
-	if want := []string{"translation", "proofreading"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
+	if want := []string{"answered", "translation", "proofreading"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
-	translationRule := cfg.Rules[2]
+	translationRule := cfg.Rules[3]
 	pushed, ok := translationRule.Action("draft-pushed").Kind.(crew.ShellSpec)
 	wantPushed := crew.ShellSpec{
 		Script: "n=$(git rev-list --count \"origin/$CREW_BRANCH\" 2>/dev/null) || n=0\n" +
@@ -126,11 +126,21 @@ var translationQuestionRule = ruleSummary{
 	routes: []string{"passed: delegate, move crew:question:waiting answer"},
 }
 
+// translationAnsweredRule is crew's answered rule, which testdata/
+// translation's questions adds after the question rule, in its queue desk.
+var translationAnsweredRule = ruleSummary{
+	name: "answered", queue: crew.Queue{Name: "desk", Slots: 1},
+	labels:  crew.Labels{Ready: "crew:answered", Running: "crew:answered:in progress"},
+	actions: []string{"return answer"},
+	routes:  []string{"passed: return", "failed: report, move crew:answered:failed"},
+}
+
 // wantTranslationRules are the rules testdata/translation's config loads
-// into: crew's question rule, then the file's in file order.
+// into: crew's question and answered rules, then the file's in file order.
 func wantTranslationRules() []ruleSummary {
 	return []ruleSummary{
 		translationQuestionRule,
+		translationAnsweredRule,
 		{
 			name: "accept request", queue: crew.Queue{Name: "desk", Slots: 1},
 			labels: crew.Labels{Ready: "request:new", Running: "request:accepting"},
