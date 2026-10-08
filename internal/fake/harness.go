@@ -234,6 +234,7 @@ func (s *Session) SetUsage(u crew.Usage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u.Models = slices.Clone(u.Models)
+	u.ByModel = slices.Clone(u.ByModel)
 	s.usage = u
 }
 
@@ -290,6 +291,7 @@ func (u UsageSession) Usage() crew.Usage {
 	defer u.mu.Unlock()
 	usage := u.usage
 	usage.Models = slices.Clone(usage.Models)
+	usage.ByModel = slices.Clone(usage.ByModel)
 	return usage
 }
 

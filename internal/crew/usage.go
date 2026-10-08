@@ -13,6 +13,17 @@ type Usage struct {
 	// Models names the models the session used, sorted; empty when the
 	// harness does not tell.
 	Models []string
+	// ByModel is the session's tokens for each model it used, sorted by
+	// model; empty when the harness does not tell tokens by model. Tokens
+	// stays the session's sum.
+	ByModel []ModelTokens
+}
+
+// ModelTokens is the tokens a session used with one model.
+type ModelTokens struct {
+	// Model is the model's name, as the harness reports it.
+	Model  string
+	Tokens Tokens
 }
 
 // Tokens is a token usage by kind.

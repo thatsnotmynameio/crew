@@ -36,7 +36,7 @@ func (a ActionRun) Name() ActionName { return a.name }
 func (a ActionRun) SessionStarted() Optional[time.Time] { return a.session }
 
 // Usage returns what its session reported it used, once the session ended;
-// the zero Usage before. The copy has its own Models.
+// the zero Usage before. The copy has its own Models and ByModel.
 func (a ActionRun) Usage() Usage { return cloneUsage(a.usage) }
 
 // Spend returns what its session used, or nothing when no session started.
@@ -224,8 +224,9 @@ func restoreAction(s ActionRunSnapshot) ActionRun {
 	}
 }
 
-// cloneUsage returns a copy of u with its own Models.
+// cloneUsage returns a copy of u with its own Models and ByModel.
 func cloneUsage(u Usage) Usage {
 	u.Models = slices.Clone(u.Models)
+	u.ByModel = slices.Clone(u.ByModel)
 	return u
 }

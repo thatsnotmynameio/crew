@@ -303,11 +303,23 @@ func TestUsageHarnessSessionsReportWhatTheTestSets(t *testing.T) {
 	if got := r.Usage(); !reflect.DeepEqual(got, crew.Usage{}) {
 		t.Errorf("Usage before SetUsage = %+v, want nothing reported", got)
 	}
-	want := crew.Usage{Cost: crew.Some(12.4), Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20}),
-		Models: []string{"claude-opus"}}
-	h.Sessions()[0].SetUsage(want)
-	if got := r.Usage(); !reflect.DeepEqual(got, want) {
+	usage := func() crew.Usage {
+		return crew.Usage{Cost: crew.Some(12.4), Tokens: crew.Some(crew.Tokens{Input: 10, Output: 20}),
+			Models: []string{"claude-opus", "claude-sonnet"}, ByModel: []crew.ModelTokens{
+				{Model: "claude-opus", Tokens: crew.Tokens{Input: 9, Output: 15}},
+				{Model: "claude-sonnet", Tokens: crew.Tokens{Input: 1, Output: 5}},
+			}}
+	}
+	given := usage()
+	h.Sessions()[0].SetUsage(given)
+	given.ByModel[0].Tokens.Input = 99
+	got := r.Usage()
+	if want := usage(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Usage = %+v, want %+v", got, want)
+	}
+	got.ByModel[1].Model = "changed"
+	if again, want := r.Usage(), usage(); !reflect.DeepEqual(again, want) {
+		t.Errorf("Usage = %+v after its copy changed, want %+v", again, want)
 	}
 
 	if _, ok := start(t, fake.NewHarness(), "implement #2").(port.UsageReporter); ok {

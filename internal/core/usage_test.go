@@ -98,6 +98,30 @@ func TestAE1ARunLooksUpItsPullRequestsOnceItChoseItsRoute(t *testing.T) {
 	}
 }
 
+func TestASessionsEndRecordsItsTokensByModelBesideItsSum(t *testing.T) {
+	d := usageDriver(t, draft())
+	d.running(issue("31", 1, ready))
+	two := crew.Usage{
+		Tokens: crew.Some(crew.Tokens{Input: 11, Output: 22}),
+		Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
+		ByModel: []crew.ModelTokens{
+			{Model: "claude-opus-5-5", Tokens: crew.Tokens{Input: 10, Output: 20}},
+			{Model: "claude-sonnet-5-5", Tokens: crew.Tokens{Input: 1, Output: 2}},
+		},
+	}
+	cmds, _ := d.send(core.SessionEnded{IssueID: issueID("31"), Action: "acceptance", Outcome: succeeded, Usage: two})
+
+	var ended []crew.ActionSessionEnded
+	for _, e := range records(cmds) {
+		if s, ok := e.(crew.ActionSessionEnded); ok {
+			ended = append(ended, s)
+		}
+	}
+	if len(ended) != 1 || !reflect.DeepEqual(ended[0].Usage, two) {
+		t.Fatalf("session ends = %#v, want acceptance's with its tokens by model, Opus then Sonnet, %#v", ended, two)
+	}
+}
+
 func TestAStopDuringTheLookupKeepsTheSessionsOwnFailure(t *testing.T) {
 	d := usageDriver(t, draft())
 	d.running(issue("9", 1, ready))
