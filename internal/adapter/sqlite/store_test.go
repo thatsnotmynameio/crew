@@ -163,6 +163,32 @@ func TestRecordWritesToAStoreANewerCrewMigrated(t *testing.T) {
 	}
 }
 
+func TestRecordIntoAStoreWithANegativeVersionFailsAndRetries(t *testing.T) {
+	dir := t.TempDir()
+	db := read(t, dir)
+	if _, err := db.ExecContext(t.Context(), "PRAGMA user_version = -1"); err != nil {
+		t.Fatal(err)
+	}
+	s := open(t, dir)
+
+	for range 2 {
+		err := s.Record(t.Context(), process(1))
+		if err == nil || !strings.Contains(err.Error(), "the store's version -1 is not one crew writes") {
+			t.Errorf("Record = %v, want an error naming the negative version", err)
+		}
+	}
+	if v := userVersion(t, dir); v != -1 {
+		t.Errorf("user_version = %d, want -1", v)
+	}
+	if _, err := db.ExecContext(t.Context(), "PRAGMA user_version = 0"); err != nil {
+		t.Fatal(err)
+	}
+	record(t, s, process(1))
+	if got := processes(t, dir); len(got) != 1 || got[0] != process(1) {
+		t.Errorf("processes = %+v, want %+v", got, process(1))
+	}
+}
+
 func TestRecordWithoutADataFolderFailsEveryTime(t *testing.T) {
 	for _, dir := range []string{"", filepath.Join("relative", "crew")} {
 		t.Run(dir, func(t *testing.T) {

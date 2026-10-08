@@ -37,6 +37,9 @@ func apply(ctx context.Context, tx *sql.Tx) error {
 	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("read the store's version: %w", err)
 	}
+	if version < 0 {
+		return fmt.Errorf("the store's version %d is not one crew writes", version)
+	}
 	if version >= len(scripts) {
 		return nil
 	}
