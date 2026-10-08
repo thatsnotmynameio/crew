@@ -39,7 +39,7 @@
       "examples": [["claude[bot]"]]
     },
     "questions": {
-      "description": "Who answers the questions rules ask, which it turns on. With it, crew adds the rule question, before the file's rules: it takes the items in crew:question, runs in crew:question:in progress, mentions the answerer on the item and moves it to crew:question:waiting answer, which no rule takes. No rule of the files may then be called question, or take, run in or move an item to one of those three labels. Without it, crew refuses every question.",
+      "description": "Who answers the questions rules ask, which it turns on. With it, crew adds two rules before the file's rules. The rule question takes the items in crew:question, runs in crew:question:in progress, mentions the answerer on the item and moves it to crew:question:waiting answer, which no rule takes. The answerer posts the answer and moves the item to crew:answered. The rule answered takes the items there, runs in crew:answered:in progress, and moves the item to its question's return label once an answer counts, or reports why and moves it to crew:answered:failed. No rule of the files may then be called question or answered, or take, run in or move an item to one of those six labels. Without it, crew refuses every question.",
       "type": "object",
       "additionalProperties": false,
       "required": ["answerer"],
@@ -52,7 +52,7 @@
           "examples": ["octocat", "claude[bot]"]
         },
         "queue": {
-          "description": "The queue crew's question rule runs in: one of queues, or default, the default.",
+          "description": "The queue crew's question and answered rules run in: one of queues, or default, the default.",
           "type": "string",
           "minLength": 1,
           "default": "default"
@@ -337,7 +337,7 @@
                             "minLength": 1
                           },
                           "return": {
-                            "description": "The label the item returns to once its question is answered: the ready label of one of the rules, compared ignoring case.",
+                            "description": "The label crew's answered rule returns the item to once its question is answered: the ready label of one of the rules that take issues, compared ignoring case. Only the rule that asked gets the answers.",
                             "type": "string",
                             "minLength": 1
                           }
@@ -419,7 +419,7 @@
                                 "minLength": 1
                               },
                               "return": {
-                                "description": "The label the item returns to once its question is answered: the ready label of one of the rules, compared ignoring case.",
+                                "description": "The label crew's answered rule returns the item to once its question is answered: the ready label of one of the rules that take issues, compared ignoring case. Only the rule that asked gets the answers.",
                                 "type": "string",
                                 "minLength": 1
                               }

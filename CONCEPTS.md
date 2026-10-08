@@ -24,7 +24,7 @@ It holds a slot of its queue while its route runs, ends through `passed` even wh
 
 ### Action
 
-One step of a rule's sequence: a session, an unattended coding-agent session written in the rule with its prompt and run on its agent's harness, a shell action, which the config defines once by name, a function, which crew registers, or a question action, which asks a rule's question. A session is named after its agent unless the rule names it, and no two actions of a rule share a name.
+One step of a rule's sequence: a session, an unattended coding-agent session written in the rule with its prompt and run on its agent's harness, a shell action, which the config defines once by name, a function, which crew registers, a question action, which asks a rule's question, or the answered rule's check, which crew adds itself. A session is named after its agent unless the rule names it, and no two actions of a rule share a name.
 
 A rule's actions run one at a time, in the listed order, in the rule run's one workspace. Each ends with a verdict, which its `on:` sends to the next action or to one of the rule's routes.
 
@@ -58,7 +58,7 @@ The former name of a shell action that judged a session, run after it; see Shell
 
 ### Verdict
 
-An action's result: `passed`, `failed`, or another name the action's `on:` maps. A session gives `passed` or `failed` by how it ended, or the verdict it wrote to the file crew gave it; a shell action gives one by its exit status; a function gives the one it returns; a question action gives `asked`. A stop, an action that cannot start, a verdict the action's `on:` does not name, and a verdict a function returns without declaring it give `failed`.
+An action's result: `passed`, `failed`, or another name the action's `on:` maps. A session gives `passed` or `failed` by how it ended, or the verdict it wrote to the file crew gave it; a shell action gives one by its exit status; a function gives the one it returns; a question action gives `asked`; the answered rule's check gives `passed`, `no-question`, `unanswered` or `unread`. A stop, an action that cannot start, a verdict the action's `on:` does not name, and a verdict a function returns without declaring it give `failed`.
 
 The action's `on:` maps each verdict to `next`, the next action, or to a route. Without an entry, `passed` goes to `next` and every other verdict to `failed`.
 
@@ -70,19 +70,25 @@ A rule with actions declares `passed`, which its run takes after its last action
 
 ### Question step
 
-The step that asks a rule's question on an issue: a comment with the question's text and its marker, which names the question's id, the rule that asked and its return label, the ready label of a rule in the config. It names no answerer. It is the last step of its route, and crew adds the move to `crew:question` after it.
+The step that asks a rule's question on an issue: a comment with the question's text and its marker, which names the question's id, the rule that asked and its return label, the ready label of a rule in the config that takes issues. It names no answerer. It is the last step of its route, and crew adds the move to `crew:question` after it.
 
-A rule writes it as a route's step or as an action. A question action ends at once with the verdict `asked`, which leads to a route crew adds under the action's name, holding the question step. Only a config with `questions` may ask, and only in a rule that takes issues.
+A rule writes it as a route's step or as an action. A question action ends at once with the verdict `asked`, which leads to a route crew adds under the action's name, holding the question step. Only a config with `questions` may ask, and only in a rule that takes issues. A question step that posted its question opens it on the rule's run.
 
 ### Question rule
 
 The rule crew adds before the config's own when the config has `questions`: it takes the issues in `crew:question`, runs in `crew:question:in progress`, and its `passed` route, its only route, delegates the issue's open question, then moves the issue to `crew:question:waiting answer`, which no rule takes.
 
-It is a rule without actions. The issue's open question is the latest question crew's writer posted and did not delegate yet; the delegation mentions the answerer, and still does, saying so, when crew finds no open question or cannot read the comments. Until crew returns answered issues, a person moves the issue to the question's return label.
+It is a rule without actions. The issue's open question is the latest question crew's writer posted and did not delegate yet; the delegation mentions the answerer, and still does, saying so, when crew finds no open question or cannot read the comments. Unless it found none, it asks the answerer to post the answer, then move the issue to `crew:answered`.
+
+### Answered rule
+
+The rule crew adds right after the question rule when the config has `questions`: it takes the issues in `crew:answered`, runs in `crew:answered:in progress`, and runs one action, `answer`, the check, which reads the issue's comments. The check finds the latest question crew's writer posted that a question of the config still declares, by its id, rule and return label, and an answer after it. With one, its `passed` route moves the issue to the question's return label; otherwise it fails with `no-question`, `unanswered` or `unread`, and its `failed` route posts a failure report that says why, then moves the issue to `crew:answered:failed`, which no rule takes.
+
+The return label always comes from the question, never from the answer. Only a move to `crew:answered` returns the issue: a comment alone returns nothing. It runs in `questions.queue` too, needs no workspace, and has a column on the default board.
 
 ### Answerer
 
-The one person or App, `questions.answerer`, whom the question rule mentions on every rule's question. Unlike a session's question, a rule's question has no answering list: crew reads no answer to it.
+The one person or App, `questions.answerer`, whom the question rule mentions on every rule's question, and who answers it and moves the issue to `crew:answered`. Its answer counts by the same answer rule as a session's: a code owner who is not an App, or an App on the answering list other than crew's writers. crew does not check at startup that the answerer may answer; an answer that does not count fails the answered rule's check.
 
 ### Rule run
 
@@ -130,9 +136,9 @@ An entry needs you when its run ended through any route other than `passed`, or 
 
 ### Resume
 
-What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action or a function that judged a session before it, the new run starts at that session instead, unless its definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through. When an earlier session at its action asked a question, it is told instead that a question was asked, and gets the answers that count.
+What crew does when a rule takes an issue whose last rule run in that rule ended through any route other than `passed`, chose such a route and never finished it, or was cut short during an action: it reopens that run's workspace, as the run left it, and starts at the action that ended the run, without running the actions before it again. When that action is a shell action or a function that judged a session before it, the new run starts at that session instead, unless its definition says `resume: self`. A resumed session is a new session, told that it continues earlier work and which route the last run ended through. When an earlier session at its action asked a question, it is told instead that a question was asked, and gets the answers that count. The first session of a run whose rule has an open question gets that question's answers the same way.
 
-When the last run ended at a question action that asked, the new run starts at the action after it, in that run's workspace, or runs only the `passed` route when the question was the rule's last action; when an action follows and the workspace cannot be reopened, it starts over at the first action and asks the question again. When the last run chose `passed` and its final move or close never landed, crew runs only the `passed` route again, in that run's workspace when it still exists. When the workspace to reopen is gone, the run starts over at the first action in a new one, since the actions before the resume point would not have run there. A run that started no action and opened no workspace, such as one stopped at its take, passes its own start on to the next run. A run that finished its `passed` route is never resumed.
+When the last run ended at a question action whose question was posted, the new run starts at the action after it, in that run's workspace, or runs only the `passed` route when the question was the rule's last action; when an action follows and the workspace cannot be reopened, it starts over at the first action and asks the question again. A question that was not posted is asked again. A step back from a judge to its session never crosses a question action. When the last run chose `passed` and its final move or close never landed, crew runs only the `passed` route again, in that run's workspace when it still exists. When the workspace to reopen is gone, the run starts over at the first action in a new one, since the actions before the resume point would not have run there. A run that started no action and opened no workspace, such as one stopped at its take, passes its own start on to the next run. A run that finished its `passed` route is never resumed.
 
 Resuming is triggered only by the rule's ready label going back on the issue; crew never resumes on its own. When another rule run later opens a workspace of the same name, which crew gives out again only once the earlier workspace is gone, the run that worked there no longer resumes.
 
@@ -152,7 +158,7 @@ Only the latest entry changes; earlier entries keep the text they had when their
 
 ### Failure report
 
-The comment a route's `report` step posts: the rule, the route its run ended through, and the action that ended the run, with its verdict and where its log is.
+The comment a route's `report` step posts: the rule, the route its run ended through, and the action that ended the run, with its verdict and where its log is, or, for the answered rule's check, why it did not return the issue, in crew's own words.
 
 It is a new comment, so the tracker notifies the people who watch the issue, and it never quotes what a session or a tool said.
 
@@ -178,7 +184,7 @@ It is a new comment at every rule end, so its watchers are notified and a rerun 
 
 The hidden HTML comment `<!-- crew:posted -->` that crew puts on every comment it posts or edits on an issue or a pull request: reports, route comments, rule questions and their delegations, status comments and stop comments. Shell actions get it as `CREW_COMMENT_MARKER`, to put on the comments they post.
 
-Every marker of crew's starts with `<!-- crew:`, which GitHub renders as nothing, and a comment that holds one anywhere is never an answer. A session's own marker, `<!-- crew:session run=<run id> action=<action> -->`, marks the comment that asks its question. A comment that holds crew's marker is never a session's question, even when it also holds a session's marker. A rule's question also holds `<!-- crew:question id=<id> rule=<rule> return=<label> -->`, and the comment that delegates it `<!-- crew:delegated id=<id> -->`; crew trusts either only on a comment its own writer posted with crew's marker.
+Every marker of crew's starts with `<!-- crew:`, which GitHub renders as nothing, and a comment that holds one anywhere is never an answer. A session's own marker, `<!-- crew:session run=<run id> action=<action> -->`, marks the comment that asks its question. A comment that holds crew's marker is never a session's question, even when it also holds a session's marker. A rule's question also holds `<!-- crew:question id=<id> rule=<rule> return=<label> -->`, and the comment that delegates it `<!-- crew:delegated id=<id> -->`, or `<!-- crew:delegated unread -->` when crew could not read the comments; crew trusts either only on a comment its own writer posted with crew's marker. An answer may carry the question's parameters as `<!-- crew:answer question=<id> rule=<rule> return=<label> -->`: crew strips it before it judges the answer and reads none of its values.
 
 ## Identity
 
@@ -214,13 +220,15 @@ What a session is asked to do next, as its captain answers it: the task's own id
 
 A question a session asked on the issue, in one comment with its own marker, because it needs an answer to go on: the rule run it ran in, its action and the login it acted as, which crew finds the comment by. Only a session whose `on:` maps `waiting` may ask one, and it waits up to its `wait` before it ends with `waiting`.
 
-A question stays open from rule run to rule run, through the run journal, until a session at its action succeeds with a verdict other than `waiting`, which closes every question asked there; one that ends with `waiting` leaves them all open, and the latest question asked is the one crew finds. A session that failed, was stopped or crashed with crew closes nothing. A run that finished its `passed` route passes no question on.
+A rule's question, posted by a question step, is open on the rule that asked, by its id: crew finds it by its marker on a comment crew's writer posted. It is tied to no action: the first session of a run of that rule gets it.
+
+A question stays open from rule run to rule run, through the run journal, until a session at its action succeeds with a verdict other than `waiting`, which closes every question asked there; one that ends with `waiting` leaves them all open, and the latest question asked is the one crew finds. A session that failed, was stopped or crashed with crew closes nothing. A run that finished its `passed` route passes no session's question on. A rule's question stays open, also past a finished `passed` route, until the first session of a later run that got it succeeds with a verdict other than `waiting`.
 
 ### Answer
 
-A comment after a question that counts as its answer: written by a code owner whom GitHub does not mark as an App, or by an App on the answering list that asked none of the open questions, and holding none of crew's markers. Any other comment is ignored and reported nowhere.
+A comment after a question that counts as its answer: written by a code owner whom GitHub does not mark as an App, or by an App on the answering list that asked none of the open questions, and holding none of crew's markers once crew stripped the answer marker. crew's writers ask every rule's question, so they never answer one. Any other comment is ignored and reported nowhere. The answered rule's check and a session's answers follow this one rule.
 
-crew does not watch for answers: whoever answers moves the issue back to the rule's ready label. Before the next session at the question's action starts, crew reads the issue's comments and hands it the answers, newest first, capped at 32 KiB, with how many it left out. The answers reach only that session's prompt and the prompt file kept beside the run's log, never the run journal or a comment.
+crew does not watch for answers: whoever answers a session's question moves the issue back to the rule's ready label, and the answerer of a rule's question moves it to `crew:answered`, which returns it to the question's return label. Before the next session at the question's action starts, or the first session of a run when the question is the rule's, crew reads the issue's comments and hands it the answers, newest first, capped at 32 KiB, with how many it left out. The answers reach only that session's prompt and the prompt file kept beside the run's log, never the run journal or a comment. A rule's question's answers reach only the rule that asked: when its return label is another rule's, that rule's sessions get none.
 
 ### Answering list
 
@@ -258,5 +266,5 @@ A question moves up only by a person's edit to the question bank, once its evide
 
 - "Run" alone is ambiguous: a *rule run* is one pass through a rule, an *action run* is one attempt at one action, and crew's run time limit concerns the whole crew process.
 - "Verdict" and "ending" are two things: a *verdict* is one action's result, which its `on:` sends on, while a rule run *ends* through a route, the way the whole run finished.
-- "Question" alone is ambiguous: a *question* is one a session asked on its issue and waits for, answered by code owners and the answering list; a rule's question, posted by a *question step*, is delegated by the *question rule* to the *answerer*, and the run that asked ends; a question of the *question bank* is a named TypeSafe question the judge answers.
+- "Question" alone is ambiguous: a *question* is one a session asked on its issue and waits for, answered by code owners and the answering list; a rule's question, posted by a *question step*, is delegated by the *question rule* to the *answerer*, the run that asked ends, and the *answered rule* returns the issue once answered; a question of the *question bank* is a named TypeSafe question the judge answers.
 - "Stage" alone is ambiguous: the run journal's `stage` key is a rule's name, kept from earlier versions, while a *question stage* is how far a TypeSafe question is trusted.
