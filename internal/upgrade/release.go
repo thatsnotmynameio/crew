@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -81,12 +82,13 @@ func ResolveAPI(override string) (API, error) {
 		return API{}, refuse
 	}
 	ip := net.ParseIP(u.Hostname())
-	plain := u.User == nil && u.Opaque == "" && u.Path == "" && u.RawQuery == "" && u.Fragment == "" &&
+	plain := u.User == nil && u.Opaque == "" && u.Path == "" && u.RawQuery == "" && !strings.ContainsRune(override, '#') &&
 		!u.ForceQuery
 	if (u.Scheme != "http" && u.Scheme != "https") || !plain || ip == nil || !ip.IsLoopback() {
 		return API{}, refuse
 	}
-	return API{Base: override, Host: u.Hostname(), Override: true}, nil
+	u.Host = strings.ToLower(u.Host)
+	return API{Base: u.String(), Host: u.Hostname(), Override: true}, nil
 }
 
 // Notice returns the line crew upgrade prints while APIEnv replaces
@@ -156,9 +158,9 @@ type Client struct {
 	token TokenFunc
 	// login is the token of gh's login, looked up on the first call, and
 	// reason why there is none when it is "".
-	login  string
-	reason string
-	looked bool
+	login     string
+	reason    string
+	tokenOnce sync.Once
 }
 
 // NewClient returns a client of api, sending its requests through hc's
@@ -336,10 +338,9 @@ func (c *Client) get(ctx context.Context, path, accept string) (*http.Response, 
 	req.Header.Set("Accept", accept)
 	req.Header.Set("X-Github-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "thatsnotmynameio-crew")
-	if !c.looked {
+	c.tokenOnce.Do(func() {
 		c.login, c.reason = c.token(ctx, c.api)
-		c.looked = true
-	}
+	})
 	if c.login != "" {
 		req.Header.Set("Authorization", "Bearer "+c.login)
 	}

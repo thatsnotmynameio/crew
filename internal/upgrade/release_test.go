@@ -389,8 +389,12 @@ func TestARedirectFromHTTPSToHTTPIsRefused(t *testing.T) {
 		http.Redirect(w, r, plain.URL+"/signed?sig=secret", http.StatusFound)
 	}))
 	t.Cleanup(api.Close)
-	c := NewClient(API{Base: api.URL}, api.Client(), noToken)
-	_, err := c.Download(t.Context(), releaseOfA(), "a", maxArchive)
+	resolved, err := ResolveAPI(strings.Replace(api.URL, "https:", "HTTPS:", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := NewClient(resolved, api.Client(), noToken)
+	_, err = c.Download(t.Context(), releaseOfA(), "a", maxArchive)
 	if err == nil || !strings.Contains(err.Error(), "not https") {
 		t.Fatalf("Download = %v, want a refused redirect to http", err)
 	}

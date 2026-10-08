@@ -19,9 +19,10 @@ func TestResolveAPIAcceptsOnlyALoopbackOverride(t *testing.T) {
 		t.Errorf("ResolveAPI(\"\") = %+v, %v, want GitHub's API", api, err)
 	}
 	for value, want := range map[string]API{
-		"http://127.0.0.1:1234": {Base: "http://127.0.0.1:1234", Host: "127.0.0.1", Override: true},
-		"https://[::1]:8443":    {Base: "https://[::1]:8443", Host: "::1", Override: true},
-		"http://127.0.0.1":      {Base: "http://127.0.0.1", Host: "127.0.0.1", Override: true},
+		"http://127.0.0.1:1234":  {Base: "http://127.0.0.1:1234", Host: "127.0.0.1", Override: true},
+		"https://[::1]:8443":     {Base: "https://[::1]:8443", Host: "::1", Override: true},
+		"http://127.0.0.1":       {Base: "http://127.0.0.1", Host: "127.0.0.1", Override: true},
+		"HTTPS://127.0.0.1:8443": {Base: "https://127.0.0.1:8443", Host: "127.0.0.1", Override: true},
 	} {
 		got, err := ResolveAPI(value)
 		if err != nil || got != want {
@@ -31,7 +32,7 @@ func TestResolveAPIAcceptsOnlyALoopbackOverride(t *testing.T) {
 	for _, value := range []string{
 		"http://localhost:1234", "https://example.com", "http://10.0.0.1", "http://127.0.0.1@evil.example",
 		"http://127.0.0.1:1/path", "http://127.0.0.1:1/?q=1", "http://127.0.0.1:1#f", "ftp://127.0.0.1", "127.0.0.1:1",
-		"http://127.0.0.1:1?", "http://[::1", "http:127.0.0.1",
+		"http://127.0.0.1:1?", "http://127.0.0.1:1234#", "http://[::1", "http:127.0.0.1",
 	} {
 		_, err := ResolveAPI(value)
 		if _, ok := errors.AsType[*EnvError](err); !ok || !strings.Contains(err.Error(), APIEnv) {
