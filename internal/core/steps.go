@@ -49,10 +49,9 @@ func (s *step) askStep(h *heldRun, i int) {
 	issue := h.run.Issue()
 	d := &delivery{purpose: purposeStep, step: i}
 	switch st := route.Steps[i].(type) {
-	case crew.MoveStep:
-		d.call = h.move(rule.Labels.Running, st.To)
-	case crew.ReturnStep:
-		// The run planned the move to the label its check found.
+	case crew.MoveStep, crew.ReturnStep:
+		// The plan holds where a move goes, and where a return goes: the
+		// label the run's check found.
 		d.call = h.move(rule.Labels.Running, p.Steps[i].To)
 	case crew.CloseStep:
 		d.call = Call{Kind: CallClose, IssueID: issue.ID(), IssueRef: issue.Ref(), From: rule.Labels.Running}

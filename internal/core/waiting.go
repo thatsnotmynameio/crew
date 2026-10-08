@@ -69,7 +69,7 @@ func (m *Model) askedAt(questions []crew.Question) ([]asked, []string) {
 	var logins []string
 	for _, q := range questions {
 		if q.ID != "" {
-			marker := strings.TrimSuffix(crew.QuestionMarker(q.ID, q.Rule, ""), " -->")
+			marker := crew.QuestionMarkerPrefix(q.ID, q.Rule)
 			asks = append(asks, asked{marker: marker, logins: writers, rule: q.ID})
 			logins = append(logins, writers...)
 			continue

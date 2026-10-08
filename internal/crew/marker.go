@@ -61,8 +61,15 @@ const markerEnd = " -->"
 // comment that asks it: <!-- crew:question id=<id> rule=<rule>
 // return=<label> -->. Its values are query-escaped, as SessionMarker's are.
 func QuestionMarker(id QuestionID, rule RuleName, ret State) string {
-	return questionPrefix + "id=" + url.QueryEscape(string(id)) + " rule=" + url.QueryEscape(string(rule)) +
-		" return=" + url.QueryEscape(string(ret)) + markerEnd
+	return QuestionMarkerPrefix(id, rule) + url.QueryEscape(string(ret)) + markerEnd
+}
+
+// QuestionMarkerPrefix returns the start of the marker of the question id
+// that rule asks, up to its return label's value: <!-- crew:question
+// id=<id> rule=<rule> return=. It finds that question whatever label it
+// returns to, and no question of a rule whose name only starts with rule.
+func QuestionMarkerPrefix(id QuestionID, rule RuleName) string {
+	return questionPrefix + "id=" + url.QueryEscape(string(id)) + " rule=" + url.QueryEscape(string(rule)) + " return="
 }
 
 // FindQuestionMarker returns the question the last question marker in body
