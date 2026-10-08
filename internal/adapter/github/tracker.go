@@ -40,7 +40,7 @@ import (
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
 // a port.Acting, a port.CodeOwnerFinder, a port.LoginFinder, a
 // port.RepositoryFinder, a port.WriterReporter, a port.BoardLister, a
-// port.Commenter, a port.Closer and a port.CommentLister.
+// port.Commenter, a port.Closer, a port.CommentLister and a port.Delegator.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -56,6 +56,7 @@ var (
 	_ port.Commenter           = (*Tracker)(nil)
 	_ port.Closer              = (*Tracker)(nil)
 	_ port.CommentLister       = (*Tracker)(nil)
+	_ port.Delegator           = (*Tracker)(nil)
 )
 
 // issueFields are what issuesQuery reads of an issue. A dependency

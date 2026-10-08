@@ -145,3 +145,16 @@ func TestEveryFunctionEventLoadsBackAsItselfWithOrWithoutAVerdict(t *testing.T) 
 		crew.StepEnded{EventHead: head(9), Step: 0, Outcome: crew.StepFailed{Reason: crew.NewShellReason("notify: failed")}},
 	})
 }
+
+// KTD12: a route that asks a question, or delegates one, loads back with
+// its steps.
+func TestEveryQuestionStepLoadsBackAsItself(t *testing.T) {
+	roundTrip(t, []crew.RunEvent{
+		crew.RouteChosen{EventHead: head(1), Route: "unsure", Action: "lfg", Steps: []crew.StepPlan{
+			{Kind: crew.StepQuestion}, {Kind: crew.StepMove, To: "crew:question"},
+		}},
+		crew.RouteChosen{EventHead: head(2), Route: crew.PassedRoute, Steps: []crew.StepPlan{
+			{Kind: crew.StepDelegate}, {Kind: crew.StepMove, To: "crew:question:waiting answer"},
+		}},
+	})
+}

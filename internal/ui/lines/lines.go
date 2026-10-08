@@ -248,6 +248,8 @@ func call(c core.Call) string {
 		return "commenting on " + c.IssueRef
 	case core.CallClose:
 		return "closing " + c.IssueRef
+	case core.CallDelegate:
+		return "asking the answerer on " + c.IssueRef
 	case core.CallPullRequests:
 		if c.To == "" {
 			return fmt.Sprintf("telling the pull requests of %s it was closed", c.IssueRef)

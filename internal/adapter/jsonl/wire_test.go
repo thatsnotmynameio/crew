@@ -159,3 +159,14 @@ func TestAFunctionsEndWritesTheVerdictItReturnedOrNone(t *testing.T) {
 		t.Errorf("verdicts = %v, want %v", got, want)
 	}
 }
+
+// KTD12: a question step and a delegation step keep their wire names.
+func TestTheQuestionStepsKeepTheirWireNames(t *testing.T) {
+	got := wireValues(t, "steps", []crew.RunEvent{crew.RouteChosen{
+		EventHead: head(1), Route: "unsure", Steps: []crew.StepPlan{{Kind: crew.StepQuestion}, {Kind: crew.StepDelegate}},
+	}})
+	want := []any{[]any{map[string]any{"kind": "question"}, map[string]any{"kind": "delegate"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("steps = %v, want %v", got, want)
+	}
+}

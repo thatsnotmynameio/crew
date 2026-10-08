@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,5 +143,48 @@ func TestRoutingTrackerScriptedFailuresComeInOrderThenCallsSucceed(t *testing.T)
 	}
 	if _, err := tr.Comments(ctx, issueID("1")); err != nil {
 		t.Errorf("second Comments: %v", err)
+	}
+}
+
+// R12, AE7: the comments and delegations the routing tracker posts join
+// the issue's comments, after the scripted ones, written as the writer set
+// and carrying crew's own marker, as the github adapter posts them; it
+// counts each listing and tells the login set.
+func TestRoutingTrackerListsWhatItPostedAsTheWriter(t *testing.T) {
+	tr := fake.NewRoutingTracker(issue("1", inProgress))
+	scripted := crew.Comment{Author: "ana", Body: "First."}
+	tr.SetComments("1", scripted)
+	tr.SetWriter("crew-ops[bot]")
+	tr.SetLogin("boss")
+	ctx := context.Background()
+
+	if err := tr.Comment(ctx, issueID("1"), "Is it done?"); err != nil {
+		t.Fatalf("Comment: %v", err)
+	}
+	d := crew.Delegation{
+		IssueID: issueID("1"), IssueRef: "#1", Answerer: "octocat", Search: crew.QuestionFound, ID: "done",
+	}
+	if err := tr.Delegate(ctx, d); err != nil {
+		t.Fatalf("Delegate: %v", err)
+	}
+	got, err := tr.Comments(ctx, issueID("1"))
+	if err != nil {
+		t.Fatalf("Comments: %v", err)
+	}
+	if len(got) != 3 || got[0] != scripted {
+		t.Fatalf("Comments = %+v, want the scripted one, then the comment and the delegation", got)
+	}
+	if got[1].Author != "crew-ops[bot]" || got[1].Body != "Is it done?\n\n"+crew.PostedMarker+"\n" {
+		t.Errorf("posted comment = %+v, want the body and crew's marker, by crew-ops[bot]", got[1])
+	}
+	if got[2].Author != "crew-ops[bot]" || !crew.HoldsPostedMarker(got[2].Body) ||
+		!strings.Contains(got[2].Body, crew.DelegatedMarker("done")) || !strings.Contains(got[2].Body, "octocat") {
+		t.Errorf("delegation = %+v, want octocat, its marker and crew's, by crew-ops[bot]", got[2])
+	}
+	if n := tr.CommentLists("1"); n != 1 {
+		t.Errorf("CommentLists = %d, want 1", n)
+	}
+	if login := tr.Login(); login != "boss" {
+		t.Errorf("Login = %q, want boss", login)
 	}
 }

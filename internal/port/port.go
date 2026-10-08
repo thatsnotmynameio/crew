@@ -314,8 +314,10 @@ type BoardLister interface {
 type Commenter interface {
 	// Comment posts body as a new comment on issue, as the tracker's
 	// writer, with its control characters stripped but its lines kept
-	// (crew.StripControlsKeepingLines). Its errors are classified as
-	// Tracker.Move's are.
+	// (crew.StripControlsKeepingLines). The comment carries
+	// crew.PostedMarker, as every comment crew posts does, so crew never
+	// takes it for an answer and finds the questions it asked. Its errors
+	// are classified as Tracker.Move's are.
 	Comment(ctx context.Context, issue crew.IssueID, body string) error
 }
 
