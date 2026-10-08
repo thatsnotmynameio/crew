@@ -25,6 +25,12 @@ type TrackerFactory func(decode Decode, states []crew.State) (Tracker, error)
 // section as TrackerFactory does.
 type HarnessFactory func(decode Decode) (Harness, error)
 
+// StatisticsFactory builds a statistics store from its config section and
+// dir, the folder its data lives in. It validates the section as
+// HarnessFactory does; it does not touch dir, which is the store's job when
+// it first records.
+type StatisticsFactory func(decode Decode, dir string) (Statistics, error)
+
 // FunctionFactory builds a function from its parameters, as a use in the
 // config writes them, validated through decode as HarnessFactory validates
 // its section. It returns a RefusedParameterError when it refuses a parameter's

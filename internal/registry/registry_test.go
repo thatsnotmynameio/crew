@@ -60,7 +60,7 @@ func assertErr(t *testing.T, err error, wants ...string) {
 
 // R13: a harness name no adapter has names the agent's key.
 func TestUnregisteredHarnessNamesTheKeyAndTheRegisteredHarnesses(t *testing.T) {
-	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())}, nil)
+	r := registry.New(nil, map[string]port.HarnessFactory{"claude": fake.HarnessFactory(fake.NewHarness())}, nil, nil)
 	a := load(t, agent("nosuch")+rules).Agents[0]
 
 	h, err := r.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
@@ -74,7 +74,7 @@ func TestUnregisteredTrackerNamesTheKeyAndTheRegisteredTrackersSorted(t *testing
 	r := registry.New(map[string]port.TrackerFactory{
 		"jira":   fake.TrackerFactory(fake.NewTracker()),
 		"github": fake.TrackerFactory(fake.NewTracker()),
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	_, err := r.Tracker("linear", func(any) error { return nil }, nil)
 	assertErr(t, err, "tracker.name", `"linear"`, "github, jira")
@@ -86,7 +86,7 @@ func TestRegistryWithoutAdaptersSaysNoneIsRegistered(t *testing.T) {
 }
 
 func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
-	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil, nil)
+	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil, nil, nil)
 	cfg := load(t, `tracker:
   name: fake
   lables:
@@ -102,7 +102,7 @@ func TestFactoryValidationErrorNamesTheSectionKeyAndItsLine(t *testing.T) {
 
 // Covers AE3: tracker.labels is no longer a key, for the fake as for github.
 func TestTrackerLabelsIsAnUnknownKey(t *testing.T) {
-	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil, nil)
+	r := registry.New(map[string]port.TrackerFactory{"fake": fake.TrackerFactory(fake.NewTracker())}, nil, nil, nil)
 	cfg := load(t, `tracker:
   name: fake
   labels:
@@ -120,7 +120,7 @@ func TestTheTrackerFactoryGetsTheStates(t *testing.T) {
 			gotStates = states
 			return fake.NewTracker(), nil
 		},
-	}, nil, nil)
+	}, nil, nil, nil)
 	states := []crew.State{"ready", "in progress"}
 
 	if _, err := r.Tracker("fake", func(any) error { return nil }, states); err != nil {
@@ -136,6 +136,7 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
 	r := registry.New(
 		map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)},
 		map[string]port.HarnessFactory{"fake": fake.HarnessFactory(harness)},
+		nil,
 		nil,
 	)
 	cfg := load(t, `tracker:
@@ -156,5 +157,63 @@ func TestRegisteredAdaptersAreBuiltFromTheirSections(t *testing.T) {
 	}
 	if gotHarness != port.Harness(harness) {
 		t.Errorf("Harness = %v, want the registered fake", gotHarness)
+	}
+}
+
+// The config key that names the statistics store, in these tests.
+const storeKey = "statistics.store"
+
+func TestRegisteredStoreIsBuiltFromItsSection(t *testing.T) {
+	store := fake.NewStatistics()
+	r := registry.New(nil, nil, nil, map[string]port.StatisticsFactory{"sqlite": fake.StatisticsFactory(store)})
+
+	got, err := r.Statistics("sqlite", section("{}"), "/data/crew")
+	if err != nil {
+		t.Fatalf("Statistics: %v", err)
+	}
+	if got != port.Statistics(store) {
+		t.Errorf("Statistics = %v, want the registered fake", got)
+	}
+}
+
+func TestUnregisteredStoreNamesTheKeyAndTheRegisteredStores(t *testing.T) {
+	r := registry.New(nil, nil, nil, map[string]port.StatisticsFactory{
+		"sqlite": fake.StatisticsFactory(fake.NewStatistics()),
+		"memory": fake.StatisticsFactory(fake.NewStatistics()),
+	})
+
+	got, err := r.Statistics("postgres", section("{}"), "/data/crew")
+	assertErr(t, err, storeKey, `no store is named "postgres"`, "the registered stores are: memory, sqlite")
+	if got != nil {
+		t.Errorf("Statistics = %v, want none", got)
+	}
+}
+
+func TestStoreSectionWithAnUnknownKeyFailsNamingTheKey(t *testing.T) {
+	r := registry.New(nil, nil, nil, map[string]port.StatisticsFactory{
+		"sqlite": fake.StatisticsFactory(fake.NewStatistics()),
+	})
+
+	got, err := r.Statistics("sqlite", section("{path: /tmp/stats.db}"), "/data/crew")
+	assertErr(t, err, "store sqlite", "path")
+	if got != nil {
+		t.Errorf("Statistics = %v, want none", got)
+	}
+}
+
+func TestTheStoreFactoryGetsTheDataFolder(t *testing.T) {
+	var gotDir string
+	r := registry.New(nil, nil, nil, map[string]port.StatisticsFactory{
+		"sqlite": func(_ port.Decode, dir string) (port.Statistics, error) {
+			gotDir = dir
+			return fake.NewStatistics(), nil
+		},
+	})
+
+	if _, err := r.Statistics("sqlite", section("{}"), "/data/crew"); err != nil {
+		t.Fatalf("Statistics: %v", err)
+	}
+	if gotDir != "/data/crew" {
+		t.Errorf("the factory got the folder %q, want /data/crew", gotDir)
 	}
 }

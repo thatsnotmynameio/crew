@@ -1,9 +1,10 @@
 // Package port holds the interfaces the engine reaches the outside world
 // through: a Tracker for issues, a Harness for coding-agent sessions, a
-// Shell for scripts, a Workspace for each rule run's checkout and a Journal
-// for the rule runs' events. A Captain answers a session's next task. Each
-// port holds only what every adapter must provide; anything an
-// adapter may or may not support is a separate optional interface, such as
+// Shell for scripts, a Workspace for each rule run's checkout, a Journal
+// for the rule runs' events and Statistics for the records crew keeps of its
+// work. A Captain answers a session's next task. Each port holds only what
+// every adapter must provide; anything an adapter may or may not support is
+// a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
 // LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Commenter,
 // Closer, CommentLister, Delegator, Narrator or Reopener, that the engine
@@ -178,6 +179,16 @@ type Journal interface {
 	Load(repository crew.RepositoryID) ([]crew.RunEvent, error)
 	// Append stores e after the events stored before it.
 	Append(e crew.RunEvent) error
+}
+
+// Statistics is the statistics store: the records crew keeps of its work,
+// which outlive restarts and repositories. Its caller makes one call at a
+// time.
+type Statistics interface {
+	// Record stores s. An error means s was not stored.
+	Record(ctx context.Context, s crew.Statistic) error
+	// Close releases the store. No Record follows it.
+	Close() error
 }
 
 // Space is a created workspace on this machine: the workspace and its
