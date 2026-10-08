@@ -75,7 +75,7 @@ const usage = "usage: crew upgrade [vX.Y.Z]"
 // optional v and no leading zeros, as CI's version check holds VERSION to.
 var releaseVersion = regexp.MustCompile(`^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))$`)
 
-// ParseArgs returns the release args, the arguments after "upgrade", name:
+// ParseArgs returns the release named by args, the arguments after "upgrade":
 // Latest for none, and vX.Y.Z for one release version written vX.Y.Z or
 // X.Y.Z. It returns an EnvError naming the argument when it is not a
 // release version, and one whose text is the usage line for -h, --help or

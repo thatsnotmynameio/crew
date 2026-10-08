@@ -77,6 +77,14 @@ func envError(t *testing.T, args []string, err error) *EnvError {
 	return envErr
 }
 
+func TestEnvErrorPreservesTheWrappedCause(t *testing.T) {
+	cause := errors.New("release unavailable")
+	err := envErrorf("find release: %w", cause)
+	if !errors.Is(err, cause) {
+		t.Errorf("errors.Is(%v, cause) = false, want true", err)
+	}
+}
+
 func TestParseArgsRefusesAnythingButMajorMinorPatch(t *testing.T) {
 	for _, arg := range []string{
 		"", "v1.2", "1.2.3.4", "v01.2.3", "v1.02.3", "latest", "v1.2.3-rc1", "V1.2.3", "v1.2.3\x00", "-v",
