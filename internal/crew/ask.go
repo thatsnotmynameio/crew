@@ -139,4 +139,8 @@ type Delegation struct {
 	// QuestionFound.
 	ID   QuestionID
 	Rule RuleName
+	// MoveTo is the label the answerer moves the item to once the answer
+	// is posted, the answered rule's ready label (KTD10). It is empty when
+	// Search is QuestionNotFound: the check would fail on that move.
+	MoveTo State
 }

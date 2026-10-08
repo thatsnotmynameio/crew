@@ -562,7 +562,7 @@ func (e *Engine) ran(in core.RunInput, s port.Session) {
 	case core.StepFunctionEnded:
 		delete(e.steps, stepKey{in.Run, in.Step})
 	case core.WorkspaceReady, core.WorkspaceGone, core.WorkspaceFailed, core.SessionFailedToStart,
-		core.PullRequestFound, core.AnswersRead, core.QuestionRead:
+		core.PullRequestFound, core.AnswersRead, core.QuestionRead, core.ReturnRead:
 	}
 }
 

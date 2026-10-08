@@ -58,7 +58,9 @@ func Delegating(answerer string) Option {
 // the delegation step in.Step asked crew to read: a delegation to the
 // answerer naming the question crew.OpenQuestion found among in's
 // comments, written as one of crew's writers, or saying none was found or
-// the read failed. The outbox delivers it in the run's lane (KTD8, KTD9).
+// the read failed. Unless it found none, it names the label the answerer
+// moves the issue to once answered (KTD10). The outbox delivers it in the
+// run's lane (KTD8, KTD9).
 // A read the run no longer waits for, as its step is not the one in
 // flight or already delivers, changes nothing.
 func (s *step) questionRead(h *heldRun, in QuestionRead) {
@@ -75,8 +77,25 @@ func (s *step) questionRead(h *heldRun, in QuestionRead) {
 			d.Search, d.ID, d.Rule = crew.QuestionFound, q.ID, q.Rule
 		}
 	}
+	if d.Search != crew.QuestionNotFound {
+		d.MoveTo = s.m.answeredLabel()
+	}
 	s.deliver(h, &delivery{
 		purpose: purposeStep, step: i, delegation: d,
 		call: Call{Kind: CallDelegate, IssueID: issue.ID(), IssueRef: issue.Ref()},
 	})
+}
+
+// answeredLabel returns the ready label of crew's answered rule, the one
+// whose action is the answered rule's check (crew.ReturnSpec), which takes
+// an answered issue back to the rule that asked; empty without one.
+func (m *Model) answeredLabel() crew.State {
+	for _, r := range m.rules {
+		for _, a := range r.Actions {
+			if _, ok := a.Kind.(crew.ReturnSpec); ok {
+				return r.Labels.Ready
+			}
+		}
+	}
+	return ""
 }

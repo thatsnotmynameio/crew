@@ -51,20 +51,34 @@ type waiting struct {
 // it acts as and theirs, compared ignoring case (R40, KTD-W7, KTD-W8).
 func (m *Model) waitingOf(h *heldRun, name crew.ActionName, spec crew.SessionSpec) waiting {
 	login := m.bots.login(spec.Bot.Name)
-	earlier, asking := askedAt(h.run.Questions(name))
+	earlier, asking := m.askedAt(h.run.Questions(name))
 	return waiting{
 		issue: h.run.Issue().ID().Key, wait: spec.Wait, marker: crew.SessionMarker(h.run.ID(), name), login: login,
 		earlier: earlier, owners: m.answerers.CodeOwners, apps: m.appsExcept(append(asking, login)...),
 	}
 }
 
-// askedAt returns what a read command prints of questions, each by its
-// marker and login, and the logins that asked them.
-func askedAt(questions []crew.Question) ([]asked, []string) {
+// askedAt returns what a read command prints of questions, and the logins
+// that asked them. A session's question is its marker and its login. A
+// rule's is the start of its question marker, up to its return label,
+// which crew's writers posted with crew's own marker, so they asked it
+// (KTD5).
+func (m *Model) askedAt(questions []crew.Question) ([]asked, []string) {
+	writers := slices.DeleteFunc(m.bots.writers(), func(l string) bool { return l == "" })
 	asks := make([]asked, 0, len(questions))
-	logins := make([]string, 0, len(questions))
+	var logins []string
 	for _, q := range questions {
-		asks = append(asks, asked{marker: crew.SessionMarker(q.Run, q.Action), login: q.Login})
+		if q.ID != "" {
+			marker := strings.TrimSuffix(crew.QuestionMarker(q.ID, q.Rule, ""), " -->")
+			asks = append(asks, asked{marker: marker, logins: writers, rule: q.ID})
+			logins = append(logins, writers...)
+			continue
+		}
+		a := asked{marker: crew.SessionMarker(q.Run, q.Action)}
+		if q.Login != "" {
+			a.logins = []string{q.Login}
+		}
+		asks = append(asks, a)
 		logins = append(logins, q.Login)
 	}
 	return asks, logins
@@ -79,13 +93,13 @@ func (m *Model) appsExcept(asking ...string) []string {
 }
 
 // reader is what a read command reads on an issue: the questions it
-// prints, by their markers and the logins they were asked as, and who may
-// answer them.
+// prints, by their markers and the logins that may have asked them, and
+// who may answer them.
 type reader struct {
 	// issue is the issue's number.
 	issue string
-	// questions are the questions' markers and logins; one with an empty
-	// login prints nothing.
+	// questions are the questions' markers and logins; one without a login
+	// prints nothing.
 	questions []asked
 	// owners are the code owners' logins.
 	owners []string
@@ -93,17 +107,40 @@ type reader struct {
 	apps []string
 }
 
-// asked is a question a read command prints: the marker of the session
-// that asked it and the login it acted as.
+// asked is a question a read command prints: the marker its comment
+// holds, the logins that may have written it, none when crew does not know
+// them, and, for a rule's question, its id. A session's question holds
+// none of crew's own marker (crew.PostedMarker); crew posted a rule's
+// with it.
 type asked struct {
 	marker string
-	login  string
+	logins []string
+	rule   crew.QuestionID
+}
+
+// filter returns the jq condition that a comment asks q, and false when q
+// has no login: one of q's logins wrote it, and it holds q's marker and,
+// for a rule's question alone, crew's own. Logins compare in lower case.
+func (q asked) filter() (string, bool) {
+	if len(q.logins) == 0 {
+		return "", false
+	}
+	posted := "($b | contains(" + jqString(crew.PostedMarker) + ")"
+	if q.rule == "" {
+		posted += " | not"
+	}
+	return "(any(" + jqList(q.logins) + "[]; . == $l) and ($b | contains(" + jqString(q.marker) + ")) and " +
+		posted + "))", true
 }
 
 // reader returns what the read command of w reads: the earlier questions
 // at its action and its session's own, and who may answer them.
 func (w waiting) reader() reader {
-	questions := append(slices.Clone(w.earlier), asked{marker: w.marker, login: w.login})
+	own := asked{marker: w.marker}
+	if w.login != "" {
+		own.logins = []string{w.login}
+	}
+	questions := append(slices.Clone(w.earlier), own)
 	return reader{issue: w.issue, questions: questions, owners: w.owners, apps: w.apps}
 }
 
@@ -115,13 +152,24 @@ func readCommand(r reader) string {
 		" --jq " + shellQuote(answerFilter(r))
 }
 
+// answerParameters is the jq regular expression of the question's
+// parameters an answer may carry (crew.AnswerMarker), as
+// crew.StripAnswerMarkers strips them: each value query-escaped, so it
+// holds no space and only whole percent escapes (KTD5).
+const answerParameters = crew.MarkerPrefix + "answer question=" + escapedValue + " rule=" + escapedValue +
+	" return=" + escapedValue + " -->"
+
+// escapedValue is the jq regular expression of a query-escaped value.
+const escapedValue = "([^ %]|%[0-9A-Fa-f]{2})*"
+
 // answerFilter returns the jq program that turns one page of comments into
-// one JSON object per line: each comment by the login of one of r's
-// questions that holds that question's marker and not crew's own, as a
-// question, with when it was written, and each comment that holds none of
-// crew's markers by a code owner who is not an App or by an App on the
-// list, with when and by whom it was written and its body. Logins compare
-// in lower case. A question whose login is unknown prints nothing.
+// one JSON object per line, each body stripped of the question's
+// parameters an answer may carry (answerParameters): each comment that
+// asks one of r's questions (asked.filter), as a question, with when it
+// was written, and each comment that holds none of crew's markers by a
+// code owner who is not an App or by an App on the list, with when and by
+// whom it was written and its body. Logins compare in lower case. A
+// question whose login is unknown prints nothing.
 func answerFilter(r reader) string {
 	answer := "($b | contains(" + jqString(crew.MarkerPrefix) + ") | not) and " +
 		"((.user.type != \"Bot\" and any(" + jqList(r.owners) + "[]; . == $l)) or " +
@@ -129,15 +177,16 @@ func answerFilter(r reader) string {
 	pick := "if " + answer + " then {created_at, login: .user.login, body: $b} else empty end"
 	var asks []string
 	for _, q := range r.questions {
-		if q.login != "" {
-			asks = append(asks, "($l == "+jqString(asciiLower(q.login))+" and ($b | contains("+jqString(q.marker)+")))")
+		if ask, ok := q.filter(); ok {
+			asks = append(asks, ask)
 		}
 	}
 	if len(asks) > 0 {
-		question := "(" + strings.Join(asks, " or ") + ") and ($b | contains(" + jqString(crew.PostedMarker) + ") | not)"
+		question := "(" + strings.Join(asks, " or ") + ")"
 		pick = "if " + question + " then {question: true, created_at} elif " + strings.TrimPrefix(pick, "if ")
 	}
-	return `.[] | ((.user.login // "") | ascii_downcase) as $l | (.body // "") as $b | ` + pick + " | tojson"
+	return `.[] | ((.user.login // "") | ascii_downcase) as $l | ((.body // "") | gsub(` + jqString(answerParameters) +
+		`; "")) as $b | ` + pick + " | tojson"
 }
 
 // jqList returns logins in lower case as a jq array literal, without

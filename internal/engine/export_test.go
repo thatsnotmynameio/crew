@@ -17,3 +17,10 @@ func (e *Engine) ReadQuestion(ctx context.Context, c core.ReadQuestion) core.Inp
 	e.readQuestion(ctx, c)
 	return (<-e.inbox).input
 }
+
+// ReadReturn runs the read of the comments c asks for, as the engine's
+// goroutine does, and returns the input it posts, for the black-box tests.
+func (e *Engine) ReadReturn(ctx context.Context, c core.ReadReturn) core.Input {
+	e.readReturn(ctx, c)
+	return (<-e.inbox).input
+}

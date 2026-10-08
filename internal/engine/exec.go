@@ -103,6 +103,8 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 		return func() { e.readAnswers(ctx, c) }
 	case core.ReadQuestion:
 		return func() { e.readQuestion(ctx, c) }
+	case core.ReadReturn:
+		return func() { e.readReturn(ctx, c) }
 	case core.Record:
 		// Appended here, in the loop, so events land in the order the core
 		// asked for them: an action's start before its session starts and
@@ -149,7 +151,7 @@ func (e *Engine) scriptJob(ctx context.Context, cmd core.RunCommand) func() {
 	case core.StopStepFunction:
 		stopScript(e.steps, stepKey{c.Run, c.Step})
 	case core.CreateWorkspace, core.ReopenWorkspace, core.StartSession, core.FindPullRequest, core.ReadAnswers,
-		core.ReadQuestion, core.Record, core.StopSession:
+		core.ReadQuestion, core.ReadReturn, core.Record, core.StopSession:
 		// runJob runs these.
 	}
 	return nil

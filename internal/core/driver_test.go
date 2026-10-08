@@ -246,6 +246,9 @@ func (d *driver) namedRun(in core.RunInput) core.Input {
 	case core.QuestionRead:
 		fill(&in.Run, in.IssueID)
 		return in
+	case core.ReturnRead:
+		fill(&in.Run, in.IssueID)
+		return in
 	}
 	return in
 }
@@ -302,7 +305,7 @@ func (d *driver) settle(cmds []core.Command) {
 			case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 				core.Record, core.StopSession, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell,
 				core.RunFunction, core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest,
-				core.ReadAnswers, core.ReadQuestion:
+				core.ReadAnswers, core.ReadQuestion, core.ReadReturn:
 				// Left unanswered.
 			}
 			next = append(next, out...)
@@ -351,7 +354,7 @@ func noIDs(cmds []core.Command) []core.Command {
 		case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.CreateWorkspace,
 			core.ReopenWorkspace, core.Record, core.StartSession, core.StopSession, core.RunShell, core.StopShell,
 			core.RunStepShell, core.StopStepShell, core.RunFunction, core.StopFunction, core.RunStepFunction,
-			core.StopStepFunction, core.FindPullRequest, core.ReadAnswers, core.ReadQuestion:
+			core.StopStepFunction, core.FindPullRequest, core.ReadAnswers, core.ReadQuestion, core.ReadReturn:
 		}
 		out = append(out, c)
 	}
@@ -500,7 +503,7 @@ func issueKey(c core.Command) string {
 	case core.ListIssues, core.ListBoard, core.ReportStatus, core.ReportPullRequests, core.ReopenWorkspace,
 		core.Record, core.RunShell, core.StopShell, core.RunStepShell, core.StopStepShell, core.RunFunction,
 		core.StopFunction, core.RunStepFunction, core.StopStepFunction, core.FindPullRequest, core.ReadAnswers,
-		core.ReadQuestion, core.Delegate:
+		core.ReadQuestion, core.ReadReturn, core.Delegate:
 	}
 	return ""
 }

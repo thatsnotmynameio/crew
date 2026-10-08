@@ -105,8 +105,8 @@ func wantIn(t *testing.T, tr fake.RoutingTracker, want crew.State) {
 }
 
 // wantDelegated fails t unless tr posted, after the question blocks of
-// deps on #1, one delegation of it to octocat, and listed #1's comments
-// once, for it.
+// deps on #1, one delegation of it to octocat, which asks for the move to
+// crew:answered, and listed #1's comments once, for it.
 func wantDelegated(t *testing.T, tr fake.RoutingTracker) {
 	t.Helper()
 	posted := tr.Posted()
@@ -114,7 +114,10 @@ func wantDelegated(t *testing.T, tr fake.RoutingTracker) {
 		!strings.Contains(posted[0].Body, crew.QuestionMarker("blocks", "deps", depsReady)) {
 		t.Errorf("posted = %+v, want the question blocks of deps", posted)
 	}
-	want := crew.Delegation{IssueRef: "#1", Answerer: "octocat", Search: crew.QuestionFound, ID: "blocks", Rule: "deps"}
+	want := crew.Delegation{
+		IssueRef: "#1", Answerer: "octocat", Search: crew.QuestionFound, ID: "blocks", Rule: "deps",
+		MoveTo: "crew:answered",
+	}
 	got := tr.Delegations()
 	if len(got) == 1 && got[0].IssueID.Key == "1" {
 		want.IssueID = got[0].IssueID // in the repository the engine names

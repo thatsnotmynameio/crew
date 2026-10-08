@@ -51,3 +51,15 @@ func (e *Engine) listComments(ctx context.Context, id crew.IssueID) ([]crew.Comm
 	}
 	return comments, "", true
 }
+
+// readReturn lists the comments on the issue of c's run (listComments) and
+// posts them for the core to check where the issue returns, for c's
+// action, the answered rule's check (KTD2). A read that fails is posted as
+// failed, and the check fails with it. The comments go only to the core:
+// the engine logs and reports none of them.
+func (e *Engine) readReturn(ctx context.Context, c core.ReadReturn) {
+	read := core.ReturnRead{IssueID: c.IssueID, Run: c.Run, Action: c.Action}
+	comments, _, ok := e.listComments(ctx, c.IssueID)
+	read.Comments, read.Failed = comments, !ok
+	e.post(read)
+}

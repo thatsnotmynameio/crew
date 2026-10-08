@@ -54,13 +54,18 @@ func continuesParagraph(branch, ended, log, logFromDir string) string {
 
 // answersParagraph is what crew appends to the prompt of a session at an
 // action with open questions once it found the question on issue (R23,
-// R44, R47, KTD-W10): that an earlier session at this action asked it, and
-// the answers that count, newest first, each quoted under its author's
-// login between crew's markers, so no answer's text can pose as crew's
-// words, with how many were left out, or that none came yet.
+// R44, R47, KTD-W10, KTD8): that an earlier session at this action asked
+// it, or this rule, by its id, and the answers that count, newest first,
+// each quoted under its author's login between crew's markers, so no
+// answer's text can pose as crew's words, with how many were left out, or
+// that none came yet.
 func answersParagraph(issue string, a crew.Answered) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "crew: an earlier session at this action asked a question on issue %s.", issue)
+	asked := "an earlier session at this action asked a question"
+	if a.RuleQuestion != "" {
+		asked = fmt.Sprintf("this rule asked the question `%s`", a.RuleQuestion)
+	}
+	fmt.Fprintf(&b, "crew: %s on issue %s.", asked, issue)
 	if len(a.Answers) == 0 && a.LeftOut == 0 {
 		b.WriteString(" No answer that counts came after it yet.")
 		return b.String()
@@ -100,28 +105,65 @@ func leftOut(n int, carried bool) string {
 
 // failedReadParagraph is what crew appends to the prompt of a session at
 // an action with open questions when it could not read the issue's
-// comments, for reason (R48, KTD-W10): that it could not, which comment is
-// the question, by the marker and login of every open question at the
-// action, and the one command to read the comments after it with.
+// comments, for reason (R48, KTD-W10, KTD8): that it could not, which
+// comment is the question, by the marker and logins of every open question
+// at the action, and the one command to read the comments after it with.
 func failedReadParagraph(r reader, reason crew.SessionText) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "crew: an earlier session at this action asked a question on issue %s, and crew could not read "+
-		"the issue's comments to give you its answers: %q. The question is the latest comment that holds ",
-		r.issue, oneLine(reason.String()))
-	for i, q := range r.questions {
-		if i > 0 {
-			b.WriteString(", or ")
-		}
-		login := "the login it was asked as, which crew does not know"
-		if q.login != "" {
-			login = "`" + q.login + "`"
-		}
-		fmt.Fprintf(&b, "`%s` by %s", q.marker, login)
-	}
-	fmt.Fprintf(&b, ", and not `%s`. Read the comments after it only with this command, and never list comment "+
-		"bodies any other way:\n\n```sh\n%s\n```\n\n", crew.PostedMarker, readCommand(r))
+	fmt.Fprintf(&b, "crew: %s on issue %s, and crew could not read the issue's comments to give you its answers: "+
+		"%q. The question is the latest comment that holds %s. Read the comments after it only with this command, "+
+		"and never list comment bodies any other way:\n\n```sh\n%s\n```\n\n",
+		whoAsked(r.questions), r.issue, oneLine(reason.String()), whichComment(r.questions), readCommand(r))
 	b.WriteString(unreadOutput(r))
 	return b.String()
+}
+
+// whoAsked says who asked questions: earlier sessions at the action, this
+// rule, or both.
+func whoAsked(questions []asked) string {
+	rule := slices.ContainsFunc(questions, func(q asked) bool { return q.rule != "" })
+	session := slices.ContainsFunc(questions, func(q asked) bool { return q.rule == "" })
+	switch {
+	case rule && session:
+		return "this rule, or an earlier session at this action, asked a question"
+	case rule:
+		return "this rule asked a question"
+	}
+	return "an earlier session at this action asked a question"
+}
+
+// whichComment says which comments may ask questions: those of the
+// sessions' questions by their markers and logins, without crew's own
+// marker, then those of the rule's questions by their markers with crew's
+// own marker, by crew's writers.
+func whichComment(questions []asked) string {
+	var sessions, rules []string
+	for _, q := range questions {
+		if q.rule == "" {
+			sessions = append(sessions, fmt.Sprintf("`%s` by %s", q.marker,
+				byLogins(q.logins, "the login it was asked as, which crew does not know")))
+			continue
+		}
+		rules = append(rules, fmt.Sprintf("`%s` and `%s` by %s", q.marker, crew.PostedMarker,
+			byLogins(q.logins, "one of the logins crew posts as, which crew does not know")))
+	}
+	if len(sessions) > 0 {
+		sessions = []string{strings.Join(sessions, ", or ") + ", and not `" + crew.PostedMarker + "`"}
+	}
+	return strings.Join(append(sessions, rules...), ", or ")
+}
+
+// byLogins returns logins in backquotes, joined by "or", or unknown
+// without any.
+func byLogins(logins []string, unknown string) string {
+	if len(logins) == 0 {
+		return unknown
+	}
+	quoted := make([]string, len(logins))
+	for i, l := range logins {
+		quoted[i] = "`" + l + "`"
+	}
+	return strings.Join(quoted, " or ")
 }
 
 // unreadOutput returns what the read command of a failed read prints, and
@@ -129,7 +171,7 @@ func failedReadParagraph(r reader, reason crew.SessionText) string {
 func unreadOutput(r reader) string {
 	answers := "the `created_at`, `login` and `body` of each comment that may answer, by a code owner or an App on " +
 		"crew's answering list."
-	if !slices.ContainsFunc(r.questions, func(q asked) bool { return q.login != "" }) {
+	if !slices.ContainsFunc(r.questions, func(q asked) bool { return len(q.logins) > 0 }) {
 		return "It prints one JSON object per line: " + answers + " It prints no line for the question, as crew does " +
 			"not know the login it was asked as: the answers are the lines created after the question."
 	}
@@ -209,19 +251,23 @@ func whoMayAnswer(w waiting) string {
 }
 
 // readOutput returns what the read command prints, and which of its lines
-// are the answers.
+// are the answers: the question lines are the session's own, those of the
+// earlier sessions' questions and those of this rule's (KTD8).
 func readOutput(w waiting) string {
 	if w.login == "" {
 		return "It prints one JSON object per line: the `created_at`, `login` and `body` of each comment that may " +
 			"answer. crew does not know the login you act as, so the command prints no line for your question: " +
 			"your question is your own latest comment with your marker, and the answers are the lines created after it."
 	}
-	asked := "comment of yours that holds your marker"
-	if len(w.earlier) > 0 {
-		asked += ", or that holds the marker of an earlier session at this action whose question may still be open"
+	which := "comment of yours that holds your marker"
+	if slices.ContainsFunc(w.earlier, func(q asked) bool { return q.rule == "" }) {
+		which += ", or that holds the marker of an earlier session at this action whose question may still be open"
+	}
+	if slices.ContainsFunc(w.earlier, func(q asked) bool { return q.rule != "" }) {
+		which += ", or of crew's that asks this rule's question"
 	}
 	return "It prints one JSON object per line: a line with `\"question\":true` and the `created_at` of each " +
-		asked + ", and the `created_at`, `login` and `body` of each comment that may answer. The answers are the " +
+		which + ", and the `created_at`, `login` and `body` of each comment that may answer. The answers are the " +
 		"lines without `question` created after the latest question line."
 }
 
