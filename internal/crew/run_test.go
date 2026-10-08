@@ -245,6 +245,54 @@ func TestARunSharesNothingWithItsSnapshotsAndCopies(t *testing.T) {
 	}
 }
 
+// opusThenSonnet is a session's tokens by model, Opus then Sonnet, as a new
+// list each call.
+func opusThenSonnet() []ModelTokens {
+	return []ModelTokens{
+		{Model: "claude-opus-5-5", Tokens: Tokens{Input: 10, Output: 20, CacheRead: 300}},
+		{Model: "claude-sonnet-5-5", Tokens: Tokens{Input: 1, Output: 2, CacheWrite: 40}},
+	}
+}
+
+func TestAnActionKeepsItsTokensByModelAndSharesThemWithNoHolder(t *testing.T) {
+	two := Usage{
+		Tokens: Some(Tokens{Input: 11, Output: 22, CacheRead: 300, CacheWrite: 40}),
+		Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"}, ByModel: opusThenSonnet(),
+	}
+	run := given(t, seq(inSession(), []RunEvent{
+		ActionSessionEnded{EventHead: eh(5), Action: "lfg", Outcome: failedOutcome("gave up"), Usage: two},
+		ActionEnded{
+			EventHead: eh(5), Action: "lfg", End: failedBy(NewSessionText("gave up"), CauseSession).End,
+			Target: toFailed, SessionStarted: Some(at(4)), Usage: two,
+		},
+		chose(5, FailedRoute, "lfg"), asked(5, 0),
+	}))
+	two.ByModel[0].Model = "changed"
+	lfg, _ := run.Action("lfg")
+	got := lfg.Usage()
+	if !reflect.DeepEqual(got.ByModel, opusThenSonnet()) {
+		t.Fatalf("lfg's tokens by model = %#v, want Opus then Sonnet, unchanged by its event's", got.ByModel)
+	}
+	got.ByModel[0].Tokens.Input = 99
+	if again := lfg.Usage(); !reflect.DeepEqual(again.ByModel, opusThenSonnet()) {
+		t.Errorf("lfg's tokens by model = %#v after its copy changed, want them unchanged", again.ByModel)
+	}
+
+	s := run.Snapshot()
+	restored, err := RestoreRuleRun(s)
+	if err != nil {
+		t.Fatalf("RestoreRuleRun = %v", err)
+	}
+	s.Actions[1].Usage.ByModel[0].Tokens.Output = 99
+	back, _ := restored.Action("lfg")
+	if !reflect.DeepEqual(back.Usage().ByModel, opusThenSonnet()) {
+		t.Errorf("restored lfg's tokens by model = %#v, want them unchanged by the snapshot's", back.Usage().ByModel)
+	}
+	if again, _ := run.Action("lfg"); !reflect.DeepEqual(again.Usage().ByModel, opusThenSonnet()) {
+		t.Errorf("lfg's tokens by model = %#v, want them unchanged by its snapshot's", again.Usage().ByModel)
+	}
+}
+
 // routingPhase returns the routing phase p.
 func routingPhase(t *testing.T, p RunPhase) RoutingPhase {
 	t.Helper()
