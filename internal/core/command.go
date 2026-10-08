@@ -9,7 +9,8 @@ import (
 // Command is a side effect the core asks the engine to run through a port.
 // The engine runs each command and feeds its result back as an Input. The
 // set of commands is closed: only this package's types implement Command,
-// each either a TrackerCommand or a RunCommand.
+// each a TrackerCommand, a RunCommand or, for what concerns crew as a
+// whole, RecordStatistic.
 //
 //sumtype:decl
 type Command interface {
@@ -127,6 +128,14 @@ type ReopenWorkspace struct {
 // (Journaling).
 type Record struct {
 	Event crew.RunEvent
+}
+
+// RecordStatistic asks the engine to write Statistic to the statistics
+// store (R5, KTD4). It concerns crew as a whole, neither the tracker nor a
+// rule run. A write that fails comes back as StatisticFailed. The core asks
+// only when it records statistics (RecordingStatistics).
+type RecordStatistic struct {
+	Statistic crew.Statistic
 }
 
 // StartSession asks the harness to start the session of Action of the rule
@@ -276,6 +285,7 @@ func (RunStepShell) command()       {}
 func (StopStepShell) command()      {}
 func (FindPullRequest) command()    {}
 func (ReadAnswers) command()        {}
+func (RecordStatistic) command()    {}
 
 func (ListIssues) trackerCommand()         {}
 func (ListBoard) trackerCommand()          {}

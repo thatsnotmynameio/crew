@@ -29,9 +29,9 @@ func (m *Model) Update(in Input) ([]Command, []Published) {
 	return s.cmds, s.events
 }
 
-// schedulerInput applies an input about what spans rule runs: a tick, a
-// stop, the run time, a pause, a listing, a board read, the bots, or a tracker
-// write's or a record's result.
+// schedulerInput applies an input about what spans rule runs: the start, a
+// tick, a stop, the run time, a pause, a listing, a board read, the bots, or
+// a tracker write's, a record's or a statistic's result.
 func (s *step) schedulerInput(in SchedulerInput) {
 	switch in := in.(type) {
 	case Tick:
@@ -63,9 +63,9 @@ func (s *step) schedulerInput(in SchedulerInput) {
 	case PullRequestsResult:
 		s.pullRequestsResult(in)
 	case RecordFailed:
-		if e, ok := notRecorded(in.Event, s.at, in.Reason); ok {
-			s.emit(e)
-		}
+		s.recordFailed(in)
+	case statisticsInput:
+		s.statisticsInput(in)
 	}
 }
 

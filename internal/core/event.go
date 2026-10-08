@@ -18,8 +18,8 @@ type Published interface {
 }
 
 // Event is an event of the core's own, about what no rule run owns: bots,
-// listings, polls, tracker calls and status writes, the journal, the run
-// time limit and the stop. Events are plain values; At is the arrival time
+// listings, polls, tracker calls and status writes, the journal, the
+// statistics store, the run time limit and the stop. Events are plain values; At is the arrival time
 // of the input that caused them.
 //
 //sumtype:decl
@@ -45,6 +45,15 @@ type RunNotRecorded struct {
 	// "the start of lfg" or "the route failed it chose".
 	What   string
 	Reason string
+}
+
+// StatisticNotRecorded is a record the statistics store could not write
+// (R3, KTD6): Statistic is what was lost, and Reason says why. The rule
+// runs go on as they would without statistics.
+type StatisticNotRecorded struct {
+	At        time.Time
+	Statistic crew.Statistic
+	Reason    string
 }
 
 // RouteStepEnded is a step of the route a rule run ends through that
@@ -253,6 +262,9 @@ type Call struct {
 func (e RunNotRecorded) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e StatisticNotRecorded) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e RouteStepEnded) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -297,19 +309,20 @@ func (e BotStopped) Time() time.Time { return e.At }
 // Time implements Event.
 func (e BotActsAgain) Time() time.Time { return e.At }
 
-func (RunNotRecorded) event()   {}
-func (RouteStepEnded) event()   {}
-func (IssueSkipped) event()     {}
-func (IssueOfOtherKind) event() {}
-func (PollDone) event()         {}
-func (PollSkipped) event()      {}
-func (ListingFailed) event()    {}
-func (CallOwed) event()         {}
-func (CallDropped) event()      {}
-func (StatusFailed) event()     {}
-func (WindingDown) event()      {}
-func (Paused) event()           {}
-func (Resumed) event()          {}
-func (Stopped) event()          {}
-func (BotStopped) event()       {}
-func (BotActsAgain) event()     {}
+func (RunNotRecorded) event()       {}
+func (StatisticNotRecorded) event() {}
+func (RouteStepEnded) event()       {}
+func (IssueSkipped) event()         {}
+func (IssueOfOtherKind) event()     {}
+func (PollDone) event()             {}
+func (PollSkipped) event()          {}
+func (ListingFailed) event()        {}
+func (CallOwed) event()             {}
+func (CallDropped) event()          {}
+func (StatusFailed) event()         {}
+func (WindingDown) event()          {}
+func (Paused) event()               {}
+func (Resumed) event()              {}
+func (Stopped) event()              {}
+func (BotStopped) event()           {}
+func (BotActsAgain) event()         {}

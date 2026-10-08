@@ -33,7 +33,9 @@ func TestEachEventAboutAnIssueIsThatIssues(t *testing.T) {
 			t.Errorf("eventIssue(%T) = %v, want %v", e, got, id)
 		}
 	}
-	if got := eventIssue(core.PollDone{}); got != (crew.IssueID{}) {
-		t.Errorf("eventIssue(PollDone) = %v, want the zero id", got)
+	for _, e := range []core.Published{core.PollDone{}, core.StatisticNotRecorded{}} {
+		if got := eventIssue(e); got != (crew.IssueID{}) {
+			t.Errorf("eventIssue(%T) = %v, want the zero id", e, got)
+		}
 	}
 }

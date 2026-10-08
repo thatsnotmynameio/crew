@@ -223,6 +223,8 @@ var sentences = []struct {
 		"poll: skipped, 1 of 1 slot busy"},
 	{core.ListingFailed{At: at("10:00:00"), Reason: "gh: rate limited"},
 		"listing issues failed: gh: rate limited"},
+	{core.StatisticNotRecorded{At: at("10:00:00"), Statistic: crew.Process{ID: "p"}, Reason: "disk full"},
+		"warning: could not record this crew process in the statistics store: disk full"},
 	{core.CallOwed{At: at("10:00:00"), Call: move, Reason: "timeout"},
 		"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
 	{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
