@@ -1,0 +1,71 @@
+package sqlite_test
+
+import (
+	"sync"
+	"testing"
+
+	"github.com/thatsnotmynameio/crew/internal/crew"
+)
+
+// recordAll records n processes from offset into a store of its own on dir
+// in each of stores goroutines at once, and returns the first error each
+// goroutine met.
+func recordAll(t *testing.T, dir string, stores, n int) []error {
+	t.Helper()
+	errs := make([]error, stores)
+	var wg sync.WaitGroup
+	for g := range stores {
+		s := open(t, dir)
+		wg.Go(func() {
+			for i := range n {
+				if err := s.Record(t.Context(), process(g*n+i)); err != nil {
+					errs[g] = err
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	return errs
+}
+
+// distinct returns how many distinct ids ps holds.
+func distinct(ps []crew.Process) int {
+	ids := map[crew.ProcessID]bool{}
+	for _, p := range ps {
+		ids[p.ID] = true
+	}
+	return len(ids)
+}
+
+func TestTwoStoresRecordIntoTheSameFileAtOnce(t *testing.T) {
+	dir := t.TempDir()
+	record(t, open(t, dir), process(1000))
+
+	for g, err := range recordAll(t, dir, 2, 50) {
+		if err != nil {
+			t.Errorf("store %d: %v", g, err)
+		}
+	}
+
+	if got := processes(t, dir); len(got) != 101 || distinct(got) != 101 {
+		t.Errorf("processes = %d rows, %d distinct, want 101 of each", len(got), distinct(got))
+	}
+}
+
+func TestStoresOpeningANewFileAtOnceAllRecord(t *testing.T) {
+	dir := t.TempDir()
+
+	for g, err := range recordAll(t, dir, 4, 1) {
+		if err != nil {
+			t.Errorf("store %d: %v", g, err)
+		}
+	}
+
+	if got := processes(t, dir); len(got) != 4 || distinct(got) != 4 {
+		t.Errorf("processes = %d rows, %d distinct, want 4 of each", len(got), distinct(got))
+	}
+	if v := userVersion(t, dir); v != migrations {
+		t.Errorf("user_version = %d, want %d", v, migrations)
+	}
+}
