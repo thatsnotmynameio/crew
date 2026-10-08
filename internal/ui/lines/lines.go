@@ -109,6 +109,8 @@ func runText(e crew.RunEvent) string {
 		return fmt.Sprintf("%s %s/%s started its script", e.IssueRef, e.Rule, e.Action)
 	case crew.ActionFunctionAsked:
 		return fmt.Sprintf("%s %s/%s started its function", e.IssueRef, e.Rule, e.Action)
+	case crew.ActionReturnAsked:
+		return fmt.Sprintf("%s %s/%s started checking the answer", e.IssueRef, e.Rule, e.Action)
 	case crew.ActionEnded:
 		return actionEnded(e)
 	case crew.TakeMoved:
@@ -117,7 +119,7 @@ func runText(e crew.RunEvent) string {
 		return fmt.Sprintf("%s %s ends through %s", e.IssueRef, e.Rule, e.Route)
 	case crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked, crew.ActionSessionAsked,
 		crew.ActionSessionStopAsked, crew.ActionSessionEnded, crew.ActionShellStopAsked, crew.ActionShellEnded,
-		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.ActionReturnAsked, crew.RunLookupAsked,
+		crew.ActionFunctionStopAsked, crew.ActionFunctionEnded, crew.RunLookupAsked,
 		crew.RunLookupDone, crew.StepAsked, crew.StepShellStopAsked, crew.StepFunctionStopAsked, crew.StepEnded,
 		crew.RunReleased:
 	}

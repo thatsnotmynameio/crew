@@ -157,6 +157,8 @@ var sentences = []struct {
 	{crew.ActionSessionStarted{EventHead: lfgHead, Action: "lfg"}, "#9 development/lfg started its session"},
 	{crew.ActionShellAsked{EventHead: lfgHead, Action: "judge"}, "#9 development/judge started its script"},
 	{crew.ActionFunctionAsked{EventHead: lfgHead, Action: "check"}, "#9 development/check started its function"},
+	{crew.ActionReturnAsked{EventHead: twoHead("answered"), Action: "answer"},
+		"#2 answered/answer started checking the answer"},
 	{core.RunNotRecorded{At: at("10:00:00"), IssueID: issueID("9"), IssueRef: "#9", Rule: "development", Action: "lfg",
 		What: "the start of lfg", Reason: "disk full"},
 		"#9 development: could not record the start of lfg, so a restart may not resume it: disk full"},

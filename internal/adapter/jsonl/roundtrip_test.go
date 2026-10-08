@@ -118,6 +118,7 @@ func TestEveryQuestionLoadsBackAsItself(t *testing.T) {
 			{Run: "development-0", Action: "lfg", Login: "crew-developer[bot]"},
 			{Run: "development-1", Action: "lfg"},
 			{Run: "development-1", Action: "acceptance", Login: "boss"},
+			{ID: "blocks", Rule: "development"},
 		},
 	}})
 }
@@ -151,10 +152,54 @@ func TestEveryFunctionEventLoadsBackAsItselfWithOrWithoutAVerdict(t *testing.T) 
 func TestEveryQuestionStepLoadsBackAsItself(t *testing.T) {
 	roundTrip(t, []crew.RunEvent{
 		crew.RouteChosen{EventHead: head(1), Route: "unsure", Action: "lfg", Steps: []crew.StepPlan{
-			{Kind: crew.StepQuestion}, {Kind: crew.StepMove, To: "crew:question"},
+			{Kind: crew.StepQuestion, Question: "blocks"}, {Kind: crew.StepMove, To: "crew:question"},
 		}},
 		crew.RouteChosen{EventHead: head(2), Route: crew.PassedRoute, Steps: []crew.StepPlan{
 			{Kind: crew.StepDelegate}, {Kind: crew.StepMove, To: "crew:question:waiting answer"},
 		}},
 	})
+}
+
+// KTD12: the answered rule's check, its failure verdict and the return its
+// passed route plans load back as themselves, so a replayed run still
+// knows its action was the check.
+func TestTheAnsweredRulesCheckLoadsBackAsItself(t *testing.T) {
+	roundTrip(t, []crew.RunEvent{
+		crew.ActionReturnAsked{EventHead: head(1), Action: "answer"},
+		crew.ActionEnded{
+			EventHead: head(2), Action: "answer", Verdict: crew.Unanswered, Target: crew.ToRoute{Route: crew.FailedRoute},
+			End: crew.EndSucceeded{Reason: crew.NewSessionText("no answer counts after the question")},
+		},
+		crew.RouteChosen{EventHead: head(3), Route: crew.PassedRoute, Action: "answer", Steps: []crew.StepPlan{
+			{Kind: crew.StepMove, To: "crew:deps:ready"},
+		}},
+	})
+}
+
+// KTD12: a version 3 line written before crew kept a question step's id
+// or a rule's question loads as it did: a question step without an id,
+// and a session's question without one.
+func TestLinesWithoutQuestionIDsLoadAsBefore(t *testing.T) {
+	j, root := journal(t)
+	writeJournal(t, root,
+		`{"v":3,"type":"run_taken","time":"2026-10-07T09:00:00Z","rule_run":"development-1","issue":"9",`+
+			`"ref":"#9","stage":"development","start":{"kind":"fresh"},`+
+			`"questions":[{"rule_run":"development-0","action":"lfg"}]}`,
+		`{"v":3,"type":"route_chosen","time":"2026-10-07T09:00:01Z","rule_run":"development-1","issue":"9",`+
+			`"ref":"#9","stage":"development","action":"lfg","route":"unsure","steps":[{"kind":"question"}]}`,
+	)
+
+	got, err := j.Load(repository)
+	want := []crew.RunEvent{
+		crew.RunTaken{
+			EventHead: head(0), Issue: crew.IssueData{ID: head(0).IssueID, Ref: "#9"}, Start: crew.StartFresh{},
+			Questions: []crew.Question{{Run: "development-0", Action: "lfg"}},
+		},
+		crew.RouteChosen{
+			EventHead: head(1), Route: "unsure", Action: "lfg", Steps: []crew.StepPlan{{Kind: crew.StepQuestion}},
+		},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Load =\n%#v, %v\nwant\n%#v", got, err, want)
+	}
 }

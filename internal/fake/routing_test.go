@@ -188,3 +188,78 @@ func TestRoutingTrackerListsWhatItPostedAsTheWriter(t *testing.T) {
 		t.Errorf("Login = %q, want boss", login)
 	}
 }
+
+// KTD3, KTD10: a delegation lists as the github adapter posts it: the one
+// that could not read with the unread marker, the one that found no
+// question with an empty one, and the label to move the issue to when the
+// delegation names it.
+func TestRoutingTrackerListsEachDelegationWithItsMarkerAndMove(t *testing.T) {
+	tests := []struct {
+		name       string
+		delegation crew.Delegation
+		marker     string
+		move       bool
+	}{
+		{"found", crew.Delegation{Search: crew.QuestionFound, ID: "done", MoveTo: "crew:answered"},
+			crew.DelegatedMarker("done"), true},
+		{"not found", crew.Delegation{Search: crew.QuestionNotFound}, crew.DelegatedMarker(""), false},
+		{"unread", crew.Delegation{Search: crew.QuestionUnread, MoveTo: "crew:answered"},
+			crew.UnreadDelegatedMarker, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := fake.NewRoutingTracker(issue("1", inProgress))
+			d := tt.delegation
+			d.IssueID, d.IssueRef, d.Answerer = issueID("1"), "#1", "octocat"
+			if err := tr.Delegate(context.Background(), d); err != nil {
+				t.Fatalf("Delegate: %v", err)
+			}
+			got, _ := tr.Comments(context.Background(), issueID("1"))
+			if len(got) != 1 {
+				t.Fatalf("Comments = %+v, want the delegation", got)
+			}
+			body := got[0].Body
+			if found, ok := crew.FindDelegatedMarker(body); !ok || !strings.Contains(body, tt.marker) {
+				t.Errorf("delegation = %q (%+v), want the marker %q", body, found, tt.marker)
+			}
+			if moves := strings.Contains(body, "`crew:answered`"); moves != tt.move {
+				t.Errorf("delegation = %q, names the move to crew:answered: %v, want %v", body, moves, tt.move)
+			}
+		})
+	}
+}
+
+// The routing tracker finds the code owners SetCodeOwners last set, none
+// before.
+func TestRoutingTrackerFindsTheScriptedCodeOwners(t *testing.T) {
+	tr := fake.NewRoutingTracker()
+	var finder port.CodeOwnerFinder = tr
+	if got := finder.CodeOwners(); len(got) != 0 {
+		t.Errorf("CodeOwners before SetCodeOwners = %q, want none", got)
+	}
+	tr.SetCodeOwners("boss", "octocat")
+	if got := finder.CodeOwners(); !reflect.DeepEqual(got, []string{"boss", "octocat"}) {
+		t.Errorf("CodeOwners = %q, want boss and octocat", got)
+	}
+}
+
+// A comment a person adds lists after the issue's comments, posted ones
+// included, as written: without crew's marker.
+func TestRoutingTrackerListsAnAddedCommentAfterThePostedOnes(t *testing.T) {
+	tr := fake.NewRoutingTracker(issue("1", inProgress))
+	tr.SetWriter("crew-ops[bot]")
+	ctx := context.Background()
+	if err := tr.Comment(ctx, issueID("1"), "Is it done?"); err != nil {
+		t.Fatalf("Comment: %v", err)
+	}
+	answer := crew.Comment{Author: "octocat", Body: "Yes."}
+	tr.AddComment("1", answer)
+
+	got, err := tr.Comments(ctx, issueID("1"))
+	if err != nil || len(got) != 2 || got[0].Author != "crew-ops[bot]" || got[1] != answer {
+		t.Errorf("Comments = %+v, %v, want the posted comment, then octocat's as written", got, err)
+	}
+	if posted := tr.Posted(); len(posted) != 1 {
+		t.Errorf("Posted = %+v, want only crew's comment", posted)
+	}
+}

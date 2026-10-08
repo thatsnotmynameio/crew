@@ -69,8 +69,8 @@ func returnRead(comments ...crew.Comment) core.ReturnRead {
 // Covers AE2, AE3, R7, R8, R9, KTD2, KTD4: the answered rule's run reads
 // #1's comments and, as an answer counts after crew's question, moves #1
 // from its running label to the question's return label, whatever label
-// the answer's parameters name. No comment's text reaches an event or a
-// record.
+// the answer's parameters name. It publishes the check's start for the
+// views. No comment's text reaches an event or a record.
 func TestTheAnsweredRuleReturnsTheItemToTheQuestionsLabel(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -89,6 +89,7 @@ func TestTheAnsweredRuleReturnsTheItemToTheQuestionsLabel(t *testing.T) {
 			d := answeredDriver(t)
 
 			wantCommands(t, d.checking(), core.ReadReturn{IssueID: issueID("1"), Run: d.run(issueID("1")), Action: "answer"})
+			hasEvent(t, d.events, crew.ActionReturnAsked{EventHead: d.runHead("1"), Action: "answer"})
 			moved, _ := d.send(returnRead(unsureQuestion("crew-clerk[bot]"), tt.answer))
 			wantCommands(t, unrecorded(moved), core.Move{IssueID: issueID("1"), From: answeredRunning, To: depsReady})
 			d.settle(moved)

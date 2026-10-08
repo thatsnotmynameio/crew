@@ -10,21 +10,30 @@ import (
 )
 
 // delegationTo returns the delegation of #12's question to answerer, as
-// search found it: deps's question blocks when found.
+// search found it: deps's question blocks when found. A delegation that
+// found the question or could not read asks for the move to
+// crew:answered (KTD10).
 func delegationTo(answerer string, search crew.QuestionSearch) crew.Delegation {
 	d := crew.Delegation{IssueID: issueID("12"), IssueRef: "#12", Answerer: answerer, Search: search}
 	if search == crew.QuestionFound {
 		d.ID, d.Rule = "blocks", "deps"
 	}
+	if search != crew.QuestionNotFound {
+		d.MoveTo = "crew:answered"
+	}
 	return d
 }
 
-// Covers KTD8, KTD9: a delegation mentions the answerer, a user as @login
-// and an App as @<slug> in a code span, names the question crew found, or
-// says it found none or could not read the comments, and ends with the
-// delegation's marker and crew's own. It never quotes the question.
+// Covers KTD8, KTD9, KTD10: a delegation mentions the answerer, a user as
+// @login and an App as @<slug> in a code span, names the question crew
+// found, or says it found none or could not read the comments, tells the
+// answerer to post the answer first, then move the issue, unless it found
+// no question, and ends with the delegation's marker, its own for a read
+// that failed, and crew's own. It never quotes the question.
 func TestDelegateMentionsTheAnswererAndNamesTheQuestion(t *testing.T) {
-	asked := " crew asks you to answer the question `blocks` that `deps` asked on #12.\n\n" +
+	move := "Post your answer on #12 first, then move #12 to `crew:answered`, " +
+		"and crew hands it to the rule that asked.\n\n"
+	asked := " crew asks you to answer the question `blocks` that `deps` asked on #12.\n\n" + move +
 		crew.DelegatedMarker("blocks") + "\n"
 	tests := []struct {
 		name       string
@@ -41,7 +50,7 @@ func TestDelegateMentionsTheAnswererAndNamesTheQuestion(t *testing.T) {
 		{
 			"the comments unread", delegationTo("claude[bot]", crew.QuestionUnread),
 			"`@claude`, crew was to ask you to answer a question on #12, and could not read its comments.\n" +
-				"\n" + crew.DelegatedMarker("") + "\n",
+				"\n" + move + crew.UnreadDelegatedMarker + "\n",
 		},
 	}
 	for _, tt := range tests {

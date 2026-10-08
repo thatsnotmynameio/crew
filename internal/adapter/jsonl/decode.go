@@ -86,7 +86,10 @@ func actionDecoders() map[string]decoder {
 			return crew.ActionFunctionStopAsked{EventHead: h, Action: l.Action}
 		},
 		typeFunctionEnded: line.functionEnded,
-		typeActionEnded:   line.ended,
+		typeReturnAsked: func(l line, h crew.EventHead) crew.RunEvent {
+			return crew.ActionReturnAsked{EventHead: h, Action: l.Action}
+		},
+		typeActionEnded: line.ended,
 	}
 }
 
@@ -106,7 +109,8 @@ func (l line) workspace() crew.Workspace {
 }
 
 // runTaken returns the RunTaken l holds, with head h; without questions
-// when l, a line of an earlier crew, holds none.
+// when l, a line of an earlier crew, holds none. A question with an id is
+// the rule's, h's own (KTD12).
 func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 	e := crew.RunTaken{
 		EventHead: h, From: l.From, To: l.To, Start: l.start(),
@@ -125,7 +129,11 @@ func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 		e.Actions = append(e.Actions, a.Name)
 	}
 	for _, q := range l.Questions {
-		e.Questions = append(e.Questions, crew.Question{Run: q.RuleRun, Action: q.Action, Login: q.Login})
+		out := crew.Question{Run: q.RuleRun, Action: q.Action, Login: q.Login, ID: q.ID}
+		if q.ID != "" {
+			out.Rule = h.Rule
+		}
+		e.Questions = append(e.Questions, out)
 	}
 	return e
 }
@@ -197,7 +205,9 @@ func (l line) routeChosen(h crew.EventHead) crew.RunEvent {
 	e := crew.RouteChosen{EventHead: h, Route: l.Route, Action: l.Action}
 	for _, s := range l.Steps {
 		kind, _ := named(stepKinds(), s.Kind)
-		e.Steps = append(e.Steps, crew.StepPlan{Kind: kind, To: s.To, Shell: s.Shell, Function: s.Function})
+		e.Steps = append(e.Steps, crew.StepPlan{
+			Kind: kind, To: s.To, Shell: s.Shell, Function: s.Function, Question: s.Question,
+		})
 	}
 	return e
 }

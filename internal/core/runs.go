@@ -239,8 +239,9 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 
 // onAction issues the commands e, an event about the action at the cursor
 // of h's run, calls for, and publishes e when the views word it: a started
-// session, script or function, or an ended action. The answered rule's
-// check asks for the read of the issue's comments (KTD2).
+// session, script, function or check of the answer, or an ended action.
+// The answered rule's check asks for the read of the issue's comments
+// (KTD2).
 func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionSessionAsked:
@@ -260,6 +261,7 @@ func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	case crew.ActionFunctionStopAsked:
 		s.command(StopFunction{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionReturnAsked:
+		s.emit(e)
 		s.command(ReadReturn{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
