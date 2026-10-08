@@ -2,9 +2,9 @@
 // through: a Tracker for issues, a Harness for coding-agent sessions, a
 // Shell for scripts, a Workspace for each rule run's checkout, a Journal
 // for the rule runs' events and Statistics for the records crew keeps of its
-// work. A Captain answers a session's next task. Each
-// port holds only what every adapter must provide; anything an
-// adapter may or may not support is a separate optional interface, such as
+// work. A Captain answers a session's next task. Each port holds only what
+// every adapter must provide; anything an adapter may or may not support is
+// a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
 // LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Commenter,
 // Closer, CommentLister, Delegator, Narrator or Reopener, that the engine
