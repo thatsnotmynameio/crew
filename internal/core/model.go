@@ -74,6 +74,9 @@ type Model struct {
 	// answerer is the login every delegation of a question mentions
 	// (KTD11).
 	answerer string
+	// statistics is the process the model records; nil when it records no
+	// statistics (KTD4).
+	statistics *statistics
 }
 
 // New returns a model for rules, whose rules are in config order and
@@ -121,6 +124,14 @@ func ReportingStatus() Option {
 // (KTD1, KTD2).
 func ReportingPullRequests() Option {
 	return func(m *Model) { m.outbox.pullRequests = map[crew.IssueID]*pullRequestLane{} }
+}
+
+// RecordingStatistics has the model record crew's statistics through
+// RecordStatistic commands: at Started, the process of crew version,
+// working in the repository at folder (R5, KTD4). Without it, the model
+// records nothing (AE12).
+func RecordingStatistics(version, folder string) Option {
+	return func(m *Model) { m.statistics = &statistics{version: version, folder: folder} }
 }
 
 // unknownName is what String gives for a value outside its enumeration.

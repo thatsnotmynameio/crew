@@ -150,15 +150,15 @@ func coreText(e core.Event) string {
 	case core.StatusFailed:
 		return withReason("could not update the status comment on "+e.IssueRef+": "+result(e.Result), e.Reason)
 	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Paused, core.Resumed,
-		core.Stopped:
+		core.Stopped, core.StatisticNotRecorded:
 		return crewText(e)
 	}
 	return fmt.Sprintf("%T", e)
 }
 
 // crewText describes the core's events about crew as a whole: its polls,
-// its wind-down, its pause and resume (R7 of #282), and its stop. coreText
-// describes the others.
+// its wind-down, its pause and resume (R7 of #282), its stop, and a record
+// its statistics store lost. coreText describes the others.
 func crewText(e core.Event) string {
 	switch e := e.(type) {
 	case core.PollDone:
@@ -175,10 +175,20 @@ func crewText(e core.Event) string {
 		return "resumed: taking new issues again"
 	case core.Stopped:
 		return "stopped"
+	case core.StatisticNotRecorded:
+		return withReason("warning: could not record "+statistic(e.Statistic)+" in the statistics store", e.Reason)
 	case core.RunNotRecorded, core.RouteStepEnded, core.IssueSkipped, core.IssueOfOtherKind, core.BotStopped,
 		core.BotActsAgain, core.CallOwed, core.CallDropped, core.StatusFailed:
 	}
 	return fmt.Sprintf("%T", e)
+}
+
+// statistic names s, a record of the statistics store, in crew's words.
+func statistic(s crew.Statistic) string {
+	if _, ok := s.(crew.Process); ok {
+		return "this crew process"
+	}
+	return fmt.Sprintf("%T", s)
 }
 
 // moved is the line for a move the tracker made, a take or a route's.

@@ -18,9 +18,10 @@ import (
 type Input interface {
 	// Stamped returns a copy of the input whose At is at. The engine stamps
 	// each input with this as it takes it from its inbox, with a fresh seed
-	// besides the time, so the ids of the rule runs the input takes are
-	// minted outside the core and are global (KTD5). Only IssuesListed
-	// keeps the seed: only a listing takes issues.
+	// besides the time, so the ids of the rule runs the input takes, and of
+	// the process, are minted outside the core and are global (KTD5). Only
+	// IssuesListed and Started keep the seed: only a listing takes issues,
+	// and only the start records the process.
 	Stamped(at time.Time, seed uuid.UUID) Input
 	arrival() time.Time
 }
@@ -40,15 +41,36 @@ type RunInput interface {
 	ruleRun() crew.RuleRunID
 }
 
-// SchedulerInput is an input about what spans rule runs: a tick, a stop,
-// the end of the run time, a listing, a board read, the bots' state, or a
-// tracker write's or a journal record's result, which the core matches by
-// its call, its issue or its record, never by a run.
+// SchedulerInput is an input about what spans rule runs: crew's start, a
+// tick, a stop, the end of the run time, a listing, a board read, the bots'
+// state, or a tracker write's, a journal record's or a statistic's result,
+// which the core matches by its call, its issue or its record, never by a
+// run.
 //
 //sumtype:decl
 type SchedulerInput interface {
 	Input
 	schedulerInput()
+}
+
+// statisticsInput is a scheduler input about the statistics store: the
+// start, which records the process, and a record that failed.
+//
+//sumtype:decl
+type statisticsInput interface {
+	SchedulerInput
+	statisticsInput()
+}
+
+// Started says the crew process started, once the engine is ready to poll
+// (KTD4). It keeps the seed the engine stamps it with, from which the
+// process gets its id. The core records the process at the first Started,
+// when it records statistics (RecordingStatistics), and does nothing
+// otherwise.
+type Started struct {
+	At time.Time
+	// Seed is the fresh seed the engine stamped, a UUIDv7, ordered by time.
+	Seed uuid.UUID
 }
 
 // Tick is a poll: the core lists issues, unless a listing is outstanding or
@@ -257,6 +279,14 @@ type RecordFailed struct {
 	Reason string
 }
 
+// StatisticFailed is a RecordStatistic the statistics store could not
+// write. Statistic is the record that was lost.
+type StatisticFailed struct {
+	At        time.Time
+	Statistic crew.Statistic
+	Reason    string
+}
+
 // WorkspaceFailed is a CreateWorkspace or ReopenWorkspace that failed. The
 // action at the run's cursor counts as failed with Reason.
 type WorkspaceFailed struct {
@@ -343,6 +373,12 @@ type AnswersRead struct {
 }
 
 // Stamped implements Input.
+func (i Started) Stamped(at time.Time, seed uuid.UUID) Input {
+	i.At, i.Seed = at, seed
+	return i
+}
+
+// Stamped implements Input.
 func (i Tick) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -391,6 +427,9 @@ func (i WorkspaceGone) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; ret
 func (i RecordFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
+func (i StatisticFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
+
+// Stamped implements Input.
 func (i WorkspaceFailed) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
 // Stamped implements Input.
@@ -414,6 +453,7 @@ func (i PullRequestFound) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; 
 // Stamped implements Input.
 func (i AnswersRead) Stamped(at time.Time, _ uuid.UUID) Input { i.At = at; return i }
 
+func (i Started) arrival() time.Time              { return i.At }
 func (i Tick) arrival() time.Time                 { return i.At }
 func (i StopRequested) arrival() time.Time        { return i.At }
 func (i TimeUp) arrival() time.Time               { return i.At }
@@ -429,6 +469,7 @@ func (i PullRequestsResult) arrival() time.Time   { return i.At }
 func (i WorkspaceReady) arrival() time.Time       { return i.At }
 func (i WorkspaceFailed) arrival() time.Time      { return i.At }
 func (i WorkspaceGone) arrival() time.Time        { return i.At }
+func (i StatisticFailed) arrival() time.Time      { return i.At }
 func (i RecordFailed) arrival() time.Time         { return i.At }
 func (i SessionStarted) arrival() time.Time       { return i.At }
 func (i SessionFailedToStart) arrival() time.Time { return i.At }
@@ -449,6 +490,7 @@ func (i StepShellEnded) ruleRun() crew.RuleRunID       { return i.Run }
 func (i PullRequestFound) ruleRun() crew.RuleRunID     { return i.Run }
 func (i AnswersRead) ruleRun() crew.RuleRunID          { return i.Run }
 
+func (Started) schedulerInput()            {}
 func (Tick) schedulerInput()               {}
 func (StopRequested) schedulerInput()      {}
 func (TimeUp) schedulerInput()             {}
@@ -462,3 +504,7 @@ func (CallResult) schedulerInput()         {}
 func (StatusResult) schedulerInput()       {}
 func (PullRequestsResult) schedulerInput() {}
 func (RecordFailed) schedulerInput()       {}
+func (StatisticFailed) schedulerInput()    {}
+
+func (Started) statisticsInput()         {}
+func (StatisticFailed) statisticsInput() {}

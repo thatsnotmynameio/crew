@@ -49,6 +49,9 @@ func (e *Engine) launch(ctx context.Context, cmd core.Command) {
 		job = e.trackerJob(ctx, c)
 	case core.RunCommand:
 		job = e.runJob(ctx, c)
+	case core.RecordStatistic:
+		// No store writes it yet: the core asks only with
+		// RecordingStatistics, which the engine does not give it.
 	}
 	if job == nil {
 		return

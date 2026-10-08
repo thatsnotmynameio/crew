@@ -2,6 +2,8 @@ module github.com/thatsnotmynameio/crew/acceptance
 
 go 1.27
 
+toolchain go1.27.2
+
 require (
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/charmbracelet/x/term v0.2.2
