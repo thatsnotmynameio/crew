@@ -1,8 +1,6 @@
 package main
 
-import (
-	"strings"
-)
+import "strings"
 
 // sectionPrefix starts every version's heading in CHANGELOG.md, and ends
 // the section before it.

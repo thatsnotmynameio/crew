@@ -17,26 +17,22 @@ type gitHub struct {
 	base  string
 	repo  string
 	token string
-	http  *http.Client
 }
 
 // newGitHub returns the repository the Actions environment names: the API
 // at GITHUB_API_URL, the repository GITHUB_REPOSITORY and the token
 // GITHUB_TOKEN.
 func newGitHub(getenv func(string) string) (gitHub, error) {
-	gh := gitHub{
-		base: strings.TrimSuffix(getenv("GITHUB_API_URL"), "/"), repo: getenv("GITHUB_REPOSITORY"),
-		token: getenv("GITHUB_TOKEN"), http: http.DefaultClient,
-	}
-	for name, value := range map[string]string{
-		"GITHUB_API_URL": gh.base, "GITHUB_REPOSITORY": gh.repo, "GITHUB_TOKEN": gh.token,
-	} {
-		if value == "" {
+	for _, name := range []string{"GITHUB_API_URL", "GITHUB_REPOSITORY", "GITHUB_TOKEN"} {
+		if getenv(name) == "" {
 			return gitHub{}, fmt.Errorf("%s is not set", name)
 		}
 	}
 
-	return gh, nil
+	return gitHub{
+		base: strings.TrimSuffix(getenv("GITHUB_API_URL"), "/"), repo: getenv("GITHUB_REPOSITORY"),
+		token: getenv("GITHUB_TOKEN"),
+	}, nil
 }
 
 // exists reports whether the repository has what path names under it, such
@@ -58,7 +54,7 @@ func (gh gitHub) exists(ctx context.Context, path ...string) (bool, error) {
 	req.Header.Set("X-Github-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "thatsnotmynameio-crew-release")
 	req.Header.Set("Authorization", "Bearer "+gh.token)
-	resp, err := gh.http.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("GitHub API: %w", err)
 	}
