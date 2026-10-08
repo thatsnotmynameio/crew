@@ -301,7 +301,7 @@ func coreEventIssue(e core.Event) crew.IssueID {
 	case core.CallDropped:
 		return e.Call.IssueID
 	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Paused, core.Resumed,
-		core.Stopped, core.BotStopped, core.BotActsAgain:
+		core.Stopped, core.BotStopped, core.BotActsAgain, core.StatisticNotRecorded:
 	}
 	return crew.IssueID{}
 }

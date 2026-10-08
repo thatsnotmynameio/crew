@@ -80,6 +80,14 @@ func (m *Model) continued(take crew.RunTaken, rule crew.Rule) crew.RunTaken {
 	return take
 }
 
+// recordFailed reports in, a run event the engine could not append, when a
+// resume depends on it.
+func (s *step) recordFailed(in RecordFailed) {
+	if e, ok := notRecorded(in.Event, s.at, in.Reason); ok {
+		s.emit(e)
+	}
+}
+
 // notRecorded returns the event that says e, a run event the engine could
 // not append, was not recorded, and false for an event no resume depends
 // on (KTD18).
