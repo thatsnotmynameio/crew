@@ -51,7 +51,7 @@ func (s *step) answersRead(h *heldRun, in AnswersRead) {
 	}
 	a.read, a.failed, a.reason = true, in.Failed, in.Reason
 	if !in.Failed {
-		a.answered = crew.Answers(in.Comments, h.run.Questions(in.Action), s.m.answerers)
+		a.answered = crew.Answers(in.Comments, h.run.Questions(in.Action), s.m.bots.writers(), s.m.answerers)
 	}
 	s.startSession(h, in.Action)
 }

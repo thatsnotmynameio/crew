@@ -2,14 +2,19 @@ package crew
 
 import "slices"
 
-// Question is a session that may have asked a question on the issue, and
-// that no later session at its action ended on since (R23, KTD-W7): the
-// run it ran in, its action, and the login it acted as, which crew finds
-// its question by (R45). An empty login finds no question.
+// Question is an open question on the issue. It is a session's when its ID
+// is empty: a session that may have asked a question, and that no later
+// session at its action ended on since (R23, KTD-W7), by the run it ran in,
+// its action, and the login it acted as, which crew finds its question by
+// (R45); an empty login finds no question. Otherwise it is a rule's: the
+// question ID the rule named Rule asked, which crew finds by its question
+// marker (QuestionMarker), posted by one of crew's writers (KTD5).
 type Question struct {
 	Run    RuleRunID
 	Action ActionName
 	Login  string
+	ID     QuestionID
+	Rule   RuleName
 }
 
 // Questions returns a copy of the run's open questions at the action named

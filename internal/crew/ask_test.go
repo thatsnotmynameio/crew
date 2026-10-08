@@ -250,6 +250,12 @@ var openQuestionCases = []struct {
 		comments: []Comment{asksAs(crewWriter, blocksID), delegates(crewWriter, blocksID)},
 	},
 	{
+		name: "a question followed by the delegation that could not read is not open",
+		comments: []Comment{
+			asksAs(crewWriter, blocksID), writes(crewWriter, "@octocat, please answer.\n\n"+UnreadDelegatedMarker),
+		},
+	},
+	{
 		name: "an earlier question delegated, then a later one whose post the tracker refused: none",
 		comments: []Comment{
 			asksAs(crewWriter, "earlier"), delegates(crewWriter, "earlier"), person("alice", "Yes"),
