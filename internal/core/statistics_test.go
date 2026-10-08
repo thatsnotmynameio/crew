@@ -51,6 +51,9 @@ func TestAStatisticNotWrittenIsReportedAndChangesNothingElse(t *testing.T) {
 	cmds, events := d.send(core.StatisticFailed{Statistic: process, Reason: "disk full"})
 	wantCommands(t, cmds)
 	wantEvents(t, events, core.StatisticNotRecorded{At: d.now, Statistic: process, Reason: "disk full"})
+	if got := events[0].Time(); !got.Equal(d.now) {
+		t.Errorf("StatisticNotRecorded.Time() = %v, want %v", got, d.now)
+	}
 	if after := d.m.View(); !reflect.DeepEqual(after, before) {
 		t.Fatalf("view:\n got %#v\nwant %#v", after, before)
 	}
