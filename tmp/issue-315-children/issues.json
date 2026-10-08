@@ -1,0 +1,79 @@
+[
+  {
+    "id": "322",
+    "title": "Report Claude Code session tokens by model",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": []
+  },
+  {
+    "id": "323",
+    "title": "Open the usage statistics store and record crew's processes",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": []
+  },
+  {
+    "id": "324",
+    "title": "Record repositories and issues in the statistics store",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": [
+      "323"
+    ]
+  },
+  {
+    "id": "325",
+    "title": "Record issues' label moves in the statistics store",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": [
+      "324"
+    ]
+  },
+  {
+    "id": "326",
+    "title": "Record rule run spans under their issues",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": [
+      "325"
+    ]
+  },
+  {
+    "id": "327",
+    "title": "Record action spans inside their rule runs",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": [
+      "326"
+    ]
+  },
+  {
+    "id": "328",
+    "title": "Record session details and tokens by model in action spans",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": [
+      "327",
+      "322"
+    ]
+  },
+  {
+    "id": "329",
+    "title": "Record route and step spans",
+    "labels": [
+      "crew:brainstorm:ready"
+    ],
+    "blocked_by": [
+      "327"
+    ]
+  }
+]
