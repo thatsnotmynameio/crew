@@ -57,7 +57,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f.private && r.Header.Get("Authorization") != "Bearer "+testToken {
-		reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+		replyNotFound(w)
 		return
 	}
 	const prefix = "/repos/thatsnotmynameio/crew"
@@ -72,7 +72,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, prefix+"/releases/assets/"):
 		f.answerAsset(w, r, strings.TrimPrefix(path, prefix+"/releases/assets/"))
 	default:
-		reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+		replyNotFound(w)
 	}
 }
 
@@ -117,7 +117,7 @@ func (f *fakeGitHub) assetID(rel *fakeRelease, name string) int64 {
 
 func (f *fakeGitHub) answerRelease(w http.ResponseWriter, rel *fakeRelease) {
 	if rel == nil {
-		reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+		replyNotFound(w)
 		return
 	}
 	type asset struct {
@@ -157,7 +157,7 @@ func (f *fakeGitHub) answerAsset(w http.ResponseWriter, r *http.Request, id stri
 			return
 		}
 	}
-	reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+	replyNotFound(w)
 }
 
 // reply answers with status and a JSON body.
@@ -165,6 +165,20 @@ func reply(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, body)
+}
+
+// replyNotFound answers GitHub's 404.
+func replyNotFound(w http.ResponseWriter) {
+	reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+}
+
+// serveFunc starts a server of h and returns a client of it with no gh
+// login.
+func serveFunc(t *testing.T, h http.HandlerFunc) *Client {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return NewClient(API{Base: srv.URL}, srv.Client(), noToken)
 }
 
 // checkRequest checks that r carries the headers every JSON call sends.

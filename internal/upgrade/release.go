@@ -26,8 +26,12 @@ const DefaultAPI = "https://api.github.com"
 // loopback address, for the acceptance suite's fake GitHub.
 const APIEnv = "CREW_UPGRADE_API_URL"
 
-// repository is the repository crew's releases are published in.
-const repository = "thatsnotmynameio/crew"
+// repository is the repository crew's releases are published in, and
+// repositoryPath its path on the API.
+const (
+	repository     = "thatsnotmynameio/crew"
+	repositoryPath = "/repos/" + repository
+)
 
 const (
 	// apiTimeout bounds each JSON call to GitHub.
@@ -181,9 +185,9 @@ func (c *Client) Download(ctx context.Context, rel Release, name string, limit i
 }
 
 func (c *Client) release(ctx context.Context, tag string) (Release, error) {
-	path := "/repos/" + repository + "/releases/latest"
+	path := repositoryPath + "/releases/latest"
 	if tag != "" {
-		path = "/repos/" + repository + "/releases/tags/" + url.PathEscape(tag)
+		path = repositoryPath + "/releases/tags/" + url.PathEscape(tag)
 	}
 	var reply struct {
 		Tag        string  `json:"tag_name"`
@@ -235,7 +239,7 @@ func (c *Client) download(ctx context.Context, rel Release, name string, limit i
 	defer cancel()
 	// The URL is built from the asset's id on the API's base, never taken
 	// from the release's JSON, so the token stays on the API's host.
-	path := "/repos/" + repository + "/releases/assets/" + strconv.FormatInt(asset.ID, 10)
+	path := repositoryPath + "/releases/assets/" + strconv.FormatInt(asset.ID, 10)
 	resp, err := c.get(ctx, path, "application/octet-stream")
 	if err != nil {
 		return nil, err
@@ -282,7 +286,7 @@ func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
 // notFound tells a missing release from a repository the login cannot see,
 // since GitHub answers 404 to both.
 func (c *Client) notFound(ctx context.Context, tag string) error {
-	err := c.getJSON(ctx, "/repos/"+repository, nil)
+	err := c.getJSON(ctx, repositoryPath, nil)
 	se, ok := errors.AsType[*statusError](err)
 	switch {
 	case ok && se.code == http.StatusNotFound && c.login == "":

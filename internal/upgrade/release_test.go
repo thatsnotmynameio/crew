@@ -72,16 +72,16 @@ func TestReleaseWithoutATokenSendsNoAuthorization(t *testing.T) {
 func checkError(t *testing.T, err error, not string, want ...string) {
 	t.Helper()
 	if err == nil {
-		t.Errorf("Release = nil, want an error saying %q", want)
+		t.Errorf("error = nil, want an error saying %q", want)
 		return
 	}
 	for _, w := range want {
 		if !strings.Contains(err.Error(), w) {
-			t.Errorf("Release = %v, want an error saying %q", err, w)
+			t.Errorf("error = %v, want an error saying %q", err, w)
 		}
 	}
 	if not != "" && strings.Contains(err.Error(), not) {
-		t.Errorf("Release = %v, want no %q", err, not)
+		t.Errorf("error = %v, want no %q", err, not)
 	}
 }
 
@@ -174,11 +174,10 @@ func TestReleaseRefusesAReleaseThatIsNotTheOneAsked(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// A GitHub that answers rel to every lookup.
 			f := &fakeGitHub{t: t, releases: []*fakeRelease{tt.rel}}
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			c := serveFunc(t, func(w http.ResponseWriter, _ *http.Request) {
 				f.answerRelease(w, tt.rel)
-			}))
-			t.Cleanup(srv.Close)
-			_, err := NewClient(API{Base: srv.URL}, srv.Client(), noToken).Release(t.Context(), tt.tag)
+			})
+			_, err := c.Release(t.Context(), tt.tag)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Release = %v, want an error saying %q", err, tt.want)
 			}
@@ -187,11 +186,10 @@ func TestReleaseRefusesAReleaseThatIsNotTheOneAsked(t *testing.T) {
 }
 
 func TestReleaseRefusesAnUnreadableReply(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := serveFunc(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, `{"tag_name":`)
-	}))
-	t.Cleanup(srv.Close)
-	_, err := NewClient(API{Base: srv.URL}, srv.Client(), noToken).Release(t.Context(), "")
+	})
+	_, err := c.Release(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "unreadable") {
 		t.Errorf("Release = %v, want an unreadable reply", err)
 	}
@@ -211,11 +209,10 @@ func TestReleaseSaysWhenGitHubCannotBeReached(t *testing.T) {
 }
 
 func TestReleaseRefusesAnOversizedReply(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := serveFunc(t, func(w http.ResponseWriter, _ *http.Request) {
 		reply(w, http.StatusOK, `{"tag_name":"v0.5.0","body":"`+strings.Repeat("a", maxJSON)+`"}`)
-	}))
-	t.Cleanup(srv.Close)
-	_, err := NewClient(API{Base: srv.URL}, srv.Client(), noToken).Release(t.Context(), "")
+	})
+	_, err := c.Release(t.Context(), "")
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("Release = %v, want a too-large error", err)
 	}
@@ -223,12 +220,11 @@ func TestReleaseRefusesAnOversizedReply(t *testing.T) {
 
 func TestReleaseInterruptedIsNotBlamedOnGitHub(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	c := serveFunc(t, func(_ http.ResponseWriter, r *http.Request) {
 		cancel()
 		<-r.Context().Done()
-	}))
-	t.Cleanup(srv.Close)
-	_, err := NewClient(API{Base: srv.URL}, srv.Client(), noToken).Release(ctx, "")
+	})
+	_, err := c.Release(ctx, "")
 	if !errors.Is(err, ErrInterrupted) || strings.Contains(err.Error(), "could not reach GitHub") {
 		t.Errorf("Release = %v, want an interrupt that blames nothing", err)
 	}
@@ -283,12 +279,10 @@ func TestDownloadFailsWithoutTheAssetOrOverItsCap(t *testing.T) {
 }
 
 func TestDownloadRefusesJSONInsteadOfBytes(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := serveFunc(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = io.WriteString(w, `{"id":1}`)
-	}))
-	t.Cleanup(srv.Close)
-	c := NewClient(API{Base: srv.URL}, srv.Client(), noToken)
+	})
 	rel := Release{Tag: "v0.5.0", Assets: []Asset{{ID: 1, Name: "checksums.txt"}}}
 	_, err := c.Download(t.Context(), rel, "checksums.txt", maxSums)
 	if err == nil || !strings.Contains(err.Error(), "JSON") {
@@ -298,7 +292,7 @@ func TestDownloadRefusesJSONInsteadOfBytes(t *testing.T) {
 
 func TestDownloadInterruptedIsNotBlamedOnGitHub(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := serveFunc(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = io.WriteString(w, "part of the archive")
 		if f, ok := w.(http.Flusher); ok {
@@ -306,14 +300,16 @@ func TestDownloadInterruptedIsNotBlamedOnGitHub(t *testing.T) {
 		}
 		cancel()
 		<-r.Context().Done()
-	}))
-	t.Cleanup(srv.Close)
-	c := NewClient(API{Base: srv.URL}, srv.Client(), noToken)
-	rel := Release{Tag: "v0.5.0", Assets: []Asset{{ID: 1, Name: "a"}}}
-	_, err := c.Download(ctx, rel, "a", maxArchive)
+	})
+	_, err := c.Download(ctx, releaseOfA(), "a", maxArchive)
 	if !errors.Is(err, ErrInterrupted) || strings.Contains(err.Error(), "could not reach GitHub") {
 		t.Errorf("Download = %v, want an interrupt that blames nothing", err)
 	}
+}
+
+// releaseOfA returns a release whose one asset is named a.
+func releaseOfA() Release {
+	return Release{Tag: "v0.5.0", Assets: []Asset{{ID: 7, Name: "a"}}}
 }
 
 // redirectTo returns an API server that redirects every request to target,
@@ -340,31 +336,30 @@ func signedServer(t *testing.T, auth *string) *httptest.Server {
 	return srv
 }
 
-func TestARedirectToAnotherHostCarriesNoToken(t *testing.T) {
-	var auth string
-	signed := signedServer(t, &auth)
-	// The signed server is reached by another name than the API.
-	signedURL := strings.Replace(signed.URL, "127.0.0.1", "localhost", 1)
-	c := redirectTo(t, signedURL+"/signed?sig=secret")
-	data, err := c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 7, Name: "a"}}}, "a", maxArchive)
-	if err != nil || string(data) != "bytes" {
-		t.Fatalf("Download = %q, %v", data, err)
+func TestARedirectToAnotherHostOrPortCarriesNoToken(t *testing.T) {
+	tests := []struct {
+		name string
+		// signedURL is how the API's redirect reaches the signed server.
+		signedURL func(string) string
+	}{
+		{name: "another host name", signedURL: func(u string) string {
+			return strings.Replace(u, "127.0.0.1", "localhost", 1)
+		}},
+		{name: "another port of the same host", signedURL: func(u string) string { return u }},
 	}
-	if auth != "" {
-		t.Errorf("the signed host got Authorization %q, want none", auth)
-	}
-}
-
-func TestARedirectToAnotherPortOfTheSameHostCarriesNoToken(t *testing.T) {
-	var auth string
-	signed := signedServer(t, &auth)
-	c := redirectTo(t, signed.URL+"/signed?sig=secret")
-	data, err := c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 7, Name: "a"}}}, "a", maxArchive)
-	if err != nil || string(data) != "bytes" {
-		t.Fatalf("Download = %q, %v", data, err)
-	}
-	if auth != "" {
-		t.Errorf("another port got Authorization %q, want none", auth)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var auth string
+			signed := signedServer(t, &auth)
+			c := redirectTo(t, tt.signedURL(signed.URL)+"/signed?sig=secret")
+			data, err := c.Download(t.Context(), releaseOfA(), "a", maxArchive)
+			if err != nil || string(data) != "bytes" {
+				t.Fatalf("Download = %q, %v", data, err)
+			}
+			if auth != "" {
+				t.Errorf("the signed server got Authorization %q, want none", auth)
+			}
+		})
 	}
 }
 
@@ -376,7 +371,7 @@ func TestARedirectThatCannotConnectNamesNoURL(t *testing.T) {
 	closed := "http://" + l.Addr().String()
 	_ = l.Close()
 	c := redirectTo(t, closed+"/signed?sig=secret")
-	_, err = c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 7, Name: "a"}}}, "a", maxArchive)
+	_, err = c.Download(t.Context(), releaseOfA(), "a", maxArchive)
 	if err == nil || !strings.Contains(err.Error(), "could not reach GitHub") {
 		t.Errorf("Download = %v, want could not reach GitHub", err)
 	}
@@ -395,7 +390,7 @@ func TestARedirectFromHTTPSToHTTPIsRefused(t *testing.T) {
 	}))
 	t.Cleanup(api.Close)
 	c := NewClient(API{Base: api.URL}, api.Client(), noToken)
-	_, err := c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 7, Name: "a"}}}, "a", maxArchive)
+	_, err := c.Download(t.Context(), releaseOfA(), "a", maxArchive)
 	if err == nil || !strings.Contains(err.Error(), "not https") {
 		t.Fatalf("Download = %v, want a refused redirect to http", err)
 	}
@@ -411,33 +406,30 @@ func TestTooManyRedirectsFail(t *testing.T) {
 	}))
 	t.Cleanup(api.Close)
 	c := NewClient(API{Base: api.URL}, api.Client(), noToken)
-	_, err := c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 7, Name: "a"}}}, "a", maxArchive)
+	_, err := c.Download(t.Context(), releaseOfA(), "a", maxArchive)
 	if err == nil || !strings.Contains(err.Error(), "redirected more than") {
 		t.Errorf("Download = %v, want too many redirects", err)
 	}
 }
 
 func TestReleaseReportsARepositoryReadThatFailsAfterA404(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := serveFunc(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/thatsnotmynameio/crew" {
 			reply(w, http.StatusBadGateway, `{"message":"upstream"}`)
 			return
 		}
-		reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
-	}))
-	t.Cleanup(srv.Close)
-	_, err := NewClient(API{Base: srv.URL}, srv.Client(), noToken).Release(t.Context(), "v9.9.9")
+		replyNotFound(w)
+	})
+	_, err := c.Release(t.Context(), "v9.9.9")
 	checkError(t, err, "does not exist", "GitHub answered 502 Bad Gateway: upstream")
 }
 
 func TestDownloadCutShortSaysGitHubCouldNotBeReached(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := serveFunc(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Length", "100")
 		_, _ = io.WriteString(w, "short")
-	}))
-	t.Cleanup(srv.Close)
-	c := NewClient(API{Base: srv.URL}, srv.Client(), noToken)
-	_, err := c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 1, Name: "a"}}}, "a", maxArchive)
+	})
+	_, err := c.Download(t.Context(), releaseOfA(), "a", maxArchive)
 	checkError(t, err, "", "could not reach GitHub while reading a")
 }
