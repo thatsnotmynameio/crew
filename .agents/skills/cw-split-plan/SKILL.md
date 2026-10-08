@@ -1,6 +1,7 @@
 ---
 name: cw-split-plan
-description: Measures the brainstormed plan in a GitHub issue's body and, when it is above the size threshold, splits it into small parts that each merge alone, written as lean files under docs/splitting/issue-N/ with a blockers.json of the links between them. It reads only the issue and changes nothing on GitHub. Use when asked to split an issue's plan the crew way, or when crew's refinement prompt runs /cw-split-plan on an issue.
+description: Measures the plan in a GitHub issue's body and, when it is above the size threshold, splits it into small parts that each merge alone, written as lean files under docs/splitting/<brainstorm|plan>/issue-N/ with a blockers.json of the links between them. It takes the issue and the stage, brainstorm or plan, reads only the issue and changes nothing on GitHub. Use when asked to split an issue's plan the crew way, or when crew's refinement prompt runs /cw-split-plan on an issue.
+argument-hint: "<issue> <brainstorm|plan>"
 ---
 
 # Split a large plan into parts
@@ -13,11 +14,14 @@ The skill only splits. It reads the issue it is given and nothing else: no other
 
 Run `gh` and `sh` with the repository root, from `git rev-parse --show-toplevel`, as the working directory. Read and write files with your own file tools, temporary ones outside the repository. When a `gh` command fails, report its error text and stop. Do not retry.
 
-The issue is the argument, such as `#42`. Below, `N` is its number.
+It takes two arguments, such as `/cw-split-plan #42 brainstorm`:
+
+- **The issue,** such as `#42`. Below, `N` is its number.
+- **The stage** the issue's plan comes from: `brainstorm` or `plan`. Below, `S` is the stage. When it is missing or is neither, say so and stop, writing nothing.
 
 ## What it writes
 
-Under `docs/splitting/issue-N/`, which git ignores:
+Under `docs/splitting/S/issue-N/`, which git ignores, such as `docs/splitting/brainstorm/issue-42/`:
 
 - `1.md` to `n.md`: one file per part, `n` being the number of parts. Ids start at 1 and follow the order the parts can merge in.
 - `blockers.json`: the links between the parts, and only between them. Each part's id is a key, and its value lists the ids of the parts it blocks, `[]` when it blocks none:
@@ -28,7 +32,7 @@ Under `docs/splitting/issue-N/`, which git ignores:
 
 Here part 1 blocks parts 2 and 3, and part 2 blocks part 3.
 
-Before writing, delete `docs/splitting/issue-N/` when it exists, so the directory holds only this split.
+Before writing, delete `docs/splitting/S/issue-N/` when it exists, so the directory holds only this split. The other stage's directory for the same issue stays as it is.
 
 ## Outcomes
 
@@ -98,7 +102,7 @@ Measure every part: `sh .agents/skills/cw-split-plan/measure.sh <part files>`. A
 
 ## 6. Write blockers.json
 
-Write `docs/splitting/issue-N/blockers.json` from step 4, with every part's id as a key.
+Write `docs/splitting/S/issue-N/blockers.json` from step 4, with every part's id as a key.
 
 ## 7. Report
 
