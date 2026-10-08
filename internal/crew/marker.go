@@ -45,3 +45,68 @@ func HoldsPostedMarker(body string) bool {
 func HoldsSessionMarker(body string, run RuleRunID, action ActionName) bool {
 	return strings.Contains(body, SessionMarker(run, action))
 }
+
+// questionPrefix starts a question's marker, and delegatedPrefix a
+// delegation's.
+const (
+	questionPrefix  = MarkerPrefix + "question "
+	delegatedPrefix = MarkerPrefix + "delegated "
+)
+
+// markerEnd closes every one of crew's markers.
+const markerEnd = " -->"
+
+// QuestionMarker returns the marker of a question a rule asks, on the
+// comment that asks it: <!-- crew:question id=<id> rule=<rule>
+// return=<label> -->. Its values are query-escaped, as SessionMarker's are.
+func QuestionMarker(id QuestionID, rule RuleName, ret State) string {
+	return questionPrefix + "id=" + url.QueryEscape(string(id)) + " rule=" + url.QueryEscape(string(rule)) +
+		" return=" + url.QueryEscape(string(ret)) + markerEnd
+}
+
+// FindQuestionMarker returns the question the last question marker in body
+// names, and whether body holds one that parses. crew writes its marker
+// after the question's text, which may render what anyone wrote, such as
+// an issue's title, so only the last one counts.
+func FindQuestionMarker(body string) (PostedQuestion, bool) {
+	_, marker, found := strings.CutLast(body, questionPrefix)
+	inner, _, closed := strings.Cut(marker, markerEnd)
+	values, ok := markerValues(inner, "id", "rule", "return")
+	if !found || !closed || !ok {
+		return PostedQuestion{}, false
+	}
+	return PostedQuestion{ID: QuestionID(values[0]), Rule: RuleName(values[1]), Return: State(values[2])}, true
+}
+
+// markerValues returns the values of inner, a marker's key=value pairs
+// separated by single spaces, which must be keys, in this order, and
+// whether each pair is there and unescapes.
+func markerValues(inner string, keys ...string) ([]string, bool) {
+	pairs := strings.Split(inner, " ")
+	if len(pairs) != len(keys) {
+		return nil, false
+	}
+	values := make([]string, 0, len(keys))
+	for i, pair := range pairs {
+		escaped, found := strings.CutPrefix(pair, keys[i]+"=")
+		value, err := url.QueryUnescape(escaped)
+		if !found || err != nil {
+			return nil, false
+		}
+		values = append(values, value)
+	}
+	return values, true
+}
+
+// DelegatedMarker returns the marker of the comment that delegates the
+// question id, empty when crew found none: <!-- crew:delegated id=<id> -->.
+// Its value is query-escaped, as SessionMarker's are.
+func DelegatedMarker(id QuestionID) string {
+	return delegatedPrefix + "id=" + url.QueryEscape(string(id)) + markerEnd
+}
+
+// HoldsDelegatedMarker reports whether body holds, anywhere, the marker of
+// a delegation, of any question.
+func HoldsDelegatedMarker(body string) bool {
+	return strings.Contains(body, delegatedPrefix)
+}

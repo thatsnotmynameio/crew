@@ -155,7 +155,7 @@ func (d *decider) stopStep(p RoutingPhase) {
 		d.emit(StepShellStopAsked{EventHead: d.head(), Step: i})
 	case StepFunction:
 		d.emit(StepFunctionStopAsked{EventHead: d.head(), Step: i})
-	case StepMove, StepClose, StepComment, StepReport:
+	case StepMove, StepClose, StepComment, StepReport, StepQuestion, StepDelegate:
 	}
 }
 

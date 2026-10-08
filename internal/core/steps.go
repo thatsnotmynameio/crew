@@ -70,6 +70,9 @@ func (s *step) askStep(h *heldRun, i int) {
 			IssueID: issue.ID(), Run: h.run.ID(), Step: i, Call: h.call(st.Name, st.Function, h.run.Bot()),
 		})
 		return
+	case crew.QuestionStep, crew.DelegateStep:
+		// No config writes a question or a delegation yet.
+		return
 	}
 	s.deliver(h, d)
 }

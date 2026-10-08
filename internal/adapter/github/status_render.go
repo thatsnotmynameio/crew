@@ -158,6 +158,7 @@ func stepName(p crew.StepPlan) string {
 		return "shell step " + codeSpan(string(p.Shell))
 	case crew.StepFunction:
 		return "function step " + codeSpan(string(p.Function))
+	case crew.StepQuestion, crew.StepDelegate:
 	}
 	return "step"
 }

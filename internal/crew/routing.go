@@ -17,6 +17,11 @@ const (
 	StepShell
 	// StepFunction calls one of crew's functions (FunctionStep).
 	StepFunction
+	// StepQuestion posts a rule's question (QuestionStep).
+	StepQuestion
+	// StepDelegate posts the delegation of the item's open question
+	// (DelegateStep).
+	StepDelegate
 )
 
 // StepPlan is one step of the route a run ends through, as plain data: what
@@ -49,6 +54,10 @@ func planOf(s Step) StepPlan {
 		return StepPlan{Kind: StepShell, Shell: s.Name}
 	case FunctionStep:
 		return StepPlan{Kind: StepFunction, Function: s.Name}
+	case QuestionStep:
+		return StepPlan{Kind: StepQuestion}
+	case DelegateStep:
+		return StepPlan{Kind: StepDelegate}
 	}
 	return StepPlan{}
 }
@@ -72,7 +81,7 @@ type StepOutcome interface {
 }
 
 // StepLanded is a tracker step that landed: the item moved or was closed,
-// or the comment or report was posted.
+// or the comment, report, question or delegation was posted.
 type StepLanded struct{}
 
 // StepRan is a shell step whose script exited 0, or a function step whose

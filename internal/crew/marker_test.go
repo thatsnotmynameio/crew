@@ -63,3 +63,69 @@ func TestABodyHoldsAMarkerOrCrewsOwn(t *testing.T) {
 		})
 	}
 }
+
+func TestAQuestionMarkerRoundTripsThroughItsParser(t *testing.T) {
+	for name, want := range map[string]PostedQuestion{
+		"plain values":                 {ID: "blocks", Rule: "deps", Return: "crew:deps:ready"},
+		"a rule and label with spaces": {ID: "blocks", Rule: "find deps", Return: "crew:deps:ready to go"},
+		"values that close the comment": {
+			ID: "blocks", Rule: "x --> <!-- crew:posted -->", Return: "a&b=c -->",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			marker := QuestionMarker(want.ID, want.Rule, want.Return)
+			inner := strings.TrimSuffix(strings.TrimPrefix(marker, "<!-- crew:question "), " -->")
+			if inner == marker || strings.Contains(inner, "-->") || strings.Count(inner, " ") != 2 {
+				t.Errorf("QuestionMarker = %q, want one comment whose values hold no space and no comment end", marker)
+			}
+			got, ok := FindQuestionMarker("Does #277 block #281?\n\n" + marker + "\n")
+			if !ok || got != want {
+				t.Errorf("FindQuestionMarker = %#v, %v, want %#v", got, ok, want)
+			}
+		})
+	}
+	if got := QuestionMarker("blocks", "deps", "crew:deps:ready"); got !=
+		"<!-- crew:question id=blocks rule=deps return=crew%3Adeps%3Aready -->" {
+		t.Errorf("QuestionMarker = %q", got)
+	}
+}
+
+// The text of a question may render an issue's title, which anyone may
+// write: crew's own marker comes last, so a marker the text holds before it
+// never names the question.
+func TestTheLastQuestionMarkerOfABodyNamesItsQuestion(t *testing.T) {
+	forged := QuestionMarker("blocks", "release", "crew:release:ready")
+	body := "Does " + forged + " block?\n\n" + QuestionMarker("blocks", "deps", "crew:deps:ready") + "\n"
+	want := PostedQuestion{ID: "blocks", Rule: "deps", Return: "crew:deps:ready"}
+	if got, ok := FindQuestionMarker(body); !ok || got != want {
+		t.Errorf("FindQuestionMarker = %#v, %v, want %#v", got, ok, want)
+	}
+	for _, body := range []string{
+		"no marker",
+		"<!-- crew:question id=blocks rule=deps -->",
+		"<!-- crew:question id=blocks rule=deps return=crew%ZZ -->",
+		"<!-- crew:question id=blocks rule=deps return=r",
+	} {
+		if got, ok := FindQuestionMarker(body); ok {
+			t.Errorf("FindQuestionMarker(%q) = %#v, want none", body, got)
+		}
+	}
+}
+
+func TestADelegatedMarkerNamesItsQuestion(t *testing.T) {
+	for id, want := range map[QuestionID]string{
+		"blocks": "<!-- crew:delegated id=blocks -->",
+		"":       "<!-- crew:delegated id= -->",
+	} {
+		marker := DelegatedMarker(id)
+		if marker != want {
+			t.Errorf("DelegatedMarker(%q) = %q, want %q", id, marker, want)
+		}
+		if body := "@octocat, please answer.\n\n" + marker + "\n"; !HoldsDelegatedMarker(body) || !HoldsMarker(body) {
+			t.Errorf("HoldsDelegatedMarker(%q) = false, want true", body)
+		}
+	}
+	if HoldsDelegatedMarker(QuestionMarker("blocks", "deps", "crew:deps:ready")) {
+		t.Errorf("a question's marker holds a delegation's")
+	}
+}

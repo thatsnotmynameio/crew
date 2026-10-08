@@ -24,7 +24,8 @@ type Route struct {
 }
 
 // Step is one step of a route: MoveStep, CloseStep, CommentStep, ReportStep,
-// ShellStep or FunctionStep. A session is never a step.
+// ShellStep, FunctionStep, QuestionStep or DelegateStep. A session is never
+// a step.
 //
 //sumtype:decl
 type Step interface {
@@ -73,3 +74,5 @@ func (CommentStep) step()  {}
 func (ReportStep) step()   {}
 func (ShellStep) step()    {}
 func (FunctionStep) step() {}
+func (QuestionStep) step() {}
+func (DelegateStep) step() {}

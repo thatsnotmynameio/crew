@@ -41,7 +41,7 @@ func landed(e core.RouteStepEnded) string {
 		return "commented on " + e.IssueRef
 	case crew.StepReport:
 		return "posted the report on " + e.IssueRef
-	case crew.StepShell, crew.StepFunction:
+	case crew.StepShell, crew.StepFunction, crew.StepQuestion, crew.StepDelegate:
 	}
 	return ""
 }
@@ -61,6 +61,7 @@ func stepName(p crew.StepPlan) string {
 		return "the shell step " + string(p.Shell)
 	case crew.StepFunction:
 		return "the function step " + string(p.Function)
+	case crew.StepQuestion, crew.StepDelegate:
 	}
 	return "the step"
 }
