@@ -416,3 +416,28 @@ func TestTooManyRedirectsFail(t *testing.T) {
 		t.Errorf("Download = %v, want too many redirects", err)
 	}
 }
+
+func TestReleaseReportsARepositoryReadThatFailsAfterA404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/thatsnotmynameio/crew" {
+			reply(w, http.StatusBadGateway, `{"message":"upstream"}`)
+			return
+		}
+		reply(w, http.StatusNotFound, `{"message":"Not Found"}`)
+	}))
+	t.Cleanup(srv.Close)
+	_, err := NewClient(API{Base: srv.URL}, srv.Client(), noToken).Release(t.Context(), "v9.9.9")
+	checkError(t, err, "does not exist", "GitHub answered 502 Bad Gateway: upstream")
+}
+
+func TestDownloadCutShortSaysGitHubCouldNotBeReached(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", "100")
+		_, _ = io.WriteString(w, "short")
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(API{Base: srv.URL}, srv.Client(), noToken)
+	_, err := c.Download(t.Context(), Release{Tag: "v0.5.0", Assets: []Asset{{ID: 1, Name: "a"}}}, "a", maxArchive)
+	checkError(t, err, "", "could not reach GitHub while reading a")
+}
