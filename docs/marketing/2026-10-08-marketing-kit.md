@@ -27,6 +27,8 @@ Antes, o limite do trabalho era o seu tempo. Agora, é o limite da sua assinatur
 
 **Em português:** *Seu expediente acaba. O do seu time, não.*
 
+**Outra frase para guardar:** *Work alone. Not by yourself.*
+
 **Em uma linha (bio, descrição do repositório, card):** *crew gives people who work alone a team of AI agents that keeps working after they stop.*
 
 **O papel da pessoa:** você faz o que depende de você (pensar, escrever, decidir), e o time faz o resto. Sem "chefe", sem "gestor", sem "comandar".
