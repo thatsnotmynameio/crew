@@ -38,6 +38,27 @@
       },
       "examples": [["claude[bot]"]]
     },
+    "questions": {
+      "description": "Who answers the questions rules ask, which it turns on. With it, crew adds the rule question, before the file's rules: it takes the items in crew:question, runs in crew:question:in progress, mentions the answerer on the item and moves it to crew:question:waiting answer, which no rule takes. No rule of the files may then be called question, or take, run in or move an item to one of those three labels. Without it, crew refuses every question.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["answerer"],
+      "properties": {
+        "answerer": {
+          "description": "The login crew mentions on every question: a person's, or an App's as <slug>[bot]. github-actions[bot] never answers, since any workflow can post anyone's text as it.",
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "^[gG][iI][tT][hH][uU][bB]-[aA][cC][tT][iI][oO][nN][sS]\\[[bB][oO][tT]\\]$" },
+          "examples": ["octocat", "claude[bot]"]
+        },
+        "queue": {
+          "description": "The queue crew's question rule runs in: one of queues, or default, the default.",
+          "type": "string",
+          "minLength": 1,
+          "default": "default"
+        }
+      }
+    },
     "queues": {
       "description": "Queues by name, each with its slots. A queue's slots are only for the rules that name it, so a long session never holds up a quick rule of another queue. The default queue, which crew always has, gets the slots max_parallel_issues leaves, and runs every rule that names no queue. A queue cannot be called default.",
       "type": "object",
@@ -101,11 +122,11 @@
       }
     },
     "actions": {
-      "description": "Shell actions and function presets by name, each defined once and named in rules' actions and routes. A name cannot be a word of the rules' grammar: agent, prompt, name, on, wait, resume, script, verdicts, report, close, move, comment or next, nor the name of a function crew registers.",
+      "description": "Shell actions and function presets by name, each defined once and named in rules' actions and routes. A name cannot be a word of the rules' grammar: agent, prompt, name, on, wait, resume, script, verdicts, report, close, move, comment, question or next, nor the name of a function crew registers.",
       "type": "object",
       "propertyNames": {
         "not": {
-          "enum": ["agent", "prompt", "name", "on", "wait", "resume", "script", "verdicts", "report", "close", "move", "comment", "next"]
+          "enum": ["agent", "prompt", "name", "on", "wait", "resume", "script", "verdicts", "report", "close", "move", "comment", "question", "next"]
         }
       },
       "additionalProperties": {
@@ -216,7 +237,7 @@
             }
           },
           "actions": {
-            "description": "The rule's actions, run one after another in one worktree and branch: the name of one of actions or of a function crew registers, a session with its agent and prompt, or a mapping whose one key names one of actions or a function, with its on and name beside it. Without actions, crew moves the item to running and on through its passed route itself, without a session, so the rule spends no tokens.",
+            "description": "The rule's actions, run one after another in one worktree and branch: the name of one of actions or of a function crew registers, a session with its agent and prompt, a question with its name beside it, or a mapping whose one key names one of actions or a function, with its on and name beside it. Without actions, crew moves the item to running and on through its passed route itself, without a session, so the rule spends no tokens.",
             "type": "array",
             "items": {
               "oneOf": [
@@ -262,6 +283,7 @@
                 {
                   "type": "object",
                   "minProperties": 1,
+                  "not": { "required": ["question"] },
                   "properties": {
                     "name": {
                       "description": "The action's name in the rule, unique there: in its log, its workspace and its reports. By default, a session's agent's name, or the name of the action it names.",
@@ -292,6 +314,42 @@
                       }
                     ]
                   }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["question"],
+                  "properties": {
+                      "question": {
+                        "description": "A question the rule asks on the item. The action ends at once with the verdict asked, which leads to a route of the action's name that crew adds to the rule: it posts the question, then moves the item to crew:question. It takes no on, and the rule takes no pull requests.",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "text", "return"],
+                        "properties": {
+                          "id": {
+                            "description": "The question's id, in its marker: a lowercase letter, then lowercase letters, digits, - or _.",
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                          },
+                          "text": {
+                            "description": "The question crew posts: a Go template over {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}}, {{.Issue.URL}}, {{.Rule}}, {{.Action}}, {{.Verdict}}, {{.Route}} and {{.Log}}, as a comment's, never what a session or a script printed.",
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "return": {
+                            "description": "The label the item returns to once its question is answered: the ready label of one of the rules, compared ignoring case.",
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                    "name": {
+                      "description": "The action's name in the rule, unique there, and the name of the route crew adds for it, which the rule cannot declare: question by default.",
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                      "default": "question"
+                    }
+                  }
                 }
               ]
             }
@@ -302,7 +360,7 @@
             "required": ["passed"],
             "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,63}$", "not": { "const": "next" } },
             "additionalProperties": {
-              "description": "The label the route moves the item to, or its steps, run in order, the last of which, and only the last, is move or close. A step that fails is recorded and the route goes on.",
+              "description": "The label the route moves the item to, or its steps, run in order, the last of which, and only the last, is move or close, or question, after which crew moves the item to crew:question. A step that fails is recorded and the route goes on.",
               "oneOf": [
                 { "type": "string", "minLength": 1 },
                 {
@@ -341,8 +399,39 @@
                       },
                       {
                         "type": "object",
+                        "additionalProperties": false,
+                        "required": ["question"],
+                        "properties": {
+                          "question": {
+                            "description": "A question crew posts on the item, with crew's marker, as crew's own writes act. It is the route's last step: crew then moves the item to crew:question itself, where its question rule mentions questions.answerer. A rule that takes pull requests cannot ask.",
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["id", "text", "return"],
+                            "properties": {
+                              "id": {
+                                "description": "The question's id, in its marker: a lowercase letter, then lowercase letters, digits, - or _.",
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+                              },
+                              "text": {
+                                "description": "The question crew posts: a Go template over {{.Issue.Ref}}, {{.Issue.Key}}, {{.Issue.Title}}, {{.Issue.URL}}, {{.Rule}}, {{.Action}}, {{.Verdict}}, {{.Route}} and {{.Log}}, as a comment's, never what a session or a script printed.",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "return": {
+                                "description": "The label the item returns to once its question is answered: the ready label of one of the rules, compared ignoring case.",
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
                         "minProperties": 1,
                         "maxProperties": 1,
+                        "not": { "required": ["question"] },
                         "additionalProperties": {
                           "description": "The name of one of actions or of a function crew registers. A shell action's value is empty; a function's is empty or its parameters, which replace its preset's key by key.",
                           "oneOf": [

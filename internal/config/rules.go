@@ -62,8 +62,9 @@ func (p parsedRule) rule() crew.Rule {
 
 // ruleEnv is what the rules' names resolve against: the queues, the agents,
 // the shell actions and the function presets by name, the registered
-// functions with their declared verdicts, and tracker.bot. uses gathers
-// each function use as it is parsed.
+// functions with their declared verdicts, tracker.bot, and questions, nil
+// when the file leaves it out. uses gathers each function use as it is
+// parsed.
 type ruleEnv struct {
 	queues    queueTable
 	agents    []Agent
@@ -71,13 +72,14 @@ type ruleEnv struct {
 	presets   map[crew.ActionName]preset
 	functions map[string][]crew.Verdict
 	bot       crew.Bot
+	questions *Questions
 	uses      *[]FunctionUse
 }
 
 // rules decodes and validates rules:, resolving each rule's queue, each
 // session's agent and bot, and each shell action in env. It returns the
-// rules, and whether each notifies, by name. It reports every error it
-// finds.
+// rules, after crew's question rule when env has questions, and whether
+// each notifies, by name. It reports every error it finds.
 func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, map[crew.RuleName]bool, error) {
 	if n.Kind == 0 {
 		return nil, nil, errors.New("rules: missing; write at least one rule")
@@ -103,14 +105,15 @@ func rules(n *yaml.Node, env ruleEnv) ([]crew.Rule, map[crew.RuleName]bool, erro
 		return nil, nil, errors.Join(errs...)
 	}
 	spellOnce(parsed)
-	if err := checkGraph(parsed); err != nil {
+	if err := errors.Join(checkGraph(parsed), checkQuestions(parsed, env.questions)); err != nil {
 		return nil, nil, err
 	}
 	out := make([]crew.Rule, len(parsed))
-	notify := make(map[crew.RuleName]bool, len(parsed))
+	notify := make(map[crew.RuleName]bool, len(parsed)+1)
 	for i, p := range parsed {
 		out[i], notify[p.Name] = p.rule(), p.notify
 	}
+	out, notify = withQuestionRule(env.questions, out, notify)
 	return out, notify, nil
 }
 
@@ -136,7 +139,8 @@ func parseRule(e entry, env ruleEnv) (parsedRule, error) {
 	if err := errors.Join(labelsErr, queueErr, takesErr, actionsErr, routesErr); err != nil {
 		return p, err
 	}
-	return p, checkRoutes(p)
+	p.routes, routesErr = questionRoutes(p)
+	return p, errors.Join(routesErr, checkRoutes(p))
 }
 
 // ruleLabels decodes the labels n of a rule at path, whose key is on
@@ -213,10 +217,11 @@ func (env ruleEnv) agentNames() string {
 }
 
 // spellOnce gives every label the spelling it first has in the rules, in
-// rule order and then ready, running and each move of the routes, in route
-// order. GitHub does not tell labels apart by case, so "In Review" and
-// "in review" are one label; after this, comparing states exactly compares
-// them as GitHub does.
+// rule order and then ready, running, each question action's return label
+// and each move and question's return label of the routes, in route order.
+// GitHub does not tell labels apart by case, so "In Review" and "in review"
+// are one label; after this, comparing states exactly compares them as
+// GitHub does.
 func spellOnce(rules []parsedRule) {
 	first := map[string]crew.State{}
 	spell := func(state crew.State) crew.State {
@@ -232,14 +237,31 @@ func spellOnce(rules []parsedRule) {
 	for i := range rules {
 		l := &rules[i].Labels
 		l.Ready, l.Running = spell(l.Ready), spell(l.Running)
+		for j, a := range rules[i].actions {
+			if q, ok := a.Kind.(crew.QuestionSpec); ok {
+				q.Question.Return = spell(q.Question.Return)
+				rules[i].actions[j].Kind = q
+			}
+		}
 		for _, route := range rules[i].routes {
 			for j, step := range route.Steps {
-				if m, ok := step.(crew.MoveStep); ok {
-					route.Steps[j] = crew.MoveStep{To: spell(m.To)}
-				}
+				route.Steps[j] = spellStep(step, spell)
 			}
 		}
 	}
+}
+
+// spellStep returns step with its label spelled by spell: a move's label,
+// or a question's return label.
+func spellStep(step crew.Step, spell func(crew.State) crew.State) crew.Step {
+	if m, ok := step.(crew.MoveStep); ok {
+		return crew.MoveStep{To: spell(m.To)}
+	}
+	if q, ok := step.(crew.QuestionStep); ok {
+		q.Question.Return = spell(q.Question.Return)
+		return q
+	}
+	return step
 }
 
 // required returns a key's non-empty value. A missing key is reported on the

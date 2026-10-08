@@ -1,6 +1,7 @@
 package crew
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -8,6 +9,15 @@ import (
 // QuestionID names a question a rule asks. It follows the verdicts'
 // grammar.
 type QuestionID string
+
+// ParseQuestionID returns s as a QuestionID, or an error naming s when it
+// is not a verdict name (ParseVerdict).
+func ParseQuestionID(s string) (QuestionID, error) {
+	if err := checkName(s); err != nil {
+		return "", fmt.Errorf("question id %w", err)
+	}
+	return QuestionID(s), nil
+}
 
 // Asked is the verdict of a question action, which ends as soon as the run
 // reaches it: its On sends it to the route of the action's name, which

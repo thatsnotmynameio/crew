@@ -37,6 +37,7 @@ type section struct {
 var sections = map[string]section{
 	"queues":               {named: true},
 	"answering_apps":       {},
+	"questions":            {items: item[questionsDoc]()},
 	"tracker":              {items: item[trackerDoc](), open: true},
 	"agents":               {items: item[agentDoc](), named: true},
 	"agents.*.harness":     {items: item[harnessDoc](), open: true},
@@ -45,7 +46,7 @@ var sections = map[string]section{
 	"board":                {named: true},
 	"rules":                {items: item[ruleDoc](), named: true},
 	"rules.*.labels":       {items: item[labelsDoc]()},
-	"rules.*.actions":      {items: types[sessionDoc, referenceDoc](), list: true, free: true},
+	"rules.*.actions":      {items: actionItems(), list: true, free: true},
 	"rules.*.actions[].on": {named: true},
 	"rules.*.actions[].*":  {named: true},
 	"rules.*.routes":       {items: item[stepDoc](), named: true, list: true, free: true},
@@ -54,6 +55,12 @@ var sections = map[string]section{
 
 // item returns the type T, an item's only shape.
 func item[T any]() []reflect.Type { return []reflect.Type{reflect.TypeFor[T]()} }
+
+// actionItems returns the shapes of an item of a rule's actions: a
+// session, a reference, or a question.
+func actionItems() []reflect.Type {
+	return append(types[sessionDoc, referenceDoc](), item[questionItemDoc]()...)
+}
 
 // types returns the types A and B, an item's two shapes.
 func types[A, B any]() []reflect.Type {

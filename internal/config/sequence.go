@@ -34,6 +34,7 @@ type referenceDoc struct {
 // itemShape is what an item of a rule's actions must be, said when it is
 // none of its forms.
 const itemShape = "must be the name of one of actions or of a function, a session with prompt, " +
+	"a question with question: {id, text, return} and optionally name, " +
 	"or a mapping whose one key names one of actions or a function, with optionally on and name"
 
 // The keys of an item of a rule's actions that are not a session's alone.
@@ -50,6 +51,7 @@ type parsedAction struct {
 	path string
 	line int
 	on   onEntries
+	ask  *askAt
 }
 
 // onEntry is one entry of an action's on, with where its target is written.
@@ -85,8 +87,8 @@ func sequence(n *yaml.Node, path string, env ruleEnv) ([]parsedAction, error) {
 }
 
 // parseItem decodes the item e of a rule's actions: the name of one of
-// actions, a session, or a reference to one of actions with its on and
-// name beside it.
+// actions, a session, a question, or a reference to one of actions with
+// its on and name beside it.
 func parseItem(e entry, env ruleEnv) (parsedAction, error) {
 	n := resolve(e.value)
 	switch {
@@ -101,6 +103,8 @@ func parseItem(e entry, env ruleEnv) (parsedAction, error) {
 		return parsedAction{}, keyError(e.path, n.Line, itemShape)
 	case hasKey(n, "prompt") || hasKey(n, "agent"):
 		return parseSession(entry{key: e.key, value: n, path: e.path}, env)
+	case hasKey(n, questionWord):
+		return parseQuestion(entry{key: e.key, value: n, path: e.path})
 	}
 	return parseReference(entry{key: e.key, value: n, path: e.path}, env)
 }
