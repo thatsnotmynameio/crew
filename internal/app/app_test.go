@@ -169,6 +169,7 @@ func options(t *testing.T, body string, tracker port.Tracker, harness port.Harne
 			map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)},
 			map[string]port.HarnessFactory{"fake": fake.HarnessFactory(harness)},
 			nil,
+			nil,
 		),
 		Workspace: func(root string) port.Workspace {
 			return fake.NewWorkspace(filepath.Join(root, ".crew", "worktrees"))

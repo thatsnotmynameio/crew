@@ -32,7 +32,7 @@ func TestRegisteredFunctionIsBuiltFromItsSection(t *testing.T) {
 	f := fake.NewFunction()
 	r := registry.New(nil, nil, map[string]port.FunctionDefinition{
 		"open-pull-request": fake.FunctionDefinition(f, crew.Passed),
-	})
+	}, nil)
 
 	got, err := r.Function(useKey, "open-pull-request", section("{title: Fix it, count: 2, draft: true}"))
 	if err != nil {
@@ -51,7 +51,7 @@ func TestUnregisteredFunctionNamesTheKeyAndTheRegisteredFunctionsSorted(t *testi
 	r := registry.New(nil, nil, map[string]port.FunctionDefinition{
 		"open-pull-request": fake.FunctionDefinition(fake.NewFunction()),
 		"check-ci":          fake.FunctionDefinition(fake.NewFunction()),
-	})
+	}, nil)
 
 	got, err := r.Function(useKey, "nosuch", section("{}"))
 	assertErr(t, err, useKey, `no function is named "nosuch"`, "the registered functions are: check-ci, open-pull-request")
@@ -70,7 +70,7 @@ func TestRegistryWithoutFunctionsSaysNoneIsRegistered(t *testing.T) {
 func TestAFactorysRefusedParameterStaysReachable(t *testing.T) {
 	f := fake.NewFunction()
 	f.Refuse(port.RefusedParameterError{Parameter: "count", Reason: "must be at least 1"})
-	r := registry.New(nil, nil, map[string]port.FunctionDefinition{"check-ci": fake.FunctionDefinition(f)})
+	r := registry.New(nil, nil, map[string]port.FunctionDefinition{"check-ci": fake.FunctionDefinition(f)}, nil)
 
 	_, err := r.Function(useKey, "check-ci", section("{count: 0}"))
 	assertErr(t, err, "function check-ci", "count", "must be at least 1")
@@ -85,7 +85,7 @@ func TestAFactorysRefusedParameterStaysReachable(t *testing.T) {
 
 func TestAFactorysDecodeErrorIsWrappedWithTheFunctionsName(t *testing.T) {
 	functions := map[string]port.FunctionDefinition{"check-ci": fake.FunctionDefinition(fake.NewFunction())}
-	r := registry.New(nil, nil, functions)
+	r := registry.New(nil, nil, functions, nil)
 
 	_, err := r.Function(useKey, "check-ci", section("{titel: Fix it}"))
 	assertErr(t, err, "function check-ci", "titel")
@@ -95,7 +95,7 @@ func TestFunctionsListsEachFunctionWithItsDeclaredVerdicts(t *testing.T) {
 	r := registry.New(nil, nil, map[string]port.FunctionDefinition{
 		"check-ci":          fake.FunctionDefinition(fake.NewFunction(), crew.Passed, "blocked"),
 		"open-pull-request": fake.FunctionDefinition(fake.NewFunction()),
-	})
+	}, nil)
 
 	got := r.Functions()
 	want := map[string][]crew.Verdict{"check-ci": {crew.Passed, "blocked"}, "open-pull-request": nil}
