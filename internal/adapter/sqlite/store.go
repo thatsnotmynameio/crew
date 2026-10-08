@@ -77,8 +77,10 @@ func (s *Store) Close() error {
 // insert runs query with args in a transaction, naming what in its error.
 func (s *Store) insert(ctx context.Context, what, query string, args ...any) error {
 	err := inTx(ctx, s.db, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, query, args...)
-		return errors.Join(err)
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			return fmt.Errorf("insert: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("record %s: %w", what, err)

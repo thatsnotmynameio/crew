@@ -281,3 +281,19 @@ func TestRecordWhereAFileHoldsTheDataFolderFails(t *testing.T) {
 		t.Errorf("Record = %v, want an error making the data folder", err)
 	}
 }
+
+// unknown is a statistic the store does not know: it is a Process only
+// through the method it promotes.
+type unknown struct{ crew.Process }
+
+func TestRecordingAStatisticTheStoreDoesNotKnowFails(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+
+	if err := s.Record(t.Context(), unknown{process(1)}); err == nil || !strings.Contains(err.Error(), "not a statistic") {
+		t.Errorf("Record = %v, want an error saying it is not a statistic the store knows", err)
+	}
+	if got := processes(t, dir); len(got) != 0 {
+		t.Errorf("processes = %+v, want none", got)
+	}
+}
