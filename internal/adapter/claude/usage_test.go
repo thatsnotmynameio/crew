@@ -33,6 +33,9 @@ func TestUsageOfACleanResultIsItsCostTokensTurnsAndModel(t *testing.T) {
 		Tokens: crew.Some(crew.Tokens{Input: 14, Output: 132, CacheRead: 38216, CacheWrite: 5360}),
 		Turns:  crew.Some(3),
 		Models: []string{"claude-opus-5-5"},
+		ByModel: []crew.ModelTokens{
+			{Model: "claude-opus-5-5", Tokens: crew.Tokens{Input: 14, Output: 132, CacheRead: 38216, CacheWrite: 5360}},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usage = %+v, want %+v", got, want)
@@ -55,6 +58,10 @@ func TestUsageOfSeveralResultsIsTheLastCostAndTokensAndEveryResultsTurns(t *test
 		}),
 		Turns:  crew.Some(42 + 1 + 21),
 		Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
+		ByModel: []crew.ModelTokens{
+			{Model: "claude-opus-5-5", Tokens: crew.Tokens{Input: 450, Output: 161694, CacheRead: 45538985, CacheWrite: 894564}},
+			{Model: "claude-sonnet-5-5", Tokens: crew.Tokens{Input: 92, Output: 23168, CacheRead: 1277724, CacheWrite: 470360}},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usage = %+v, want %+v", got, want)
@@ -77,6 +84,27 @@ func TestUsageReportsACostOfZero(t *testing.T) {
 	got := usageOf(t, newProcess([]byte(line), nil))
 
 	want := crew.Usage{Cost: crew.Some(0.0), Turns: crew.Some(1)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("usage = %+v, want %+v", got, want)
+	}
+}
+
+// A model listed with no tokens was reported, so it keeps its entry and the
+// session's tokens read as zero, not as not reported.
+func TestUsageReportsAModelWithZeroTokens(t *testing.T) {
+	line := `{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"Nothing to do.",` +
+		`"total_cost_usd":0,"modelUsage":{"claude-haiku-4-5":{"inputTokens":0,"outputTokens":0,` +
+		`"cacheReadInputTokens":0,"cacheCreationInputTokens":0}}}` + "\n"
+
+	got := usageOf(t, newProcess([]byte(line), nil))
+
+	want := crew.Usage{
+		Cost:    crew.Some(0.0),
+		Tokens:  crew.Some(crew.Tokens{}),
+		Turns:   crew.Some(1),
+		Models:  []string{"claude-haiku-4-5"},
+		ByModel: []crew.ModelTokens{{Model: "claude-haiku-4-5"}},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usage = %+v, want %+v", got, want)
 	}
