@@ -155,9 +155,8 @@ func (s *stream) end() *result {
 // last result's cost and modelUsage cover the whole session, subagents and
 // earlier queries included, so they are the cost and the tokens, summed
 // over models and kept for each model, sorted by name; an empty modelUsage
-// reports no tokens. Each result's
-// num_turns counts only its own query, so the turns are added up. It is
-// nothing when there was no result.
+// reports no tokens. Each result's num_turns counts only its own query, so
+// the turns are added up. It is nothing when there was no result.
 func (s *stream) usage() crew.Usage {
 	if s.last == nil {
 		return crew.Usage{}
@@ -177,13 +176,12 @@ func (s *stream) usage() crew.Usage {
 	u.ByModel = make([]crew.ModelTokens, 0, len(u.Models))
 	for _, name := range u.Models {
 		m := s.last.Models[name]
-		tokens.Input += m.Input
-		tokens.Output += m.Output
-		tokens.CacheRead += m.CacheRead
-		tokens.CacheWrite += m.CacheWrite
-		u.ByModel = append(u.ByModel, crew.ModelTokens{Model: name, Tokens: crew.Tokens{
-			Input: m.Input, Output: m.Output, CacheRead: m.CacheRead, CacheWrite: m.CacheWrite,
-		}})
+		t := crew.Tokens{Input: m.Input, Output: m.Output, CacheRead: m.CacheRead, CacheWrite: m.CacheWrite}
+		tokens.Input += t.Input
+		tokens.Output += t.Output
+		tokens.CacheRead += t.CacheRead
+		tokens.CacheWrite += t.CacheWrite
+		u.ByModel = append(u.ByModel, crew.ModelTokens{Model: name, Tokens: t})
 	}
 	u.Tokens = crew.Some(tokens)
 	return u
