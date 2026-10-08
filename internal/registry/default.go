@@ -21,5 +21,6 @@ func Default(group *proc.Group) Registry {
 			"codex":  codex.Factory(group),
 		},
 		nil, // crew has no function yet
+		nil, // crew has no statistics store yet
 	)
 }

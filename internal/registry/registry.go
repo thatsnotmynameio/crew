@@ -1,6 +1,6 @@
-// Package registry resolves the adapter names of the config, tracker.name and
-// each agent's harness.name, to adapters, and the names of crew's functions
-// to the functions. A Registry is a value built from an
+// Package registry resolves the adapter names of the config, tracker.name,
+// each agent's harness.name and statistics.store, to adapters, and the names
+// of crew's functions to the functions. A Registry is a value built from an
 // explicit list of factories: cmd/crew passes the production list, and tests
 // pass the fakes, so both go through the same lookup and validation path.
 package registry
@@ -19,19 +19,27 @@ import (
 // value has no adapters and no functions. It is safe for concurrent use,
 // since it never changes once built.
 type Registry struct {
-	trackers  map[string]port.TrackerFactory
-	harnesses map[string]port.HarnessFactory
-	functions map[string]port.FunctionDefinition
+	trackers   map[string]port.TrackerFactory
+	harnesses  map[string]port.HarnessFactory
+	functions  map[string]port.FunctionDefinition
+	statistics map[string]port.StatisticsFactory
 }
 
-// New returns a registry holding trackers, harnesses and functions, each
-// keyed by the name the config selects it with. It copies the three maps.
+// New returns a registry holding trackers, harnesses, functions and
+// statistics stores, each keyed by the name the config selects it with. It
+// copies the four maps.
 func New(
 	trackers map[string]port.TrackerFactory,
 	harnesses map[string]port.HarnessFactory,
 	functions map[string]port.FunctionDefinition,
+	statistics map[string]port.StatisticsFactory,
 ) Registry {
-	return Registry{trackers: maps.Clone(trackers), harnesses: maps.Clone(harnesses), functions: maps.Clone(functions)}
+	return Registry{
+		trackers:   maps.Clone(trackers),
+		harnesses:  maps.Clone(harnesses),
+		functions:  maps.Clone(functions),
+		statistics: maps.Clone(statistics),
+	}
 }
 
 // Tracker builds the tracker adapter registered as name, the config's
@@ -65,6 +73,22 @@ func (r Registry) Harness(key, name string, section port.Decode) (port.Harness, 
 		return nil, fmt.Errorf("harness %s: %w", name, err)
 	}
 	return harness, nil
+}
+
+// Statistics builds the statistics store registered as name, the config's
+// statistics.store, from its config section and dir, the folder its data
+// lives in, as Tracker does. An unregistered name is an error naming
+// statistics.store and every registered store.
+func (r Registry) Statistics(name string, section port.Decode, dir string) (port.Statistics, error) {
+	factory, err := lookup(r.statistics, "store", "stores", "statistics.store", name)
+	if err != nil {
+		return nil, err
+	}
+	store, err := factory(section, dir)
+	if err != nil {
+		return nil, fmt.Errorf("store %s: %w", name, err)
+	}
+	return store, nil
 }
 
 // Functions returns the catalog of the registered functions: each one's name
