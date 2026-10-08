@@ -313,3 +313,31 @@ func TestARouteChosenLeavesTheActionsItDidNotReachNotRun(t *testing.T) {
 		t.Error("a run whose session runs has ended its actions")
 	}
 }
+
+// A question step that lands opens the rule's question, by the id its plan
+// carries, once: a question the run inherited and asks again stays one. A
+// plan without an id, as a journal written before ids were recorded holds,
+// opens none.
+func TestAQuestionStepThatLandsOpensTheRulesQuestion(t *testing.T) {
+	asking := lfgFailedThrough(QuestionStep{Question: blocks()}, toQuestion)
+	inherited, _ := asking[0].(RunTaken)
+	inherited.Questions = []Question{blocksAsked}
+	withoutID := slices.Clone(asking)
+	route, _ := withoutID[len(withoutID)-2].(RouteChosen)
+	route.Steps = []StepPlan{{Kind: StepQuestion}, {Kind: StepMove, To: labelQuestion}}
+	withoutID[len(withoutID)-2] = route
+	for _, tc := range []struct {
+		name   string
+		events []RunEvent
+		want   []Question
+	}{
+		{name: "landed", events: asking, want: []Question{blocksAsked}},
+		{name: "landed again", events: append([]RunEvent{inherited}, asking[1:]...), want: []Question{blocksAsked}},
+		{name: "a plan without an id", events: withoutID},
+	} {
+		run := given(t, append(slices.Clone(tc.events), stepEnded(6, 0, StepLanded{})))
+		if got := run.Snapshot().Questions; !slices.Equal(got, tc.want) {
+			t.Errorf("%s: questions = %#v, want %#v", tc.name, got, tc.want)
+		}
+	}
+}

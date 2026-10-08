@@ -27,7 +27,8 @@ const (
 
 // StepPlan is one step of the route a run ends through, as plain data: what
 // it does, the state a move moves the item to, the shell action a shell
-// step runs and the name of a function step.
+// step runs, the name of a function step and the id of the question a
+// question step posts.
 type StepPlan struct {
 	Kind StepKind
 	// To is the state a StepMove moves the item to: a return step's is the
@@ -39,6 +40,10 @@ type StepPlan struct {
 	Shell ActionName
 	// Function is the name of a StepFunction; empty for the other kinds.
 	Function ActionName
+	// Question is the id of the question a StepQuestion posts; empty for
+	// the other kinds, and in a plan a journal recorded before crew kept
+	// it.
+	Question QuestionID
 }
 
 // planOf returns s as plain data.
@@ -57,7 +62,7 @@ func planOf(s Step) StepPlan {
 	case FunctionStep:
 		return StepPlan{Kind: StepFunction, Function: s.Name}
 	case QuestionStep:
-		return StepPlan{Kind: StepQuestion}
+		return StepPlan{Kind: StepQuestion, Question: s.Question.ID}
 	case DelegateStep:
 		return StepPlan{Kind: StepDelegate}
 	case ReturnStep:

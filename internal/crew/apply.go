@@ -187,8 +187,9 @@ func (e ActionReturnAsked) apply(r RuleRun) RuleRun {
 
 // apply ends the action with what the event recorded, which, for an end
 // Decide returned, is what the action run already holds. A session that
-// started in this run and ended well ends on the open questions at its
-// action (KTD-W7); one that failed, crew stopped or never started ends on
+// started in this run and ended well ends on the open questions it got:
+// those at its action (KTD-W7) and, for the run's first session, the
+// rule's (KTD8); one that failed, crew stopped or never started ends on
 // none, as it may have asked before it was cut short.
 func (e ActionEnded) apply(r RuleRun) RuleRun {
 	var session bool
@@ -244,13 +245,20 @@ func (StepShellStopAsked) apply(r RuleRun) RuleRun { return r }
 
 func (StepFunctionStopAsked) apply(r RuleRun) RuleRun { return r }
 
-// apply settles the step, which is no longer in flight.
+// apply settles the step, which is no longer in flight. A question step
+// that landed opens the rule's question its plan names (KTD8).
 func (e StepEnded) apply(r RuleRun) RuleRun {
-	return r.whileRouting(e.Step, func(p RoutingPhase) RoutingPhase {
+	var plan StepPlan
+	r = r.whileRouting(e.Step, func(p RoutingPhase) RoutingPhase {
+		plan = p.Steps[e.Step]
 		p.Settled = append(slices.Clone(p.Settled), e.Outcome)
 		p.Asked = false
 		return p
 	})
+	if _, landed := e.Outcome.(StepLanded); landed && plan.Kind == StepQuestion {
+		r = r.ruleAsked(plan.Question)
+	}
+	return r
 }
 
 // apply releases the run, keeping its route and how its steps settled

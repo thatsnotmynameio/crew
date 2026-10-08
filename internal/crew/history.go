@@ -95,8 +95,8 @@ func (h *History) Retire(w WorkspaceName, issue IssueID, rule RuleName) {
 //   - after a run that chose PassedRoute, fresh once the route finished, or
 //     with the passed route alone, in last's worktree, when it did not,
 //     unless rule returns the item (returns);
-//   - after a run whose question action asked, after that action
-//     (askedAfter);
+//   - after a run whose question action asked and whose question landed,
+//     after that action (askedAfter);
 //   - after a run that started no action and opened no worktree of its
 //     own, last's own start, passed on;
 //   - otherwise at the restart point, in last's worktree;
@@ -162,14 +162,18 @@ func passedRouteAfter(last RuleRun) StartPassedRoute {
 }
 
 // askedAfter returns how a run starts after last, whose cursor is a
-// question action of rule that ended with Asked through route, and whether
-// it is one (KTD4): with the passed route alone, in last's worktree when it
-// had one, after rule's last action; at the action after it, in last's
-// worktree; or fresh, asking again, when last had no worktree to reopen.
+// question action of rule that ended with Asked through route and whose
+// question landed, and whether it is one (KTD4, KTD9): with the passed
+// route alone, in last's worktree when it had one, after rule's last
+// action; at the action after it, in last's worktree; or fresh, asking
+// again, when last had no worktree to reopen. A question that did not land
+// is not one: the restart point is the question action, which asks it
+// again.
 func askedAfter(last RuleRun, rule Rule, route RouteName) (Start, bool) {
 	f, ended := cursorEnd(last)
 	a, _ := last.Cursor()
-	if _, question := rule.Action(a.name).Kind.(QuestionSpec); !ended || !question || f.Verdict != Asked {
+	_, question := rule.Action(a.name).Kind.(QuestionSpec)
+	if !ended || !question || f.Verdict != Asked || !questionLanded(last) {
 		return nil, false
 	}
 	i := slices.IndexFunc(rule.Actions, func(b Action) bool { return b.Name == a.name })
@@ -184,6 +188,18 @@ func askedAfter(last RuleRun, rule Rule, route RouteName) (Start, bool) {
 		Workspace: w, Log: log, Action: rule.Actions[i+1].Name, Route: route, Reason: f.End.Outcome().Reason,
 		Session: last.session,
 	}, true
+}
+
+// questionLanded reports whether the route last chose posted its question:
+// the route's question step landed.
+func questionLanded(last RuleRun) bool {
+	p, _ := last.route()
+	i := slices.IndexFunc(p.Steps, func(s StepPlan) bool { return s.Kind == StepQuestion })
+	if i < 0 || i >= len(p.Settled) {
+		return false
+	}
+	_, landed := p.Settled[i].(StepLanded)
+	return landed
 }
 
 // passedFinished reports whether last chose PassedRoute and finished it:
@@ -366,15 +382,21 @@ func (r Rule) has(name ActionName) bool {
 }
 
 // sessionBefore returns the latest session action before the action named
-// name in r's order, or name itself when no session comes before it.
+// name in r's order, after the latest question action before it, or name
+// itself when no session comes between them: a step back never crosses a
+// question, which would ask it again (KTD9).
 func (r Rule) sessionBefore(name ActionName) ActionName {
 	before := name
 	for _, a := range r.Actions {
 		if a.Name == name {
 			break
 		}
-		if _, ok := a.Kind.(SessionSpec); ok {
+		switch a.Kind.(type) {
+		case SessionSpec:
 			before = a.Name
+		case QuestionSpec:
+			before = name
+		case ShellSpec, FunctionSpec, ReturnSpec:
 		}
 	}
 	return before
