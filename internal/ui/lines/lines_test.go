@@ -102,13 +102,14 @@ func TestATakenStartedEndedRoutedSequencePrintsStampedLinesInOrder(t *testing.T)
 
 // The tracker calls the sentences below describe, all of issue #2.
 var (
-	two     = issueID("2")
-	move    = core.Call{Kind: core.CallMove, IssueID: two, IssueRef: "#2", From: "in review", To: "needs attention"}
-	report  = core.Call{Kind: core.CallReport, IssueID: two, IssueRef: "#2"}
-	prs     = core.Call{Kind: core.CallPullRequests, IssueID: two, IssueRef: "#2", To: "needs attention"}
-	closed  = core.Call{Kind: core.CallPullRequests, IssueID: two, IssueRef: "#2"}
-	comment = core.Call{Kind: core.CallComment, IssueID: two, IssueRef: "#2"}
-	closing = core.Call{Kind: core.CallClose, IssueID: two, IssueRef: "#2", From: "in review"}
+	two      = issueID("2")
+	move     = core.Call{Kind: core.CallMove, IssueID: two, IssueRef: "#2", From: "in review", To: "needs attention"}
+	report   = core.Call{Kind: core.CallReport, IssueID: two, IssueRef: "#2"}
+	prs      = core.Call{Kind: core.CallPullRequests, IssueID: two, IssueRef: "#2", To: "needs attention"}
+	closed   = core.Call{Kind: core.CallPullRequests, IssueID: two, IssueRef: "#2"}
+	comment  = core.Call{Kind: core.CallComment, IssueID: two, IssueRef: "#2"}
+	delegate = core.Call{Kind: core.CallDelegate, IssueID: two, IssueRef: "#2"}
+	closing  = core.Call{Kind: core.CallClose, IssueID: two, IssueRef: "#2", From: "in review"}
 )
 
 // The run events below name these heads and workspace.
@@ -181,6 +182,10 @@ var sentences = []struct {
 	{stepEnded(crew.StepPlan{Kind: crew.StepClose}, crew.StepLanded{}), "closed #9"},
 	{stepEnded(crew.StepPlan{Kind: crew.StepComment}, crew.StepLanded{}), "commented on #9"},
 	{stepEnded(crew.StepPlan{Kind: crew.StepReport}, crew.StepLanded{}), "posted the report on #9"},
+	{stepEnded(crew.StepPlan{Kind: crew.StepQuestion}, crew.StepLanded{}), "posted the question on #9"},
+	{stepEnded(crew.StepPlan{Kind: crew.StepDelegate}, crew.StepLanded{}), "asked the answerer on #9"},
+	{stepEnded(crew.StepPlan{Kind: crew.StepQuestion}, crew.StepFailed{Reason: crew.NewShellReason("no .Foo")}),
+		"#9 development through blocked: the question failed: no .Foo"},
 	{stepEnded(notify, crew.StepRan{Reason: crew.NewShellReason("the route's shell step notify exited with status 0")}),
 		"#9 development through blocked: the shell step notify ran: the route's shell step notify exited with status 0"},
 	{stepEnded(notify, crew.StepFailed{Reason: crew.NewShellReason("the route's shell step notify exited with status 1")}),
@@ -222,6 +227,10 @@ var sentences = []struct {
 		"posting the report on #2 failed, retrying at the next tick: timeout"},
 	{core.CallOwed{At: at("10:00:00"), Call: comment, Reason: "timeout"},
 		"commenting on #2 failed, retrying at the next tick: timeout"},
+	{core.CallOwed{At: at("10:00:00"), Call: delegate, Reason: "timeout"},
+		"asking the answerer on #2 failed, retrying at the next tick: timeout"},
+	{core.CallDropped{At: at("10:00:00"), Call: delegate, Result: core.ResultRefused, Reason: "issue is locked"},
+		"gave up asking the answerer on #2: the tracker refused: issue is locked"},
 	{core.CallOwed{At: at("10:00:00"), Call: closing, Reason: "timeout"},
 		"closing #2 failed, retrying at the next tick: timeout"},
 	{core.CallOwed{At: at("10:00:00"), Call: prs, Reason: "gh: HTTP 502"},

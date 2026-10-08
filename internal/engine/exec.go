@@ -74,6 +74,8 @@ func (e *Engine) trackerJob(ctx context.Context, cmd core.TrackerCommand) func()
 			e.close(ctx, c)
 		case core.ReportFailure:
 			e.report(ctx, c)
+		case core.Delegate:
+			e.delegate(ctx, c)
 		case core.ReportStatus:
 			e.reportStatus(ctx, c)
 		case core.ReportPullRequests:
@@ -99,6 +101,8 @@ func (e *Engine) runJob(ctx context.Context, cmd core.RunCommand) func() {
 		return func() { e.findPullRequest(ctx, c) }
 	case core.ReadAnswers:
 		return func() { e.readAnswers(ctx, c) }
+	case core.ReadQuestion:
+		return func() { e.readQuestion(ctx, c) }
 	case core.Record:
 		// Appended here, in the loop, so events land in the order the core
 		// asked for them: an action's start before its session starts and
@@ -145,7 +149,7 @@ func (e *Engine) scriptJob(ctx context.Context, cmd core.RunCommand) func() {
 	case core.StopStepFunction:
 		stopScript(e.steps, stepKey{c.Run, c.Step})
 	case core.CreateWorkspace, core.ReopenWorkspace, core.StartSession, core.FindPullRequest, core.ReadAnswers,
-		core.Record, core.StopSession:
+		core.ReadQuestion, core.Record, core.StopSession:
 		// runJob runs these.
 	}
 	return nil

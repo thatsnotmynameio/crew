@@ -191,7 +191,7 @@ type step struct {
 func stepKinds() map[crew.StepKind]string {
 	return map[crew.StepKind]string{
 		crew.StepMove: "move", crew.StepClose: "close", crew.StepComment: "comment", crew.StepReport: "report",
-		crew.StepShell: "shell", crew.StepFunction: "function",
+		crew.StepShell: "shell", crew.StepFunction: "function", crew.StepQuestion: "question", crew.StepDelegate: "delegate",
 	}
 }
 

@@ -34,7 +34,7 @@ const resumeSelf = "self"
 func reservedNames() []string {
 	return []string{
 		"agent", "prompt", nameKey, onKey, "wait", "resume", "script", "verdicts",
-		reportWord, closeWord, moveWord, commentWord, "next",
+		reportWord, closeWord, moveWord, commentWord, questionWord, "next",
 	}
 }
 

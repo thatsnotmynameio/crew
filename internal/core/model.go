@@ -71,6 +71,9 @@ type Model struct {
 	// answerers are who may answer a question a session asks on its
 	// issue (KTD-W4).
 	answerers crew.Answerers
+	// answerer is the login every delegation of a question mentions
+	// (KTD11).
+	answerer string
 }
 
 // New returns a model for rules, whose rules are in config order and

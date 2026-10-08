@@ -1,5 +1,7 @@
 package crew
 
+import "slices"
+
 // crashedReason is the reason of a run that recorded no end for the action
 // that ended it: crew did not live to see it end.
 const crashedReason = "crew stopped before the run ended: it crashed or was killed"
@@ -92,6 +94,8 @@ func (h *History) Retire(w WorkspaceName, issue IssueID, rule RuleName) {
 // rule on its issue:
 //   - after a run that chose PassedRoute, fresh once the route finished, or
 //     with the passed route alone, in last's worktree, when it did not;
+//   - after a run whose question action asked, after that action
+//     (askedAfter);
 //   - after a run that started no action and opened no worktree of its
 //     own, last's own start, passed on;
 //   - otherwise at the restart point, in last's worktree;
@@ -101,6 +105,9 @@ func startAfter(last RuleRun, rule Rule) Start {
 	route, chosen := chosenRoute(last)
 	if chosen && route == PassedRoute {
 		return passedAfter(last)
+	}
+	if start, ok := askedAfter(last, rule, route); ok {
+		return start
 	}
 	if passesOn(last) {
 		return revalidate(last.Start(), rule)
@@ -129,11 +136,42 @@ func passedAfter(last RuleRun) Start {
 	if passedFinished(last) {
 		return StartFresh{}
 	}
+	return passedRouteAfter(last)
+}
+
+// passedRouteAfter returns the passed route alone after last, in last's
+// worktree when it had one.
+func passedRouteAfter(last RuleRun) StartPassedRoute {
 	s := StartPassedRoute{Session: last.session}
 	if w, log, ok := worktreeOf(last); ok {
 		s.Workspace, s.Log = Some(w), log
 	}
 	return s
+}
+
+// askedAfter returns how a run starts after last, whose cursor is a
+// question action of rule that ended with Asked through route, and whether
+// it is one (KTD4): with the passed route alone, in last's worktree when it
+// had one, after rule's last action; at the action after it, in last's
+// worktree; or fresh, asking again, when last had no worktree to reopen.
+func askedAfter(last RuleRun, rule Rule, route RouteName) (Start, bool) {
+	f, ended := cursorEnd(last)
+	a, _ := last.Cursor()
+	if _, question := rule.Action(a.name).Kind.(QuestionSpec); !ended || !question || f.Verdict != Asked {
+		return nil, false
+	}
+	i := slices.IndexFunc(rule.Actions, func(b Action) bool { return b.Name == a.name })
+	if i == len(rule.Actions)-1 {
+		return passedRouteAfter(last), true
+	}
+	w, log, ok := worktreeOf(last)
+	if !ok {
+		return StartFresh{}, true
+	}
+	return StartAt{
+		Workspace: w, Log: log, Action: rule.Actions[i+1].Name, Route: route, Reason: f.End.Outcome().Reason,
+		Session: last.session,
+	}, true
 }
 
 // passedFinished reports whether last chose PassedRoute and finished it:
@@ -280,7 +318,7 @@ func judges(kind ActionKind) bool {
 		return !k.ResumeSelf
 	case FunctionSpec:
 		return !k.ResumeSelf
-	case SessionSpec:
+	case SessionSpec, QuestionSpec:
 	}
 	return false
 }

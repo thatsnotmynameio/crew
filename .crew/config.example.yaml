@@ -54,6 +54,20 @@
 # answering_apps:
 #   - claude[bot]
 
+## Who answers the questions rules ask, which it turns on. With it, crew adds
+## the rule question before your rules: it takes the items in crew:question,
+## runs in crew:question:in progress, mentions the answerer on the item and
+## moves it to crew:question:waiting answer, which no rule takes, until
+## someone moves it to its question's return label. No other rule may then
+## be called question, or take, run in or move an item to those labels.
+## Without it, crew refuses every question.
+# questions:
+#   ## The login crew mentions on every question: a person's, or an App's as
+#   ## <slug>[bot]. github-actions[bot] never answers.
+#   answerer: octocat
+#   ## The queue the question rule runs in: one of queues, or default.
+#   queue: default
+
 ## Queues by name, each with its slots. A queue's slots serve only the rules
 ## that name it, so a long session never holds up a quick rule of another
 ## queue. The queue default always exists: it gets the slots
@@ -102,8 +116,8 @@
 ##   CREW_PROMPT_FILE                                the session's prompt
 ##   CREW_LAST_MESSAGE_FILE                          the session's last message
 ## A name cannot be a word of the rules' grammar: agent, prompt, name, on,
-## wait, resume, script, verdicts, report, close, move, comment or next, nor
-## the name of a function crew registers.
+## wait, resume, script, verdicts, report, close, move, comment, question or
+## next, nor the name of a function crew registers.
 # actions:
 #   ## A string is the script.
 #   tests: go test ./...
@@ -190,17 +204,35 @@
 #         ## leads to next and every other verdict to failed.
 #         on:
 #           blocked: blocked
+#           unsure: unsure
 #       ## One of actions, with its on and name beside it, and its own key
 #       ## left empty.
 #       - judge:
 #         name: judge
 #         on:
 #           needs_person: needs-person
+#       ## A question the rule asks on the item, with questions set and in a
+#       ## rule that takes issues. The action ends at once with the verdict
+#       ## asked, which leads to a route of the action's name that crew adds:
+#       ## it posts the question, then moves the item to crew:question. When
+#       ## the item is back, the run starts after it. It takes no on.
+#       - question:
+#           ## The question's id: a lowercase letter, then lowercase letters,
+#           ## digits, - or _.
+#           id: scope
+#           ## The question, a Go template as a comment's.
+#           text: "Is {{.Issue.Ref}} still worth a pull request?"
+#           ## The label the item returns to once the question is answered:
+#           ## the ready label of one of the rules.
+#           return: ready
+#         ## The action's name, and its route's: question by default.
+#         name: confirm-scope
 #       - pr-opened
 #     ## The rule's routes by name, each a way to end a run. A rule with
 #     ## actions declares passed and failed, and every route an on leads to.
 #     ## A route is a label to move the item to, or a list of steps, run in
-#     ## order, whose last step, and only it, is move or close. No route moves
+#     ## order, whose last step, and only it, is move or close, or a question,
+#     ## after which crew moves the item to crew:question. No route moves
 #     ## the item to the rule's own ready label or to any rule's running label.
 #     routes:
 #       passed: in review
@@ -221,6 +253,10 @@
 #         - tests
 #         - pr-opened:
 #         - move: needs person
+#       unsure:
+#         ## question posts a question, as a question action does: it is the
+#         ## route's last step.
+#         - question: {id: unsure, text: "What should {{.Issue.Ref}} do?", return: ready}
 #   review:
 #     takes: pull_requests
 #     queue: reviews

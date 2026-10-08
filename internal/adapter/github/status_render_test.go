@@ -381,6 +381,8 @@ func TestARoutesStepIsNamedByItsKind(t *testing.T) {
 		"report":                    {Kind: crew.StepReport},
 		"shell step `notify`":       {Kind: crew.StepShell, Shell: "notify"},
 		"function step `check`":     {Kind: crew.StepFunction, Function: "check"},
+		"question":                  {Kind: crew.StepQuestion},
+		"delegation":                {Kind: crew.StepDelegate},
 	}
 	for want, step := range steps {
 		if got := stepName(step); got != want {

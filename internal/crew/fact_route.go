@@ -89,7 +89,7 @@ func (k StepKind) Delivered() bool {
 	switch k {
 	case StepShell, StepFunction:
 		return false
-	case StepMove, StepClose, StepComment, StepReport:
+	case StepMove, StepClose, StepComment, StepReport, StepQuestion, StepDelegate:
 	}
 	return true
 }

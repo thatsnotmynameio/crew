@@ -12,18 +12,20 @@ import (
 // stepDoc is a step of a route written as a mapping of one key, besides a
 // reference to one of actions.
 type stepDoc struct {
-	Move    located[string] `yaml:"move"`
-	Comment located[string] `yaml:"comment"`
+	Move     located[string] `yaml:"move"`
+	Comment  located[string] `yaml:"comment"`
+	Question questionDoc     `yaml:"question"`
 }
 
 // What a route and its steps must be, said when one is none of its forms.
 const (
 	routeShape = "must be a label to move the item to, or a list of steps"
-	stepShape  = "must be report, close, move: <label>, comment: <text>, or the name of one of actions or of a function"
+	stepShape  = "must be report, close, move: <label>, comment: <text>, question: {id, text, return}, " +
+		"or the name of one of actions or of a function"
 )
 
 // The steps' words: report and close are written alone, move and comment
-// as the key of a step's mapping.
+// as the key of a step's mapping, as question (questionWord) is.
 const (
 	reportWord  = "report"
 	closeWord   = "close"
@@ -39,10 +41,12 @@ type parsedRoute struct {
 	path  string
 	line  int
 	steps []keyAt
+	ask   *askAt
 }
 
 // keyAt is where a step is written: its key path and its line. For a move,
-// it is where its label is written.
+// it is where its label is written, and for a question, where its return
+// label is.
 type keyAt struct {
 	path string
 	line int
@@ -92,9 +96,12 @@ func parseRoute(e entry, name crew.RouteName, env ruleEnv) (parsedRoute, error) 
 			errs = append(errs, err)
 			continue
 		}
+		if _, ok := step.(crew.QuestionStep); ok {
+			r.ask = &askAt{step: keyAt{item.path, resolve(item.value).Line}, ret: at}
+		}
 		r.Steps, r.steps = append(r.Steps, step), append(r.steps, at)
 	}
-	return r, errors.Join(errs...)
+	return r, errors.Join(append(errs, endWithQuestion(&r))...)
 }
 
 // parseStep decodes the step e of the route called route.
@@ -120,6 +127,8 @@ func parseStep(e entry, route crew.RouteName, env ruleEnv) (crew.Step, keyAt, er
 	switch key.key.Value {
 	case moveWord, commentWord:
 		return effectStep(key, route, at)
+	case questionWord:
+		return questionStep(key, route)
 	}
 	c, err := env.callee(key.key, key.path)
 	if err != nil {

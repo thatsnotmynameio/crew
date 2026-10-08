@@ -14,6 +14,9 @@ const (
 	// githubActions is the App every workflow comments as, which can post
 	// anyone's text, so it never answers (R39).
 	githubActions = "github-actions[bot]"
+	// githubActionsRefusal says why githubActions is refused wherever a
+	// login that answers is written.
+	githubActionsRefusal = githubActions + " never answers: any workflow can post anyone's text as it"
 )
 
 // answeringApps reads the optional answering_apps n into cfg: a list of App
@@ -51,7 +54,7 @@ func appLogin(e entry) (string, error) {
 	lower := strings.ToLower(login)
 	switch {
 	case lower == githubActions:
-		return "", keyError(e.path, v.Line, githubActions+" never answers: any workflow can post anyone's text as it")
+		return "", keyError(e.path, v.Line, githubActionsRefusal)
 	case !strings.HasSuffix(lower, appSuffix) || len(login) == len(appSuffix):
 		return "", keyError(e.path, v.Line, fmt.Sprintf("%q is not an App's login: it must be <slug>[bot]", login))
 	}

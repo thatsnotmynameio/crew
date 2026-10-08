@@ -38,9 +38,9 @@ type RunDefinition struct {
 // It renders the prompt of each session action it starts, from def, only
 // to decide whether the action fails with CausePrompt, the text parameters
 // of each function action it starts, only to decide whether the action
-// fails with CauseFunction, and the comment of each comment step and the
-// text parameters of each function step it asks, only to decide whether
-// the step fails.
+// fails with CauseFunction, and the comment of each comment step, the
+// question of each question step and the text parameters of each function
+// step it asks, only to decide whether the step fails.
 func Decide(run RuleRun, def RunDefinition, fact Fact) ([]RunEvent, error) {
 	h := fact.factHead()
 	if run.id == "" || h.Run != run.id {
@@ -100,8 +100,9 @@ func is[T ActionRunState](s ActionRunState) bool {
 // rendering its prompt, or for its script or its function, after rendering
 // its text parameters, acting as the run's bot. A session whose prompt
 // does not render, and a function whose text parameters do not, end at
-// once, and once a stop or time-up reached the run the action ends without
-// starting.
+// once. A question ends at once with Asked and asks for nothing: the route
+// its On sends Asked to posts it. Once a stop or time-up reached the run
+// the action ends without starting.
 func (d *decider) start(name ActionName) {
 	if j, halted := d.halted(); halted {
 		d.end(name, j, ToRoute{Route: FailedRoute})
@@ -122,6 +123,9 @@ func (d *decider) start(name ActionName) {
 			return
 		}
 		d.emit(ActionFunctionAsked{EventHead: d.head(), Action: name, Bot: d.run.Bot()})
+	case QuestionSpec:
+		reason := fmt.Sprintf("crew asked the question %q", k.Question.ID)
+		d.finish(name, Judged{Verdict: Asked, End: EndSucceeded{Reason: NewSessionText(reason)}})
 	}
 }
 
@@ -231,8 +235,8 @@ func (d *decider) nextStep() {
 // unasked returns the outcome of the step at index i of route when it
 // settles without being asked, and whether it does: a shell or function
 // step once a stop reached the run is skipped, and a function step whose
-// text parameters, or a comment whose template, do not render for the run
-// fails.
+// text parameters, or a comment's or a question's text, do not render for
+// the run fails.
 func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 	r, _ := d.def.Rule.Route(route)
 	switch s := r.Steps[i].(type) {
@@ -251,7 +255,11 @@ func (d *decider) unasked(route RouteName, i int) (StepOutcome, bool) {
 		if _, err := s.Template.Render(d.run.CommentData()); err != nil {
 			return StepFailed{Reason: NewShellReason(err.Error())}, true
 		}
-	case MoveStep, CloseStep, ReportStep:
+	case QuestionStep:
+		if _, err := s.Question.Body(d.run.CommentData()); err != nil {
+			return StepFailed{Reason: NewShellReason(err.Error())}, true
+		}
+	case MoveStep, CloseStep, ReportStep, DelegateStep:
 	}
 	return nil, false
 }

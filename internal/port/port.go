@@ -6,8 +6,8 @@
 // adapter may or may not support is a separate optional interface, such as
 // Preparer, StatusReporter, PullRequestReporter, Acting, CodeOwnerFinder,
 // LoginFinder, RepositoryFinder, WriterReporter, BoardLister, Commenter,
-// Closer, CommentLister, Narrator or Reopener, that the engine detects by
-// type assertion. An adapter therefore never wraps another
+// Closer, CommentLister, Delegator, Narrator or Reopener, that the engine
+// detects by type assertion. An adapter therefore never wraps another
 // adapter value, because a wrapper hides the optional interfaces of what it
 // wraps.
 //
@@ -314,8 +314,10 @@ type BoardLister interface {
 type Commenter interface {
 	// Comment posts body as a new comment on issue, as the tracker's
 	// writer, with its control characters stripped but its lines kept
-	// (crew.StripControlsKeepingLines). Its errors are classified as
-	// Tracker.Move's are.
+	// (crew.StripControlsKeepingLines). The comment carries
+	// crew.PostedMarker, as every comment crew posts does, so crew never
+	// takes it for an answer and finds the questions it asked. Its errors
+	// are classified as Tracker.Move's are.
 	Comment(ctx context.Context, issue crew.IssueID, body string) error
 }
 
@@ -341,6 +343,18 @@ type CommentLister interface {
 	// Comments returns every comment on issue, oldest first. Its errors are
 	// classified as Tracker.Move's are.
 	Comments(ctx context.Context, issue crew.IssueID) ([]crew.Comment, error)
+}
+
+// Delegator is an optional interface of a Tracker: it posts the delegation
+// of an issue's open question, which asks the answerer to answer it.
+type Delegator interface {
+	// Delegate posts delegation on its issue, as a new comment of the
+	// tracker's writer, formatted in the tracker's own markup, with the
+	// answerer mentioned in the tracker's own syntax. The comment carries
+	// crew.DelegatedMarker of the question's id, and crew.PostedMarker as
+	// every comment crew posts does. Its errors are classified as
+	// Tracker.Move's are.
+	Delegate(ctx context.Context, delegation crew.Delegation) error
 }
 
 // Reopener is an optional interface of a Workspace: it reopens a workspace

@@ -4,13 +4,17 @@
 # and as a mapping, a function preset, a function called through its preset
 # and by its own name, rules with and without actions, sessions with and
 # without a name or a wait, on maps, routes as a label and as a list of
-# steps, notify set both ways, multi-line prompts and an answering list. Its
-# function, word-count, is invented too: the test registers it.
+# steps, notify set both ways, multi-line prompts, an answering list, and
+# questions with a question action and a question step. Its function,
+# word-count, is invented too: the test registers it.
 poll_interval_seconds: 120
 max_parallel_issues: 4
 answering_apps:
   - glossary-keeper[bot]
   - linguist[bot]
+questions:
+  answerer: glossary-keeper[bot]
+  queue: desk
 queues:
   desk: 1
   translators: 2
@@ -88,6 +92,12 @@ rules:
         on:
           failed: rejected
           waiting: next
+          unclear: unclear
+      - question:
+          id: register
+          text: Which register should {{.Issue.Ref}} keep, formal or casual?
+          return: "translation:drafted"
+        name: ask-register
       - glossary-kept
       - agent: translator
         prompt: Typeset the draft of {{.Issue.Ref}} for print.
@@ -101,6 +111,9 @@ rules:
         - glossary-kept
         - word-count
         - close
+      unclear:
+        - comment: "{{.Issue.Ref}} reads unclear to {{.Action}}."
+        - question: {id: unclear, text: "What does {{.Issue.Ref}} mean here?", return: "TRANSLATION:DRAFTED"}
   archive:
     notify: true
     labels:

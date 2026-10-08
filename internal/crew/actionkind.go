@@ -2,8 +2,8 @@ package crew
 
 import "time"
 
-// ActionKind is what an action runs: SessionSpec, ShellSpec or
-// FunctionSpec.
+// ActionKind is what an action runs: SessionSpec, ShellSpec, FunctionSpec
+// or QuestionSpec.
 //
 //sumtype:decl
 type ActionKind interface {
@@ -70,3 +70,4 @@ type FunctionSpec struct {
 func (SessionSpec) actionKind()  {}
 func (ShellSpec) actionKind()    {}
 func (FunctionSpec) actionKind() {}
+func (QuestionSpec) actionKind() {}

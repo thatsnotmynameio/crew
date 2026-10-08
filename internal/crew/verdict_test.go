@@ -366,3 +366,27 @@ func TestJudgeFunction(t *testing.T) {
 		})
 	}
 }
+
+func TestParseQuestionID(t *testing.T) {
+	tests := []struct {
+		in string
+		ok bool
+	}{
+		{"blocks", true},
+		{"needs-person", true},
+		{"two words", false},
+		{"Blocks", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			id, err := ParseQuestionID(tt.in)
+			if tt.ok && (err != nil || id != QuestionID(tt.in)) {
+				t.Fatalf("ParseQuestionID(%q) = %q, %v; want %q, nil", tt.in, id, err, tt.in)
+			}
+			if !tt.ok && (err == nil || id != "" || !strings.Contains(err.Error(), "question id")) {
+				t.Fatalf("ParseQuestionID(%q) = %q, %v; want an error naming a question id", tt.in, id, err)
+			}
+		})
+	}
+}

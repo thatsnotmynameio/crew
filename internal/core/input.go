@@ -27,10 +27,11 @@ type Input interface {
 
 // RunInput is the result of a RunCommand about one rule run: its
 // workspace, an action's session or script, the read of the answers a
-// session starts with, a route's shell step, or the lookup of its pull
-// requests. It names the run that asked, and the core hands it to that
-// run only, so an answer for a run it no longer holds changes nothing,
-// even while a newer run of the same issue runs the same action (KTD7).
+// session starts with or of a delegation step's question, a route's shell
+// step, or the lookup of its pull requests. It names the run that asked,
+// and the core hands it to that run only, so an answer for a run it no
+// longer holds changes nothing, even while a newer run of the same issue
+// runs the same action (KTD7).
 //
 //sumtype:decl
 type RunInput interface {

@@ -60,17 +60,25 @@ type Config struct {
 	// AnsweringAppsWritten tells whether AnsweringApps is the file's list,
 	// which replaces the default, crew's bots, even when empty.
 	AnsweringAppsWritten bool
+	// Questions is questions:, or nil when the file leaves it out: then no
+	// rule may ask a question, and crew adds no question rule.
+	Questions *Questions
 	// Agents are the agents in file order, including those no session names
 	// (see Agent.Used).
 	Agents []Agent
-	// Rules are the rules in file order. Every state is non-empty text,
-	// spelled everywhere as it is first written, since labels that differ
-	// only in case are one label. No two rules take the same label, no rule
-	// takes back what it moved, and every prompt and comment renders. Every
-	// rule has its queue, the one it names or default, with the queue's
-	// slots, its actions in the order they run and its routes. Every session
-	// has its agent and bot, every shell action its script from actions, and
-	// every on leads to one of its rule's routes.
+	// Rules are the rules in file order, after crew's question rule when
+	// Questions is set: it takes crew:question, runs in crew:question:in
+	// progress, has no actions, and its passed route delegates the item's
+	// open question, then moves it to crew:question:waiting answer. Every
+	// state is non-empty text, spelled everywhere as it is first written,
+	// since labels that differ only in case are one label. No two rules
+	// take the same label, no rule takes back what it moved, and every
+	// prompt and comment renders. Every rule has its queue, the one it
+	// names or default, with the queue's slots, its actions in the order
+	// they run and its routes. Every session has its agent and bot, every
+	// shell action its script from actions, and every on leads to one of
+	// its rule's routes. Every question returns to a rule's ready label, and
+	// its route ends with the move to crew:question.
 	Rules []crew.Rule
 	// Notify tells, for each rule by name, whether the live view sends a
 	// desktop notification when the rule ends for an item: the rule's
@@ -103,6 +111,7 @@ type document struct {
 	RunTimeLimitSeconds located[int]  `yaml:"run_time_limit_seconds"`
 	UsageInStatus       located[bool] `yaml:"usage_in_status"`
 	AnsweringApps       yaml.Node     `yaml:"answering_apps"`
+	Questions           yaml.Node     `yaml:"questions"`
 	Queues              yaml.Node     `yaml:"queues"`
 	Tracker             yaml.Node     `yaml:"tracker"`
 	Agents              yaml.Node     `yaml:"agents"`
@@ -175,13 +184,14 @@ func parse(top *yaml.Node, functions map[string][]crew.Verdict) (*Config, error)
 	var err error
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
 	errs = append(errs, err)
+	errs = append(errs, questions(&doc.Questions, table, cfg))
 	shellActions, presets, err := shells(&doc.Actions, functions)
 	errs = append(errs, err)
 	cfg.Agents, err = agents(&doc.Agents)
 	errs = append(errs, err)
 	env := ruleEnv{
 		queues: table, agents: cfg.Agents, actions: shellActions, presets: presets,
-		functions: functions, bot: cfg.Bot, uses: &cfg.Functions,
+		functions: functions, bot: cfg.Bot, questions: cfg.Questions, uses: &cfg.Functions,
 	}
 	cfg.Rules, cfg.Notify, err = rules(&doc.Rules, env)
 	errs = append(errs, err, agentsInUse(cfg.Agents, cfg.Rules))

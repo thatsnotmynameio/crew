@@ -156,6 +156,9 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 		if bots, err = b.bots(ctx, o); err != nil {
 			return err
 		}
+		if err := questionWriter(b.cfg.Tracker, b.tracker, b.cfg.Questions, bots.Writer); err != nil {
+			return err
+		}
 		eng = b.engine(o, bots)
 		return eng.Prepare(ctx)
 	})
@@ -222,9 +225,10 @@ type built struct {
 // fills it from its listings (KTD10). A route that comments or closes needs
 // a tracker that can, a port.Commenter or a port.Closer (KTD7), and a
 // session that may wait for answers one that lists comments, a
-// port.CommentLister (KTD-W5). Every function use is built once, from its
-// parameters, so a parameter its function refuses stops crew before it
-// polls (R28).
+// port.CommentLister (KTD-W5). A question needs a tracker that comments,
+// and questions one that lists comments and delegates, a port.Delegator
+// (KTD10). Every function use is built once, from its parameters, so a
+// parameter its function refuses stops crew before it polls (R28).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root, o.GlobalConfig, o.Registry.Functions())
 	if err != nil {
@@ -249,7 +253,7 @@ func build(o Options) (built, error) {
 		return built{}, fmt.Errorf("board: tracker %q cannot list issues by any label", cfg.Tracker)
 	}
 	if err := errors.Join(routeSteps(cfg.Tracker, tracker, cfg.Rules),
-		waitingSessions(cfg.Tracker, tracker, cfg.Rules)); err != nil {
+		waitingSessions(cfg.Tracker, tracker, cfg.Rules), questionRule(cfg.Tracker, tracker, cfg.Questions)); err != nil {
 		return built{}, err
 	}
 	return built{cfg: cfg, tracker: tracker, harnesses: harnesses, functions: functions}, nil
@@ -322,6 +326,7 @@ func (b built) engineConfig(o Options, bots Bots) engine.Config {
 		Identities:        bots.Identities,
 		BotLogins:         bots.Logins,
 		AnsweringApps:     answeringApps(b.cfg, bots),
+		Answerer:          answerer(b.cfg),
 		DefaultBot:        b.cfg.Bot.Name,
 		Bots:              b.cfg.BotNames(),
 		Unable:            bots.Unable,
@@ -339,6 +344,15 @@ func answeringApps(cfg *config.Config, bots Bots) []string {
 		return slices.Clone(cfg.AnsweringApps)
 	}
 	return slices.Clone(bots.Logins)
+}
+
+// answerer returns the config's questions.answerer; empty without
+// questions.
+func answerer(cfg *config.Config) string {
+	if cfg.Questions == nil {
+		return ""
+	}
+	return cfg.Questions.Answerer
 }
 
 // journal returns the run journal of the repository at Root, through

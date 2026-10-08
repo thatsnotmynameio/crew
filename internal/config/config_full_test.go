@@ -62,7 +62,7 @@ func TestAFullConfigLoads(t *testing.T) {
 	if want := []string{"translation", "proofreading"}; !reflect.DeepEqual(columns, want) || cfg.BoardWritten {
 		t.Errorf("board columns = %q (written %v), want %q", columns, cfg.BoardWritten, want)
 	}
-	translationRule := cfg.Rules[1]
+	translationRule := cfg.Rules[2]
 	pushed, ok := translationRule.Action("draft-pushed").Kind.(crew.ShellSpec)
 	wantPushed := crew.ShellSpec{
 		Script: "n=$(git rev-list --count \"origin/$CREW_BRANCH\" 2>/dev/null) || n=0\n" +
@@ -118,10 +118,19 @@ func TestAFullConfigLoadsItsAnsweringApps(t *testing.T) {
 	}
 }
 
+// translationQuestionRule is crew's question rule, which testdata/
+// translation's questions adds, in its queue desk.
+var translationQuestionRule = ruleSummary{
+	name: "question", queue: crew.Queue{Name: "desk", Slots: 1},
+	labels: crew.Labels{Ready: "crew:question", Running: "crew:question:in progress"},
+	routes: []string{"passed: delegate, move crew:question:waiting answer"},
+}
+
 // wantTranslationRules are the rules testdata/translation's config loads
-// into, in file order.
+// into: crew's question rule, then the file's in file order.
 func wantTranslationRules() []ruleSummary {
 	return []ruleSummary{
+		translationQuestionRule,
 		{
 			name: "accept request", queue: crew.Queue{Name: "desk", Slots: 1},
 			labels: crew.Labels{Ready: "request:new", Running: "request:accepting"},
@@ -147,7 +156,9 @@ func wantTranslationRules() []ruleSummary {
 			name: "proofreading", queue: crew.Queue{Name: "default", Slots: 1},
 			labels: crew.Labels{Ready: "translation:drafted", Running: "translation:proofreading"},
 			actions: []string{
-				"session proofread: agent proofreader, bot concierge, wait 10m0s; failed to rejected, waiting to next",
+				"session proofread: agent proofreader, bot concierge, wait 10m0s; " +
+					"failed to rejected, unclear to unclear, waiting to next",
+				"question ask-register: register; asked to ask-register",
 				"shell glossary-kept",
 				"session translator: agent translator, bot linguist, wait 10m0s",
 			},
@@ -155,6 +166,8 @@ func wantTranslationRules() []ruleSummary {
 				"passed: move translation:published",
 				"failed: report, move translation:rejected",
 				"rejected: comment {{.Issue.Ref}} was rejected in {{.Rule}}., glossary-kept, function word-count, close",
+				"unclear: comment {{.Issue.Ref}} reads unclear to {{.Action}}., question unclear, move crew:question",
+				"ask-register: question register, move crew:question",
 			},
 		},
 		{
@@ -200,6 +213,8 @@ func summarize(rules []crew.Rule, notify map[crew.RuleName]bool) []ruleSummary {
 				action = fmt.Sprintf("shell %s", a.Name)
 			case crew.FunctionSpec:
 				action = fmt.Sprintf("function %s: %s", a.Name, k.Function)
+			case crew.QuestionSpec:
+				action = fmt.Sprintf("question %s: %s", a.Name, k.Question.ID)
 			}
 			if on := onNames(a.On); on != "" {
 				action += "; " + on
@@ -230,6 +245,10 @@ func stepNames(steps []crew.Step) string {
 			names[i] = string(s.Name)
 		case crew.FunctionStep:
 			names[i] = "function " + string(s.Name)
+		case crew.QuestionStep:
+			names[i] = "question " + string(s.Question.ID)
+		case crew.DelegateStep:
+			names[i] = "delegate"
 		}
 	}
 	return strings.Join(names, ", ")

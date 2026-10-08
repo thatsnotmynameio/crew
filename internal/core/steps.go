@@ -39,7 +39,9 @@ func (s *step) findPullRequest(h *heldRun) {
 // askStep runs the step at index i of the route of h's run: a shell step's
 // script or a function step's function, acting as the run's bot, or a
 // tracker step, which the outbox delivers in the run's lane (KTD9). A move
-// and a close take the issue from the rule's running label.
+// and a close take the issue from the rule's running label. A question is
+// delivered as a comment, and a delegation once crew read the issue's
+// comments (KTD1, KTD8).
 func (s *step) askStep(h *heldRun, i int) {
 	p, _ := h.run.Phase().(crew.RoutingPhase)
 	rule := s.m.rules[h.rule]
@@ -69,6 +71,14 @@ func (s *step) askStep(h *heldRun, i int) {
 		s.command(RunStepFunction{
 			IssueID: issue.ID(), Run: h.run.ID(), Step: i, Call: h.call(st.Name, st.Function, h.run.Bot()),
 		})
+		return
+	case crew.QuestionStep:
+		// The run rendered the question already, when it asked for the
+		// step, as it does a comment.
+		d.body, _ = st.Question.Body(h.run.CommentData())
+		d.call = Call{Kind: CallComment, IssueID: issue.ID(), IssueRef: issue.Ref()}
+	case crew.DelegateStep:
+		s.command(ReadQuestion{IssueID: issue.ID(), Run: h.run.ID(), Step: i})
 		return
 	}
 	s.deliver(h, d)
