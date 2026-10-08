@@ -16,6 +16,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # modernc.org/libc moves only with modernc.org/sqlite: the driver needs
+    # exactly the libc its go.mod names, which a driver bump raises.
+    ignore:
+      - dependency-name: "modernc.org/libc"
   - package-ecosystem: "gomod"
     directory: "/acceptance"
     schedule:

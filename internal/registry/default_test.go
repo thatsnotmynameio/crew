@@ -1,6 +1,8 @@
 package registry_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
@@ -62,4 +64,20 @@ func TestDefaultRegistersNoFunction(t *testing.T) {
 	}
 	_, err := r.Function("rules.implement.actions[0].function", "check-ci", func(any) error { return nil })
 	assertErr(t, err, "the registered functions are: none")
+}
+
+func TestDefaultBuildsTheSqliteStoreWithoutTouchingItsFolder(t *testing.T) {
+	r := registry.Default(&proc.Group{})
+	dir := filepath.Join(t.TempDir(), "crew")
+
+	s, err := r.Statistics("sqlite", func(any) error { return nil }, dir)
+	if err != nil || s == nil {
+		t.Fatalf("Statistics(sqlite) = %v, %v; want a store", s, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("stat %s = %v, want it never created", dir, err)
+	}
 }
