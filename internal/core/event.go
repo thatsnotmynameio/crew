@@ -19,8 +19,8 @@ type Published interface {
 
 // Event is an event of the core's own, about what no rule run owns: bots,
 // listings, polls, tracker calls and status writes, the journal, the
-// statistics store, the run time limit and the stop. Events are plain values; At is the arrival time
-// of the input that caused them.
+// statistics store, the run time limit and the stop. Events are plain
+// values; At is the arrival time of the input that caused them.
 //
 //sumtype:decl
 type Event interface {
