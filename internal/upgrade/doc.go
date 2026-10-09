@@ -31,4 +31,8 @@
 // failure changes nothing and a running crew keeps its old binary. A path
 // crew may not write is an EnvError that points to the README's install
 // into ~/.local/bin: crew upgrade never uses sudo.
+//
+// The package imports only the standard library and internal/proc, and
+// only cmd/crew imports it: the upgrade involves no tracker, engine or
+// port. The upgrade and upgrade-users rules of depguard hold both.
 package upgrade
