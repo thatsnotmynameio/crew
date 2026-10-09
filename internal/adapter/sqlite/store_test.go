@@ -80,26 +80,15 @@ func read(t *testing.T, dir string) *sql.DB {
 // processes returns the processes table's rows in dir, in insertion order.
 func processes(t *testing.T, dir string) []crew.Process {
 	t.Helper()
-	rows, err := read(t, dir).QueryContext(t.Context(),
-		"SELECT id, version, folder, started_at FROM processes ORDER BY rowid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = rows.Close() }()
-	var got []crew.Process
-	for rows.Next() {
-		var p crew.Process
-		var ms int64
-		if err := rows.Scan(&p.ID, &p.Version, &p.Folder, &ms); err != nil {
-			t.Fatal(err)
-		}
-		p.Start = time.UnixMilli(ms).UTC()
-		got = append(got, p)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return got
+	return rows(t, dir, "SELECT id, version, folder, started_at FROM processes ORDER BY rowid",
+		func(r *sql.Rows, p *crew.Process) error {
+			var ms int64
+			if err := r.Scan(&p.ID, &p.Version, &p.Folder, &ms); err != nil {
+				return fmt.Errorf("scan: %w", err)
+			}
+			p.Start = time.UnixMilli(ms).UTC()
+			return nil
+		})
 }
 
 // userVersion returns the file's user_version in dir.

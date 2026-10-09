@@ -48,7 +48,7 @@ type Store struct {
 const (
 	insertProcess    = `INSERT INTO processes (id, version, folder, started_at) VALUES (?, ?, ?, ?)`
 	upsertRepository = `INSERT INTO repositories (tracker, id, name) VALUES (?, ?, ?)
-		ON CONFLICT (tracker, id) DO UPDATE SET name = excluded.name`
+		ON CONFLICT (tracker, id) DO UPDATE SET name = excluded.name WHERE name <> excluded.name`
 	insertIssue = `INSERT INTO issues (tracker, repository_id, key, ref, kind, created_at, seen_at, first_label)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tracker, repository_id, key) DO NOTHING`
 	insertMove = `INSERT INTO label_moves
