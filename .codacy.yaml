@@ -12,9 +12,10 @@ exclude_paths:
   - "node_modules/**"
 engines:
   duplication:
-    # Codacy owns duplication (golangci-lint's dupl is off). 100 tokens is the
-    # threshold strict Go setups agree on; below it, Go's repeated error
-    # handling reads as clones.
+    # golangci-lint's dupl owns duplication in CI, at the same 100 tokens with
+    # test files skipped; this block stays until Codacy leaves (#385). 100
+    # tokens is the threshold strict Go setups agree on; below it, Go's
+    # repeated error handling reads as clones.
     minTokenMatch: 100
     exclude_paths:
       # Recorded Claude and Codex sessions, TUI golden files and the acceptance

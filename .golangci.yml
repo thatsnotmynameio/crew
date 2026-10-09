@@ -10,8 +10,6 @@ linters:
   # is pinned (v2.14.0), so a release cannot switch new linters on unseen.
   default: all
   disable:
-    # Codacy's duplication engine owns duplication (one owner per metric).
-    - dupl
     # cyclop measures the same cyclomatic complexity, matched to Lizard's CCN.
     - gocyclo
     # Whitespace style (blank lines around blocks and before returns). gofmt
@@ -76,6 +74,9 @@ linters:
       # only errors from third-party packages need context added here.
       ignore-package-globs:
         - github.com/thatsnotmynameio/crew/*
+    dupl:
+      # Codacy's minTokenMatch: the bar Codacy held for duplication.
+      threshold: 100
     cyclop:
       max-complexity: 15
     gocognit:
@@ -322,6 +323,10 @@ linters:
       # Test fixtures are package-level values shared by the cases of a file.
       - path: _test\.go
         linters: [gochecknoglobals]
+      # Table-driven tests repeat their case shape on purpose, as Codacy's
+      # duplication engine allowed.
+      - path: _test\.go
+        linters: [dupl]
       # Tests read fixtures from testdata, run git in temporary repositories
       # and write files in t.TempDir(): paths and commands come from the test.
       - path: _test\.go

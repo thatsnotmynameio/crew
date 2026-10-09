@@ -98,7 +98,7 @@ func (f SessionEnded) decide(d *decider) error {
 
 // decide keeps how the script ended and ends the action with the verdict
 // judgeShell gives.
-func (f ShellEnded) decide(d *decider) error {
+func (f ShellEnded) decide(d *decider) error { //nolint:dupl // FunctionEnded's sibling: event, spec, judge differ
 	if err := d.awaits(f.Action, is[InShell]); err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (f ShellEnded) decide(d *decider) error {
 
 // decide keeps how the function ended and ends the action with the
 // verdict judgeFunction gives.
-func (f FunctionEnded) decide(d *decider) error {
+func (f FunctionEnded) decide(d *decider) error { //nolint:dupl // ShellEnded's sibling: event, spec, judge differ
 	if err := d.awaits(f.Action, is[InFunction]); err != nil {
 		return err
 	}
