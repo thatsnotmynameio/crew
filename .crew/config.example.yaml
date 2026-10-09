@@ -87,6 +87,16 @@
 #   ## as the gh login it runs as.
 #   bot: clerk
 
+## Where crew records its statistics: one row per crew run, with its
+## version, its repository folder and its start time, in statistics.db in
+## crew's data folder, $XDG_DATA_HOME/crew, or ~/.local/share/crew without
+## it. A failed write is a warning and never stops a rule.
+# statistics:
+#   ## The store. sqlite is the one crew ships; off records nothing and
+#   ## creates no store. Set off in the global file to turn recording off
+#   ## in every repository.
+#   store: sqlite
+
 ## Agents by name. An agent is the harness that runs a session, its model,
 ## and the bot the session acts as. A session names its agent with agent.
 ## Required when a rule has a session.

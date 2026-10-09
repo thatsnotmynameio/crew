@@ -39,6 +39,7 @@ var sections = map[string]section{
 	"answering_apps":       {},
 	"questions":            {items: item[questionsDoc]()},
 	"tracker":              {items: item[trackerDoc](), open: true},
+	"statistics":           {items: item[statisticsDoc](), open: true},
 	"agents":               {items: item[agentDoc](), named: true},
 	"agents.*.harness":     {items: item[harnessDoc](), open: true},
 	"actions":              {items: types[shellDoc, presetDoc](), named: true, free: true},
