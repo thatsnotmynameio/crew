@@ -10,12 +10,15 @@ import (
 //go:embed migrations/0001_processes.sql
 var processes string
 
+//go:embed migrations/0002_issues.sql
+var issues string
+
 // migrations returns the store's migrations in order: the n-th is the file
 // migrations/000n_*.sql, and the store's user_version is n once it is
 // applied. A migration only adds, a table or a column with a default, so an
 // older crew writes what it knows into a file a newer one migrated.
 func migrations() []string {
-	return []string{processes}
+	return []string{processes, issues}
 }
 
 // migrate applies the migrations above the file's user_version and sets it,

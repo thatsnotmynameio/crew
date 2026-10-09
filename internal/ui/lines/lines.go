@@ -185,8 +185,15 @@ func crewText(e core.Event) string {
 
 // statistic names s, a record of the statistics store, in crew's words.
 func statistic(s crew.Statistic) string {
-	if _, ok := s.(crew.Process); ok {
+	switch s := s.(type) {
+	case crew.Process:
 		return "this crew process"
+	case crew.RepositoryRecord:
+		return "the repository " + s.Repository.Name
+	case crew.IssueSighting:
+		return "issue " + s.Ref
+	case crew.LabelMove:
+		return "a label move of #" + s.Issue.String()
 	}
 	return fmt.Sprintf("%T", s)
 }

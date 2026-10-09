@@ -18,7 +18,7 @@ import (
 )
 
 // migrations is how many migration files the adapter embeds.
-const migrations = 1
+const migrations = 2
 
 var t0 = time.Date(2026, 10, 8, 21, 2, 3, 456_000_000, time.UTC)
 
@@ -58,10 +58,10 @@ func open(t *testing.T, dir string) port.Statistics {
 	return s
 }
 
-// record records p into s and fails the test if it does not.
-func record(t *testing.T, s port.Statistics, p crew.Process) {
+// record records st into s and fails the test if it does not.
+func record(t *testing.T, s port.Statistics, st crew.Statistic) {
 	t.Helper()
-	if err := s.Record(t.Context(), p); err != nil {
+	if err := s.Record(t.Context(), st); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 }
@@ -80,26 +80,15 @@ func read(t *testing.T, dir string) *sql.DB {
 // processes returns the processes table's rows in dir, in insertion order.
 func processes(t *testing.T, dir string) []crew.Process {
 	t.Helper()
-	rows, err := read(t, dir).QueryContext(t.Context(),
-		"SELECT id, version, folder, started_at FROM processes ORDER BY rowid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = rows.Close() }()
-	var got []crew.Process
-	for rows.Next() {
-		var p crew.Process
-		var ms int64
-		if err := rows.Scan(&p.ID, &p.Version, &p.Folder, &ms); err != nil {
-			t.Fatal(err)
-		}
-		p.Start = time.UnixMilli(ms).UTC()
-		got = append(got, p)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return got
+	return rows(t, dir, "SELECT id, version, folder, started_at FROM processes ORDER BY rowid",
+		func(r *sql.Rows, p *crew.Process) error {
+			var ms int64
+			if err := r.Scan(&p.ID, &p.Version, &p.Folder, &ms); err != nil {
+				return fmt.Errorf("scan: %w", err)
+			}
+			p.Start = time.UnixMilli(ms).UTC()
+			return nil
+		})
 }
 
 // userVersion returns the file's user_version in dir.
