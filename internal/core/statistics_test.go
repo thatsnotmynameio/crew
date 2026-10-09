@@ -147,13 +147,13 @@ func TestAListingRecordsAMoveMadeOutsideCrew(t *testing.T) {
 }
 
 // Covers R8, KTD4: a take that lands records its move, made by its run, at
-// the time it landed; the next listing that finds the issue in the running
-// label records nothing.
+// the time it landed, after the span its take opened; the next listing
+// that finds the issue in the running label records nothing.
 func TestALandedTakeRecordsItsMove(t *testing.T) {
 	d := recordingDriver(t)
 	i1 := issue("1", 1, ready)
 	take, _ := d.poll(i1)
-	wantStatistics(t, statisticsOf(take), sighting(i1, d.now))
+	wantStatistics(t, statisticsOf(take), sighting(i1, d.now), d.opened("1"))
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, take, "1"), Result: core.ResultDone})
 	wantStatistics(t, statisticsOf(cmds), d.runMove(ready, inProgress))
@@ -163,18 +163,20 @@ func TestALandedTakeRecordsItsMove(t *testing.T) {
 }
 
 // Covers R8, F1, KTD4: a route's move that lands records the move from the
-// rule's running label to the route's label, made by the run.
+// rule's running label to the route's label, made by the run, then the end
+// of the run's span.
 func TestALandedRouteMoveRecordsItsMove(t *testing.T) {
 	d := recordingDriver(t)
 	ending := implemented(d, succeeded)
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
-	wantStatistics(t, statisticsOf(cmds), d.runMove(inProgress, readyToReview))
+	wantStatistics(t, statisticsOf(cmds), d.runMove(inProgress, readyToReview),
+		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers R8, KTD4: a return step that lands records the move from the
 // answered rule's running label to the label the check found, made by the
-// run.
+// run, then the end of the run's span.
 func TestALandedReturnRecordsItsMove(t *testing.T) {
 	rules := append(append(delegating(), answering()), depsAsking(t)...)
 	m := core.New(rules, 2, core.Journaling(nil), core.WithBots(developerBots()),
@@ -184,16 +186,18 @@ func TestALandedReturnRecordsItsMove(t *testing.T) {
 	moved, _ := d.send(returnRead(unsureQuestion("crew-clerk[bot]"), crew.Comment{Author: "alice", Body: "yes"}))
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
-	wantStatistics(t, statisticsOf(cmds), d.runMove(answeredRunning, depsReady))
+	wantStatistics(t, statisticsOf(cmds), d.runMove(answeredRunning, depsReady),
+		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
-// Covers KTD4: a close that lands records no move.
+// Covers KTD4: a close that lands records no move, only the end of the
+// run's span.
 func TestALandedCloseRecordsNoMove(t *testing.T) {
 	d := recordingDriverOf(t, implementClosing())
 	ending := implemented(d, succeeded)
 
 	cmds, _ := d.send(core.CallResult{ID: closeID(t, ending), Result: core.ResultDone})
-	wantStatistics(t, statisticsOf(cmds))
+	wantStatistics(t, statisticsOf(cmds), d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers KTD5: a listing answered while the take's move is in flight finds
@@ -232,7 +236,7 @@ func TestListingsWhileATakeIsOwedRecordNoMove(t *testing.T) {
 
 // Covers KTD5: a held issue that its session moved to its route's label is
 // listed there, and the listing records nothing; the route's move that
-// lands records the one move, made by the run.
+// lands records the one move, made by the run, then the end of its span.
 func TestAListingOfAHeldIssueRecordsNoMove(t *testing.T) {
 	d := recordingDriver(t)
 	d.running(issue("1", 1, ready))
@@ -243,7 +247,8 @@ func TestAListingOfAHeldIssueRecordsNoMove(t *testing.T) {
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
 	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
-	wantStatistics(t, statisticsOf(cmds), d.runMove(inProgress, readyToReview))
+	wantStatistics(t, statisticsOf(cmds), d.runMove(inProgress, readyToReview),
+		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers KTD5: a listing asked before a route's move lands and answered
@@ -358,4 +363,274 @@ func TestATickAfterStartedListsAsAFirstTick(t *testing.T) {
 	cmds, events := d.send(core.Tick{})
 	wantCommands(t, cmds, core.ListIssues{States: draftListing})
 	wantEvents(t, events)
+}
+
+// startedDriverOf is a driver of rules whose model records crew's
+// statistics, as crew v0.1.1 in /repo on GitHub, journals from past when
+// there is a past, and has recorded its process. Its inputs are seeded
+// after those of the drivers that left past, as resumeDriverOf's are.
+func startedDriverOf(t *testing.T, rules []crew.Rule, past ...crew.RunEvent) *driver {
+	t.Helper()
+	opts := []core.Option{core.RecordingStatistics("v0.1.1", "/repo", tracker)}
+	if past != nil {
+		opts = append(opts, core.Journaling(past))
+	}
+	d := &driver{t: t, m: core.New(rules, 2, opts...), now: t0}
+	for _, e := range past {
+		if _, ok := e.(crew.RunTaken); ok {
+			d.inputs += 1000
+		}
+	}
+	d.send(core.Started{Repository: crew.Repository{ID: "R_1", Name: "owner/name"}})
+	return d
+}
+
+// process returns the crew process d's model recorded, which the spans of
+// its runs name; empty before it recorded one.
+func (d *driver) process() crew.ProcessID {
+	for _, st := range d.statistics {
+		if p, ok := st.(crew.Process); ok {
+			return p.ID
+		}
+	}
+	return ""
+}
+
+// opened is the span of issue key's last run as its take opened it: by
+// d's process, in no named queue.
+func (d *driver) opened(key string) crew.RuleRunSpan {
+	d.t.Helper()
+	taken := takenOf(d.t, d, key)
+	return crew.RuleRunSpan{
+		Tracker: tracker, Issue: taken.IssueID, Run: taken.Run, Process: d.process(), Rule: taken.Rule,
+		Continues: taken.Continues, Start: taken.At,
+	}
+}
+
+// closed is the span of issue key's last run ended at d.now with outcome,
+// through route unless it is empty, halted by halt unless it is empty.
+func (d *driver) closed(key string, outcome crew.RunOutcome, route crew.RouteName, halt crew.RunHalt) crew.RuleRunSpan {
+	d.t.Helper()
+	sp := d.opened(key)
+	end := crew.RuleRunEnd{At: d.now, Outcome: outcome}
+	if route != "" {
+		end.Route = crew.Some(route)
+	}
+	if halt != "" {
+		end.Halt = crew.Some(halt)
+	}
+	sp.End = crew.Some(end)
+	return sp
+}
+
+// spansOf returns the rule run spans among sts, in order.
+func spansOf(sts []crew.Statistic) []crew.Statistic {
+	var out []crew.Statistic
+	for _, st := range sts {
+		if sp, ok := st.(crew.RuleRunSpan); ok {
+			out = append(out, sp)
+		}
+	}
+	return out
+}
+
+// promoteRunning is the running label of promote.
+const promoteRunning crew.State = "promote:in progress"
+
+// promoting is one rule, promote, whose session promotes a brainstormed
+// issue from brainstorm:done.
+func promoting() []crew.Rule {
+	return []crew.Rule{{
+		Name:    "promote",
+		Labels:  crew.Labels{Ready: ideaDone, Running: promoteRunning},
+		Actions: []crew.Action{sessionAction("promote", "Promote issue {{.Issue.Ref}}")},
+		Routes:  routes("plan:ready", needsAttention),
+	}}
+}
+
+// Covers AE3, R8, R9, KTD2: a take of #315 by promote opens the run's span
+// under #315, by the process, before the take's move, which names the same
+// run once it lands.
+func TestATakeOpensTheRunsSpanBeforeItsMove(t *testing.T) {
+	d := startedDriverOf(t, promoting())
+	it := issue("315", 1, ideaDone)
+
+	take, _ := d.poll(it)
+	open := d.opened("315")
+	if open.Process == "" || open.Rule != "promote" || open.Issue != issueID("315") || !open.Start.Equal(d.now) {
+		t.Fatalf("open = %#v, want promote's span of #315 by the process, at the take", open)
+	}
+	wantStatistics(t, statisticsOf(take), sighting(it, d.now), open)
+
+	cmds, _ := d.send(core.CallResult{ID: moveID(t, take, "315"), Result: core.ResultDone})
+	move := outsideMove("315", ideaDone, promoteRunning, d.now)
+	move.Run = crew.Some(open.Run)
+	wantStatistics(t, statisticsOf(cmds), move)
+}
+
+// Covers R9, KTD3: each way a run ends records its span's end at the
+// release, with its outcome, its route and the halt that chose it.
+// releases are the ways a run of #1 by implement ends, with the outcome,
+// route and halt its span's end records.
+var releases = []struct {
+	name    string
+	play    func(d *driver)
+	outcome crew.RunOutcome
+	route   crew.RouteName
+	halt    crew.RunHalt
+}{
+	{"its passed route's move lands", func(d *driver) {
+		d.settle(implemented(d, succeeded))
+	}, crew.OutcomeRouted, crew.PassedRoute, ""},
+	{"its final move is dropped", func(d *driver) {
+		ending := implemented(d, succeeded)
+		d.send(core.CallResult{ID: moveID(d.t, ending, "1"), Result: core.ResultMovedMeanwhile, Reason: "moved"})
+	}, crew.OutcomeRouteDropped, crew.PassedRoute, ""},
+	{"its final move is given up", func(d *driver) {
+		ending := implemented(d, succeeded)
+		d.send(core.CallResult{ID: moveID(d.t, ending, "1"), Result: core.ResultRefused, Reason: "nope"})
+	}, crew.OutcomeRouteGivenUp, crew.PassedRoute, ""},
+	{"its take does not land", func(d *driver) {
+		take, _ := d.poll(issue("1", 1, ready))
+		d.send(core.CallResult{ID: moveID(d.t, take, "1"), Result: core.ResultRefused, Reason: "nope"})
+	}, crew.OutcomeNotTaken, "", ""},
+	{"crew's stop ends its session", func(d *driver) {
+		d.running(issue("1", 1, ready))
+		d.send(core.StopRequested{})
+		d.settle(d.ended("1", "acceptance", failed("stopped")))
+	}, crew.OutcomeRouted, crew.FailedRoute, crew.HaltStop},
+	{"crew's stop reaches it while its take is in flight", func(d *driver) {
+		take, _ := d.poll(issue("1", 1, ready))
+		d.send(core.StopRequested{})
+		d.settle(take)
+	}, crew.OutcomeRouted, crew.FailedRoute, crew.HaltStop},
+	{"the run time limit keeps its next action from starting", func(d *driver) {
+		d.running(issue("1", 1, ready))
+		d.send(core.TimeUp{Limit: limit})
+		d.settle(d.ended("1", "acceptance", succeeded))
+	}, crew.OutcomeRouted, crew.FailedRoute, crew.HaltRunTimeLimit},
+	{"its session fails on its own during the wind-down", func(d *driver) {
+		d.running(issue("1", 1, ready))
+		d.send(core.TimeUp{Limit: limit})
+		d.settle(d.ended("1", "acceptance", failed("broke")))
+	}, crew.OutcomeRouted, crew.FailedRoute, ""},
+	{"crew's stop reaches it going through passed", func(d *driver) {
+		ending := implemented(d, succeeded)
+		d.send(core.StopRequested{})
+		d.settle(ending)
+	}, crew.OutcomeRouted, crew.PassedRoute, ""},
+	{"crew's stop reaches it going through a failed it chose", func(d *driver) {
+		ending := implemented(d, failed("broke"))
+		d.send(core.StopRequested{})
+		d.settle(ending)
+	}, crew.OutcomeRouted, crew.FailedRoute, ""},
+	{"its session judged its work failed", func(d *driver) {
+		d.settle(implemented(d, failed("broke")))
+	}, crew.OutcomeRouted, crew.FailedRoute, ""},
+}
+
+func TestTheReleaseEndsTheRunsSpan(t *testing.T) {
+	for _, tc := range releases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := startedDriverOf(t, draft())
+
+			tc.play(d)
+
+			wantHeld(t, d.m)
+			wantStatistics(t, spansOf(d.statistics), d.opened("1"), d.closed("1", tc.outcome, tc.route, tc.halt))
+		})
+	}
+}
+
+// Covers AE11, R9: a run whose session still runs has an open span and no
+// end.
+func TestARunningRunHasAnOpenSpanOnly(t *testing.T) {
+	d := startedDriverOf(t, draft())
+
+	d.running(issue("1", 1, ready))
+
+	wantStatistics(t, spansOf(d.statistics), d.opened("1"))
+}
+
+// Covers KTD6: a run of a rule in queue fast records queue fast.
+func TestARunsSpanNamesItsRulesQueue(t *testing.T) {
+	d := startedDriverOf(t, inQueues(brainstorming(), crew.Queue{Name: "fast", Slots: 1}))
+
+	d.running(issue("315", 1, ideaReady))
+
+	want := d.opened("315")
+	want.Queue = crew.Some[crew.QueueName]("fast")
+	wantStatistics(t, spansOf(d.statistics), want)
+}
+
+// firstRun returns the id of the first run past took.
+func firstRun(t *testing.T, past []crew.RunEvent) crew.RuleRunID {
+	t.Helper()
+	for _, e := range past {
+		if taken, ok := e.(crew.RunTaken); ok {
+			return taken.Run
+		}
+	}
+	t.Fatal("no take in the journal")
+	return ""
+}
+
+// Covers KTD1, F3: a run that continues a run of the journal names it in
+// its span.
+func TestARunsSpanNamesTheRunItContinues(t *testing.T) {
+	past := failedRun(t, "broke")
+	d := startedDriverOf(t, crewRules(), past...)
+
+	d.takeIssue(issue("9", 1, readyForDev))
+
+	if got, ok := d.opened("9").Continues.Get(); !ok || got != firstRun(t, past) {
+		t.Fatalf("continues %q, %v; want %q", got, ok, firstRun(t, past))
+	}
+	wantStatistics(t, spansOf(d.statistics), d.opened("9"))
+}
+
+// Covers KTD2: a run that only runs the passed route of the run it
+// continues opens and ends its span like any run.
+func TestARunOfThePassedRouteAloneOpensAndEndsItsSpan(t *testing.T) {
+	past := journaled(t, crewRules(), nil, func(d *driver) {
+		d.running(issue("9", 1, readyForDev))
+		moved := d.ended("9", "lfg", succeeded)
+		d.send(core.CallResult{ID: moveID(t, moved, "9"), Result: core.ResultRefused, Reason: "nope"})
+	})
+	d := startedDriverOf(t, crewRules(), past...)
+
+	d.settle(d.takeIssue(issue("9", 1, readyForDev)))
+
+	if _, ok := takenOf(t, d, "9").Start.(crew.StartPassedRoute); !ok {
+		t.Fatalf("start = %#v, want the passed route alone", takenOf(t, d, "9").Start)
+	}
+	wantHeld(t, d.m)
+	wantStatistics(t, spansOf(d.statistics), d.opened("9"), d.closed("9", crew.OutcomeRouted, crew.PassedRoute, ""))
+}
+
+// Covers KTD2: the runs a journal replays at the start record no span.
+func TestAReplayedJournalRecordsNoSpan(t *testing.T) {
+	past := journaled(t, crewRules(), nil, func(d *driver) {
+		d.running(issue("9", 1, readyForDev))
+		d.settle(d.ended("9", "lfg", succeeded))
+	})
+
+	d := startedDriverOf(t, crewRules(), past...)
+	d.poll()
+
+	wantStatistics(t, spansOf(d.statistics))
+}
+
+// Covers KTD3: a stop that reaches a rule without actions while its take
+// is in flight does not choose its route, which is passed: its span's end
+// names no halt.
+func TestAStopThatChoosesNoRouteNamesNoHalt(t *testing.T) {
+	d := startedDriverOf(t, promoted())
+
+	take, _ := d.poll(issue("1", 1, triageDone))
+	d.send(core.StopRequested{})
+	d.settle(take)
+
+	wantHeld(t, d.m)
+	wantStatistics(t, spansOf(d.statistics), d.opened("1"), d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }

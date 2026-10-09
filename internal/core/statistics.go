@@ -155,3 +155,81 @@ func (s *step) moved(id crew.IssueID, from, to crew.State, seen time.Time, run c
 		Tracker: st.tracker, Issue: id, From: from, To: to, Seen: seen, Run: run,
 	}})
 }
+
+// spanOpened records the open of the span of h's run, which the rule just
+// took: under its issue, by this process, in its rule's queue, with the run
+// it continues, at the take's time, before the take's move that names the
+// run (KTD2, KTD6).
+func (s *step) spanOpened(h *heldRun) {
+	if s.m.statistics == nil {
+		return
+	}
+	s.command(RecordStatistic{Statistic: s.m.span(h)})
+}
+
+// spanEnded records the end of the span of h's run, released at at: how
+// it ended, the route it ended through and the halt that chose that route
+// (KTD2, KTD3). The record carries the whole span, so an end whose open was
+// lost still records it (KTD5).
+func (s *step) spanEnded(h *heldRun, at time.Time) {
+	if s.m.statistics == nil {
+		return
+	}
+	sp := s.m.span(h)
+	end := crew.RuleRunEnd{At: at, Outcome: crew.OutcomeNotTaken, Halt: h.halt}
+	released, _ := h.run.Phase().(crew.ReleasedPhase)
+	if p, routed := released.Route.Get(); routed {
+		end.Outcome, end.Route = outcome(p), crew.Some(p.Route)
+	}
+	sp.End = crew.Some(end)
+	s.command(RecordStatistic{Statistic: sp})
+}
+
+// span returns the span of h's run, with no end.
+func (m *Model) span(h *heldRun) crew.RuleRunSpan {
+	st := m.statistics
+	sp := crew.RuleRunSpan{
+		Tracker: st.tracker, Issue: h.id(), Run: h.run.ID(), Process: st.process, Rule: h.run.Rule(),
+		Continues: h.run.Continues(), Start: h.run.Taken(),
+	}
+	if queue := m.queues[m.queueOf[h.rule]].Name; queue != "" {
+		sp.Queue = crew.Some(queue)
+	}
+	return sp
+}
+
+// outcome returns how a run that ended through p ended, from how its final
+// move or close settled: dropped as the item moved meanwhile, given up, or
+// landed, as a route with no steps counts (KTD3).
+func outcome(p crew.RoutingPhase) crew.RunOutcome {
+	switch final, _ := p.Final(); final.(type) {
+	case crew.StepDropped:
+		return crew.OutcomeRouteDropped
+	case crew.StepGivenUp:
+		return crew.OutcomeRouteGivenUp
+	case crew.StepLanded, crew.StepRan, crew.StepFailed, crew.StepSkipped, crew.StepStopped, nil:
+	}
+	return crew.OutcomeRouted
+}
+
+// keepHalt keeps on h the halt that chose route, the route h's run just
+// chose, for its span's end (KTD3): crew's stop, when it reached the run
+// before it chose FailedRoute, or the run time limit, when it kept the
+// action at the run's cursor from starting. A stop that reaches a run
+// already going through its route, and a session that ends on its own
+// during the wind-down, chose nothing.
+func (s *step) keepHalt(h *heldRun, route crew.RouteName) {
+	if s.m.statistics == nil || route != crew.FailedRoute {
+		return
+	}
+	if h.run.Stopping() {
+		h.halt = crew.Some(crew.HaltStop)
+		return
+	}
+	a, _ := h.run.Cursor()
+	if finished, ok := a.State().(crew.Finished); ok {
+		if failed, ok := finished.End.(crew.EndFailed); ok && failed.Cause == crew.CauseTimeUp {
+			h.halt = crew.Some(crew.HaltRunTimeLimit)
+		}
+	}
+}

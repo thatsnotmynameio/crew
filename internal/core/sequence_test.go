@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
@@ -135,4 +136,9 @@ func TestAShellActionsStartSaysSoWhenItFailsToWrite(t *testing.T) {
 		At: d.now, IssueID: issueID("1"), IssueRef: "#1", Rule: "implement", Action: "judge",
 		What: "the start of judge", Reason: "disk full",
 	})
+}
+
+// exited is how a script that exited with status ended.
+func exited(status int) crew.ShellOutcome {
+	return crew.ShellOutcome{Status: crew.Some(status), Reason: crew.NewShellReason("exited " + strconv.Itoa(status))}
 }

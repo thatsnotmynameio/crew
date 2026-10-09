@@ -194,6 +194,12 @@ func statistic(s crew.Statistic) string {
 		return "issue " + s.Ref
 	case crew.LabelMove:
 		return "a label move of #" + s.Issue.String()
+	case crew.RuleRunSpan:
+		part := "start"
+		if _, ended := s.End.Get(); ended {
+			part = "end"
+		}
+		return fmt.Sprintf("the %s of the rule run %s on #%s", part, s.Rule, s.Issue)
 	}
 	return fmt.Sprintf("%T", s)
 }

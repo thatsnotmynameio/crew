@@ -53,11 +53,25 @@ func recordingConfig(t *testing.T, tr port.Tracker, rules ...crew.Rule) (engine.
 	return cfg, store
 }
 
-// Covers R5, R6, R7, R8, F1: a crew that develops issue 1 records the
-// process, the repository on the configured tracker, the sighting of issue
-// 1 in ready, then the take's move and the route's move, both made by the
-// run, in that order.
-func TestRunRecordsTheProcessTheRepositoryTheIssueAndItsMovesInOrder(t *testing.T) {
+// developedRun is what run, which process took at at, records as it
+// develops issue id at once: the open of its span, its take's move, its
+// route's move, then the end of its span through passed.
+func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, at time.Time) []crew.Statistic {
+	move := func(from, to crew.State) crew.LabelMove {
+		return crew.LabelMove{Tracker: "github", Issue: id, From: from, To: to, Seen: at, Run: crew.Some(run)}
+	}
+	open := crew.RuleRunSpan{Tracker: "github", Issue: id, Run: run, Process: process, Rule: develop.Name, Start: at}
+	end := open
+	end.End = crew.Some(crew.RuleRunEnd{At: at, Outcome: crew.OutcomeRouted, Route: crew.Some(crew.PassedRoute)})
+	return []crew.Statistic{open, move(ready, inProgress), move(inProgress, readyToReview), end}
+}
+
+// Covers R5, R6, R7, R8, R9, F1, AE3: a crew that develops issue 1 records
+// the process, the repository on the configured tracker, the sighting of
+// issue 1 in ready, the open of the run's span, then the take's move and
+// the route's move, both made by the run, then the end of the run's span
+// with its outcome and route, in that order.
+func TestRunRecordsTheProcessTheRepositoryTheIssueItsMovesAndItsRunsSpanInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
 		cfg, store := recordingConfig(t, repositoryTracker{Tracker: tr, repository: widgets}, develop)
@@ -71,33 +85,28 @@ func TestRunRecordsTheProcessTheRepositoryTheIssueAndItsMovesInOrder(t *testing.
 		}
 
 		recorded := store.Recorded()
-		if len(recorded) != 5 {
-			t.Fatalf("recorded %#v, want five records", recorded)
+		if len(recorded) != 7 {
+			t.Fatalf("recorded %#v, want seven records", recorded)
 		}
 		p, ok := recorded[0].(crew.Process)
 		if !ok || p.ID == "" {
 			t.Fatalf("recorded %#v first, want a process with an id", recorded[0])
 		}
-		take, ok := recorded[3].(crew.LabelMove)
+		take, ok := recorded[4].(crew.LabelMove)
 		run, byRun := take.Run.Get()
 		if !ok || !byRun || run == "" {
-			t.Fatalf("recorded %#v fourth, want a move made by a run", recorded[3])
+			t.Fatalf("recorded %#v fifth, want a move made by a run", recorded[4])
 		}
 		started := final.Snapshot.Started
 		id := crew.IssueID{Repository: widgets.ID, Key: "1"}
-		move := func(from, to crew.State) crew.LabelMove {
-			return crew.LabelMove{Tracker: "github", Issue: id, From: from, To: to, Seen: started, Run: crew.Some(run)}
-		}
-		want := []crew.Statistic{
+		want := append([]crew.Statistic{
 			crew.Process{ID: p.ID, Version: "1.2.3", Folder: cfg.Root, Start: started},
 			crew.RepositoryRecord{Tracker: "github", Repository: widgets},
 			crew.IssueSighting{
 				Tracker: "github", Issue: id, Ref: "#1", Created: crew.Some(issue(1).Created()), Seen: started,
 				State: crew.Some(ready),
 			},
-			move(ready, inProgress),
-			move(inProgress, readyToReview),
-		}
+		}, developedRun(id, run, p.ID, started)...)
 		if !reflect.DeepEqual(recorded, want) {
 			t.Errorf("recorded\n %#v\nwant\n %#v", recorded, want)
 		}
@@ -143,6 +152,16 @@ func TestAMoveMadeOutsideCrewIsRecordedAtTheNextListing(t *testing.T) {
 	})
 }
 
+// wantLostSpan fails the test unless lost is the warning of a lost record
+// of a run's span, its end when ended, else its open.
+func wantLostSpan(t *testing.T, lost core.StatisticNotRecorded, ended bool) {
+	t.Helper()
+	sp, ok := lost.Statistic.(crew.RuleRunSpan)
+	if _, hasEnd := sp.End.Get(); !ok || hasEnd != ended {
+		t.Errorf("lost %#v, want the span of the run, ended %v", lost.Statistic, ended)
+	}
+}
+
 func TestAE8AStoreThatCannotBeWrittenIsWarnedAboutAndTheRunGoesOn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
@@ -159,15 +178,18 @@ func TestAE8AStoreThatCannotBeWrittenIsWarnedAboutAndTheRunGoesOn(t *testing.T) 
 			t.Fatalf("Run: %v", err)
 		}
 
-		// The process, the repository, issue 1's sighting, its take's move
-		// and its route's move.
+		// The process, the repository, issue 1's sighting, the open of its
+		// run's span, its take's move, its route's move and the end of its
+		// run's span.
 		n := r.notRecorded()
-		if len(n) != 5 {
-			t.Fatalf("StatisticNotRecorded = %+v, want five", n)
+		if len(n) != 7 {
+			t.Fatalf("StatisticNotRecorded = %+v, want seven", n)
 		}
 		if _, ok := n[0].Statistic.(crew.Process); !ok {
 			t.Errorf("the first lost record is %T, want the process", n[0].Statistic)
 		}
+		wantLostSpan(t, n[3], false)
+		wantLostSpan(t, n[6], true)
 		want := "open ~/.local/share/crew/statistics.db: database or disk is full"
 		for _, lost := range n {
 			if lost.Reason != want {
@@ -210,11 +232,11 @@ func TestABlockedStoreDelaysNoTickAndRunWaitsForItsRecord(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		// The process, the repository, issue 1's sighting, the moves of its
-		// first run, the move back to ready made outside crew, and the
-		// moves of its second run.
-		if got := store.Recorded(); len(got) != 8 {
-			t.Errorf("recorded %#v, want eight records", got)
+		// The process, the repository, issue 1's sighting, the span and
+		// moves of its first run, the move back to ready made outside crew,
+		// and the span and moves of its second run.
+		if got := store.Recorded(); len(got) != 12 {
+			t.Errorf("recorded %#v, want twelve records", got)
 		}
 	})
 }

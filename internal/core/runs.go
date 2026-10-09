@@ -26,6 +26,9 @@ type heldRun struct {
 	// landed is the listing generation when the final move or close of
 	// its route settled (KTD4).
 	landed int
+	// halt is the halt that chose the run's route, which its span's end
+	// records, once it chose one (KTD3).
+	halt crew.Optional[crew.RunHalt]
 }
 
 // findRun returns the held run identified by id, or nil.
@@ -223,6 +226,7 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 	case crew.WorkspaceMissing, crew.WorkspaceOpened:
 		s.emit(e)
 	case crew.RunReleased:
+		s.spanEnded(h, e.At)
 		s.m.release(h)
 		s.freed()
 	case crew.RunTaken, crew.RunStopped, crew.RunOutOfTime:

@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"reflect"
 	"slices"
-	"strconv"
 	"testing"
 	"time"
 	"uuid"
@@ -142,6 +141,9 @@ type driver struct {
 	// recorded holds the events of every Record the model issued, in
 	// order: the run journal a healthy engine would have written.
 	recorded []crew.RunEvent
+	// statistics holds the records of every RecordStatistic the model
+	// issued, in order.
+	statistics []crew.Statistic
 }
 
 // seed returns the nth sequential seed: a UUID whose last bytes encode n.
@@ -170,6 +172,7 @@ func (d *driver) send(in core.Input) ([]core.Command, []core.Published) {
 	cmds, events := d.m.Update(in.Stamped(d.now, stamp))
 	d.events = append(d.events, events...)
 	d.recorded = append(d.recorded, records(cmds)...)
+	d.statistics = append(d.statistics, statisticsOf(cmds)...)
 	return cmds, events
 }
 
@@ -612,11 +615,6 @@ func (d *driver) ended(key string, action crew.ActionName, outcome crew.Outcome)
 	d.t.Helper()
 	cmds, _ := d.send(core.SessionEnded{IssueID: issueID(key), Action: action, Outcome: outcome})
 	return cmds
-}
-
-// exited is how a script that exited with status ended.
-func exited(status int) crew.ShellOutcome {
-	return crew.ShellOutcome{Status: crew.Some(status), Reason: crew.NewShellReason("exited " + strconv.Itoa(status))}
 }
 
 // runShellOf returns the RunShell in cmds.

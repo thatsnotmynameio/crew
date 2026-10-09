@@ -120,3 +120,19 @@ func TestTwoStoresRecordingTheSameSightingAndRepositoryKeepOneOfEach(t *testing.
 		t.Errorf("moves = %+v, want none", got)
 	}
 }
+
+// Covers KTD5: two stores writing the same open and end at once leave one
+// span with one end.
+func TestTwoStoresRecordingTheSameSpanAtOnceKeepOne(t *testing.T) {
+	dir := t.TempDir()
+
+	errs := recordAtOnce(t, dir, opened(), opened(),
+		ended(2, crew.OutcomeRouted, crew.PassedRoute), ended(2, crew.OutcomeRouted, crew.PassedRoute))
+	for g, err := range errs {
+		if err != nil {
+			t.Errorf("store %d: %v", g, err)
+		}
+	}
+
+	wantSpan(t, dir, endedRow("routed"), ruleRunOf("passed"))
+}
