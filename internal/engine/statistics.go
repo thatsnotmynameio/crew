@@ -70,6 +70,7 @@ func (w *statisticsWriter) next() (crew.Statistic, bool) {
 		return nil, false
 	}
 	s := w.queue[0]
+	w.queue[0] = nil // the queue's array no longer holds the record
 	w.queue = w.queue[1:]
 	return s, true
 }
