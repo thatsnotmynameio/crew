@@ -135,12 +135,12 @@ func readCrew(tr *tar.Reader, hdr *tar.Header, name string, limit int64) ([]byte
 func Target(executable func() (string, error)) (string, error) {
 	exe, err := executable()
 	if err == nil {
-		var target string
-		if target, err = filepath.EvalSymlinks(exe); err == nil {
-			return target, nil
-		}
+		exe, err = filepath.EvalSymlinks(exe)
 	}
-	return "", envErrorf("crew cannot find its own path: %w", err)
+	if err != nil {
+		return "", envErrorf("crew cannot find its own path: %w", err)
+	}
+	return exe, nil
 }
 
 // CheckWritable returns an EnvError when crew cannot replace target, the
