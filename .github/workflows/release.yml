@@ -51,9 +51,12 @@ jobs:
       - uses: thatsnotmynameio/.github/actions/release@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
         with:
           mode: check
+      # No module cache: the binaries released are built only from what this
+      # run downloads, never from a cache another workflow could have written.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
       # The notes go outside the checkout: GoReleaser refuses a dirty tree.
       - name: Check the release
         id: check

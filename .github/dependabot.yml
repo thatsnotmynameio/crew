@@ -2,20 +2,29 @@
 # shared workflows (pinned by SHA), the Codacy CLIs, and the Go modules: crew's
 # and the acceptance suite's (acceptance/). Dependabot's "npm" ecosystem is the
 # one for pnpm too: it reads pnpm-lock.yaml and updates it with pnpm.
+# A version update waits until the new version is 7 days old, so that a
+# compromised release is likely found and pulled before it reaches crew.
+# Security updates do not wait.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     # modernc.org/libc moves only with modernc.org/sqlite: the driver needs
     # exactly the libc its go.mod names, which a driver bump raises.
     ignore:
@@ -24,3 +33,5 @@ updates:
     directory: "/acceptance"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7

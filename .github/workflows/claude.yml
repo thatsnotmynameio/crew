@@ -17,7 +17,7 @@ permissions: {}
 jobs:
   claude:
     uses: thatsnotmynameio/.github/.github/workflows/claude.yml@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit] the shared workflow declares no secrets, so they cannot be passed one by one; it reads only CLAUDE_CODE_OAUTH_TOKEN
     permissions:
       contents: read
       pull-requests: read
