@@ -273,11 +273,12 @@ func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	}
 }
 
-// takeMoved publishes the take, applies it to the board (KTD4) and reports
-// it on h's pull requests.
+// takeMoved publishes the take, applies it to the board (KTD4), records it
+// as a move made by h's run and reports it on h's pull requests.
 func (s *step) takeMoved(h *heldRun, e crew.TakeMoved) {
 	s.emit(e)
 	s.m.boardMoved(h.run.Issue(), e.To)
+	s.moved(e.IssueID, e.From, e.To, e.At, crew.Some(e.Run))
 	s.reportPullRequests(h.run.TakeReport(e.To))
 }
 

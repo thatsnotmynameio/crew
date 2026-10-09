@@ -64,13 +64,16 @@ type statisticsInput interface {
 
 // Started says the crew process started, once the engine is ready to poll
 // (KTD4). It keeps the seed the engine stamps it with, from which the
-// process gets its id. The core records the process at the first Started,
-// when it records statistics (RecordingStatistics), and does nothing
-// otherwise.
+// process gets its id. The core records the process and the repository at
+// the first Started, when it records statistics (RecordingStatistics), and
+// does nothing otherwise.
 type Started struct {
 	At time.Time
 	// Seed is the fresh seed the engine stamped, a UUIDv7, ordered by time.
 	Seed uuid.UUID
+	// Repository is the repository crew works in, as the engine found it
+	// before it started.
+	Repository crew.Repository
 }
 
 // Tick is a poll: the core lists issues, unless a listing is outstanding or

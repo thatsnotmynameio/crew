@@ -86,11 +86,11 @@ func (s *step) askStep(h *heldRun, i int) {
 	s.deliver(h, d)
 }
 
-// stepEnded publishes the step that settled and reports h's run anew
-// (KTD-S17). Once the route's final step settled, it applies a move or
-// close that landed to the board (KTD4), reports a landed move or close on
-// h's pull requests, and keeps the listing generation from which a listing
-// may find the issue gone.
+// stepEnded publishes the step that settled, records a move that landed as
+// made by h's run, and reports h's run anew (KTD-S17). Once the route's
+// final step settled, it applies a move or close that landed to the board
+// (KTD4), reports a landed move or close on h's pull requests, and keeps
+// the listing generation from which a listing may find the issue gone.
 func (s *step) stepEnded(h *heldRun, e crew.StepEnded) {
 	p, _ := h.run.Phase().(crew.RoutingPhase)
 	var plan crew.StepPlan
@@ -107,6 +107,9 @@ func (s *step) stepEnded(h *heldRun, e crew.StepEnded) {
 	s.emit(ended)
 	_, final := p.Final()
 	_, landed := e.Outcome.(crew.StepLanded)
+	if landed && plan.Kind == crew.StepMove {
+		s.moved(e.IssueID, ended.From, plan.To, e.At, crew.Some(e.Run))
+	}
 	end, _ := p.End()
 	if final && landed {
 		s.m.boardMoved(h.run.Issue(), end.To)
