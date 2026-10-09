@@ -55,7 +55,7 @@ func withFunction(r *crewRun, tracker port.Tracker, harness port.Harness, f *fak
 		map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)},
 		map[string]port.HarnessFactory{"fake": fake.HarnessFactory(harness)},
 		map[string]port.FunctionDefinition{"pull-request": fake.FunctionDefinition(f, "blocked")},
-		nil,
+		r.stores(),
 	)
 }
 

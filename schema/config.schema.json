@@ -86,6 +86,20 @@
         }
       }
     },
+    "statistics": {
+      "description": "Where crew records its statistics: one row per crew run, with its version, its repository folder and its start time, in statistics.db in crew's data folder ($XDG_DATA_HOME/crew, or ~/.local/share/crew without it). A failed write is a warning and never stops a rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "store": {
+          "description": "The statistics store's name: sqlite, the default, is the one crew ships. off records nothing and creates no store; it takes no other key.",
+          "type": "string",
+          "minLength": 1,
+          "default": "sqlite",
+          "examples": ["sqlite", "off"]
+        }
+      }
+    },
     "agents": {
       "description": "Agents by name: each is the harness that runs a session, with its model, and the bot the session acts as. Required when a rule has a session. A session names its agent with agent.",
       "type": "object",

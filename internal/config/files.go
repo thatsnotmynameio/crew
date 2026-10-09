@@ -27,14 +27,34 @@ const (
 // never under os.UserConfigDir, which is ~/Library/Application Support on
 // macOS.
 func GlobalFile(xdgConfigHome, home string) string {
-	dir := xdgConfigHome
+	dir := crewDir(xdgConfigHome, home, ".config")
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "config.yaml")
+}
+
+// DataDir returns crew's data folder, where its statistics store lives:
+// crew under xdgDataHome, $XDG_DATA_HOME, or else under
+// home/.local/share, on every OS. It is "", no data folder, when the
+// directory is relative or unknown, as for GlobalFile.
+func DataDir(xdgDataHome, home string) string {
+	return crewDir(xdgDataHome, home, ".local", "share")
+}
+
+// crewDir returns crew's folder under xdg, an XDG base directory, or else
+// under home's fallback, its default. It is "" when that directory is
+// relative or unknown: a relative one would resolve against the
+// repository crew runs in.
+func crewDir(xdg, home string, fallback ...string) string {
+	dir := xdg
 	if dir == "" && home != "" {
-		dir = filepath.Join(home, ".config")
+		dir = filepath.Join(append([]string{home}, fallback...)...)
 	}
 	if !filepath.IsAbs(dir) {
 		return ""
 	}
-	return filepath.Join(dir, "crew", "config.yaml")
+	return filepath.Join(dir, "crew")
 }
 
 // source is one config file that exists: the name its errors carry, and

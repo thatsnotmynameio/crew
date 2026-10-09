@@ -149,11 +149,20 @@ type crewRun struct {
 	stderr  *syncBuffer
 	signals chan os.Signal
 	code    chan int
+	// stats is the statistics store registered as sqlite, the config's
+	// default store.
+	stats *fake.Statistics
+}
+
+// stores returns the statistics stores the tests register: r's own, as
+// sqlite.
+func (r *crewRun) stores() map[string]port.StatisticsFactory {
+	return map[string]port.StatisticsFactory{"sqlite": fake.StatisticsFactory(r.stats)}
 }
 
 // options returns app options over tracker and harness, registered as fake,
-// for a repository whose .crew/config.yaml is body. The output is not a
-// terminal.
+// and a fake statistics store registered as sqlite, for a repository whose
+// .crew/config.yaml is body. The output is not a terminal.
 func options(t *testing.T, body string, tracker port.Tracker, harness port.Harness) *crewRun {
 	t.Helper()
 	root := t.TempDir()
@@ -163,13 +172,16 @@ func options(t *testing.T, body string, tracker port.Tracker, harness port.Harne
 	if err := os.WriteFile(filepath.Join(root, ".crew", "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := &crewRun{stdout: &syncBuffer{}, stderr: &syncBuffer{}, signals: make(chan os.Signal, 2), code: make(chan int, 1)}
+	r := &crewRun{
+		stdout: &syncBuffer{}, stderr: &syncBuffer{}, signals: make(chan os.Signal, 2), code: make(chan int, 1),
+		stats: fake.NewStatistics(),
+	}
 	r.opts = app.Options{
 		Registry: registry.New(
 			map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)},
 			map[string]port.HarnessFactory{"fake": fake.HarnessFactory(harness)},
 			nil,
-			nil,
+			r.stores(),
 		),
 		Workspace: func(root string) port.Workspace {
 			return fake.NewWorkspace(filepath.Join(root, ".crew", "worktrees"))

@@ -142,6 +142,8 @@ func start(plain bool, stdout, stderr *os.File) int {
 		return app.ExitConfig
 	}
 	home, _ := os.UserHomeDir() // without one, nothing is shortened to ~
+	globalConfig, dataDir := folders(home)
+	info, _ := debug.ReadBuildInfo()
 	// The crew run's id on every line of the run journal: when this crew
 	// process started, in RFC 3339 and UTC, so runs sort as text.
 	run := time.Now().UTC().Format(time.RFC3339Nano)
@@ -152,8 +154,10 @@ func start(plain bool, stdout, stderr *os.File) int {
 		Shell:        shell.New(&group),
 		Journal:      func(root string) port.Journal { return jsonl.New(root, engine.JournalPath, run) },
 		Root:         root,
-		GlobalConfig: config.GlobalFile(os.Getenv("XDG_CONFIG_HOME"), home),
+		GlobalConfig: globalConfig,
 		Home:         home,
+		DataDir:      dataDir,
+		Version:      crewVersion(version, info),
 		Stdout:       stdout,
 		Stderr:       stderr,
 		Terminal:     term.IsTerminal(int(stdout.Fd())),
@@ -162,6 +166,13 @@ func start(plain bool, stdout, stderr *os.File) int {
 		Signals:      signals,
 		Bots:         actingBots(group.Run, root),
 	})
+}
+
+// folders returns the path of the user's global config file and crew's data
+// folder, from XDG_CONFIG_HOME, XDG_DATA_HOME and home, the home folder:
+// the one place crew reads them.
+func folders(home string) (globalConfig, dataDir string) { //nolint:nonamedreturns // the names tell the two paths apart
+	return config.GlobalFile(os.Getenv("XDG_CONFIG_HOME"), home), config.DataDir(os.Getenv("XDG_DATA_HOME"), home)
 }
 
 // repoRoot returns the root of the git repository crew runs in, asking git
