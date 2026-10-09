@@ -166,17 +166,26 @@ func writeFile(t *testing.T, path string, data []byte) {
 	}
 }
 
+// file is one file of an archive.
+type file struct {
+	name string
+	data []byte
+}
+
 // archive packs binary as crew, beside a LICENSE and a README.md, in a
 // tar.gz, as GoReleaser does.
 func archive(t *testing.T, binary []byte) []byte {
 	t.Helper()
+
+	return pack(t, file{"LICENSE", []byte("MIT")}, file{"README.md", []byte("# crew")}, file{"crew", binary})
+}
+
+// pack packs files in a tar.gz.
+func pack(t *testing.T, files ...file) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	files := []struct {
-		name string
-		data []byte
-	}{{"LICENSE", []byte("MIT")}, {"README.md", []byte("# crew")}, {"crew", binary}}
 	for _, f := range files {
 		err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0o755, Size: int64(len(f.data))})
 		if err != nil {
@@ -514,6 +523,49 @@ func TestPublishRefusesADownloadWithNoArchive(t *testing.T) {
 	subjects, r := fakeRelease(t)
 	r.assets = nil
 	assertNotPublished(t, runPublish(t, subjects, r), "Verified 0 files; want 8")
+}
+
+func TestPublishRefusesAPartialDownload(t *testing.T) {
+	subjects, r := fakeRelease(t)
+	delete(r.assets, "crew_darwin_arm64.tar.gz")
+	assertNotPublished(t, runPublish(t, subjects, r), "Verified 6 files; want 8")
+}
+
+func TestPublishRefusesAnArchiveMissingFromTheSubjects(t *testing.T) {
+	subjects, r := fakeRelease(t)
+	r.assets["crew_windows_amd64.tar.gz"] = archive(t, []byte("crew for windows amd64"))
+	assertNotPublished(t, runPublish(t, subjects, r), "crew_windows_amd64.tar.gz is not an archive this run attested")
+}
+
+func TestPublishRefusesATagAlreadyPublished(t *testing.T) {
+	subjects, r := fakeRelease(t)
+	r.published = "v0.1.2 v0.1.1"
+	got := runPublish(t, subjects, r)
+	assertNotPublished(t, got, "v0.1.2 is not above the published release v0.1.2")
+	if called(got.calls, "attestation verify") {
+		t.Errorf("calls %q; want no attestation verify", got.calls)
+	}
+}
+
+func TestPublishRefusesAnArchiveWhoseAttestationFails(t *testing.T) {
+	subjects, r := fakeRelease(t)
+	r.unverified = sum(r.assets[builds[1].archive])
+	got := runPublish(t, subjects, r)
+	assertNotPublished(t, got, "verification failed for "+r.unverified)
+	if len(got.verified) == 0 || got.verified[len(got.verified)-1] != r.unverified {
+		t.Errorf("verified %q; want the step to stop at the archive whose attestation fails, %s", got.verified, r.unverified)
+	}
+}
+
+func TestPublishRefusesAnArchiveWithoutCrew(t *testing.T) {
+	archives := releaseArchives(t)
+	archives["crew_linux_amd64.tar.gz"] = pack(t, file{"LICENSE", []byte("MIT")}, file{"README.md", []byte("# crew")})
+	r := release{draft: "true", published: "v0.1.1", assets: archives}
+	got := runPublish(t, subjectsFile(archives), r)
+	assertNotPublished(t, got, "crew: Not found in archive")
+	if len(got.verified) == 0 || got.verified[len(got.verified)-1] != sum(archives["crew_linux_amd64.tar.gz"]) {
+		t.Errorf("verified %q; want the step to stop after the archive without crew", got.verified)
+	}
 }
 
 func TestOnlyAttestCanMintAnOIDCToken(t *testing.T) {
