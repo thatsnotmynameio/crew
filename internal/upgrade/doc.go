@@ -1,6 +1,7 @@
-// Package upgrade holds what crew upgrade decides before it changes
-// anything: the release it is asked for, and whether it may replace the
-// running crew at all, and the client that finds that release on GitHub.
+// Package upgrade holds what crew upgrade decides and does: the release
+// it is asked for, whether it may replace the running crew at all, the
+// client that finds that release on GitHub, and the install of the crew
+// that release holds.
 //
 // ParseArgs reads crew upgrade's one optional argument, a release version
 // written vX.Y.Z or X.Y.Z, and returns it as vX.Y.Z, or an EnvError, the
@@ -20,4 +21,14 @@
 // Under the override, gh is asked for the override's host with its token
 // variables unset, so no github.com token reaches a local server, and
 // API.Notice is the line crew prints to say the override is in use.
+//
+// Client.Binary downloads a release's archive for the machine and its
+// checksums.txt, checks the archive's SHA-256 against its one line there
+// before it opens it, and returns the one regular crew the archive holds.
+// Target finds the running crew's path with its symlinks resolved, and
+// CheckWritable tells whether crew may replace it. Replace writes the new
+// crew to a hidden temp file beside it and renames that over it, so a
+// failure changes nothing and a running crew keeps its old binary. A path
+// crew may not write is an EnvError that points to the README's install
+// into ~/.local/bin: crew upgrade never uses sudo.
 package upgrade
