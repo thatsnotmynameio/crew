@@ -18,7 +18,7 @@ import (
 )
 
 // migrations is how many migration files the adapter embeds.
-const migrations = 1
+const migrations = 2
 
 var t0 = time.Date(2026, 10, 8, 21, 2, 3, 456_000_000, time.UTC)
 
@@ -58,10 +58,10 @@ func open(t *testing.T, dir string) port.Statistics {
 	return s
 }
 
-// record records p into s and fails the test if it does not.
-func record(t *testing.T, s port.Statistics, p crew.Process) {
+// record records st into s and fails the test if it does not.
+func record(t *testing.T, s port.Statistics, st crew.Statistic) {
 	t.Helper()
-	if err := s.Record(t.Context(), p); err != nil {
+	if err := s.Record(t.Context(), st); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 }

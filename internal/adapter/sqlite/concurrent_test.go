@@ -69,3 +69,54 @@ func TestStoresOpeningANewFileAtOnceAllRecord(t *testing.T) {
 		t.Errorf("user_version = %d, want %d", v, migrations)
 	}
 }
+
+// recordAtOnce records each of sts into a store of its own on dir, each in
+// its own goroutine at once, and returns the error each met.
+func recordAtOnce(t *testing.T, dir string, sts ...crew.Statistic) []error {
+	t.Helper()
+	errs := make([]error, len(sts))
+	var wg sync.WaitGroup
+	for g, st := range sts {
+		s := open(t, dir)
+		wg.Go(func() { errs[g] = s.Record(t.Context(), st) })
+	}
+	wg.Wait()
+	return errs
+}
+
+func TestTwoStoresRecordingTheSameMoveOutsideCrewKeepOne(t *testing.T) {
+	dir := t.TempDir()
+	record(t, open(t, dir), sighting(1, "ready"))
+
+	for g, err := range recordAtOnce(t, dir, outside(2, "ready", "done"), outside(3, "ready", "done")) {
+		if err != nil {
+			t.Errorf("store %d: %v", g, err)
+		}
+	}
+
+	if got := moves(t, dir); len(got) != 1 || got[0].to != "done" {
+		t.Errorf("moves = %+v, want one to done", got)
+	}
+}
+
+func TestTwoStoresRecordingTheSameSightingAndRepositoryKeepOneOfEach(t *testing.T) {
+	dir := t.TempDir()
+
+	errs := recordAtOnce(t, dir,
+		repository("acme/app"), repository("acme/app"), sighting(1, "ready"), sighting(2, "ready"))
+	for g, err := range errs {
+		if err != nil {
+			t.Errorf("store %d: %v", g, err)
+		}
+	}
+
+	if got := repositories(t, dir); len(got) != 1 {
+		t.Errorf("repositories = %+v, want one", got)
+	}
+	if got := issues(t, dir); len(got) != 1 {
+		t.Errorf("issues = %+v, want one", got)
+	}
+	if got := moves(t, dir); len(got) != 0 {
+		t.Errorf("moves = %+v, want none", got)
+	}
+}
