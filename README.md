@@ -70,6 +70,25 @@ Settings you share across repositories, such as your agents, bots or board, can 
 
 crew shows a live view of the issues it holds and the sessions it runs; `--plain` prints one line per event instead. You act on issues through their labels on GitHub. Under the header, Bots shows a card for each bot crew acts as, then one for you: whether it can act, what it cost this run, what acts as it and what runs as it now. Below them, the board has a card for each issue in each of its columns. Without a `board` in the config, it has one column per rule that has actions, holding the rule's ready and running labels, and a column of its own for each label where the route of a `waiting` verdict leaves the issue, so an issue paused there stays on screen. A card shows the issue's reference and title, then `run` (the action its run is on and how long it has run, how many of the rule's actions are left after it, and the route the run ends through once it chose one, or its state with none: `blocked` when crew does not hold it and an open issue blocks it), `bots` (the bots its running actions act as) and `via` (the queue its actions run in). In each column, the cards of the issues crew holds come first, then the others, each group oldest first. An issue whose rule ended shows only in the columns its labels put it in, and Events says how the rule ended. A held issue that no column shows, such as a pull request, gets a card in a Not on board column after the others. Queues and Events sit under the board. The board has focus when the view opens, with one card highlighted: ↑↓ move the highlight within a column, ←→ move it between columns, and Enter opens a box over the dimmed view with that issue's rule, its labels as chips with a `blocked` chip after them when an open issue blocks it, its kind, priority and URL, its actions with the bot, queue, state and branch of each and the last thing each said or why it failed, and its events. In the box ←→ move to the previous or next card, ↑↓ scroll it, and Esc closes it. Tab cycles the board, Bots and Events, `b` and `e` jump to Bots and Events, and Esc returns to the board; while Bots has focus, ←→ scroll its cards when they do not all fit. Ctrl+P pauses crew: it takes no new issue while each issue it holds runs on to its end label, and the board keeps refreshing. The header then reads `PAUSED · 2 running`, or `PAUSED · nothing running` once no held issue is left, and Events says when crew pauses and when it resumes. Ctrl+P again resumes crew, which lists at once. `?` lists every key.
 
+## Upgrading crew
+
+A crew installed from a release upgrades itself to the latest release, or to the release you name, which is also how you go back to an older one:
+
+```sh
+crew upgrade
+crew upgrade v0.4.0
+```
+
+crew prints the version it replaced, the one it installed and where:
+
+```text
+crew: upgraded v0.4.0 to v0.5.0 at /home/you/.local/bin/crew
+```
+
+When crew already is that version, it prints `crew: already v0.5.0` and changes nothing. The version is `vX.Y.Z` or `X.Y.Z`. crew downloads the release's archive for your OS and architecture, checks it against the release's `checksums.txt`, and replaces the crew that runs, at its own path, without `sudo` and without asking first. It needs no login; when `gh` is logged in, it sends that login, which raises GitHub's rate limit. A crew that is already running keeps its version until you start it again. Only a crew installed from a release upgrades: a crew built by `go install` is left as it is, and `crew upgrade` prints the `go install` command to run instead; a crew built in a checkout, such as with `go build`, is left too, and `crew upgrade` says it is a local build. When crew cannot write the directory it runs from, such as `/usr/local/bin` owned by root, it changes nothing and tells you to install crew into `~/.local/bin` with the Quick start's command, then remove the old binary. Any other failure also leaves the installed crew as it was and names its cause, such as no network, GitHub's rate limit, a release that does not exist or a checksum that does not match. `crew upgrade` exits 0 once crew is the version asked, 1 when the download or the check failed, and 2 on a command line it cannot use, a crew built by `go install` or locally, or a directory it cannot write.
+
+crew v0.1.1 and earlier came out before `crew upgrade` and answer `crew: unexpected argument "upgrade"`: install crew once more with the Quick start's command, then use `crew upgrade` from there on. Going back with `crew upgrade` to such a release leaves a crew that needs that command again to come forward.
+
 ## Rules
 
 When crew moves an issue or pull request, it adds the new state label before removing the old ones. If adding fails, the old labels stay; if removal fails, the new label stays and crew retries the removal. An interrupted move can leave an item in two states; crew skips items in multiple states and reports them in Events.
@@ -293,7 +312,7 @@ For now the captain, which answers, decides nothing: every task carries that sam
 | Path | What it does |
 | --- | --- |
 | `cmd/crew` | The `crew` binary. |
-| `internal/` | crew's engine, its adapters (`github`, `claude`, `codex`, `git`), its TUI, `bots` for `crew bots create`, and `captain` for `crew sessions`. See `AGENTS.md`. |
+| `internal/` | crew's engine, its adapters (`github`, `claude`, `codex`, `git`), its TUI, `bots` for `crew bots create`, `captain` for `crew sessions`, and `upgrade` for `crew upgrade`. See `AGENTS.md`. |
 | `acceptance/` | The acceptance suite, a Go module of its own: it runs the `crew` binary that the release config builds against doubles for `gh` and `claude` on its `PATH`, and checks what crew does on GitHub and on the screen. `go -C acceptance run ./cmd/acceptance`, from the repository root, builds crew and runs the suite. See [`acceptance/README.md`](acceptance/README.md). |
 | `.crew/config.yaml` | crew's own rules: crew runs on this repository too, with rules for features, bugs, refinement of brainstormed features (splitting a large plan into sub-issues, then finding their dependencies, reading in full only the open issues Jev's shortlist names, or every open issue when the shortlist is unavailable) and the hand-offs between them, and labels that start with `crew:`. A split plan's issue stays open as the parts' parent and leaves crew, so crew reports its move to done as given up; that is how a split ends. Keep your own settings in `.crew/config.local.yaml`, which git ignores. |
 | `.crew/config.example.yaml` | The reference of every key crew's config accepts, commented out, with what each does and its default. |
