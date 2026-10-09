@@ -178,7 +178,7 @@ func convert(r io.Reader) ([]byte, error) {
 // the order the codes first appear.
 func toSARIF(comments []comment) (sarif, error) {
 	rules := []rule{}
-	results := []result{}
+	results := make([]result, 0, len(comments))
 	seen := make(map[int]bool)
 	for _, c := range comments {
 		level, err := sarifLevel(c.Level)
