@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -273,6 +274,34 @@ func TestStatusBoardRecordsStatusesAndScriptsTheirFailures(t *testing.T) {
 	}
 	if _, ok := any(fake.NewPreparingTracker()).(port.StatusReporter); ok {
 		t.Error("a PreparingTracker reports statuses; only a ReportingTracker should")
+	}
+}
+
+func TestPullRequestBoardRecordsReportsAndScriptsTheirFailures(t *testing.T) {
+	tr := fake.NewPullRequestTracker(issue("75", ready))
+	var reporter port.PullRequestReporter = tr
+	data := crew.PullRequestReportData{IssueID: issueID("75"), IssueRef: "#75", State: inProgress}
+	taken := crew.NewPullRequestReport(data)
+	data.State = readyToReview
+	done := crew.NewPullRequestReport(data)
+	tr.FailPullRequests("75", port.ErrRefused)
+	ctx := context.Background()
+
+	err := reporter.ReportPullRequests(ctx, taken)
+	if !errors.Is(err, port.ErrRefused) || !strings.Contains(err.Error(), "issue 75") {
+		t.Fatalf("first ReportPullRequests = %v, want ErrRefused naming issue 75", err)
+	}
+	if got := tr.PullRequestReports("75"); len(got) != 0 {
+		t.Fatalf("PullRequestReports after the failed report = %+v, want none", got)
+	}
+	for _, r := range []crew.PullRequestReport{taken, done} {
+		if err := reporter.ReportPullRequests(ctx, r); err != nil {
+			t.Fatalf("ReportPullRequests: %v", err)
+		}
+	}
+	got := tr.PullRequestReports("75")
+	if len(got) != 2 || got[0].State() != inProgress || got[1].State() != readyToReview {
+		t.Errorf("PullRequestReports = %+v, want the %q then the %q report, as written", got, inProgress, readyToReview)
 	}
 }
 
