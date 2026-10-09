@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,5 +181,27 @@ func TestGolden(t *testing.T) {
 	code, stdout, stderr := runOn(t, string(input))
 	if code != 0 || stdout != string(want) {
 		t.Fatalf("exit code %d, stderr %q, SARIF:\n%s\nwant testdata/golden.sarif:\n%s", code, stderr, stdout, want)
+	}
+}
+
+// failing is a reader and writer whose every call fails.
+type failing struct{}
+
+func (failing) Read([]byte) (int, error)  { return 0, errors.New("closed") }
+func (failing) Write([]byte) (int, error) { return 0, errors.New("closed") }
+
+func TestUnreadableInputFails(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(failing{}, &stdout, &stderr)
+	if code == 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "read the input: closed") {
+		t.Fatalf("exit code %d, stdout %q, stderr %q; want a failure naming the read", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestUnwritableOutputFails(t *testing.T) {
+	var stderr bytes.Buffer
+	code := run(strings.NewReader(`{"comments": []}`), failing{}, &stderr)
+	if code == 0 || !strings.Contains(stderr.String(), "write the SARIF: closed") {
+		t.Fatalf("exit code %d, stderr %q; want a failure naming the write", code, stderr.String())
 	}
 }
