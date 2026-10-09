@@ -148,6 +148,10 @@ crew's local, append-only record of every rule run's events, one line each, such
 
 Its lines are version 3. It skips the lines older versions wrote, so a run that failed before the upgrade starts over in a new workspace. Its lines keep the key `stage` for the rule's name, the wire name of earlier versions.
 
+### Statistics store
+
+crew's local record of its work across restarts and repositories, kept apart from the run journal: a SQLite database, `statistics.db` in crew's data folder (`$XDG_DATA_HOME/crew`, or `~/.local/share/crew`). For now it holds one row per crew process, recorded once when it starts, with crew's version, the repository's root and the start time. A process is not a level of the work: one process works on many issues, and one issue's runs span many processes. The config chooses the store with `statistics.store`, or turns recording off with `off`. A record it cannot write is a warning, never a failed rule.
+
 ## Reporting
 
 ### Status comment

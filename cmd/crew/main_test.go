@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
@@ -66,5 +68,31 @@ func TestRunOutsideAGitRepositoryIsAnEnvironmentError(t *testing.T) {
 	t.Cleanup(func() { signal.Reset() })
 	if got := run(nil); got != app.ExitConfig {
 		t.Errorf("run outside a git repository = %d, want %d", got, app.ExitConfig)
+	}
+}
+
+// R1: crew's data folder is $XDG_DATA_HOME/crew, or ~/.local/share/crew
+// without it, beside the global config file.
+func TestFoldersReadXDGDataHomeThenTheHomeFolder(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "/x")
+	if global, data := folders("/home/u"); global != "/home/u/.config/crew/config.yaml" || data != "/x/crew" {
+		t.Errorf("folders = %q, %q; want the home's config file and /x/crew", global, data)
+	}
+	t.Setenv("XDG_DATA_HOME", "")
+	if _, data := folders("/home/u"); data != "/home/u/.local/share/crew" {
+		t.Errorf("data folder = %q, want /home/u/.local/share/crew", data)
+	}
+}
+
+// crew --version records nothing: it creates no data folder.
+func TestVersionCreatesNoStore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	if got := run([]string{"--version"}); got != app.ExitClean {
+		t.Fatalf("run(--version) = %d, want %d", got, app.ExitClean)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "crew")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stat %s/crew = %v, want no data folder", dir, err)
 	}
 }

@@ -96,6 +96,13 @@ type Config struct {
 	// TrackerSection decodes the tracker adapter's settings: every key under
 	// tracker: except name and bot.
 	TrackerSection Decode
+	// Statistics is statistics.store, the statistics store's name, "sqlite"
+	// by default, or "" when the config turns recording off with off. It is
+	// not checked against the registered stores.
+	Statistics string
+	// StatisticsSection decodes the statistics store's settings: every key
+	// under statistics: except store.
+	StatisticsSection Decode
 	// Functions are the config's function uses, one per rule action or
 	// route step that calls a function, in rule order and, in each rule,
 	// its actions' and then its routes' order. It is empty when no rule
@@ -114,6 +121,7 @@ type document struct {
 	Questions           yaml.Node     `yaml:"questions"`
 	Queues              yaml.Node     `yaml:"queues"`
 	Tracker             yaml.Node     `yaml:"tracker"`
+	Statistics          yaml.Node     `yaml:"statistics"`
 	Agents              yaml.Node     `yaml:"agents"`
 	Actions             yaml.Node     `yaml:"actions"`
 	Board               yaml.Node     `yaml:"board"`
@@ -156,6 +164,7 @@ func Load(root, global string, functions map[string][]crew.Verdict) (*Config, er
 		return nil, o.name(err)
 	}
 	cfg.TrackerSection = o.decode(cfg.TrackerSection)
+	cfg.StatisticsSection = o.decode(cfg.StatisticsSection)
 	for i := range cfg.Functions {
 		cfg.Functions[i] = cfg.Functions[i].named(o)
 	}
@@ -183,6 +192,8 @@ func parse(top *yaml.Node, functions map[string][]crew.Verdict) (*Config, error)
 	errs = append(errs, queueErrs...)
 	var err error
 	cfg.TrackerSection, err = trackerSection(&doc.Tracker, cfg)
+	errs = append(errs, err)
+	cfg.StatisticsSection, err = statisticsSection(&doc.Statistics, cfg)
 	errs = append(errs, err)
 	errs = append(errs, questions(&doc.Questions, table, cfg))
 	shellActions, presets, err := shells(&doc.Actions, functions)

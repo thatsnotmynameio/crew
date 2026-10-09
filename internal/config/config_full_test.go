@@ -51,6 +51,9 @@ func TestAFullConfigLoads(t *testing.T) {
 	if got, want := summarize(cfg.Rules, cfg.Notify), wantTranslationRules(); !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %+v\nwant %+v", got, want)
 	}
+	if cfg.Statistics != "" {
+		t.Errorf("Statistics = %q, want recording off", cfg.Statistics)
+	}
 	wantBots := []crew.BotName{"concierge", "linguist"}
 	if cfg.Bot.Name != "concierge" || !reflect.DeepEqual(cfg.BotNames(), wantBots) {
 		t.Errorf("Bot = %q, Bots = %q; want concierge, %q", cfg.Bot, cfg.BotNames(), wantBots)
