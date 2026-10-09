@@ -39,8 +39,8 @@ jobs:
   # .golangci.yml), tests with the race detector and coverage, the coverage
   # floor, and known vulnerabilities. It holds no secret: on a Dependabot
   # pull request the updated module runs here.
-  go:
-    name: go
+  go-linux:
+    name: go (linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -92,8 +92,8 @@ jobs:
 
   # crew ships macOS binaries: its tests, vet and lint run there too, so code
   # behind a darwin build constraint is built and linted. Coverage and
-  # govulncheck stay in the go job.
-  macos:
+  # govulncheck stay in the go (linux) job.
+  go-macos:
     name: go (macos)
     runs-on: macos-latest
     timeout-minutes: 20
