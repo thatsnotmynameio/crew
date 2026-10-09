@@ -8,6 +8,7 @@
 //	crew [--plain] [--version]
 //	crew bots create <name>
 //	crew sessions <session-id> tasks next|current
+//	crew upgrade [vX.Y.Z]
 //
 // It runs from anywhere inside a git repository. On a terminal it shows a
 // TUI; otherwise, or with --plain, it prints timestamped event lines. The
@@ -25,6 +26,16 @@
 // task of a coding-agent session crew runs and prints it as one JSON line.
 // It needs no repository or config. It exits 0 once the task is printed, 2
 // on a malformed command line, and 1 when the captain or the output fails.
+// A session can outlive an upgrade of the crew that started it and then
+// asks the new crew, so what crew sessions prints must stay readable across
+// versions.
+//
+// crew upgrade [vX.Y.Z] replaces the running crew, a release build, with
+// the latest release or the one named, after checking its archive against
+// the release's checksums.txt. It never uses sudo. It exits 0 once crew is
+// that version, 1 when the download or the check failed, and 2 on a
+// malformed command line, a go install or local build, or a directory it
+// cannot write.
 package main
 
 import (
@@ -32,8 +43,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -51,6 +64,7 @@ import (
 	"github.com/thatsnotmynameio/crew/internal/port"
 	"github.com/thatsnotmynameio/crew/internal/proc"
 	"github.com/thatsnotmynameio/crew/internal/registry"
+	"github.com/thatsnotmynameio/crew/internal/upgrade"
 )
 
 // version is set at build time with -ldflags "-X main.version=vX.Y.Z", as
@@ -82,11 +96,14 @@ func run(args []string) int {
 	if len(args) > 0 && args[0] == "sessions" {
 		return runSessions(args[1:], stdout, stderr, captain.Dumb{})
 	}
+	if len(args) > 0 && args[0] == "upgrade" {
+		return runUpgrade(args[1:], stdout, stderr, processUpgrader())
+	}
 	flags := flag.NewFlagSet("crew", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {
 		_, _ = fmt.Fprint(stderr, "Usage:\n  crew [--plain] [--version]\n  crew bots create <name>\n"+
-			"  crew sessions <session-id> tasks next|current\n\nFlags:\n")
+			"  crew sessions <session-id> tasks next|current\n  crew upgrade [vX.Y.Z]\n\nFlags:\n")
 		flags.PrintDefaults()
 	}
 	plain := flags.Bool("plain", false, "print timestamped event lines instead of the TUI")
@@ -108,6 +125,18 @@ func run(args []string) int {
 		return app.ExitClean
 	}
 	return start(*plain, stdout, stderr)
+}
+
+// processUpgrader returns what crew upgrade takes from this process: its
+// stamped version and build info, its path, its platform, the API
+// override, and the token of the user's gh login.
+func processUpgrader() upgrader {
+	info, _ := debug.ReadBuildInfo()
+	var group proc.Group
+	return upgrader{
+		stamped: version, info: info, exe: os.Executable, goos: runtime.GOOS, goarch: runtime.GOARCH,
+		apiEnv: os.Getenv(upgrade.APIEnv), http: &http.Client{}, token: upgrade.GHToken(group.Run),
+	}
 }
 
 // crewVersion is the version crew prints: the one stamped at build time,

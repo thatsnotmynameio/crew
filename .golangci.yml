@@ -243,6 +243,45 @@ linters:
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal/bots
               desc: only cmd/crew uses bots; nothing in the engine sees them
+        upgrade:
+          files:
+            - "**/internal/upgrade/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/adapter
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/app
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/bots
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/captain
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/config
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/core
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/crew
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/engine
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/fake
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/fileline
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/function
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/port
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/registry
+              desc: upgrade imports only the standard library and proc
+            - pkg: github.com/thatsnotmynameio/crew/internal/ui
+              desc: upgrade imports only the standard library and proc
+        upgrade-users:
+          files:
+            - "!**/cmd/crew/**"
+            - "!**/internal/upgrade/**"
+          deny:
+            - pkg: github.com/thatsnotmynameio/crew/internal/upgrade
+              desc: only cmd/crew uses upgrade, for crew upgrade
         fakes:
           files:
             - "!$test"
