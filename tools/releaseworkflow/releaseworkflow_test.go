@@ -82,7 +82,10 @@ case "$1 $2" in
   "attestation verify")
     digest="$(sha256sum "$3" | cut -d' ' -f1)"
     echo "$digest" >> "$GH_VERIFIED"
-    [ "$digest" != "$STUB_UNVERIFIED" ]
+    if [ "$digest" = "$STUB_UNVERIFIED" ]; then
+      echo "verification failed for $digest" >&2
+      exit 1
+    fi
     ;;
   "release edit") ;;
   *) echo "unexpected gh $*" >&2; exit 2 ;;
@@ -123,12 +126,9 @@ func step(t *testing.T, jobName, name string) string {
 }
 
 // runStep runs script in dir as GitHub runs a bash step, with env, and
-// returns its exit code and stdout.
+// returns its exit code and output.
 func runStep(t *testing.T, dir, script string, env ...string) (int, string) {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not installed")
-	}
 	cmd := exec.CommandContext(t.Context(), "bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
@@ -199,6 +199,18 @@ func archive(t *testing.T, binary []byte) []byte {
 	return buf.Bytes()
 }
 
+// releaseArchives packs each build's binary in its archive and returns the
+// archives' bytes by name.
+func releaseArchives(t *testing.T) map[string][]byte {
+	t.Helper()
+	archives := map[string][]byte{}
+	for _, b := range builds {
+		archives[b.archive] = archive(t, b.binary)
+	}
+
+	return archives
+}
+
 // checksumLines are the lines of checksums.txt for archives, as GoReleaser
 // writes them.
 func checksumLines(archives map[string][]byte) []string {
@@ -219,6 +231,12 @@ func binaryLines(bs []build) []string {
 	}
 
 	return lines
+}
+
+// subjectsFile is the subjects file the build job writes for archives: the
+// lines of checksums.txt, then one line per binary.
+func subjectsFile(archives map[string][]byte) string {
+	return strings.Join(append(checksumLines(archives), binaryLines(builds)...), "\n") + "\n"
 }
 
 // writeArtifacts writes dist/artifacts.json, listing the archives and the
@@ -251,9 +269,8 @@ func writeArtifacts(t *testing.T, dir string, bs []build) {
 // the archives' bytes by name.
 func makeDist(t *testing.T, dir string) map[string][]byte {
 	t.Helper()
-	archives := map[string][]byte{}
+	archives := releaseArchives(t)
 	for _, b := range builds {
-		archives[b.archive] = archive(t, b.binary)
 		writeFile(t, filepath.Join(dir, "dist", b.folder, "crew"), b.binary)
 		writeFile(t, filepath.Join(dir, "dist", b.archive), archives[b.archive])
 	}
@@ -268,6 +285,9 @@ func makeDist(t *testing.T, dir string) map[string][]byte {
 // code, its output and the subjects file it wrote, if any.
 func runSubjects(t *testing.T, dir string) (int, string, string) {
 	t.Helper()
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq is not installed")
+	}
 	temp := t.TempDir()
 	code, out := runStep(t, dir, step(t, "build", "subjects"), "RUNNER_TEMP="+temp)
 	data, err := os.ReadFile(filepath.Join(temp, "subjects.txt"))
@@ -285,7 +305,7 @@ func TestSubjectsListTheArchivesThenTheirBinaries(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the subjects step exited %d, output %q; want 0", code, out)
 	}
-	want := strings.Join(append(checksumLines(archives), binaryLines(builds)...), "\n") + "\n"
+	want := subjectsFile(archives)
 	if subjects != want {
 		t.Errorf("subjects\n%s\nwant\n%s", subjects, want)
 	}
@@ -335,9 +355,9 @@ type release struct {
 	unverified string            // the digest gh attestation verify fails on
 }
 
-// published is one run of the publish step: its exit code and output, the
+// publishRun is one run of the publish step: its exit code and output, the
 // gh calls it made, in order, and the digests of the files it verified.
-type published struct {
+type publishRun struct {
 	code     int
 	out      string
 	calls    []string
@@ -360,7 +380,7 @@ func lines(t *testing.T, path string) []string {
 
 // runPublish runs the publish job's publish step for the tag v0.1.2 with
 // subjects downloaded and gh answering as r says.
-func runPublish(t *testing.T, subjects string, r release) published {
+func runPublish(t *testing.T, subjects string, r release) publishRun {
 	t.Helper()
 	temp := t.TempDir()
 	writeFile(t, filepath.Join(temp, "subjects", "subjects.txt"), []byte(subjects))
@@ -393,20 +413,16 @@ func runPublish(t *testing.T, subjects string, r release) published {
 		"STUB_UNVERIFIED="+r.unverified,
 	)
 
-	return published{code: code, out: out, calls: lines(t, log), verified: lines(t, verified)}
+	return publishRun{code: code, out: out, calls: lines(t, log), verified: lines(t, verified)}
 }
 
 // fakeRelease is a draft v0.1.2 whose assets match its subjects, after
 // v0.1.1 shipped. It returns the subjects file and the release.
 func fakeRelease(t *testing.T) (string, release) {
 	t.Helper()
-	archives := map[string][]byte{}
-	for _, b := range builds {
-		archives[b.archive] = archive(t, b.binary)
-	}
-	subjects := strings.Join(append(checksumLines(archives), binaryLines(builds)...), "\n") + "\n"
+	archives := releaseArchives(t)
 
-	return subjects, release{draft: "true", published: "v0.1.1", assets: archives}
+	return subjectsFile(archives), release{draft: "true", published: "v0.1.1", assets: archives}
 }
 
 // called reports whether any call starts with prefix.
@@ -416,7 +432,7 @@ func called(calls []string, prefix string) bool {
 
 // assertNotPublished fails unless the step failed, saying why, without
 // editing the release.
-func assertNotPublished(t *testing.T, got published, why string) {
+func assertNotPublished(t *testing.T, got publishRun, why string) {
 	t.Helper()
 	if got.code == 0 || !strings.Contains(got.out, why) {
 		t.Errorf("the publish step exited %d, output %q; want a failure saying %q", got.code, got.out, why)
@@ -488,7 +504,7 @@ func TestPublishRefusesACrewWhoseAttestationFails(t *testing.T) {
 	subjects, r := fakeRelease(t)
 	r.unverified = sum(builds[2].binary)
 	got := runPublish(t, subjects, r)
-	assertNotPublished(t, got, "")
+	assertNotPublished(t, got, "verification failed for "+r.unverified)
 	if len(got.verified) == 0 || got.verified[len(got.verified)-1] != r.unverified {
 		t.Errorf("verified %q; want the step to stop at the crew whose attestation fails, %s", got.verified, r.unverified)
 	}
