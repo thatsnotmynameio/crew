@@ -50,8 +50,12 @@ func (e *Engine) launch(ctx context.Context, cmd core.Command) {
 	case core.RunCommand:
 		job = e.runJob(ctx, c)
 	case core.RecordStatistic:
-		// No store writes it yet: the core asks only with
-		// RecordingStatistics, which the engine does not give it.
+		// The writer writes it, in order, off the loop, and posts its final
+		// message (KTD5). The core asks only with RecordingStatistics, which
+		// the engine gives it only with a store.
+		e.statistics.add(c.Statistic)
+		e.inflight++
+		return
 	}
 	if job == nil {
 		return

@@ -82,6 +82,12 @@ type Config struct {
 	// failed run resumes after a restart (KTD12). Without one, nothing is
 	// journaled and nothing resumes.
 	Journal port.Journal
+	// Statistics is the statistics store, which the engine writes each
+	// record the core asks for to, off its loop (KTD5). Without one,
+	// nothing is recorded (AE12). The engine does not close it.
+	Statistics port.Statistics
+	// Version is crew's version, which the recorded process carries.
+	Version string
 	// UsageInStatus has each issue's status show what its ended actions
 	// spent and the pull requests they opened, when the tracker reports
 	// statuses (KTD11).
@@ -190,6 +196,9 @@ type Engine struct {
 	codeOwners []string
 	// repository is the repository the engine works on, as Prepare read it.
 	repository crew.Repository
+	// statistics writes the records the core asks for to Config.Statistics;
+	// nil without a store, and the core then asks for none (AE12).
+	statistics *statisticsWriter
 
 	// The fields below are owned by Run's loop.
 	model    *core.Model
@@ -240,18 +249,15 @@ func New(cfg Config) *Engine {
 		opts = append(opts, core.FindingPullRequests())
 	}
 	board, boardOpts := boardSource(cfg)
-	opts = append(opts, boardOpts...)
+	statistics, statisticsOpts := statisticsSource(cfg)
+	opts = slices.Concat(opts, boardOpts, statisticsOpts)
 	writes, _ := cfg.Tracker.(port.WriterReporter)
 	commenter, _ := cfg.Tracker.(port.Commenter)
 	closer, _ := cfg.Tracker.(port.Closer)
 	delegator, _ := cfg.Tracker.(port.Delegator)
-	harnesses := make(map[crew.AgentName]port.Harness, len(cfg.Harnesses))
-	for _, h := range cfg.Harnesses {
-		harnesses[h.Agent] = h.Harness
-	}
 	return &Engine{
 		cfg:          cfg,
-		harnesses:    harnesses,
+		harnesses:    byAgent(cfg.Harnesses),
 		stream:       newStream(),
 		stop:         make(chan struct{}),
 		pause:        make(chan struct{}, pauseSize),
@@ -263,12 +269,22 @@ func New(cfg Config) *Engine {
 		commenter:    commenter,
 		closer:       closer,
 		delegator:    delegator,
+		statistics:   statistics,
 		opts:         opts,
 		inbox:        make(chan message, inboxSize),
 		sessions:     map[sessionKey]liveSession{},
 		shells:       map[sessionKey]context.CancelFunc{},
 		steps:        map[stepKey]context.CancelFunc{},
 	}
+}
+
+// byAgent returns each of harnesses by its agent.
+func byAgent(harnesses []AgentHarness) map[crew.AgentName]port.Harness {
+	out := make(map[crew.AgentName]port.Harness, len(harnesses))
+	for _, h := range harnesses {
+		out[h.Agent] = h.Harness
+	}
+	return out
 }
 
 // boardSource returns where the core reads cfg's board from: a written
@@ -326,10 +342,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		defer timer.Stop()
 		timeUp = timer.C
 	}
-	e.started = time.Now()
-	e.checkBots(cmdCtx)
-	e.pendingPauses(cmdCtx)
-	e.step(cmdCtx, core.Tick{})
+	e.begin(cmdCtx)
 	for !e.model.Stopped() || e.inflight > 0 {
 		select {
 		case <-ticker.C:
@@ -351,6 +364,10 @@ func (e *Engine) Run(ctx context.Context) error {
 		case m := <-e.inbox:
 			e.receive(cmdCtx, m)
 		}
+	}
+	// Every queued record was in flight, so the writer has written them all.
+	if e.statistics != nil {
+		e.statistics.close()
 	}
 	e.wg.Wait()
 	return nil
@@ -405,6 +422,21 @@ func (e *Engine) Prepare(ctx context.Context) error {
 		e.preparation = e.prepare(ctx)
 	}
 	return e.preparation
+}
+
+// begin starts the statistics writer, reads the bots' live state and the
+// toggles made before Run, records the process and polls at once, on the
+// command context ctx.
+func (e *Engine) begin(ctx context.Context) {
+	if e.statistics != nil {
+		e.wg.Go(func() { e.statistics.run(ctx, e.recorded) })
+	}
+	e.started = time.Now()
+	e.checkBots(ctx)
+	e.pendingPauses(ctx)
+	// After the bots' state, so the first update still shows it (KTD4).
+	e.step(ctx, core.Started{})
+	e.step(ctx, core.Tick{})
 }
 
 // pendingPauses steps the core with each toggle made before Run, so none
