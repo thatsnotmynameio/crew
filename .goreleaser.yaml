@@ -1,7 +1,7 @@
-# What a release builds and uploads to a draft release: crew for macOS and
-# Linux on amd64 and arm64, one tar.gz per platform, and checksums.txt. The
-# Release workflow (.github/workflows/release.yml) runs it, attests the
-# assets, publishes the draft and says when a release happens.
+# What a release builds and publishes: crew for macOS and Linux on amd64 and
+# arm64, one tar.gz per platform, and checksums.txt. The Release workflow
+# (.github/workflows/release.yml) runs it, attests the assets and says when a
+# release happens.
 # Try it locally with a snapshot build:
 # go run github.com/goreleaser/goreleaser/v2@v2.18.2 release --snapshot --clean
 version: 2
@@ -31,16 +31,27 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# The release notes: the commits since the last tag, grouped by their
+# conventional-commit type. Docs, tests, CI and chores stay out.
+changelog:
+  sort: asc
+  abbrev: -1 # no commit hash: each title ends with its pull request
+  filters:
+    exclude:
+      - "^(docs|test|ci|chore)(\\(.+\\))?!?:"
+  groups:
+    - title: Features
+      regexp: "^feat(\\(.+\\))?!?:"
+      order: 0
+    - title: Fixes
+      regexp: "^fix(\\(.+\\))?!?:"
+      order: 1
+    - title: Other changes
+      order: 999
+
 release:
   name_template: "{{ .Tag }}"
-  # A draft: the Release workflow publishes it once the archives and their
-  # binaries are attested and verified.
-  draft: true
-  # The tag stays local until the draft is published, then GitHub creates it
-  # at the built commit.
+  make_latest: true
+  # The tag is only local: GitHub creates it at the built commit when the
+  # release is published.
   target_commitish: "{{ .Commit }}"
-  # A re-run finishes the draft a failed run left, with this run's notes and
-  # assets.
-  use_existing_draft: true
-  replace_existing_artifacts: true
-  mode: replace

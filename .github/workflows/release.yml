@@ -1,26 +1,17 @@
 # Started by hand on main: releases the commit it was started on as the
-# version VERSION names there, tag vX.Y.Z and a GitHub release whose binaries
-# carry a signed build-provenance attestation. Merging a pull request, a
-# version bump included, publishes nothing.
-# build refuses, saying why, when the run was started on another branch, when
-# the version already has a tag or a published release, or when CHANGELOG.md
-# has no section for it (tools/release check). GoReleaser (.goreleaser.yaml)
-# then builds crew for macOS and Linux and uploads the archives and
-# checksums.txt to a draft release, with that section as the release text.
-# The tag stays local: GitHub creates it when the draft is published.
-# attest signs one build-provenance attestation, through GitHub's artifact
-# attestations, for the archives and the crew binary inside each one.
-# publish checks that the release is still a draft above every published
-# release, that its archives are the bytes attest signed, and that
-# gh attestation verify passes on each archive and on the crew extracted from
-# it, with the README's flags. Only then does it publish the draft as the
-# latest release. Nothing is published unless every asset built and was
-# attested and verified.
-# A failed run leaves a draft, or no release at all: re-running its failed
-# jobs, or starting the release again, finishes it. Unlike CI, this does not
-# use the shared release action's publish mode, only its check.
-# tools/releaseworkflow runs the subjects and publish steps against a fake
-# release.
+# version VERSION names there, tag vX.Y.Z and a GitHub release whose archives,
+# and the crew binary inside each one, carry a signed build-provenance
+# attestation. Merging a pull request, a version bump included, publishes
+# nothing.
+# A run started on another branch is skipped. The run fails when its tag
+# already exists, or when GoReleaser finds the tag is not semantic. GoReleaser (.goreleaser.yaml) then builds crew for macOS and
+# Linux and publishes the release with the archives and checksums.txt, with
+# notes made from the commits since the last tag; GitHub creates the tag at
+# the built commit. actions/attest then attests the archives and the binaries,
+# through GitHub's artifact attestations.
+# A run that fails before GoReleaser publishes is started again. One that
+# fails after it, the attestation included, leaves a published release and
+# its tag: delete both, then start again.
 name: Release
 
 on:
@@ -34,159 +25,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: build
+  release:
+    name: release
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
-      contents: write # the draft release and its assets
-    outputs:
-      tag: ${{ steps.check.outputs.tag }}
+      contents: write # the release and its assets
+      id-token: write # the OIDC token Sigstore certifies the attestation with
+      attestations: write # stores the attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the release rule reads the v* tags
           persist-credentials: false
-      # VERSION is MAJOR.MINOR.PATCH and not below the latest release.
-      - uses: thatsnotmynameio/.github/actions/release@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
-        with:
-          mode: check
       # No module cache: the binaries released are built only from what this
       # run downloads, never from a cache another workflow could have written.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
-      # The notes go outside the checkout: GoReleaser refuses a dirty tree.
-      - name: Check the release
-        id: check
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: go run ./tools/release check -ref "$GITHUB_REF" -notes "$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
-      # Local only: GitHub creates the tag when the draft is published.
+      # Local only: GoReleaser reads the version from it, and GitHub creates
+      # the tag when the release is published. Fails when the tag exists: the
+      # checkout fetched every tag.
       - name: Tag the release locally
-        env:
-          TAG: ${{ steps.check.outputs.tag }}
-        run: git tag "$TAG"
+        run: git tag "v$(cat VERSION)"
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           version: v2.18.2
-          args: release --clean --release-notes ${{ runner.temp }}/notes.md
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # What attest signs: the archives, as checksums.txt lists them, then the
-      # crew binary packed into each one, named by its path in dist/, so that
-      # an installed crew can be verified too. artifacts.json gives the
-      # binaries' paths, whatever suffix GoReleaser gives their folders.
-      - name: subjects
-        shell: bash
-        run: |
-          subjects="$RUNNER_TEMP/subjects.txt"
-          cp dist/checksums.txt "$subjects"
-          archives="$(grep -c '\.tar\.gz$' "$subjects" || true)"
-          paths="$(jq -r '.[] | select(.type == "Binary") | .path' dist/artifacts.json)"
-          binaries=0
-          for path in $paths; do
-            (cd dist && sha256sum "${path#dist/}") >> "$subjects"
-            binaries=$((binaries + 1))
-          done
-          echo "Subjects: $archives archives, $binaries binaries"
-          if [ "$archives" -eq 0 ] || [ "$binaries" -ne "$archives" ]; then
-            echo "::error::A release attests at least one archive and one crew binary per archive; dist/ has $archives archives and $binaries binaries."
-            exit 1
-          fi
-      # A re-run of build replaces the subjects of the run before.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: subjects
-          path: ${{ runner.temp }}/subjects.txt
-          if-no-files-found: error
-          overwrite: true
-
-  # No checkout: nothing of the repository runs in the only job that can mint
-  # an OIDC token, so no code the build runs can sign as this workflow.
-  attest:
-    name: attest
-    needs: [build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      id-token: write # the OIDC token Sigstore certifies the signature with
-      attestations: write # stores the attestation
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: subjects
-          path: ${{ runner.temp }}/subjects
-      # SLSA build provenance, one attestation for every subject.
+      # SLSA build provenance for each archive and for the crew inside it, so
+      # that an installed crew can be verified too. Each pattern must match a
+      # file: the action fails on one that matches none.
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: ${{ runner.temp }}/subjects/subjects.txt
-
-  # The job that makes the release public. No checkout: it only reads the
-  # release, its attestations and the subjects.
-  publish:
-    name: publish
-    needs: [build, attest]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write # reads the draft and publishes it
-      attestations: read # gh attestation verify reads the attestations
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+          subject-path: |
+            dist/*.tar.gz
+            dist/crew_*/crew
+      # What GoReleaser produced, to see why a run failed.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
         with:
-          name: subjects
-          path: ${{ runner.temp }}/subjects
-      # Fails before any change unless the release is a draft above every
-      # published release (a re-run of an old run's publish skips build and
-      # its version check), each archive of the draft is a subject this run
-      # attested, and gh attestation verify passes on each archive and on the
-      # crew inside it. The count makes a download with no archive fail.
-      - name: publish
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.build.outputs.tag }}
-        run: |
-          subjects="$RUNNER_TEMP/subjects/subjects.txt"
-          draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
-          if [ "$draft" != "true" ]; then
-            echo "::error::The release $TAG is not a draft: there is nothing to publish."
-            exit 1
-          fi
-          published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
-          for tag in $published; do
-            if [ "$tag" = "$TAG" ] || [ "$(printf '%s\n%s\n' "$tag" "$TAG" | sort -V | tail -n 1)" != "$TAG" ]; then
-              echo "::error::$TAG is not above the published release $tag."
-              exit 1
-            fi
-          done
-          release="$RUNNER_TEMP/release"
-          gh release download "$TAG" --pattern '*.tar.gz' --dir "$release"
-          verify=(--repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref refs/heads/main)
-          verified=0
-          shopt -s nullglob
-          for archive in "$release"/*.tar.gz; do
-            name="$(basename "$archive")"
-            want="$(awk -v name="$name" '$2 == name { print $1 }' "$subjects")"
-            got="$(sha256sum "$archive" | cut -d' ' -f1)"
-            if [ -z "$want" ] || [ "$got" != "$want" ]; then
-              echo "::error::$name is not an archive this run attested."
-              exit 1
-            fi
-            gh attestation verify "$archive" "${verify[@]}"
-            crew="$RUNNER_TEMP/crew/${name%.tar.gz}"
-            mkdir -p "$crew"
-            tar -xzf "$archive" -C "$crew" crew
-            gh attestation verify "$crew/crew" "${verify[@]}"
-            verified=$((verified + 2))
-          done
-          archives="$(grep -c '\.tar\.gz$' "$subjects" || true)"
-          if [ "$archives" -eq 0 ] || [ "$verified" -ne $((2 * archives)) ]; then
-            echo "::error::Verified $verified files; want $((2 * archives)): each archive this run attested and the crew inside it."
-            exit 1
-          fi
-          gh release edit "$TAG" --draft=false --latest
+          name: dist
+          path: dist
+          overwrite: true
+          retention-days: 7

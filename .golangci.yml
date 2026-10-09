@@ -50,10 +50,9 @@ linters:
     revive:
       enable-default-rules: true
       rules:
-        # Matched to Codacy's Lizard parameter-count pattern.
         - name: argument-limit
           arguments: [8]
-        # Matched to Codacy's Lizard file-length pattern (non-comment lines).
+        # Non-comment, non-blank lines.
         - name: file-length-limit
           arguments:
             - max: 500
@@ -75,15 +74,14 @@ linters:
       ignore-package-globs:
         - github.com/thatsnotmynameio/crew/*
     dupl:
-      # Codacy's minTokenMatch: the bar Codacy held for duplication.
+      # Tokens a repeated fragment must reach to count as duplication.
       threshold: 100
     cyclop:
       max-complexity: 15
     gocognit:
       min-complexity: 15
     funlen:
-      # Lines, not statements: Codacy's Lizard counts non-comment lines, and
-      # both must agree on what is too long.
+      # Non-comment lines, not statements.
       lines: 50
       statements: -1
       ignore-comments: true
@@ -290,14 +288,6 @@ linters:
           deny:
             - pkg: github.com/thatsnotmynameio/crew/internal/fake
               desc: the fakes are for tests only
-        acceptance:
-          files:
-            - "**/acceptance/**"
-          deny:
-            - pkg: github.com/thatsnotmynameio/crew/internal
-              desc: the acceptance suite reaches crew only through its binary (R16)
-            - pkg: github.com/thatsnotmynameio/crew/cmd
-              desc: the acceptance suite reaches crew only through its binary (R16)
         charm:
           files:
             - "!**/internal/ui/tui/**"
@@ -323,8 +313,7 @@ linters:
       # Test fixtures are package-level values shared by the cases of a file.
       - path: _test\.go
         linters: [gochecknoglobals]
-      # Table-driven tests repeat their case shape on purpose, as Codacy's
-      # duplication engine allowed.
+      # Table-driven tests repeat their case shape on purpose.
       - path: _test\.go
         linters: [dupl]
       # Tests read fixtures from testdata, run git in temporary repositories

@@ -1,10 +1,7 @@
-# Weekly pull requests for new versions: the actions and thatsnotmynameio/.github's
-# shared workflows (pinned by SHA), the Codacy CLIs, and the Go modules: crew's
-# and the acceptance suite's (acceptance/). Dependabot's "npm" ecosystem is the
-# one for pnpm too: it reads pnpm-lock.yaml and updates it with pnpm.
-# A version update waits until the new version is 7 days old, so that a
-# compromised release is likely found and pulled before it reaches crew.
-# Security updates do not wait.
+# Weekly pull requests for new versions, one per ecosystem: the actions
+# (pinned by SHA), and crew's Go module with its tools (go.mod's tool
+# directive). A version is proposed only
+# once it is 7 days old, so a compromised release has time to be pulled.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -13,25 +10,23 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
       default-days: 7
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go:
+        patterns: ["*"]
     # modernc.org/libc moves only with modernc.org/sqlite: the driver needs
     # exactly the libc its go.mod names, which a driver bump raises.
     ignore:
       - dependency-name: "modernc.org/libc"
-  - package-ecosystem: "gomod"
-    directory: "/acceptance"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
