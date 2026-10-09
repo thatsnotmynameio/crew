@@ -22,7 +22,7 @@ type palette struct {
 }
 
 // darkPalette is the sketch's palette, for a dark background (R27, R28).
-func darkPalette() palette {
+func darkPalette() palette { //nolint:dupl // data: lightPalette's roles with dark-background colours
 	return palette{
 		text: lipgloss.Color("#d8d6e3"), title: lipgloss.Color("#f1effa"),
 		muted: lipgloss.Color("#7d7996"), subtle: lipgloss.Color("#4a4760"),
@@ -40,7 +40,7 @@ func darkPalette() palette {
 
 // lightPalette keeps each role's meaning with shades that read on a light
 // background (R29, KTD12).
-func lightPalette() palette {
+func lightPalette() palette { //nolint:dupl // data: darkPalette's roles with light-background colours
 	return palette{
 		text: lipgloss.Color("#2b2938"), title: lipgloss.Color("#16151d"),
 		muted: lipgloss.Color("#6b6785"), subtle: lipgloss.Color("#c9c6d8"),
