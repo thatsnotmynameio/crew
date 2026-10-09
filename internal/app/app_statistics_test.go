@@ -162,6 +162,31 @@ type closeFailing struct{ *fake.Statistics }
 func (closeFailing) Close() error { return errors.New("close the statistics store: disk I/O error") }
 
 // A store that fails to close is a warning: the run still exits 0.
+// A failed engine never ended its writer, which may be inside a record, so
+// crew leaves the store open, as a forced exit does. A real one-second
+// tick, not synctest: the writer the panic left behind outlives the test.
+func TestAFailingEngineLeavesTheStoreOpen(t *testing.T) {
+	tr := fake.NewTracker(issue("1", ready))
+	h := panickingHarness{fake.NewHarness()}
+	r := options(t, "poll_interval_seconds: 1\nstatistics: {store: fake}\n"+oneAction, tr, h)
+	stats := fake.NewStatistics()
+	withStores(r, tr, h, map[string]port.StatisticsFactory{"fake": fake.StatisticsFactory(stats)})
+	r.opts.DataDir = t.TempDir()
+	r.start()
+	session := next(t, h.Harness)
+
+	code := r.exitCode(t)
+	session.End(port.SessionEnd{Reason: "released by the test"})
+	sessionKept(t, r.opts.Root, "issue-1-implement")
+
+	if code != app.ExitFailure {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if n := stats.Closes(); n != 0 {
+		t.Errorf("the store was closed %d times, want none", n)
+	}
+}
+
 func TestAStoreThatFailsToCloseIsAWarning(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr, h := fake.NewTracker(issue("1", ready)), fake.NewHarness()

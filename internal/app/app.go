@@ -421,9 +421,12 @@ func run(
 		case err := <-engineDone:
 			engineDone = nil
 			r.engineEnded(err)
-			// A forced exit returns while the engine still runs, and leaves
-			// the store open: its writer may be inside a record.
-			b.closeStatistics(o)
+			// Only an engine that finished its stop sequence has ended its
+			// writer. A failed engine, a panic included, and a forced exit
+			// leave the store open: its writer may be inside a record.
+			if err == nil {
+				b.closeStatistics(o)
+			}
 		case err := <-rendered:
 			rendered = nil
 			if r.forced.Load() {
