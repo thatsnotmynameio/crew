@@ -21,28 +21,37 @@ type stepKey struct {
 }
 
 // runShell returns the goroutine that runs c's shell action and posts its
-// end. The script's context is made here, in the loop, so a StopShell that
-// follows always finds it.
+// end (startScript).
 func (e *Engine) runShell(ctx context.Context, c core.RunShell) func() {
-	scriptCtx, cancel := context.WithTimeout(ctx, shellTimeout)
-	e.shells[sessionKey{c.Run, c.Action}] = cancel
-	return func() {
-		defer cancel()
-		outcome := e.runScript(scriptCtx, c.IssueID, c.Script, "the shell action "+string(c.Action), true)
+	return startScript(ctx, e.shells, sessionKey{c.Run, c.Action}, func(ctx context.Context) {
+		outcome := e.runScript(ctx, c.IssueID, c.Script, "the shell action "+string(c.Action), true)
 		e.post(core.ShellEnded{IssueID: c.IssueID, Run: c.Run, Action: c.Action, Outcome: outcome})
-	}
+	})
 }
 
 // runStepShell returns the goroutine that runs c's route step and posts
 // its end, as runShell does. A step's reason is in crew's words only,
 // without what the script printed (R49).
 func (e *Engine) runStepShell(ctx context.Context, c core.RunStepShell) func() {
-	scriptCtx, cancel := context.WithTimeout(ctx, shellTimeout)
-	e.steps[stepKey{c.Run, c.Step}] = cancel
+	return startScript(ctx, e.steps, stepKey{c.Run, c.Step}, func(ctx context.Context) {
+		outcome := e.runScript(ctx, c.IssueID, c.Script, "the route's shell step "+string(c.Script.Name), false)
+		e.post(core.StepShellEnded{IssueID: c.IssueID, Run: c.Run, Step: c.Step, Outcome: outcome})
+	})
+}
+
+// startScript returns the goroutine that calls run, which runs a script or
+// calls a function and posts its end, with a context that ends after
+// shellTimeout. The context is made here, in the loop, and its cancel kept
+// in running under key, so a stop that follows always finds it
+// (stopScript).
+func startScript[K comparable](
+	ctx context.Context, running map[K]context.CancelFunc, key K, run func(context.Context),
+) func() {
+	runCtx, cancel := context.WithTimeout(ctx, shellTimeout)
+	running[key] = cancel
 	return func() {
 		defer cancel()
-		outcome := e.runScript(scriptCtx, c.IssueID, c.Script, "the route's shell step "+string(c.Script.Name), false)
-		e.post(core.StepShellEnded{IssueID: c.IssueID, Run: c.Run, Step: c.Step, Outcome: outcome})
+		run(runCtx)
 	}
 }
 

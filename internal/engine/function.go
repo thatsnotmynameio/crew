@@ -24,29 +24,22 @@ type Function struct {
 }
 
 // runFunction returns the goroutine that calls c's function action and
-// posts its end. The call's context is made here, in the loop, so a
-// StopFunction that follows always finds it.
+// posts its end (startScript).
 func (e *Engine) runFunction(ctx context.Context, c core.RunFunction) func() {
-	callCtx, cancel := context.WithTimeout(ctx, shellTimeout)
-	e.shells[sessionKey{c.Run, c.Action}] = cancel
-	return func() {
-		defer cancel()
-		outcome := e.callFunction(callCtx, c.IssueID, c.Call, "the function action "+string(c.Action), true)
+	return startScript(ctx, e.shells, sessionKey{c.Run, c.Action}, func(ctx context.Context) {
+		outcome := e.callFunction(ctx, c.IssueID, c.Call, "the function action "+string(c.Action), true)
 		e.post(core.FunctionEnded{IssueID: c.IssueID, Run: c.Run, Action: c.Action, Outcome: outcome})
-	}
+	})
 }
 
 // runStepFunction returns the goroutine that calls c's route step and
 // posts its end, as runFunction does. A step's reason is in crew's words
 // only, without the error the function returned (R49).
 func (e *Engine) runStepFunction(ctx context.Context, c core.RunStepFunction) func() {
-	callCtx, cancel := context.WithTimeout(ctx, shellTimeout)
-	e.steps[stepKey{c.Run, c.Step}] = cancel
-	return func() {
-		defer cancel()
-		outcome := e.callFunction(callCtx, c.IssueID, c.Call, "the route's function step "+string(c.Call.Name), false)
+	return startScript(ctx, e.steps, stepKey{c.Run, c.Step}, func(ctx context.Context) {
+		outcome := e.callFunction(ctx, c.IssueID, c.Call, "the route's function step "+string(c.Call.Name), false)
 		e.post(core.StepFunctionEnded{IssueID: c.IssueID, Run: c.Run, Step: c.Step, Outcome: outcome})
-	}
+	})
 }
 
 // callFunction calls c, the function of a function action or a route step
