@@ -21,11 +21,11 @@ type statistics struct {
 	// name: the labels that count an item of that kind (KTD1).
 	states map[crew.Kind][]crew.State
 	// issues holds, by item id, each item recorded in this process.
-	issues map[crew.IssueID]sighted
+	issues map[crew.IssueID]recordedIssue
 }
 
-// sighted is what the model knows of an item it recorded (KTD4).
-type sighted struct {
+// recordedIssue is what the model knows of an item it recorded (KTD4).
+type recordedIssue struct {
 	// state is the last crew state the item was known at; empty when it
 	// was first seen in two or more.
 	state crew.State
@@ -44,7 +44,7 @@ func newStatistics(rules []crew.Rule, version, folder string, tracker crew.Track
 		states[kind] = crew.RuleStates(takers)
 	}
 	return &statistics{
-		version: version, folder: folder, tracker: tracker, states: states, issues: map[crew.IssueID]sighted{},
+		version: version, folder: folder, tracker: tracker, states: states, issues: map[crew.IssueID]recordedIssue{},
 	}
 }
 
@@ -131,7 +131,7 @@ func (s *step) sight(issue crew.Issue) {
 	if alone {
 		sighting.State = crew.Some(state)
 	}
-	st.issues[issue.ID()] = sighted{state: state}
+	st.issues[issue.ID()] = recordedIssue{state: state}
 	s.command(RecordStatistic{Statistic: sighting})
 }
 
