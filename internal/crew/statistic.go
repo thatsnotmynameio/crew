@@ -4,7 +4,7 @@ import "time"
 
 // Statistic is one record crew keeps in its statistics store, which
 // outlives restarts and repositories: a Process, a RepositoryRecord, an
-// IssueSighting or a LabelMove.
+// IssueSighting, a LabelMove or a RuleRunSpan.
 //
 //sumtype:decl
 type Statistic interface {
@@ -94,3 +94,83 @@ type LabelMove struct {
 }
 
 func (LabelMove) statistic() {}
+
+// RuleRunSpan is a rule run as a span of work under its issue: it opens
+// when the rule takes the issue and ends when crew releases the run. crew
+// records it twice, at the take with no end and at the release with its
+// end; the store keeps one span and its first end. A span a killed crew
+// left stays without an end: the run a restarted crew takes is another
+// span, which names the run it continues.
+type RuleRunSpan struct {
+	// Tracker is the tracker the issue is on.
+	Tracker TrackerName
+	// Issue is the issue the run was for: the span's parent.
+	Issue IssueID
+	// Run is the rule run, which identifies the span.
+	Run RuleRunID
+	// Process is the crew process that took the run.
+	Process ProcessID
+	// Rule is the rule that ran.
+	Rule RuleName
+	// Queue is the queue the rule runs in, none for a rule of no named
+	// queue.
+	Queue Optional[QueueName]
+	// Continues is the run of the same issue and rule this run continues,
+	// when there was one.
+	Continues Optional[RuleRunID]
+	// Start is when the rule took the issue.
+	Start time.Time
+	// End is how and when the run ended, none while it runs.
+	End Optional[RuleRunEnd]
+}
+
+func (RuleRunSpan) statistic() {}
+
+// RuleRunEnd is how a rule run ended: when, its outcome, the route it
+// ended through and the halt that chose that route.
+type RuleRunEnd struct {
+	// At is when crew released the run.
+	At time.Time
+	// Outcome says how the run ended.
+	Outcome RunOutcome
+	// Route is the route the run ended through, none when its take did not
+	// land.
+	Route Optional[RouteName]
+	// Halt is the halt that chose the route, none when the run chose it on
+	// its own.
+	Halt Optional[RunHalt]
+}
+
+// RunOutcome is how a rule run ended, as the statistics store writes it.
+type RunOutcome string
+
+// The outcomes of a rule run.
+const (
+	// OutcomeRouted is a run whose route's final move or close landed, or
+	// whose route has no steps.
+	OutcomeRouted RunOutcome = "routed"
+	// OutcomeRouteDropped is a run whose route's final move or close was
+	// dropped, as the item was moved or closed meanwhile: the route is
+	// finished, the item is where someone else put it.
+	OutcomeRouteDropped RunOutcome = "route_dropped"
+	// OutcomeRouteGivenUp is a run whose route's final move or close the
+	// tracker refused, or whose final try failed: the route is unfinished,
+	// and the rule's next run runs it again.
+	OutcomeRouteGivenUp RunOutcome = "route_given_up"
+	// OutcomeNotTaken is a run whose take did not land: it chose no route.
+	OutcomeNotTaken RunOutcome = "not_taken"
+)
+
+// RunHalt is what halted a rule run and chose its route, as the statistics
+// store writes it.
+type RunHalt string
+
+// The halts of a rule run.
+const (
+	// HaltStop is crew's stop, which reached the run before it chose its
+	// route and sent it through FailedRoute.
+	HaltStop RunHalt = "stop"
+	// HaltRunTimeLimit is crew's run time limit, which kept the run's next
+	// action from starting and sent it through FailedRoute.
+	HaltRunTimeLimit RunHalt = "run_time_limit"
+)

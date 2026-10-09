@@ -44,7 +44,8 @@ type Store struct {
 
 // The store's statements. A repository keeps its latest name; an issue
 // keeps its first sighting; the issue's last label is the label its latest
-// move reached, else the one crew first saw it at.
+// move reached, else the one crew first saw it at; a span keeps its first
+// open and its first end.
 const (
 	insertProcess    = `INSERT INTO processes (id, version, folder, started_at) VALUES (?, ?, ?, ?)`
 	upsertRepository = `INSERT INTO repositories (tracker, id, name) VALUES (?, ?, ?)
@@ -56,6 +57,14 @@ const (
 	selectLastLabel = `SELECT COALESCE(
 		(SELECT to_label FROM label_moves WHERE tracker = ? AND repository_id = ? AND issue_key = ? ORDER BY id DESC LIMIT 1),
 		(SELECT first_label FROM issues WHERE tracker = ? AND repository_id = ? AND key = ?))`
+	insertSpan = `INSERT INTO spans (id, kind, process_id, started_at) VALUES (?, 'rule_run', ?, ?)
+		ON CONFLICT (id) DO NOTHING`
+	insertRuleRunSpan = `INSERT INTO rule_run_spans
+		(span_id, tracker, repository_id, issue_key, rule, queue, continues_run_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (span_id) DO NOTHING`
+	selectSpanOpen   = `SELECT ended_at IS NULL FROM spans WHERE id = ?`
+	updateSpanEnd    = `UPDATE spans SET ended_at = ?, outcome = ? WHERE id = ?`
+	updateRuleRunEnd = `UPDATE rule_run_spans SET route = ?, halted = ? WHERE span_id = ?`
 )
 
 // Record implements port.Statistics. It opens the store first when no
@@ -83,6 +92,8 @@ func (s *Store) Record(ctx context.Context, st crew.Statistic) error {
 		return s.write(ctx, "issue "+st.Ref, func(tx *sql.Tx) error { return sight(ctx, tx, st) })
 	case crew.LabelMove:
 		return s.write(ctx, "a label move of #"+st.Issue.String(), func(tx *sql.Tx) error { return move(ctx, tx, st) })
+	case crew.RuleRunSpan:
+		return s.write(ctx, "the span of rule run "+string(st.Run), func(tx *sql.Tx) error { return span(ctx, tx, st) })
 	}
 	return fmt.Errorf("record a %T: not a statistic the store knows", st)
 }
@@ -145,6 +156,34 @@ func lastLabel(ctx context.Context, tx *sql.Tx, tracker crew.TrackerName, issue 
 	return last, nil
 }
 
+// span records sp in tx: its rows when the store lacks them, then, when sp
+// has an end and the stored span none, that end (KTD5). It reads whether
+// the span is open once, before either update, so both rows get the same
+// end.
+func span(ctx context.Context, tx *sql.Tx, sp crew.RuleRunSpan) error {
+	id := string(sp.Run)
+	if err := exec(ctx, tx, insertSpan, id, string(sp.Process), sp.Start.UnixMilli()); err != nil {
+		return err
+	}
+	err := exec(ctx, tx, insertRuleRunSpan, id, string(sp.Tracker), string(sp.Issue.Repository), sp.Issue.Key,
+		string(sp.Rule), text(sp.Queue), text(sp.Continues))
+	end, ok := sp.End.Get()
+	if err != nil || !ok {
+		return err
+	}
+	var open bool
+	if err := tx.QueryRowContext(ctx, selectSpanOpen, id).Scan(&open); err != nil {
+		return fmt.Errorf("read the span's end: %w", err)
+	}
+	if !open {
+		return nil
+	}
+	if err := update(ctx, tx, updateSpanEnd, end.At.UnixMilli(), string(end.Outcome), id); err != nil {
+		return err
+	}
+	return update(ctx, tx, updateRuleRunEnd, text(end.Route), text(end.Halt), id)
+}
+
 // kind is how the store writes k.
 func kind(k crew.Kind) string {
 	if k == crew.KindPullRequest {
@@ -193,6 +232,14 @@ func (s *Store) write(ctx context.Context, what string, f func(*sql.Tx) error) e
 func exec(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("insert: %w", err)
+	}
+	return nil
+}
+
+// update runs query with args in tx.
+func update(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("update: %w", err)
 	}
 	return nil
 }
