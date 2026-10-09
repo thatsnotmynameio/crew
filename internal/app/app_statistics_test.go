@@ -47,9 +47,9 @@ func runToReview(t *testing.T, r *crewRun, tr *fake.Tracker, h *fake.Harness) st
 	return r.stdout.String()
 }
 
-// R5: the store the config names records the crew process once, with
-// crew's version and the repository's root, and is closed once the engine
-// has stopped.
+// R5, R6: the store the config names records the crew process once, with
+// crew's version and the repository's root, then the repository on the
+// tracker the config names, and is closed once the engine has stopped.
 func TestACrewRunRecordsItselfInTheStoreTheConfigNames(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr, h := fake.NewTracker(issue("1", ready)), fake.NewHarness()
@@ -61,12 +61,15 @@ func TestACrewRunRecordsItselfInTheStoreTheConfigNames(t *testing.T) {
 		runToReview(t, r, tr, h)
 
 		got := stats.Recorded()
-		if len(got) != 1 {
-			t.Fatalf("records = %+v, want one process", got)
+		if len(got) < 2 {
+			t.Fatalf("records = %+v, want a process, then the repository", got)
 		}
 		p, ok := got[0].(crew.Process)
 		if !ok || p.Version != "v1.2.3" || p.Folder != r.opts.Root {
 			t.Errorf("record = %+v, want a process of v1.2.3 in %s", got[0], r.opts.Root)
+		}
+		if repo, ok := got[1].(crew.RepositoryRecord); !ok || repo.Tracker != "fake" {
+			t.Errorf("record = %+v, want the repository on the tracker fake", got[1])
 		}
 		if n := stats.Closes(); n != 1 {
 			t.Errorf("the store was closed %d times, want once", n)

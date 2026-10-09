@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -39,12 +40,27 @@ func developOnce(t *testing.T, r *rig, tr *fake.Tracker) {
 	}
 }
 
-func TestRunRecordsTheProcessOnceWithTheVersionTheRootAndTheStart(t *testing.T) {
+// widgets is the repository a repositoryTracker names in these tests.
+var widgets = crew.Repository{ID: "R_kgDOWidgets", Name: "acme/widgets"}
+
+// recordingConfig returns a config over tr for rules that records its
+// statistics in a fresh store, as crew 1.2.3 on GitHub.
+func recordingConfig(t *testing.T, tr port.Tracker, rules ...crew.Rule) (engine.Config, *fake.Statistics) {
+	t.Helper()
+	cfg := config(t, tr, rules...)
+	store := fake.NewStatistics()
+	cfg.Statistics, cfg.Version, cfg.TrackerName = store, "1.2.3", "github"
+	return cfg, store
+}
+
+// Covers R5, R6, R7, R8, F1: a crew that develops issue 1 records the
+// process, the repository on the configured tracker, the sighting of issue
+// 1 in ready, then the take's move and the route's move, both made by the
+// run, in that order.
+func TestRunRecordsTheProcessTheRepositoryTheIssueAndItsMovesInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
-		store := fake.NewStatistics()
-		cfg.Statistics, cfg.Version = store, "1.2.3"
+		cfg, store := recordingConfig(t, repositoryTracker{Tracker: tr, repository: widgets}, develop)
 		r := start(t, cfg)
 
 		developOnce(t, r, tr)
@@ -55,22 +71,74 @@ func TestRunRecordsTheProcessOnceWithTheVersionTheRootAndTheStart(t *testing.T) 
 		}
 
 		recorded := store.Recorded()
-		if len(recorded) != 1 {
-			t.Fatalf("recorded %#v, want one process", recorded)
+		if len(recorded) != 5 {
+			t.Fatalf("recorded %#v, want five records", recorded)
 		}
 		p, ok := recorded[0].(crew.Process)
-		if !ok {
-			t.Fatalf("recorded %T, want a process", recorded[0])
+		if !ok || p.ID == "" {
+			t.Fatalf("recorded %#v first, want a process with an id", recorded[0])
 		}
-		if p.ID == "" {
-			t.Error("the process has no id")
+		take, ok := recorded[3].(crew.LabelMove)
+		run, byRun := take.Run.Get()
+		if !ok || !byRun || run == "" {
+			t.Fatalf("recorded %#v fourth, want a move made by a run", recorded[3])
 		}
-		want := crew.Process{ID: p.ID, Version: "1.2.3", Folder: cfg.Root, Start: final.Snapshot.Started}
-		if p != want {
-			t.Errorf("recorded %+v, want %+v", p, want)
+		started := final.Snapshot.Started
+		id := crew.IssueID{Repository: widgets.ID, Key: "1"}
+		move := func(from, to crew.State) crew.LabelMove {
+			return crew.LabelMove{Tracker: "github", Issue: id, From: from, To: to, Seen: started, Run: crew.Some(run)}
+		}
+		want := []crew.Statistic{
+			crew.Process{ID: p.ID, Version: "1.2.3", Folder: cfg.Root, Start: started},
+			crew.RepositoryRecord{Tracker: "github", Repository: widgets},
+			crew.IssueSighting{
+				Tracker: "github", Issue: id, Ref: "#1", Created: crew.Some(issue(1).Created()), Seen: started,
+				State: crew.Some(ready),
+			},
+			move(ready, inProgress),
+			move(inProgress, readyToReview),
+		}
+		if !reflect.DeepEqual(recorded, want) {
+			t.Errorf("recorded\n %#v\nwant\n %#v", recorded, want)
 		}
 		if n := r.notRecorded(); len(n) != 0 {
 			t.Errorf("StatisticNotRecorded = %+v, want none", n)
+		}
+	})
+}
+
+// Covers AE2, R8: a person's move of a blocked issue 1 from ready to ready
+// to review, made on the tracker between two ticks, is recorded at the
+// second tick's listing, made outside crew.
+func TestAMoveMadeOutsideCrewIsRecordedAtTheNextListing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		blocked := issue(1, ready).Data()
+		blocked.Blocked = true
+		tr := fake.NewTracker(crew.NewIssue(blocked))
+		review := crew.Rule{
+			Name: "review", Labels: crew.Labels{Ready: readyToReview, Running: "in review"},
+			Actions: develop.Actions, Routes: routes(needsAttention),
+		}
+		cfg, store := recordingConfig(t, tr, develop, review)
+		r := start(t, cfg)
+		synctest.Wait()
+
+		tr.SetStates("1", readyToReview)
+		time.Sleep(poll)
+		synctest.Wait()
+		r.engine.Stop()
+		final, err := r.wait()
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		recorded := store.Recorded()
+		want := crew.LabelMove{
+			Tracker: "github", Issue: crew.IssueID{Repository: "repo", Key: "1"}, From: ready, To: readyToReview,
+			Seen: final.Snapshot.Started.Add(poll),
+		}
+		if len(recorded) != 4 || !reflect.DeepEqual(recorded[3], want) {
+			t.Errorf("recorded %#v, want the process, the repository, the sighting, then %#v", recorded, want)
 		}
 	})
 }
@@ -91,16 +159,20 @@ func TestAE8AStoreThatCannotBeWrittenIsWarnedAboutAndTheRunGoesOn(t *testing.T) 
 			t.Fatalf("Run: %v", err)
 		}
 
+		// The process, the repository, issue 1's sighting, its take's move
+		// and its route's move.
 		n := r.notRecorded()
-		if len(n) != 1 {
-			t.Fatalf("StatisticNotRecorded = %+v, want one", n)
+		if len(n) != 5 {
+			t.Fatalf("StatisticNotRecorded = %+v, want five", n)
 		}
 		if _, ok := n[0].Statistic.(crew.Process); !ok {
-			t.Errorf("the lost record is %T, want the process", n[0].Statistic)
+			t.Errorf("the first lost record is %T, want the process", n[0].Statistic)
 		}
 		want := "open ~/.local/share/crew/statistics.db: database or disk is full"
-		if n[0].Reason != want {
-			t.Errorf("reason = %q, want %q", n[0].Reason, want)
+		for _, lost := range n {
+			if lost.Reason != want {
+				t.Errorf("reason of the lost %T = %q, want %q", lost.Statistic, lost.Reason, want)
+			}
 		}
 		if got := store.Recorded(); len(got) != 0 {
 			t.Errorf("recorded %#v, want nothing", got)
@@ -138,8 +210,11 @@ func TestABlockedStoreDelaysNoTickAndRunWaitsForItsRecord(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		if got := store.Recorded(); len(got) != 1 {
-			t.Errorf("recorded %#v, want the process", got)
+		// The process, the repository, issue 1's sighting, the moves of its
+		// first run, the move back to ready made outside crew, and the
+		// moves of its second run.
+		if got := store.Recorded(); len(got) != 8 {
+			t.Errorf("recorded %#v, want eight records", got)
 		}
 	})
 }

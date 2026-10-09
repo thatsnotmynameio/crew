@@ -331,6 +331,7 @@ func (b built) engineConfig(o Options, bots Bots) engine.Config {
 		RunTimeLimit:      b.cfg.RunTimeLimit,
 		UsageInStatus:     b.cfg.UsageInStatus,
 		Tracker:           b.tracker,
+		TrackerName:       crew.TrackerName(b.cfg.Tracker),
 		Harnesses:         b.harnesses,
 		Functions:         b.functions,
 		Workspace:         o.Workspace(o.Root),

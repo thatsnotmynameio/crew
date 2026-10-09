@@ -27,7 +27,8 @@ func statisticsSource(cfg Config) (*statisticsWriter, []core.Option) {
 	if cfg.Statistics == nil {
 		return nil, nil
 	}
-	return newStatisticsWriter(cfg.Statistics), []core.Option{core.RecordingStatistics(cfg.Version, cfg.Root)}
+	recording := core.RecordingStatistics(cfg.Version, cfg.Root, cfg.TrackerName)
+	return newStatisticsWriter(cfg.Statistics), []core.Option{recording}
 }
 
 // newStatisticsWriter returns a writer to store that writes nothing until

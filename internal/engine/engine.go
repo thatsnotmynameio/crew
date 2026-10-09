@@ -67,9 +67,13 @@ type Config struct {
 	// of each agent some rule's action names, in config order. The engine
 	// detects their optional interfaces, such as port.Preparer, on these
 	// values.
-	Tracker   port.Tracker
-	Harnesses []AgentHarness
-	Workspace port.Workspace
+	Tracker port.Tracker
+	// TrackerName is the tracker adapter's name, as the config's
+	// tracker.name names it, which the recorded repository, issues and
+	// moves carry (KTD2).
+	TrackerName crew.TrackerName
+	Harnesses   []AgentHarness
+	Workspace   port.Workspace
 	// Shell runs the scripts of the shell actions and route steps. Without
 	// one, every script fails to start, saying crew has no shell.
 	Shell port.Shell
@@ -435,7 +439,7 @@ func (e *Engine) begin(ctx context.Context) {
 	e.checkBots(ctx)
 	e.pendingPauses(ctx)
 	// After the bots' state, so the first update still shows it (KTD4).
-	e.step(ctx, core.Started{})
+	e.step(ctx, core.Started{Repository: e.repository})
 	e.step(ctx, core.Tick{})
 }
 

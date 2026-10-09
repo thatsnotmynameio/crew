@@ -162,6 +162,7 @@ func (s *step) listed(issues []crew.Issue) {
 	m.listing = false
 	m.gone(issues)
 	m.boardFromListing(issues)
+	s.sighted(issues)
 	if m.stopping || m.timeUp {
 		return
 	}

@@ -128,10 +128,12 @@ func ReportingPullRequests() Option {
 
 // RecordingStatistics has the model record crew's statistics through
 // RecordStatistic commands: at Started, the process of crew version,
-// working in the repository at folder (R5, KTD4). Without it, the model
-// records nothing (AE12).
-func RecordingStatistics(version, folder string) Option {
-	return func(m *Model) { m.statistics = &statistics{version: version, folder: folder} }
+// working in the repository at folder, and that repository on tracker
+// (R5, R6, KTD3); then each issue it manages and each move of those issues
+// between its rules' labels (R7, R8, KTD4). Without it, the model records
+// nothing (AE12).
+func RecordingStatistics(version, folder string, tracker crew.TrackerName) Option {
+	return func(m *Model) { m.statistics = newStatistics(m.rules, version, folder, tracker) }
 }
 
 // unknownName is what String gives for a value outside its enumeration.
