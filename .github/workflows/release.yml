@@ -3,17 +3,15 @@
 # and the crew binary inside each one, carry a signed build-provenance
 # attestation. Merging a pull request, a version bump included, publishes
 # nothing.
-# The run refuses, saying why, when it was started on another branch, when
-# the version already has a tag or a published release, or when CHANGELOG.md
-# has no section for it (tools/release check). GoReleaser (.goreleaser.yaml)
-# then builds crew for macOS and Linux and publishes the release with the
-# archives and checksums.txt, with that section as the release text; GitHub
-# creates the tag at the built commit. actions/attest then attests the
-# archives and the binaries, through GitHub's artifact attestations.
+# A run started on another branch is skipped. The run fails when its tag
+# already exists, or when GoReleaser finds the tag is not semantic. GoReleaser (.goreleaser.yaml) then builds crew for macOS and
+# Linux and publishes the release with the archives and checksums.txt, with
+# notes made from the commits since the last tag; GitHub creates the tag at
+# the built commit. actions/attest then attests the archives and the binaries,
+# through GitHub's artifact attestations.
 # A run that fails before GoReleaser publishes is started again. One that
-# fails after it, the attestation included, leaves a published release that
-# tools/release check then refuses: delete the release and its tag, then
-# start again.
+# fails after it, the attestation included, leaves a published release and
+# its tag: delete both, then start again.
 name: Release
 
 on:
@@ -29,6 +27,7 @@ concurrency:
 jobs:
   release:
     name: release
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -40,30 +39,19 @@ jobs:
         with:
           fetch-depth: 0 # the release rule reads the v* tags
           persist-credentials: false
-      # VERSION is MAJOR.MINOR.PATCH and not below the latest release.
-      - uses: thatsnotmynameio/.github/actions/release@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
-        with:
-          mode: check
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # The notes go outside the checkout: GoReleaser refuses a dirty tree.
-      - name: Check the release
-        id: check
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: go run ./tools/release check -ref "$GITHUB_REF" -notes "$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
       # Local only: GoReleaser reads the version from it, and GitHub creates
-      # the tag when the release is published.
+      # the tag when the release is published. Fails when the tag exists: the
+      # checkout fetched every tag.
       - name: Tag the release locally
-        env:
-          TAG: ${{ steps.check.outputs.tag }}
-        run: git tag "$TAG"
+        run: git tag "v$(cat VERSION)"
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           version: v2.18.2
-          args: release --clean --release-notes ${{ runner.temp }}/notes.md
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
       # SLSA build provenance for each archive and for the crew inside it, so

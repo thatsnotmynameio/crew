@@ -260,11 +260,10 @@ rules:
   #         Review this repository's GitHub Actions and find what to improve. You run headless: nobody answers questions, so decide and report.
   #
   #         1. Read `.github/workflows/` and its recent runs (`gh run list`, `gh run view`). Look for failing or flaky jobs, slow jobs, steps repeated across jobs, missing caches, permissions wider than needed and actions not pinned by SHA.
-  #         2. Most jobs call the shared workflows of thatsnotmynameio/.github. When a change belongs there, say so in its issue.
-  #         3. For each improvement worth doing, open an issue with the label `enhancement`, or `bug` when something is broken: what to change, why, and the evidence, with links to the runs. Search the open issues first, so you do not open a duplicate.
-  #         4. Never add or remove a label that starts with `crew:`, on any issue.
-  #         5. Do not change code, push a branch or open a pull request.
-  #         6. End with one comment on {{.Issue.Ref}}: the issues you opened, what you checked and found fine, and anything you could not check, with the error.
+  #         2. For each improvement worth doing, open an issue with the label `enhancement`, or `bug` when something is broken: what to change, why, and the evidence, with links to the runs. Search the open issues first, so you do not open a duplicate.
+  #         3. Never add or remove a label that starts with `crew:`, on any issue.
+  #         4. Do not change code, push a branch or open a pull request.
+  #         5. End with one comment on {{.Issue.Ref}}: the issues you opened, what you checked and found fine, and anything you could not check, with the error.
   #   routes:
   #     passed: "crew:ci audit:done"
   #     failed:

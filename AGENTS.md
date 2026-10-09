@@ -15,6 +15,7 @@ gofmt -l cmd internal tools # prints the unformatted files; must print nothing
 go vet ./...
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run   # lint + layering (depguard)
 go tool govulncheck ./...   # the version go.mod's tool directive pins
+go tool actionlint    # the workflows, with shellcheck when it is installed
 go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...   # coverage profile
 go run github.com/vladopajic/go-test-coverage/v2@v2.19.0 --config=.testcoverage.yml   # total >= 90%; CI runs the go-test-coverage action
 ```
@@ -67,9 +68,8 @@ Ports and adapters with a pure core.
 
 ## Releases and CI
 
-- **Releases:** the version is `VERSION`, starting at `0.1.0`. A bump pull request changes it and adds the version's section to `CHANGELOG.md`, a `## X.Y.Z` heading with what changed for users. Merging it publishes nothing. The boss then starts the Release workflow by hand on `main`. Its `tools/release check` refuses another branch, a version that already has a tag or a published release, and a version with no section. In the same job, GoReleaser (`.goreleaser.yaml`) then builds crew for macOS and Linux and publishes `vX.Y.Z` as a GitHub release with the archives and `checksums.txt`, with the section as the release text, and `actions/attest` attests the archives and the `crew` inside each one; the job keeps `dist/` as an artifact. A run that fails after GoReleaser published, the attestation included, is finished by deleting the release and its tag and starting again. A run that refused is fixed by a new pull request and a new start: re-running it checks the same commit again. Unlike the other workflows, it publishes without the shared release action and uses only its `check` mode. The version must be `MAJOR.MINOR.PATCH` and not below the latest release (CI's `version` check).
-- **Shared workflows:** CI and the release call [thatsnotmynameio/.github](https://github.com/thatsnotmynameio/.github), pinned by SHA with the version as a comment; Dependabot bumps them. Change shared behaviour there, not here.
-- **CI:** GitHub Actions are pinned by SHA. The `checks` ruleset requires `version`, `actionlint / actionlint` and `go`. A new required job goes into it through `bootstrap.sh --checks` (in `.github`).
+- **Releases:** the version is `VERSION`, starting at `0.1.0`. A bump pull request changes it. Merging it publishes nothing. The boss then starts the Release workflow by hand on `main`; on another branch its job is skipped. It fails when the version's tag already exists. In the same job, GoReleaser (`.goreleaser.yaml`) then builds crew for macOS and Linux and publishes `vX.Y.Z` as a GitHub release with the archives and `checksums.txt`, with notes made from the conventional commits since the last tag (features and fixes; docs, tests, CI and chores left out), and `actions/attest` attests the archives and the `crew` inside each one; the job keeps `dist/` as an artifact. A run that fails after GoReleaser published, the attestation included, is finished by deleting the release and its tag and starting again. A run that refused is fixed by a new pull request and a new start: re-running it checks the same commit again. The version must be `MAJOR.MINOR.PATCH`: GoReleaser refuses a tag that is not semantic.
+- **CI:** GitHub Actions are pinned by SHA. The `checks` ruleset lists the jobs a pull request must pass; a new required job goes into it in the repository's settings.
 
 ## Agents
 

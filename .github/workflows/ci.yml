@@ -1,8 +1,6 @@
-# Every pull request: the release rule on VERSION, actionlint over the
-# workflows, the Go module on Linux and macOS, and a snapshot of the release
-# build. Pushes to main run all but the release rule. Add the project's
-# build and test jobs here, and their check names to the "checks" ruleset
-# (bootstrap.sh --checks, in thatsnotmynameio/.github).
+# Every pull request and each push to main: actionlint over the workflows,
+# the Go module on Linux and macOS, and a snapshot of the release build. A new
+# job that must pass before a merge also goes into the "checks" ruleset.
 name: CI
 
 on:
@@ -21,24 +19,23 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  version:
-    name: version
-    if: github.event_name == 'pull_request'
+  # actionlint at the version go.mod's tool directive pins, with the runner's
+  # shellcheck on every run: script.
+  actionlint:
+    name: actionlint
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # the release rule reads the v* tags
           persist-credentials: false
-      - uses: thatsnotmynameio/.github/actions/release@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          mode: check
+          go-version-file: go.mod
+      - name: actionlint
+        run: go tool actionlint -color
 
-  actionlint:
-    uses: thatsnotmynameio/.github/.github/workflows/actionlint.yml@684e95730da54880499f6b8401fe00d9b10aa8c4 # v0.1.0
-
-  # The Go module: tidy go.mod files, formatting, vet, lint (including the layering rules in
+  # The Go module: tidy go.mod, formatting, vet, lint (including the layering rules in
   # .golangci.yml), tests with the race detector and coverage, the coverage
   # floor, and known vulnerabilities. It holds no secret: on a Dependabot
   # pull request the updated module runs here.
