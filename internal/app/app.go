@@ -71,6 +71,12 @@ type Options struct {
 	// Home is the user's home directory, shortened to ~ in failure reports;
 	// empty shortens nothing.
 	Home string
+	// DataDir is crew's data folder, where the statistics store the config
+	// names keeps its data. An empty or relative one is no data folder,
+	// which the store reports when it first records.
+	DataDir string
+	// Version is crew's version, which the recorded crew process carries.
+	Version string
 	// Stdin is where the TUI reads keys; nil means the standard input, or
 	// the terminal when the standard input is not one.
 	Stdin io.Reader
@@ -168,6 +174,7 @@ func Run(ctx context.Context, o Options) (code int) { //nolint:nonamedreturns //
 	}
 	if err != nil {
 		o.errorf("%v", err)
+		b.closeStatistics(o)
 		return ExitConfig
 	}
 	return run(ctx, eng, o, signalled, b, bots.Warnings)
@@ -214,6 +221,9 @@ type built struct {
 	tracker   port.Tracker
 	harnesses []engine.AgentHarness
 	functions map[crew.FunctionUse]engine.Function
+	// statistics is the statistics store, nil when the config turns
+	// recording off.
+	statistics port.Statistics
 }
 
 // build loads the config and builds its adapters: the tracker, and the
@@ -228,7 +238,9 @@ type built struct {
 // port.CommentLister (KTD-W5). A question needs a tracker that comments,
 // and questions one that lists comments and delegates, a port.Delegator
 // (KTD10). Every function use is built once, from its parameters, so a
-// parameter its function refuses stops crew before it polls (R28).
+// parameter its function refuses stops crew before it polls (R28). The
+// statistics store the config names is built in DataDir, and none when
+// the config turns recording off (KTD3).
 func build(o Options) (built, error) {
 	cfg, err := config.Load(o.Root, o.GlobalConfig, o.Registry.Functions())
 	if err != nil {
@@ -236,6 +248,11 @@ func build(o Options) (built, error) {
 	}
 	tracker, err := o.Registry.Tracker(cfg.Tracker, cfg.TrackerSection, crew.RuleStates(cfg.Rules))
 	errs := []error{err}
+	var statistics port.Statistics
+	if cfg.Statistics != "" {
+		statistics, err = o.Registry.Statistics(cfg.Statistics, cfg.StatisticsSection, o.DataDir)
+		errs = append(errs, err)
+	}
 	var harnesses []engine.AgentHarness
 	for _, a := range cfg.Agents {
 		harness, err := o.Registry.Harness(a.HarnessKey(), string(a.Harness), a.HarnessSection)
@@ -256,7 +273,7 @@ func build(o Options) (built, error) {
 		waitingSessions(cfg.Tracker, tracker, cfg.Rules), questionRule(cfg.Tracker, tracker, cfg.Questions)); err != nil {
 		return built{}, err
 	}
-	return built{cfg: cfg, tracker: tracker, harnesses: harnesses, functions: functions}, nil
+	return built{cfg: cfg, tracker: tracker, harnesses: harnesses, functions: functions, statistics: statistics}, nil
 }
 
 // buildFunctions builds the function of each use through r, from the use's
@@ -319,6 +336,8 @@ func (b built) engineConfig(o Options, bots Bots) engine.Config {
 		Workspace:         o.Workspace(o.Root),
 		Shell:             o.Shell,
 		Journal:           o.journal(),
+		Statistics:        b.statistics,
+		Version:           o.Version,
 		Root:              o.Root,
 		Home:              o.Home,
 		ActAs:             len(b.cfg.Bots) > 0,
@@ -353,6 +372,17 @@ func answerer(cfg *config.Config) string {
 		return ""
 	}
 	return cfg.Questions.Answerer
+}
+
+// closeStatistics closes the statistics store, when there is one. A store
+// that fails to close is a warning: it changes no exit code.
+func (b built) closeStatistics(o Options) {
+	if b.statistics == nil {
+		return
+	}
+	if err := b.statistics.Close(); err != nil {
+		o.errorf("warning: could not close the statistics store: %v", err)
+	}
 }
 
 // journal returns the run journal of the repository at Root, through
@@ -390,6 +420,9 @@ func run(
 		case err := <-engineDone:
 			engineDone = nil
 			r.engineEnded(err)
+			// A forced exit returns while the engine still runs, and leaves
+			// the store open: its writer may be inside a record.
+			b.closeStatistics(o)
 		case err := <-rendered:
 			rendered = nil
 			if r.forced.Load() {

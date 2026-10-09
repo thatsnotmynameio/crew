@@ -623,3 +623,18 @@ func TestASpinnerTickTurnsTheRunningSpinners(t *testing.T) {
 		t.Errorf("the spinner did not turn to its next frame:\n%s", view)
 	}
 }
+
+// Covers AE8: a record the statistics store lost shows in Events as the
+// line renderer's warning.
+func TestALostStatisticShowsInEvents(t *testing.T) {
+	u := engine.Update{Snapshot: engine.Snapshot{
+		Started: start.Add(-time.Minute),
+		Recent: []core.Published{core.StatisticNotRecorded{
+			At: start, Statistic: crew.Process{ID: "p"}, Reason: "no data folder: set XDG_DATA_HOME or HOME",
+		}},
+	}}
+
+	view := fitted(t, 160, 40, u)
+
+	contains(t, view, "warning: could not record this crew process in the statistics store: no data folder")
+}
