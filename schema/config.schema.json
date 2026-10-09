@@ -94,6 +94,7 @@
         "store": {
           "description": "The statistics store's name: sqlite, the default, is the one crew ships. off records nothing and creates no store; it takes no other key.",
           "type": "string",
+          "minLength": 1,
           "default": "sqlite",
           "examples": ["sqlite", "off"]
         }

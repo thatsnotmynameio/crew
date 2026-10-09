@@ -20,8 +20,9 @@ type statisticsDoc struct {
 }
 
 // statisticsSection reads statistics.store into cfg, "" when it is off, and
-// returns the rest of statistics: for the store's adapter. With the store
-// off, any other key is an error, since nothing would read it.
+// returns the rest of statistics: for the store's adapter. An empty store is
+// an error, so only off turns recording off. With the store off, any other
+// key is an error, since nothing would read it.
 func statisticsSection(n *yaml.Node, cfg *Config) (Decode, error) {
 	const path = "statistics"
 	section, err := mapping(n, path)
@@ -32,6 +33,9 @@ func statisticsSection(n *yaml.Node, cfg *Config) (Decode, error) {
 	doc := statisticsDoc{Store: defaultStore}
 	if err := decodeFields(own, reflect.ValueOf(&doc).Elem()); err != nil {
 		return nil, err
+	}
+	if doc.Store == "" {
+		return nil, keyError(own[0].path, own[0].key.Line, "must name a store, or off")
 	}
 	if doc.Store == storeOff {
 		if len(rest) > 0 {

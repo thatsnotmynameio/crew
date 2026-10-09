@@ -61,6 +61,11 @@ func TestLoadRejectsInvalidStatistics(t *testing.T) {
 			want: []string{sharedName + ": statistics.path (line 3): store is off, so nothing reads this key"},
 		},
 		{
+			name: "an empty store",
+			body: "statistics:\n  store: \"\"\n",
+			want: []string{sharedName + ": statistics.store (line 2): must name a store, or off"},
+		},
+		{
 			name: "not a mapping",
 			body: "statistics: [a]\n",
 			want: []string{sharedName + ": statistics (line 1): must be a mapping"},

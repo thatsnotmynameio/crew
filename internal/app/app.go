@@ -375,13 +375,14 @@ func answerer(cfg *config.Config) string {
 }
 
 // closeStatistics closes the statistics store, when there is one. A store
-// that fails to close is a warning: it changes no exit code.
+// that fails to close is a warning: it changes no exit code. The store's
+// error says what failed, as the sqlite store's does.
 func (b built) closeStatistics(o Options) {
 	if b.statistics == nil {
 		return
 	}
 	if err := b.statistics.Close(); err != nil {
-		o.errorf("warning: could not close the statistics store: %v", err)
+		o.errorf("warning: %v", err)
 	}
 }
 

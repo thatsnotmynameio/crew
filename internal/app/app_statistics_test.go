@@ -155,10 +155,11 @@ func TestWithoutADataFolderCrewRunsAndWarnsOnce(t *testing.T) {
 	})
 }
 
-// closeFailing is a store whose Close fails.
+// closeFailing is a store whose Close fails with an error shaped like the
+// sqlite store's.
 type closeFailing struct{ *fake.Statistics }
 
-func (closeFailing) Close() error { return errors.New("disk I/O error") }
+func (closeFailing) Close() error { return errors.New("close the statistics store: disk I/O error") }
 
 // A store that fails to close is a warning: the run still exits 0.
 func TestAStoreThatFailsToCloseIsAWarning(t *testing.T) {
@@ -171,7 +172,7 @@ func TestAStoreThatFailsToCloseIsAWarning(t *testing.T) {
 
 		runToReview(t, r, tr, h)
 
-		want := "crew: warning: could not close the statistics store: disk I/O error"
+		want := "crew: warning: close the statistics store: disk I/O error"
 		if !strings.Contains(r.stderr.String(), want) {
 			t.Errorf("stderr lacks %q; it is:\n%s", want, r.stderr)
 		}
