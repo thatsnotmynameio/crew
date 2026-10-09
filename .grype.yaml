@@ -1,0 +1,63 @@
+# Grype's configuration for the grype job in .github/workflows/security.yml.
+# It holds only ignore rules. Each names a vulnerability id and a package,
+# with the reason the finding stays open. Never ignore by fix state, by
+# location, through exclude or only-fixed: each would also drop the matches
+# on malware advisories, which have no fixed version. A malware match is
+# never ignored: the package is removed instead. No fail-on-severity either:
+# grype would then exit non-zero on findings, which the job reads as an error.
+ignore:
+  # The Codacy CLIs' development dependencies, in pnpm-lock.yaml. crew's
+  # binary contains none of them. #385 removes pnpm-lock.yaml, and these
+  # rules with it.
+  - vulnerability: GHSA-pfrx-2q88-qq97
+    package:
+      name: got
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > update-notifier > latest-version > package-json > got); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-vfj7-8cjw-p6xm
+    package:
+      name: braces
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-9 > @dword-design/eslint-plugin-import-alias > micromatch > braces); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-7r86-cg39-jmmj
+    package:
+      name: minimatch
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-formatjs > @typescript-eslint/utils > @typescript-eslint/typescript-estree > minimatch); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-3ppc-4f35-3m26
+    package:
+      name: minimatch
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-formatjs > @typescript-eslint/utils > @typescript-eslint/typescript-estree > minimatch); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-23c5-xmqv-rm74
+    package:
+      name: minimatch
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-formatjs > @typescript-eslint/utils > @typescript-eslint/typescript-estree > minimatch); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-ch52-4w7c-c8xp
+    package:
+      name: http-cache-semantics
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > update-notifier > latest-version > package-json > got > cacheable-request > http-cache-semantics); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-ggr8-5vv4-36mx
+    package:
+      name: deepmerge-ts
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-functional > deepmerge-ts); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-vcc3-ghjq-m6fr
+    package:
+      name: decode-uri-component
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-vue-scoped-css > postcss-styl > stylus > css > source-map-resolve > decode-uri-component); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-2g4f-4pwh-qvx6
+    package:
+      name: ajv
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-tsdoc > @microsoft/tsdoc-config > ajv); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-rj75-hqrm-r3gf
+    package:
+      name: postcss-selector-parser
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-vue > postcss-selector-parser); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-hp3w-g68c-fv3c
+    package:
+      name: sprintf-js
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-eslint-8 > eslint-plugin-awscdk > eslint > js-yaml > argparse > sprintf-js); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-gh4j-gqv2-49f6
+    package:
+      name: fast-xml-parser
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-scalastyle-1 > fast-xml-parser); #385 removes pnpm-lock.yaml"
+  - vulnerability: GHSA-238p-pmpm-9mq7
+    package:
+      name: katex
+    reason: "development dependency of the Codacy CLIs (@codacy/analysis-cli > @codacy/analysis-adapters > @codacy/tools-markdownlint-0 > markdownlint > micromark-extension-math > katex); #385 removes pnpm-lock.yaml"
