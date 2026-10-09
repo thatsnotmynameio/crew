@@ -336,6 +336,7 @@ For now the captain, which answers, decides nothing: every task carries that sam
 | `schema/config.schema.json` | The JSON Schema of `.crew/config.yaml`, `.crew/config.local.yaml` and the global `~/.config/crew/config.yaml`, for editors that complete and explain their keys. |
 | `docs/` | Plans (`docs/plans/`), ideation and documented solutions (`docs/solutions/`). |
 | `STRATEGY.md` | What crew is for, who it serves, and its boundaries. |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability privately, and what crew counts as one. |
 | `AGENTS.md` (`CLAUDE.md`) | Instructions for coding agents. |
 | `.agents/agents/acceptance-tester.md` | The acceptance tester: writes behavior tests from a plan's acceptance examples, without reading the implementation. |
 | `.agents/skills/cw-create-issue/` | The `/cw-create-issue` skill: creates an issue with the label and filled template of one of the issue types it lists. This repository's own aid, with its own labels. |
