@@ -8,6 +8,7 @@ import "github.com/thatsnotmynameio/crew/internal/crew"
 func (s *step) onRoute(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.RouteChosen:
+		s.keepHalt(h, e.Route)
 		s.emit(e)
 		s.reportRun(h)
 	case crew.RunLookupAsked:

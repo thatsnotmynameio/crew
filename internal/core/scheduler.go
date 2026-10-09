@@ -268,6 +268,7 @@ func (s *step) take(si int, issue crew.Issue) {
 	h := &heldRun{run: run, rule: si}
 	m.issues = append(m.issues, h)
 	s.record(taken)
+	s.spanOpened(h)
 	s.emit(taken)
 	s.deliver(h, &delivery{purpose: purposeTake, call: h.move(rule.Labels.Ready, rule.Labels.Running)})
 }
