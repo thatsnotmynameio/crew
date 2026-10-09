@@ -25,6 +25,7 @@ pnpm exec codacy-analysis analyze --install-dependencies   # Codacy's Lizard, Op
 
 - **golangci-lint:** run it through `go run` at v2.14.0, as CI does. A local install older than v2.13.0 cannot lint a `go 1.27` module.
 - **CI:** the `go` job in `.github/workflows/ci.yml` runs gofmt, vet, golangci-lint, `go test -race` with coverage, both coverage floors and govulncheck. Its `acceptance` job builds crew with GoReleaser (a Linux amd64 snapshot), runs vet, golangci-lint and govulncheck in `acceptance/`, then the suite with `CREW_BIN` set; on failure it uploads the tests' artifacts. Its `codacy` job uploads the coverage to Codacy, which analyses the code on its own servers.
+- **Code scanning:** `.github/workflows/security.yml` runs the security analyses on every pull request and on each push to `main`, with no secret, and publishes them to GitHub code scanning. The pull request runs every check, and no new check has to run locally first. Its `codeql (go)` and `codeql (actions)` jobs run CodeQL's `security-extended` suite (`.github/codeql/codeql-config.yml`) over both Go modules, tests included, and over the workflows. They fail on a build or analysis error, but not on an alert: an alert only reports until a ruleset blocks on it. CodeQL has no inline suppression: dismiss a false positive in code scanning, with its reason.
 - **Quality bar:** zero findings, everywhere. `.golangci.yml` turns on every linter except those it lists with a reason; Codacy's tools and limits are in `.codacy/codacy.config.json`.
 
 ## Architecture
