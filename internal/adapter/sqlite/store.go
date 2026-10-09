@@ -62,8 +62,7 @@ const (
 	insertRuleRunSpan = `INSERT INTO rule_run_spans
 		(span_id, tracker, repository_id, issue_key, rule, queue, continues_run_id) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (span_id) DO NOTHING`
-	selectSpanOpen   = `SELECT ended_at IS NULL FROM spans WHERE id = ?`
-	updateSpanEnd    = `UPDATE spans SET ended_at = ?, outcome = ? WHERE id = ?`
+	updateSpanEnd    = `UPDATE spans SET ended_at = ?, outcome = ? WHERE id = ? AND ended_at IS NULL`
 	updateRuleRunEnd = `UPDATE rule_run_spans SET route = ?, halted = ? WHERE span_id = ?`
 )
 
@@ -157,9 +156,8 @@ func lastLabel(ctx context.Context, tx *sql.Tx, tracker crew.TrackerName, issue 
 }
 
 // span records sp in tx: its rows when the store lacks them, then, when sp
-// has an end and the stored span none, that end (KTD5). It reads whether
-// the span is open once, before either update, so both rows get the same
-// end.
+// has an end and the stored span none, that end (KTD5). The rule run's row
+// gets the end only when the span did, so both rows hold the same end.
 func span(ctx context.Context, tx *sql.Tx, sp crew.RuleRunSpan) error {
 	id := string(sp.Run)
 	if err := exec(ctx, tx, insertSpan, id, string(sp.Process), sp.Start.UnixMilli()); err != nil {
@@ -171,15 +169,16 @@ func span(ctx context.Context, tx *sql.Tx, sp crew.RuleRunSpan) error {
 	if err != nil || !ok {
 		return err
 	}
-	var open bool
-	if err := tx.QueryRowContext(ctx, selectSpanOpen, id).Scan(&open); err != nil {
-		return fmt.Errorf("read the span's end: %w", err)
+	res, err := tx.ExecContext(ctx, updateSpanEnd, end.At.UnixMilli(), string(end.Outcome), id)
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
 	}
-	if !open {
+	ended, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+	if ended == 0 {
 		return nil
-	}
-	if err := update(ctx, tx, updateSpanEnd, end.At.UnixMilli(), string(end.Outcome), id); err != nil {
-		return err
 	}
 	return update(ctx, tx, updateRuleRunEnd, text(end.Route), text(end.Halt), id)
 }
