@@ -27,7 +27,7 @@ retire_when: "zizmorcore/zizmor-action gains an input for --strict-collection, o
 
 #378's KTD5, copied into each part's plan (`docs/plans/2026-10-09-0511-issue-391-plan.md:76`, and #392's plan), says every job "reports only a complete scan, and it fails on its own errors", counting "files left unprocessed" as an error, because "a partial SARIF marks every alert it leaves out as fixed". Plans are not updated after they ship, so they still say it. The job's comment (`security.yml:319-320`), the Code scanning bullet in `AGENTS.md` and the `security.yml` row in the README say the job fails on an error, such as a malformed `.github/zizmor.yml`. That is true for some errors but not for a file zizmor cannot parse.
 
-The review of #392 found the gap (P2, adversarial reviewer), and its validator reproduced it. The finding was left unapplied when this learning was written. It went to the pull request as an open choice (session history).
+The review of #392 found the gap (P2, adversarial reviewer), and its validator reproduced it. The finding was left unapplied when this learning was written. It went to the pull request as an open choice (session history), and Codacy's review raised it again on #421. The maintainer chose option 2 below: keep the action, which the repository prefers to an inline script, and say what it does.
 
 ## Guidance
 

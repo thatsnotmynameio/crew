@@ -199,6 +199,10 @@ jobs:
   # it. Its alerts do not fail the job: in SARIF mode zizmor exits 0 on
   # findings. The job fails on an error, such as a malformed
   # .github/zizmor.yml or no input to audit, and then uploads nothing.
+  # A file zizmor cannot parse is not an error: zizmor skips it with a
+  # warning and uploads the results of the other files, and the action has no
+  # input for --strict-collection. The required actionlint check is what
+  # rejects broken workflow YAML.
   # The job's name and the category "zizmor" are contracts, as for grype above.
   zizmor:
     name: zizmor
