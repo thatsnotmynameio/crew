@@ -111,7 +111,8 @@ jobs:
   # license it cannot parse or a denied package, and the job then uploads
   # nothing.
   # The job's name and the category "dependency-review" are contracts, as
-  # for grype above.
+  # for grype above. tools/securityworkflow runs its sarif and results steps
+  # against the review's outputs.
   dependency-review:
     name: dependency-review
     runs-on: ubuntu-latest
