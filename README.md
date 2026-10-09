@@ -58,6 +58,15 @@ On macOS or Linux, on amd64 or arm64, with `gh` and `claude` or `codex` on your 
 
 With Go 1.27 or later, `go install github.com/thatsnotmynameio/crew/cmd/crew@vX.Y.Z` builds a release instead, where `vX.Y.Z` is its tag from the [releases page](https://github.com/thatsnotmynameio/crew/releases).
 
+Each release after v0.1.1 carries a signed build-provenance attestation for each archive and for the `crew` inside it, which shows that crew's own Release workflow built it from `main`. To check one, with `gh` logged in, run `gh attestation verify` on a downloaded archive or on the `crew` you installed:
+
+```sh
+gh attestation verify crew_linux_amd64.tar.gz --repo thatsnotmynameio/crew --signer-workflow thatsnotmynameio/crew/.github/workflows/release.yml --source-ref refs/heads/main
+gh attestation verify ~/.local/bin/crew --repo thatsnotmynameio/crew --signer-workflow thatsnotmynameio/crew/.github/workflows/release.yml --source-ref refs/heads/main
+```
+
+The install command above does not run this check, so it works without it. Releases up to v0.1.1 have no attestation, and neither has a crew built by `go install` or in a checkout: `gh` reports that it found none.
+
 Commit a `.crew/config.yaml` that declares your agents and rules ([`.crew/config.example.yaml`](.crew/config.example.yaml) lists every key, commented out and explained: copy it and uncomment what you need, and [`schema/config.schema.json`](schema/config.schema.json) gives your editor completion for every key in any of crew's config files), then run `crew` in the repository's main checkout:
 
 ```sh
@@ -349,8 +358,8 @@ For now the captain, which answers, decides nothing: every task carries that sam
 | `.github/workflows/ci.yml` | Pull requests: `version` (the release rule on `VERSION`) and `actionlint`. Pull requests and pushes to `main`: `go` (gofmt, vet, lint, tests, coverage floors, govulncheck), `codacy` (uploads the coverage to Codacy) and `codacy gate` (repeats Codacy's verdict on a pull request), both when the variable `CODACY_ENABLED` is `true` and skipped for Dependabot. The `acceptance` job is temporarily commented out because the suite is too slow; it can still be run locally. |
 | `.github/workflows/security.yml` | Pull requests and pushes to `main`, both jobs publishing to GitHub code scanning: `grype` (vulnerable and malicious packages in every manifest; fails only on a tool error or a scan that found no package in one of `go.mod`, `acceptance/go.mod` and `pnpm-lock.yaml`, never on its findings, which `.grype.yaml` ignores by vulnerability id and package with a reason) and `dependency-review` (on a pull request, fails when it adds a dependency with a license off the workflow's `allow-licenses` list or a known vulnerability, and publishes the license findings; a package is exempted through `allow-dependencies-licenses` and an advisory through `allow-ghsas`, each with a comment giving the reason; on a push, runs no review and uploads an analysis with no result, which each pull request's analysis is compared against). A malware match is never ignored: the package is removed. |
 | `.github/workflows/codacy-import.yml` | Pushes to `main` that change `.codacy/codacy.config.json`: applies it to Codacy. |
-| `.github/workflows/release.yml` | Started by hand on `main`: when `VERSION` has no release yet and `CHANGELOG.md` has a section for it, GoReleaser builds crew and publishes it as `vX.Y.Z`, a GitHub release with the binaries, `checksums.txt` and that section as its text. Merging a pull request publishes nothing. |
-| `.goreleaser.yaml` | What a release builds: crew for macOS and Linux on amd64 and arm64, one archive per platform, and `checksums.txt`. |
+| `.github/workflows/release.yml` | Started by hand on `main`: when `VERSION` has no release yet and `CHANGELOG.md` has a section for it, GoReleaser builds crew as a draft of `vX.Y.Z`, a GitHub release with the binaries, `checksums.txt` and that section as its text. The workflow then attests each archive and the `crew` inside it, checks each attestation with `gh attestation verify`, and only then publishes the draft. Merging a pull request publishes nothing. |
+| `.goreleaser.yaml` | What a release builds and uploads to its draft: crew for macOS and Linux on amd64 and arm64, one archive per platform, and `checksums.txt`. |
 | `.github/workflows/claude.yml` | `@claude` in issues, pull requests and reviews. |
 | `.github/dependabot.yml` | Weekly updates of the pinned actions, the shared workflows, the Codacy CLIs and the Go modules (crew's and the acceptance suite's). |
 | `VERSION` | The version. A pull request that bumps it adds its section to `CHANGELOG.md`; the release is started by hand once it merges. |
