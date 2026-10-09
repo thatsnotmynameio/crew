@@ -5,8 +5,9 @@
 //
 // check refuses unless the run was started on main, CHANGELOG.md has a
 // section for the version, and GitHub has neither the version's tag nor a
-// published release of it. A draft a failed upload left does not count:
-// GoReleaser finishes it. On a pass, check prints the version and its tag
+// published release of it. A draft does not count: it is what the workflow's
+// build job leaves for its publish job, and what a failed run leaves, which
+// GoReleaser then finishes. On a pass, check prints the version and its tag
 // as outputs and writes the section to the notes file, the release text.
 // Each refusal or error prints one ::error:: line, which fails the step
 // with its reason.
