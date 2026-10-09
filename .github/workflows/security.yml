@@ -1,7 +1,8 @@
 # Every pull request and each push to main: the security analyses, published
 # to GitHub code scanning. The push gives code scanning the analysis of main
-# that a pull request's alerts are compared against. For now, CodeQL for Go
-# and for GitHub Actions.
+# that a pull request's alerts are compared against. CodeQL analyses Go and
+# GitHub Actions; Grype scans the repository's dependencies, and dependency
+# review checks the dependencies a pull request adds.
 # No job holds a secret: code scanning accepts an upload from any run that
 # the pull_request event started, a fork's included, with the read-only token.
 # No paths filter: these checks will be required, and a required check that
@@ -116,3 +117,193 @@ jobs:
         with:
           sarif_file: ${{ runner.temp }}/codeql-results
           category: /language:${{ matrix.language }}
+
+  # Vulnerable dependencies and malicious packages in every manifest of the
+  # checkout, with the ignore rules of .grype.yaml. Its alerts do not fail the
+  # job: code scanning reports the ones a pull request adds. The job fails on
+  # a tool error, or on a scan that found no package in one of MANIFESTS, and
+  # then uploads nothing, since a partial analysis would mark the alerts it
+  # leaves out as fixed.
+  # The job's name and the category "grype" are contracts: the checks ruleset
+  # requires the job by name, and the daily scan of main uploads under the
+  # same category. A renamed job leaves a required check pending forever, and
+  # a renamed category leaves its old alerts open on main.
+  grype:
+    name: grype
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # uploads the results to code scanning
+    # A pull request's newer run replaces the older one. Each main commit gets
+    # a group of its own and is never cancelled.
+    concurrency:
+      group: ${{ github.workflow }}-grype-${{ github.event_name == 'push' && github.sha || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      # Grype's release binary, checked against its published sha256. Bump
+      # both by hand: Dependabot does not see them.
+      GRYPE_VERSION: 0.120.1
+      GRYPE_SHA256: 0a9ee97ef5ae2ee953b0a80098105052e846cdbe319a57d808b519c33cd1343d
+      # The manifests the scan must find packages in.
+      MANIFESTS: go.mod acceptance/go.mod pnpm-lock.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install grype
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o grype.tar.gz "https://github.com/anchore/grype/releases/download/v$GRYPE_VERSION/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "$GRYPE_SHA256  grype.tar.gz" | sha256sum --check --strict
+          tar -xzf grype.tar.gz grype
+      # No --fail-on and no --only-fixed: grype exits non-zero only on an
+      # error, and malware, which has no fixed version, stays in the results.
+      # The outputs go to RUNNER_TEMP, so the scan never catalogues them. A
+      # database grype cannot check for updates, or older than its maximum
+      # age, is an error.
+      - name: scan
+        shell: bash
+        env:
+          GRYPE_DB_REQUIRE_UPDATE_CHECK: "true"
+          GRYPE_DB_VALIDATE_AGE: "true"
+          GRYPE_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          "$RUNNER_TEMP/grype" dir:. -c .grype.yaml \
+            -o sarif="$RUNNER_TEMP/grype.sarif" \
+            -o cyclonedx-json="$RUNNER_TEMP/grype.cdx.json"
+          if ! jq -e '.runs | length > 0' "$RUNNER_TEMP/grype.sarif" > /dev/null; then
+            echo "::error::Grype wrote no SARIF analysis." >&2
+            exit 1
+          fi
+      # The proof that the scan looked at something: each manifest gave it at
+      # least one package.
+      - name: manifests
+        shell: bash
+        run: |
+          missing=0
+          for manifest in $MANIFESTS; do
+            packages="$(jq --arg path "/$manifest" '[.components[]? | select(any(.properties[]?; (.name | test("^syft:location:[0-9]+:path$")) and .value == $path))] | length' "$RUNNER_TEMP/grype.cdx.json")"
+            echo "$manifest: $packages packages"
+            if [ "$packages" -eq 0 ]; then
+              echo "::error::Grype found no package in $manifest." >&2
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: ${{ runner.temp }}/grype.sarif
+          category: grype
+      - name: results
+        run: |
+          echo "Grype results: $(jq '[.runs[].results[]] | length' "$RUNNER_TEMP/grype.sarif")"
+
+  # The dependencies a pull request adds, through GitHub's dependency review:
+  # a license off the allowlist below, or a known vulnerability, fails the
+  # job. The license findings go to code scanning; a vulnerable dependency
+  # does not, since grype already files the same advisory on the same
+  # manifest. A push runs no review and uploads an analysis with no result,
+  # the base each pull request's analysis is compared against.
+  # The action fails its own step on an error, such as a failed API call, a
+  # license it cannot parse or a denied package, and the job then uploads
+  # nothing.
+  # The job's name and the category "dependency-review" are contracts, as
+  # for grype above. tools/securityworkflow runs its sarif and results steps
+  # against the review's outputs.
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # uploads the results to code scanning
+    concurrency:
+      group: ${{ github.workflow }}-dependency-review-${{ github.event_name == 'push' && github.sha || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The action throws on push: it compares a pull request's base and head.
+      # warn-only keeps the findings from failing its step, so that the
+      # license findings reach code scanning first; the last step fails on
+      # them.
+      - id: review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # The licenses a dependency may have. Today's dependency graph holds
+          # MIT and BSD-3-Clause, Apache-2.0 (go.yaml.in/yaml/v3, with MIT)
+          # and LicenseRef-scancode-google-patent-license-golang (Go's
+          # golang.org/x modules, with BSD-3-Clause). MIT-0, BSD-2-Clause,
+          # ISC and 0BSD are permissive licenses that ask no more of crew's
+          # MIT license than a notice. No copyleft license is on the list:
+          # adding one, or any other license, is a decision made here.
+          allow-licenses: MIT, MIT-0, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, 0BSD, LicenseRef-scancode-google-patent-license-golang
+          # Every new vulnerability, whatever its severity and scope.
+          fail-on-severity: low
+          fail-on-scopes: runtime, development, unknown
+          # A comment would need pull-requests: write.
+          comment-summary-in-pr: never
+          warn-only: true
+      # One result per added dependency whose license is off the allowlist, at
+      # line 1 of its manifest, named by the package so that each one is an
+      # alert of its own. No security-severity: a license is not a
+      # vulnerability. On push the review's outputs are empty, which gives
+      # the analysis with no result.
+      - name: sarif
+        env:
+          LICENSE_CHANGES: ${{ steps.review.outputs.invalid-license-changes }}
+        run: |
+          jq -n --arg changes "$LICENSE_CHANGES" '
+            [if $changes == "" then empty else ($changes | fromjson | .forbidden[]?) end] as $forbidden
+            | {
+                version: "2.1.0",
+                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                runs: [{
+                  tool: {driver: {
+                    name: "dependency-review",
+                    informationUri: "https://github.com/actions/dependency-review-action",
+                    rules: ([$forbidden[] | {
+                      id: "license/\(.name)",
+                      name: "LicenseOffTheAllowlist",
+                      shortDescription: {text: "\(.name) has a license off the allowlist"},
+                      fullDescription: {text: "A dependency the pull request adds has a license that is not on allow-licenses in .github/workflows/security.yml."},
+                      help: {text: "Remove the dependency, or add its license to allow-licenses in .github/workflows/security.yml."},
+                      defaultConfiguration: {level: "error"}
+                    }] | unique_by(.id))
+                  }},
+                  results: [$forbidden[] | {
+                    ruleId: "license/\(.name)",
+                    level: "error",
+                    message: {text: "\(.name)@\(.version) has the license \(.license // "none"), which is not on the allowlist."},
+                    locations: [{physicalLocation: {
+                      artifactLocation: {uri: .manifest},
+                      region: {startLine: 1}
+                    }}]
+                  }]
+                }]
+              }' > "$RUNNER_TEMP/dependency-review.sarif"
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: ${{ runner.temp }}/dependency-review.sarif
+          category: dependency-review
+      - name: results
+        env:
+          VULNERABLE_CHANGES: ${{ steps.review.outputs.vulnerable-changes }}
+        run: |
+          failed=0
+          licenses="$(jq '[.runs[].results[]] | length' "$RUNNER_TEMP/dependency-review.sarif")"
+          echo "Dependencies with a license off the allowlist: $licenses"
+          jq -r '.runs[].results[] | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=1::\(.message.text)"' "$RUNNER_TEMP/dependency-review.sarif"
+          if [ "$licenses" -gt 0 ]; then
+            failed=1
+          fi
+          vulnerable="$(jq -n --arg changes "$VULNERABLE_CHANGES" 'if $changes == "" then 0 else $changes | fromjson | length end')"
+          echo "Vulnerable dependencies: $vulnerable"
+          if [ "$vulnerable" -gt 0 ]; then
+            jq -r '.[] | "::error file=\(.manifest),line=1::\(.name)@\(.version) has known vulnerabilities: \([.vulnerabilities[].advisory_ghsa_id] | join(", "))"' <<< "$VULNERABLE_CHANGES"
+            failed=1
+          fi
+          exit "$failed"

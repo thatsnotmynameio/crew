@@ -302,6 +302,27 @@ func (f *failures) pop(key string) error {
 	return errs[0]
 }
 
+// recorded are the values a board records by issue key, each recorded
+// unless a failure scripted for its key comes first. Its zero value is ready
+// to use; its owner guards it with its mutex.
+type recorded[T any] struct {
+	errs  failures
+	byKey map[string][]T
+}
+
+// record appends v to key's values, or returns the failure scripted next for
+// key and records nothing.
+func (r *recorded[T]) record(key string, v T) error {
+	if err := r.errs.pop(key); err != nil {
+		return err
+	}
+	if r.byKey == nil {
+		r.byKey = map[string][]T{}
+	}
+	r.byKey[key] = append(r.byKey[key], v)
+	return nil
+}
+
 // Preparation is a scriptable port.Preparer, to embed in a fake. It records
 // the states of each call, reports the step set by ReportStep and returns the
 // error set by Fail. Its zero value reports no step and succeeds.
@@ -369,8 +390,7 @@ func NewPreparingTracker(issues ...crew.Issue) PreparingTracker {
 // scripted with FailStatuses comes first. Its zero value is ready to use.
 type StatusBoard struct {
 	mu       sync.Mutex
-	errs     failures
-	statuses map[string][]crew.Status
+	statuses recorded[crew.Status]
 }
 
 // ReportStatus implements port.StatusReporter.
@@ -378,13 +398,9 @@ func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := status.IssueID().Key
-	if err := b.errs.pop(key); err != nil {
+	if err := b.statuses.record(key, status); err != nil {
 		return fmt.Errorf("report status on issue %s: %w", key, err)
 	}
-	if b.statuses == nil {
-		b.statuses = map[string][]crew.Status{}
-	}
-	b.statuses[key] = append(b.statuses[key], status)
 	return nil
 }
 
@@ -393,14 +409,14 @@ func (b *StatusBoard) ReportStatus(_ context.Context, status crew.Status) error 
 func (b *StatusBoard) FailStatuses(key string, errs ...error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.errs.add(key, errs...)
+	b.statuses.errs.add(key, errs...)
 }
 
 // Statuses returns the statuses written for key, in order.
 func (b *StatusBoard) Statuses(key string) []crew.Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return slices.Clone(b.statuses[key])
+	return slices.Clone(b.statuses.byKey[key])
 }
 
 // ReportingTracker is a PreparingTracker that also implements
@@ -505,8 +521,7 @@ func NewFindingTracker(issues ...crew.Issue) FindingTracker {
 // ready to use.
 type PullRequestBoard struct {
 	mu      sync.Mutex
-	errs    failures
-	reports map[string][]crew.PullRequestReport
+	reports recorded[crew.PullRequestReport]
 }
 
 // ReportPullRequests implements port.PullRequestReporter.
@@ -514,13 +529,9 @@ func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.Pul
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := report.IssueID().Key
-	if err := b.errs.pop(key); err != nil {
+	if err := b.reports.record(key, report); err != nil {
 		return fmt.Errorf("report pull requests of issue %s: %w", key, err)
 	}
-	if b.reports == nil {
-		b.reports = map[string][]crew.PullRequestReport{}
-	}
-	b.reports[key] = append(b.reports[key], report)
 	return nil
 }
 
@@ -530,7 +541,7 @@ func (b *PullRequestBoard) ReportPullRequests(_ context.Context, report crew.Pul
 func (b *PullRequestBoard) FailPullRequests(key string, errs ...error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.errs.add(key, errs...)
+	b.reports.errs.add(key, errs...)
 }
 
 // PullRequestReports returns the pull request reports recorded for key, in
@@ -538,7 +549,7 @@ func (b *PullRequestBoard) FailPullRequests(key string, errs ...error) {
 func (b *PullRequestBoard) PullRequestReports(key string) []crew.PullRequestReport {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return slices.Clone(b.reports[key])
+	return slices.Clone(b.reports.byKey[key])
 }
 
 // PullRequestTracker is a ReportingTracker that also implements

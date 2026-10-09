@@ -1,6 +1,7 @@
-# What a release builds and publishes: crew for macOS and Linux on amd64 and
-# arm64, one tar.gz per platform, and checksums.txt. The Release workflow
-# (.github/workflows/release.yml) runs it and says when a release happens.
+# What a release builds and uploads to a draft release: crew for macOS and
+# Linux on amd64 and arm64, one tar.gz per platform, and checksums.txt. The
+# Release workflow (.github/workflows/release.yml) runs it, attests the
+# assets, publishes the draft and says when a release happens.
 # Try it locally with a snapshot build:
 # go run github.com/goreleaser/goreleaser/v2@v2.18.2 release --snapshot --clean
 version: 2
@@ -32,11 +33,14 @@ checksum:
 
 release:
   name_template: "{{ .Tag }}"
-  # The tag stays local until the release is published, then GitHub creates
-  # it at the built commit.
+  # A draft: the Release workflow publishes it once the archives and their
+  # binaries are attested and verified.
+  draft: true
+  # The tag stays local until the draft is published, then GitHub creates it
+  # at the built commit.
   target_commitish: "{{ .Commit }}"
-  # A re-run finishes the draft a failed upload left, with this run's notes
-  # and assets.
+  # A re-run finishes the draft a failed run left, with this run's notes and
+  # assets.
   use_existing_draft: true
   replace_existing_artifacts: true
   mode: replace
