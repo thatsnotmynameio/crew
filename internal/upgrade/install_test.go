@@ -80,7 +80,13 @@ var zeroSum = strings.Repeat("0", 64)
 // path and what it is, for unchanged.
 func installed(t *testing.T) (string, os.FileInfo) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "crew")
+	// Resolved: Target returns the install's real path, and on macOS the
+	// temp directory sits behind the /var -> /private/var link.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "crew")
 	if err := os.WriteFile(path, []byte("old crew"), 0o700); err != nil {
 		t.Fatal(err)
 	}

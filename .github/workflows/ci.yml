@@ -35,17 +35,28 @@ jobs:
       - name: actionlint
         run: go tool actionlint -color
 
-  # The Go module: tidy go.mod, formatting, vet, lint (including the layering rules in
-  # .golangci.yml), tests with the race detector and coverage, the coverage
-  # floor, and known vulnerabilities. It holds no secret: on a Dependabot
-  # pull request the updated module runs here.
-  go-linux:
-    name: go (linux)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # The Go module on each system crew ships for: tidy go.mod, formatting, vet,
+  # lint (including the layering rules in .golangci.yml), tests with the race
+  # detector and coverage, and known vulnerabilities. Linux alone checks the
+  # coverage floor (the action runs in Docker, which only Linux runners have)
+  # and uploads lint's findings, so code scanning gets them once. It holds no
+  # secret: on a Dependabot pull request the updated module runs here.
+  go:
+    name: go (${{ matrix.os }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write # uploads golangci-lint's findings to code scanning
+    strategy:
+      # One system's failure does not cancel the other's run.
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+          - os: macos
+            runner: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,7 +86,7 @@ jobs:
           version: v2.14.0
           args: --output.text.path=stdout --output.sarif.path=golangci-lint.sarif
       # After a failed lint too, so its findings show; not when lint never ran.
-      - if: ${{ !cancelled() && hashFiles('golangci-lint.sarif') != '' }}
+      - if: ${{ !cancelled() && matrix.os == 'linux' && hashFiles('golangci-lint.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: golangci-lint.sarif
@@ -84,34 +95,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...
       - name: coverage floor
+        if: matrix.os == 'linux'
         uses: vladopajic/go-test-coverage@f94bcf0d6b9fa5fb8b783830b22648f6c17475e2 # v2.19.0
         with:
           config: ./.testcoverage.yml
       - name: govulncheck
         run: go tool govulncheck ./...
-
-  # crew ships macOS binaries: its tests, vet and lint run there too, so code
-  # behind a darwin build constraint is built and linted. Coverage and
-  # govulncheck stay in the go (linux) job.
-  go-macos:
-    name: go (macos)
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: go vet
-        run: go vet ./...
-      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.14.0
-      - name: go test
-        if: ${{ !cancelled() }}
-        run: go test -race ./...
 
   # The release build from .goreleaser.yaml, as a snapshot: every platform's
   # binary, archives and checksums.txt in dist/, published nowhere. A change
