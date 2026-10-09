@@ -4,9 +4,10 @@
 # and as a mapping, a function preset, a function called through its preset
 # and by its own name, rules with and without actions, sessions with and
 # without a name or a wait, on maps, routes as a label and as a list of
-# steps, notify set both ways, multi-line prompts, an answering list, and
-# questions with a question action and a question step. Its function,
-# word-count, is invented too: the test registers it.
+# steps, notify set both ways, multi-line prompts, an answering list,
+# questions with a question action and a question step, and statistics
+# turned off. Its function, word-count, is invented too: the test registers
+# it.
 poll_interval_seconds: 120
 max_parallel_issues: 4
 answering_apps:
@@ -21,6 +22,8 @@ queues:
 tracker:
   name: github
   bot: concierge
+statistics:
+  store: off
 agents:
   translator:
     harness:

@@ -47,7 +47,7 @@ func withHarnesses(r *crewRun, tracker port.Tracker, harnesses map[string]port.H
 		factories[name] = fake.HarnessFactory(h)
 	}
 	r.opts.Registry = registry.New(
-		map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)}, factories, nil, nil,
+		map[string]port.TrackerFactory{"fake": fake.TrackerFactory(tracker)}, factories, nil, r.stores(),
 	)
 }
 

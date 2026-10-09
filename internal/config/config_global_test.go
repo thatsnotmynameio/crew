@@ -153,6 +153,27 @@ func TestGlobalFile(t *testing.T) {
 	}
 }
 
+// R1: XDG_DATA_HOME wins over the home directory, the folder is the same on
+// every OS, and a relative or unknown directory gives no data folder.
+func TestDataDir(t *testing.T) {
+	tests := []struct {
+		name, xdg, home, want string
+	}{
+		{"XDG_DATA_HOME wins", "/x", "/home/u", "/x/crew"},
+		{"home without XDG_DATA_HOME", "", "/home/u", "/home/u/.local/share/crew"},
+		{"neither", "", "", ""},
+		{"relative XDG_DATA_HOME", "rel", "/home/u", ""},
+		{"relative home", "", "relative/home", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := config.DataDir(tt.xdg, tt.home); got != tt.want {
+				t.Errorf("DataDir(%q, %q) = %q, want %q", tt.xdg, tt.home, got, tt.want)
+			}
+		})
+	}
+}
+
 // Covers AE7: a config under ~/Library/Application Support is never read,
 // since GlobalFile never points there.
 func TestApplicationSupportIsNeverRead(t *testing.T) {
