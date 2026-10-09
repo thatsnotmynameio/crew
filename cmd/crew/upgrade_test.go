@@ -180,7 +180,13 @@ type upgradeFixture struct {
 // with the fake's releases tags and v0.5.0 the latest.
 func newUpgrade(t *testing.T, kind upgrade.Kind, version string, tags ...string) *upgradeFixture {
 	t.Helper()
-	exe := filepath.Join(t.TempDir(), "crew")
+	// Resolved: crew upgrade reports the install's real path, and on macOS
+	// the temp directory sits behind the /var -> /private/var link.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "crew")
 	if err := os.WriteFile(exe, []byte("crew "+version), 0o700); err != nil {
 		t.Fatal(err)
 	}
