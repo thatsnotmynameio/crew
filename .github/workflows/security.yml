@@ -1,0 +1,101 @@
+# Every pull request and each push to main: the security analyses, published
+# to GitHub code scanning. The push gives code scanning the analysis of main
+# that a pull request's alerts are compared against. For now, Grype over the
+# repository's dependencies.
+# No job holds a secret: code scanning accepts an upload from any run that
+# the pull_request event started, a fork's included, with the read-only token.
+# No paths filter: these checks will be required, and a required check that
+# a path filter skips stays pending.
+# Each job checks out the pull request's merge commit, which is the commit its
+# results are filed under, so configuration files come from the merged tree
+# and a change to them applies to the pull request that makes it.
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  # Vulnerable dependencies and malicious packages in every manifest of the
+  # checkout, with the ignore rules of .grype.yaml. Its alerts do not fail the
+  # job: code scanning reports the ones a pull request adds. The job fails on
+  # a tool error, or on a scan that found no package in one of MANIFESTS, and
+  # then uploads nothing, since a partial analysis would mark the alerts it
+  # leaves out as fixed.
+  # The job's name and the category "grype" are contracts: the checks ruleset
+  # requires the job by name, and the daily scan of main uploads under the
+  # same category. A renamed job leaves a required check pending forever, and
+  # a renamed category leaves its old alerts open on main.
+  grype:
+    name: grype
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # uploads the results to code scanning
+    # A pull request's newer run replaces the older one. Each main commit gets
+    # a group of its own and is never cancelled.
+    concurrency:
+      group: ${{ github.workflow }}-grype-${{ github.event_name == 'push' && github.sha || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      # Grype's release binary, checked against its published sha256. Bump
+      # both by hand: Dependabot does not see them.
+      GRYPE_VERSION: 0.120.1
+      GRYPE_SHA256: 0a9ee97ef5ae2ee953b0a80098105052e846cdbe319a57d808b519c33cd1343d
+      # The manifests the scan must find packages in.
+      MANIFESTS: go.mod acceptance/go.mod pnpm-lock.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: install grype
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o grype.tar.gz "https://github.com/anchore/grype/releases/download/v$GRYPE_VERSION/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "$GRYPE_SHA256  grype.tar.gz" | sha256sum --check --strict
+          tar -xzf grype.tar.gz grype
+      # No --fail-on and no --only-fixed: grype exits non-zero only on an
+      # error, and malware, which has no fixed version, stays in the results.
+      # The outputs go to RUNNER_TEMP, so the scan never catalogues them. A
+      # database grype cannot check for updates, or older than its maximum
+      # age, is an error.
+      - name: scan
+        shell: bash
+        env:
+          GRYPE_DB_REQUIRE_UPDATE_CHECK: "true"
+          GRYPE_DB_VALIDATE_AGE: "true"
+          GRYPE_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          "$RUNNER_TEMP/grype" dir:. -c .grype.yaml \
+            -o sarif="$RUNNER_TEMP/grype.sarif" \
+            -o cyclonedx-json="$RUNNER_TEMP/grype.cdx.json"
+          if ! jq -e '.runs | length > 0' "$RUNNER_TEMP/grype.sarif" > /dev/null; then
+            echo "::error::Grype wrote no SARIF analysis." >&2
+            exit 1
+          fi
+      # The proof that the scan looked at something: each manifest gave it at
+      # least one package.
+      - name: manifests
+        shell: bash
+        run: |
+          missing=0
+          for manifest in $MANIFESTS; do
+            packages="$(jq --arg path "/$manifest" '[.components[]? | select(any(.properties[]?; (.name | test("^syft:location:[0-9]+:path$")) and .value == $path))] | length' "$RUNNER_TEMP/grype.cdx.json")"
+            echo "$manifest: $packages packages"
+            if [ "$packages" -eq 0 ]; then
+              echo "::error::Grype found no package in $manifest." >&2
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: ${{ runner.temp }}/grype.sarif
+          category: grype
+      - name: results
+        run: |
+          echo "Grype results: $(jq '[.runs[].results[]] | length' "$RUNNER_TEMP/grype.sarif")"
