@@ -39,7 +39,7 @@ func (e RunTaken) apply(RuleRun) RuleRun {
 	r := RuleRun{
 		id: e.Run, continues: e.Continues, issue: NewIssue(e.Issue), rule: e.Rule, taken: e.At,
 		phase: TakingPhase{}, workspace: NoWorkspace{}, start: start, session: inherited(start),
-		questions: slices.Clone(e.Questions), lookup: LookupNotAsked{},
+		questions: slices.Clone(e.Questions), lookup: LookupNotAsked{}, stack: e.Stack,
 	}
 	for _, name := range e.Actions {
 		r.actions = append(r.actions, newActionRun(name))
@@ -104,7 +104,9 @@ func (WorkspaceMissing) apply(r RuleRun) RuleRun {
 
 func (e WorkspaceOpened) apply(r RuleRun) RuleRun {
 	r = r.acting()
-	opened := OpenedWorkspace{Workspace: e.Workspace, Log: e.Log, Resumed: e.Resumed, Opened: e.At}
+	opened := OpenedWorkspace{
+		Workspace: e.Workspace, Log: e.Log, Resumed: e.Resumed, Opened: e.At, DefaultBranch: e.DefaultBranch,
+	}
 	r.workspace = InWorkspace{Opened: opened}
 	return r
 }

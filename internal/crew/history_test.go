@@ -473,3 +473,75 @@ func TestTheQuestionsANewRunInherits(t *testing.T) {
 		t.Errorf("without a last run: %#v, want none", got)
 	}
 }
+
+// tookIn returns the events of run, of rule on issue, taken at minute n in
+// a new workspace on branch.
+func tookIn(run RuleRunID, issue IssueID, rule RuleName, n int, branch string) []RunEvent {
+	h := EventHead{Run: run, At: at(n), IssueID: issue, IssueRef: "#" + issue.Key, Rule: rule}
+	w := Workspace{Name: WorkspaceName("issue-" + issue.Key + "-" + string(rule)), Branch: branch}
+	return []RunEvent{RunTaken{EventHead: h, Issue: IssueData{ID: issue}}, WorkspaceOpened{EventHead: h, Workspace: w}}
+}
+
+// stackHistory is #9's runs of plan at minute 1, implement at minute 5 and
+// review at minute 3, and #8's run of implement at minute 9.
+func stackHistory() *History {
+	return folded(
+		tookIn("run-1", testID, "plan", 1, "crew/issue-9-plan"),
+		tookIn("run-2", testID, "implement", 5, "crew/issue-9-implement"),
+		tookIn("run-3", testID, "review", 3, "crew/issue-9-review"),
+		tookIn("run-4", blockerID, "implement", 9, "crew/issue-8-implement"),
+	)
+}
+
+func TestTheLatestRunAcrossRulesIsTheOneTakenLast(t *testing.T) {
+	h := stackHistory()
+	for _, tc := range []struct {
+		name  string
+		issue IssueID
+		rules []RuleName
+		want  RuleRunID
+	}{
+		{"of every rule", testID, []RuleName{"plan", "implement", "review"}, "run-2"},
+		{"of the rules given", testID, []RuleName{"plan", "review"}, "run-3"},
+		{"of a rule without a run", testID, []RuleName{"fix"}, ""},
+		{"of an issue without a run", IssueID{Repository: "R_1", Key: "99"}, []RuleName{"implement"}, ""},
+	} {
+		run, ok := h.LatestRun(tc.issue, tc.rules...)
+		if run.ID() != tc.want || ok != (tc.want != "") {
+			t.Errorf("%s: LatestRun = %q, %v, want %q", tc.name, run.ID(), ok, tc.want)
+		}
+	}
+}
+
+func TestABranchNamesTheIssueWhoseRunWorkedOnIt(t *testing.T) {
+	h := stackHistory()
+	if got, ok := h.IssueOfBranch("crew/issue-8-implement"); !ok || got != blockerID {
+		t.Errorf("IssueOfBranch(crew/issue-8-implement) = %v, %v, want #8", got, ok)
+	}
+	if got, ok := h.IssueOfBranch("people/fix-it"); ok {
+		t.Errorf("IssueOfBranch(people/fix-it) = %v, want none", got)
+	}
+	for _, e := range tookIn("run-5", IssueID{Repository: "R_1", Key: "7"}, "plan", 9, "crew/issue-8-implement") {
+		h.Fold(e)
+	}
+	if got, _ := h.IssueOfBranch("crew/issue-8-implement"); got != (IssueID{Repository: "R_1", Key: "7"}) {
+		t.Errorf("IssueOfBranch of two runs taken at once = %v, want #7, the lowest", got)
+	}
+	for _, e := range tookIn("run-6", testID, "fix", 10, "crew/issue-8-implement") {
+		h.Fold(e)
+	}
+	if got, _ := h.IssueOfBranch("crew/issue-8-implement"); got != testID {
+		t.Errorf("IssueOfBranch after a later run = %v, want #9, taken last", got)
+	}
+}
+
+func TestTheBranchesOfAnIssuesRuns(t *testing.T) {
+	h := stackHistory()
+	want := []string{"crew/issue-9-implement", "crew/issue-9-plan", "crew/issue-9-review"}
+	if got := h.Branches(testID); !slices.Equal(got, want) {
+		t.Errorf("Branches(#9) = %q, want %q", got, want)
+	}
+	if got := h.Branches(IssueID{Repository: "R_1", Key: "99"}); got != nil {
+		t.Errorf("Branches(#99) = %q, want none", got)
+	}
+}

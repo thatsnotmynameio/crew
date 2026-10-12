@@ -115,6 +115,7 @@ func TestApplyLeavesTheRunItIsGivenAsItWas(t *testing.T) {
 // snapshots are runs in each phase, for the snapshot tests.
 var snapshots = map[string][]RunEvent{
 	"taking":      {taken()},
+	"stacked":     {stackedTake()},
 	"resuming":    reopening(),
 	"stopping":    seq(inSession(), stopped(5)),
 	"in a shell":  judging(),

@@ -22,6 +22,9 @@ type OpenedWorkspace struct {
 	Resumed bool
 	// Opened is when the workspace was ready.
 	Opened time.Time
+	// DefaultBranch is the name of origin's default branch: the run's base
+	// when it is not stacked.
+	DefaultBranch string
 }
 
 // Since returns when the run's new workspace was made, from which its pull

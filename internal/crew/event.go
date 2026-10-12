@@ -54,6 +54,9 @@ type RunTaken struct {
 	// Questions are the open questions the run inherits from the run it
 	// continues (History.Questions), oldest first.
 	Questions []Question
+	// Stack is the blocker's pull request the run is taken on, when the
+	// take stacked it.
+	Stack Optional[Stack]
 }
 
 // TakeMoved is the run's take move that landed: the issue moved from From
@@ -105,6 +108,9 @@ type WorkspaceOpened struct {
 	// Resumed says whether the workspace is the reopened workspace of the
 	// run this one resumes.
 	Resumed bool
+	// DefaultBranch is the name of origin's default branch, as the
+	// workspace reported it.
+	DefaultBranch string
 }
 
 // ActionSessionAsked is a session action's start: its session asked to

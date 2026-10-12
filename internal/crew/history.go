@@ -1,6 +1,9 @@
 package crew
 
-import "slices"
+import (
+	"slices"
+	"time"
+)
 
 // crashedReason is the reason of a run that recorded no end for the action
 // that ended it: crew did not live to see it end.
@@ -57,6 +60,52 @@ func (h *History) Fold(e RunEvent) {
 func (h *History) LastRun(issue IssueID, rule RuleName) (RuleRun, bool) {
 	past, ok := h.runs[ruleKey{issue: issue, rule: rule}]
 	return past.run, ok
+}
+
+// LatestRun returns the latest run of issue among the last runs of rules,
+// the one taken last, and whether there was one.
+func (h *History) LatestRun(issue IssueID, rules ...RuleName) (RuleRun, bool) {
+	var latest RuleRun
+	found := false
+	for _, rule := range rules {
+		if run, ok := h.LastRun(issue, rule); ok && (!found || run.Taken().After(latest.Taken())) {
+			latest, found = run, true
+		}
+	}
+	return latest, found
+}
+
+// IssueOfBranch returns the issue whose last run of a rule has a worktree
+// on branch, the one taken last when several do, and whether one does.
+// Runs taken at the same time go by issue, the lowest first.
+func (h *History) IssueOfBranch(branch string) (IssueID, bool) {
+	var issue IssueID
+	var taken time.Time
+	found := false
+	for k, past := range h.runs {
+		w, _, ok := worktreeOf(past.run)
+		if !ok || w.Branch != branch {
+			continue
+		}
+		at := past.run.Taken()
+		if !found || at.After(taken) || at.Equal(taken) && k.issue.Compare(issue) < 0 {
+			issue, taken, found = k.issue, at, true
+		}
+	}
+	return issue, found
+}
+
+// Branches returns the branches of the worktrees of issue's last runs, of
+// every rule, each once and in order; none when it has no run with one.
+func (h *History) Branches(issue IssueID) []string {
+	var out []string
+	for k, past := range h.runs {
+		if w, _, ok := worktreeOf(past.run); ok && k.issue == issue && !slices.Contains(out, w.Branch) {
+			out = append(out, w.Branch)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Start returns how a new run of rule on issue starts, from the last run

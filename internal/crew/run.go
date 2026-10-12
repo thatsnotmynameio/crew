@@ -32,6 +32,7 @@ type RuleRun struct {
 	session   Optional[LatestSession]
 	questions []Question
 	lookup    Lookup
+	stack     Optional[Stack]
 }
 
 // ID returns the run's id.
@@ -49,6 +50,10 @@ func (r RuleRun) Rule() RuleName { return r.rule }
 
 // Taken returns when the rule took the issue.
 func (r RuleRun) Taken() time.Time { return r.taken }
+
+// Stack returns the blocker's pull request the run was taken on, when its
+// take stacked it.
+func (r RuleRun) Stack() Optional[Stack] { return r.stack }
 
 // Stopping reports whether a stop reached the run before it was released.
 func (r RuleRun) Stopping() bool { return r.stopping }
@@ -146,7 +151,7 @@ func (r RuleRun) Snapshot() RuleRunSnapshot {
 	s := RuleRunSnapshot{
 		ID: r.id, Continues: r.continues, Issue: r.issue.Data(), Rule: r.rule, Taken: r.taken,
 		Stopping: r.stopping, TimeUp: r.timeUp, Phase: clonePhase(r.phase), Workspace: r.workspace, Start: r.Start(),
-		Cursor: r.cursor, Session: r.session, Questions: slices.Clone(r.questions), Lookup: r.lookup,
+		Cursor: r.cursor, Session: r.session, Questions: slices.Clone(r.questions), Lookup: r.lookup, Stack: r.stack,
 	}
 	for _, a := range r.actions {
 		s.Actions = append(s.Actions, a.snapshot())
@@ -184,6 +189,9 @@ type RuleRunSnapshot struct {
 	// Questions are the run's open questions, oldest first.
 	Questions []Question
 	Lookup    Lookup
+	// Stack is the blocker's pull request the run was taken on, when its
+	// take stacked it.
+	Stack Optional[Stack]
 }
 
 // errBadSnapshot is the error of a snapshot RestoreRuleRun rejects.
@@ -202,6 +210,7 @@ func RestoreRuleRun(s RuleRunSnapshot) (RuleRun, error) {
 		id: s.ID, continues: s.Continues, issue: NewIssue(s.Issue), rule: s.Rule, taken: s.Taken,
 		stopping: s.Stopping, timeUp: s.TimeUp, phase: clonePhase(s.Phase), workspace: s.Workspace, start: s.Start,
 		cursor: s.Cursor, session: s.Session, questions: slices.Clone(s.Questions), lookup: s.Lookup,
+		stack: s.Stack,
 	}
 	for _, a := range s.Actions {
 		r.actions = append(r.actions, restoreAction(a))
