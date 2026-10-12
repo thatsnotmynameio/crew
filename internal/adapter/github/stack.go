@@ -53,6 +53,12 @@ const (
     }`
 )
 
+// The GraphQL types of the rounds' variables.
+const (
+	intVar    = "Int!"
+	stringVar = "String!"
+)
+
 // The timeline events that link a pull request to a blocker by hand.
 const (
 	connectedEvent    = "ConnectedEvent"
@@ -219,7 +225,7 @@ func (t *Tracker) FindStacks(ctx context.Context, issues []crew.Issue) ([]crew.I
 	for i, issue := range issues {
 		keys[i] = issue.ID().Key
 	}
-	repo, found, err := readAliases[stackCandidate](ctx, t.gh, "Int!", candidateField, "", keys)
+	repo, found, err := readAliases[stackCandidate](ctx, t.gh, intVar, candidateField, "", keys)
 	if err != nil {
 		return nil, fmt.Errorf("read the stacks: find the blockers: %w", err)
 	}
@@ -262,7 +268,7 @@ func (t *Tracker) FindStacks(ctx context.Context, issues []crew.Issue) ([]crew.I
 func (t *Tracker) linkedPullRequests(
 	ctx context.Context, repo string, keys []string,
 ) (map[string][]crew.StackPullRequest, error) {
-	timelines, err := readRound[stackTimeline](ctx, t.gh, "Int!", blockerField, linkedFragment, keys)
+	timelines, err := readRound[stackTimeline](ctx, t.gh, intVar, blockerField, linkedFragment, keys)
 	if err != nil {
 		return nil, fmt.Errorf("find the blockers' pull requests: %w", err)
 	}
@@ -276,7 +282,7 @@ func (t *Tracker) linkedPullRequests(
 			}
 		}
 	}
-	stacked, err := readRound[stackBased](ctx, t.gh, "String!", basedField, "", heads)
+	stacked, err := readRound[stackBased](ctx, t.gh, stringVar, basedField, "", heads)
 	if err != nil {
 		return nil, fmt.Errorf("find the pull requests based on them: %w", err)
 	}
@@ -294,11 +300,7 @@ func (t *Tracker) linkedPullRequests(
 // its labels name, each once, in label order.
 func (t *Tracker) stackBlocker(b stackIssue, pulls []crew.StackPullRequest) crew.StackBlocker {
 	blocker := crew.StackBlocker{ID: b.id(), Ref: "#" + strconv.Itoa(b.Number), URL: b.URL, PullRequests: pulls}
-	for _, l := range b.Labels.Nodes {
-		if s, ok := t.labels.stateOf(l.Name); ok && !slices.Contains(blocker.States, s) {
-			blocker.States = append(blocker.States, s)
-		}
-	}
+	_, blocker.States = t.crewLabels(b.Labels.Nodes)
 	return blocker
 }
 
@@ -373,7 +375,7 @@ func aliasedArgs(typ, field, fragment string, values []string) []string {
 	var vars, fields strings.Builder
 	args := make([]string, 0, fieldArgs*len(values))
 	flag := "-F" // an Int, which gh sends as one only through -F
-	if typ != "Int!" {
+	if typ != intVar {
 		flag = "-f" // a String, raw
 	}
 	for i, v := range values {

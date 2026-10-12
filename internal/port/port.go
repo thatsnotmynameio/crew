@@ -428,10 +428,11 @@ type PullRequestFinder interface {
 type StackFinder interface {
 	// FindStacks returns issues with their Stacking read, in issues' order:
 	// an issue whose only blocker, closed ones counted, is open and in its
-	// repository gets that blocker, the blocker's open pull requests from the repository's
-	// own branches and the pull requests based on those, and its parent's
-	// sub-issues; any other issue gets the zero StackReading. An issue the
-	// tracker cannot resolve is left out. Any other failure fails the read.
+	// repository gets that blocker, the blocker's open pull requests from
+	// the repository's own branches and the pull requests based on those,
+	// and its parent's sub-issues; any other issue gets the zero
+	// StackReading. An issue the tracker cannot resolve is left out. Any
+	// other failure fails the read.
 	FindStacks(ctx context.Context, issues []crew.Issue) ([]crew.Issue, error)
 }
 
