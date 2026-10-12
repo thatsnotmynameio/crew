@@ -77,7 +77,9 @@ func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, a
 	}
 	routed := route
 	routed.End = crew.Some(crew.RouteEnd{At: at, Outcome: crew.OutcomeRouted})
-	return []crew.Statistic{open, move(ready, inProgress), development, route, move(inProgress, readyToReview), routed, end}
+	return []crew.Statistic{
+		open, move(ready, inProgress), development, route, move(inProgress, readyToReview), routed, end,
+	}
 }
 
 // Covers R5, R6, R7, R8, R9, R10, F1, F2, AE3: a crew that develops issue
