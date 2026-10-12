@@ -52,6 +52,9 @@ type WorkspaceReady struct {
 	// Resumed says whether the workspace is the reopened workspace of the
 	// run this one resumes.
 	Resumed bool
+	// DefaultBranch is the name of origin's default branch, as the
+	// workspace reported it.
+	DefaultBranch string
 }
 
 // WorkspaceGone is the workspace the run asked to reopen, which no longer
@@ -195,7 +198,7 @@ func (f WorkspaceReady) decide(d *decider) error {
 	if err := d.awaitsWorkspace(false); err != nil {
 		return err
 	}
-	opened := WorkspaceOpened{EventHead: d.head(), Workspace: f.Workspace}
+	opened := WorkspaceOpened{EventHead: d.head(), Workspace: f.Workspace, DefaultBranch: f.DefaultBranch}
 	if _, halted := d.halted(); !halted || d.passedAlone() {
 		_, _, reopen := reopens(d.run.Start())
 		opened.Log, opened.Resumed = f.Log, f.Resumed && reopen

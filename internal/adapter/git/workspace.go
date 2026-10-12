@@ -1,5 +1,6 @@
 // Package git is the workspace adapter: each rule run works in its own git
-// worktree, on its own branch, made from the latest default branch of origin.
+// worktree, on its own branch, made from the latest commit of a branch of
+// origin, its default branch unless the run names another.
 package git
 
 import (
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
@@ -27,8 +29,9 @@ var (
 const worktrees = ".crew/worktrees"
 
 // Workspace creates each rule run's worktree under <root>/.crew/worktrees/,
-// on a new branch from origin's latest default branch. It is safe for
-// concurrent use, and creates one worktree at a time.
+// on a new branch from the latest commit of a branch of origin, its default
+// branch unless the run names another. It is safe for concurrent use, and
+// creates one worktree at a time.
 type Workspace struct {
 	root string
 	run  proc.Runner
@@ -67,14 +70,20 @@ func (w *Workspace) Prepare(ctx context.Context, _ []crew.State) error {
 	return err
 }
 
-// Create implements port.Workspace. It fetches origin's default branch, then
-// adds the worktree .crew/worktrees/<name> on the new branch crew/<name>
-// from origin/<default>. The name is port.WorkspaceBase, issue-<key>-<rule>,
-// both lowercased and with every character outside [a-z0-9-] replaced by
-// '-', suffixed -2, -3… while the folder or the branch exists. The default branch is resolved
-// on the first call when Prepare has not resolved it. Errors carry git's
-// stderr.
-func (w *Workspace) Create(ctx context.Context, issue crew.Issue, rule crew.RuleName) (port.Space, error) {
+// Create implements port.Workspace. It fetches the branch base from origin
+// into origin/<base>, then adds the worktree .crew/worktrees/<name> on the
+// new branch crew/<name> from it; an empty base is origin's default branch.
+// The name is port.WorkspaceBase, issue-<key>-<rule>, both lowercased and
+// with every character outside [a-z0-9-] replaced by '-', suffixed -2, -3…
+// while the folder or the branch exists. A base that starts with '-' or
+// holds a control character is refused before any git call, and one git
+// does not take as a branch name before the fetch. The default branch is
+// resolved on the first call when Prepare has not resolved it, and the
+// space reports it. Errors carry git's stderr.
+func (w *Workspace) Create(ctx context.Context, issue crew.Issue, rule crew.RuleName, base string) (port.Space, error) {
+	if strings.HasPrefix(base, "-") || strings.ContainsFunc(base, unicode.IsControl) {
+		return port.Space{}, fmt.Errorf("base branch %q: not a branch name", base)
+	}
 	if err := w.acquire(ctx); err != nil {
 		return port.Space{}, err
 	}
@@ -84,17 +93,25 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, rule crew.Rule
 	if err != nil {
 		return port.Space{}, err
 	}
-	if _, err := w.git(ctx, "fetch", "origin", def); err != nil {
-		return port.Space{}, fmt.Errorf("fetch origin %s: %w", def, err)
+	if base == "" {
+		base = def
+	} else if _, err := w.git(ctx, "check-ref-format", "--branch", base); err != nil {
+		return port.Space{}, fmt.Errorf("base branch %q: %w", base, err)
+	}
+	// The forced refspec follows a base that was rebased or force-pushed,
+	// as a pull request's branch may be.
+	if _, err := w.git(ctx, "fetch", "origin", "+refs/heads/"+base+":refs/remotes/origin/"+base); err != nil {
+		return port.Space{}, fmt.Errorf("fetch origin %s: %w", base, err)
 	}
 	space, err := w.free(ctx, string(port.WorkspaceBase(issue.ID(), rule)))
 	if err != nil {
 		return port.Space{}, err
 	}
-	// --no-track: the branch is new work, not a copy of the default branch,
-	// so a bare `git push` must not target the default branch.
+	space.DefaultBranch = def
+	// --no-track: the branch is new work, not a copy of its base, so a bare
+	// `git push` must not target the base.
 	branch := space.Workspace.Branch
-	if _, err := w.git(ctx, "worktree", "add", "--no-track", "-b", branch, space.Dir, "origin/"+def); err != nil {
+	if _, err := w.git(ctx, "worktree", "add", "--no-track", "-b", branch, space.Dir, "origin/"+base); err != nil {
 		return port.Space{}, fmt.Errorf("create worktree %s: %w", space.Workspace.Name, err)
 	}
 	return space, nil
@@ -109,8 +126,9 @@ func (w *Workspace) Create(ctx context.Context, issue crew.Issue, rule crew.Rule
 // abandoned for a new worktree: git lists a worktree under the path it was
 // created at, so after the repository moves the error offers `git worktree
 // repair`, which keeps that work. The branch is the one checked out, or the
-// recorded one when HEAD is detached, as in the middle of a rebase. Errors
-// carry git's stderr.
+// recorded one when HEAD is detached, as in the middle of a rebase. The
+// space reports origin's default branch, resolved as Create resolves it.
+// Errors carry git's stderr.
 func (w *Workspace) Reopen(ctx context.Context, recorded crew.Workspace) (port.Space, error) {
 	// The lock keeps a creation from adding a worktree under this name while
 	// it is being inspected.
@@ -146,7 +164,11 @@ func (w *Workspace) Reopen(ctx context.Context, recorded crew.Workspace) (port.S
 	if branch == "" {
 		branch = recorded.Branch
 	}
-	return port.Space{Workspace: crew.Workspace{Name: recorded.Name, Branch: branch}, Dir: dir}, nil
+	def, err := w.resolveDefault(ctx)
+	if err != nil {
+		return port.Space{}, err
+	}
+	return port.Space{Workspace: crew.Workspace{Name: recorded.Name, Branch: branch}, Dir: dir, DefaultBranch: def}, nil
 }
 
 // worktree is one entry of `git worktree list --porcelain`.

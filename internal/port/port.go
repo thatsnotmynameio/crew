@@ -164,9 +164,10 @@ type SessionEnd struct {
 // share.
 type Workspace interface {
 	// Create creates a fresh workspace for a run of rule on issue, named
-	// from WorkspaceBase. Each call gets its own workspace, even for an
-	// issue and rule seen before.
-	Create(ctx context.Context, issue crew.Issue, rule crew.RuleName) (Space, error)
+	// from WorkspaceBase, from the latest commit of the branch base on
+	// origin; an empty base is origin's default branch. Each call gets its
+	// own workspace, even for an issue and rule seen before.
+	Create(ctx context.Context, issue crew.Issue, rule crew.RuleName, base string) (Space, error)
 }
 
 // Journal is the run journal: the rule runs' events, kept so a later crew
@@ -201,6 +202,9 @@ type Space struct {
 	Workspace crew.Workspace
 	// Dir is the workspace's absolute directory.
 	Dir string
+	// DefaultBranch is the name of origin's default branch, the base of a
+	// run that is not stacked.
+	DefaultBranch string
 }
 
 // Preparer is an optional interface of any port's adapter: it checks the

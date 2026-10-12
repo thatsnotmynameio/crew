@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -218,7 +219,7 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndRule(t *testing.T) {
 	ws := fake.NewWorkspace(root)
 	ctx := context.Background()
 
-	first, err := ws.Create(ctx, issue("42"), "Code Review")
+	first, err := ws.Create(ctx, issue("42"), "Code Review", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -235,13 +236,36 @@ func TestWorkspaceCreatesUniqueDirectoriesPerIssueAndRule(t *testing.T) {
 		t.Error("Branch is empty")
 	}
 
-	second, err := ws.Create(ctx, issue("42"), "Code Review")
+	second, err := ws.Create(ctx, issue("42"), "Code Review", "")
 	if err != nil {
 		t.Fatalf("second Create: %v", err)
 	}
 	if second.Workspace.Name == first.Workspace.Name || second.Workspace.Branch == first.Workspace.Branch ||
 		second.Dir == first.Dir {
 		t.Errorf("second workspace %+v repeats the first %+v", second, first)
+	}
+}
+
+func TestWorkspaceRecordsTheBaseAndReportsTheDefaultBranch(t *testing.T) {
+	ws := fake.NewWorkspace(t.TempDir())
+
+	created, err := ws.Create(t.Context(), issue("7"), "implement", "crew/issue-3-implement")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := ws.Create(t.Context(), issue("8"), "implement", ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	reopened, err := ws.Reopen(t.Context(), created.Workspace)
+	if err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+
+	if want := []string{"crew/issue-3-implement", ""}; !slices.Equal(ws.Bases(), want) {
+		t.Errorf("Bases = %q, want %q", ws.Bases(), want)
+	}
+	if created.DefaultBranch != "main" || reopened.DefaultBranch != "main" {
+		t.Errorf("default branches = %q and %q, want main for both", created.DefaultBranch, reopened.DefaultBranch)
 	}
 }
 
@@ -254,7 +278,7 @@ func TestWorkspaceNamesStayUniqueUnderConcurrentCreates(t *testing.T) {
 	)
 	for range 10 {
 		wg.Go(func() {
-			s, err := ws.Create(context.Background(), issue("7"), "review")
+			s, err := ws.Create(context.Background(), issue("7"), "review", "")
 			if err != nil {
 				t.Errorf("Create: %v", err)
 				return

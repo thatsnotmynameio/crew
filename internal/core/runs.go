@@ -179,6 +179,7 @@ func (s *step) workspaceReady(h *heldRun, in WorkspaceReady) {
 	events, ok := s.decisions(h, crew.WorkspaceReady{
 		FactHead:  s.head(h),
 		Workspace: crew.Workspace{Name: in.Workspace, Branch: in.Branch}, Log: in.Log, Resumed: in.Resumed,
+		DefaultBranch: in.DefaultBranch,
 	})
 	if !ok {
 		return

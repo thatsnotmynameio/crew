@@ -15,6 +15,7 @@ import (
 
 	"github.com/thatsnotmynameio/crew/internal/core"
 	"github.com/thatsnotmynameio/crew/internal/crew"
+	"github.com/thatsnotmynameio/crew/internal/engine"
 	"github.com/thatsnotmynameio/crew/internal/fake"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
@@ -70,6 +71,51 @@ func failOnce(t *testing.T, r *rig, tr *fake.Tracker, output, reason string) *fa
 	tr.SetStates("1", ready)
 	time.Sleep(poll)
 	return s
+}
+
+// opened returns the opened workspaces cfg's fake journal holds, in the
+// order they were appended.
+func opened(t *testing.T, cfg engine.Config) []crew.WorkspaceOpened {
+	t.Helper()
+	j, ok := cfg.Journal.(*fake.Journal)
+	if !ok {
+		t.Fatalf("journal is %T, want the fake one", cfg.Journal)
+	}
+	var out []crew.WorkspaceOpened
+	for _, e := range j.Appended() {
+		if o, ok := e.(crew.WorkspaceOpened); ok {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func TestANewAndAReopenedWorkspaceJournalTheDefaultBranch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr := fake.NewTracker(issue(1, ready))
+		cfg := config(t, tr, develop)
+		r := start(t, cfg)
+
+		failOnce(t, r, tr, "", "broke")
+		r.session()
+		r.engine.Stop()
+		if _, err := r.wait(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		if bases := fakeWorkspace(t, cfg).Bases(); !slices.Equal(bases, []string{""}) {
+			t.Errorf("bases = %q, want one creation from the default branch", bases)
+		}
+		got := opened(t, cfg)
+		if len(got) != 2 || got[1].Resumed != true {
+			t.Fatalf("opened = %+v, want a new workspace then the reopened one", got)
+		}
+		for _, o := range got {
+			if o.DefaultBranch != "main" {
+				t.Errorf("opened %+v names default branch %q, want main", o, o.DefaultBranch)
+			}
+		}
+	})
 }
 
 func TestAE1ARelabeledFailedRunResumesInItsWorkspaceAndLog(t *testing.T) {
@@ -257,8 +303,8 @@ func TestAJournalThatCannotBeWrittenIsReportedAndTheRunGoesOn(t *testing.T) {
 // port.Reopener.
 type createOnly struct{ w *fake.Workspace }
 
-func (c createOnly) Create(ctx context.Context, issue crew.Issue, rule crew.RuleName) (port.Space, error) {
-	return c.w.Create(ctx, issue, rule)
+func (c createOnly) Create(ctx context.Context, issue crew.Issue, rule crew.RuleName, base string) (port.Space, error) {
+	return c.w.Create(ctx, issue, rule, base)
 }
 
 func TestAWorkspaceThatCannotReopenStartsAFailedRunFresh(t *testing.T) {
