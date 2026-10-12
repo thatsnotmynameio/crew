@@ -20,10 +20,10 @@ The issue is the argument, such as `#42`.
 
 ## Run it
 
-From the repository root (`git rev-parse --show-toplevel`):
+From the repository root (`git rev-parse --show-toplevel`), where `<skill dir>` is the directory this file is in, which holds the scripts:
 
 ```sh
-sh .agents/skills/cw-rank-blockers/rank.sh '#42'
+sh "<skill dir>/rank.sh" '#42'
 ```
 
 The candidates are the open issues those logins opened, without the issue itself, split parents (issues whose body holds `<!-- cw-split-plan: split record -->`) and, when the issue is a part of a split (its body holds `<!-- cw-split-plan: part of #P -->`), its parent #P and the other parts of #P. For each candidate one request holds only the two issues' titles and the first 3,000 characters of their bodies. The script prints, for example:
@@ -52,7 +52,7 @@ Report that line as it is. Do not retry the script, and do not rank the candidat
 `backtest.sh`, beside it, measures how often `rank.sh` puts a real dependency in its top 5. It replays `rank.sh` against every `blocked_by` link GitHub records in the repository, each at the moment it was recorded: the issues open then, with their bodies as they read then, from the side whose refinement recorded the link (the blocked issue for a link recorded by hand). It needs the same environment as `rank.sh` and takes no argument:
 
 ```sh
-sh .agents/skills/cw-rank-blockers/backtest.sh
+sh "<skill dir>/backtest.sh"
 ```
 
 It prints a markdown report of issue numbers, ranks and Jev's probabilities, with no issue text: one row per measured link, the misses with the top 5 shown instead, the links the shortlist could never show and why, and the gate line, which passes when at least 70% of the measured links were found. When `rank.sh` fails for any link, it prints no report and one line starting with `backtest.sh:` on standard error, and exits 1.
@@ -61,4 +61,4 @@ It prints a markdown report of issue numbers, ranks and Jev's probabilities, wit
 
 It only reads: it records, removes or edits no dependency, label or issue. Report its lists, or its error, and leave every decision to whoever asked.
 
-Its tests are `rank_test.sh` and `backtest_test.sh`, beside it, which run the scripts with stub `gh` and `curl`: `sh .agents/skills/cw-rank-blockers/rank_test.sh` and `sh .agents/skills/cw-rank-blockers/backtest_test.sh`.
+Its tests are `rank_test.sh` and `backtest_test.sh`, beside it, which run the scripts with stub `gh` and `curl`: `sh "<skill dir>/rank_test.sh"` and `sh "<skill dir>/backtest_test.sh"`.

@@ -56,7 +56,7 @@ When the body has no `## Implementation Units` section, end with `not an impleme
 
 ## 2. Measure the plan
 
-Run `sh .agents/skills/cw-split-brainstorm/measure.sh <body file>`, the measure `/cw-split-brainstorm` keeps. It prints the plan's characters, requirements and acceptance examples, and `above_threshold`. The threshold is above 10,000 characters or above 12 requirements.
+Run `sh "<skill dir>/../cw-split-brainstorm/measure.sh" <body file>`, the measure `/cw-split-brainstorm` keeps beside this skill, where `<skill dir>` is the directory this file is in. It prints the plan's characters, requirements and acceptance examples, and `above_threshold`. The threshold is above 10,000 characters or above 12 requirements.
 
 When `above_threshold=no`, end with `not split`, giving the three numbers.
 
@@ -114,7 +114,7 @@ Verbatim is the contract and the work: decisions, requirements, flows, examples,
 
 End the file with the line `<!-- cw-split-ce-plan: part of #N -->`.
 
-Measure every part: `sh .agents/skills/cw-split-brainstorm/measure.sh <part files>`. A part with `above_threshold=yes` must be one that rule 1 keeps whole, or one whose units alone are above the threshold. Otherwise regroup, and go back to step 3.
+Measure every part: `sh "<skill dir>/../cw-split-brainstorm/measure.sh" <part files>`. A part with `above_threshold=yes` must be one that rule 1 keeps whole, or one whose units alone are above the threshold. Otherwise regroup, and go back to step 3.
 
 ## 6. Write issues.json
 
