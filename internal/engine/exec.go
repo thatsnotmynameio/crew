@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/core"
@@ -175,6 +176,8 @@ func callContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, callTimeout)
 }
 
+// list reads the issues in c's states, then the stacks of those of them a
+// stacking rule may take (stacks).
 func (e *Engine) list(ctx context.Context, c core.ListIssues) {
 	ctx, cancel := callContext(ctx)
 	defer cancel()
@@ -186,7 +189,37 @@ func (e *Engine) list(ctx context.Context, c core.ListIssues) {
 	for i := range issues {
 		issues[i] = issues[i].WithRepository(e.repository.ID)
 	}
-	e.post(core.IssuesListed{Issues: issues})
+	e.post(core.IssuesListed{Issues: issues, StacksFailed: e.stacks(ctx, issues, c.Stacking)})
+}
+
+// stacks reads, through the tracker's port.StackFinder, the stacks of the
+// blocked issues of issues that are in one state alone, one of stacking,
+// and puts each issue it read back in issues (KTD1 of #446). It reads
+// nothing without a StackFinder or such an issue. A read that fails leaves
+// issues as listed, and returns why, for the core's warning.
+func (e *Engine) stacks(ctx context.Context, issues []crew.Issue, stacking []crew.State) string {
+	if e.stackFinder == nil {
+		return ""
+	}
+	var candidates []crew.Issue
+	for _, issue := range issues {
+		if state, alone := issue.OnlyState(); alone && issue.Blocked() && slices.Contains(stacking, state) {
+			candidates = append(candidates, issue)
+		}
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	read, err := e.stackFinder.FindStacks(ctx, candidates)
+	if err != nil {
+		return e.reason(ctx, err)
+	}
+	for _, r := range read {
+		if i := slices.IndexFunc(issues, func(issue crew.Issue) bool { return issue.ID() == r.ID() }); i >= 0 {
+			issues[i] = r
+		}
+	}
+	return ""
 }
 
 // listBoard reads the board's issues; the core asks only when the engine
@@ -283,7 +316,7 @@ func (e *Engine) sessionText(text string) crew.SessionText {
 func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	ctx, cancel := callContext(ctx)
 	defer cancel()
-	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Rule, "")
+	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Rule, c.Base)
 	if err != nil {
 		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID(), Run: c.Run, Reason: e.sessionText(callError(ctx, err))})
 		return
@@ -355,7 +388,7 @@ func (e *Engine) startSession(ctx context.Context, c core.StartSession) {
 	s, err := e.harnesses[c.Agent].Start(ctx, port.Run{
 		Dir: c.Dir, Prompt: c.Prompt, Output: log,
 		Identity: e.cfg.Identities[c.Bot], CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
-		VerdictFile: verdict.file, VerdictDir: verdict.dir,
+		VerdictFile: verdict.file, VerdictDir: verdict.dir, Base: c.Base, Stack: c.Stack,
 	})
 	if err != nil {
 		_ = log.Close()

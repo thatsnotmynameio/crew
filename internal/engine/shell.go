@@ -105,7 +105,7 @@ func (e *Engine) runScript(
 		Dir: dir, Name: s.Name, Command: s.Command, Session: s.Session, Prompt: prompt, LastMessage: last,
 		IssueRef: s.IssueRef, IssueID: issue, IssueURL: s.IssueURL, Branch: s.Branch,
 		Output: io.MultiWriter(log, &line), Identity: e.cfg.Identities[s.Bot],
-		CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins,
+		CodeOwners: e.codeOwners, Bots: e.cfg.BotLogins, Base: s.Base, Stack: s.Stack,
 	})
 	switch {
 	case err == nil:

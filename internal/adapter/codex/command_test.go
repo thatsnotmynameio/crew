@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -31,7 +32,19 @@ func botRun(prompt string) port.Run {
 		},
 		CodeOwners: []string{"alice", "bob"},
 		Bots:       []string{"crew-developer[bot]", "crew-reviewer[bot]"},
+		Base:       "crew/issue-3-implement",
+		Stack: crew.Some(crew.Stack{
+			BlockerRef: "#3", BlockerURL: "https://github.com/o/r/issues/3",
+			PullRequestRef: "#45", PullRequestURL: "https://github.com/o/r/pull/45", Branch: "crew/issue-3-implement",
+		}),
 	}
+}
+
+// stackEnv is the environment of botRun's base and stack.
+var stackEnv = []string{
+	"CREW_BASE_BRANCH=crew/issue-3-implement", "CREW_BLOCKER_REF=#3",
+	"CREW_BLOCKER_URL=https://github.com/o/r/issues/3", "CREW_BLOCKER_PR_REF=#45",
+	"CREW_BLOCKER_PR_URL=https://github.com/o/r/pull/45",
 }
 
 var worktreeGitDirs = []string{"/repo/.git/worktrees/issue-4-review", "/repo/.git"}
@@ -53,7 +66,11 @@ func TestCommandRunsCodexHeadlessInTheSandboxWithTheGitDirs(t *testing.T) {
 	if got.Name != "codex" || got.Dir != "/repo/.crew/worktrees/issue-4-review" || !slices.Equal(got.Args, want) {
 		t.Errorf("command = %#v,\nwant codex in the worktree with args %q", got, want)
 	}
-	if wantEnv := []string{"CREW_CODE_OWNERS=", "CREW_BOTS="}; !slices.Equal(got.Env, wantEnv) || got.Unset != nil {
+	wantEnv := []string{
+		"CREW_CODE_OWNERS=", "CREW_BOTS=",
+		"CREW_BASE_BRANCH=", "CREW_BLOCKER_REF=", "CREW_BLOCKER_URL=", "CREW_BLOCKER_PR_REF=", "CREW_BLOCKER_PR_URL=",
+	}
+	if !slices.Equal(got.Env, wantEnv) || got.Unset != nil {
 		t.Errorf("env = %q, unset = %q, want %q and none", got.Env, got.Unset, wantEnv)
 	}
 }
@@ -93,7 +110,7 @@ func TestCommandPinsTheBotsEnvironmentInsideCodex(t *testing.T) {
 
 	wantEnv := slices.Concat(run.Identity.Env, []string{
 		"CREW_CODE_OWNERS=alice bob", "CREW_BOTS=crew-developer[bot] crew-reviewer[bot]",
-	})
+	}, stackEnv)
 	if !slices.Equal(got.Env, wantEnv) {
 		t.Errorf("env = %q, want %q", got.Env, wantEnv)
 	}
@@ -128,7 +145,15 @@ func TestCommandKeepsTheEnvironmentValuesOutOfItsArguments(t *testing.T) {
 	if !slices.Contains(got.Env, "SECRET_PROBE=s3cret") {
 		t.Errorf("env = %q, want SECRET_PROBE=s3cret", got.Env)
 	}
-	values := []string{"s3cret", "/home/me/.config/crew/bots/reviewer/sessions", "hook.crew-co-author", "alice bob"}
+	for _, want := range stackEnv {
+		if !slices.Contains(got.Env, want) {
+			t.Errorf("env = %q, want %s", got.Env, want)
+		}
+	}
+	values := []string{
+		"s3cret", "/home/me/.config/crew/bots/reviewer/sessions", "hook.crew-co-author", "alice bob",
+		"crew/issue-3-implement", "https://github.com/o/r/issues/3", "https://github.com/o/r/pull/45", "#45",
+	}
 	for _, arg := range got.Args {
 		for _, value := range values {
 			if strings.Contains(arg, value) {

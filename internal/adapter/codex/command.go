@@ -28,7 +28,8 @@ const envPolicy = "shell_environment_policy"
 //
 // The session acts as run's identity, with its environment added and the
 // variables it unsets removed, and gets the code owners' and the bots'
-// logins as CREW_CODE_OWNERS and CREW_BOTS. Those values reach codex only
+// logins as CREW_CODE_OWNERS and CREW_BOTS, and the run's base and stack as
+// port.StackEnv names them. Those values reach codex only
 // through its environment, never its arguments, which any process on the
 // machine can read. Codex's shell environment policy is reset to inherit
 // everything and filter nothing, so no filter of the user's drops them from
@@ -41,6 +42,7 @@ func command(run port.Run, model string, gitDirs []string) proc.Command {
 	env := slices.Concat(
 		run.Identity.Env,
 		[]string{"CREW_CODE_OWNERS=" + strings.Join(run.CodeOwners, " "), "CREW_BOTS=" + strings.Join(run.Bots, " ")},
+		port.StackEnv(run.Base, run.Stack),
 	)
 	if run.VerdictFile != "" {
 		env = append(env, "CREW_VERDICT_FILE="+run.VerdictFile)
