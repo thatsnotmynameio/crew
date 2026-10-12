@@ -422,6 +422,20 @@ type PullRequestFinder interface {
 	FindPullRequest(ctx context.Context, branch string, since time.Time) (crew.PullRequest, error)
 }
 
+// StackFinder is an optional interface of a Tracker: it reads what deciding
+// whether to stack a blocked issue on its blocker's pull request needs. A
+// tracker without it stacks no issue.
+type StackFinder interface {
+	// FindStacks returns issues with their Stacking read, in issues' order:
+	// an issue whose only blocker, closed ones counted, is open and in its
+	// repository gets that blocker, the blocker's open pull requests from
+	// the repository's own branches and the pull requests based on those,
+	// and its parent's sub-issues; any other issue gets the zero
+	// StackReading. An issue the tracker cannot resolve is left out. Any
+	// other failure fails the read.
+	FindStacks(ctx context.Context, issues []crew.Issue) ([]crew.Issue, error)
+}
+
 // Shell runs scripts: the command of one of the config's shell actions, run
 // in a rule run's workspace as one of its actions or a step of its route.
 type Shell interface {
