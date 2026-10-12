@@ -241,6 +241,24 @@ var sentences = []struct {
 		Issue: crew.IssueID{Repository: "R_1", Key: "42"}, Run: "r.1", Rule: "develop",
 		End: crew.Some(crew.RuleRunEnd{Outcome: crew.OutcomeRouted})}, Reason: "disk full"},
 		"warning: could not record the end of the rule run develop on #42 in the statistics store: disk full"},
+	{core.StatisticNotRecorded{At: at("10:00:00"), Statistic: crew.ActionSpan{
+		Issue: crew.IssueID{Repository: "R_1", Key: "42"}, Rule: "develop", Run: "r.1", Action: "review"},
+		Reason: "disk full"},
+		"warning: could not record the action review of the rule run develop on #42 in the statistics store: disk full"},
+	{core.StatisticNotRecorded{At: at("10:00:00"), Statistic: crew.RouteSpan{
+		Issue: crew.IssueID{Repository: "R_1", Key: "42"}, Rule: "develop", Run: "r.1", Route: "passed"},
+		Reason: "disk full"},
+		"warning: could not record the start of the route passed of the rule run develop on #42 " +
+			"in the statistics store: disk full"},
+	{core.StatisticNotRecorded{At: at("10:00:00"), Statistic: crew.RouteSpan{
+		Issue: crew.IssueID{Repository: "R_1", Key: "42"}, Rule: "develop", Run: "r.1", Route: "passed",
+		End: crew.Some(crew.RouteEnd{Outcome: crew.OutcomeRouted})}, Reason: "disk full"},
+		"warning: could not record the end of the route passed of the rule run develop on #42 " +
+			"in the statistics store: disk full"},
+	{core.StatisticNotRecorded{At: at("10:00:00"), Statistic: crew.StepSpan{
+		Issue: crew.IssueID{Repository: "R_1", Key: "42"}, Rule: "develop", Run: "r.1", Index: 1, Name: "lint"},
+		Reason: "disk full"},
+		"warning: could not record the route step lint of the rule run develop on #42 in the statistics store: disk full"},
 	{core.CallOwed{At: at("10:00:00"), Call: move, Reason: "timeout"},
 		"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
 	{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
