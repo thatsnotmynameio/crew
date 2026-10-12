@@ -69,8 +69,9 @@ func encode(e crew.RunEvent, run string) line {
 }
 
 // takenLine returns the line of e: the issue as the rule took it, the run
-// it continues, its actions, how it starts and the questions it inherits.
-// A rule's question writes its id alone: its rule is the line's.
+// it continues, its actions, how it starts, the questions it inherits and
+// its stack, left out when it has none. A rule's question writes its id
+// alone: its rule is the line's.
 func takenLine(e crew.RunTaken, run string) line {
 	l := headLine(e.EventHead, typeRunTaken, run)
 	l.From, l.To = e.From, e.To
@@ -90,6 +91,12 @@ func takenLine(e crew.RunTaken, run string) line {
 	l.Start = startOf(e.Start)
 	for _, q := range e.Questions {
 		l.Questions = append(l.Questions, question{RuleRun: q.Run, Action: q.Action, Login: q.Login, ID: q.ID})
+	}
+	if s, ok := e.Stack.Get(); ok {
+		l.Stack = &stack{
+			Blocker: s.Blocker.Key, BlockerRef: s.BlockerRef, BlockerURL: s.BlockerURL,
+			PullRequest: s.PullRequestRef, PullRequestURL: s.PullRequestURL, Branch: s.Branch,
+		}
 	}
 	return l
 }
@@ -141,6 +148,7 @@ func encodeWorkspace(e crew.RunEvent, run string) line {
 	case crew.WorkspaceOpened:
 		l := headLine(e.EventHead, typeWorkspaceOpened, run)
 		l.Workspace, l.Branch, l.Log, l.Resumed = e.Workspace.Name, e.Workspace.Branch, e.Log, e.Resumed
+		l.DefaultBranch = e.DefaultBranch
 		return l
 	case crew.ActionReturnAsked, crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.RunReleased,
 		crew.ActionSessionAsked, crew.ActionSessionStarted, crew.ActionSessionStopAsked, crew.ActionSessionEnded,
