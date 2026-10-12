@@ -116,6 +116,27 @@ type Run struct {
 	// the worktree and .crew/logs/; the harness only hands them on.
 	VerdictFile string
 	VerdictDir  string
+	// Base is the run's base branch, and Stack the pull request the run is
+	// stacked on, none when it is not. The session gets them as the
+	// variables StackEnv names (R8).
+	Base  string
+	Stack crew.Optional[crew.Stack]
+}
+
+// StackEnv returns the KEY=value entries that give a session or a script
+// the base branch of its run and the stack it is stacked on (R8):
+// CREW_BASE_BRANCH, then CREW_BLOCKER_REF, CREW_BLOCKER_URL,
+// CREW_BLOCKER_PR_REF and CREW_BLOCKER_PR_URL, the blocker and its pull
+// request, which are empty when the run is not stacked.
+func StackEnv(base string, stack crew.Optional[crew.Stack]) []string {
+	s, _ := stack.Get()
+	return []string{
+		"CREW_BASE_BRANCH=" + base,
+		"CREW_BLOCKER_REF=" + s.BlockerRef,
+		"CREW_BLOCKER_URL=" + s.BlockerURL,
+		"CREW_BLOCKER_PR_REF=" + s.PullRequestRef,
+		"CREW_BLOCKER_PR_URL=" + s.PullRequestURL,
+	}
 }
 
 // Identity is who a child process, such as a session or a script, acts as on
@@ -497,4 +518,8 @@ type Script struct {
 	// bots the config names, as in Run.
 	CodeOwners []string
 	Bots       []string
+	// Base and Stack are the run's base branch and the pull request it is
+	// stacked on, as in Run.
+	Base  string
+	Stack crew.Optional[crew.Stack]
 }

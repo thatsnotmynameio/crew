@@ -101,10 +101,42 @@ func TestScriptReadsTheIssueFromItsEnvironmentInItsDirectory(t *testing.T) {
 	}
 }
 
+// R8: a stacked run's script reads its base, the blocker and the
+// blocker's pull request from its environment; an unstacked run's script
+// reads the default branch as its base, and the other four empty.
+func TestScriptReadsTheRunsBaseAndStack(t *testing.T) {
+	command := `printf '%s|%s|%s|%s|%s\n' ` +
+		`"$CREW_BASE_BRANCH" "$CREW_BLOCKER_REF" "$CREW_BLOCKER_URL" "$CREW_BLOCKER_PR_REF" "$CREW_BLOCKER_PR_URL"`
+	stack := crew.Some(crew.Stack{
+		BlockerRef: "#8", BlockerURL: "https://github.com/o/r/issues/8",
+		PullRequestRef: "#45", PullRequestURL: "https://github.com/o/r/pull/45", Branch: "crew/issue-8-lfg",
+	})
+	for _, tt := range []struct {
+		name  string
+		base  string
+		stack crew.Optional[crew.Stack]
+		want  string
+	}{
+		{"stacked", "crew/issue-8-lfg", stack,
+			"crew/issue-8-lfg|#8|https://github.com/o/r/issues/8|#45|https://github.com/o/r/pull/45\n"},
+		{"unstacked", "main", crew.Optional[crew.Stack]{}, "main||||\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var out output
+			c := script(t, command, &out)
+			c.Base, c.Stack = tt.base, tt.stack
+			exits(t, c, 0)
+			if got := out.String(); got != tt.want {
+				t.Errorf("output = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 	// The title is not part of port.Script at all, so it cannot reach the
-	// command: the script sees only crew's ten variables, and the command
-	// runs as written.
+	// command: the script sees only crew's fifteen variables, and the
+	// command runs as written.
 	withoutCrewEnv(t)
 	var out output
 	c := script(t, `env | grep '^CREW_' | sort`, &out)
@@ -113,7 +145,8 @@ func TestAE6ScriptRunsOnlyItsCommandWhateverTheIssueTitle(t *testing.T) {
 		name, _, _ := strings.Cut(line, "=")
 		switch name {
 		case "CREW_ACTION", "CREW_BOTS", "CREW_BRANCH", "CREW_CODE_OWNERS", "CREW_COMMENT_MARKER", "CREW_ISSUE_KEY",
-			"CREW_ISSUE_REF", "CREW_ISSUE_URL", "CREW_LAST_MESSAGE_FILE", "CREW_PROMPT_FILE":
+			"CREW_ISSUE_REF", "CREW_ISSUE_URL", "CREW_LAST_MESSAGE_FILE", "CREW_PROMPT_FILE", "CREW_BASE_BRANCH",
+			"CREW_BLOCKER_REF", "CREW_BLOCKER_URL", "CREW_BLOCKER_PR_REF", "CREW_BLOCKER_PR_URL":
 		default:
 			t.Errorf("unexpected variable %q", line)
 		}

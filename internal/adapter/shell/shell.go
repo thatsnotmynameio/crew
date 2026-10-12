@@ -45,12 +45,12 @@ func New(group *proc.Group) *Shell {
 // CREW_ISSUE_URL, CREW_BRANCH, CREW_CODE_OWNERS, CREW_BOTS, CREW_ACTION, the
 // latest session's name, and CREW_COMMENT_MARKER, crew's marker
 // (crew.PostedMarker), with which a script marks the comments it posts as
-// crew's, set, and stdout and stderr on one pipe, so its output keeps the
-// order it was printed in. The latest session's prompt and
-// last message are in files that CREW_PROMPT_FILE and
-// CREW_LAST_MESSAGE_FILE name, in a directory only you can read, removed
-// once the script ended: a file has no size limit, where one environment
-// string does.
+// crew's, and the run's base and stack, as port.StackEnv names them, set,
+// and stdout and stderr on one pipe, so its output keeps the order it was
+// printed in. The latest session's prompt and last message are in files
+// that CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name, in a directory only
+// you can read, removed once the script ended: a file has no size limit,
+// where one environment string does.
 func (sh *Shell) Run(ctx context.Context, script port.Script) (port.ShellResult, error) {
 	dir, err := os.MkdirTemp("", "crew-script-")
 	if err != nil {
@@ -78,6 +78,7 @@ func (sh *Shell) Run(ctx context.Context, script port.Script) (port.ShellResult,
 		"CREW_PROMPT_FILE="+prompt,
 		"CREW_LAST_MESSAGE_FILE="+last,
 	)
+	env = append(env, port.StackEnv(script.Base, script.Stack)...)
 	p, err := sh.group.Start(proc.Command{
 		Name: "sh", Args: []string{"-c", script.Command}, Dir: script.Dir,
 		Env: env, Unset: script.Identity.Unset,

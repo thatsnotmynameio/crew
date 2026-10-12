@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thatsnotmynameio/crew/internal/crew"
 	"github.com/thatsnotmynameio/crew/internal/port"
 )
 
@@ -54,6 +55,7 @@ func TestCommandAsYouIsTodaysPlusTheCodeOwnersAndTheBots(t *testing.T) {
 	want := []string{
 		"BASH_DEFAULT_TIMEOUT_MS=600000", "BASH_MAX_TIMEOUT_MS=1800000",
 		"CREW_CODE_OWNERS=octocat hubot", "CREW_BOTS=",
+		"CREW_BASE_BRANCH=", "CREW_BLOCKER_REF=", "CREW_BLOCKER_URL=", "CREW_BLOCKER_PR_REF=", "CREW_BLOCKER_PR_URL=",
 	}
 	if !slices.Equal(got.Env, want) {
 		t.Errorf("env = %q, want %q", got.Env, want)
@@ -102,5 +104,43 @@ func TestCommandGivesTheSessionItsVerdictFile(t *testing.T) {
 	}
 	if !slices.Equal(got.Args, want) {
 		t.Errorf("args = %q, want %q", got.Args, want)
+	}
+}
+
+// R8: a stacked run's session reads its base, the blocker and the
+// blocker's pull request from its environment; an unstacked run's session
+// reads the default branch as its base, and the other four empty.
+func TestCommandGivesTheSessionTheRunsBaseAndStack(t *testing.T) {
+	stacked := port.Run{
+		Dir: "/work", Prompt: "Implement #9", Base: "crew/issue-8-implement",
+		Stack: crew.Some(crew.Stack{
+			BlockerRef: "#8", BlockerURL: "https://github.com/o/r/issues/8",
+			PullRequestRef: "#45", PullRequestURL: "https://github.com/o/r/pull/45", Branch: "crew/issue-8-implement",
+		}),
+	}
+	unstacked := port.Run{Dir: "/work", Prompt: "Implement #9", Base: "main"}
+	for _, tt := range []struct {
+		name string
+		run  port.Run
+		want []string
+	}{
+		{"stacked", stacked, []string{
+			"CREW_BASE_BRANCH=crew/issue-8-implement", "CREW_BLOCKER_REF=#8",
+			"CREW_BLOCKER_URL=https://github.com/o/r/issues/8", "CREW_BLOCKER_PR_REF=#45",
+			"CREW_BLOCKER_PR_URL=https://github.com/o/r/pull/45",
+		}},
+		{"unstacked", unstacked, []string{
+			"CREW_BASE_BRANCH=main", "CREW_BLOCKER_REF=", "CREW_BLOCKER_URL=", "CREW_BLOCKER_PR_REF=",
+			"CREW_BLOCKER_PR_URL=",
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := command(tt.run, "")
+			for _, want := range tt.want {
+				if !slices.Contains(got.Env, want) {
+					t.Errorf("env = %q, want it to hold %s", got.Env, want)
+				}
+			}
+		})
 	}
 }

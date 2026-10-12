@@ -174,6 +174,9 @@ type Engine struct {
 	// finder is the tracker's port.PullRequestFinder; nil when the tracker
 	// has none, and the core then looks up no pull request (R6).
 	finder port.PullRequestFinder
+	// stackFinder is the tracker's port.StackFinder; nil when the tracker
+	// has none, and the core then stacks no issue (KTD1 of #446).
+	stackFinder port.StackFinder
 	// pullRequests is the tracker's port.PullRequestReporter; nil when the
 	// tracker has none, and the core then makes no pull request report.
 	pullRequests port.PullRequestReporter
@@ -225,7 +228,9 @@ type Engine struct {
 // requests through it. When the workspace implements port.Reopener, a
 // failed run resumes in that run's workspace (KTD4). When the
 // tracker implements port.PullRequestFinder, the engine looks up the pull
-// request each run opened. When cfg has a written Board and the
+// request each run opened. When it implements port.StackFinder, the engine
+// reads at each listing the stacks of the blocked issues a stacking rule
+// may take. When cfg has a written Board and the
 // tracker implements port.BoardLister, the engine reads the board's issues
 // at each poll through it; a default Board fills from the listings. When
 // the tracker implements port.WriterReporter, the engine reads through it
@@ -235,6 +240,7 @@ type Engine struct {
 func New(cfg Config) *Engine {
 	reporter, _ := cfg.Tracker.(port.StatusReporter)
 	finder, _ := cfg.Tracker.(port.PullRequestFinder)
+	stackFinder, _ := cfg.Tracker.(port.StackFinder)
 	var opts []core.Option
 	if reporter != nil {
 		opts = append(opts, core.ReportingStatus())
@@ -268,6 +274,7 @@ func New(cfg Config) *Engine {
 		reporter:     reporter,
 		pullRequests: pullRequests,
 		finder:       finder,
+		stackFinder:  stackFinder,
 		board:        board,
 		writes:       writes,
 		commenter:    commenter,

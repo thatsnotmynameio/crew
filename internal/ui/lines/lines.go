@@ -157,8 +157,9 @@ func coreText(e core.Event) string {
 }
 
 // crewText describes the core's events about crew as a whole: its polls,
-// its wind-down, its pause and resume (R7 of #282), its stop, and a record
-// its statistics store lost. coreText describes the others.
+// its wind-down, its pause and resume (R7 of #282), its stop, a record its
+// statistics store lost, and a read of the stacks that failed. coreText
+// describes the others.
 func crewText(e core.Event) string {
 	switch e := e.(type) {
 	case core.PollDone:
@@ -177,8 +178,10 @@ func crewText(e core.Event) string {
 		return "stopped"
 	case core.StatisticNotRecorded:
 		return withReason("warning: could not record "+statistic(e.Statistic)+" in the statistics store", e.Reason)
+	case core.StacksNotFound:
+		return withReason("warning: could not read the stacks of the blocked issues", e.Reason)
 	case core.RunNotRecorded, core.RouteStepEnded, core.IssueSkipped, core.IssueOfOtherKind, core.BotStopped,
-		core.BotActsAgain, core.CallOwed, core.CallDropped, core.StatusFailed, core.StacksNotFound:
+		core.BotActsAgain, core.CallOwed, core.CallDropped, core.StatusFailed:
 	}
 	return fmt.Sprintf("%T", e)
 }
