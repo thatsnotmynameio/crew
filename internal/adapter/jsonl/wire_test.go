@@ -195,3 +195,34 @@ func TestTheAnsweredRulesCheckAndQuestionIDsKeepTheirWireKeys(t *testing.T) {
 		t.Errorf("questions = %v, want %v", got[2]["questions"], want)
 	}
 }
+
+// KTD6, KTD7: a stacked take writes its stack as one object, and an opened
+// workspace the default branch it reported; an unstacked take and a
+// workspace that reported none write neither key.
+func TestAStackAndADefaultBranchKeepTheirWireKeys(t *testing.T) {
+	j, root := journal(t)
+	appendAll(t, j,
+		crew.RunTaken{EventHead: head(0), Stack: crew.Some(stack)},
+		crew.WorkspaceOpened{EventHead: head(1), Workspace: space, DefaultBranch: "main"},
+		crew.RunTaken{EventHead: head(2)},
+		crew.WorkspaceOpened{EventHead: head(3), Workspace: space},
+	)
+
+	got := lines(t, root)
+	want := map[string]any{
+		"blocker": "8", "blocker_ref": "#8", "blocker_url": "https://example.test/issues/8",
+		"pull_request": "#45", "pull_request_url": "https://example.test/pull/45", "branch": "crew/issue-8-development",
+	}
+	if !reflect.DeepEqual(got[0]["stack"], want) {
+		t.Errorf("stack = %v, want %v", got[0]["stack"], want)
+	}
+	if got[1]["default_branch"] != "main" {
+		t.Errorf("workspace_opened line = %v, want the default branch main", got[1])
+	}
+	if s, ok := got[2]["stack"]; ok {
+		t.Errorf("unstacked take writes stack = %v, want none", s)
+	}
+	if b, ok := got[3]["default_branch"]; ok {
+		t.Errorf("workspace_opened line writes default_branch = %v, want none", b)
+	}
+}
