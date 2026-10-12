@@ -295,6 +295,8 @@ func (s ActionSpan) ID() SpanID { return actionSpanID(s.Run, s.Action) }
 // Parent returns the id of the span it hangs from: its rule run's.
 func (s ActionSpan) Parent() SpanID { return SpanID(s.Run) }
 
+func (ActionSpan) statistic() {}
+
 // RouteSpan is the route a rule run ended through, as a span of work
 // under the action whose verdict chose it. crew records it twice, when the
 // run chooses it with no end and when crew releases the run with its end;
@@ -318,8 +320,6 @@ type RouteSpan struct {
 	// End is how and when the route ended, none while it runs.
 	End Optional[RouteEnd]
 }
-
-func (ActionSpan) statistic() {}
 
 // ID returns the span's id: the run's, then /route.
 func (s RouteSpan) ID() SpanID { return routeSpanID(s.Run) }
@@ -378,12 +378,12 @@ func (s StepSpan) ID() SpanID { return routeSpanID(s.Run) + "/" + SpanID(strconv
 // Parent returns the id of the span it hangs from: its route's.
 func (s StepSpan) Parent() SpanID { return routeSpanID(s.Run) }
 
+func (StepSpan) statistic() {}
+
 // actionSpanID is the id of the span of action in run.
 func actionSpanID(run RuleRunID, action ActionName) SpanID {
 	return SpanID(string(run) + "/action/" + string(action))
 }
-
-func (StepSpan) statistic() {}
 
 // routeSpanID is the id of the span of run's route.
 func routeSpanID(run RuleRunID) SpanID { return SpanID(string(run) + "/route") }
