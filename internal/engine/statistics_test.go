@@ -53,48 +53,125 @@ func recordingConfig(t *testing.T, tr port.Tracker, rules ...crew.Rule) (engine.
 	return cfg, store
 }
 
-// developedRun is what run, which process took at at, records as it
-// develops issue id at once: the open of its span, its take's move, the
-// span of its session development, which reported no usage, the open of
-// its route's span, chosen by development's verdict, its route's move,
-// then the end of its route's span and of its own through passed.
-func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, at time.Time) []crew.Statistic {
-	move := func(from, to crew.State) crew.LabelMove {
-		return crew.LabelMove{Tracker: "github", Issue: id, From: from, To: to, Seen: at, Run: crew.Some(run)}
-	}
-	open := crew.RuleRunSpan{Tracker: "github", Issue: id, Run: run, Process: process, Rule: develop.Name, Start: at}
-	spec, _ := develop.Actions[0].Kind.(crew.SessionSpec)
-	development := crew.ActionSpan{
-		Issue: id, Rule: develop.Name, Run: run, Action: "development", Process: process, Start: at, End: at,
-		Outcome: crew.WorkSucceeded, Verdict: crew.Passed,
-		Work: crew.SessionWork{PromptHash: spec.Prompt.Hash(), Started: crew.Some(at)},
-	}
-	end := open
-	end.End = crew.Some(crew.RuleRunEnd{At: at, Outcome: crew.OutcomeRouted, Route: crew.Some(crew.PassedRoute)})
-	route := crew.RouteSpan{
-		Issue: id, Rule: develop.Name, Run: run, Process: process, Route: crew.PassedRoute,
-		ChosenBy: crew.Some(crew.RouteChoice{Action: "development", Verdict: crew.Passed}), Start: at,
-	}
-	routed := route
-	routed.End = crew.Some(crew.RouteEnd{At: at, Outcome: crew.OutcomeRouted})
-	return []crew.Statistic{
-		open, move(ready, inProgress), development, route, move(inProgress, readyToReview), routed, end,
+// routedUse is the place of the config that calls the function pr-open in
+// routed's passed route.
+const routedUse crew.FunctionUse = "rules.implement.routes.passed[1]"
+
+// routed is develop whose passed route runs the shell step notify and the
+// function step check before it moves the issue to ready to review.
+var routed = crew.Rule{
+	Name: develop.Name, Labels: develop.Labels, Actions: develop.Actions,
+	Routes: []crew.Route{
+		{Name: crew.PassedRoute, Steps: []crew.Step{
+			crew.ShellStep{Name: "notify", Shell: crew.ShellSpec{Script: "./notify"}},
+			crew.FunctionStep{Name: "check", Function: prOpen(routedUse)},
+			crew.MoveStep{To: readyToReview},
+		}},
+		develop.Routes[1],
+	},
+}
+
+// routedConfig is recordingConfig for routed, with a harness whose
+// sessions report their usage, a shell whose scripts exit 0 and a function
+// that returns passed.
+func routedConfig(t *testing.T, tr port.Tracker) (engine.Config, *fake.Statistics) {
+	t.Helper()
+	cfg, store := recordingConfig(t, tr, routed)
+	cfg.Harnesses = harnesses(fake.NewUsageHarness())
+	cfg.Shell = fake.NewShell()
+	cfg.Functions = map[crew.FunctionUse]engine.Function{routedUse: {Function: fake.NewFunction(), Bind: bind}}
+	return cfg, store
+}
+
+// sessionTime is how long issue 1's development session runs in
+// developRouted.
+const sessionTime = 90 * time.Second
+
+// usage is what issue 1's development session reports in developRouted:
+// its turns and its tokens by model.
+var usage = crew.Usage{
+	Turns:  crew.Some(7),
+	Tokens: crew.Some(crew.Tokens{Input: 30, Output: 50, CacheRead: 700, CacheWrite: 90}),
+	Models: []string{"claude-opus-5-5", "claude-sonnet-5-5"},
+	ByModel: []crew.ModelTokens{
+		{Model: "claude-opus-5-5", Tokens: crew.Tokens{Input: 10, Output: 20, CacheRead: 300, CacheWrite: 40}},
+		{Model: "claude-sonnet-5-5", Tokens: crew.Tokens{Input: 20, Output: 30, CacheRead: 400, CacheWrite: 50}},
+	},
+}
+
+// developRouted runs issue 1's development session in r for sessionTime,
+// reporting usage, to a success, and checks that its route moved the issue
+// to ready to review.
+func developRouted(t *testing.T, r *rig, tr *fake.Tracker) {
+	t.Helper()
+	s := r.session()
+	time.Sleep(sessionTime)
+	s.SetUsage(usage)
+	s.End(port.SessionEnd{Succeeded: true, Reason: "done"})
+	synctest.Wait()
+	if got := states(t, tr, "1"); !slices.Equal(got, []crew.State{readyToReview}) {
+		t.Fatalf("issue 1 is in %v, want ready to review", got)
 	}
 }
 
-// Covers R5, R6, R7, R8, R9, R10, F1, F2, AE3: a crew that develops issue
-// 1 records the process, the repository on the configured tracker, the
-// sighting of issue 1 in ready, the open of the run's span, then the
-// take's move, the span of its session and the route's move, made by the
-// run, with the route's span around the latter, then the end of the run's
-// span with its outcome and route, in that order.
+// developedRun is what run, which process took at at, records as it
+// develops issue id under routed at once: the open of its span, its take's
+// move, the span of its session development, which ran for sessionTime
+// and reported usage, the open of its route's span, chosen by
+// development's verdict, the spans of its route's shell and function
+// steps, its route's move, then the end of its route's span and of its own
+// through passed.
+func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, at time.Time) []crew.Statistic {
+	ended := at.Add(sessionTime)
+	move := func(from, to crew.State, seen time.Time) crew.LabelMove {
+		return crew.LabelMove{Tracker: "github", Issue: id, From: from, To: to, Seen: seen, Run: crew.Some(run)}
+	}
+	open := crew.RuleRunSpan{Tracker: "github", Issue: id, Run: run, Process: process, Rule: routed.Name, Start: at}
+	spec, _ := routed.Actions[0].Kind.(crew.SessionSpec)
+	development := crew.ActionSpan{
+		Issue: id, Rule: routed.Name, Run: run, Action: "development", Process: process, Start: at, End: ended,
+		Outcome: crew.WorkSucceeded, Verdict: crew.Passed,
+		Work: crew.SessionWork{
+			PromptHash: spec.Prompt.Hash(), Started: crew.Some(at), Turns: usage.Turns, Tokens: usage.ByModel,
+		},
+	}
+	route := crew.RouteSpan{
+		Issue: id, Rule: routed.Name, Run: run, Process: process, Route: crew.PassedRoute,
+		ChosenBy: crew.Some(crew.RouteChoice{Action: "development", Verdict: crew.Passed}), Start: ended,
+	}
+	step := func(index int, name crew.ActionName, work crew.Work) crew.StepSpan {
+		return crew.StepSpan{
+			Issue: id, Rule: routed.Name, Run: run, Index: index, Name: name, Process: process,
+			Start: ended, End: ended, Outcome: crew.WorkSucceeded, Work: work,
+		}
+	}
+	routeEnded := route
+	routeEnded.End = crew.Some(crew.RouteEnd{At: ended, Outcome: crew.OutcomeRouted})
+	end := open
+	end.End = crew.Some(crew.RuleRunEnd{At: ended, Outcome: crew.OutcomeRouted, Route: crew.Some(crew.PassedRoute)})
+	return []crew.Statistic{
+		open, move(ready, inProgress, at), development, route,
+		step(0, "notify", crew.ShellWork{ExitStatus: crew.Some(0)}),
+		step(1, "check", crew.FunctionWork{Function: "pr-open", Verdict: crew.Some(crew.Passed)}),
+		move(inProgress, readyToReview, ended), routeEnded, end,
+	}
+}
+
+// Covers R5, R6, R7, R8, R9, R10, R11, R12, F1, F2, AE3: a crew that
+// develops issue 1 records the process, the repository on the configured
+// tracker, the sighting of issue 1 in ready, the open of the run's span,
+// then the take's move, the span of its session with its turns and its
+// tokens by model, the open of the route's span, the spans of the route's
+// shell and function steps, the route's move, made by the run, the end of
+// the route's span, then the end of the run's span with its outcome and
+// route, in that order.
 func TestRunRecordsTheProcessTheRepositoryTheIssueItsMovesAndItsRunsSpanInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
-		cfg, store := recordingConfig(t, repositoryTracker{Tracker: tr, repository: widgets}, develop)
+		cfg, store := routedConfig(t, repositoryTracker{Tracker: tr, repository: widgets})
 		r := start(t, cfg)
 
-		developOnce(t, r, tr)
+		developRouted(t, r, tr)
 		r.engine.Stop()
 		final, err := r.wait()
 		if err != nil {
@@ -102,8 +179,8 @@ func TestRunRecordsTheProcessTheRepositoryTheIssueItsMovesAndItsRunsSpanInOrder(
 		}
 
 		recorded := store.Recorded()
-		if len(recorded) != 10 {
-			t.Fatalf("recorded %#v, want ten records", recorded)
+		if len(recorded) != 12 {
+			t.Fatalf("recorded %#v, want twelve records", recorded)
 		}
 		p, ok := recorded[0].(crew.Process)
 		if !ok || p.ID == "" {
@@ -179,17 +256,24 @@ func wantLostSpan(t *testing.T, lost core.StatisticNotRecorded, ended bool) {
 	}
 }
 
+// wantLost fails the test unless lost is the warning of a lost record of
+// the same kind as want.
+func wantLost(t *testing.T, lost core.StatisticNotRecorded, want crew.Statistic) {
+	t.Helper()
+	if reflect.TypeOf(lost.Statistic) != reflect.TypeOf(want) {
+		t.Errorf("lost %#v, want a %T", lost.Statistic, want)
+	}
+}
+
 func TestAE8AStoreThatCannotBeWrittenIsWarnedAboutAndTheRunGoesOn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
-		cfg := config(t, tr, develop)
+		cfg, store := routedConfig(t, tr)
 		db := filepath.Join(cfg.Home, ".local", "share", "crew", "statistics.db")
-		store := fake.NewStatistics()
 		store.FailRecords(fmt.Errorf("open %s: database or disk is full", db))
-		cfg.Statistics = store
 		r := start(t, cfg)
 
-		developOnce(t, r, tr)
+		developRouted(t, r, tr)
 		r.engine.Stop()
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -197,17 +281,22 @@ func TestAE8AStoreThatCannotBeWrittenIsWarnedAboutAndTheRunGoesOn(t *testing.T) 
 
 		// The process, the repository, issue 1's sighting, the open of its
 		// run's span, its take's move, its session's span, the open of its
-		// route's span, its route's move, the end of its route's span and
-		// of its run's span.
+		// route's span, its two steps' spans, its route's move, the end of
+		// its route's span and of its run's span.
 		n := r.notRecorded()
-		if len(n) != 10 {
-			t.Fatalf("StatisticNotRecorded = %+v, want ten", n)
+		if len(n) != 12 {
+			t.Fatalf("StatisticNotRecorded = %+v, want twelve", n)
 		}
 		if _, ok := n[0].Statistic.(crew.Process); !ok {
 			t.Errorf("the first lost record is %T, want the process", n[0].Statistic)
 		}
 		wantLostSpan(t, n[3], false)
-		wantLostSpan(t, n[9], true)
+		wantLost(t, n[5], crew.ActionSpan{})
+		wantLost(t, n[6], crew.RouteSpan{})
+		wantLost(t, n[7], crew.StepSpan{})
+		wantLost(t, n[8], crew.StepSpan{})
+		wantLost(t, n[10], crew.RouteSpan{})
+		wantLostSpan(t, n[11], true)
 		want := "open ~/.local/share/crew/statistics.db: database or disk is full"
 		for _, lost := range n {
 			if lost.Reason != want {
