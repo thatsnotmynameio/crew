@@ -265,8 +265,9 @@ func (s *step) actionSpanEnded(h *heldRun, e crew.ActionEnded) {
 	}})
 }
 
-// workOutcome returns how an action that ended as end ended: a halt chose
-// its end exactly when it is one of the last three (KTD5).
+// workOutcome returns how an action that ended as end ended: stopped,
+// stopped before its start or kept from running by the run time limit
+// when a halt chose its end, else succeeded or failed (KTD5).
 func workOutcome(end crew.ActionEnd) crew.WorkOutcome {
 	failed, ok := end.(crew.EndFailed)
 	if !ok {
