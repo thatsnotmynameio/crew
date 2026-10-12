@@ -37,9 +37,8 @@ type ruleSummary struct {
 // A full config loads its rules with their labels, queues, notify,
 // stacking, actions and routes: each session with its agent, its bot and its
 // wait, each shell action by name, each action's on, each route's steps in
-// order; its
-// tracker's bot and every agent's; its board, one column per rule with
-// actions when it sets none; its shell actions' scripts, verdicts and
+// order; its tracker's bot and every agent's; its board, one column per rule
+// with actions when it sets none; its shell actions' scripts, verdicts and
 // resume; its function uses with their parameters; and its prompts as they
 // are written.
 func TestAFullConfigLoads(t *testing.T) {
