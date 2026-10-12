@@ -13,7 +13,7 @@ func TestPromptRendersTheIssuesFields(t *testing.T) {
 	issue := NewIssue(IssueData{
 		ID: IssueID{Repository: "R_one", Key: "7"}, Ref: "#7", Title: "Fix it", URL: "https://example.com/7",
 	})
-	got, err := p.Render(issue)
+	got, err := p.Render(PromptData{Issue: issue})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestPromptRendersEachIssueItIsGiven(t *testing.T) {
 		t.Fatalf("ParsePrompt: %v", err)
 	}
 	for _, ref := range []string{"#1", "#2"} {
-		got, err := p.Render(NewIssue(IssueData{Ref: ref}))
+		got, err := p.Render(PromptData{Issue: NewIssue(IssueData{Ref: ref})})
 		if err != nil {
 			t.Fatalf("Render %s: %v", ref, err)
 		}
@@ -38,12 +38,81 @@ func TestPromptRendersEachIssueItIsGiven(t *testing.T) {
 	}
 }
 
+func TestPromptRendersTheBase(t *testing.T) {
+	p, err := ParsePrompt("implement", "Open the pull request on {{.Base}}")
+	if err != nil {
+		t.Fatalf("ParsePrompt: %v", err)
+	}
+	got, err := p.Render(PromptData{Issue: NewIssue(IssueData{Ref: "#7"}), Base: "trunk"})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if want := "Open the pull request on trunk"; got != want {
+		t.Errorf("Render = %q, want %q", got, want)
+	}
+}
+
+func TestPromptRendersTheStackOnlyForAStackedRun(t *testing.T) {
+	p, err := ParsePrompt("implement", "{{if .Stack.Stacked}}{{.Stack.PullRequest.URL}}{{end}}")
+	if err != nil {
+		t.Fatalf("ParsePrompt: %v", err)
+	}
+	issue := NewIssue(IssueData{Ref: "#7"})
+	stack := Stack{PullRequestRef: "#45", PullRequestURL: "https://example.com/pull/45", Branch: "crew/issue-6-implement"}
+	tests := []struct {
+		name  string
+		stack Optional[Stack]
+		want  string
+	}{
+		{"stacked", Some(stack), "https://example.com/pull/45"},
+		{"unstacked", Optional[Stack]{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := p.Render(PromptData{Issue: issue, Stack: tt.stack})
+			if err != nil || got != tt.want {
+				t.Errorf("Render = %q, %v; want %q, nil", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestPromptRendersEveryStackField(t *testing.T) {
+	p, err := ParsePrompt("implement",
+		"{{.Stack.Stacked}} {{.Stack.Blocker.Ref}} {{.Stack.Blocker.URL}} "+
+			"{{.Stack.PullRequest.Ref}} {{.Stack.PullRequest.URL}} {{.Stack.Branch}}")
+	if err != nil {
+		t.Fatalf("ParsePrompt: %v", err)
+	}
+	stack := Stack{
+		Blocker: IssueID{Key: "6"}, BlockerRef: "#6", BlockerURL: "https://example.com/issues/6",
+		PullRequestRef: "#45", PullRequestURL: "https://example.com/pull/45", Branch: "crew/issue-6-implement",
+	}
+	got, err := p.Render(PromptData{Issue: NewIssue(IssueData{Ref: "#7"}), Stack: Some(stack)})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := "true #6 https://example.com/issues/6 #45 https://example.com/pull/45 crew/issue-6-implement"
+	if got != want {
+		t.Errorf("Render = %q, want %q", got, want)
+	}
+	got, err = p.Render(PromptData{Issue: NewIssue(IssueData{Ref: "#7"})})
+	if want := "false     "; err != nil || got != want {
+		t.Errorf("Render unstacked = %q, %v; want %q, nil", got, err, want)
+	}
+}
+
 func TestParsePromptRefusesABadTemplate(t *testing.T) {
 	tests := []struct {
 		name, text, want string
 	}{
 		{"does not parse", "{{.Issue.Ref", `parse prompt of action "review": `},
 		{"unknown field", "{{.Issue.Number}}", `render prompt of action "review": `},
+		{
+			"typo in a stacked branch", "{{if .Stack.Stacked}}{{.Stack.PullRequest.Ulr}}{{end}}",
+			`render prompt of action "review": `,
+		},
+		{"unknown stack field", "{{.Stack.Blocker.Number}}", `render prompt of action "review": `},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,7 +125,7 @@ func TestParsePromptRefusesABadTemplate(t *testing.T) {
 }
 
 func TestZeroPromptRendersNothing(t *testing.T) {
-	got, err := Prompt{}.Render(NewIssue(IssueData{Ref: "#1"}))
+	got, err := Prompt{}.Render(PromptData{Issue: NewIssue(IssueData{Ref: "#1"})})
 	if err != nil || got != "" {
 		t.Fatalf("Prompt{}.Render = %q, %v; want \"\", nil", got, err)
 	}
@@ -82,7 +151,7 @@ func TestPromptRenderErrorNamesTheAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePrompt: %v", err)
 	}
-	_, err = p.Render(NewIssue(IssueData{Title: "short"}))
+	_, err = p.Render(PromptData{Issue: NewIssue(IssueData{Title: "short"})})
 	if err == nil || !strings.HasPrefix(err.Error(), `render prompt of action "implement": `) {
 		t.Fatalf("Render = %v, want an error naming the action", err)
 	}

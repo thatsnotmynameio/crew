@@ -55,6 +55,20 @@ func (r RuleRun) Taken() time.Time { return r.taken }
 // take stacked it.
 func (r RuleRun) Stack() Optional[Stack] { return r.stack }
 
+// PromptData returns what the prompt of the run's sessions renders: its
+// issue, its stack and its base, which is its stack's branch when stacked,
+// else its workspace's default branch, and empty before its workspace is
+// ready (KTD7).
+func (r RuleRun) PromptData() PromptData {
+	d := PromptData{Issue: r.issue, Stack: r.stack}
+	if s, ok := r.stack.Get(); ok {
+		d.Base = s.Branch
+	} else if w, ok := r.Workspace().Get(); ok {
+		d.Base = w.DefaultBranch
+	}
+	return d
+}
+
 // Stopping reports whether a stop reached the run before it was released.
 func (r RuleRun) Stopping() bool { return r.stopping }
 
