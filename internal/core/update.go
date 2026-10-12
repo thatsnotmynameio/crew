@@ -45,7 +45,7 @@ func (s *step) schedulerInput(in SchedulerInput) {
 		s.togglePause()
 	case IssuesListed:
 		s.seed = in.Seed
-		s.listed(in.Issues)
+		s.listed(in.Issues, in.StacksFailed)
 	case ListFailed:
 		s.m.listing = false
 		s.m.listingFailed(in.Reason)

@@ -56,6 +56,14 @@ type StatisticNotRecorded struct {
 	Reason    string
 }
 
+// StacksNotFound is a read of the stacks of a listing's blocked issues
+// that failed (KTD1 of #446): Reason says why. The issues it would have
+// read wait, unstacked, and the listing takes the others.
+type StacksNotFound struct {
+	At     time.Time
+	Reason string
+}
+
 // RouteStepEnded is a step of the route a rule run ends through that
 // settled (crew.StepEnded), with what the step does, for the views to word
 // it (R16, KTD23).
@@ -265,6 +273,9 @@ func (e RunNotRecorded) Time() time.Time { return e.At }
 func (e StatisticNotRecorded) Time() time.Time { return e.At }
 
 // Time implements Event.
+func (e StacksNotFound) Time() time.Time { return e.At }
+
+// Time implements Event.
 func (e RouteStepEnded) Time() time.Time { return e.At }
 
 // Time implements Event.
@@ -311,6 +322,7 @@ func (e BotActsAgain) Time() time.Time { return e.At }
 
 func (RunNotRecorded) event()       {}
 func (StatisticNotRecorded) event() {}
+func (StacksNotFound) event()       {}
 func (RouteStepEnded) event()       {}
 func (IssueSkipped) event()         {}
 func (IssueOfOtherKind) event()     {}

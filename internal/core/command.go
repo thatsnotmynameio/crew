@@ -54,6 +54,10 @@ type ListIssues struct {
 	// filled from the listings, the states their waiting routes move to,
 	// rule by rule in config order, each once (KTD10, KTD17).
 	States []crew.State
+	// Stacking are the ready states of the rules with stacking on, in
+	// config order, each once: the engine reads the stacks of the blocked
+	// issues listed alone in one of them (KTD1 of #446).
+	Stacking []crew.State
 }
 
 // ListBoard asks the tracker for the open issues that carry any of Labels,
@@ -100,12 +104,15 @@ type Close struct {
 }
 
 // CreateWorkspace asks for the one new workspace of the rule run Run of
-// Rule on Issue, which its actions share. Its result is WorkspaceReady or
-// WorkspaceFailed, carrying Issue.ID() and Run.
+// Rule on Issue, which its actions share, made from Base: the branch of
+// the pull request the run is stacked on, or origin's default branch when
+// empty (R7). Its result is WorkspaceReady or WorkspaceFailed, carrying
+// Issue.ID() and Run.
 type CreateWorkspace struct {
 	Issue crew.Issue
 	Run   crew.RuleRunID
 	Rule  crew.RuleName
+	Base  string
 }
 
 // ReopenWorkspace asks to reopen, for the rule run Run, the workspace the
@@ -146,7 +153,9 @@ type RecordStatistic struct {
 // session continues the work of the run this one resumes, in its reopened
 // workspace, so the engine marks in the log where the new session starts.
 // Agent is the action's agent, whose harness runs the session. Bot is the
-// session's bot, whom it acts as on the tracker; empty means you.
+// session's bot, whom it acts as on the tracker; empty means you. Base is
+// the run's base branch and Stack the pull request it is stacked on, as
+// its prompt renders them (R8).
 type StartSession struct {
 	IssueID crew.IssueID
 	Run     crew.RuleRunID
@@ -157,6 +166,8 @@ type StartSession struct {
 	Resumed bool
 	Agent   crew.AgentName
 	Bot     crew.BotName
+	Base    string
+	Stack   crew.Optional[crew.Stack]
 }
 
 // StopSession asks the engine to stop the running session of Action of the
@@ -177,7 +188,9 @@ type StopSession struct {
 // Session, the name of the run's latest session, reach the command as
 // environment variables, never as part of it; Session is empty before any
 // session. Bot is the run's bot, the latest session's, whom the script acts
-// as on the tracker; empty means you.
+// as on the tracker; empty means you. Base is the run's base branch and
+// Stack the pull request it is stacked on, as its sessions' prompts render
+// them (R8).
 type Script struct {
 	Dir      string
 	Name     crew.ActionName
@@ -189,6 +202,8 @@ type Script struct {
 	Branch   string
 	Session  crew.ActionName
 	Bot      crew.BotName
+	Base     string
+	Stack    crew.Optional[crew.Stack]
 }
 
 // RunShell asks the engine to run the script of Action, the shell action
