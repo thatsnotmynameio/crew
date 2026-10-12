@@ -127,10 +127,14 @@ type PauseToggled struct {
 }
 
 // IssuesListed is the result of ListIssues: the open issues in any of the
-// requested states, each carrying every crew state it is in.
+// requested states, each carrying every crew state it is in, and the
+// blocked ones in a stacking state with their stacks read.
 type IssuesListed struct {
 	At     time.Time
 	Issues []crew.Issue
+	// StacksFailed says in one line why the read of the stacks failed,
+	// leaving its issues unread; empty when it did not (KTD1 of #446).
+	StacksFailed string
 	// Seed is the fresh seed the engine stamped, from which the rule runs
 	// this listing takes get their ids.
 	Seed uuid.UUID

@@ -49,29 +49,33 @@ func (s *step) tick(said []Said) {
 // (R6). For a board filled from the listings, it also asks for the labels
 // each rule's waiting routes move to, so a paused issue stays on the board
 // (KTD17). Only the ready labels are taken from; the others fill the
-// default board (KTD10).
+// default board (KTD10). It names the ready labels of the rules with
+// stacking on, whose blocked issues' stacks are read (KTD1 of #446).
 func (s *step) listIssues() {
 	m := s.m
 	m.listing = true
 	m.listings++
 	m.skipped = 0
 	m.listingAsked()
-	var states []crew.State
-	add := func(st crew.State) {
-		if !slices.Contains(states, st) {
-			states = append(states, st)
+	var states, stacking []crew.State
+	add := func(to *[]crew.State, st crew.State) {
+		if !slices.Contains(*to, st) {
+			*to = append(*to, st)
 		}
 	}
 	for _, r := range m.rules {
-		add(r.Labels.Ready)
-		add(r.Labels.Running)
+		add(&states, r.Labels.Ready)
+		add(&states, r.Labels.Running)
 		if m.board != nil && m.board.listed {
 			for _, st := range r.WaitingStates() {
-				add(st)
+				add(&states, st)
 			}
 		}
+		if r.Stacking && r.Takes == crew.KindIssue {
+			add(&stacking, r.Labels.Ready)
+		}
 	}
-	s.command(ListIssues{States: states})
+	s.command(ListIssues{States: states, Stacking: stacking})
 }
 
 // freed lists at once when a released issue freed a slot after a tick
@@ -156,10 +160,15 @@ func (s *step) timeUp(limit time.Duration) {
 // priority first, an issue without one last; then, at the same priority,
 // later rules first; then the oldest issue first (KTD8). It reports nothing
 // for the issues it leaves, a blocked one included: a later listing with a
-// free slot takes them. It takes nothing once the run time is up.
-func (s *step) listed(issues []crew.Issue) {
+// free slot takes them. It takes nothing once the run time is up. A read
+// of the stacks that failed, saying why in stacksFailed, is a warning: its
+// issues, unread, wait (KTD1 of #446).
+func (s *step) listed(issues []crew.Issue, stacksFailed string) {
 	m := s.m
 	m.listing = false
+	if stacksFailed != "" {
+		s.emit(StacksNotFound{At: s.at, Reason: stacksFailed})
+	}
 	m.gone(issues)
 	m.boardFromListing(issues)
 	s.sighted(issues)
@@ -191,14 +200,16 @@ type candidate struct {
 	issue crew.Issue
 }
 
-// waiting returns the unblocked items of a rule's kind waiting in its state,
-// in the order listed takes them.
+// waiting returns the items of a rule's kind waiting in its state, in the
+// order listed takes them: the unblocked ones, and the blocked ones too for
+// a rule with stacking on, which takeWaiting takes only on a stack.
 func (s *step) waiting(issues []crew.Issue) []candidate {
 	var candidates []candidate
 	for si, rule := range s.m.rules {
 		for _, issue := range issues {
 			state, alone := issue.OnlyState()
-			if alone && state == rule.Labels.Ready && issue.Kind() == rule.Takes && !issue.Blocked() {
+			if alone && state == rule.Labels.Ready && issue.Kind() == rule.Takes &&
+				(!issue.Blocked() || rule.Stacking) {
 				candidates = append(candidates, candidate{si, issue})
 			}
 		}
@@ -216,8 +227,10 @@ func (s *step) waiting(issues []crew.Issue) []candidate {
 }
 
 // takeWaiting takes candidates in order while slots are free, passing over
-// each one whose rule's queue is full, and returns how many it took
-// (KTD3). It reports nothing for the rest.
+// each one whose rule's queue is full, and each blocked one that cannot
+// stack, and returns how many it took (KTD3). A blocked one is taken on its
+// stack, which counts the stacks taken before it (KTD4 of #446). It reports
+// nothing for the rest.
 func (s *step) takeWaiting(candidates []candidate) int {
 	m := s.m
 	taken := 0
@@ -228,7 +241,15 @@ func (s *step) takeWaiting(candidates []candidate) int {
 		if m.held(c.issue.ID()) != nil || m.queueFull(m.queueOf[c.rule]) {
 			continue
 		}
-		s.take(c.rule, c.issue)
+		var stack crew.Optional[crew.Stack]
+		if c.issue.Blocked() {
+			st, ok := m.stackOf(c.issue)
+			if !ok {
+				continue
+			}
+			stack = crew.Some(st)
+		}
+		s.take(c.rule, c.issue, stack)
 		taken++
 	}
 	return taken
@@ -250,15 +271,15 @@ func comparePriority(a, b int) int {
 
 // take holds issue for rule si, as a new rule run that continues the last
 // run of the rule on the issue, starts where that run says (R22, KTD19)
-// and inherits its open questions (KTD-W7), and moves it to the rule's
-// running label.
-func (s *step) take(si int, issue crew.Issue) {
+// and inherits its open questions (KTD-W7), on stack, decided anew at each
+// take (KTD6 of #446), and moves it to the rule's running label.
+func (s *step) take(si int, issue crew.Issue, stack crew.Optional[crew.Stack]) {
 	m := s.m
 	rule := m.rules[si]
 	s.runs++
 	taken := m.continued(crew.RunTaken{
 		Run: crew.NewRuleRunID(s.seed, s.runs), At: s.at, IssueID: issue.ID(), IssueRef: issue.Ref(), Rule: rule.Name,
-		Issue: issue.Data(), From: rule.Labels.Ready, To: rule.Labels.Running,
+		Issue: issue.Data(), From: rule.Labels.Ready, To: rule.Labels.Running, Stack: stack,
 	}, rule)
 	for _, a := range rule.Actions {
 		taken.Actions = append(taken.Actions, a.Name)

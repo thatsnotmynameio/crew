@@ -304,14 +304,16 @@ func (s *step) takeMoved(h *heldRun, e crew.TakeMoved) {
 	s.reportPullRequests(h.run.TakeReport(e.To))
 }
 
-// workspaceAsked asks for the run's one new workspace, or for the reopened
-// workspace of the run it continues (R5, KTD6).
+// workspaceAsked asks for the run's one new workspace, made from the branch
+// of the pull request the run is stacked on, or origin's default branch
+// (R7), or for the reopened workspace of the run it continues (R5, KTD6).
 func (s *step) workspaceAsked(h *heldRun, e crew.WorkspaceAsked) {
 	if w, ok := e.Reopen.Get(); ok {
 		s.command(ReopenWorkspace{IssueID: e.IssueID, Run: e.Run, Workspace: w.Name, Branch: w.Branch})
 		return
 	}
-	s.command(CreateWorkspace{Issue: h.run.Issue(), Run: e.Run, Rule: e.Rule})
+	stack, _ := h.run.Stack().Get()
+	s.command(CreateWorkspace{Issue: h.run.Issue(), Run: e.Run, Rule: e.Rule, Base: stack.Branch})
 }
 
 // startSession starts the session of h's action named name, with its
@@ -328,7 +330,8 @@ func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	w, _ := h.run.Workspace().Get()
 	// The run rendered the prompt already, when it asked for the session:
 	// the same template and data render the same text.
-	prompt, _ := spec.Prompt.Render(h.run.PromptData())
+	data := h.run.PromptData()
+	prompt, _ := spec.Prompt.Render(data)
 	start, resumed := h.run.Start().(crew.StartAt)
 	resumed = resumed && w.Resumed && start.Action == name
 	if p, ok := s.m.resumeParagraphs(h, name, start, resumed); ok {
@@ -342,7 +345,7 @@ func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	}
 	s.command(StartSession{
 		IssueID: h.id(), Run: h.run.ID(), Action: name, Dir: h.dir, Prompt: prompt, Log: w.Log, Resumed: resumed,
-		Agent: spec.Agent.Name, Bot: spec.Bot.Name,
+		Agent: spec.Agent.Name, Bot: spec.Bot.Name, Base: data.Base, Stack: data.Stack,
 	})
 }
 
@@ -355,14 +358,16 @@ func (s *step) runShell(h *heldRun, e crew.ActionShellAsked) {
 
 // script returns the script of the shell action named name, command, as
 // h's run runs it, acting as bot: in its workspace, when it has one, with
-// its latest session's name (KTD-S12).
+// its latest session's name (KTD-S12), its base and its stack (R8).
 func (h *heldRun) script(name crew.ActionName, command string, bot crew.Bot) Script {
 	w, _ := h.run.Workspace().Get()
 	latest, _ := h.run.LatestSession().Get()
 	issue := h.run.Issue()
+	data := h.run.PromptData()
 	return Script{
 		Dir: h.dir, Name: name, Command: command, Log: w.Log, Rule: h.run.Rule(), IssueRef: issue.Ref(),
 		IssueURL: issue.URL(), Branch: w.Workspace.Branch, Session: latest.Action, Bot: bot.Name,
+		Base: data.Base, Stack: data.Stack,
 	}
 }
 

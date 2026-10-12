@@ -150,7 +150,7 @@ func coreText(e core.Event) string {
 	case core.StatusFailed:
 		return withReason("could not update the status comment on "+e.IssueRef+": "+result(e.Result), e.Reason)
 	case core.PollDone, core.PollSkipped, core.ListingFailed, core.WindingDown, core.Paused, core.Resumed,
-		core.Stopped, core.StatisticNotRecorded:
+		core.Stopped, core.StatisticNotRecorded, core.StacksNotFound:
 		return crewText(e)
 	}
 	return fmt.Sprintf("%T", e)
@@ -178,7 +178,7 @@ func crewText(e core.Event) string {
 	case core.StatisticNotRecorded:
 		return withReason("warning: could not record "+statistic(e.Statistic)+" in the statistics store", e.Reason)
 	case core.RunNotRecorded, core.RouteStepEnded, core.IssueSkipped, core.IssueOfOtherKind, core.BotStopped,
-		core.BotActsAgain, core.CallOwed, core.CallDropped, core.StatusFailed:
+		core.BotActsAgain, core.CallOwed, core.CallDropped, core.StatusFailed, core.StacksNotFound:
 	}
 	return fmt.Sprintf("%T", e)
 }
