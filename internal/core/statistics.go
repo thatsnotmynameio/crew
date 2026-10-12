@@ -311,3 +311,124 @@ func (m *Model) work(h *heldRun, e crew.ActionEnded) crew.Work {
 	}
 	return crew.CheckWork{}
 }
+
+// stepWork is what the span of a route's shell or function step needs that
+// no run event keeps: when crew asked for the step, and how its script or
+// function ended, as the engine's input said (KTD3, KTD4).
+type stepWork struct {
+	asked   crew.Optional[time.Time]
+	status  crew.Optional[int]
+	verdict crew.Optional[crew.Verdict]
+}
+
+// keepStep changes what h keeps of its route's step at index i with
+// change, when the model records statistics. A later input for the same
+// step replaces what an earlier one kept (KTD4).
+func (s *step) keepStep(h *heldRun, i int, change func(*stepWork)) {
+	if s.m.statistics == nil {
+		return
+	}
+	if h.steps == nil {
+		h.steps = map[int]stepWork{}
+	}
+	w := h.steps[i]
+	change(&w)
+	h.steps[i] = w
+}
+
+// routeOpened records the open of the span of the route h's run just
+// chose, before any of its steps (KTD2).
+func (s *step) routeOpened(h *heldRun) {
+	if s.m.statistics == nil {
+		return
+	}
+	p, _ := h.run.Phase().(crew.RoutingPhase)
+	s.command(RecordStatistic{Statistic: s.m.routeSpan(h, p)})
+}
+
+// routeEnded records the end of the span of the route h's run chose, when
+// it chose one, at at, the run's release, with the run's outcome (KTD2,
+// KTD5). The record carries the whole span.
+func (s *step) routeEnded(h *heldRun, at time.Time) {
+	if s.m.statistics == nil {
+		return
+	}
+	released, _ := h.run.Phase().(crew.ReleasedPhase)
+	p, routed := released.Route.Get()
+	if !routed {
+		return
+	}
+	sp := s.m.routeSpan(h, p)
+	sp.End = crew.Some(crew.RouteEnd{At: at, Outcome: outcome(p)})
+	s.command(RecordStatistic{Statistic: sp})
+}
+
+// routeSpan returns the span of p, the route of h's run, with no end:
+// under the action at the run's cursor, with its verdict, when that action
+// ended in this run, and under the run otherwise, as for a rule without
+// actions or a run of its continued run's passed route alone (KTD9).
+func (m *Model) routeSpan(h *heldRun, p crew.RoutingPhase) crew.RouteSpan {
+	sp := crew.RouteSpan{
+		Issue: h.id(), Rule: h.run.Rule(), Run: h.run.ID(), Process: m.statistics.process, Route: p.Route,
+		Start: p.Chosen,
+	}
+	if a, ok := h.run.Cursor(); ok {
+		if finished, ended := a.State().(crew.Finished); ended {
+			sp.ChosenBy = crew.Some(crew.RouteChoice{Action: a.Name(), Verdict: finished.Verdict})
+		}
+	}
+	return sp
+}
+
+// stepSpanEnded records the span of the shell or function step e ended in
+// the route of h's run, with its exit status or verdict as the engine said:
+// from when crew asked for it, or from its end when it ended unasked
+// (KTD3, KTD4). A tracker step records nothing.
+func (s *step) stepSpanEnded(h *heldRun, e crew.StepEnded) {
+	if s.m.statistics == nil {
+		return
+	}
+	p, routing := h.run.Phase().(crew.RoutingPhase)
+	if !routing || e.Step >= len(p.Steps) {
+		return
+	}
+	kept := h.steps[e.Step]
+	start, asked := kept.asked.Get()
+	if !asked {
+		start = e.At
+	}
+	plan := p.Steps[e.Step]
+	sp := crew.StepSpan{
+		Issue: h.id(), Rule: h.run.Rule(), Run: h.run.ID(), Index: e.Step, Process: s.m.statistics.process,
+		Start: start, End: e.At, Outcome: stepWorkOutcome(e.Outcome),
+	}
+	switch plan.Kind {
+	case crew.StepShell:
+		sp.Name, sp.Work = plan.Shell, crew.ShellWork{ExitStatus: kept.status}
+	case crew.StepFunction:
+		// The plan keeps only the step's name; the rule's step names its
+		// function.
+		route, _ := s.m.rules[h.rule].Route(p.Route)
+		step, _ := route.Steps[e.Step].(crew.FunctionStep)
+		sp.Name, sp.Work = plan.Function, crew.FunctionWork{Function: step.Function.Function, Verdict: kept.verdict}
+	case crew.StepMove, crew.StepClose, crew.StepComment, crew.StepReport, crew.StepQuestion, crew.StepDelegate:
+		return
+	}
+	s.command(RecordStatistic{Statistic: sp})
+}
+
+// stepWorkOutcome returns how a route's step that settled as o ended: ran,
+// stopped while it ran, skipped as a stop kept it from starting, or failed
+// (KTD5).
+func stepWorkOutcome(o crew.StepOutcome) crew.WorkOutcome {
+	switch o.(type) {
+	case crew.StepRan:
+		return crew.WorkSucceeded
+	case crew.StepStopped:
+		return crew.WorkStopped
+	case crew.StepSkipped:
+		return crew.WorkStoppedBeforeStart
+	case crew.StepFailed, crew.StepLanded, crew.StepGivenUp, crew.StepDropped, nil:
+	}
+	return crew.WorkFailed
+}

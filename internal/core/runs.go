@@ -34,6 +34,10 @@ type heldRun struct {
 	// that it asked for, which the action's span starts at; empty when the
 	// model records no statistics (KTD3).
 	starts map[crew.ActionName]time.Time
+	// steps holds, by index, what the spans of its route's shell and
+	// function steps need that no run event keeps, while the core records
+	// statistics (KTD3, KTD4).
+	steps map[int]stepWork
 }
 
 // findRun returns the held run identified by id, or nil.
@@ -127,10 +131,12 @@ func (s *step) runInput(in RunInput) {
 	case ShellEnded:
 		s.decide(h, crew.ShellEnded{FactHead: head, Action: in.Action, Outcome: in.Outcome})
 	case StepShellEnded:
+		s.keepStep(h, in.Step, func(w *stepWork) { w.status = in.Outcome.Status })
 		s.decide(h, crew.StepShellEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
 	case FunctionEnded:
 		s.decide(h, crew.FunctionEnded{FactHead: head, Action: in.Action, Outcome: in.Outcome})
 	case StepFunctionEnded:
+		s.keepStep(h, in.Step, func(w *stepWork) { w.verdict = in.Outcome.Verdict })
 		s.decide(h, crew.StepFunctionEnded{FactHead: head, Step: in.Step, Outcome: in.Outcome})
 	case PullRequestFound:
 		s.decide(h, crew.PullRequestLookedUp{FactHead: head, PullRequest: in.PullRequest})
@@ -231,6 +237,7 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 	case crew.WorkspaceMissing, crew.WorkspaceOpened:
 		s.emit(e)
 	case crew.RunReleased:
+		s.routeEnded(h, e.At)
 		s.spanEnded(h, e.At)
 		s.m.release(h)
 		s.freed()
