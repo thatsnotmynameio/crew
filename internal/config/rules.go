@@ -12,12 +12,13 @@ import (
 
 // ruleDoc is one rule of rules, keyed by its name.
 type ruleDoc struct {
-	Takes   located[string] `yaml:"takes"`
-	Queue   located[string] `yaml:"queue"`
-	Notify  located[bool]   `yaml:"notify"`
-	Labels  yaml.Node       `yaml:"labels"`
-	Actions yaml.Node       `yaml:"actions"`
-	Routes  yaml.Node       `yaml:"routes"`
+	Takes    located[string] `yaml:"takes"`
+	Stacking located[bool]   `yaml:"stacking"`
+	Queue    located[string] `yaml:"queue"`
+	Notify   located[bool]   `yaml:"notify"`
+	Labels   yaml.Node       `yaml:"labels"`
+	Actions  yaml.Node       `yaml:"actions"`
+	Routes   yaml.Node       `yaml:"routes"`
 }
 
 // labelsDoc is a rule's labels.
@@ -28,7 +29,7 @@ type labelsDoc struct {
 
 // What a rule and its labels must be, said when one is not a mapping.
 const (
-	ruleShape   = "must be a rule with labels and routes, and optionally takes, queue, notify and actions"
+	ruleShape   = "must be a rule with labels and routes, and optionally takes, stacking, queue, notify and actions"
 	labelsShape = "must be a mapping with ready and running"
 )
 
@@ -125,18 +126,20 @@ func parseRule(e entry, env ruleEnv) (parsedRule, error) {
 		return parsedRule{}, err
 	}
 	p := parsedRule{Name: crew.RuleName(e.key.Value), path: e.path, ruleLine: e.key.Line}
-	var labelsErr, queueErr, takesErr, actionsErr, routesErr error
+	var labelsErr, queueErr, takesErr, stackingErr, actionsErr, routesErr error
 	p.Labels, p.labels, labelsErr = ruleLabels(&doc.Labels, e.path+".labels", e.key.Line)
 	p.Queue, queueErr = ruleQueue(doc.Queue, e.path, env.queues)
 	p.Takes, takesErr = ruleTakes(doc.Takes, e.path)
 	p.actions, actionsErr = sequence(&doc.Actions, e.path+".actions", env)
 	p.routes, routesErr = routes(&doc.Routes, e.path+".routes", env)
 	p.routesLine = doc.Routes.Line
-	p.notify = doc.Actions.Kind == yaml.SequenceNode && len(doc.Actions.Content) > 0
+	hasActions := doc.Actions.Kind == yaml.SequenceNode && len(doc.Actions.Content) > 0
+	p.Stacking, stackingErr = ruleStacking(doc.Stacking, e.path, hasActions)
+	p.notify = hasActions
 	if doc.Notify.line != 0 {
 		p.notify = doc.Notify.value
 	}
-	if err := errors.Join(labelsErr, queueErr, takesErr, actionsErr, routesErr); err != nil {
+	if err := errors.Join(labelsErr, queueErr, takesErr, stackingErr, actionsErr, routesErr); err != nil {
 		return p, err
 	}
 	p.routes, routesErr = questionRoutes(p)
@@ -181,6 +184,16 @@ func ruleTakes(l located[string], path string) (crew.Kind, error) {
 	}
 	return crew.KindIssue, keyError(path+".takes", l.line,
 		fmt.Sprintf("%q must be %s or %s", l.value, takesIssues, takesPullRequests))
+}
+
+// ruleStacking returns whether the rule at path stacks: false when stacking
+// is left out. A rule without actions may not stack, since it would move a
+// blocked issue on without working it.
+func ruleStacking(l located[bool], path string, hasActions bool) (bool, error) {
+	if l.value && !hasActions {
+		return false, keyError(path+".stacking", l.line, "must not be true on a rule without actions")
+	}
+	return l.value, nil
 }
 
 // agent returns the agent a session names in l, at path, on line. A

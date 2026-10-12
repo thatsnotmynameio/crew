@@ -35,6 +35,18 @@ var invalidRules = []rejectCase{
 		wants: []string{"rules.implement.notify", "line 6", "maybe"},
 	},
 	{
+		name:  "stacking not a boolean",
+		body:  ruleWith("stacking: maybe"),
+		wants: []string{"rules.implement.stacking", "line 6", "maybe"},
+	},
+	{
+		// It would move blocked issues on without working them.
+		name: "stacking on a rule without actions",
+		body: "rules:\n  promote:\n    stacking: true\n" +
+			"    labels: {ready: done, running: promoting}\n    routes: {passed: next}\n",
+		wants: []string{"rules.promote.stacking", "line 3", "a rule without actions"},
+	},
+	{
 		// A bad takes is reported with the rule's other errors.
 		name:  "takes and a label wrong in one rule",
 		body:  strings.Replace(ruleWith("takes: prs"), "      running: in progress\n", "", 1),

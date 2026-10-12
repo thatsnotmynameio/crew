@@ -179,6 +179,11 @@
 #   development:
 #     ## The kind of item the rule takes: issues or pull_requests.
 #     takes: issues
+#     ## Whether the rule takes a blocked issue on its only blocker's open
+#     ## pull request, once crew's run of the blocker passed, instead of
+#     ## waiting for the blocker to close. Off by default. Only a rule with
+#     ## actions may turn it on.
+#     stacking: false
 #     ## The queue the rule runs in: one of queues, or default.
 #     queue: default
 #     ## Whether crew sends a desktop notification when the rule ends. On by

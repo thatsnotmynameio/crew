@@ -167,3 +167,24 @@ func TestLoadGivesEveryRuleTheKindItTakes(t *testing.T) {
 		})
 	}
 }
+
+// Covers AE1 (config side), R1, KTD9: a rule stacks only when its config
+// turns stacking on.
+func TestLoadGivesEveryRuleWhetherItStacks(t *testing.T) {
+	tests := []struct {
+		name     string
+		stacking string
+		want     bool
+	}{
+		{name: "a rule without the key waits for its blockers", stacking: "", want: false},
+		{name: "stacking: true", stacking: "stacking: true", want: true},
+		{name: "stacking: false", stacking: "stacking: false", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := load(t, ruleWith(tt.stacking)).Rules[0].Stacking; got != tt.want {
+				t.Errorf("Stacking = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
