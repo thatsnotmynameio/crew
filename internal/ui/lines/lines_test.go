@@ -259,6 +259,8 @@ var sentences = []struct {
 		Issue: crew.IssueID{Repository: "R_1", Key: "42"}, Rule: "develop", Run: "r.1", Index: 1, Name: "lint"},
 		Reason: "disk full"},
 		"warning: could not record the route step lint of the rule run develop on #42 in the statistics store: disk full"},
+	{core.StacksNotFound{At: at("10:00:00"), Reason: "gh: HTTP 502"},
+		"warning: could not read the stacks of the blocked issues: gh: HTTP 502"},
 	{core.CallOwed{At: at("10:00:00"), Call: move, Reason: "timeout"},
 		"moving #2 from in review to needs attention failed, retrying at the next tick: timeout"},
 	{core.CallOwed{At: at("10:00:00"), Call: report, Reason: "timeout"},
