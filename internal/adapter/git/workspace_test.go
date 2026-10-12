@@ -80,7 +80,7 @@ func TestCreateFetchesThenAddsWorktreeFromOriginDefault(t *testing.T) {
 	git := &scripted{}
 	w, root := scriptedWorkspace(t, git)
 
-	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7"), Ref: "#7"}), "implement")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7"), Ref: "#7"}), "implement", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -88,24 +88,12 @@ func TestCreateFetchesThenAddsWorktreeFromOriginDefault(t *testing.T) {
 	dir := filepath.Join(root, ".crew", "worktrees", "issue-7-implement")
 	want := port.Space{
 		Workspace: crew.Workspace{Name: "issue-7-implement", Branch: "crew/issue-7-implement"}, Dir: dir,
+		DefaultBranch: "main",
 	}
 	if space != want {
 		t.Errorf("space = %+v, want %+v", space, want)
 	}
-	fetch := git.index("fetch", "origin", "main")
-	add := git.index("worktree", "add")
-	if fetch < 0 || add < 0 || fetch > add {
-		t.Fatalf("want git fetch origin main before git worktree add; calls: %q", git.calls)
-	}
-	args := git.call(add)
-	for _, want := range []string{"crew/issue-7-implement", dir, "origin/main"} {
-		if !slices.Contains(args, want) {
-			t.Errorf("worktree add %q lacks %q", args, want)
-		}
-	}
-	if b := slices.Index(args, "-b"); b < 0 || b+1 >= len(args) || args[b+1] != "crew/issue-7-implement" {
-		t.Errorf("worktree add %q does not create branch crew/issue-7-implement", args)
-	}
+	checkFetchedThenAdded(t, git, "main", "crew/issue-7-implement", dir)
 }
 
 func TestPrepareReportsItsSteps(t *testing.T) {
@@ -139,7 +127,7 @@ func TestCreateReportsNoStep(t *testing.T) {
 	var steps []string
 	ctx := port.WithSteps(t.Context(), func(step string) { steps = append(steps, step) })
 
-	if _, err := w.Create(ctx, crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement"); err != nil {
+	if _, err := w.Create(ctx, crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement", ""); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if len(steps) != 0 {
@@ -176,7 +164,7 @@ func TestCreateNames(t *testing.T) {
 				}
 			}
 
-			space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID(tt.key)}), tt.rule)
+			space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID(tt.key)}), tt.rule, "")
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
@@ -193,7 +181,7 @@ func TestCreateFailingWorktreeAddCarriesGitStderr(t *testing.T) {
 	git := &scripted{fail: map[string]string{"worktree add": stderr}}
 	w, _ := scriptedWorkspace(t, git)
 
-	_, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement")
+	_, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement", "")
 	if err == nil || !strings.Contains(err.Error(), stderr) {
 		t.Fatalf("err = %v, want it to carry %q", err, stderr)
 	}
@@ -287,13 +275,14 @@ func TestCreateFromOriginDefaultBranchInRealRepository(t *testing.T) {
 	if err := w.Prepare(t.Context(), nil); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	want := port.Space{
-		Workspace: crew.Workspace{Name: "issue-7-implement", Branch: "crew/issue-7-implement"},
-		Dir:       filepath.Join(root, ".crew", "worktrees", "issue-7-implement"),
+		Workspace:     crew.Workspace{Name: "issue-7-implement", Branch: "crew/issue-7-implement"},
+		Dir:           filepath.Join(root, ".crew", "worktrees", "issue-7-implement"),
+		DefaultBranch: "trunk",
 	}
 	if space != want {
 		t.Errorf("space = %+v, want %+v", space, want)
@@ -312,7 +301,7 @@ func TestConcurrentCreationsAfterOriginAdvanced(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range spaces {
 		wg.Go(func() {
-			spaces[i], errs[i] = w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement")
+			spaces[i], errs[i] = w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement", "")
 		})
 	}
 	wg.Wait()
@@ -339,7 +328,7 @@ func TestCreateFindsDefaultBranchThroughLsRemoteWhenOriginAddedByHand(t *testing
 	gitIn(t, root, "remote", "add", "origin", r.bare)
 
 	w := New(&proc.Group{}, root)
-	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -374,7 +363,7 @@ func reopenable(t *testing.T) (remote, string, *Workspace, port.Space) {
 	r := newRemote(t)
 	root := r.clone(t)
 	w := New(&proc.Group{}, root)
-	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement")
+	space, err := w.Create(t.Context(), crew.NewIssue(crew.IssueData{ID: issueID("7")}), "implement", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -396,8 +385,8 @@ func TestReopenLeavesWorktreeAsItWasAfterOriginMovedOn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reopen: %v", err)
 	}
-	if got != space {
-		t.Errorf("space = %+v, want %+v", got, space)
+	if got != space || got.DefaultBranch != "trunk" {
+		t.Errorf("space = %+v, want %+v with default branch trunk", got, space)
 	}
 	if head := gitIn(t, space.Dir, "rev-parse", "HEAD"); head != own {
 		t.Errorf("HEAD = %s, want the worktree's own commit %s", head, own)
@@ -518,8 +507,9 @@ func TestReopenThroughSymlinkedRoot(t *testing.T) {
 		t.Fatalf("Reopen: %v", err)
 	}
 	want := port.Space{
-		Workspace: space.Workspace,
-		Dir:       filepath.Join(link, ".crew", "worktrees", string(space.Workspace.Name)),
+		Workspace:     space.Workspace,
+		Dir:           filepath.Join(link, ".crew", "worktrees", string(space.Workspace.Name)),
+		DefaultBranch: "trunk",
 	}
 	if got != want {
 		t.Errorf("space = %+v, want %+v", got, want)
