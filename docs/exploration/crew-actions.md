@@ -174,25 +174,44 @@ Three things cost little now and a lot later:
 
 ## Code architecture
 
-A tree of its own, `internal/actions/`, in crew's module and binary (`crew actions engine`, `crew actions runner`).
+### A Go module of its own
+
+crew actions is its own Go module, in crew's repository: `actions/`, with its own `go.mod` and the module path `github.com/thatsnotmynameio/crew/actions`.
+It is large and apart from crew, and a module makes the separation real:
+
+- **Its dependencies stay its own.** Postgres's driver, OpenTelemetry and connect-rpc enter `actions/go.mod`, not crew's; crew's binary, its vulnerability scan and its dependency review do not grow with them.
+- **The isolation is the module's.** crew actions does not require crew's module, so it cannot import crew's packages, and crew does not require it. Inside the module, `depguard` still checks the layers.
+- **Its version is its own,** released with tags of the form `actions/vX.Y.Z`, the form Go expects for a module in a subdirectory.
+
+What this brings, for the brainstorm of slice -1 to settle:
+
+- **The binary.** A `crew-actions` binary from `actions/cmd/crew-actions`, and `crew actions …` as a git-style dispatch: crew runs `crew-actions` from the `PATH` with the rest of the arguments. Neither module then requires the other. The commands keep the names used below (`crew actions run`, `crew actions engine`, `crew actions runner`).
+- **`internal/proc`.** It is crew's only way to start a child process, but another module cannot import crew's `internal/` without requiring crew's module. crew actions gets its own, a copy to start with, or both move to a small module they share.
+- **CI and releases.** Every check that runs on crew's module (`go mod tidy`, gofmt, vet, golangci-lint, `go test -race` with coverage, govulncheck) runs on `actions/` too; Dependabot gets an entry for `/actions`; GoReleaser builds `crew-actions` with its own version.
+- **A `go.work`,** or none: a workspace file eases working on both modules at once, and is often left uncommitted.
+
+### The tree
 
 ```text
-internal/actions/
-  spec/                    # YAML: parse, lint, compile into a neutral form
-  spec/dag/                # the depends_on graph, with cycle detection
-  model/                   # Build, Workflow, Step; states as types, not strings
-  scheduler/               # pure: from a snapshot of the candidates, picks one
-  engine/                  # the use cases: create a build, hand out, accept, renew a lease, finish, release dependents
-  store/postgres/          # pgx, embedded migrations, SKIP LOCKED, LISTEN/NOTIFY, advisory locks
-  protocol/                # the engine–runner contract: protos and one Go interface
-  transport/inproc/        # engine and runner in one process
-  transport/connect/       # engine and runner on different machines
-  api/                     # the API for the CLI, the TUI and the web, apart from the runner protocol
-  source/github/           # where events come from
-  runner/                  # the poller and its capacity, the lease, cancellation, the reporter, logs
-  runner/executor/         # the phases and hooks of one workflow
-  runner/backend/          # the Backend interface: local, docker, dummy
-  telemetry/               # every span, attribute and metric crew names, and crew's span exporter
+actions/
+  go.mod                   # github.com/thatsnotmynameio/crew/actions
+  cmd/crew-actions/        # the binary: flags, environment, the SDK set up, wiring
+  internal/
+    spec/                  # YAML: parse, lint, compile into a neutral form
+    spec/dag/              # the depends_on graph, with cycle detection
+    model/                 # Build, Workflow, Step; states as types, not strings
+    scheduler/             # pure: from a snapshot of the candidates, picks one
+    engine/                # the use cases: create a build, hand out, accept, renew a lease, finish, release dependents
+    store/postgres/        # pgx, embedded migrations, SKIP LOCKED, LISTEN/NOTIFY, advisory locks
+    protocol/              # the engine–runner contract: protos and one Go interface
+    transport/inproc/      # engine and runner in one process
+    transport/connect/     # engine and runner on different machines
+    api/                   # the API for the CLI, the TUI and the web, apart from the runner protocol
+    source/github/         # where events come from
+    runner/                # the poller and its capacity, the lease, cancellation, the reporter, logs
+    runner/executor/       # the phases and hooks of one workflow
+    runner/backend/        # the Backend interface: local, docker, dummy
+    telemetry/             # every span, attribute and metric crew names, and crew's span exporter
 ```
 
 ### What each part does, and why
@@ -218,13 +237,13 @@ internal/actions/
 
 ### Boundaries
 
-Imports point inward, checked by `depguard` as crew's other layers are:
+Inside the module, imports point inward, checked by `depguard` as crew's layers are:
 
 - `spec`, `model` and `scheduler` import nothing with I/O.
 - `runner` imports `protocol`, never `engine`, `scheduler` or `store`.
 - `engine` imports no transport, backend or source.
 - Only `telemetry` imports OpenTelemetry, and only `main` sets up its SDK.
-- Nothing under `internal/actions/` imports today's crew (`internal/crew`, `core`, `engine`, `config`), and today's crew imports nothing under it. The one exception is `internal/proc`, the only way crew starts a child process.
+- crew actions and crew are two modules, and neither requires the other: the module boundary keeps them apart, so no `depguard` rule is needed between them.
 
 ### Day one
 
@@ -258,7 +277,7 @@ crew 0.1.4 already measures its own work as a tree of spans in SQLite (`internal
 The spans and metrics are crew's own, easy to identify, and crew sets them itself.
 They follow no generic convention, and nothing depends on automatic instrumentation.
 
-- **One package names them all:** `internal/actions/telemetry`. It holds every span name, attribute key and metric instrument as constants, and typed helpers such as `telemetry.StartWorkflow(ctx, workflow)` or `telemetry.RecordTokens(ctx, model, tokens)`. No other package spells a name or imports OpenTelemetry; `depguard` checks it.
+- **One package names them all:** `actions/internal/telemetry`. It holds every span name, attribute key and metric instrument as constants, and typed helpers such as `telemetry.StartWorkflow(ctx, workflow)` or `telemetry.RecordTokens(ctx, model, tokens)`. No other package spells a name or imports OpenTelemetry; `depguard` checks it.
 - **Every name starts with `crew.`,** so a span or a metric is crew's at a glance in any backend.
 - **Span names are fixed and few;** what varies goes in attributes.
 - **Metrics never carry an id** (a build, an issue, a workflow run): only bounded values such as the repository, the queue, the workflow's name, the model. Ids live on spans.
