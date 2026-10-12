@@ -205,7 +205,7 @@ internal/actions/
   - register and declare: the runner's name, labels and capacity;
   - next: a long poll that returns a workflow whose labels match;
   - accept, guarded by the version column;
-  - update: step states, with the lease renewed; the response carries a cancellation when there is one, so no separate channel is needed;
+  - update: step states and the measures a step reports (such as a session's tokens per model), with the lease renewed; the response carries a cancellation when there is one, so no separate channel is needed;
   - log: by offset, acknowledged, with a final "no more", so a resend is safe;
   - done.
 - **`transport/inproc/`** implements the protocol in memory, for the local mode and the end-to-end tests. **`transport/connect/`** implements it over HTTP with connect-rpc, which crosses proxies and keeps the protos as the contract's documentation.
@@ -235,6 +235,54 @@ Imports point inward, checked by `depguard` as crew's other layers are:
 - `store/postgres`: against a real Postgres, one database per test from a migrated template.
 - `runner`: against a fake engine that serves the real protocol, not a mocked client, so requests really round-trip.
 - End to end: a real engine and runner in one process, over `transport/inproc`, with the `dummy` backend: routing, depends_on, queue limits, cancellation, an expired lease, a restart.
+
+## Measurement
+
+Every feature is measured: no slice is done until the time and the tokens of the work it adds can be read from its spans.
+crew 0.1.4 already measures its own work as a tree of spans, and the actions engine builds on it.
+If the span design has to change for the engine, it changes.
+
+### What crew 0.1.4 has
+
+- **A tree of spans.** A rule run is a span under its issue; each action is a span under its rule run; the route hangs under the action whose verdict chose it, else under the rule run; each route step is a span under the route (`internal/crew/statistic.go`).
+- **Ids derived from the parent's.** An action's span is `<run>/action/<name>`, the route's `<run>/route`, a step's `<run>/route/<index>`. A span recorded twice is the same span, and the store keeps its first end.
+- **Work detail per kind,** as a sealed type: a session (agent, harness, bot, the prompt template's hash, turns, and tokens per model: input, output, cache read, cache write), a shell script (exit status), a function (its verdict), a question, a check. Tokens a harness did not report are absent, never zero.
+- **A generic table and one table per kind.** `spans` holds what every span has (id, kind, parent, process, start, end, outcome); `rule_run_spans`, `work_spans`, `session_spans`, `session_tokens`, `shell_spans`, `function_spans` and `route_spans` hold each kind's own fields (`internal/adapter/sqlite/migrations/`).
+- **A store port with one call,** `Record`, written by the engine on a goroutine of its own, so a slow store never delays the work; a failed record is a warning. The store is SQLite in crew's data folder, shared by every crew process on the machine.
+
+### What the actions engine needs that this does not give
+
+1. **Its own kinds.** The tree's levels are crew's: issue, rule run, action, route, step, with verdicts and routes. The engine's are build, workflow, step, and the hook phases inside a workflow. And its isolation rule forbids importing `internal/crew`, where the span types and `ModelTokens` live today.
+2. **A root that is not an issue.** A build starts from an event: an issue, a pull request, a push, a cron or a person. Its span hangs from the build, and the build names what started it.
+3. **Waiting, not only working.** crew's spans measure work. In the engine, a workflow also waits: for its dependencies, for a slot in its queue, for a runner. Queues and priority are only tuned well if those waits are measured, so a workflow's span needs its wait phases or the times it entered each state.
+4. **Tokens from another machine.** A session's tokens come from the harness that ran it. In the engine, that harness runs on a runner, so the runner must report them through the protocol: the protocol needs a way for a step to report measures, such as tokens per model and turns, beside its state.
+5. **Attempts.** A workflow whose lease expired goes back to the queue and runs again. Each attempt is its own span, under the workflow, with the runner that ran it, so a retried workflow does not hide the time its first attempt lost.
+6. **Two clocks.** Step times are measured on the runner and waits on the engine. Once runners are on other machines, a span's times say which clock they come from, or are all taken on one side.
+7. **The same database as the work.** The engine's builds, workflows and steps are already rows in Postgres with their times. Spans there can be written in the same transaction as the state change, so a span is never lost the way a failed statistics record is today, and a separate writer may not be needed.
+
+### What to decide, in slice -1 and slice 0
+
+- **Extract the neutral part of the span design** (a span's id, parent, kind, process or runner, start, end and outcome, and the tokens-per-model record) into a package that imports nothing of crew's, so crew and the engine share it, and each keeps its own kinds and detail. Today's `spans` table already has that shape; only the kinds and their tables are crew's.
+- **Spans in the engine's Postgres,** apart from crew's SQLite, or one store for both. Two stores are simpler now; one view of both comes later, if anyone needs it.
+- **Whether spans follow OpenTelemetry's model** (trace, span, parent, attributes, its conventions for model token usage), so they can also be exported to tools that read it. A candidate for the brainstorm to review, like the libraries.
+- **How a step reports measures** through the protocol, which slice 0 shapes and slice 3 fills with a session's tokens.
+
+### What each slice measures
+
+| Slice | It is measured by |
+|---|---|
+| 0, Skeleton | a span per build, workflow and step, with its time and outcome; the workflow's attempts |
+| 1, Hooks | a span per phase and hook, so checkout or a slow hook shows apart from the steps |
+| 2, Workflows and `depends_on` | the time a workflow waits for its dependencies; what a failure skipped |
+| 3, Agent session | the session's tokens per model, turns and prompt hash, reported by the runner |
+| 4, Runners and labels | which runner ran each attempt; the time a workflow waits for a runner |
+| 5, Queues | the time a workflow waits for a slot in its queue |
+| 6, Events | the time from the event to the build |
+| 7, Multi-repo and priority | the waits by repository and priority |
+| 8, Containers | image pull and container start, apart from the step |
+| 9, Remote runner | which clock each time comes from |
+| 10, API and clients | — |
+| 11, Service mode | the spans of several engines in one database |
 
 ## Set aside
 
@@ -292,13 +340,15 @@ What it holds:
 5. **The protocol at the level of its calls:** names and purpose, not fields.
 6. **The technical choices,** each with its version: Postgres, the database library, the migration tool, the transport. This is where the review of the libraries and versions happens.
 7. **The milestones** (below), and which slice belongs to which.
-8. **A decision log:** what was decided, in which slice, and why. A slice that changes something records the change with its reason instead of only rewriting the text.
+8. **The span model:** the neutral part shared with crew, the engine's kinds, and how a step reports measures (see [Measurement](#measurement)).
+9. **A decision log:** what was decided, in which slice, and why. A slice that changes something records the change with its reason instead of only rewriting the text.
 
 How it stays true:
 
 - **Every brainstorm starts by reading the document and ends by saying what changes in it.** A slice that changes the architecture shows it as a revised decision, with its reason, not hidden among its requirements.
 - **Every delivery's pull request updates the document in the same pull request,** as the repository already requires for the README.
 - **The import rules become `depguard` rules in slice 0,** when the first packages exist, so the document's most important part is checked by the linter.
+- **Every brainstorm says what its slice measures, and its delivery proves it:** a feature whose time and tokens cannot be read from its spans is not done.
 - **Once code exists, `AGENTS.md` gets a line pointing at the document,** since that is how crew's sessions reach it.
 
 In crew's flow, slice -1 is an issue like the others: a brainstorm, then a pull request with the document and no code.
