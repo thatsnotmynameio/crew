@@ -3,6 +3,7 @@ package core
 import (
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/thatsnotmynameio/crew/internal/crew"
 )
@@ -29,6 +30,10 @@ type heldRun struct {
 	// halt is the halt that chose the run's route, which its span's end
 	// records, once it chose one (KTD3).
 	halt crew.Optional[crew.RunHalt]
+	// starts holds, by action, when crew asked for each action of the run
+	// that it asked for, which the action's span starts at; empty when the
+	// model records no statistics (KTD3).
+	starts map[crew.ActionName]time.Time
 }
 
 // findRun returns the held run identified by id, or nil.
@@ -249,26 +254,31 @@ func (s *step) on(h *heldRun, e crew.RunEvent) {
 func (s *step) onAction(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.ActionSessionAsked:
+		s.actionAsked(h, e.Action, e.At)
 		s.sessionAsked(h, e.Action)
 	case crew.ActionSessionStarted:
 		s.emit(e)
 	case crew.ActionSessionStopAsked:
 		s.command(StopSession{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionShellAsked:
+		s.actionAsked(h, e.Action, e.At)
 		s.emit(e)
 		s.runShell(h, e)
 	case crew.ActionShellStopAsked:
 		s.command(StopShell{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionFunctionAsked:
+		s.actionAsked(h, e.Action, e.At)
 		s.emit(e)
 		s.runFunction(h, e)
 	case crew.ActionFunctionStopAsked:
 		s.command(StopFunction{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionReturnAsked:
+		s.actionAsked(h, e.Action, e.At)
 		s.emit(e)
 		s.command(ReadReturn{IssueID: e.IssueID, Run: e.Run, Action: e.Action})
 	case crew.ActionEnded:
 		s.actionEnded(h, e)
+		s.actionSpanEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
 		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionEnded, crew.ActionShellEnded,
 		crew.ActionFunctionEnded, crew.RouteChosen, crew.RunLookupAsked, crew.RunLookupDone, crew.StepAsked,

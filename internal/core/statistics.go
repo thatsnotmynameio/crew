@@ -233,3 +233,81 @@ func (s *step) keepHalt(h *heldRun, route crew.RouteName) {
 		}
 	}
 }
+
+// actionAsked keeps on h when crew asked for its action named name, at,
+// which the action's span starts at (KTD3).
+func (s *step) actionAsked(h *heldRun, name crew.ActionName, at time.Time) {
+	if s.m.statistics == nil {
+		return
+	}
+	if h.starts == nil {
+		h.starts = map[crew.ActionName]time.Time{}
+	}
+	h.starts[name] = at
+}
+
+// actionSpanEnded records the span of the action e ended in h's run, once
+// applied: from when crew asked for it, or from its end when crew never
+// did, to its end, by this process, with its outcome, its verdict and what
+// it did (KTD2, KTD3, KTD10).
+func (s *step) actionSpanEnded(h *heldRun, e crew.ActionEnded) {
+	st := s.m.statistics
+	if st == nil {
+		return
+	}
+	start, asked := h.starts[e.Action]
+	if !asked {
+		start = e.At
+	}
+	s.command(RecordStatistic{Statistic: crew.ActionSpan{
+		Issue: h.id(), Rule: h.run.Rule(), Run: h.run.ID(), Action: e.Action, Process: st.process,
+		Start: start, End: e.At, Outcome: workOutcome(e.End), Verdict: e.Verdict, Work: s.m.work(h, e),
+	}})
+}
+
+// workOutcome returns how an action that ended as end ended: stopped,
+// stopped before its start or kept from running by the run time limit
+// when a halt chose its end, else succeeded or failed (KTD5).
+func workOutcome(end crew.ActionEnd) crew.WorkOutcome {
+	failed, ok := end.(crew.EndFailed)
+	if !ok {
+		return crew.WorkSucceeded
+	}
+	switch failed.Cause {
+	case crew.CauseStopped:
+		return crew.WorkStopped
+	case crew.CauseStoppedBeforeStart:
+		return crew.WorkStoppedBeforeStart
+	case crew.CauseTimeUp:
+		return crew.WorkRunTimeLimit
+	case crew.CauseSession, crew.CauseWorkspace, crew.CauseStart, crew.CausePrompt, crew.CauseShell,
+		crew.CauseVerdict, crew.CauseFunction:
+	}
+	return crew.WorkFailed
+}
+
+// work returns what the action e ended in h's run did, with its kind's
+// detail: a session's agent, harness, bot, prompt template's hash, start
+// and the turns and tokens its harness reported, none when it reported
+// none (R14); a script's exit status; a function's name and the verdict it
+// returned (KTD7).
+func (m *Model) work(h *heldRun, e crew.ActionEnded) crew.Work {
+	a, _ := h.run.Action(e.Action)
+	switch k := m.rules[h.rule].Action(e.Action).Kind.(type) {
+	case crew.SessionSpec:
+		return crew.SessionWork{
+			Agent: k.Agent.Name, Harness: k.Agent.Harness, Bot: k.Bot.Name, PromptHash: k.Prompt.Hash(),
+			Started: e.SessionStarted, Turns: e.Usage.Turns, Tokens: slices.Clone(e.Usage.TokenRecords()),
+		}
+	case crew.ShellSpec:
+		shell, _ := a.Shell().Get()
+		return crew.ShellWork{ExitStatus: shell.Status}
+	case crew.FunctionSpec:
+		function, _ := a.Function().Get()
+		return crew.FunctionWork{Function: k.Function, Verdict: function.Verdict}
+	case crew.QuestionSpec:
+		return crew.QuestionWork{}
+	case crew.ReturnSpec:
+	}
+	return crew.CheckWork{}
+}
