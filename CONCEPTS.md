@@ -106,6 +106,10 @@ One attempt at an action on an issue, within a rule run, from the moment it star
 
 The isolated checkout a rule run works in: a git worktree on its own branch, `issue-<key>-<rule>`, shared by every action of the run and its route's shell and function steps, and kept after the run ends. Only a rule with a session or a shell action gets one; a function needs none. A workspace is identified by a name, which can be reused only once the earlier workspace of that name and its branch are gone.
 
+### Stacked take
+
+A rule run that takes a blocked issue before its blocker closes, on the blocker's open pull request, which only a rule with `stacking` on does. Its workspace is made from that pull request's branch, and its pull request goes on top of the blocker's, in a stack. crew takes it once it is done with the blocker, whose last rule run passed, and only when every other issue stacked on that pull request is a sub-issue of the same parent. Without it, a rule waits until every issue that blocks the issue is closed.
+
 ### Priority
 
 The rank the tracker gives an issue, which decides first which waiting issue crew takes when a slot is free, ahead of its rule's place in the file and its age. On GitHub it is the organization's issue field `Priority`, its first option the highest. An issue without one ranks after every issue that has one.

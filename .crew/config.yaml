@@ -193,8 +193,12 @@ rules:
       running: "crew:refinement:promoting"
     routes:
       passed: "crew:development:ready"
+  # Stacks a blocked issue on its only blocker's open pull request once
+  # crew's run of the blocker passed, so a split's parts are in review at
+  # once; fix waits for its blockers to close.
   development:
     queue: developer
+    stacking: true
     labels:
       ready: "crew:development:ready"
       running: "crew:development:in progress"
@@ -205,6 +209,16 @@ rules:
           /compound-engineering:lfg {{.Issue.Ref}}
 
           The pull request body must contain the line `Closes {{.Issue.Ref}}`, so merging it closes the issue.
+          {{- if .Stack.Stacked}}
+
+          {{.Stack.Blocker.Ref}} blocks {{.Issue.Ref}}, and this run is stacked on its pull request, {{.Stack.PullRequest.URL}}: the worktree's branch starts from `{{.Base}}`, that pull request's branch. Just before you open the pull request, check that `{{.Base}}` still exists on origin (`git ls-remote --exit-code --heads origin {{.Base}}`) and that {{.Stack.PullRequest.URL}} is still open (`gh pr view {{.Stack.PullRequest.URL}} --json state --jq .state` prints `OPEN`).
+
+          - When both hold, open the pull request with `{{.Base}}` as its base. Then link it into a stack on top of the blocker's: `gh stack link {{.Stack.PullRequest.URL}} <your pull request's URL>`. When `gh stack link` refuses, leave the pull request unlinked and say why in its body.
+          - When either is gone, the blocker merged or was given up: move only this run's commits onto the repository's default branch, leaving out the blocker's. Fetch the default branch and the blocker pull request's head commit (`gh pr view {{.Stack.PullRequest.URL}} --json headRefOid --jq .headRefOid`; GitHub keeps it as `pull/<number>/head` after the branch is deleted), run `git rebase --onto origin/<default branch> <that commit>`, and push with `--force-with-lease` if the branch was pushed before. Open the pull request on the default branch, and link no stack.
+          {{- else if .Base}}
+
+          Open the pull request on `{{.Base}}`.
+          {{- end}}
 
           This session is headless: ending your turn ends the session, and nothing resumes it. Never end a turn waiting on a background command. Run it in the foreground, or wait for it with Monitor.
       - session-finished:

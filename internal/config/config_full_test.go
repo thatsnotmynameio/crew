@@ -25,19 +25,20 @@ func translationFunctions() map[string][]crew.Verdict {
 // agent A, bot B, wait W", "shell S" or "function S: F", each followed by
 // its on as "; verdict to target", and its routes as "route: step, step".
 type ruleSummary struct {
-	name    crew.RuleName
-	labels  crew.Labels
-	queue   crew.Queue
-	notify  bool
-	actions []string
-	routes  []string
+	name     crew.RuleName
+	labels   crew.Labels
+	queue    crew.Queue
+	notify   bool
+	stacking bool
+	actions  []string
+	routes   []string
 }
 
-// A full config loads its rules with their labels, queues, notify, actions
-// and routes: each session with its agent, its bot and its wait, each shell
-// action by name, each action's on, each route's steps in order; its
-// tracker's bot and every agent's; its board, one column per rule with
-// actions when it sets none; its shell actions' scripts, verdicts and
+// A full config loads its rules with their labels, queues, notify,
+// stacking, actions and routes: each session with its agent, its bot and its
+// wait, each shell action by name, each action's on, each route's steps in
+// order; its tracker's bot and every agent's; its board, one column per rule
+// with actions when it sets none; its shell actions' scripts, verdicts and
 // resume; its function uses with their parameters; and its prompts as they
 // are written.
 func TestAFullConfigLoads(t *testing.T) {
@@ -150,7 +151,7 @@ func wantTranslationRules() []ruleSummary {
 			routes: []string{"passed: move translation:to do"},
 		},
 		{
-			name: "translation", queue: crew.Queue{Name: "translators", Slots: 2}, notify: true,
+			name: "translation", queue: crew.Queue{Name: "translators", Slots: 2}, notify: true, stacking: true,
 			labels: crew.Labels{Ready: "translation:to do", Running: "translation:drafting"},
 			actions: []string{
 				"session draft: agent translator, bot linguist, wait 30m0s",
@@ -216,7 +217,9 @@ func shellScript(t *testing.T, r crew.Rule, name crew.ActionName) string {
 func summarize(rules []crew.Rule, notify map[crew.RuleName]bool) []ruleSummary {
 	out := make([]ruleSummary, len(rules))
 	for i, r := range rules {
-		out[i] = ruleSummary{name: r.Name, labels: r.Labels, queue: r.Queue, notify: notify[r.Name]}
+		out[i] = ruleSummary{
+			name: r.Name, labels: r.Labels, queue: r.Queue, notify: notify[r.Name], stacking: r.Stacking,
+		}
 		for _, a := range r.Actions {
 			var action string
 			switch k := a.Kind.(type) {

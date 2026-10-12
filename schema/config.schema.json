@@ -222,6 +222,11 @@
             "enum": ["issues", "pull_requests"],
             "default": "issues"
           },
+          "stacking": {
+            "description": "Whether the rule takes a blocked issue on its only blocker's open pull request, once crew's run of the blocker passed, instead of waiting for the blocker to close. Off by default; only a rule with actions may turn it on.",
+            "type": "boolean",
+            "default": false
+          },
           "queue": {
             "description": "The queue the rule runs in: one of queues, or default, the default.",
             "type": "string",
