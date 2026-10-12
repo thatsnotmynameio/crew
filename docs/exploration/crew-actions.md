@@ -309,21 +309,31 @@ In crew's flow, slice -1 is an issue like the others: a brainstorm, then a pull 
 |---|---|---|---|---|
 | -1 | **Architecture document** | the reference above | structure, names, folders, import rules, technical choices and versions | — |
 | 0 | **Skeleton** | `crew actions run` with one file: one repository, one workflow, steps in sequence on the `local` backend, engine and runner in one process over `inproc`, the queue in Postgres with claim, lease and done, docker compose | the lifecycle and states of builds, workflows and steps; the base schema, with organization and repository; the minimal protocol | -1 |
-| 1 | **Workflows and `depends_on`** | a build as a DAG, cycles rejected, `waiting` to `pending`, skipping what a failure rules out | what `when: status` looks at | 0 |
-| 2 | **A coding-agent session as a step** | a step that runs a Claude session, with the worktree as its checkout and the prompt and last message as artifacts | the plugin model | 0 |
-| 3 | **Runners and labels** | several runners, capacity, the label match, runner registration | — | 0 |
-| 4 | **Queues with a limit** | named queues in the engine's config, the limit checked in the claim's transaction, re-queued when a slot frees | — | 0 |
-| 5 | **Events** | `source/github`, `when: event`, builds that start without a person | polling or webhooks; a second event for something already running | 1 |
-| 6 | **Multi-repo and priority** | several repositories on one engine, the per-project priority in the ranking | the kind of priority | 4, 5 |
-| 7 | **Hooks** | the executor's phases, the three levels of hooks, their order, the replaceable `checkout` | where the repository's hooks run | 0 |
-| 8 | **Containers** | the `docker` backend, the mounted workspace, a plugin as an image | — | 0 |
-| 9 | **Remote runner** | `transport/connect`, registration tokens | how runners authenticate | 3 |
+| 1 | **Hooks** | the executor's phases (policy, environment, checkout, steps, artifacts, exit), the three levels of hooks (runner, repository, plugin), pre-hooks in order and post-hooks in reverse, the replaceable `checkout` | how a hook passes what it exports to the next phases | 0 |
+| 2 | **Workflows and `depends_on`** | a build as a DAG, cycles rejected, `waiting` to `pending`, skipping what a failure rules out | what `when: status` looks at | 0 |
+| 3 | **A coding-agent session as a step** | a step that runs a Claude session, in the worktree a `checkout` hook makes, as the bot an `environment` hook sets up, with the prompt and last message as artifacts | the plugin model | 1 |
+| 4 | **Runners and labels** | several runners, capacity, the label match, runner registration | — | 0 |
+| 5 | **Queues with a limit** | named queues in the engine's config, the limit checked in the claim's transaction, re-queued when a slot frees | — | 0 |
+| 6 | **Events** | `source/github`, `when: event`, builds that start without a person | polling or webhooks; a second event for something already running | 2 |
+| 7 | **Multi-repo and priority** | several repositories on one engine, the per-project priority in the ranking | the kind of priority | 5, 6 |
+| 8 | **Containers** | the `docker` backend, the mounted workspace, a plugin as an image | where the repository's hooks run: on the machine, or inside the container | 1 |
+| 9 | **Remote runner** | `transport/connect`, registration tokens | how runners authenticate | 4 |
 | 10 | **API and clients** | the `api` package, the CLI and the TUI talking to the engine through it | — | 0 |
 | 11 | **Service mode** | encrypted secrets, identity per repository, logs and artifacts off the disk, several engines side by side | — | 9, 10 |
 
-Slice 2 comes early on purpose.
+Hooks come right after the skeleton because they are what makes a crew flow work:
+
+- **`checkout`** is the worktree: on the right branch, reused when an issue comes back, not a plain clone.
+- **`environment`** is the bot's identity: its GitHub token and the git setup of the co-author hook. Without it a session runs as whoever runs crew.
+- **`pre-workflow`** is the policy, such as "this runner runs no session on an issue a code owner did not open".
+- **`pre-exit`** cleans up what a session leaves behind.
+
+Without hooks, the agent session would have to carry the worktree and the identity as settings of its plugin, and move them into hooks later: the same work done twice.
+While `local` is the only backend, every hook runs on the machine anyway, so where the repository's hooks run is not a question yet; it waits for the containers.
+
+The agent session (slice 3) comes early on purpose.
 crew exists to run coding-agent sessions, and a session is not a CI command: it lasts hours, needs the machine's credentials and ends in a text someone judges.
-If it does not fit the model of workflows and steps, finding out at the third slice costs far less than at the tenth.
+If it does not fit the model of workflows and steps, finding out at the fourth slice costs far less than at the tenth.
 
 ### Milestones
 
@@ -332,17 +342,16 @@ Each milestone says what can be used once its slices are done, and under which l
 
 | Milestone | After slices | Usable for | Limits |
 |---|---|---|---|
-| **M0: runs a file by hand** | -1, 0 | running a workflow of `commands` steps, with everything recorded in Postgres: states, logs, a runner that dies and the workflow that goes back to the queue | a manual start, one repository, one machine, one runner, the `local` backend, no dependencies |
-| **M1: runs an agent flow by hand** | 1, 2 | crew's real work, started by hand: a Claude session followed by the scripts that check it, in workflows with `depends_on`, such as `crew actions run development.yaml` with the issue passed as a variable | still manual, one machine, one repository, the identity of whoever runs it (no bots) |
-| **M2: runs on its own in one repository** | 3, 4, 5 | the engine reacts to GitHub events, with several runners on the machine, labels and queues with a limit. From here a repository can move one flow at a time from crew to the actions engine, with crew running the rest | one machine, one repository, the `local` backend, no hooks |
-| **M3: several repositories on one machine** | 6 | one engine and the same runners serving several repositories, with per-project priority | one machine, the `local` backend |
-| **M4: isolated** | 7, 8 | hooks (a bot's identity, policy, a checkout of one's own) and steps in containers | still one machine |
+| **M0: runs a file by hand** | -1, 0 | running a workflow of `commands` steps, with everything recorded in Postgres: states, logs, a runner that dies and the workflow that goes back to the queue | a manual start, one repository, one machine, one runner, the `local` backend, no hooks, no dependencies |
+| **M1: runs an agent flow by hand** | 1, 2, 3 | crew's real work, started by hand: a Claude session in its worktree, as its bot, followed by the scripts that check it, in workflows with `depends_on`, such as `crew actions run development.yaml` with the issue passed as a variable | still manual, one machine, one repository |
+| **M2: runs on its own in one repository** | 4, 5, 6 | the engine reacts to GitHub events, with several runners on the machine, labels and queues with a limit. From here a repository can move one flow at a time from crew to the actions engine, with crew running the rest | one machine, one repository, the `local` backend |
+| **M3: several repositories on one machine** | 7 | one engine and the same runners serving several repositories, with per-project priority | one machine, the `local` backend |
+| **M4: isolated** | 8 | steps in containers, and the repository's hooks where the isolation needs them | still one machine |
 | **M5: several machines** | 9, 10 | runners on other machines, and the CLI and the TUI talking to a remote engine | simple runner authentication; no secrets kept by the engine |
 | **M6: a service** | 11 | the engine as a service: encrypted secrets, identity per repository, logs off the disk, several engines side by side | — |
 
-- **Events come before hooks and containers.** Without them nothing runs on its own, and running on its own is what makes the engine useful day to day. Hooks and containers add safety and reproducibility, but the `local` backend already serves today's flows, which run on the machine.
-- **M4 can move.** It needs only M0, so it can come before M3 if isolation matters more than several repositories.
-- **In M1 the session runs as whoever runs crew.** A bot's identity comes from the `environment` hook, in M4. If a bot is needed early, a setting of the session's plugin can carry it in M1, and the hook takes it over later.
+- **Events come before containers.** Without them nothing runs on its own, and running on its own is what makes the engine useful day to day. Containers add isolation and reproducibility, but the `local` backend already serves today's flows, which run on the machine.
+- **M4 can move.** It needs only the skeleton and the hooks, so it can come before M2 or M3 if isolation matters more.
 
 Each milestone has a demonstration that proves it closed.
 For M0: run a file, kill the runner midway, and watch the workflow go back to the queue and finish.
