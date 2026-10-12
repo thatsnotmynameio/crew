@@ -55,8 +55,9 @@ func recordingConfig(t *testing.T, tr port.Tracker, rules ...crew.Rule) (engine.
 
 // developedRun is what run, which process took at at, records as it
 // develops issue id at once: the open of its span, its take's move, the
-// span of its session development, which reported no usage, its route's
-// move, then the end of its span through passed.
+// span of its session development, which reported no usage, the open of
+// its route's span, chosen by development's verdict, its route's move,
+// then the end of its route's span and of its own through passed.
 func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, at time.Time) []crew.Statistic {
 	move := func(from, to crew.State) crew.LabelMove {
 		return crew.LabelMove{Tracker: "github", Issue: id, From: from, To: to, Seen: at, Run: crew.Some(run)}
@@ -70,15 +71,21 @@ func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, a
 	}
 	end := open
 	end.End = crew.Some(crew.RuleRunEnd{At: at, Outcome: crew.OutcomeRouted, Route: crew.Some(crew.PassedRoute)})
-	return []crew.Statistic{open, move(ready, inProgress), development, move(inProgress, readyToReview), end}
+	route := crew.RouteSpan{
+		Issue: id, Rule: develop.Name, Run: run, Process: process, Route: crew.PassedRoute,
+		ChosenBy: crew.Some(crew.RouteChoice{Action: "development", Verdict: crew.Passed}), Start: at,
+	}
+	routed := route
+	routed.End = crew.Some(crew.RouteEnd{At: at, Outcome: crew.OutcomeRouted})
+	return []crew.Statistic{open, move(ready, inProgress), development, route, move(inProgress, readyToReview), routed, end}
 }
 
 // Covers R5, R6, R7, R8, R9, R10, F1, F2, AE3: a crew that develops issue
 // 1 records the process, the repository on the configured tracker, the
 // sighting of issue 1 in ready, the open of the run's span, then the
 // take's move, the span of its session and the route's move, made by the
-// run, then the end of the run's span with its outcome and route, in that
-// order.
+// run, with the route's span around the latter, then the end of the run's
+// span with its outcome and route, in that order.
 func TestRunRecordsTheProcessTheRepositoryTheIssueItsMovesAndItsRunsSpanInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tr := fake.NewTracker(issue(1, ready))
@@ -93,8 +100,8 @@ func TestRunRecordsTheProcessTheRepositoryTheIssueItsMovesAndItsRunsSpanInOrder(
 		}
 
 		recorded := store.Recorded()
-		if len(recorded) != 8 {
-			t.Fatalf("recorded %#v, want eight records", recorded)
+		if len(recorded) != 10 {
+			t.Fatalf("recorded %#v, want ten records", recorded)
 		}
 		p, ok := recorded[0].(crew.Process)
 		if !ok || p.ID == "" {
@@ -187,17 +194,18 @@ func TestAE8AStoreThatCannotBeWrittenIsWarnedAboutAndTheRunGoesOn(t *testing.T) 
 		}
 
 		// The process, the repository, issue 1's sighting, the open of its
-		// run's span, its take's move, its session's span, its route's move
-		// and the end of its run's span.
+		// run's span, its take's move, its session's span, the open of its
+		// route's span, its route's move, the end of its route's span and
+		// of its run's span.
 		n := r.notRecorded()
-		if len(n) != 8 {
-			t.Fatalf("StatisticNotRecorded = %+v, want eight", n)
+		if len(n) != 10 {
+			t.Fatalf("StatisticNotRecorded = %+v, want ten", n)
 		}
 		if _, ok := n[0].Statistic.(crew.Process); !ok {
 			t.Errorf("the first lost record is %T, want the process", n[0].Statistic)
 		}
 		wantLostSpan(t, n[3], false)
-		wantLostSpan(t, n[7], true)
+		wantLostSpan(t, n[9], true)
 		want := "open ~/.local/share/crew/statistics.db: database or disk is full"
 		for _, lost := range n {
 			if lost.Reason != want {
@@ -240,12 +248,11 @@ func TestABlockedStoreDelaysNoTickAndRunWaitsForItsRecord(t *testing.T) {
 		if _, err := r.wait(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		// The process, the repository, issue 1's sighting, the span, moves
-		// and session's span of its first run, the move back to ready made
-		// outside crew, and the span, moves and session's span of its second
-		// run.
-		if got := store.Recorded(); len(got) != 14 {
-			t.Errorf("recorded %#v, want fourteen records", got)
+		// The process, the repository, issue 1's sighting, the spans and
+		// moves of its first run, the move back to ready made outside crew,
+		// and the spans and moves of its second run.
+		if got := store.Recorded(); len(got) != 18 {
+			t.Errorf("recorded %#v, want eighteen records", got)
 		}
 	})
 }

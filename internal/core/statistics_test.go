@@ -164,19 +164,20 @@ func TestALandedTakeRecordsItsMove(t *testing.T) {
 
 // Covers R8, F1, KTD4: a route's move that lands records the move from the
 // rule's running label to the route's label, made by the run, then the end
-// of the run's span.
+// of the route's span, then of the run's.
 func TestALandedRouteMoveRecordsItsMove(t *testing.T) {
 	d := recordingDriver(t)
 	ending := implemented(d, succeeded)
+	route := d.routeOpened("1", crew.PassedRoute, d.now, "development", crew.Passed)
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantStatistics(t, statisticsOf(cmds), d.runMove(inProgress, readyToReview),
-		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
+		d.routeClosed(route, crew.OutcomeRouted), d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers R8, KTD4: a return step that lands records the move from the
 // answered rule's running label to the label the check found, made by the
-// run, then the end of the run's span.
+// run, then the end of the route's span, then of the run's.
 func TestALandedReturnRecordsItsMove(t *testing.T) {
 	rules := append(append(delegating(), answering()), depsAsking(t)...)
 	m := core.New(rules, 2, core.Journaling(nil), core.WithBots(developerBots()),
@@ -184,20 +185,23 @@ func TestALandedReturnRecordsItsMove(t *testing.T) {
 	d := &driver{t: t, m: m, now: t0}
 	d.checking()
 	moved, _ := d.send(returnRead(unsureQuestion("crew-clerk[bot]"), crew.Comment{Author: "alice", Body: "yes"}))
+	route := d.routeOpened("1", crew.PassedRoute, d.now, "answer", crew.Passed)
 
 	cmds, _ := d.send(core.CallResult{ID: moveID(t, moved, "1"), Result: core.ResultDone})
 	wantStatistics(t, statisticsOf(cmds), d.runMove(answeredRunning, depsReady),
-		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
+		d.routeClosed(route, crew.OutcomeRouted), d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers KTD4: a close that lands records no move, only the end of the
-// run's span.
+// route's span and of the run's.
 func TestALandedCloseRecordsNoMove(t *testing.T) {
 	d := recordingDriverOf(t, implementClosing())
 	ending := implemented(d, succeeded)
+	route := d.routeOpened("1", crew.PassedRoute, d.now, "development", crew.Passed)
 
 	cmds, _ := d.send(core.CallResult{ID: closeID(t, ending), Result: core.ResultDone})
-	wantStatistics(t, statisticsOf(cmds), d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
+	wantStatistics(t, statisticsOf(cmds), d.routeClosed(route, crew.OutcomeRouted),
+		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers KTD5: a listing answered while the take's move is in flight finds
@@ -236,7 +240,8 @@ func TestListingsWhileATakeIsOwedRecordNoMove(t *testing.T) {
 
 // Covers KTD5: a held issue that its session moved to its route's label is
 // listed there, and the listing records nothing; the route's move that
-// lands records the one move, made by the run, then the end of its span.
+// lands records the one move, made by the run, then the end of its
+// route's span and of its own.
 func TestAListingOfAHeldIssueRecordsNoMove(t *testing.T) {
 	d := recordingDriver(t)
 	d.running(issue("1", 1, ready))
@@ -246,9 +251,10 @@ func TestAListingOfAHeldIssueRecordsNoMove(t *testing.T) {
 
 	d.send(core.SessionEnded{IssueID: issueID("1"), Action: "acceptance", Outcome: succeeded})
 	ending, _ := d.send(core.SessionEnded{IssueID: issueID("1"), Action: "development", Outcome: succeeded})
+	route := d.routeOpened("1", crew.PassedRoute, d.now, "development", crew.Passed)
 	cmds, _ = d.send(core.CallResult{ID: moveID(t, ending, "1"), Result: core.ResultDone})
 	wantStatistics(t, statisticsOf(cmds), d.runMove(inProgress, readyToReview),
-		d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
+		d.routeClosed(route, crew.OutcomeRouted), d.closed("1", crew.OutcomeRouted, crew.PassedRoute, ""))
 }
 
 // Covers KTD5: a listing asked before a route's move lands and answered

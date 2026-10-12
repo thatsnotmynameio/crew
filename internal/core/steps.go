@@ -9,17 +9,20 @@ func (s *step) onRoute(h *heldRun, e crew.RunEvent) {
 	switch e := e.(type) {
 	case crew.RouteChosen:
 		s.keepHalt(h, e.Route)
+		s.routeOpened(h)
 		s.emit(e)
 		s.reportRun(h)
 	case crew.RunLookupAsked:
 		s.findPullRequest(h)
 	case crew.StepAsked:
+		s.keepStep(h, e.Step, func(w *stepWork) { w.asked = crew.Some(e.At) })
 		s.askStep(h, e.Step)
 	case crew.StepShellStopAsked:
 		s.command(StopStepShell{IssueID: e.IssueID, Run: e.Run, Step: e.Step})
 	case crew.StepFunctionStopAsked:
 		s.command(StopStepFunction{IssueID: e.IssueID, Run: e.Run, Step: e.Step})
 	case crew.StepEnded:
+		s.stepSpanEnded(h, e)
 		s.stepEnded(h, e)
 	case crew.RunTaken, crew.TakeMoved, crew.RunStopped, crew.RunOutOfTime, crew.WorkspaceAsked,
 		crew.WorkspaceMissing, crew.WorkspaceOpened, crew.ActionSessionAsked, crew.ActionSessionStarted,
