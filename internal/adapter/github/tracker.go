@@ -10,7 +10,8 @@
 // off them and their pull requests. It puts the open pull requests that close
 // an issue in the issue's crew label, and comments on them when a rule ends
 // that nobody watches them any more. It finds the pull request an action
-// opened from its branch. It works on the
+// opened from its branch, and reads, for a blocked issue, its only blocker,
+// the blocker's pull requests and the parent's sub-issues. It works on the
 // repository gh resolves from crew's working directory, and runs every gh
 // call through the shared process helper.
 //
@@ -40,7 +41,8 @@ import (
 // port.StatusReporter, a port.PullRequestReporter, a port.PullRequestFinder,
 // a port.Acting, a port.CodeOwnerFinder, a port.LoginFinder, a
 // port.RepositoryFinder, a port.WriterReporter, a port.BoardLister, a
-// port.Commenter, a port.Closer, a port.CommentLister and a port.Delegator.
+// port.Commenter, a port.Closer, a port.CommentLister, a port.Delegator and
+// a port.StackFinder.
 var (
 	_ port.Tracker             = (*Tracker)(nil)
 	_ port.Preparer            = (*Tracker)(nil)
@@ -57,6 +59,7 @@ var (
 	_ port.Closer              = (*Tracker)(nil)
 	_ port.CommentLister       = (*Tracker)(nil)
 	_ port.Delegator           = (*Tracker)(nil)
+	_ port.StackFinder         = (*Tracker)(nil)
 )
 
 // issueFields are what issuesQuery reads of an issue. A dependency
