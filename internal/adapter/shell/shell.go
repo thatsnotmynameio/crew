@@ -47,11 +47,10 @@ func New(group *proc.Group) *Shell {
 // (crew.PostedMarker), with which a script marks the comments it posts as
 // crew's, and the run's base and stack, as port.StackEnv names them, set,
 // and stdout and stderr on one pipe, so its output keeps the order it was
-// printed in. The latest session's prompt and
-// last message are in files that CREW_PROMPT_FILE and
-// CREW_LAST_MESSAGE_FILE name, in a directory only you can read, removed
-// once the script ended: a file has no size limit, where one environment
-// string does.
+// printed in. The latest session's prompt and last message are in files
+// that CREW_PROMPT_FILE and CREW_LAST_MESSAGE_FILE name, in a directory only
+// you can read, removed once the script ended: a file has no size limit,
+// where one environment string does.
 func (sh *Shell) Run(ctx context.Context, script port.Script) (port.ShellResult, error) {
 	dir, err := os.MkdirTemp("", "crew-script-")
 	if err != nil {
