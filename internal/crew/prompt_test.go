@@ -113,6 +113,10 @@ func TestParsePromptRefusesABadTemplate(t *testing.T) {
 			`render prompt of action "review": `,
 		},
 		{"unknown stack field", "{{.Stack.Blocker.Number}}", `render prompt of action "review": `},
+		{
+			"typo without a base", "{{if .Base}}on {{.Base}}{{else}}{{.Issue.Nmber}}{{end}}",
+			`render prompt of action "review": `,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -83,9 +83,9 @@ func newPromptData(d PromptData) promptData {
 	return data
 }
 
-// sampleIssue is the issue every prompt is rendered for when it is parsed,
-// so a bad template stops crew before polling rather than when an issue is
-// taken.
+// sampleIssue is the issue every template is rendered for when it is
+// parsed, so a bad template stops crew before polling rather than when an
+// issue is taken.
 func sampleIssue() Issue {
 	return NewIssue(IssueData{
 		ID: IssueID{Key: "42"}, Ref: "#42", Title: "Sample issue", URL: "https://example.com/issues/42",
@@ -93,25 +93,28 @@ func sampleIssue() Issue {
 }
 
 // samplePromptData are the data every prompt is rendered for when it is
-// parsed: an unstacked and a stacked run of the sample issue, so a bad
-// template inside {{if .Stack.Stacked}} stops crew too.
+// parsed: a run of the sample issue that does not know its base yet, an
+// unstacked one and a stacked one, so a bad template inside {{if .Base}} or
+// {{if .Stack.Stacked}} stops crew too.
 func samplePromptData() []PromptData {
 	stack := Stack{
 		Blocker: IssueID{Key: "41"}, BlockerRef: "#41", BlockerURL: "https://example.com/issues/41",
 		PullRequestRef: "#45", PullRequestURL: "https://example.com/pull/45", Branch: "crew/issue-41-implement",
 	}
 	return []PromptData{
+		{Issue: sampleIssue()},
 		{Issue: sampleIssue(), Base: "main"},
 		{Issue: sampleIssue(), Base: stack.Branch, Stack: Some(stack)},
 	}
 }
 
 // ParsePrompt parses text, the prompt of the action named action, and
-// renders it for an unstacked and a stacked sample run. The template's data
-// is .Issue with the fields Ref, Key, Title and URL, .Base, and .Stack with
-// the fields Stacked, Blocker.Ref, Blocker.URL, PullRequest.Ref,
-// PullRequest.URL and Branch; a template that does not parse, or that names
-// any other field, is an error naming the action.
+// renders it for a sample run without a base, an unstacked one and a
+// stacked one. The template's data is .Issue with the fields Ref, Key,
+// Title and URL, .Base, and .Stack with the fields Stacked, Blocker.Ref,
+// Blocker.URL, PullRequest.Ref, PullRequest.URL and Branch; a template that
+// does not parse, or that names any other field, is an error naming the
+// action.
 func ParsePrompt(action ActionName, text string) (Prompt, error) {
 	tmpl, err := template.New(string(action)).Parse(text)
 	if err != nil {
