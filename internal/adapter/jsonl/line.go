@@ -51,18 +51,20 @@ type head struct {
 
 // place is the action an event is about, the bot it acts as, the login a
 // session acts as and whether it may ask a question, the worktree the run
-// works in and the states a move went between.
+// works in, origin's default branch as that worktree reported it, and the
+// states a move went between.
 type place struct {
-	Action    crew.ActionName    `json:"action,omitempty"`
-	Bot       crew.BotName       `json:"bot,omitempty"`
-	Login     string             `json:"login,omitempty"`
-	Asks      bool               `json:"asks,omitempty"`
-	Workspace crew.WorkspaceName `json:"workspace,omitempty"`
-	Branch    string             `json:"branch,omitempty"`
-	Log       string             `json:"log,omitempty"`
-	Resumed   bool               `json:"resumed,omitempty"`
-	From      crew.State         `json:"from,omitempty"`
-	To        crew.State         `json:"to,omitempty"`
+	Action        crew.ActionName    `json:"action,omitempty"`
+	Bot           crew.BotName       `json:"bot,omitempty"`
+	Login         string             `json:"login,omitempty"`
+	Asks          bool               `json:"asks,omitempty"`
+	Workspace     crew.WorkspaceName `json:"workspace,omitempty"`
+	Branch        string             `json:"branch,omitempty"`
+	DefaultBranch string             `json:"default_branch,omitempty"`
+	Log           string             `json:"log,omitempty"`
+	Resumed       bool               `json:"resumed,omitempty"`
+	From          crew.State         `json:"from,omitempty"`
+	To            crew.State         `json:"to,omitempty"`
 }
 
 // outcome is how an action, its session, its script or its function
@@ -111,7 +113,8 @@ const (
 )
 
 // taken is the issue as a rule took it, the run that rule run continues,
-// its actions, how it starts and the open questions it inherits.
+// its actions, how it starts, the open questions it inherits and the
+// blocker's pull request it is stacked on.
 type taken struct {
 	Title     string         `json:"title,omitempty"`
 	URL       string         `json:"url,omitempty"`
@@ -124,6 +127,18 @@ type taken struct {
 	Actions   []takenAction  `json:"actions,omitempty"`
 	Start     *start         `json:"start,omitempty"`
 	Questions []question     `json:"questions,omitempty"`
+	Stack     *stack         `json:"stack,omitempty"`
+}
+
+// stack is the blocker's pull request a run is taken on: the blocker,
+// by its key in the line's repository, the pull request and its branch.
+type stack struct {
+	Blocker        string `json:"blocker"`
+	BlockerRef     string `json:"blocker_ref,omitempty"`
+	BlockerURL     string `json:"blocker_url,omitempty"`
+	PullRequest    string `json:"pull_request,omitempty"`
+	PullRequestURL string `json:"pull_request_url,omitempty"`
+	Branch         string `json:"branch"`
 }
 
 // question is one open question: the rule run whose session may have

@@ -203,3 +203,48 @@ func TestLinesWithoutQuestionIDsLoadAsBefore(t *testing.T) {
 		t.Errorf("Load =\n%#v, %v\nwant\n%#v", got, err, want)
 	}
 }
+
+// stack is the take of issue #9 on its blocker #8's open pull request.
+var stack = crew.Stack{
+	Blocker: crew.IssueID{Repository: repository, Key: "8"}, BlockerRef: "#8",
+	BlockerURL: "https://example.test/issues/8", PullRequestRef: "#45", PullRequestURL: "https://example.test/pull/45",
+	Branch: "crew/issue-8-development",
+}
+
+// KTD6, KTD7: a stacked take and the default branch its workspace
+// reported load back as themselves, as an unstacked take and a workspace
+// that reported none do.
+func TestAStackAndADefaultBranchLoadBackAsThemselves(t *testing.T) {
+	issue := crew.IssueData{ID: head(0).IssueID, Ref: "#9"}
+	roundTrip(t, []crew.RunEvent{
+		crew.RunTaken{EventHead: head(0), Issue: issue, Start: crew.StartFresh{}, Stack: crew.Some(stack)},
+		crew.WorkspaceOpened{EventHead: head(1), Workspace: space, Log: logPath, DefaultBranch: "main"},
+		crew.RunTaken{EventHead: head(2), Issue: issue, Start: crew.StartFresh{}},
+		crew.WorkspaceOpened{EventHead: head(3), Workspace: space, Log: logPath},
+	})
+}
+
+// KTD6: a version 3 take and workspace written before crew kept a run's
+// stack or its default branch load unstacked, with no default branch.
+func TestLinesWithoutAStackOrADefaultBranchLoadUnstacked(t *testing.T) {
+	j, root := journal(t)
+	writeJournal(t, root,
+		`{"v":3,"type":"run_taken","time":"2026-10-07T09:00:00Z","rule_run":"development-1","issue":"9",`+
+			`"ref":"#9","stage":"development","blocked":true,"start":{"kind":"fresh"}}`,
+		`{"v":3,"type":"workspace_opened","time":"2026-10-07T09:00:05Z","rule_run":"development-1","issue":"9",`+
+			`"ref":"#9","stage":"development","workspace":"issue-9-development","branch":"crew/issue-9-development",`+
+			`"log":".crew/logs/issue-9-development.log"}`,
+	)
+
+	got, err := j.Load(repository)
+	want := []crew.RunEvent{
+		crew.RunTaken{
+			EventHead: head(0), Issue: crew.IssueData{ID: head(0).IssueID, Ref: "#9", Blocked: true},
+			Start: crew.StartFresh{},
+		},
+		crew.WorkspaceOpened{EventHead: head(5), Workspace: space, Log: logPath},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Load =\n%#v, %v\nwant\n%#v", got, err, want)
+	}
+}

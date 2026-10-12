@@ -33,7 +33,9 @@ func decoders() map[string]decoder {
 			return crew.WorkspaceMissing{EventHead: h, Workspace: l.workspace()}
 		},
 		typeWorkspaceOpened: func(l line, h crew.EventHead) crew.RunEvent {
-			return crew.WorkspaceOpened{EventHead: h, Workspace: l.workspace(), Log: l.Log, Resumed: l.Resumed}
+			return crew.WorkspaceOpened{
+				EventHead: h, Workspace: l.workspace(), Log: l.Log, Resumed: l.Resumed, DefaultBranch: l.DefaultBranch,
+			}
 		},
 		typeRouteChosen: line.routeChosen,
 		typeLookupAsked: func(_ line, h crew.EventHead) crew.RunEvent { return crew.RunLookupAsked{EventHead: h} },
@@ -109,8 +111,9 @@ func (l line) workspace() crew.Workspace {
 }
 
 // runTaken returns the RunTaken l holds, with head h; without questions
-// when l, a line of an earlier crew, holds none. A question with an id is
-// the rule's, h's own (KTD12).
+// or a stack when l, a line of an earlier crew, holds none. A question with
+// an id is the rule's, h's own (KTD12), and the blocker is in h's
+// repository.
 func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 	e := crew.RunTaken{
 		EventHead: h, From: l.From, To: l.To, Start: l.start(),
@@ -134,6 +137,12 @@ func (l line) runTaken(h crew.EventHead) crew.RunEvent {
 			out.Rule = h.Rule
 		}
 		e.Questions = append(e.Questions, out)
+	}
+	if s := l.Stack; s != nil {
+		e.Stack = crew.Some(crew.Stack{
+			Blocker: crew.IssueID{Repository: h.IssueID.Repository, Key: s.Blocker}, BlockerRef: s.BlockerRef,
+			BlockerURL: s.BlockerURL, PullRequestRef: s.PullRequest, PullRequestURL: s.PullRequestURL, Branch: s.Branch,
+		})
 	}
 	return e
 }
