@@ -87,3 +87,29 @@ func TestPromptRenderErrorNamesTheAction(t *testing.T) {
 		t.Fatalf("Render = %v, want an error naming the action", err)
 	}
 }
+
+// Covers KTD8: a prompt's hash is the SHA-256, in hex, of its template as
+// the config wrote it, whatever action it belongs to.
+func TestPromptHashIsTheSHA256OfItsTemplate(t *testing.T) {
+	parse := func(action ActionName, text string) Prompt {
+		t.Helper()
+		p, err := ParsePrompt(action, text)
+		if err != nil {
+			t.Fatalf("ParsePrompt: %v", err)
+		}
+		return p
+	}
+	review, again := parse("review", "Review {{.Issue.Ref}}"), parse("review again", "Review {{.Issue.Ref}}")
+	edited := parse("review", "Review {{.Issue.Ref}} closely")
+
+	// echo -n 'Review {{.Issue.Ref}}' | sha256sum
+	if want := "4bbac29b2d5ab5a7a5fc60ed83a1a390c9494c73b8bfaa15108a2ebd022d05ec"; review.Hash() != want {
+		t.Errorf("Hash() = %q, want %q", review.Hash(), want)
+	}
+	if again.Hash() != review.Hash() {
+		t.Errorf("the same template in two actions hashes %q and %q", review.Hash(), again.Hash())
+	}
+	if edited.Hash() == review.Hash() {
+		t.Errorf("an edited template keeps the hash %q", edited.Hash())
+	}
+}

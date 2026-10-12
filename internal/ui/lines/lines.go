@@ -200,6 +200,16 @@ func statistic(s crew.Statistic) string {
 			part = "end"
 		}
 		return fmt.Sprintf("the %s of the rule run %s on #%s", part, s.Rule, s.Issue)
+	case crew.ActionSpan:
+		return fmt.Sprintf("the action %s of the rule run %s on #%s", s.Action, s.Rule, s.Issue)
+	case crew.RouteSpan:
+		part := "start"
+		if _, ended := s.End.Get(); ended {
+			part = "end"
+		}
+		return fmt.Sprintf("the %s of the route %s of the rule run %s on #%s", part, s.Route, s.Rule, s.Issue)
+	case crew.StepSpan:
+		return fmt.Sprintf("the route step %s of the rule run %s on #%s", s.Name, s.Rule, s.Issue)
 	}
 	return fmt.Sprintf("%T", s)
 }

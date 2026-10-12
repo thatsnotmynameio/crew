@@ -18,7 +18,7 @@ import (
 )
 
 // migrations is how many migration files the adapter embeds.
-const migrations = 3
+const migrations = 4
 
 var t0 = time.Date(2026, 10, 8, 21, 2, 3, 456_000_000, time.UTC)
 

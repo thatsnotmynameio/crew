@@ -1,6 +1,8 @@
 package crew
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"text/template"
@@ -70,3 +72,11 @@ func (p Prompt) Render(issue Issue) (string, error) {
 
 // Text returns the prompt as the config wrote it.
 func (p Prompt) Text() string { return p.text }
+
+// Hash returns the SHA-256, in hex, of the prompt as the config wrote it:
+// the same template in two actions hashes the same, and an edited one
+// differently. The rendered prompt is not in it (KTD8).
+func (p Prompt) Hash() string {
+	sum := sha256.Sum256([]byte(p.text))
+	return hex.EncodeToString(sum[:])
+}

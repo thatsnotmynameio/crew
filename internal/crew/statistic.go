@@ -1,10 +1,14 @@
 package crew
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // Statistic is one record crew keeps in its statistics store, which
 // outlives restarts and repositories: a Process, a RepositoryRecord, an
-// IssueSighting, a LabelMove or a RuleRunSpan.
+// IssueSighting, a LabelMove, a RuleRunSpan, an ActionSpan, a RouteSpan or
+// a StepSpan.
 //
 //sumtype:decl
 type Statistic interface {
@@ -174,3 +178,212 @@ const (
 	// action from starting and sent it through FailedRoute.
 	HaltRunTimeLimit RunHalt = "run_time_limit"
 )
+
+// SpanID identifies a span in the statistics store. A rule run's span has
+// the run's id; the spans under it derive theirs from it, so a span
+// recorded twice is the same span (KTD1).
+type SpanID string
+
+// WorkOutcome is how an action or a route's step ended, as the statistics
+// store writes it. Its last three say a halt chose the end.
+type WorkOutcome string
+
+// The outcomes of an action or a route's step.
+const (
+	// WorkSucceeded is an action that ended well, or a step that ran.
+	WorkSucceeded WorkOutcome = "succeeded"
+	// WorkFailed is an action or a step that failed of itself.
+	WorkFailed WorkOutcome = "failed"
+	// WorkStopped is an action or a step that crew's stop ended.
+	WorkStopped WorkOutcome = "stopped"
+	// WorkStoppedBeforeStart is an action or a step that crew's stop kept
+	// from starting.
+	WorkStoppedBeforeStart WorkOutcome = "stopped_before_start"
+	// WorkRunTimeLimit is an action that crew's run time limit kept from
+	// starting.
+	WorkRunTimeLimit WorkOutcome = "run_time_limit"
+)
+
+// Work is what an action or a route's step did, with its kind's detail:
+// SessionWork, ShellWork, FunctionWork, QuestionWork or CheckWork. A step
+// only ever does ShellWork or FunctionWork.
+//
+//sumtype:decl
+type Work interface {
+	work()
+}
+
+// SessionWork is an action that ran one coding-agent session.
+type SessionWork struct {
+	// Agent is the agent whose harness ran the session.
+	Agent AgentName
+	// Harness is the harness that ran it.
+	Harness HarnessName
+	// Bot is the bot the session acted as, empty for the tracker's own
+	// identity.
+	Bot BotName
+	// PromptHash is the hash of the action's prompt template
+	// (Prompt.Hash), never its text.
+	PromptHash string
+	// Started is when the session started, none when it never did.
+	Started Optional[time.Time]
+	// Turns is how many turns the session took, when its harness said.
+	Turns Optional[int]
+	// Tokens is the tokens its harness reported, one record per model
+	// (Usage.TokenRecords): none when it reported none, which reads as not
+	// reported, never as zero.
+	Tokens []ModelTokens
+}
+
+// ShellWork is an action or a step that ran one shell script.
+type ShellWork struct {
+	// ExitStatus is the script's exit status, none when it did not exit.
+	ExitStatus Optional[int]
+}
+
+// FunctionWork is an action or a step that called one of crew's
+// functions.
+type FunctionWork struct {
+	// Function is the function's registered name.
+	Function FunctionName
+	// Verdict is the verdict the function returned, none when it returned
+	// none.
+	Verdict Optional[Verdict]
+}
+
+// QuestionWork is a rule's question action, which asks its question and
+// ends at once.
+type QuestionWork struct{}
+
+// CheckWork is the answered rule's check of where the item returns.
+type CheckWork struct{}
+
+func (SessionWork) work()  {}
+func (ShellWork) work()    {}
+func (FunctionWork) work() {}
+func (QuestionWork) work() {}
+func (CheckWork) work()    {}
+
+// ActionSpan is an action of a rule run that ended, as a span of work
+// under the run's span. crew records it once, when the action ends, with
+// its start and its end.
+type ActionSpan struct {
+	// Issue and Rule are the run's issue and rule, for crew's words only:
+	// the store finds them through the run's span.
+	Issue IssueID
+	Rule  RuleName
+	// Run is the rule run the action ran in: the span's parent.
+	Run RuleRunID
+	// Action is the action's name.
+	Action ActionName
+	// Process is the crew process that ran it.
+	Process ProcessID
+	// Start and End are when the action started and ended.
+	Start time.Time
+	End   time.Time
+	// Outcome says how it ended.
+	Outcome WorkOutcome
+	// Verdict is the action's verdict.
+	Verdict Verdict
+	// Work is what the action did.
+	Work Work
+}
+
+// ID returns the span's id: the run's, then action/ and the action's name.
+func (s ActionSpan) ID() SpanID { return actionSpanID(s.Run, s.Action) }
+
+// Parent returns the id of the span it hangs from: its rule run's.
+func (s ActionSpan) Parent() SpanID { return SpanID(s.Run) }
+
+// RouteSpan is the route a rule run ended through, as a span of work
+// under the action whose verdict chose it. crew records it twice, when the
+// run chooses it with no end and when crew releases the run with its end;
+// the store keeps one span and its first end.
+type RouteSpan struct {
+	// Issue and Rule are the run's issue and rule, for crew's words only.
+	Issue IssueID
+	Rule  RuleName
+	// Run is the rule run that chose the route.
+	Run RuleRunID
+	// Process is the crew process that chose it.
+	Process ProcessID
+	// Route is the route's name.
+	Route RouteName
+	// ChosenBy is the action of this run whose verdict chose the route,
+	// none when no action of this run did: the route's parent is then the
+	// rule run's span (KTD9).
+	ChosenBy Optional[RouteChoice]
+	// Start is when the run chose the route.
+	Start time.Time
+	// End is how and when the route ended, none while it runs.
+	End Optional[RouteEnd]
+}
+
+func (ActionSpan) statistic() {}
+
+// ID returns the span's id: the run's, then /route.
+func (s RouteSpan) ID() SpanID { return routeSpanID(s.Run) }
+
+// Parent returns the id of the span it hangs from: the action that chose
+// it, else its rule run.
+func (s RouteSpan) Parent() SpanID {
+	if chosen, ok := s.ChosenBy.Get(); ok {
+		return actionSpanID(s.Run, chosen.Action)
+	}
+	return SpanID(s.Run)
+}
+
+func (RouteSpan) statistic() {}
+
+// RouteChoice is the action whose verdict chose a route, and that verdict.
+type RouteChoice struct {
+	Action  ActionName
+	Verdict Verdict
+}
+
+// RouteEnd is how a route ended: when, and the rule run's outcome.
+type RouteEnd struct {
+	// At is when crew released the run.
+	At time.Time
+	// Outcome is the rule run's outcome.
+	Outcome RunOutcome
+}
+
+// StepSpan is a shell or function step of a route, as a span of work
+// under the route's span. crew records it once, when the step ends.
+type StepSpan struct {
+	// Issue and Rule are the run's issue and rule, for crew's words only.
+	Issue IssueID
+	Rule  RuleName
+	// Run is the rule run whose route the step is in.
+	Run RuleRunID
+	// Index is the step's place in the route, from 0.
+	Index int
+	// Name is the shell action or function the step runs.
+	Name ActionName
+	// Process is the crew process that ran it.
+	Process ProcessID
+	// Start and End are when the step started and ended.
+	Start time.Time
+	End   time.Time
+	// Outcome says how it ended.
+	Outcome WorkOutcome
+	// Work is what the step did: ShellWork or FunctionWork.
+	Work Work
+}
+
+// ID returns the span's id: its route's, then / and its index.
+func (s StepSpan) ID() SpanID { return routeSpanID(s.Run) + "/" + SpanID(strconv.Itoa(s.Index)) }
+
+// Parent returns the id of the span it hangs from: its route's.
+func (s StepSpan) Parent() SpanID { return routeSpanID(s.Run) }
+
+// actionSpanID is the id of the span of action in run.
+func actionSpanID(run RuleRunID, action ActionName) SpanID {
+	return SpanID(string(run) + "/action/" + string(action))
+}
+
+func (StepSpan) statistic() {}
+
+// routeSpanID is the id of the span of run's route.
+func routeSpanID(run RuleRunID) SpanID { return SpanID(string(run) + "/route") }

@@ -1,6 +1,8 @@
 package sqlite_test
 
 import (
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -135,4 +137,25 @@ func TestTwoStoresRecordingTheSameSpanAtOnceKeepOne(t *testing.T) {
 	}
 
 	wantSpan(t, dir, endedRow("routed"), ruleRunOf("passed"))
+}
+
+// Covers AE9: two crew processes on two repositories that end actions at
+// once both keep their span, each under its own rule run.
+func TestTwoStoresRecordingActionsOfTwoRepositoriesAtOnceKeepBoth(t *testing.T) {
+	dir := t.TempDir()
+	first := action("lfg", crew.WorkSucceeded, lfg())
+	second := action("lfg", crew.WorkSucceeded, lfg())
+	second.Issue, second.Run, second.Process = crew.IssueID{Repository: "R_2", Key: "7"}, "s.1", "q"
+
+	for g, err := range recordAtOnce(t, dir, first, second) {
+		if err != nil {
+			t.Errorf("store %d: %v", g, err)
+		}
+	}
+
+	got := spans(t, dir)
+	slices.SortFunc(got, func(a, b spanRow) int { return strings.Compare(a.id, b.id) })
+	if len(got) != 2 || got[0].parent != some("r.1") || got[1].parent != some("s.1") || got[1].process != "q" {
+		t.Errorf("spans = %+v, want r.1's action under r.1 and s.1's under s.1", got)
+	}
 }

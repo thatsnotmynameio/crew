@@ -19,6 +19,19 @@ type Usage struct {
 	ByModel []ModelTokens
 }
 
+// TokenRecords returns the tokens u reported, one record per model: its
+// tokens by model, else its sum under no model's name, else none, which
+// reads as not reported, never as zero (KTD7).
+func (u Usage) TokenRecords() []ModelTokens {
+	if len(u.ByModel) > 0 {
+		return u.ByModel
+	}
+	if tokens, ok := u.Tokens.Get(); ok {
+		return []ModelTokens{{Tokens: tokens}}
+	}
+	return nil
+}
+
 // ModelTokens is the tokens a session used with one model.
 type ModelTokens struct {
 	// Model is the model's name, as the harness reports it.

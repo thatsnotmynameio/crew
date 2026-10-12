@@ -57,13 +57,25 @@ const (
 	selectLastLabel = `SELECT COALESCE(
 		(SELECT to_label FROM label_moves WHERE tracker = ? AND repository_id = ? AND issue_key = ? ORDER BY id DESC LIMIT 1),
 		(SELECT first_label FROM issues WHERE tracker = ? AND repository_id = ? AND key = ?))`
-	insertSpan = `INSERT INTO spans (id, kind, process_id, started_at) VALUES (?, 'rule_run', ?, ?)
+	insertSpan = `INSERT INTO spans (id, kind, parent_id, process_id, started_at) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING`
 	insertRuleRunSpan = `INSERT INTO rule_run_spans
 		(span_id, tracker, repository_id, issue_key, rule, queue, continues_run_id) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (span_id) DO NOTHING`
 	updateSpanEnd    = `UPDATE spans SET ended_at = ?, outcome = ? WHERE id = ? AND ended_at IS NULL`
 	updateRuleRunEnd = `UPDATE rule_run_spans SET route = ?, halted = ? WHERE span_id = ?`
+	insertWorkSpan   = `INSERT INTO work_spans (span_id, name, kind, verdict) VALUES (?, ?, ?, ?)
+		ON CONFLICT (span_id) DO NOTHING`
+	insertSessionSpan = `INSERT INTO session_spans
+		(span_id, agent, harness, bot, prompt_hash, session_started_at, turns) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (span_id) DO NOTHING`
+	insertModelUsage = `INSERT INTO session_tokens
+		(span_id, model, input, output, cache_read, cache_write) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (span_id, model) DO NOTHING`
+	insertShellSpan    = `INSERT INTO shell_spans (span_id, exit_status) VALUES (?, ?) ON CONFLICT (span_id) DO NOTHING`
+	insertFunctionSpan = `INSERT INTO function_spans (span_id, function, verdict) VALUES (?, ?, ?)
+		ON CONFLICT (span_id) DO NOTHING`
+	insertRouteSpan = `INSERT INTO route_spans (span_id, route, verdict) VALUES (?, ?, ?) ON CONFLICT (span_id) DO NOTHING`
 )
 
 // Record implements port.Statistics. It opens the store first when no
@@ -93,6 +105,15 @@ func (s *Store) Record(ctx context.Context, st crew.Statistic) error {
 		return s.write(ctx, "a label move of #"+st.Issue.String(), func(tx *sql.Tx) error { return move(ctx, tx, st) })
 	case crew.RuleRunSpan:
 		return s.write(ctx, "the span of rule run "+string(st.Run), func(tx *sql.Tx) error { return span(ctx, tx, st) })
+	case crew.ActionSpan:
+		return s.write(ctx, fmt.Sprintf("the span of action %s of rule run %s", st.Action, st.Run),
+			func(tx *sql.Tx) error { return actionSpan(ctx, tx, st) })
+	case crew.RouteSpan:
+		return s.write(ctx, "the span of the route of rule run "+string(st.Run),
+			func(tx *sql.Tx) error { return routeSpan(ctx, tx, st) })
+	case crew.StepSpan:
+		return s.write(ctx, fmt.Sprintf("the span of step %d of the route of rule run %s", st.Index, st.Run),
+			func(tx *sql.Tx) error { return stepSpan(ctx, tx, st) })
 	}
 	return fmt.Errorf("record a %T: not a statistic the store knows", st)
 }
@@ -160,7 +181,7 @@ func lastLabel(ctx context.Context, tx *sql.Tx, tracker crew.TrackerName, issue 
 // gets the end only when the span did, so both rows hold the same end.
 func span(ctx context.Context, tx *sql.Tx, sp crew.RuleRunSpan) error {
 	id := string(sp.Run)
-	if err := exec(ctx, tx, insertSpan, id, string(sp.Process), sp.Start.UnixMilli()); err != nil {
+	if err := openSpan(ctx, tx, id, "rule_run", nil, sp.Process, sp.Start); err != nil {
 		return err
 	}
 	err := exec(ctx, tx, insertRuleRunSpan, id, string(sp.Tracker), string(sp.Issue.Repository), sp.Issue.Key,
@@ -169,18 +190,128 @@ func span(ctx context.Context, tx *sql.Tx, sp crew.RuleRunSpan) error {
 	if err != nil || !ok {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, updateSpanEnd, end.At.UnixMilli(), string(end.Outcome), id)
+	ended, err := endSpan(ctx, tx, id, end.At, string(end.Outcome))
+	if err != nil || !ended {
+		return err
+	}
+	return update(ctx, tx, updateRuleRunEnd, text(end.Route), text(end.Halt), id)
+}
+
+// actionSpan records sp, written once with its end, in tx: its rows when
+// the store lacks them, and its end when the stored span has none.
+func actionSpan(ctx context.Context, tx *sql.Tx, sp crew.ActionSpan) error {
+	id := string(sp.ID())
+	if err := openSpan(ctx, tx, id, "action", string(sp.Parent()), sp.Process, sp.Start); err != nil {
+		return err
+	}
+	if _, err := endSpan(ctx, tx, id, sp.End, string(sp.Outcome)); err != nil {
+		return err
+	}
+	return work(ctx, tx, id, sp.Action, string(sp.Verdict), sp.Work)
+}
+
+// routeSpan records sp in tx: its rows when the store lacks them, then,
+// when sp has an end and the stored span none, that end. Nothing else of a
+// route changes at its end.
+func routeSpan(ctx context.Context, tx *sql.Tx, sp crew.RouteSpan) error {
+	id := string(sp.ID())
+	if err := openSpan(ctx, tx, id, "route", string(sp.Parent()), sp.Process, sp.Start); err != nil {
+		return err
+	}
+	var verdict any
+	if chosen, ok := sp.ChosenBy.Get(); ok {
+		verdict = string(chosen.Verdict)
+	}
+	err := exec(ctx, tx, insertRouteSpan, id, string(sp.Route), verdict)
+	end, ok := sp.End.Get()
+	if err != nil || !ok {
+		return err
+	}
+	_, err = endSpan(ctx, tx, id, end.At, string(end.Outcome))
+	return err
+}
+
+// stepSpan records sp, written once with its end, in tx, as actionSpan
+// records an action's, with no verdict.
+func stepSpan(ctx context.Context, tx *sql.Tx, sp crew.StepSpan) error {
+	id := string(sp.ID())
+	if err := openSpan(ctx, tx, id, "step", string(sp.Parent()), sp.Process, sp.Start); err != nil {
+		return err
+	}
+	if _, err := endSpan(ctx, tx, id, sp.End, string(sp.Outcome)); err != nil {
+		return err
+	}
+	return work(ctx, tx, id, sp.Name, nil, sp.Work)
+}
+
+// openSpan inserts, in tx, the spans row of id, a span of kind under parent,
+// nil for none, when the store lacks it.
+func openSpan(ctx context.Context, tx *sql.Tx, id, kind string, parent any, process crew.ProcessID,
+	start time.Time,
+) error {
+	return exec(ctx, tx, insertSpan, id, kind, parent, string(process), start.UnixMilli())
+}
+
+// endSpan sets, in tx, the end of span id when it has none, and returns
+// whether it did.
+func endSpan(ctx context.Context, tx *sql.Tx, id string, at time.Time, outcome string) (bool, error) {
+	res, err := tx.ExecContext(ctx, updateSpanEnd, at.UnixMilli(), outcome, id)
 	if err != nil {
-		return fmt.Errorf("update: %w", err)
+		return false, fmt.Errorf("update: %w", err)
 	}
 	ended, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("update: %w", err)
+		return false, fmt.Errorf("update: %w", err)
 	}
-	if ended == 0 {
-		return nil
+	return ended > 0, nil
+}
+
+// work records, in tx, what the action or step of span id, named name, did:
+// its work_spans row, with verdict, nil for a step's, and its kind's detail.
+func work(ctx context.Context, tx *sql.Tx, id string, name crew.ActionName, verdict any, w crew.Work) error {
+	insert := func(kind string) error { return exec(ctx, tx, insertWorkSpan, id, string(name), kind, verdict) }
+	switch w := w.(type) {
+	case crew.SessionWork:
+		if err := insert("session"); err != nil {
+			return err
+		}
+		return session(ctx, tx, id, w)
+	case crew.ShellWork:
+		if err := insert("shell"); err != nil {
+			return err
+		}
+		return exec(ctx, tx, insertShellSpan, id, integer(w.ExitStatus))
+	case crew.FunctionWork:
+		if err := insert("function"); err != nil {
+			return err
+		}
+		return exec(ctx, tx, insertFunctionSpan, id, string(w.Function), text(w.Verdict))
+	case crew.QuestionWork:
+		return insert("question")
+	case crew.CheckWork:
+		return insert("check")
 	}
-	return update(ctx, tx, updateRuleRunEnd, text(end.Route), text(end.Halt), id)
+	return fmt.Errorf("a %T is not a work the store knows", w)
+}
+
+// session records, in tx, the session of span id: its row and one row per
+// model its harness reported tokens for.
+func session(ctx context.Context, tx *sql.Tx, id string, w crew.SessionWork) error {
+	var bot any
+	if w.Bot != "" {
+		bot = string(w.Bot)
+	}
+	if err := exec(ctx, tx, insertSessionSpan, id, string(w.Agent), string(w.Harness), bot, w.PromptHash,
+		unixMilli(w.Started), integer(w.Turns)); err != nil {
+		return err
+	}
+	for _, m := range w.Tokens {
+		if err := exec(ctx, tx, insertModelUsage, id, m.Model, m.Tokens.Input, m.Tokens.Output,
+			m.Tokens.CacheRead, m.Tokens.CacheWrite); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // kind is how the store writes k.
@@ -195,6 +326,14 @@ func kind(k crew.Kind) string {
 func unixMilli(t crew.Optional[time.Time]) any {
 	if v, ok := t.Get(); ok {
 		return v.UnixMilli()
+	}
+	return nil
+}
+
+// integer is n, or nil, a null, when it is absent.
+func integer(n crew.Optional[int]) any {
+	if v, ok := n.Get(); ok {
+		return v
 	}
 	return nil
 }
