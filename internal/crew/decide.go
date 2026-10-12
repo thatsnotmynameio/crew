@@ -113,7 +113,7 @@ func (d *decider) start(name ActionName) {
 	}
 	switch k := d.def.Rule.Action(name).Kind.(type) {
 	case SessionSpec:
-		if _, err := k.Prompt.Render(d.run.issue); err != nil {
+		if _, err := k.Prompt.Render(d.run.PromptData()); err != nil {
 			d.finish(name, failedBy(NewSessionText(err.Error()), CausePrompt))
 			return
 		}

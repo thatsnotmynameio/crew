@@ -326,8 +326,8 @@ func (s *step) startSession(h *heldRun, name crew.ActionName) {
 	spec, _ := def.Kind.(crew.SessionSpec)
 	w, _ := h.run.Workspace().Get()
 	// The run rendered the prompt already, when it asked for the session:
-	// the same template and issue render the same text.
-	prompt, _ := spec.Prompt.Render(h.run.Issue())
+	// the same template and data render the same text.
+	prompt, _ := spec.Prompt.Render(h.run.PromptData())
 	start, resumed := h.run.Start().(crew.StartAt)
 	resumed = resumed && w.Resumed && start.Action == name
 	if p, ok := s.m.resumeParagraphs(h, name, start, resumed); ok {

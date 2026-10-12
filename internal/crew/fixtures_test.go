@@ -66,7 +66,7 @@ func badPrompt(action ActionName) Prompt {
 
 // renderError returns the reason a prompt that does not render gives.
 func renderError(action ActionName) SessionText {
-	_, err := badPrompt(action).Render(NewIssue(testIssue()))
+	_, err := badPrompt(action).Render(PromptData{Issue: NewIssue(testIssue())})
 	if err == nil {
 		panic("the bad prompt rendered")
 	}

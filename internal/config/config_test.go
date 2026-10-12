@@ -266,7 +266,7 @@ func parsedPrompt(t *testing.T, action crew.ActionName, text string) crew.Prompt
 func TestLoadRendersPromptForIssue(t *testing.T) {
 	cfg := load(t, oneRule)
 	issue := crew.NewIssue(crew.IssueData{ID: issueID("42"), Ref: "#42", Title: "Fix it", URL: "https://example.com/42"})
-	got, err := sessionOf(t, cfg.Rules[0].Actions[0]).Prompt.Render(issue)
+	got, err := sessionOf(t, cfg.Rules[0].Actions[0]).Prompt.Render(crew.PromptData{Issue: issue})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
