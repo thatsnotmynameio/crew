@@ -21,6 +21,10 @@ type Rule struct {
 	// Takes is the kind of item the rule takes: it takes only the items of
 	// that kind in its Labels.Ready state. The zero Kind takes issues.
 	Takes Kind
+	// Stacking says whether the rule takes a blocked issue on its only
+	// blocker's open pull request, whose run ended, instead of waiting for
+	// the blocker to close. False waits, as a rule always did.
+	Stacking bool
 	// Routes are the rule's ways to end a run, in the config's order. A
 	// rule with actions declares PassedRoute and FailedRoute; a rule
 	// without actions declares only PassedRoute.

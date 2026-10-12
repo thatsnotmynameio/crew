@@ -48,20 +48,26 @@ type IssueData struct {
 	// that takes its kind takes it. A tracker that knows no pull requests
 	// leaves it KindIssue.
 	Kind Kind
+	// Stacking is what the tracker read to stack the issue on its
+	// blocker's pull request; the zero StackReading unless a tracker read
+	// it for a rule that stacks.
+	Stacking StackReading
 }
 
 // NewIssue returns the issue d describes. The issue keeps its own copy of
-// d's States.
+// d's States and Stacking.
 func NewIssue(d IssueData) Issue {
 	d.States = slices.Clone(d.States)
+	d.Stacking = d.Stacking.clone()
 	return Issue{data: d}
 }
 
 // Data returns the issue's fields as plain data, with its own copy of the
-// States.
+// States and Stacking.
 func (i Issue) Data() IssueData {
 	d := i.data
 	d.States = slices.Clone(d.States)
+	d.Stacking = d.Stacking.clone()
 	return d
 }
 
