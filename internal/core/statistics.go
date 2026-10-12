@@ -346,8 +346,8 @@ func (s *step) routeOpened(h *heldRun) {
 	s.command(RecordStatistic{Statistic: s.m.routeSpan(h, p)})
 }
 
-// routeEnded records the end of the span of the route h's run, released at
-// at, ended through, with the run's outcome, when it chose one (KTD2,
+// routeEnded records the end of the span of the route h's run chose, when
+// it chose one, at at, the run's release, with the run's outcome (KTD2,
 // KTD5). The record carries the whole span.
 func (s *step) routeEnded(h *heldRun, at time.Time) {
 	if s.m.statistics == nil {
@@ -385,8 +385,11 @@ func (m *Model) routeSpan(h *heldRun, p crew.RoutingPhase) crew.RouteSpan {
 // from when crew asked for it, or from its end when it ended unasked
 // (KTD3, KTD4). A tracker step records nothing.
 func (s *step) stepSpanEnded(h *heldRun, e crew.StepEnded) {
+	if s.m.statistics == nil {
+		return
+	}
 	p, routing := h.run.Phase().(crew.RoutingPhase)
-	if s.m.statistics == nil || !routing || e.Step >= len(p.Steps) {
+	if !routing || e.Step >= len(p.Steps) {
 		return
 	}
 	kept := h.steps[e.Step]
@@ -403,6 +406,8 @@ func (s *step) stepSpanEnded(h *heldRun, e crew.StepEnded) {
 	case crew.StepShell:
 		sp.Name, sp.Work = plan.Shell, crew.ShellWork{ExitStatus: kept.status}
 	case crew.StepFunction:
+		// The plan keeps only the step's name; the rule's step names its
+		// function.
 		route, _ := s.m.rules[h.rule].Route(p.Route)
 		step, _ := route.Steps[e.Step].(crew.FunctionStep)
 		sp.Name, sp.Work = plan.Function, crew.FunctionWork{Function: step.Function.Function, Verdict: kept.verdict}
