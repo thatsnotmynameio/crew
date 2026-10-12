@@ -1,7 +1,7 @@
 # crew actions: the engine
 
 A draft to evolve, from a conversation on 2026-10-12. It is not a brainstorm yet.
-A new actions engine, built alongside crew: today's crew keeps working, and this design does not start from its rules, routes or labels.
+A new actions engine, built alongside crew in a repository of its own: today's crew keeps working, and this design does not start from its rules, routes or labels.
 The engine is simple and made for our case.
 
 **Status:** exploration only.
@@ -174,27 +174,29 @@ Three things cost little now and a lot later:
 
 ## Code architecture
 
-### A Go module of its own
+### A repository of its own
 
-crew actions is its own Go module, in crew's repository: `actions/`, with its own `go.mod` and the module path `github.com/thatsnotmynameio/crew/actions`.
-It is large and apart from crew, and a module makes the separation real:
+crew actions lives in a repository of its own, apart from crew's, with its own Go module at its root.
+A first candidate for its name is `thatsnotmynameio/crew-actions`, with the module path `github.com/thatsnotmynameio/crew-actions`; slice -1 settles it.
+It is large and apart from crew, and its own repository makes the separation complete:
 
-- **Its dependencies stay its own.** Postgres's driver, OpenTelemetry and connect-rpc enter `actions/go.mod`, not crew's; crew's binary, its vulnerability scan and its dependency review do not grow with them.
-- **The isolation is the module's.** crew actions does not require crew's module, so it cannot import crew's packages, and crew does not require it. Inside the module, `depguard` still checks the layers.
-- **Its version is its own,** released with tags of the form `actions/vX.Y.Z`, the form Go expects for a module in a subdirectory.
+- **Its dependencies stay its own.** Postgres's driver, OpenTelemetry and connect-rpc enter its `go.mod`; crew's binary, its vulnerability scan and its dependency review do not grow with them.
+- **The isolation is the repository's.** crew actions cannot import crew's packages, and crew does not import it. Inside the module, `depguard` checks the layers.
+- **Its version, releases, CI and issues are its own,** with plain `vX.Y.Z` tags.
+- **This draft stays here, in crew's repository,** as the exploration that led to it. The architecture document of slice -1 and everything after it live in the new repository.
 
 What this brings, for the brainstorm of slice -1 to settle:
 
-- **The binary.** A `crew-actions` binary from `actions/cmd/crew-actions`, and `crew actions …` as a git-style dispatch: crew runs `crew-actions` from the `PATH` with the rest of the arguments. Neither module then requires the other. The commands keep the names used below (`crew actions run`, `crew actions engine`, `crew actions runner`).
-- **`internal/proc`.** It is crew's only way to start a child process, but another module cannot import crew's `internal/` without requiring crew's module. crew actions gets its own, a copy to start with, or both move to a small module they share.
-- **CI and releases.** Every check that runs on crew's module (`go mod tidy`, gofmt, vet, golangci-lint, `go test -race` with coverage, govulncheck) runs on `actions/` too; Dependabot gets an entry for `/actions`; GoReleaser builds `crew-actions` with its own version.
-- **A `go.work`,** or none: a workspace file eases working on both modules at once, and is often left uncommitted.
+- **The binary.** A `crew-actions` binary, from `cmd/crew-actions`, and `crew actions …` as a git-style dispatch: crew runs `crew-actions` from the `PATH` with the rest of the arguments, so neither project requires the other. The commands keep the names used below (`crew actions run`, `crew actions engine`, `crew actions runner`). The dispatch is a small change in crew, made when there is something to dispatch to.
+- **Starting a child process.** crew's `internal/proc` is crew's only way to do it, and another repository cannot import crew's `internal/`. crew actions gets its own, a copy to start with, or both use a small module they share.
+- **The repository's setup, with crew's as the template:** CI with the same checks (`go mod tidy`, gofmt, vet, golangci-lint, `go test -race` with coverage, govulncheck), the security workflow, Dependabot, GoReleaser, the `checks` ruleset, an `AGENTS.md`, a README and a license (crew's is MIT).
+- **Where the slices' issues live,** and whether crew runs the new repository's issues through its own rules, as it runs crew's.
 
 ### The tree
 
 ```text
-actions/
-  go.mod                   # github.com/thatsnotmynameio/crew/actions
+crew-actions/              # the repository's root
+  go.mod                   # github.com/thatsnotmynameio/crew-actions
   cmd/crew-actions/        # the binary: flags, environment, the SDK set up, wiring
   internal/
     spec/                  # YAML: parse, lint, compile into a neutral form
@@ -243,7 +245,7 @@ Inside the module, imports point inward, checked by `depguard` as crew's layers 
 - `runner` imports `protocol`, never `engine`, `scheduler` or `store`.
 - `engine` imports no transport, backend or source.
 - Only `telemetry` imports OpenTelemetry, and only `main` sets up its SDK.
-- crew actions and crew are two modules, and neither requires the other: the module boundary keeps them apart, so no `depguard` rule is needed between them.
+- crew actions and crew are two repositories, and neither imports the other: no `depguard` rule is needed between them.
 
 ### Day one
 
@@ -277,7 +279,7 @@ crew 0.1.4 already measures its own work as a tree of spans in SQLite (`internal
 The spans and metrics are crew's own, easy to identify, and crew sets them itself.
 They follow no generic convention, and nothing depends on automatic instrumentation.
 
-- **One package names them all:** `actions/internal/telemetry`. It holds every span name, attribute key and metric instrument as constants, and typed helpers such as `telemetry.StartWorkflow(ctx, workflow)` or `telemetry.RecordTokens(ctx, model, tokens)`. No other package spells a name or imports OpenTelemetry; `depguard` checks it.
+- **One package names them all:** `internal/telemetry`. It holds every span name, attribute key and metric instrument as constants, and typed helpers such as `telemetry.StartWorkflow(ctx, workflow)` or `telemetry.RecordTokens(ctx, model, tokens)`. No other package spells a name or imports OpenTelemetry; `depguard` checks it.
 - **Every name starts with `crew.`,** so a span or a metric is crew's at a glance in any backend.
 - **Span names are fixed and few;** what varies goes in attributes.
 - **Metrics never carry an id** (a build, an issue, a workflow run): only bounded values such as the repository, the queue, the workflow's name, the model. Ids live on spans.
@@ -374,7 +376,7 @@ The dependencies below are a guide for refinement, which decides and records the
 
 ### Slice -1: the architecture document
 
-Before any code, a document of the high-level architecture and the folder layout, for every slice to follow: `docs/actions/architecture.md`, apart from this exploration.
+Before any code, a document of the high-level architecture and the folder layout, for every slice to follow: `docs/architecture.md` in crew actions' repository, apart from this exploration, which stays in crew's.
 This exploration is its starting point; the document is the curated version of what is decided.
 
 It fixes structure, not behaviour: who owns what, who talks to whom, the names, the folders and the import rules.
@@ -396,12 +398,12 @@ What it holds:
 How it stays true:
 
 - **Every brainstorm starts by reading the document and ends by saying what changes in it.** A slice that changes the architecture shows it as a revised decision, with its reason, not hidden among its requirements.
-- **Every delivery's pull request updates the document in the same pull request,** as the repository already requires for the README.
+- **Every delivery's pull request updates the document in the same pull request,** as crew's repository already requires for its README.
 - **The import rules become `depguard` rules in slice 0,** when the first packages exist, so the document's most important part is checked by the linter.
 - **Every brainstorm says what its slice measures, and its delivery proves it:** a feature whose time and tokens cannot be read from its spans is not done.
-- **Once code exists, `AGENTS.md` gets a line pointing at the document,** since that is how crew's sessions reach it.
+- **The new repository's `AGENTS.md` points at the document,** since that is how coding agents reach it.
 
-In crew's flow, slice -1 is an issue like the others: a brainstorm, then a pull request with the document and no code.
+In crew's flow, slice -1 is an issue like the others: a brainstorm, then a pull request with the document and no code. It also sets up the new repository: its module, CI and the files crew's repository has as a template.
 
 ### The slices
 
