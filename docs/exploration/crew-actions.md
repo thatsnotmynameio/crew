@@ -257,8 +257,95 @@ Imports point inward, checked by `depguard` as crew's other layers are:
 
 ## Next: a build's lifecycle
 
+These questions belong to slice 0, the skeleton (see [Breaking it down](#breaking-it-down)).
+
 - How an event enters the engine.
 - How a build and its workflows are born: reading the files, applying the `when`s, linking the `depends_on`s.
 - A workflow's states, from created to success or failure: waiting for dependencies, waiting for a slot, waiting for a runner, handed out, running, finished.
 - What happens to the dependents of a workflow that failed.
 - What the engine keeps to survive a restart. With the queue in Postgres, the builds, the queue, the slots and the leases are already rows; what is left is how an engine that starts resumes its loops and reaps the expired leases.
+
+## Breaking it down
+
+The whole engine is too large for one brainstorm.
+It breaks into vertical slices: each one adds a capability across every part it touches (spec, scheduler, store, protocol, runner) and ends in something that runs.
+Slicing by component instead (one brainstorm for the scheduler, one for the store) delivers nothing that runs alone, and decisions that cross components, like a workflow's states, get made several times in different ways.
+
+Each slice stays under the size `/cw-split-brainstorm` splits at (10,000 characters or 12 requirements), so refinement does not have to split it again.
+The dependencies below are a guide for refinement, which decides and records the links between the issues.
+
+### Slice -1: the architecture document
+
+Before any code, a document of the high-level architecture and the folder layout, for every slice to follow: `docs/actions/architecture.md`, apart from this exploration.
+This exploration is its starting point; the document is the curated version of what is decided.
+
+It fixes structure, not behaviour: who owns what, who talks to whom, the names, the folders and the import rules.
+The slices fix behaviour: what happens when a workflow fails, how a queue frees a slot.
+Kept to that line, the document does not speculate: it does not say how the scheduler orders, only that the scheduler is pure, that only the engine calls it and that the runner never imports it.
+
+What it holds:
+
+1. **Purpose and non-goals:** an engine alongside crew, with no migration of crew now.
+2. **A glossary:** build, workflow, step, runner, queue, lease, label. Every slice uses these words, and confusions start there.
+3. **The hierarchy and the boundary:** the engine hands out, the runner executes.
+4. **The folder tree,** one line of responsibility per package, and the import rules `depguard` checks.
+5. **The protocol at the level of its calls:** names and purpose, not fields.
+6. **The technical choices,** each with its version: Postgres, the database library, the migration tool, the transport. This is where the review of the libraries and versions happens.
+7. **The milestones** (below), and which slice belongs to which.
+8. **A decision log:** what was decided, in which slice, and why. A slice that changes something records the change with its reason instead of only rewriting the text.
+
+How it stays true:
+
+- **Every brainstorm starts by reading the document and ends by saying what changes in it.** A slice that changes the architecture shows it as a revised decision, with its reason, not hidden among its requirements.
+- **Every delivery's pull request updates the document in the same pull request,** as the repository already requires for the README.
+- **The import rules become `depguard` rules in slice 0,** when the first packages exist, so the document's most important part is checked by the linter.
+- **Once code exists, `AGENTS.md` gets a line pointing at the document,** since that is how crew's sessions reach it.
+
+In crew's flow, slice -1 is an issue like the others: a brainstorm, then a pull request with the document and no code.
+
+### The slices
+
+| # | Slice | What it delivers | Decisions it forces | Needs |
+|---|---|---|---|---|
+| -1 | **Architecture document** | the reference above | structure, names, folders, import rules, technical choices and versions | — |
+| 0 | **Skeleton** | `crew actions run` with one file: one repository, one workflow, steps in sequence on the `local` backend, engine and runner in one process over `inproc`, the queue in Postgres with claim, lease and done, docker compose | the lifecycle and states of builds, workflows and steps; the base schema, with organization and repository; the minimal protocol | -1 |
+| 1 | **Workflows and `depends_on`** | a build as a DAG, cycles rejected, `waiting` to `pending`, skipping what a failure rules out | what `when: status` looks at | 0 |
+| 2 | **A coding-agent session as a step** | a step that runs a Claude session, with the worktree as its checkout and the prompt and last message as artifacts | the plugin model | 0 |
+| 3 | **Runners and labels** | several runners, capacity, the label match, runner registration | — | 0 |
+| 4 | **Queues with a limit** | named queues in the engine's config, the limit checked in the claim's transaction, re-queued when a slot frees | — | 0 |
+| 5 | **Events** | `source/github`, `when: event`, builds that start without a person | polling or webhooks; a second event for something already running | 1 |
+| 6 | **Multi-repo and priority** | several repositories on one engine, the per-project priority in the ranking | the kind of priority | 4, 5 |
+| 7 | **Hooks** | the executor's phases, the three levels of hooks, their order, the replaceable `checkout` | where the repository's hooks run | 0 |
+| 8 | **Containers** | the `docker` backend, the mounted workspace, a plugin as an image | — | 0 |
+| 9 | **Remote runner** | `transport/connect`, registration tokens | how runners authenticate | 3 |
+| 10 | **API and clients** | the `api` package, the CLI and the TUI talking to the engine through it | — | 0 |
+| 11 | **Service mode** | encrypted secrets, identity per repository, logs and artifacts off the disk, several engines side by side | — | 9, 10 |
+
+Slice 2 comes early on purpose.
+crew exists to run coding-agent sessions, and a session is not a CI command: it lasts hours, needs the machine's credentials and ends in a text someone judges.
+If it does not fit the model of workflows and steps, finding out at the third slice costs far less than at the tenth.
+
+### Milestones
+
+Nothing has to be finished for the engine to be usable.
+Each milestone says what can be used once its slices are done, and under which limits.
+
+| Milestone | After slices | Usable for | Limits |
+|---|---|---|---|
+| **M0: runs a file by hand** | -1, 0 | running a workflow of `commands` steps, with everything recorded in Postgres: states, logs, a runner that dies and the workflow that goes back to the queue | a manual start, one repository, one machine, one runner, the `local` backend, no dependencies |
+| **M1: runs an agent flow by hand** | 1, 2 | crew's real work, started by hand: a Claude session followed by the scripts that check it, in workflows with `depends_on`, such as `crew actions run development.yaml` with the issue passed as a variable | still manual, one machine, one repository, the identity of whoever runs it (no bots) |
+| **M2: runs on its own in one repository** | 3, 4, 5 | the engine reacts to GitHub events, with several runners on the machine, labels and queues with a limit. From here a repository can move one flow at a time from crew to the actions engine, with crew running the rest | one machine, one repository, the `local` backend, no hooks |
+| **M3: several repositories on one machine** | 6 | one engine and the same runners serving several repositories, with per-project priority | one machine, the `local` backend |
+| **M4: isolated** | 7, 8 | hooks (a bot's identity, policy, a checkout of one's own) and steps in containers | still one machine |
+| **M5: several machines** | 9, 10 | runners on other machines, and the CLI and the TUI talking to a remote engine | simple runner authentication; no secrets kept by the engine |
+| **M6: a service** | 11 | the engine as a service: encrypted secrets, identity per repository, logs off the disk, several engines side by side | — |
+
+- **Events come before hooks and containers.** Without them nothing runs on its own, and running on its own is what makes the engine useful day to day. Hooks and containers add safety and reproducibility, but the `local` backend already serves today's flows, which run on the machine.
+- **M4 can move.** It needs only M0, so it can come before M3 if isolation matters more than several repositories.
+- **In M1 the session runs as whoever runs crew.** A bot's identity comes from the `environment` hook, in M4. If a bot is needed early, a setting of the session's plugin can carry it in M1, and the hook takes it over later.
+
+Each milestone has a demonstration that proves it closed.
+For M0: run a file, kill the runner midway, and watch the workflow go back to the queue and finish.
+For M2: open a pull request and watch the workflow start on its own, with the queue holding the second one.
+
+On GitHub the milestones can become milestones, holding the issues of their slices, so progress toward the next one shows without effort.
