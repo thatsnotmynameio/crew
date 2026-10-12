@@ -264,6 +264,9 @@ type WorkspaceReady struct {
 	// Resumed is set when this answers a ReopenWorkspace: the workspace is
 	// the continued run's, as it was left.
 	Resumed bool
+	// DefaultBranch is the name of origin's default branch, as the
+	// workspace reported it.
+	DefaultBranch string
 }
 
 // WorkspaceGone is a ReopenWorkspace whose workspace no longer exists.

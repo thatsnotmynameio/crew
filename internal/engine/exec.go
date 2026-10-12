@@ -283,7 +283,7 @@ func (e *Engine) sessionText(text string) crew.SessionText {
 func (e *Engine) createWorkspace(ctx context.Context, c core.CreateWorkspace) {
 	ctx, cancel := callContext(ctx)
 	defer cancel()
-	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Rule)
+	space, err := e.cfg.Workspace.Create(ctx, c.Issue, c.Rule, "")
 	if err != nil {
 		e.post(core.WorkspaceFailed{IssueID: c.Issue.ID(), Run: c.Run, Reason: e.sessionText(callError(ctx, err))})
 		return
@@ -324,7 +324,7 @@ func (e *Engine) ready(id crew.IssueID, run crew.RuleRunID, space port.Space, re
 	return core.WorkspaceReady{
 		IssueID: id, Run: run,
 		Workspace: space.Workspace.Name, Dir: space.Dir, Branch: space.Workspace.Branch, Log: log,
-		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed,
+		LogFromDir: e.logFromDir(space.Dir, log), Resumed: resumed, DefaultBranch: space.DefaultBranch,
 	}
 }
 

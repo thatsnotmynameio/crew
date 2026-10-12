@@ -70,19 +70,20 @@ func TestARoutingRunShowsItsRouteAndTheActionsItDidNotRun(t *testing.T) {
 	}
 }
 
-// Covers KTD23: the run's worktree, branch and log reach the views as a
-// published event, once its workspace is ready.
+// Covers KTD23: the run's worktree, branch, log and default branch reach
+// the views as a published event, once its workspace is ready.
 func TestTheRunsWorkspaceIsPublishedOnceReady(t *testing.T) {
 	d := newDriver(t, draft(), 2)
 	cmds, _ := d.poll(issue("1", 1, ready))
 	d.send(core.CallResult{ID: moveID(t, cmds, "1"), Result: core.ResultDone})
 
 	w := space("1", "implement")
-	w.Run = d.run(issueID("1"))
+	w.Run, w.DefaultBranch = d.run(issueID("1")), "main"
 	_, events := d.send(w)
 
 	hasEvent(t, events, crew.WorkspaceOpened{
 		EventHead: d.runHead("1"), Workspace: crew.Workspace{Name: w.Workspace, Branch: w.Branch}, Log: w.Log,
+		DefaultBranch: "main",
 	})
 }
 

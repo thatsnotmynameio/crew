@@ -106,6 +106,15 @@ var workspaceDecisions = []decision{
 		},
 	},
 	{
+		name:  "ready: the opened workspace names the default branch the workspace reported",
+		given: asking(),
+		fact:  WorkspaceReady{FactHead: fh(2), Workspace: runWS(), Log: runLog, DefaultBranch: "main"},
+		want: []RunEvent{
+			WorkspaceOpened{EventHead: eh(2), Workspace: runWS(), Log: runLog, DefaultBranch: "main"},
+			ActionShellAsked{EventHead: eh(2), Action: "install"},
+		},
+	},
+	{
 		name:  "ready: the reopened workspace resumes at the resume point's action",
 		given: reopening(), fact: ready(true),
 		want: []RunEvent{
