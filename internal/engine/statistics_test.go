@@ -132,7 +132,7 @@ func developedRun(id crew.IssueID, run crew.RuleRunID, process crew.ProcessID, a
 		Issue: id, Rule: routed.Name, Run: run, Action: "development", Process: process, Start: at, End: ended,
 		Outcome: crew.WorkSucceeded, Verdict: crew.Passed,
 		Work: crew.SessionWork{
-			PromptHash: spec.Prompt.Hash(), Started: crew.Some(at), Turns: crew.Some(7), Tokens: usage.ByModel,
+			PromptHash: spec.Prompt.Hash(), Started: crew.Some(at), Turns: usage.Turns, Tokens: usage.ByModel,
 		},
 	}
 	route := crew.RouteSpan{
