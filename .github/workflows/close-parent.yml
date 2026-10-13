@@ -1,0 +1,38 @@
+# When an issue closes, its parent closes once every one of its sub-issues is
+# closed, and so on up the chain: a parent the token closes starts no new run,
+# so this run walks up to the grandparents itself. A parent already closed, or
+# with a sub-issue still open, ends the walk.
+name: Close parent
+
+on:
+  issues:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  close-parent:
+    name: close parent
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write # closes the parent issue
+    steps:
+      - name: Close parents whose sub-issues are all closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.url }}
+        run: |
+          issue="$ISSUE_URL"
+          while :; do
+            parent="$(gh api "$issue" --jq '.parent_issue_url // empty')"
+            [ -n "$parent" ] || break
+            summary="$(gh api "$parent" --jq '"\(.state) \(.sub_issues_summary.completed) \(.sub_issues_summary.total)"')"
+            read -r state completed total <<< "$summary"
+            if [ "$state" != open ] || [ "$completed" -ne "$total" ]; then
+              echo "$parent stays as it is: $state, $completed of $total sub-issues closed"
+              break
+            fi
+            gh api --method PATCH "$parent" -f state=closed -f state_reason=completed --jq '"Closed " + .html_url'
+            issue="$parent"
+          done
