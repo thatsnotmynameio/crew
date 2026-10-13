@@ -1,0 +1,10 @@
+# The settings of the organization's Go check, "tnmn.io: go"
+# (thatsnotmynameio/github-actions' .github/workflows/go.yml). The check reads
+# them from a pull request's base commit, so a change here applies once it
+# merges, never to the pull request that makes it.
+
+# The systems the tests run on: every system the module ships for.
+systems: [linux, macos]
+# The coverage floor: the least total coverage, in percent, of the statements
+# go test covers on Linux.
+coverage: 90
